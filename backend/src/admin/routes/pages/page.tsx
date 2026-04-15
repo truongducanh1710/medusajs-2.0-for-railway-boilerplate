@@ -1,4 +1,3 @@
-import { defineRouteConfig } from "@medusajs/admin-shared"
 import { useEffect, useState } from "react"
 
 const PagesListPage = () => {
@@ -164,8 +163,8 @@ const PagesListPage = () => {
   )
 }
 
-export const config = defineRouteConfig({
+export const config = {
   label: "Trang & Landing Page",
-})
+}
 
 export default PagesListPage
