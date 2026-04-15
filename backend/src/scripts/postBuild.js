@@ -26,7 +26,15 @@ if (fs.existsSync(envPath)) {
 
 // Install dependencies
 console.log('Installing dependencies in .medusa/server...');
-execSync('pnpm i --prod --frozen-lockfile', { 
+execSync('pnpm i --prod --frozen-lockfile', {
   cwd: MEDUSA_SERVER_PATH,
   stdio: 'inherit'
 });
+
+// Run database migrations
+console.log('Running database migrations...');
+execSync('node_modules/.bin/medusa db:migrate', {
+  cwd: MEDUSA_SERVER_PATH,
+  stdio: 'inherit'
+});
+console.log('Migrations completed.');
