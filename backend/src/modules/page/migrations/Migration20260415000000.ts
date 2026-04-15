@@ -1,24 +1,14 @@
-import { Migration } from "@mikro-orm/migrations"
+import { Migration } from "@medusajs/framework/mikro-orm/migrations"
 
 export class Migration20260415000000 extends Migration {
   async up(): Promise<void> {
     this.addSql(
-      `CREATE TABLE IF NOT EXISTS "page" (
-        "id" text NOT NULL,
-        "title" text NOT NULL,
-        "slug" text NOT NULL,
-        "content" text NOT NULL DEFAULT '{}',
-        "status" text NOT NULL DEFAULT 'draft',
-        "created_at" timestamptz NOT NULL DEFAULT now(),
-        "updated_at" timestamptz NOT NULL DEFAULT now(),
-        "deleted_at" timestamptz NULL,
-        CONSTRAINT "page_pkey" PRIMARY KEY ("id")
-      );`
+      `create table if not exists "page" ("id" text not null, "title" text not null, "slug" text not null, "content" text not null default '{}', "status" text not null default 'draft', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "page_pkey" primary key ("id"));`
     )
-    this.addSql(`CREATE UNIQUE INDEX IF NOT EXISTS "page_slug_unique" ON "page" ("slug");`)
+    this.addSql(`create unique index if not exists "page_slug_unique" on "page" ("slug") where deleted_at is null;`)
   }
 
   async down(): Promise<void> {
-    this.addSql(`DROP TABLE IF EXISTS "page";`)
+    this.addSql(`drop table if exists "page" cascade;`)
   }
 }
