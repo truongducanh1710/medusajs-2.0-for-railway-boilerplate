@@ -117,6 +117,10 @@ const medusaConfig = {
         ]
       }
     }] : []),
+    {
+      resolve: "./src/modules/page",
+      key: "pageModule",
+    },
     ...(STRIPE_API_KEY && STRIPE_WEBHOOK_SECRET ? [{
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
