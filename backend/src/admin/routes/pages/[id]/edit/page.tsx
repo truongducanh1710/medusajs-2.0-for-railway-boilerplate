@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
+import { useParams } from "react-router-dom"
 
 const PageEditorPage = () => {
-  // Extract id from URL path: /app/pages/:id/edit
-  const id = window.location.pathname.split("/").slice(-2)[0]
+  const { id } = useParams<{ id: string }>()
   const editorRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState<any>(null)
