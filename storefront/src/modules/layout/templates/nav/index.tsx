@@ -11,52 +11,62 @@ export default async function Nav() {
 
   return (
     <div className="sticky top-0 inset-x-0 z-50 group">
-      <header className="relative h-16 mx-auto border-b duration-200 bg-white border-ui-border-base">
-        <nav className="content-container txt-xsmall-plus text-ui-fg-subtle flex items-center justify-between w-full h-full text-small-regular">
-          <div className="flex-1 basis-0 h-full flex items-center">
-            <div className="h-full">
-              <SideMenu regions={regions} />
-            </div>
+      {/* Top bar */}
+      <div className="bg-brand-secondary text-white text-xs text-center py-1.5 hidden small:block">
+        🚚 Miễn phí vận chuyển cho đơn hàng từ 500.000đ &nbsp;|&nbsp; Hotline: 1800 xxxx
+      </div>
+      {/* Main nav */}
+      <header className="relative h-16 mx-auto duration-200 bg-white border-b border-gray-200 shadow-sm">
+        <nav className="content-container flex items-center justify-between w-full h-full">
+          {/* Mobile menu */}
+          <div className="flex-1 basis-0 h-full flex items-center small:hidden">
+            <SideMenu regions={regions} />
           </div>
 
+          {/* Logo */}
           <div className="flex items-center h-full">
             <LocalizedClientLink
               href="/"
-              className="txt-compact-xlarge-plus hover:text-ui-fg-base uppercase"
+              className="flex items-center gap-2"
               data-testid="nav-store-link"
             >
-              Medusa Store
+              <span className="text-brand-primary font-extrabold text-2xl tracking-tight">PHAN</span>
+              <span className="text-brand-secondary font-extrabold text-2xl tracking-tight">VIET</span>
             </LocalizedClientLink>
           </div>
 
+          {/* Desktop links */}
           <div className="flex items-center gap-x-6 h-full flex-1 basis-0 justify-end">
-            <div className="hidden small:flex items-center gap-x-6 h-full">
+            <div className="hidden small:flex items-center gap-x-6 h-full text-sm font-medium text-gray-700">
+              <LocalizedClientLink className="hover:text-brand-primary transition-colors" href="/store">
+                Sản phẩm
+              </LocalizedClientLink>
               {process.env.NEXT_PUBLIC_FEATURE_SEARCH_ENABLED && (
                 <LocalizedClientLink
-                  className="hover:text-ui-fg-base"
+                  className="hover:text-brand-primary transition-colors"
                   href="/search"
                   scroll={false}
                   data-testid="nav-search-link"
                 >
-                  Search
+                  Tìm kiếm
                 </LocalizedClientLink>
               )}
               <LocalizedClientLink
-                className="hover:text-ui-fg-base"
+                className="hover:text-brand-primary transition-colors"
                 href="/account"
                 data-testid="nav-account-link"
               >
-                Account
+                Tài khoản
               </LocalizedClientLink>
             </div>
             <Suspense
               fallback={
                 <LocalizedClientLink
-                  className="hover:text-ui-fg-base flex gap-2"
+                  className="hover:text-brand-primary flex gap-2 text-sm font-medium"
                   href="/cart"
                   data-testid="nav-cart-link"
                 >
-                  Cart (0)
+                  Giỏ hàng (0)
                 </LocalizedClientLink>
               }
             >

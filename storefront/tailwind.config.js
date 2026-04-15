@@ -58,15 +58,20 @@ module.exports = {
       fontSize: {
         "3xl": "2rem",
       },
+      colors: {
+        brand: {
+          primary: "#E8420A",
+          "primary-hover": "#C73508",
+          secondary: "#1A1AE8",
+          "secondary-hover": "#1313C0",
+        },
+      },
       fontFamily: {
         sans: [
+          "Be Vietnam Pro",
           "Inter",
           "-apple-system",
           "BlinkMacSystemFont",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Ubuntu",
           "sans-serif",
         ],
       },
