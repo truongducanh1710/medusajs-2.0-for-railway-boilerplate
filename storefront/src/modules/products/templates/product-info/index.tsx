@@ -1,5 +1,4 @@
 import { HttpTypes } from "@medusajs/types"
-import { Heading, Text } from "@medusajs/ui"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
 type ProductInfoProps = {
@@ -8,31 +7,40 @@ type ProductInfoProps = {
 
 const ProductInfo = ({ product }: ProductInfoProps) => {
   return (
-    <div id="product-info">
-      <div className="flex flex-col gap-y-4 lg:max-w-[500px] mx-auto">
-        {product.collection && (
-          <LocalizedClientLink
-            href={`/collections/${product.collection.handle}`}
-            className="text-medium text-ui-fg-muted hover:text-ui-fg-subtle"
-          >
-            {product.collection.title}
-          </LocalizedClientLink>
-        )}
-        <Heading
-          level="h2"
-          className="text-3xl leading-10 text-ui-fg-base"
-          data-testid="product-title"
+    <div id="product-info" className="flex flex-col gap-4">
+      {product.collection && (
+        <LocalizedClientLink
+          href={`/collections/${product.collection.handle}`}
+          className="text-xs font-bold uppercase tracking-widest text-orange-500 hover:text-orange-600"
         >
-          {product.title}
-        </Heading>
+          {product.collection.title}
+        </LocalizedClientLink>
+      )}
 
-        <Text
-          className="text-medium text-ui-fg-subtle whitespace-pre-line"
+      <h1
+        className="text-2xl lg:text-3xl font-extrabold text-gray-900 leading-tight"
+        data-testid="product-title"
+      >
+        {product.title}
+      </h1>
+
+      {/* Rating placeholder */}
+      <div className="flex items-center gap-2">
+        <div className="flex text-orange-400 text-sm">
+          {"★★★★★"}
+        </div>
+        <span className="text-sm text-gray-500">(128 đánh giá)</span>
+        <span className="text-sm text-green-600 font-medium">● Còn hàng</span>
+      </div>
+
+      {product.description && (
+        <p
+          className="text-gray-600 leading-relaxed whitespace-pre-line"
           data-testid="product-description"
         >
           {product.description}
-        </Text>
-      </div>
+        </p>
+      )}
     </div>
   )
 }
