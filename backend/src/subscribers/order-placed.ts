@@ -2,6 +2,7 @@ import { Modules } from '@medusajs/framework/utils'
 import { INotificationModuleService, IOrderModuleService } from '@medusajs/framework/types'
 import { SubscriberArgs, SubscriberConfig } from '@medusajs/medusa'
 import { EmailTemplates } from '../modules/email-notifications/templates'
+import { pushOrderToPancake } from '../lib/pancake'
 
 export default async function orderPlacedHandler({
   event: { data },
@@ -30,6 +31,12 @@ export default async function orderPlacedHandler({
     })
   } catch (error) {
     console.error('Error sending order confirmation notification:', error)
+  }
+
+  try {
+    await pushOrderToPancake(order, shippingAddress)
+  } catch (error) {
+    console.error('Error pushing order to Pancake POS:', error)
   }
 }
 

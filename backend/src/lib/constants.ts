@@ -91,6 +91,14 @@ export const MEILISEARCH_HOST = process.env.MEILISEARCH_HOST;
 export const MEILISEARCH_ADMIN_KEY = process.env.MEILISEARCH_ADMIN_KEY;
 
 /**
+ * (optional) Pancake POS configuration
+ */
+export const PANCAKE_API_KEY = process.env.PANCAKE_API_KEY || ''
+export const PANCAKE_SHOP_ID = process.env.PANCAKE_SHOP_ID || ''
+export const PANCAKE_WAREHOUSE_ID = process.env.PANCAKE_WAREHOUSE_ID || ''
+export const PANCAKE_API_BASE = 'https://pos.pages.fm/api/v1'
+
+/**
  * Worker mode
  */
 export const WORKER_MODE =
