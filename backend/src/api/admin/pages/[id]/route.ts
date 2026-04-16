@@ -4,7 +4,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { id } = req.params
-    const pageService = req.scope.resolve("pageModuleService") as any
+    const pageService = req.scope.resolve("pageModule") as any
     const pages = await pageService.listPages({ id })
 
     if (!pages.length) {
@@ -22,7 +22,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { id } = req.params
     const { title, slug, content, status } = req.body as any
-    const pageService = req.scope.resolve("pageModuleService") as any
+    const pageService = req.scope.resolve("pageModule") as any
 
     const page = await pageService.updatePages({ id, title, slug, content, status })
     res.json({ page })
@@ -35,7 +35,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { id } = req.params
-    const pageService = req.scope.resolve("pageModuleService") as any
+    const pageService = req.scope.resolve("pageModule") as any
     await pageService.deletePages(id)
     res.json({ deleted: true })
   } catch (e: any) {
