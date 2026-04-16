@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { HttpTypes } from "@medusajs/types"
-import { updateCart, placeOrder } from "@lib/data/cart"
+import { updateCart, placeOrder, setShippingMethod, initiatePaymentSession } from "@lib/data/cart"
+import { sdk } from "@lib/config"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
 import { useParams } from "next/navigation"
@@ -144,8 +145,15 @@ export default function SimpleCheckout({ cart }: { cart: HttpTypes.StoreCart }) 
         }
       })
 
+      // Set default shipping method
+      const shippingResp = await sdk.store.shippingOption.list({ cart_id: cart.id })
+      if (shippingResp.shipping_options.length > 0) {
+        await setShippingMethod({ cartId: cart.id, shippingMethodId: shippingResp.shipping_options[0].id })
+      }
+
       if (payment === "sepay") {
         const code = Date.now().toString(36).toUpperCase()
+        await initiatePaymentSession(cart, { provider_id: "sepay", context: { orderCode: code } })
         setOrderId(code)
         setShowQR(true)
         setSubmitting(false)
