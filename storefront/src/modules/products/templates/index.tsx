@@ -8,6 +8,8 @@ import ProductActions from "@modules/products/components/product-actions"
 import RelatedProducts from "@modules/products/components/related-products"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import BundleSelector from "@modules/products/components/bundle-selector"
+import ComboBundle from "@modules/products/components/combo-bundle"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -353,6 +355,9 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
               </Suspense>
             </div>
 
+            {/* Bundle Selector — Mua nhiều giảm giá */}
+            <BundleSelector product={product} region={region} />
+
             {/* Delivery info */}
             <div className="bg-blue-50 rounded-xl p-4 text-sm space-y-2">
               <div className="flex gap-2"><span>📦</span><span><strong>Giao hàng:</strong> Nội thành 1-2 ngày, tỉnh 2-4 ngày</span></div>
@@ -365,6 +370,17 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
 
       {/* Trust Bar */}
       <TrustBar />
+
+      {/* Combo Bundle — Mua kèm tiết kiệm */}
+      {product.metadata?.combo_products && (
+        <div className="max-w-3xl mx-auto px-4 py-8">
+          <ComboBundle
+            mainProduct={product}
+            comboProducts={[]}
+            discountPercent={Number(meta(product, "combo_discount")) || 15}
+          />
+        </div>
+      )}
 
       {/* Video */}
       <VideoSection videoUrl={videoUrl} />
