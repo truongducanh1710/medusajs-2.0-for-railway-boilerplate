@@ -99,6 +99,14 @@ export const PANCAKE_WAREHOUSE_ID = process.env.PANCAKE_WAREHOUSE_ID || ''
 export const PANCAKE_API_BASE = 'https://pos.pages.fm/api/v1'
 
 /**
+ * (optional) Sepay configuration
+ */
+export const SEPAY_API_TOKEN = process.env.SEPAY_API_TOKEN
+export const SEPAY_ACCOUNT_NUMBER = process.env.SEPAY_ACCOUNT_NUMBER
+export const SEPAY_BANK = process.env.SEPAY_BANK
+export const SEPAY_API_URL = process.env.SEPAY_API_URL
+
+/**
  * Worker mode
  */
 export const WORKER_MODE =

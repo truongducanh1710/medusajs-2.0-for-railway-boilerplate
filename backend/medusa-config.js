@@ -21,7 +21,11 @@ import {
   MINIO_SECRET_KEY,
   MINIO_BUCKET,
   MEILISEARCH_HOST,
-  MEILISEARCH_ADMIN_KEY
+  MEILISEARCH_ADMIN_KEY,
+  SEPAY_API_TOKEN,
+  SEPAY_ACCOUNT_NUMBER,
+  SEPAY_BANK,
+  SEPAY_API_URL
 } from 'lib/constants';
 
 loadEnv(process.env.NODE_ENV, process.cwd());
@@ -121,22 +125,39 @@ const medusaConfig = {
       resolve: "./src/modules/page",
       key: "pageModule",
     },
-    ...(STRIPE_API_KEY && STRIPE_WEBHOOK_SECRET ? [{
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {
         providers: [
+          // Manual payment for COD
           {
+            resolve: '@medusajs/payment-manual',
+            id: 'manual',
+          },
+          // Sepay for QR payments
+          ...(SEPAY_API_TOKEN && SEPAY_ACCOUNT_NUMBER && SEPAY_BANK && SEPAY_API_URL ? [{
+            resolve: './src/modules/sepay-payment',
+            id: 'sepay',
+            options: {
+              apiToken: SEPAY_API_TOKEN,
+              accountNumber: SEPAY_ACCOUNT_NUMBER,
+              bank: SEPAY_BANK,
+              apiUrl: SEPAY_API_URL,
+            },
+          }] : []),
+          // Stripe if configured
+          ...(STRIPE_API_KEY && STRIPE_WEBHOOK_SECRET ? [{
             resolve: '@medusajs/payment-stripe',
             id: 'stripe',
             options: {
               apiKey: STRIPE_API_KEY,
               webhookSecret: STRIPE_WEBHOOK_SECRET,
             },
-          },
+          }] : []),
         ],
       },
-    }] : [])
+    }
   ],
   plugins: [
   ...(MEILISEARCH_HOST && MEILISEARCH_ADMIN_KEY ? [{
