@@ -98,6 +98,25 @@ export default function SimpleCheckout({ cart }: { cart: HttpTypes.StoreCart }) 
   const [showQR, setShowQR] = useState(false)
   const [orderId, setOrderId] = useState("")
 
+  // Load saved form data
+  useEffect(() => {
+    const saved = localStorage.getItem('phanviet_checkout_form')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        setForm(parsed.form || { name: "", phone: "", address: "", note: "" })
+        setPayment(parsed.payment || "cod")
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [])
+
+  // Save form data on change
+  useEffect(() => {
+    localStorage.setItem('phanviet_checkout_form', JSON.stringify({ form, payment }))
+  }, [form, payment])
+
   const sortedItems = [...(cart.items || [])].sort((a, b) =>
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
