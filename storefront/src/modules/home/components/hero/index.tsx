@@ -4,7 +4,7 @@ const Hero = () => {
   return (
     <>
       {/* Hero Section */}
-      <section className="relative h-[870px] w-full flex items-center overflow-hidden">
+      <section className="relative h-[600px] md:h-[700px] lg:h-[870px] w-full flex items-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img
             className="w-full h-full object-cover"
@@ -13,31 +13,31 @@ const Hero = () => {
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent"></div>
         </div>
-        <div className="relative z-10 max-w-[1920px] mx-auto px-12 w-full">
+        <div className="relative z-10 max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 w-full">
           <div className="max-w-2xl">
-            <span className="inline-block px-4 py-1.5 mb-6 rounded-full bg-white/10 text-white border border-white/20 font-semibold text-xs tracking-widest uppercase">
+            <span className="inline-block px-3 py-1 mb-4 sm:mb-6 rounded-full bg-white/10 text-white border border-white/20 font-semibold text-xs tracking-widest uppercase">
               Thương hiệu gia dụng tin cậy
             </span>
-            <h1 className="font-extrabold text-6xl lg:text-8xl text-white leading-tight mb-8 tracking-tighter">
+            <h1 className="font-extrabold text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl 2xl:text-8xl text-white leading-tight mb-6 sm:mb-8 tracking-tighter">
               Thiết bị{" "}
               <span className="block">
-                <span className="text-[6rem] tracking-tighter">thông minh </span>
-                <span className="text-orange-400 text-[6rem] tracking-tighter">cho mọi gia đình</span>
+                <span className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl 2xl:text-9xl tracking-tighter">thông minh </span>
+                <span className="text-orange-400 text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl 2xl:text-9xl tracking-tighter">cho mọi gia đình</span>
               </span>
             </h1>
-            <p className="text-white/80 text-xl mb-12 max-w-lg leading-relaxed font-light">
+            <p className="text-white/80 text-base sm:text-lg md:text-xl mb-8 sm:mb-12 max-w-lg leading-relaxed font-light">
               Nâng tầm không gian sống với những sản phẩm công nghệ đỉnh cao, kết hợp giữa kỹ thuật chính xác và nghệ thuật thủ công.
             </p>
-            <div className="flex gap-4 flex-wrap">
+            <div className="flex gap-3 sm:gap-4 flex-wrap">
               <LocalizedClientLink
                 href="/store"
-                className="bg-orange-500 text-white px-12 py-5 rounded font-black text-xl hover:bg-orange-600 transition-all duration-300"
+                className="bg-orange-500 text-white px-6 sm:px-8 md:px-12 py-3 sm:py-4 md:py-5 rounded font-black text-base sm:text-lg md:text-xl hover:bg-orange-600 transition-all duration-300"
               >
                 Mua ngay
               </LocalizedClientLink>
               <LocalizedClientLink
                 href="/store"
-                className="bg-white/10 backdrop-blur-md text-white border border-white/20 px-12 py-5 rounded font-black text-xl hover:bg-white/20 transition-all duration-300"
+                className="bg-white/10 backdrop-blur-md text-white border border-white/20 px-6 sm:px-8 md:px-12 py-3 sm:py-4 md:py-5 rounded font-black text-base sm:text-lg md:text-xl hover:bg-white/20 transition-all duration-300"
               >
                 Khám phá
               </LocalizedClientLink>
@@ -47,8 +47,8 @@ const Hero = () => {
       </section>
 
       {/* Advantages Bar */}
-      <section className="max-w-[1920px] mx-auto px-12 -mt-16 relative z-20">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-0.5 bg-gray-200/20 rounded-xl overflow-hidden backdrop-blur-xl shadow-2xl">
+      <section className="max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 -mt-12 md:-mt-16 relative z-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-0.5 bg-gray-200/20 rounded-xl overflow-hidden backdrop-blur-xl shadow-2xl">
           {[
             { icon: "✅", title: "Hàng chính hãng", desc: "Cam kết chất lượng 100%" },
             { icon: "🛡️", title: "Bảo hành uy tín", desc: "Hỗ trợ kỹ thuật 24/7" },
@@ -57,14 +57,14 @@ const Hero = () => {
           ].map((item) => (
             <div
               key={item.title}
-              className="bg-white p-8 flex items-center gap-5 transition-all hover:bg-gray-50 group"
+              className="bg-white p-4 sm:p-6 md:p-8 flex items-center gap-3 sm:gap-4 md:gap-5 transition-all hover:bg-gray-50 group"
             >
-              <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-blue-100 flex items-center justify-center text-lg sm:text-xl md:text-2xl group-hover:scale-110 transition-transform">
                 {item.icon}
               </div>
               <div>
-                <h3 className="font-bold text-lg text-gray-800">{item.title}</h3>
-                <p className="text-sm text-gray-500">{item.desc}</p>
+                <h3 className="font-bold text-base sm:text-lg text-gray-800">{item.title}</h3>
+                <p className="text-xs sm:text-sm text-gray-500">{item.desc}</p>
               </div>
             </div>
           ))}
@@ -72,17 +72,17 @@ const Hero = () => {
       </section>
 
       {/* Categories Section */}
-      <section className="max-w-[1920px] mx-auto px-12 py-24">
-        <div className="flex justify-between items-end mb-12">
-          <div>
-            <h2 className="font-extrabold text-4xl tracking-tight mb-2 text-gray-900">Danh mục nổi bật</h2>
-            <p className="text-gray-500">Giải pháp tối ưu cho không gian sống hiện đại</p>
+      <section className="max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 py-12 sm:py-16 md:py-24">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 sm:mb-12">
+          <div className="mb-4 sm:mb-0">
+            <h2 className="font-extrabold text-2xl sm:text-3xl md:text-4xl tracking-tight mb-2 text-gray-900">Danh mục nổi bật</h2>
+            <p className="text-gray-500 text-sm sm:text-base">Giải pháp tối ưu cho không gian sống hiện đại</p>
           </div>
-          <LocalizedClientLink href="/store" className="text-orange-500 font-bold flex items-center gap-2 hover:underline">
+          <LocalizedClientLink href="/store" className="text-orange-500 font-bold flex items-center gap-2 hover:underline text-sm sm:text-base">
             Xem tất cả →
           </LocalizedClientLink>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
           {[
             {
               title: "Chảo chống dính",
@@ -100,17 +100,17 @@ const Hero = () => {
               img: "https://lh3.googleusercontent.com/aida-public/AB6AXuB1cWp9D_97tx4R_ap7V8UFnnlmvlz8GmX8f4800Y0epPzKlhdE5znp8tfopRptO1n-uYtC0yIoGoniSuz1izH3prtGntAeGRoE4tiOJ8nTKT9DZc_2TDiFq1GtLw1tdhqWNy5ngxXynXjJ2P-0M6Ws1bjr9fIhd6eVj7vk0ThVQ-BUK_GTpQHk7uyG2NZlRKiy6L8wczAV23dL0e-aGUrCaKbviMbxsTsLDw_ld2LAIFbetZZew7MafqSKqaPTTgUkVm5APFC0SU6m",
             },
           ].map((cat) => (
-            <div key={cat.title} className="group relative h-[500px] rounded-xl overflow-hidden cursor-pointer">
+            <div key={cat.title} className="group relative h-[300px] sm:h-[400px] md:h-[500px] rounded-xl overflow-hidden cursor-pointer">
               <img
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                 src={cat.img}
                 alt={cat.title}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-12 w-full">
-                <h3 className="text-white text-3xl font-bold mb-4">{cat.title}</h3>
-                <p className="text-white/70 mb-8 max-w-xs">{cat.desc}</p>
-                <span className="bg-white/10 backdrop-blur-md text-white px-6 py-2 rounded-full text-sm font-bold border border-white/20 group-hover:bg-orange-500 group-hover:border-orange-500 transition-all">
+              <div className="absolute bottom-0 left-0 p-4 sm:p-6 md:p-8 lg:p-12 w-full">
+                <h3 className="text-white text-xl sm:text-2xl md:text-3xl font-bold mb-2 sm:mb-4">{cat.title}</h3>
+                <p className="text-white/70 mb-4 sm:mb-6 md:mb-8 max-w-xs text-sm sm:text-base">{cat.desc}</p>
+                <span className="bg-white/10 backdrop-blur-md text-white px-4 sm:px-6 py-2 rounded-full text-xs sm:text-sm font-bold border border-white/20 group-hover:bg-orange-500 group-hover:border-orange-500 transition-all">
                   Khám phá ngay
                 </span>
               </div>
@@ -120,8 +120,8 @@ const Hero = () => {
       </section>
 
       {/* Promotion Banner */}
-      <section className="max-w-[1920px] mx-auto px-12 py-12">
-        <div className="relative rounded-2xl overflow-hidden bg-orange-500 h-80 flex items-center px-20">
+      <section className="max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 py-8 sm:py-12">
+        <div className="relative rounded-2xl overflow-hidden bg-orange-500 h-64 sm:h-72 md:h-80 flex items-center px-6 sm:px-8 md:px-12 lg:px-20">
           <div className="absolute right-0 top-0 h-full w-1/2 opacity-20 pointer-events-none">
             <img
               className="w-full h-full object-cover"
@@ -130,22 +130,22 @@ const Hero = () => {
             />
           </div>
           <div className="relative z-10">
-            <h2 className="font-black text-5xl text-white mb-4 tracking-tighter uppercase">
+            <h2 className="font-black text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white mb-2 sm:mb-4 tracking-tighter uppercase">
               Siêu Ưu Đãi Mùa Hè
             </h2>
-            <p className="text-white/90 text-xl mb-8 max-w-lg">
+            <p className="text-white/90 text-sm sm:text-base md:text-lg lg:text-xl mb-4 sm:mb-6 md:mb-8 max-w-lg">
               Nhập mã{" "}
-              <span className="bg-white/30 px-3 py-1 rounded font-bold">PHANVIET20</span>{" "}
+              <span className="bg-white/30 px-2 sm:px-3 py-1 rounded font-bold">PHANVIET20</span>{" "}
               để được giảm ngay 20% cho đơn hàng thiết bị gia dụng đầu tiên.
             </p>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
               <LocalizedClientLink
                 href="/store"
-                className="bg-white text-orange-500 px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform"
+                className="bg-white text-orange-500 px-6 sm:px-8 py-2 sm:py-3 rounded-full font-bold text-sm sm:text-base hover:scale-105 transition-transform"
               >
                 Nhận ưu đãi ngay
               </LocalizedClientLink>
-              <span className="text-white font-medium">Thời gian có hạn đến hết 30/06</span>
+              <span className="text-white font-medium text-sm">Thời gian có hạn đến hết 30/06</span>
             </div>
           </div>
         </div>
