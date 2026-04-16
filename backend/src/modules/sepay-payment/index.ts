@@ -1,7 +1,12 @@
-import { AbstractPaymentProvider, PaymentProviderError, PaymentProviderSessionResponse, PaymentSessionStatus } from "@medusajs/framework/utils"
+import { AbstractPaymentProvider, PaymentSessionStatus } from "@medusajs/framework/utils"
 
 class SepayPaymentProvider extends AbstractPaymentProvider {
   static identifier = "sepay"
+
+  private apiToken: string
+  private accountNumber: string
+  private bank: string
+  private apiUrl: string
 
   constructor(container, config) {
     super(container, config)
@@ -11,8 +16,8 @@ class SepayPaymentProvider extends AbstractPaymentProvider {
     this.apiUrl = config.apiUrl
   }
 
-  async initiatePayment(context) {
-    const { amount, currency_code, resource_id } = context
+  async initiatePayment(input) {
+    const { amount, currency_code, resource_id } = input
 
     try {
       // Generate QR code via Sepay API
@@ -38,100 +43,86 @@ class SepayPaymentProvider extends AbstractPaymentProvider {
       }
 
       return {
-        success: true,
+        id: `sepay_${Date.now()}`,
         data: {
-          id: `sepay_${Date.now()}`,
-          status: PaymentSessionStatus.PENDING,
-          data: {
-            qrUrl: data.qrDataURL,
-            bank: this.bank,
-            accountNumber: this.accountNumber,
-            amount: Math.round(amount / 100),
-            content: `Payment for order ${resource_id}`
-          }
+          qrUrl: data.qrDataURL,
+          bank: this.bank,
+          accountNumber: this.accountNumber,
+          amount: Math.round(amount / 100),
+          content: `Payment for order ${resource_id}`
         }
       }
     } catch (error) {
-      throw new PaymentProviderError(
-        `Sepay payment initiation failed: ${error.message}`,
-        error
-      )
+      throw new Error(`Sepay payment initiation failed: ${error.message}`)
     }
   }
 
-  async authorizePayment(paymentSessionData, context) {
-    // For Sepay, authorization is handled via polling in frontend
-    // This would be called when payment is confirmed
+  async getWebhookActionAndData(data) {
+    // Handle webhook from Sepay if needed
     return {
-      success: true,
+      action: "not_supported",
+      data: {}
+    }
+  }
+
+  async authorizePayment(input) {
+    // For Sepay, authorization is handled via polling in frontend
+    return {
       data: {
-        ...paymentSessionData,
+        ...input.data,
         status: PaymentSessionStatus.AUTHORIZED
       }
     }
   }
 
-  async capturePayment(paymentSessionData) {
-    // Capture the payment
+  async capturePayment(input) {
     return {
-      success: true,
       data: {
-        ...paymentSessionData,
+        ...input.data,
         status: PaymentSessionStatus.CAPTURED
       }
     }
   }
 
-  async cancelPayment(paymentSessionData) {
+  async cancelPayment(input) {
     return {
-      success: true,
       data: {
-        ...paymentSessionData,
+        ...input.data,
         status: PaymentSessionStatus.CANCELED
       }
     }
   }
 
-  async deletePayment(paymentSessionData) {
+  async deletePayment(input) {
     return {
-      success: true,
       data: {
-        ...paymentSessionData,
+        ...input.data,
         status: PaymentSessionStatus.CANCELED
       }
     }
   }
 
-  async getPaymentStatus(paymentSessionData) {
-    // In a real implementation, you might poll Sepay API for status
-    // For now, return current status
+  async getPaymentStatus(input) {
     return {
-      success: true,
-      data: paymentSessionData
+      data: input.data,
+      status: PaymentSessionStatus.PENDING
     }
   }
 
-  async refundPayment(paymentSessionData, refundAmount) {
-    throw new PaymentProviderError("Refunds not supported by Sepay")
+  async refundPayment(input) {
+    throw new Error("Refunds not supported by Sepay")
   }
 
-  async retrievePayment(paymentSessionData) {
+  async retrievePayment(input) {
     return {
-      success: true,
-      data: paymentSessionData
+      data: input.data
     }
   }
 
-  async updatePayment(paymentSessionData, context) {
+  async updatePayment(input) {
     return {
-      success: true,
-      data: paymentSessionData
+      data: input.data
     }
-  }
-
-  async getPaymentData(sessionId) {
-    // Retrieve payment data from your storage if needed
-    return {}
   }
 }
 
