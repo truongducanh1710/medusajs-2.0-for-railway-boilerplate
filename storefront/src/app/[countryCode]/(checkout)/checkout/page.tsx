@@ -1,6 +1,7 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { enrichLineItems, retrieveCart } from "@lib/data/cart"
+import { listCartShippingMethods } from "@lib/data/fulfillment"
 import { HttpTypes } from "@medusajs/types"
 import SimpleCheckout from "@modules/checkout/templates/simple-checkout"
 
@@ -22,5 +23,6 @@ const fetchCart = async () => {
 
 export default async function Checkout() {
   const cart = await fetchCart()
-  return <SimpleCheckout cart={cart} />
+  const shippingOptions = await listCartShippingMethods(cart.id)
+  return <SimpleCheckout cart={cart} shippingOptions={shippingOptions} />
 }

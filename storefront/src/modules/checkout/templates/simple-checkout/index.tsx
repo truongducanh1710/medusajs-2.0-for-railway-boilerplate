@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import { HttpTypes } from "@medusajs/types"
 import { updateCart, placeOrder, setShippingMethod, initiatePaymentSession } from "@lib/data/cart"
-import { listCartShippingMethods } from "@lib/data/fulfillment"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
 import { useParams } from "next/navigation"
@@ -86,7 +85,7 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   )
 }
 
-export default function SimpleCheckout({ cart }: { cart: HttpTypes.StoreCart }) {
+export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTypes.StoreCart, shippingOptions: any[] | null }) {
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
@@ -165,7 +164,6 @@ export default function SimpleCheckout({ cart }: { cart: HttpTypes.StoreCart }) 
       })
 
       // Set default shipping method
-      const shippingOptions = await listCartShippingMethods(cart.id)
       if (shippingOptions && shippingOptions.length > 0) {
         await setShippingMethod({ cartId: cart.id, shippingMethodId: shippingOptions[0].id })
       }
