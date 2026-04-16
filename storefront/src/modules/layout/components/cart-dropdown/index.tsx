@@ -89,9 +89,15 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
       )}
 
       {/* Drawer */}
-      <div
-        style={{ fontFamily: "inherit" }}
-        className={`fixed top-0 right-0 h-full w-full max-w-[420px] bg-white z-50 shadow-2xl flex flex-col transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}>
+      <div style={{
+        position: "fixed", top: 0, right: 0, height: "100%",
+        width: "100%", maxWidth: 420, backgroundColor: "white",
+        zIndex: 50, boxShadow: "-4px 0 24px rgba(0,0,0,0.15)",
+        display: "flex", flexDirection: "column",
+        transform: open ? "translateX(0)" : "translateX(100%)",
+        transition: "transform 0.3s ease-out",
+        fontFamily: "inherit"
+      }}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-black text-lg text-gray-900">
@@ -108,7 +114,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
         )}
 
         {/* Items */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4" style={{ display: "block" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
           {sortedItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
               <span className="text-5xl">🛒</span>
@@ -208,7 +214,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
         {/* Footer */}
         {sortedItems.length > 0 && (
-          <div className="border-t border-gray-100 px-4 py-4 space-y-3 bg-gray-50/50">
+          <div style={{ borderTop: "1px solid #f3f4f6", padding: "16px", backgroundColor: "#fafafa" }}>
             {savings > 0 && (
               <div className="flex justify-between text-sm text-green-600 font-semibold">
                 <span>Tiết kiệm được</span>
