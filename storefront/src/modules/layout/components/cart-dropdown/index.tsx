@@ -1,16 +1,14 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
-import { convertToLocale } from "@lib/util/money"
+import { deleteLineItem, updateLineItem } from "@lib/data/cart"
+import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
-// Format VND luôn — không phụ thuộc region
 function fmtVND(amount: number) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
 }
-import { deleteLineItem, updateLineItem } from "@lib/data/cart"
-import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
 function Countdown({ seconds = 299 }: { seconds?: number }) {
   const [secs, setSecs] = useState(seconds)
@@ -20,7 +18,7 @@ function Countdown({ seconds = 299 }: { seconds?: number }) {
   }, [])
   const m = String(Math.floor(secs / 60)).padStart(2, "0")
   const s = String(secs % 60).padStart(2, "0")
-  return <span className="font-black tabular-nums">{m}:{s}</span>
+  return <span style={{ fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>{m}:{s}</span>
 }
 
 const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
@@ -31,18 +29,12 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
   const totalItems = cart?.items?.reduce((acc, i) => acc + i.quantity, 0) || 0
   const subtotal = cart?.subtotal ?? 0
-
-  // Tính tiết kiệm
-  const originalTotal = cart?.items?.reduce((acc, item) => {
-    const orig = (item.unit_price || 0) * item.quantity
-    return acc + orig
-  }, 0) || 0
+  const originalTotal = cart?.items?.reduce((acc, item) => acc + (item.unit_price || 0) * item.quantity, 0) || 0
   const savings = originalTotal - subtotal
 
-  // Auto-open khi thêm sản phẩm
   useEffect(() => {
-    if (itemRef.current !== totalItems && !pathname.includes("/cart") && !pathname.includes("/checkout")) {
-      setOpen(true)
+    if (itemRef.current !== totalItems && !pathname.includes("/checkout")) {
+      if (totalItems > itemRef.current) setOpen(true)
     }
     itemRef.current = totalItems
   }, [totalItems, pathname])
@@ -64,65 +56,152 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
 
+  const S = {
+    overlay: {
+      position: "fixed" as const, inset: 0,
+      backgroundColor: "rgba(0,0,0,0.5)", zIndex: 40,
+    },
+    drawer: {
+      position: "fixed" as const, top: 0, right: 0,
+      height: "100%", width: "100%", maxWidth: 420,
+      backgroundColor: "#fff", zIndex: 50,
+      boxShadow: "-4px 0 24px rgba(0,0,0,0.15)",
+      display: "flex", flexDirection: "column" as const,
+      transform: open ? "translateX(0)" : "translateX(100%)",
+      transition: "transform 0.3s ease-out",
+      fontFamily: "'Be Vietnam Pro', Inter, sans-serif",
+    },
+    header: {
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "16px 20px", borderBottom: "1px solid #f3f4f6", flexShrink: 0,
+    },
+    countdown: {
+      backgroundColor: "#172554", color: "#fff",
+      textAlign: "center" as const, padding: "8px 16px",
+      fontSize: 13, fontWeight: 600, flexShrink: 0,
+    },
+    itemsArea: {
+      flex: 1, overflowY: "auto" as const, padding: "12px 16px",
+    },
+    itemCard: {
+      border: "1px solid #f3f4f6", borderRadius: 12,
+      padding: 12, marginBottom: 12,
+    },
+    itemRow: { display: "flex", gap: 12, alignItems: "flex-start" },
+    thumb: {
+      width: 64, height: 64, borderRadius: 8, overflow: "hidden",
+      backgroundColor: "#f3f4f6", flexShrink: 0,
+      display: "flex", alignItems: "center", justifyContent: "center",
+    },
+    thumbImg: { width: "100%", height: "100%", objectFit: "cover" as const },
+    info: { flex: 1, minWidth: 0 },
+    name: { fontWeight: 600, fontSize: 13, color: "#111827", margin: 0, lineHeight: 1.4 },
+    price: { fontWeight: 900, fontSize: 13, color: "#f97316", margin: "4px 0 0" },
+    qtyRow: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 },
+    qtyBtn: {
+      width: 28, height: 28, borderRadius: "50%",
+      border: "1px solid #d1d5db", background: "#fff",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      cursor: "pointer", fontSize: 16, color: "#374151",
+    },
+    deleteBtn: {
+      background: "none", border: "none", cursor: "pointer",
+      fontSize: 20, color: "#d1d5db", lineHeight: 1, padding: 0,
+      flexShrink: 0,
+    },
+    giftBox: {
+      marginTop: 10, backgroundColor: "#fff7ed",
+      border: "1px solid #fed7aa", borderRadius: 8, padding: 10,
+    },
+    giftTitle: {
+      fontSize: 10, fontWeight: 900, color: "#f97316",
+      textTransform: "uppercase" as const, letterSpacing: "0.05em",
+      margin: "0 0 6px",
+    },
+    giftRow: {
+      display: "flex", alignItems: "center", gap: 8,
+      backgroundColor: "#fff", borderRadius: 6, padding: "6px 8px",
+      border: "1px solid #ffedd5", marginBottom: 4,
+    },
+    footer: {
+      borderTop: "1px solid #f3f4f6", padding: 16,
+      backgroundColor: "#fafafa", flexShrink: 0,
+    },
+    totalRow: {
+      display: "flex", justifyContent: "space-between",
+      alignItems: "center", marginBottom: 12,
+    },
+    checkoutBtn: {
+      display: "block", width: "100%", backgroundColor: "#172554",
+      color: "#fff", fontWeight: 900, fontSize: 15,
+      padding: "14px 0", borderRadius: 12, textAlign: "center" as const,
+      textDecoration: "none", border: "none", cursor: "pointer",
+      marginBottom: 8,
+    },
+    continueBtn: {
+      display: "block", width: "100%", background: "none",
+      border: "none", cursor: "pointer", textAlign: "center" as const,
+      fontSize: 13, color: "#9ca3af", padding: "4px 0",
+    },
+  }
+
   return (
     <>
-      {/* Cart icon trigger */}
+      {/* Cart icon */}
       <button
         onClick={() => setOpen(true)}
-        className="relative hover:bg-slate-100 p-2 rounded-full transition-all"
+        style={{ position: "relative", background: "none", border: "none", cursor: "pointer", padding: 8 }}
         aria-label="Giỏ hàng"
       >
-        <span className="text-xl">🛒</span>
+        <span style={{ fontSize: 20 }}>🛒</span>
         {totalItems > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 bg-orange-500 text-white text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full">
-            {totalItems}
+          <span style={{
+            position: "absolute", top: 0, right: 0,
+            backgroundColor: "#f97316", color: "#fff",
+            fontSize: 10, fontWeight: 900,
+            width: 16, height: 16, borderRadius: "50%",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {totalItems > 9 ? "9+" : totalItems}
           </span>
         )}
       </button>
 
       {/* Overlay */}
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 transition-opacity"
-          onClick={() => setOpen(false)}
-        />
-      )}
+      {open && <div style={S.overlay} onClick={() => setOpen(false)} />}
 
       {/* Drawer */}
-      <div style={{
-        position: "fixed", top: 0, right: 0, height: "100%",
-        width: "100%", maxWidth: 420, backgroundColor: "white",
-        zIndex: 50, boxShadow: "-4px 0 24px rgba(0,0,0,0.15)",
-        display: "flex", flexDirection: "column",
-        transform: open ? "translateX(0)" : "translateX(100%)",
-        transition: "transform 0.3s ease-out",
-        fontFamily: "inherit"
-      }}>
+      <div style={S.drawer}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-black text-lg text-gray-900">
-            Giỏ hàng {totalItems > 0 && <span className="text-gray-400 font-normal text-base">• {totalItems} sản phẩm</span>}
+        <div style={S.header}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: "#111827" }}>
+            Giỏ hàng
+            {totalItems > 0 && (
+              <span style={{ fontWeight: 400, fontSize: 14, color: "#9ca3af", marginLeft: 6 }}>
+                • {totalItems} sản phẩm
+              </span>
+            )}
           </h2>
-          <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-700 text-2xl leading-none font-light">×</button>
+          <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "#9ca3af", lineHeight: 1 }}>×</button>
         </div>
 
         {/* Countdown */}
         {totalItems > 0 && (
-          <div className="bg-blue-950 text-white text-center py-2 text-sm font-semibold">
+          <div style={S.countdown}>
             ⏰ Giỏ hàng được giữ trong <Countdown seconds={299} />
           </div>
         )}
 
         {/* Items */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+        <div style={S.itemsArea}>
           {sortedItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-              <span className="text-5xl">🛒</span>
-              <p className="text-gray-500">Giỏ hàng của bạn đang trống</p>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center" }}>
+              <span style={{ fontSize: 48 }}>🛒</span>
+              <p style={{ color: "#6b7280", margin: 0 }}>Giỏ hàng của bạn đang trống</p>
               <LocalizedClientLink
                 href="/store"
                 onClick={() => setOpen(false)}
-                className="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-orange-600"
+                style={{ backgroundColor: "#f97316", color: "#fff", padding: "10px 20px", borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: "none" }}
               >
                 Khám phá sản phẩm
               </LocalizedClientLink>
@@ -132,50 +211,34 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
               const gifts = (() => {
                 try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
               })()
+              const thumb = item.variant?.product?.thumbnail || (item as any).thumbnail
 
               return (
-                <div key={item.id} style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12, marginBottom: 12, display: "block" }}>
-                  <div style={{ display: "flex", gap: 12 }}>
-                    {/* Thumbnail */}
-                    <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
-                      {item.variant?.product?.thumbnail ? (
-                        <img
-                          src={item.variant.product.thumbnail}
-                          alt={item.title || ""}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (item as any).thumbnail ? (
-                        <img
-                          src={(item as any).thumbnail}
-                          alt={item.title || ""}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-2xl">🛍️</span>
-                      )}
+                <div key={item.id} style={S.itemCard}>
+                  <div style={S.itemRow}>
+                    {/* Thumb */}
+                    <div style={S.thumb}>
+                      {thumb
+                        ? <img src={thumb} alt={item.title || ""} style={S.thumbImg} />
+                        : <span style={{ fontSize: 24 }}>🛍️</span>
+                      }
                     </div>
 
                     {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm text-gray-900 line-clamp-2">
-                        {item.title || (item as any).product_title}
-                      </p>
-                      <p className="text-orange-500 font-black text-sm mt-0.5">
-                        {fmtVND(item.unit_price * item.quantity)}
-                      </p>
-
-                      {/* Qty controls */}
-                      <div className="flex items-center gap-2 mt-2">
+                    <div style={S.info}>
+                      <p style={S.name}>{item.title || (item as any).product_title}</p>
+                      <p style={S.price}>{fmtVND((item.unit_price || 0) * item.quantity)}</p>
+                      <div style={S.qtyRow}>
                         <button
                           onClick={() => handleQtyChange(item.id, item.quantity - 1)}
                           disabled={!!updating}
-                          className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:border-orange-400 disabled:opacity-40"
+                          style={{ ...S.qtyBtn, opacity: updating ? 0.4 : 1 }}
                         >−</button>
-                        <span className="text-sm font-bold w-5 text-center">{item.quantity}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13, minWidth: 20, textAlign: "center" }}>{item.quantity}</span>
                         <button
                           onClick={() => handleQtyChange(item.id, item.quantity + 1)}
                           disabled={!!updating}
-                          className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:border-orange-400 disabled:opacity-40"
+                          style={{ ...S.qtyBtn, opacity: updating ? 0.4 : 1 }}
                         >+</button>
                       </div>
                     </div>
@@ -184,24 +247,22 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                     <button
                       onClick={() => handleDelete(item.id)}
                       disabled={updating === item.id}
-                      className="text-gray-300 hover:text-red-400 text-lg leading-none self-start disabled:opacity-40"
+                      style={{ ...S.deleteBtn, opacity: updating === item.id ? 0.4 : 1 }}
                     >×</button>
                   </div>
 
-                  {/* Gift items */}
+                  {/* Gifts */}
                   {gifts.length > 0 && (
-                    <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg p-2.5 space-y-2">
-                      <p className="text-[10px] font-black text-orange-500 uppercase tracking-wider">🎁 Quà tặng kèm ({gifts.length} món)</p>
-                      {gifts.map((gift: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 bg-white rounded-lg px-2.5 py-2 border border-orange-100">
-                          {gift.image
-                            ? <img src={gift.image} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" alt={gift.name} />
-                            : <span className="text-xl flex-shrink-0">🎁</span>
+                    <div style={S.giftBox}>
+                      <p style={S.giftTitle}>🎁 Quà tặng kèm ({gifts.length} món)</p>
+                      {gifts.map((g: any, i: number) => (
+                        <div key={i} style={S.giftRow}>
+                          {g.image
+                            ? <img src={g.image} style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} alt={g.name} />
+                            : <span style={{ fontSize: 18, flexShrink: 0 }}>🎁</span>
                           }
-                          <p className="text-xs text-gray-700 flex-1 font-medium line-clamp-1">{gift.name}</p>
-                          <span className="text-xs text-gray-400 line-through flex-shrink-0">
-                            {fmtVND(gift.value || 0)}
-                          </span>
+                          <span style={{ fontSize: 12, color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
+                          <span style={{ fontSize: 11, color: "#9ca3af", textDecoration: "line-through", flexShrink: 0 }}>{fmtVND(g.value || 0)}</span>
                         </div>
                       ))}
                     </div>
@@ -214,30 +275,21 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
         {/* Footer */}
         {sortedItems.length > 0 && (
-          <div style={{ borderTop: "1px solid #f3f4f6", padding: "16px", backgroundColor: "#fafafa" }}>
+          <div style={S.footer}>
             {savings > 0 && (
-              <div className="flex justify-between text-sm text-green-600 font-semibold">
-                <span>Tiết kiệm được</span>
-                <span>-{fmtVND(savings)}</span>
+              <div style={{ ...S.totalRow, marginBottom: 6 }}>
+                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>Tiết kiệm được</span>
+                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>-{fmtVND(savings)}</span>
               </div>
             )}
-            <div className="flex justify-between font-black text-lg">
-              <span>Tổng cộng</span>
-              <span className="text-orange-500">
-                {fmtVND(subtotal)}
-              </span>
+            <div style={{ ...S.totalRow, marginBottom: 14 }}>
+              <span style={{ fontWeight: 900, fontSize: 16, color: "#111827" }}>Tổng cộng</span>
+              <span style={{ fontWeight: 900, fontSize: 18, color: "#f97316" }}>{fmtVND(subtotal)}</span>
             </div>
-            <LocalizedClientLink
-              href="/checkout"
-              onClick={() => setOpen(false)}
-              className="block w-full bg-blue-950 hover:bg-blue-900 text-white font-black text-base py-4 rounded-xl text-center transition-all active:scale-95"
-            >
+            <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} style={S.checkoutBtn}>
               TIẾN HÀNH THANH TOÁN →
             </LocalizedClientLink>
-            <button
-              onClick={() => setOpen(false)}
-              className="block w-full text-center text-sm text-gray-400 hover:text-gray-600"
-            >
+            <button onClick={() => setOpen(false)} style={S.continueBtn}>
               Tiếp tục mua hàng
             </button>
           </div>
