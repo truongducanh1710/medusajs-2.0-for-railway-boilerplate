@@ -60,7 +60,7 @@ class SepayPaymentProvider extends AbstractPaymentProvider {
   async getWebhookActionAndData(data) {
     // Handle webhook from Sepay if needed
     return {
-      action: "not_supported",
+      action: "not_supported" as any,
       data: {}
     }
   }
@@ -68,10 +68,8 @@ class SepayPaymentProvider extends AbstractPaymentProvider {
   async authorizePayment(input) {
     // For Sepay, authorization is handled via polling in frontend
     return {
-      data: {
-        ...input.data,
-        status: PaymentSessionStatus.AUTHORIZED
-      }
+      data: input.data,
+      status: PaymentSessionStatus.AUTHORIZED
     }
   }
 
@@ -110,7 +108,9 @@ class SepayPaymentProvider extends AbstractPaymentProvider {
   }
 
   async refundPayment(input) {
-    throw new Error("Refunds not supported by Sepay")
+    return {
+      data: input.data
+    }
   }
 
   async retrievePayment(input) {
