@@ -1,7 +1,7 @@
 import { ModuleProviderExports } from '@medusajs/framework/types'
-import SepayPaymentProviderService from './service'
+import CodPaymentProviderService from './service'
 
-const services = [SepayPaymentProviderService]
+const services = [CodPaymentProviderService]
 
 const providerExport: ModuleProviderExports = {
   services,

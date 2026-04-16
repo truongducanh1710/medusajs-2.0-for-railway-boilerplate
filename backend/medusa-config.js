@@ -22,9 +22,9 @@ import {
   MINIO_BUCKET,
   MEILISEARCH_HOST,
   MEILISEARCH_ADMIN_KEY,
-  SEPAY_API_TOKEN,
-  SEPAY_ACCOUNT_NUMBER,
   SEPAY_BANK,
+  SEPAY_ACCOUNT_NUMBER,
+  SEPAY_API_TOKEN,
   SEPAY_API_URL
 } from 'lib/constants';
 
@@ -130,23 +130,24 @@ const medusaConfig = {
       resolve: '@medusajs/payment',
       options: {
         providers: [
-          // Manual payment for COD
+          // Cash on Delivery — always available
           {
-            resolve: '@medusajs/payment-manual',
-            id: 'manual',
+            resolve: './src/modules/cod-payment',
+            id: 'cod',
+            options: {},
           },
-          // Sepay for QR payments
-          ...(SEPAY_API_TOKEN && SEPAY_ACCOUNT_NUMBER && SEPAY_BANK && SEPAY_API_URL ? [{
+          // SePay bank-transfer — enabled when SEPAY_API_TOKEN is set
+          ...(SEPAY_API_TOKEN ? [{
             resolve: './src/modules/sepay-payment',
             id: 'sepay',
             options: {
-              apiToken: SEPAY_API_TOKEN,
-              accountNumber: SEPAY_ACCOUNT_NUMBER,
               bank: SEPAY_BANK,
+              accountNumber: SEPAY_ACCOUNT_NUMBER,
+              apiToken: SEPAY_API_TOKEN,
               apiUrl: SEPAY_API_URL,
             },
           }] : []),
-          // Stripe if configured
+          // Stripe — enabled when both STRIPE_API_KEY and STRIPE_WEBHOOK_SECRET are set
           ...(STRIPE_API_KEY && STRIPE_WEBHOOK_SECRET ? [{
             resolve: '@medusajs/payment-stripe',
             id: 'stripe',
