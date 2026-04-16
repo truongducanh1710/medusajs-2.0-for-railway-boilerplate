@@ -11,6 +11,7 @@ const beVietnamPro = Be_Vietnam_Pro({
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
+  viewport: "width=device-width, initial-scale=1.0",
 }
 
 export default function RootLayout(props: { children: React.ReactNode }) {

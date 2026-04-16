@@ -191,44 +191,38 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
       {/* Cart icon */}
       <button
         onClick={() => setOpen(true)}
-        style={{ position: "relative", background: "none", border: "none", cursor: "pointer", padding: 8 }}
+        className="relative bg-none border-none cursor-pointer p-2"
         aria-label="Giỏ hàng"
       >
-        <span style={{ fontSize: 20 }}>🛒</span>
+        <span className="text-xl">🛒</span>
         {totalItems > 0 && (
-          <span style={{
-            position: "absolute", top: 0, right: 0,
-            backgroundColor: "#f97316", color: "#fff",
-            fontSize: 10, fontWeight: 900,
-            width: 16, height: 16, borderRadius: "50%",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
+          <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
             {totalItems > 9 ? "9+" : totalItems}
           </span>
         )}
       </button>
 
       {/* Overlay */}
-      {open && <div style={S.overlay} onClick={() => setOpen(false)} />}
+      {open && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setOpen(false)} />}
 
       {/* Drawer */}
-      <div style={S.drawer}>
+      <div className={`fixed top-0 right-0 h-screen w-full max-w-sm sm:max-w-md lg:max-w-lg bg-white z-50 shadow-lg flex flex-col min-h-full transform transition-transform duration-300 ease-out font-be-vietnam-pro ${open ? 'translate-x-0' : 'translate-x-full'}`}>
         {/* Header */}
-        <div style={S.header}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: "#111827" }}>
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-gray-200 flex-shrink-0">
+          <h2 className="m-0 text-base sm:text-lg font-black text-gray-900">
             Giỏ hàng
             {totalItems > 0 && (
-              <span style={{ fontWeight: 400, fontSize: 14, color: "#9ca3af", marginLeft: 6 }}>
+              <span className="font-normal text-sm text-gray-400 ml-1.5">
                 • {totalItems} sản phẩm
               </span>
             )}
           </h2>
-          <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "#9ca3af", lineHeight: 1 }}>×</button>
+          <button onClick={() => setOpen(false)} className="bg-none border-none cursor-pointer text-xl sm:text-2xl text-gray-400 leading-none">×</button>
         </div>
 
         {/* Urgency Bar */}
         {totalItems > 0 && (
-          <div style={S.urgencyBar}>
+          <div className="bg-blue-900 text-white text-center py-2 px-4 text-xs sm:text-sm font-semibold flex-shrink-0">
             ⏰ Giỏ hàng sẽ hết hạn sau <Countdown seconds={299} />
           </div>
         )}
@@ -236,15 +230,15 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
 
         {/* Items */}
-        <div style={S.itemsArea}>
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 min-h-0">
           {sortedItems.length === 0 ? (
-             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center" }}>
-               <span style={{ fontSize: 48 }}>🛒</span>
-               <p style={{ color: "#6b7280", margin: 0 }}>Giỏ hàng của bạn đang trống</p>
+             <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+               <span className="text-5xl sm:text-6xl">🛒</span>
+               <p className="text-gray-500 m-0">Giỏ hàng của bạn đang trống</p>
                <LocalizedClientLink
                  href="/store"
                  onClick={() => setOpen(false)}
-                 style={{ backgroundColor: "#f97316", color: "#fff", padding: "10px 20px", borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: "none" }}
+                 className="bg-orange-500 text-white py-2.5 px-5 rounded-lg font-bold text-sm hover:bg-orange-600 transition-colors no-underline"
                >
                  Khám phá sản phẩm
                </LocalizedClientLink>
@@ -261,38 +255,38 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
               const variantText = item.variant?.options?.map(o => `${o.option?.title}: ${o.value}`).join(" | ") || ""
 
               return (
-                <div key={item.id} style={S.itemCard}>
-                  <div style={S.itemRow}>
+                <div key={item.id} className="border border-gray-200 rounded-lg p-3 mb-3">
+                  <div className="flex gap-4 items-start">
                     {/* Thumb */}
-                    <div style={S.thumb}>
+                    <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center flex-shrink-0">
                       {thumb
-                        ? <img src={thumb} alt={item.title || ""} style={S.thumbImg} />
-                        : <span style={{ fontSize: 24 }}>🛍️</span>
+                        ? <img src={thumb} alt={item.title || ""} className="w-full h-full object-cover" />
+                        : <span className="text-2xl">🛍️</span>
                       }
                     </div>
 
                     {/* Info */}
-                    <div style={S.info}>
-                      <p style={S.name}>{item.title || (item as any).product_title}</p>
-                      {variantText && <p style={S.variant}>{variantText}</p>}
-                      <div style={{ display: "flex", alignItems: "center", marginTop: 4 }}>
-                        <span style={S.originalPrice}>{fmtVND(originalPrice)}</span>
-                        <span style={S.salePrice}>{fmtVND(salePrice)}</span>
-                        <span style={S.tag}>ƯU ĐÃI GIỚI HẠN</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-gray-900 line-clamp-2">{item.title || (item as any).product_title}</p>
+                      {variantText && <p className="text-xs text-gray-500 mt-0.5">{variantText}</p>}
+                      <div className="flex items-center mt-1">
+                        <span className="text-xs text-gray-400 line-through mr-2">{fmtVND(originalPrice)}</span>
+                        <span className="text-sm font-bold text-red-600 mr-2">{fmtVND(salePrice)}</span>
+                        <span className="bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded uppercase">ƯU ĐÃI GIỚI HẠN</span>
                       </div>
-                      <p style={S.totalPrice}>{fmtVND(salePrice * item.quantity)}</p>
-                      <p style={S.savings}>✓ Bạn tiết kiệm {fmtVND(savings)}</p>
-                      <div style={S.qtyRow}>
+                      <p className="text-sm font-black text-orange-500 mt-1">{fmtVND(salePrice * item.quantity)}</p>
+                      <p className="text-xs text-green-600 font-medium mt-1">✓ Bạn tiết kiệm {fmtVND(savings)}</p>
+                      <div className="flex items-center gap-2 mt-2">
                         <button
                           onClick={() => handleQtyChange(item.id, item.quantity - 1)}
                           disabled={!!updating}
-                          style={{ ...S.qtyBtn, opacity: updating ? 0.4 : 1 }}
+                          className={`w-7 h-7 rounded-full border border-gray-300 bg-white flex items-center justify-center text-sm hover:bg-gray-50 transition-colors ${updating ? 'opacity-40' : ''}`}
                         >−</button>
-                        <span style={{ fontWeight: 700, fontSize: 13, minWidth: 20, textAlign: "center" }}>{item.quantity}</span>
+                        <span className="font-bold text-sm min-w-[20px] text-center">{item.quantity}</span>
                         <button
                           onClick={() => handleQtyChange(item.id, item.quantity + 1)}
                           disabled={!!updating}
-                          style={{ ...S.qtyBtn, opacity: updating ? 0.4 : 1 }}
+                          className={`w-7 h-7 rounded-full border border-gray-300 bg-white flex items-center justify-center text-sm hover:bg-gray-50 transition-colors ${updating ? 'opacity-40' : ''}`}
                         >+</button>
                       </div>
                     </div>
@@ -301,7 +295,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                      <button
                        onClick={() => handleDelete(item.id)}
                        disabled={updating === item.id}
-                       style={{ ...S.deleteBtn, opacity: updating === item.id ? 0.4 : 1 }}
+                       className={`text-gray-400 hover:text-gray-600 text-lg leading-none flex-shrink-0 ${updating === item.id ? 'opacity-40' : ''}`}
                      >🗑️</button>
                   </div>
 
@@ -329,77 +323,77 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
         {/* Trust Badges */}
         {sortedItems.length > 0 && (
-          <div style={S.trustBadges}>
-            <div style={S.trustItem}>
-              <span style={S.trustIcon}>⭐</span>
-              <span style={S.trustText}>10.000+ ĐÁNH GIÁ 5 SAO</span>
+          <div className="flex justify-around items-center p-4 bg-gray-50 border-t border-b border-gray-200 flex-shrink-0">
+            <div className="flex flex-col items-center gap-1 flex-1">
+              <span className="text-xl">⭐</span>
+              <span className="text-[10px] font-semibold text-gray-700 text-center">10.000+ ĐÁNH GIÁ 5 SAO</span>
             </div>
-            <div style={S.trustItem}>
-              <span style={S.trustIcon}>🔄</span>
-              <span style={S.trustText}>ĐỔI TRẢ MIỄN PHÍ TRONG 7 NGÀY</span>
+            <div className="flex flex-col items-center gap-1 flex-1">
+              <span className="text-xl">🔄</span>
+              <span className="text-[10px] font-semibold text-gray-700 text-center">ĐỔI TRẢ MIỄN PHÍ TRONG 7 NGÀY</span>
             </div>
-            <div style={S.trustItem}>
-              <span style={S.trustIcon}>🚚</span>
-              <span style={S.trustText}>FREESHIP ĐƠN TỪ 0Đ CHO THÀNH VIÊN</span>
+            <div className="flex flex-col items-center gap-1 flex-1">
+              <span className="text-xl">🚚</span>
+              <span className="text-[10px] font-semibold text-gray-700 text-center">FREESHIP ĐƠN TỪ 0Đ CHO THÀNH VIÊN</span>
             </div>
-            <div style={S.trustItem}>
-              <span style={S.trustIcon}>📞</span>
-              <span style={S.trustText}>HỖ TRỢ 24/7: 1900.XXX.XXX</span>
+            <div className="flex flex-col items-center gap-1 flex-1">
+              <span className="text-xl">📞</span>
+              <span className="text-[10px] font-semibold text-gray-700 text-center">HỖ TRỢ 24/7: 1900.XXX.XXX</span>
             </div>
           </div>
         )}
 
         {/* Footer */}
         {sortedItems.length > 0 && (
-          <div style={S.footer}>
+          <div className="border-t border-gray-200 p-4 bg-gray-50 flex-shrink-0">
             {/* Promo Code */}
-            <div style={S.promoRow}>
+            <div className="flex gap-2 mb-3">
               <input
                 type="text"
                 placeholder="Nhập mã giảm giá"
                 value={promoCode}
                 onChange={e => setPromoCode(e.target.value)}
-                style={S.promoInput}
+                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm outline-none focus:border-orange-400"
               />
-              <button onClick={handleApplyPromo} disabled={applyingPromo} style={{ ...S.promoBtn, opacity: applyingPromo ? 0.6 : 1 }}>
+              <button onClick={handleApplyPromo} disabled={applyingPromo} className={`bg-orange-500 text-white rounded px-4 py-2 text-sm font-semibold hover:bg-orange-600 transition-colors ${applyingPromo ? 'opacity-60' : ''}`}>
                 {applyingPromo ? "Đang áp dụng..." : "Áp dụng"}
               </button>
             </div>
 
             {/* Freeship Reminder */}
             {subtotal < freeshipThreshold ? (
-              <div style={S.freeship}>
+              <div className="bg-yellow-100 text-amber-800 p-3 rounded-lg text-sm mb-3 text-center">
                 🎁 Mua thêm {fmtVND(freeshipThreshold - subtotal / 100)} để được FREESHIP
               </div>
             ) : (
-              <div style={{ ...S.freeship, backgroundColor: "#d1fae5", color: "#065f46" }}>
+              <div className="bg-green-100 text-green-800 p-3 rounded-lg text-sm mb-3 text-center">
                 ✅ Đơn hàng của bạn được FREESHIP
               </div>
             )}
 
             {savings > 0 && (
-              <div style={{ ...S.totalRow, marginBottom: 6 }}>
-                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>Tiết kiệm được</span>
-                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>-{fmtVND(savings / 100)}</span>
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm text-green-700 font-semibold">Tiết kiệm được</span>
+                <span className="text-sm text-green-700 font-bold">-{fmtVND(savings / 100)}</span>
               </div>
             )}
-            <div style={{ ...S.totalRow, marginBottom: 14 }}>
-              <span style={{ fontWeight: 900, fontSize: 16, color: "#111827" }}>Tổng cộng</span>
-              <span style={{ fontWeight: 900, fontSize: 18, color: "#f97316" }}>{fmtVND(subtotal / 100)}</span>
+            <div className="flex justify-between items-center mb-3.5">
+              <span className="text-base font-black text-gray-900">Tổng cộng</span>
+              <span className="text-lg font-black text-orange-500">{fmtVND(subtotal / 100)}</span>
             </div>
-            <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} style={S.checkoutBtn}>
+            <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} className="block w-full bg-orange-500 text-white font-black text-base py-3.5 rounded-lg text-center hover:bg-orange-600 transition-colors no-underline">
               Tiến hành thanh toán
             </LocalizedClientLink>
-            <div style={S.paymentIcons}>
-              <span style={S.paymentIcon}>💵 COD</span>
-              <span style={S.paymentIcon}>💳 Momo</span>
-              <span style={S.paymentIcon}>🏦 VNPay</span>
-              <span style={S.paymentIcon}>💳 Visa</span>
-              <span style={S.paymentIcon}>🍎 Pay</span>
-              <span style={S.paymentIcon}>🇬 Pay</span>
-              <span style={S.paymentIcon}>💳 MC</span>
+            <div className="flex justify-center items-center gap-3 mt-3 flex-wrap">
+              <span className="text-lg opacity-70">💵 COD</span>
+              <span className="text-lg opacity-70">💳 Momo</span>
+              <span className="text-lg opacity-70">🏦 VNPay</span>
+              <span className="text-lg opacity-70">💳 Visa</span>
+              <span className="text-lg opacity-70">🍎 Pay</span>
+              <span className="text-lg opacity-70">🇬 Pay</span>
+              <span className="text-lg opacity-70">💳 MC</span>
             </div>
-            <button onClick={() => setOpen(false)} style={S.continueBtn}>
+            <button onClick={() => setOpen(false)} className="block w-full bg-none border-none cursor-pointer text-center text-sm text-gray-500 py-1 hover:text-gray-700">
               Tiếp tục mua hàng
             </button>
           </div>
