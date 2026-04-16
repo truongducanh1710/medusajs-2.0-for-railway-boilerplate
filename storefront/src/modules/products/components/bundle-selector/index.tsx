@@ -111,7 +111,13 @@ export default function BundleSelector({ product, region }: Props) {
     if (!variant?.id) return
     setAdding(true)
     try {
-      await addToCart({ variantId: variant.id, quantity: selected, countryCode })
+      const giftsToSave = selectedOpt.gifts || []
+      await addToCart({
+        variantId: variant.id,
+        quantity: selected,
+        countryCode,
+        metadata: giftsToSave.length > 0 ? { gifts: JSON.stringify(giftsToSave) } : undefined,
+      } as any)
       setAdded(true)
       setTimeout(() => setAdded(false), 2500)
     } catch (e) {

@@ -173,17 +173,16 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
                   {/* Gift items */}
                   {gifts.length > 0 && (
-                    <div className="mt-3 space-y-2 border-t border-dashed border-orange-200 pt-3">
+                    <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg p-2.5 space-y-2">
+                      <p className="text-[10px] font-black text-orange-500 uppercase tracking-wider">🎁 Quà tặng kèm ({gifts.length} món)</p>
                       {gifts.map((gift: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2">
+                        <div key={i} className="flex items-center gap-2 bg-white rounded-lg px-2.5 py-2 border border-orange-100">
                           {gift.image
-                            ? <img src={gift.image} className="w-8 h-8 rounded-lg object-cover" alt={gift.name} />
-                            : <span className="text-lg">🎁</span>
+                            ? <img src={gift.image} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" alt={gift.name} />
+                            : <span className="text-xl flex-shrink-0">🎁</span>
                           }
-                          <p className="text-xs text-gray-600 flex-1">
-                            <span className="text-orange-500 font-bold">TẶNG! </span>{gift.name}
-                          </p>
-                          <span className="text-xs text-gray-400 line-through">
+                          <p className="text-xs text-gray-700 flex-1 font-medium line-clamp-1">{gift.name}</p>
+                          <span className="text-xs text-gray-400 line-through flex-shrink-0">
                             {fmtVND(gift.value || 0)}
                           </span>
                         </div>
