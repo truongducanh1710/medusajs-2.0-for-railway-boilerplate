@@ -24,7 +24,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     const { title, slug, content, status } = req.body as any
     const pageService = req.scope.resolve("pageModule") as any
 
-    const page = await pageService.updatePages({ id, title, slug, content, status })
+    const page = await pageService.updatePages([{ id, title, slug, content, status }])
     res.json({ page })
   } catch (e: any) {
     res.status(500).json({ message: e.message })
