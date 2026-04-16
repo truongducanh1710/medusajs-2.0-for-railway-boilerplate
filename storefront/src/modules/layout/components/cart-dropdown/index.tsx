@@ -11,7 +11,6 @@ function fmtVND(amount: number) {
 }
 import { deleteLineItem, updateLineItem } from "@lib/data/cart"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
-import Thumbnail from "@modules/products/components/thumbnail"
 
 function Countdown({ seconds = 299 }: { seconds?: number }) {
   const [secs, setSecs] = useState(seconds)
@@ -90,7 +89,9 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
       )}
 
       {/* Drawer */}
-      <div className={`fixed top-0 right-0 h-full w-full max-w-[420px] bg-white z-50 shadow-2xl flex flex-col transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}>
+      <div
+        style={{ fontFamily: "inherit" }}
+        className={`fixed top-0 right-0 h-full w-full max-w-[420px] bg-white z-50 shadow-2xl flex flex-col transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-black text-lg text-gray-900">
@@ -107,7 +108,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
         )}
 
         {/* Items */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4" style={{ display: "block" }}>
           {sortedItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
               <span className="text-5xl">🛒</span>
@@ -127,15 +128,25 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
               })()
 
               return (
-                <div key={item.id} className="border border-gray-100 rounded-xl p-3">
-                  <div className="flex gap-3">
+                <div key={item.id} style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12, marginBottom: 12, display: "block" }}>
+                  <div style={{ display: "flex", gap: 12 }}>
                     {/* Thumbnail */}
-                    <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden">
-                      <Thumbnail
-                        thumbnail={item.variant?.product?.thumbnail}
-                        images={item.variant?.product?.images}
-                        size="square"
-                      />
+                    <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+                      {item.variant?.product?.thumbnail ? (
+                        <img
+                          src={item.variant.product.thumbnail}
+                          alt={item.title || ""}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (item as any).thumbnail ? (
+                        <img
+                          src={(item as any).thumbnail}
+                          alt={item.title || ""}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-2xl">🛍️</span>
+                      )}
                     </div>
 
                     {/* Info */}
