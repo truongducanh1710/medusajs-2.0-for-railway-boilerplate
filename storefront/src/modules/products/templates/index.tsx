@@ -4,12 +4,11 @@ import { HttpTypes } from "@medusajs/types"
 
 import ImageGallery from "@modules/products/components/image-gallery"
 import ProductActionsWrapper from "./product-actions-wrapper"
-import ProductActions from "@modules/products/components/product-actions"
 import RelatedProducts from "@modules/products/components/related-products"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ComboBundle from "@modules/products/components/combo-bundle"
-import QuickOrder from "@modules/products/components/quick-order"
+import BundleSelector from "@modules/products/components/bundle-selector"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -346,17 +345,8 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
               ))}
             </div>
 
-            {/* Product Actions (variant + price + add to cart) */}
-            <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
-              <Suspense fallback={
-                <ProductActions disabled={true} product={product} region={region} />
-              }>
-                <ProductActionsWrapper id={product.id} region={region} />
-              </Suspense>
-            </div>
-
-            {/* Quick Order Form — Đặt hàng nhanh kiểu VN */}
-            <QuickOrder product={product} region={region} />
+            {/* Bundle Selector — Mua nhiều giảm giá + quà tặng */}
+            <BundleSelector product={product} region={region} />
 
             {/* Delivery info */}
             <div className="bg-blue-50 rounded-xl p-4 text-sm space-y-2">
