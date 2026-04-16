@@ -61,7 +61,10 @@ class SepayPaymentProvider extends AbstractPaymentProvider {
     // Handle webhook from Sepay if needed
     return {
       action: "not_supported" as any,
-      data: {}
+      data: {
+        session_id: "",
+        amount: 0
+      }
     }
   }
 
