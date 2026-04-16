@@ -79,10 +79,11 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
     },
     drawer: {
       position: "fixed" as const, top: 0, right: 0,
-      height: "100%", width: "100%", maxWidth: 420,
+      height: "100vh", width: "100%", maxWidth: 420,
       backgroundColor: "#fff", zIndex: 50,
       boxShadow: "-4px 0 24px rgba(0,0,0,0.15)",
       display: "flex", flexDirection: "column" as const,
+      minHeight: "100%",
       transform: open ? "translateX(0)" : "translateX(100%)",
       transition: "transform 0.3s ease-out",
       fontFamily: "'Be Vietnam Pro', Inter, sans-serif",
@@ -97,7 +98,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
       fontSize: 13, fontWeight: 600, flexShrink: 0,
     },
     itemsArea: {
-      flex: 1, overflowY: "auto" as const, padding: "12px 16px",
+      flex: 1, overflowY: "auto" as const, padding: "12px 16px", minHeight: 0,
     },
     itemCard: {
       border: "1px solid #f3f4f6", borderRadius: 12,
@@ -147,7 +148,6 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
     footer: {
       borderTop: "1px solid #f3f4f6", padding: 16,
       backgroundColor: "#fafafa", flexShrink: 0,
-      position: "sticky" as const, bottom: 0, zIndex: 10,
     },
     totalRow: {
       display: "flex", justifyContent: "space-between",
