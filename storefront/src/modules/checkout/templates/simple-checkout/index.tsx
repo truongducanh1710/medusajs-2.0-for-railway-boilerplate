@@ -9,7 +9,13 @@ import { useParams } from "next/navigation"
 import Thumbnail from "@modules/products/components/thumbnail"
 
 const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
+const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 const SEPAY_DISCOUNT = 20000
+
+const sepayHeaders = {
+  "Content-Type": "application/json",
+  "x-publishable-api-key": PUB_KEY,
+}
 
 function formatVND(n: number) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ"
@@ -28,12 +34,12 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   useEffect(() => {
     fetch(`${BACKEND}/store/sepay/qr`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: sepayHeaders,
       body: JSON.stringify({ orderCode, amount }),
     }).then(r => r.json()).then(d => { setQrUrl(d.qrUrl); setInfo(d) })
 
     const iv = setInterval(async () => {
-      const r = await fetch(`${BACKEND}/store/sepay/qr?orderCode=${orderCode}`)
+      const r = await fetch(`${BACKEND}/store/sepay/qr?orderCode=${orderCode}`, { headers: sepayHeaders })
       const d = await r.json()
       if (d.paid) { setPaid(true); clearInterval(iv); setTimeout(onSuccess, 1500) }
     }, 5000)

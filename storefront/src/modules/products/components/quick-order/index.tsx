@@ -43,12 +43,14 @@ function SepayModal({ orderCode, amount, onClose, onConfirm }: {
   const [checking, setChecking] = useState(false)
   const [paid, setPaid] = useState(false)
   const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
+  const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+  const apiHeaders = { "Content-Type": "application/json", "x-publishable-api-key": PUB_KEY }
 
   useEffect(() => {
     // Lấy QR code
     fetch(`${BACKEND}/store/sepay/qr`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: apiHeaders,
       body: JSON.stringify({ orderCode, amount }),
     })
       .then(r => r.json())
@@ -61,7 +63,7 @@ function SepayModal({ orderCode, amount, onClose, onConfirm }: {
     const interval = setInterval(async () => {
       setChecking(true)
       try {
-        const r = await fetch(`${BACKEND}/store/sepay/qr?orderCode=${orderCode}`)
+        const r = await fetch(`${BACKEND}/store/sepay/qr?orderCode=${orderCode}`, { headers: apiHeaders })
         const data = await r.json()
         if (data.paid) {
           setPaid(true)
@@ -158,6 +160,8 @@ function SepayModal({ orderCode, amount, onClose, onConfirm }: {
 
 export default function QuickOrder({ product, region }: Props) {
   const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
+  const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+  const apiHeaders = { "Content-Type": "application/json", "x-publishable-api-key": PUB_KEY }
   const basePrice = product.variants?.[0]?.calculated_price?.calculated_amount
     ?? product.variants?.[0]?.prices?.[0]?.amount
     ?? 0
@@ -199,7 +203,7 @@ export default function QuickOrder({ product, region }: Props) {
       // Tạo cart
       const cartRes = await fetch(`${BACKEND}/store/carts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders,
         body: JSON.stringify({ region_id: regionId })
       })
       const { cart } = await cartRes.json()
@@ -207,14 +211,14 @@ export default function QuickOrder({ product, region }: Props) {
       // Thêm sản phẩm vào cart
       await fetch(`${BACKEND}/store/carts/${cart.id}/line-items`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders,
         body: JSON.stringify({ variant_id: variant?.id, quantity: selectedOpt.qty })
       })
 
       // Thêm shipping address
       await fetch(`${BACKEND}/store/carts/${cart.id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders,
         body: JSON.stringify({
           email: `${form.phone}@phanviet.vn`,
           shipping_address: {
