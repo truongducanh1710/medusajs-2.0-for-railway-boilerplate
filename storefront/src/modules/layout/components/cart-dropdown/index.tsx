@@ -6,8 +6,8 @@ import { HttpTypes } from "@medusajs/types"
 import { deleteLineItem, updateLineItem } from "@lib/data/cart"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
-function fmtVND(amount: number) {
-  return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
+function fmtEUR(amount: number) {
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(amount)
 }
 
 function Countdown({ seconds = 299 }: { seconds?: number }) {
@@ -75,7 +75,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
       display: "flex", alignItems: "center", justifyContent: "space-between",
       padding: "16px 20px", borderBottom: "1px solid #f3f4f6", flexShrink: 0,
     },
-    countdown: {
+    urgencyBar: {
       backgroundColor: "#172554", color: "#fff",
       textAlign: "center" as const, padding: "8px 16px",
       fontSize: 13, fontWeight: 600, flexShrink: 0,
@@ -96,7 +96,11 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
     thumbImg: { width: "100%", height: "100%", objectFit: "cover" as const },
     info: { flex: 1, minWidth: 0 },
     name: { fontWeight: 600, fontSize: 13, color: "#111827", margin: 0, lineHeight: 1.4 },
-    price: { fontWeight: 900, fontSize: 13, color: "#f97316", margin: "4px 0 0" },
+    originalPrice: { textDecoration: "line-through", color: "#9ca3af", fontSize: 13, margin: 0 },
+    salePrice: { fontWeight: 900, fontSize: 13, color: "#111827", margin: "0 0 0 8px" },
+    tag: { backgroundColor: "#f97316", color: "#fff", fontSize: 10, fontWeight: 900, padding: "2px 6px", borderRadius: 4, textTransform: "uppercase" as const, letterSpacing: "0.05em", marginLeft: 8 },
+    totalPrice: { fontWeight: 900, fontSize: 13, color: "#f97316", margin: "4px 0 0" },
+    savings: { fontSize: 12, color: "#16a34a", fontStyle: "italic", marginTop: 4 },
     qtyRow: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 },
     qtyBtn: {
       width: 28, height: 28, borderRadius: "50%",
@@ -143,6 +147,21 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
       border: "none", cursor: "pointer", textAlign: "center" as const,
       fontSize: 13, color: "#9ca3af", padding: "4px 0",
     },
+    paymentIcons: {
+      display: "flex", justifyContent: "center", alignItems: "center", gap: 8,
+      marginTop: 12, flexWrap: "wrap" as const,
+    },
+    paymentIcon: { fontSize: 20, opacity: 0.7 },
+    trustBadges: {
+      display: "flex", justifyContent: "space-around", alignItems: "center",
+      padding: "16px", backgroundColor: "#f9fafb",
+      borderTop: "1px solid #e5e7eb", borderBottom: "1px solid #e5e7eb",
+    },
+    trustItem: {
+      display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 4, flex: 1,
+    },
+    trustIcon: { fontSize: 24 },
+    trustText: { fontSize: 10, fontWeight: 600, color: "#374151", textAlign: "center" as const },
   }
 
   return (
@@ -185,33 +204,38 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
           <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: "#9ca3af", lineHeight: 1 }}>×</button>
         </div>
 
-        {/* Countdown */}
+        {/* Urgency Bar */}
         {totalItems > 0 && (
-          <div style={S.countdown}>
-            ⏰ Giỏ hàng được giữ trong <Countdown seconds={299} />
+          <div style={S.urgencyBar}>
+            Giỏ hàng được giữ trong <Countdown seconds={299} />
           </div>
         )}
+
+
 
         {/* Items */}
         <div style={S.itemsArea}>
           {sortedItems.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center" }}>
-              <span style={{ fontSize: 48 }}>🛒</span>
-              <p style={{ color: "#6b7280", margin: 0 }}>Giỏ hàng của bạn đang trống</p>
-              <LocalizedClientLink
-                href="/store"
-                onClick={() => setOpen(false)}
-                style={{ backgroundColor: "#f97316", color: "#fff", padding: "10px 20px", borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: "none" }}
-              >
-                Khám phá sản phẩm
-              </LocalizedClientLink>
-            </div>
+             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center" }}>
+               <span style={{ fontSize: 48 }}>🛒</span>
+               <p style={{ color: "#6b7280", margin: 0 }}>Giỏ hàng của bạn đang trống</p>
+               <LocalizedClientLink
+                 href="/store"
+                 onClick={() => setOpen(false)}
+                 style={{ backgroundColor: "#f97316", color: "#fff", padding: "10px 20px", borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: "none" }}
+               >
+                 Khám phá sản phẩm
+               </LocalizedClientLink>
+             </div>
           ) : (
             sortedItems.map((item) => {
               const gifts = (() => {
                 try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
               })()
               const thumb = item.variant?.product?.thumbnail || (item as any).thumbnail
+              const originalPrice = (item.unit_price || 0) * 1.5 / 100
+              const salePrice = (item.unit_price || 0) / 100
+              const savings = (originalPrice - salePrice) * item.quantity
 
               return (
                 <div key={item.id} style={S.itemCard}>
@@ -227,7 +251,13 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                     {/* Info */}
                     <div style={S.info}>
                       <p style={S.name}>{item.title || (item as any).product_title}</p>
-                      <p style={S.price}>{fmtVND((item.unit_price || 0) * item.quantity)}</p>
+                      <div style={{ display: "flex", alignItems: "center", marginTop: 4 }}>
+                        <span style={S.originalPrice}>{fmtEUR(originalPrice)}</span>
+                        <span style={S.salePrice}>{fmtEUR(salePrice)}</span>
+                        <span style={S.tag}>ƯU ĐÃI GIỚI HẠN</span>
+                      </div>
+                      <p style={S.totalPrice}>{fmtEUR(salePrice * item.quantity)}</p>
+                      <p style={S.savings}>(Bạn tiết kiệm {fmtEUR(savings)})</p>
                       <div style={S.qtyRow}>
                         <button
                           onClick={() => handleQtyChange(item.id, item.quantity - 1)}
@@ -254,7 +284,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                   {/* Gifts */}
                   {gifts.length > 0 && (
                     <div style={S.giftBox}>
-                      <p style={S.giftTitle}>🎁 Quà tặng kèm ({gifts.length} món)</p>
+                       <p style={S.giftTitle}>🎁 Quà tặng kèm ({gifts.length} món)</p>
                       {gifts.map((g: any, i: number) => (
                         <div key={i} style={S.giftRow}>
                           {g.image
@@ -273,22 +303,49 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
           )}
         </div>
 
+        {/* Trust Badges */}
+        {sortedItems.length > 0 && (
+          <div style={S.trustBadges}>
+            <div style={S.trustItem}>
+              <span style={S.trustIcon}>⭐</span>
+              <span style={S.trustText}>8528 ĐÁNH GIÁ ĐÃ XÁC MINH</span>
+            </div>
+            <div style={S.trustItem}>
+              <span style={S.trustIcon}>🛡️</span>
+              <span style={S.trustText}>HOÀN TRẢ TRONG 60 NGÀY</span>
+            </div>
+            <div style={S.trustItem}>
+              <span style={S.trustIcon}>🇻🇳</span>
+              <span style={S.trustText}>MIỄN PHÍ GIAO HÀNG</span>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         {sortedItems.length > 0 && (
           <div style={S.footer}>
             {savings > 0 && (
               <div style={{ ...S.totalRow, marginBottom: 6 }}>
                 <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>Tiết kiệm được</span>
-                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>-{fmtVND(savings)}</span>
+                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>-{fmtEUR(savings / 100)}</span>
               </div>
             )}
             <div style={{ ...S.totalRow, marginBottom: 14 }}>
               <span style={{ fontWeight: 900, fontSize: 16, color: "#111827" }}>Tổng cộng</span>
-              <span style={{ fontWeight: 900, fontSize: 18, color: "#f97316" }}>{fmtVND(subtotal)}</span>
+              <span style={{ fontWeight: 900, fontSize: 18, color: "#f97316" }}>{fmtEUR(subtotal / 100)}</span>
             </div>
             <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} style={S.checkoutBtn}>
-              TIẾN HÀNH THANH TOÁN →
+              Tiến hành thanh toán
             </LocalizedClientLink>
+            <div style={S.paymentIcons}>
+              <span style={S.paymentIcon}>💳 Amex</span>
+              <span style={S.paymentIcon}>🍎 Pay</span>
+              <span style={S.paymentIcon}>🇬 Pay</span>
+              <span style={S.paymentIcon}>💳 Mastercard</span>
+              <span style={S.paymentIcon}>🅿️ PayPal</span>
+              <span style={S.paymentIcon}>🛒 Pay</span>
+              <span style={S.paymentIcon}>💳 Visa</span>
+            </div>
             <button onClick={() => setOpen(false)} style={S.continueBtn}>
               Tiếp tục mua hàng
             </button>
