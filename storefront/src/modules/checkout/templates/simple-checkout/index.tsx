@@ -140,7 +140,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     try {
       // Cập nhật cart với thông tin giao hàng
       await updateCart({
-        email: `guest_${Date.now()}@phanviet.vn`,
+        email: `guest${Date.now()}@example.com`,
         shipping_address: {
           first_name: form.name,
           last_name: "",
@@ -168,10 +168,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         await setShippingMethod({ cartId: cart.id, shippingMethodId: shippingOptions[0].id })
       }
 
-      // Initiate payment session for all methods
-      if (payment === "cod") {
-        await initiatePaymentSession(cart, { provider_id: "manual", context: {} })
-      } else if (payment === "sepay") {
+      // Initiate payment session
+      if (payment === "sepay") {
         const code = Date.now().toString(36).toUpperCase()
         await initiatePaymentSession(cart, { provider_id: "sepay", context: { orderCode: code } })
         setOrderId(code)
@@ -180,7 +178,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         return
       }
 
-      // Đặt hàng
+      // COD: Đặt hàng luôn (không cần payment session)
       const result = await placeOrder()
       if (result?.type === "order") {
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
