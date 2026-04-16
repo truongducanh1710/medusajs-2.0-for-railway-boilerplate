@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
 import { convertToLocale } from "@lib/util/money"
+
+// Format VND luôn — không phụ thuộc region
+function fmtVND(amount: number) {
+  return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
+}
 import { deleteLineItem, updateLineItem } from "@lib/data/cart"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import Thumbnail from "@modules/products/components/thumbnail"
@@ -135,9 +140,11 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm text-gray-900 line-clamp-2">{item.title}</p>
+                      <p className="font-semibold text-sm text-gray-900 line-clamp-2">
+                        {item.title || (item as any).product_title}
+                      </p>
                       <p className="text-orange-500 font-black text-sm mt-0.5">
-                        {convertToLocale({ amount: item.unit_price * item.quantity, currency_code: cart?.currency_code || "vnd" })}
+                        {fmtVND(item.unit_price * item.quantity)}
                       </p>
 
                       {/* Qty controls */}
@@ -177,7 +184,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                             <span className="text-orange-500 font-bold">TẶNG! </span>{gift.name}
                           </p>
                           <span className="text-xs text-gray-400 line-through">
-                            {convertToLocale({ amount: gift.value || 0, currency_code: cart?.currency_code || "vnd" })}
+                            {fmtVND(gift.value || 0)}
                           </span>
                         </div>
                       ))}
@@ -195,13 +202,13 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
             {savings > 0 && (
               <div className="flex justify-between text-sm text-green-600 font-semibold">
                 <span>Tiết kiệm được</span>
-                <span>-{convertToLocale({ amount: savings, currency_code: cart?.currency_code || "vnd" })}</span>
+                <span>-{fmtVND(savings)}</span>
               </div>
             )}
             <div className="flex justify-between font-black text-lg">
               <span>Tổng cộng</span>
               <span className="text-orange-500">
-                {convertToLocale({ amount: subtotal, currency_code: cart?.currency_code || "vnd" })}
+                {fmtVND(subtotal)}
               </span>
             </div>
             <LocalizedClientLink
