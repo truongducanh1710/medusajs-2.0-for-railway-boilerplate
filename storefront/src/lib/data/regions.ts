@@ -33,12 +33,12 @@ export const getRegion = cache(async function (countryCode: string) {
 
     regions.forEach((region) => {
       region.countries?.forEach((c) => {
-        regionMap.set(c?.iso_2 ?? "", region)
+        regionMap.set(c?.iso_2?.toLowerCase() ?? "", region)
       })
     })
 
     const region = countryCode
-      ? regionMap.get(countryCode)
+      ? regionMap.get(countryCode.toLowerCase())
       : regionMap.get("us")
 
     return region
