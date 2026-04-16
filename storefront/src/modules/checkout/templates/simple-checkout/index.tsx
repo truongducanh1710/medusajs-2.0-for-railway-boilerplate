@@ -171,7 +171,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       // Initiate payment session
       if (payment === "sepay") {
         const code = Date.now().toString(36).toUpperCase()
-        await initiatePaymentSession(cart, { provider_id: "sepay", context: { orderCode: code } })
+        await initiatePaymentSession(cart, { provider_id: "sepay" })
         setOrderId(code)
         setShowQR(true)
         setSubmitting(false)
