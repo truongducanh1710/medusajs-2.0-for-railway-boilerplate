@@ -31,9 +31,9 @@ export default async function syncSePayRegion({ container }: ExecArgs) {
       .filter(Boolean)
 
     if (existingProviders.includes("sepay")) {
-      logger.info("[SePay sync] Region already has sepay enabled", {
-        regionId: region.id,
-      })
+      logger.info(
+        `[SePay sync] Region already has sepay enabled: ${region.id}`
+      )
       continue
     }
 
@@ -50,9 +50,8 @@ export default async function syncSePayRegion({ container }: ExecArgs) {
       },
     })
 
-    logger.info("[SePay sync] Enabled sepay in region", {
-      regionId: region.id,
-      paymentProviders,
-    })
+    logger.info(
+      `[SePay sync] Enabled sepay in region ${region.id}: ${paymentProviders.join(", ")}`
+    )
   }
 }
