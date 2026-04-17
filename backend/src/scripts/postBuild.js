@@ -41,7 +41,7 @@ console.log('Migrations completed.');
 
 // Sync SePay payment provider into VN region during build so runtime startup stays fast.
 console.log('Syncing SePay region configuration...');
-execSync('node_modules/.bin/medusa exec ./src/scripts/sync-sepay-region.ts', {
+execSync('node_modules/.bin/medusa exec ../../src/scripts/sync-sepay-region.ts', {
   cwd: MEDUSA_SERVER_PATH,
   stdio: 'inherit'
 });
