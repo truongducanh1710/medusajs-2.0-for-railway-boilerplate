@@ -21,8 +21,10 @@ function logSePayRouteError(stage: string, error: unknown, extra?: Record<string
  * Tạo QR code thanh toán SePay cho đơn hàng
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const body = req.body as any
+
   try {
-    const { orderCode, amount } = req.body as any
+    const { orderCode, amount } = body
     console.info("[SePay QR] POST request", { orderCode, amount })
 
     if (!orderCode || !amount) {
@@ -55,8 +57,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   } catch (err: any) {
     logSePayRouteError("POST failed", err, {
-      orderCode: req.body?.orderCode,
-      amount: req.body?.amount,
+      orderCode: body?.orderCode,
+      amount: body?.amount,
     })
     return res.status(500).json({ message: err.message })
   }
@@ -67,8 +69,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
  * Kiểm tra trạng thái thanh toán của đơn hàng
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const query = req.query as any
+
   try {
-    const orderCode = req.query.orderCode as string
+    const orderCode = query.orderCode as string
     console.info("[SePay QR] GET status request", { orderCode })
 
     if (!orderCode) {
@@ -126,7 +130,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   } catch (err: any) {
     logSePayRouteError("GET failed", err, {
-      orderCode: req.query.orderCode,
+      orderCode: query.orderCode,
     })
     return res.json({ paid: false })
   }
