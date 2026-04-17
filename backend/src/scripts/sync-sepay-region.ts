@@ -6,6 +6,20 @@ export default async function syncSePayRegion({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
+  const { data: paymentProviders } = await query.graph({
+    entity: "payment_provider",
+    fields: ["id"],
+  })
+
+  const hasSepayProvider = (paymentProviders ?? []).some(
+    (provider: any) => provider?.id === "sepay"
+  )
+
+  if (!hasSepayProvider) {
+    logger.info("[SePay sync] payment provider sepay is not registered, skipping")
+    return
+  }
+
   const { data: regions } = await query.graph({
     entity: "region",
     fields: ["id", "name", "payment_providers.*", "countries.*"],
