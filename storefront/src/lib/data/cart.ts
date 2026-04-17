@@ -267,6 +267,97 @@ export async function initiatePaymentSession(
     })
 }
 
+async function retrieveCartWithPaymentContext(cartId: string) {
+  return sdk.store.cart
+    .retrieve(
+      cartId,
+      {
+        fields: "id,region_id,metadata,*payment_collection",
+      },
+      await getAuthHeaders()
+    )
+    .then(({ cart }) => cart)
+}
+
+export async function ensurePaymentSession(
+  cartId: string,
+  preferredProviderId = "pp_system_default"
+) {
+  const cart = await retrieveCartWithPaymentContext(cartId)
+  const regionId = cart.region_id as string
+  const existingSessionProviderIds =
+    cart.payment_collection?.payment_sessions
+      ?.map((session: any) => session.provider_id)
+      .filter(Boolean) ?? []
+
+  if (existingSessionProviderIds.length > 0) {
+    return existingSessionProviderIds[0] as string
+  }
+
+  const providers = await sdk.store.payment
+    .listPaymentProviders(
+      { region_id: regionId },
+      await getAuthHeaders()
+    )
+    .then(({ payment_providers }) => payment_providers)
+    .catch((error) => {
+      logCartActionError("listPaymentProviders failed", error, {
+        cartId,
+        regionId,
+      })
+      return []
+    })
+
+  const normalizedPreferredProvider = preferredProviderId?.trim()
+  const hasPreferredProvider = providers.some(
+    (provider: any) =>
+      provider.id === normalizedPreferredProvider && provider.is_enabled
+  )
+  const hasDefaultProvider = providers.some(
+    (provider: any) => provider.id === "pp_system_default" && provider.is_enabled
+  )
+  const providerId = hasPreferredProvider
+    ? normalizedPreferredProvider
+    : hasDefaultProvider
+      ? "pp_system_default"
+      : providers.find((provider: any) => provider.is_enabled)?.id
+
+  if (!providerId) {
+    throw new Error(
+      `No enabled payment provider available for region ${regionId}`
+    )
+  }
+
+  console.info("[Cart] ensurePaymentSession", {
+    cartId,
+    regionId,
+    preferredProviderId: normalizedPreferredProvider,
+    providerId,
+  })
+
+  await sdk.store.payment
+    .initiatePaymentSession(
+      cart,
+      { provider_id: providerId },
+      {},
+      await getAuthHeaders()
+    )
+    .then((resp) => {
+      revalidateTag("cart")
+      return resp
+    })
+    .catch((error) => {
+      logCartActionError("ensurePaymentSession failed", error, {
+        cartId,
+        regionId,
+        providerId,
+      })
+      throw error
+    })
+
+  return providerId
+}
+
 export async function applyPromotions(codes: string[]) {
   const cartId = await getCartId()
   if (!cartId) {
@@ -395,6 +486,8 @@ export async function placeOrder() {
   }
 
   console.info("[Cart] placeOrder start", { cartId })
+
+  await ensurePaymentSession(cartId)
 
   const cartRes: any = await sdk.store.cart
     .complete(cartId, {}, await getAuthHeaders())

@@ -22,10 +22,8 @@ import {
   MINIO_BUCKET,
   MEILISEARCH_HOST,
   MEILISEARCH_ADMIN_KEY,
-  SEPAY_API_TOKEN,
   SEPAY_ACCOUNT_NUMBER,
-  SEPAY_BANK,
-  SEPAY_API_URL
+  SEPAY_BANK
 } from 'lib/constants';
 
 loadEnv(process.env.NODE_ENV, process.cwd());
@@ -136,14 +134,12 @@ const medusaConfig = {
             id: 'manual',
           },
           // Sepay for QR payments
-          ...(SEPAY_API_TOKEN && SEPAY_ACCOUNT_NUMBER && SEPAY_BANK && SEPAY_API_URL ? [{
+          ...(SEPAY_ACCOUNT_NUMBER && SEPAY_BANK ? [{
             resolve: './src/modules/sepay-payment',
             id: 'sepay',
             options: {
-              apiToken: SEPAY_API_TOKEN,
               accountNumber: SEPAY_ACCOUNT_NUMBER,
               bank: SEPAY_BANK,
-              apiUrl: SEPAY_API_URL,
             },
           }] : []),
           // Stripe if configured

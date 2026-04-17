@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { HttpTypes } from "@medusajs/types"
-import { updateCart, placeOrder, setShippingMethod, initiatePaymentSession } from "@lib/data/cart"
+import {
+  updateCart,
+  placeOrder,
+  setShippingMethod,
+  ensurePaymentSession,
+} from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
 import { useParams } from "next/navigation"
@@ -280,53 +285,51 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
       // Set default shipping method
       if (shippingOptions && shippingOptions.length > 0) {
-        await setShippingMethod({ cartId: cart.id, shippingMethodId: shippingOptions[0].id })
+        await setShippingMethod({
+          cartId: updatedCart.id,
+          shippingMethodId: shippingOptions[0].id,
+        })
         console.info("[SimpleCheckout] shipping method set", {
-          cartId: cart.id,
+          cartId: updatedCart.id,
           shippingMethodId: shippingOptions[0].id,
         })
       }
 
-      // Initiate payment session
+      const preferredProviderId = payment === "sepay" ? "sepay" : "pp_system_default"
+      const resolvedProviderId = await ensurePaymentSession(
+        updatedCart.id,
+        preferredProviderId
+      )
+
+      console.info("[SimpleCheckout] payment session ready", {
+        cartId: updatedCart.id,
+        preferredProviderId,
+        resolvedProviderId,
+      })
+
       if (payment === "sepay") {
         const code = Date.now().toString(36).toUpperCase()
-        console.info("[SimpleCheckout] initiating SePay payment session", {
-          cartId: cart.id,
-          providerId: "sepay",
-          orderCode: code,
-          total: sepayTotal,
-        })
-
-        await initiatePaymentSession(cart, { provider_id: "sepay" })
-          .catch((error) => {
-            logCheckoutError("initiatePaymentSession failed", error, {
-              cartId: cart.id,
-              providerId: "sepay",
-            })
-            throw error
-          })
-
         setOrderId(code)
         setShowQR(true)
         setSubmitting(false)
         return
       }
 
-      // COD: Đặt hàng luôn (không cần payment session)
+      // COD: đặt hàng sau khi payment session đã được tạo
       console.info("[SimpleCheckout] placing COD order", {
-        cartId: cart.id,
+        cartId: updatedCart.id,
       })
 
       const result: any = await placeOrder().catch((error) => {
         logCheckoutError("placeOrder failed for COD", error, {
-          cartId: cart.id,
+          cartId: updatedCart.id,
           payment,
         })
         throw error
       })
 
       console.info("[SimpleCheckout] placeOrder result", {
-        cartId: cart.id,
+        cartId: updatedCart.id,
         resultType: result?.type,
         orderId: result?.order?.id,
       })

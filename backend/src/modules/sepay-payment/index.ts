@@ -3,57 +3,35 @@ import { AbstractPaymentProvider, PaymentSessionStatus } from "@medusajs/framewo
 class SepayPaymentProvider extends AbstractPaymentProvider {
   static identifier = "sepay"
 
-  private apiToken: string
   private accountNumber: string
   private bank: string
-  private apiUrl: string
 
   constructor(container, config) {
     super(container, config)
-    this.apiToken = config.apiToken
     this.accountNumber = config.accountNumber
     this.bank = config.bank
-    this.apiUrl = config.apiUrl
   }
 
   async initiatePayment(input) {
-    const { amount, currency_code, resource_id } = input
+    const { amount, resource_id } = input
+    const normalizedAmount = Math.round(Number(amount) || 0)
+    const content = `Payment for order ${resource_id}`
+    const qrUrl =
+      `https://img.vietqr.io/image/${this.bank}-${this.accountNumber}-compact2.png` +
+      `?amount=${normalizedAmount}` +
+      `&addInfo=${encodeURIComponent(content)}` +
+      `&accountName=${encodeURIComponent("PHAN VIET")}`
 
-    try {
-      // Generate QR code via Sepay API
-      const response = await fetch(`${this.apiUrl}/qr`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-token': this.apiToken
-        },
-        body: JSON.stringify({
-          account_number: this.accountNumber,
-          bank: this.bank,
-          amount: Math.round(amount / 100), // Convert cents to VND
-          content: `Payment for order ${resource_id}`,
-          template: 'compact'
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to generate QR')
-      }
-
-      return {
-        id: `sepay_${Date.now()}`,
-        data: {
-          qrUrl: data.qrDataURL,
-          bank: this.bank,
-          accountNumber: this.accountNumber,
-          amount: Math.round(amount / 100),
-          content: `Payment for order ${resource_id}`
-        }
-      }
-    } catch (error) {
-      throw new Error(`Sepay payment initiation failed: ${error.message}`)
+    return {
+      id: `sepay_${Date.now()}`,
+      data: {
+        qrUrl,
+        bank: this.bank,
+        accountNumber: this.accountNumber,
+        amount: normalizedAmount,
+        content,
+        accountName: "PHAN VIET",
+      },
     }
   }
 
