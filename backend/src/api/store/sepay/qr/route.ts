@@ -1,5 +1,21 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
+function logSePayRouteError(stage: string, error: unknown, extra?: Record<string, unknown>) {
+  const payload =
+    error instanceof Error
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        }
+      : { error }
+
+  console.error(`[SePay QR] ${stage}`, {
+    ...payload,
+    ...extra,
+  })
+}
+
 /**
  * POST /store/sepay/qr
  * Tạo QR code thanh toán SePay cho đơn hàng
@@ -7,6 +23,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { orderCode, amount } = req.body as any
+    console.info("[SePay QR] POST request", { orderCode, amount })
 
     if (!orderCode || !amount) {
       return res.status(400).json({ message: "Thiếu orderCode hoặc amount" })
@@ -14,6 +31,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const bank = process.env.SEPAY_BANK || "BIDV"
     const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER
+    if (!accountNumber) {
+      console.warn("[SePay QR] Missing SEPAY_ACCOUNT_NUMBER", { orderCode, amount })
+    }
     const content = `PV${orderCode}` // Nội dung chuyển khoản để match webhook
 
     if (!accountNumber) {
@@ -34,7 +54,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
 
   } catch (err: any) {
-    console.error("[SePay QR] Error:", err.message)
+    logSePayRouteError("POST failed", err, {
+      orderCode: req.body?.orderCode,
+      amount: req.body?.amount,
+    })
     return res.status(500).json({ message: err.message })
   }
 }
@@ -46,6 +69,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const orderCode = req.query.orderCode as string
+    console.info("[SePay QR] GET status request", { orderCode })
 
     if (!orderCode) {
       return res.status(400).json({ message: "Thiếu orderCode" })
@@ -53,8 +77,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const apiToken = process.env.SEPAY_API_TOKEN
     const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER
-
     if (!apiToken) {
+      console.warn("[SePay QR] Missing SEPAY_API_TOKEN", { orderCode })
       return res.status(500).json({ message: "Chưa cấu hình SEPAY_API_TOKEN" })
     }
 
@@ -70,6 +94,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
 
     if (!response.ok) {
+      const body = await response.text()
+      console.error("[SePay QR] SePay API returned non-OK response", {
+        orderCode,
+        status: response.status,
+        statusText: response.statusText,
+        body,
+      })
       return res.json({ paid: false, message: "API error" })
     }
 
@@ -94,7 +125,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({ paid: false })
 
   } catch (err: any) {
-    console.error("[SePay Status] Error:", err.message)
+    logSePayRouteError("GET failed", err, {
+      orderCode: req.query.orderCode,
+    })
     return res.json({ paid: false })
   }
 }
@@ -103,3 +136,6 @@ function getDateMinusMinutes(minutes: number): string {
   const d = new Date(Date.now() - minutes * 60 * 1000)
   return d.toISOString().slice(0, 19).replace("T", " ")
 }
+
+
+

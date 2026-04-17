@@ -1,5 +1,26 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
+function logSePayWebhook(stage: string, error?: unknown, extra?: Record<string, unknown>) {
+  if (!error) {
+    console.info(`[SePay Webhook] ${stage}`, extra ?? {})
+    return
+  }
+
+  const payload =
+    error instanceof Error
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        }
+      : { error }
+
+  console.error(`[SePay Webhook] ${stage}`, {
+    ...payload,
+    ...extra,
+  })
+}
+
 /**
  * POST /store/sepay/webhook
  * SePay gọi endpoint này khi có giao dịch chuyển khoản vào tài khoản
@@ -9,7 +30,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const body = req.body as any
 
     // Log để debug
-    console.log("[SePay Webhook]", JSON.stringify(body))
+    logSePayWebhook("POST request", undefined, {
+      transferType: body?.transferType,
+      accountNumber: body?.accountNumber,
+      transferAmount: body?.transferAmount,
+      content: body?.content,
+      referenceCode: body?.referenceCode,
+      code: body?.code,
+      gateway: body?.gateway,
+    })
 
     const {
       gateway,
@@ -89,7 +118,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.json({ success: true })
 
   } catch (err: any) {
-    console.error("[SePay Webhook] Error:", err.message)
+    logSePayWebhook("POST failed", err)
     // Vẫn trả 200 để SePay không retry liên tục
     return res.json({ success: true })
   }

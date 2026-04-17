@@ -10,6 +10,26 @@ import { getAuthHeaders, getCartId, removeCartId, setCartId } from "./cookies"
 import { getProductsById } from "./products"
 import { getRegion } from "./regions"
 
+function logCartActionError(
+  action: string,
+  error: unknown,
+  extra?: Record<string, unknown>
+) {
+  const payload =
+    error instanceof Error
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        }
+      : { error }
+
+  console.error(`[Cart] ${action}`, {
+    ...payload,
+    ...extra,
+  })
+}
+
 export async function retrieveCart() {
   const cartId = await getCartId()
 
@@ -65,7 +85,13 @@ export async function updateCart(data: HttpTypes.StoreUpdateCart) {
       revalidateTag("cart")
       return cart
     })
-    .catch(medusaError)
+    .catch((error) => {
+      logCartActionError("updateCart failed", error, {
+        cartId,
+        fields: Object.keys(data ?? {}),
+      })
+      return medusaError(error)
+    })
 }
 
 export async function addToCart({
@@ -99,7 +125,14 @@ export async function addToCart({
     .then(() => {
       revalidateTag("cart")
     })
-    .catch(medusaError)
+    .catch((error) => {
+      logCartActionError("addToCart failed", error, {
+        cartId: cart.id,
+        variantId,
+        quantity,
+      })
+      return medusaError(error)
+    })
 }
 
 export async function updateLineItem({
@@ -225,7 +258,13 @@ export async function initiatePaymentSession(
       revalidateTag("cart")
       return resp
     })
-    .catch(medusaError)
+    .catch((error) => {
+      logCartActionError("initiatePaymentSession failed", error, {
+        cartId: cart.id,
+        providerId: data.provider_id,
+      })
+      return medusaError(error)
+    })
 }
 
 export async function applyPromotions(codes: string[]) {
@@ -355,20 +394,36 @@ export async function placeOrder() {
     throw new Error("No existing cart found when placing an order")
   }
 
-  const cartRes = await sdk.store.cart
+  console.info("[Cart] placeOrder start", { cartId })
+
+  const cartRes: any = await sdk.store.cart
     .complete(cartId, {}, await getAuthHeaders())
     .then((cartRes) => {
       revalidateTag("cart")
       return cartRes
     })
-    .catch(medusaError)
+    .catch((error) => {
+      logCartActionError("placeOrder failed", error, { cartId })
+      return medusaError(error)
+    })
 
   if (cartRes?.type === "order") {
     const countryCode =
       cartRes.order.shipping_address?.country_code?.toLowerCase()
+    console.info("[Cart] placeOrder success", {
+      cartId,
+      orderId: cartRes.order.id,
+      countryCode,
+    })
     await removeCartId()
     redirect(`/${countryCode}/order/confirmed/${cartRes?.order.id}`)
   }
+
+  console.info("[Cart] placeOrder returned cart", {
+    cartId,
+    hasCart: Boolean(cartRes?.cart),
+    hasOrder: Boolean(cartRes?.order),
+  })
 
   return cartRes.cart
 }

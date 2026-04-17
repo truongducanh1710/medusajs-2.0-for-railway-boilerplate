@@ -185,5 +185,7 @@ const medusaConfig = {
   ]
 };
 
-console.log(JSON.stringify(medusaConfig, null, 2));
+if (process.env.MEDUSA_DEBUG_CONFIG === "true") {
+  console.log(JSON.stringify(medusaConfig, null, 2));
+}
 export default defineConfig(medusaConfig);

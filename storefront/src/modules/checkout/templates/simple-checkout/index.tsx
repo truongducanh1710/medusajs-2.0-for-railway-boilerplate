@@ -17,6 +17,40 @@ const sepayHeaders = {
   "x-publishable-api-key": PUB_KEY,
 }
 
+async function readResponseBody(response: Response) {
+  const raw = await response.text()
+
+  if (!raw) {
+    return null
+  }
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
+function logCheckoutError(
+  stage: string,
+  error: unknown,
+  extra?: Record<string, unknown>
+) {
+  const payload =
+    error instanceof Error
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        }
+      : { error }
+
+  console.error(`[SimpleCheckout] ${stage}`, {
+    ...payload,
+    ...extra,
+  })
+}
+
 function formatVND(n: number) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ"
 }
@@ -32,16 +66,76 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [paid, setPaid] = useState(false)
 
   useEffect(() => {
-    fetch(`${BACKEND}/store/sepay/qr`, {
-      method: "POST",
-      headers: sepayHeaders,
-      body: JSON.stringify({ orderCode, amount }),
-    }).then(r => r.json()).then(d => { setQrUrl(d.qrUrl); setInfo(d) })
+    console.info("[SimpleCheckout][SePay] open modal", { orderCode, amount })
+
+    const loadQr = async () => {
+      try {
+        const response = await fetch(`${BACKEND}/store/sepay/qr`, {
+          method: "POST",
+          headers: sepayHeaders,
+          body: JSON.stringify({ orderCode, amount }),
+        })
+        const body = await readResponseBody(response)
+
+        if (!response.ok) {
+          console.error("[SimpleCheckout][SePay] QR request failed", {
+            orderCode,
+            amount,
+            status: response.status,
+            statusText: response.statusText,
+            body,
+          })
+          return
+        }
+
+        console.info("[SimpleCheckout][SePay] QR response received", {
+          orderCode,
+          amount,
+          hasQrUrl: Boolean(body?.qrUrl),
+        })
+        setQrUrl(body?.qrUrl || "")
+        setInfo(body)
+      } catch (error) {
+        logCheckoutError("SePay QR request threw", error, { orderCode, amount })
+      }
+    }
+
+    void loadQr()
 
     const iv = setInterval(async () => {
-      const r = await fetch(`${BACKEND}/store/sepay/qr?orderCode=${orderCode}`, { headers: sepayHeaders })
-      const d = await r.json()
-      if (d.paid) { setPaid(true); clearInterval(iv); setTimeout(onSuccess, 1500) }
+      try {
+        const response = await fetch(`${BACKEND}/store/sepay/qr?orderCode=${orderCode}`, {
+          headers: sepayHeaders,
+        })
+        const body = await readResponseBody(response)
+
+        if (!response.ok) {
+          console.error("[SimpleCheckout][SePay] status poll failed", {
+            orderCode,
+            status: response.status,
+            statusText: response.statusText,
+            body,
+          })
+          return
+        }
+
+        if (body?.paid) {
+          console.info("[SimpleCheckout][SePay] payment confirmed", {
+            orderCode,
+            body,
+          })
+          setPaid(true)
+          clearInterval(iv)
+          setTimeout(onSuccess, 1500)
+        } else {
+          console.info("[SimpleCheckout][SePay] payment not found yet", {
+            orderCode,
+            body,
+          })
+        }
+      } catch (error) {
+        logCheckoutError("SePay status poll threw", error, { orderCode })
+      }
     }, 5000)
     return () => clearInterval(iv)
   }, [])
@@ -116,6 +210,16 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     localStorage.setItem('phanviet_checkout_form', JSON.stringify({ form, payment }))
   }, [form, payment])
 
+  useEffect(() => {
+    console.info("[SimpleCheckout] checkout screen ready", {
+      cartId: cart.id,
+      countryCode,
+      payment,
+      itemCount: cart.items?.length ?? 0,
+      shippingOptions: shippingOptions?.length ?? 0,
+    })
+  }, [cart.id, countryCode, payment, shippingOptions?.length])
+
   const sortedItems = [...(cart.items || [])].sort((a, b) =>
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
@@ -138,8 +242,14 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     setSubmitting(true)
 
     try {
+      console.info("[SimpleCheckout] submit start", {
+        cartId: cart.id,
+        payment,
+        countryCode,
+      })
+
       // Cập nhật cart với thông tin giao hàng
-      await updateCart({
+      const updatedCart = await updateCart({
         email: `guest${Date.now()}@example.com`,
         shipping_address: {
           first_name: form.name,
@@ -162,16 +272,40 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           payment_method: payment,
         }
       })
+      console.info("[SimpleCheckout] cart updated", {
+        cartId: updatedCart.id,
+        email: updatedCart.email,
+        shippingMethods: updatedCart.shipping_methods?.length ?? 0,
+      })
 
       // Set default shipping method
       if (shippingOptions && shippingOptions.length > 0) {
         await setShippingMethod({ cartId: cart.id, shippingMethodId: shippingOptions[0].id })
+        console.info("[SimpleCheckout] shipping method set", {
+          cartId: cart.id,
+          shippingMethodId: shippingOptions[0].id,
+        })
       }
 
       // Initiate payment session
       if (payment === "sepay") {
         const code = Date.now().toString(36).toUpperCase()
+        console.info("[SimpleCheckout] initiating SePay payment session", {
+          cartId: cart.id,
+          providerId: "sepay",
+          orderCode: code,
+          total: sepayTotal,
+        })
+
         await initiatePaymentSession(cart, { provider_id: "sepay" })
+          .catch((error) => {
+            logCheckoutError("initiatePaymentSession failed", error, {
+              cartId: cart.id,
+              providerId: "sepay",
+            })
+            throw error
+          })
+
         setOrderId(code)
         setShowQR(true)
         setSubmitting(false)
@@ -179,12 +313,33 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       }
 
       // COD: Đặt hàng luôn (không cần payment session)
-      const result = await placeOrder()
+      console.info("[SimpleCheckout] placing COD order", {
+        cartId: cart.id,
+      })
+
+      const result: any = await placeOrder().catch((error) => {
+        logCheckoutError("placeOrder failed for COD", error, {
+          cartId: cart.id,
+          payment,
+        })
+        throw error
+      })
+
+      console.info("[SimpleCheckout] placeOrder result", {
+        cartId: cart.id,
+        resultType: result?.type,
+        orderId: result?.order?.id,
+      })
+
       if (result?.type === "order") {
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
       }
     } catch (err) {
-      console.error(err)
+      logCheckoutError("handleSubmit failed", err, {
+        cartId: cart.id,
+        payment,
+        countryCode,
+      })
     } finally {
       setSubmitting(false)
     }
@@ -194,12 +349,34 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     setShowQR(false)
     setSubmitting(true)
     try {
-      const result = await placeOrder()
+      console.info("[SimpleCheckout] SePay confirmed, placing order", {
+        cartId: cart.id,
+        orderCode: orderId,
+      })
+
+      const result: any = await placeOrder().catch((error) => {
+        logCheckoutError("placeOrder failed after SePay success", error, {
+          cartId: cart.id,
+          orderCode: orderId,
+        })
+        throw error
+      })
+
+      console.info("[SimpleCheckout] placeOrder result after SePay", {
+        cartId: cart.id,
+        orderCode: orderId,
+        resultType: result?.type,
+        orderId: result?.order?.id,
+      })
+
       if (result?.type === "order") {
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
       }
     } catch (err) {
-      console.error(err)
+      logCheckoutError("handleSepaySuccess failed", err, {
+        cartId: cart.id,
+        orderCode: orderId,
+      })
     } finally {
       setSubmitting(false)
     }
