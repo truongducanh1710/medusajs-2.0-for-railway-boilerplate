@@ -13,6 +13,7 @@ import MobileActions from "./mobile-actions"
 import ProductPrice from "../product-price"
 import { addToCart } from "@lib/data/cart"
 import { HttpTypes } from "@medusajs/types"
+import { useLocaleCopy } from "@lib/locale-context"
 
 type ProductActionsProps = {
   product: HttpTypes.StoreProduct
@@ -37,6 +38,7 @@ export default function ProductActions({
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [isAdding, setIsAdding] = useState(false)
   const countryCode = useParams().countryCode as string
+  const copy = useLocaleCopy()
 
   // If there is only 1 variant, preselect the options
   useEffect(() => {
@@ -144,10 +146,10 @@ export default function ProductActions({
           data-testid="add-product-button"
         >
           {!selectedVariant
-            ? "Chọn phiên bản"
+            ? copy.product.selectVariant
             : !inStock
-            ? "Hết hàng"
-            : "Thêm vào giỏ hàng"}
+            ? copy.product.soldOut
+            : copy.product.addToCart}
         </Button>
         <MobileActions
           product={product}

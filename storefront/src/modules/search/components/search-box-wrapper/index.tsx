@@ -8,6 +8,7 @@ import {
   useState,
 } from "react"
 import { UseSearchBoxProps, useSearchBox } from "react-instantsearch-hooks-web"
+import { useLocaleCopy } from "@lib/locale-context"
 
 export type ControlledSearchBoxProps = React.ComponentProps<"div"> & {
   inputRef: RefObject<HTMLInputElement>
@@ -31,12 +32,13 @@ type SearchBoxProps = {
 
 const SearchBoxWrapper = ({
   children,
-  placeholder = "Search products...",
+  placeholder,
   ...rest
 }: SearchBoxProps) => {
   const { query, refine } = useSearchBox(rest)
   const [value, setValue] = useState(query)
   const inputRef = useRef<HTMLInputElement>(null)
+  const copy = useLocaleCopy()
 
   const router = useRouter()
 
@@ -84,7 +86,7 @@ const SearchBoxWrapper = ({
     onChange,
     onSubmit,
     onReset,
-    placeholder,
+    placeholder: placeholder ?? copy.nav.searchPlaceholder,
   }
 
   return children(state) as React.ReactElement

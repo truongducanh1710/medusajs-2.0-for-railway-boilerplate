@@ -1,10 +1,10 @@
 import { Heading, Text } from "@medusajs/ui"
-import Link from "next/link"
 
 import RefinementList from "@modules/store/components/refinement-list"
 import { SortOptions } from "@modules/store/components/refinement-list/sort-products"
 import PaginatedProducts from "@modules/store/templates/paginated-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import { getCopy, localeFromCountryCode } from "@lib/i18n"
 
 type SearchResultsTemplateProps = {
   query: string
@@ -22,12 +22,13 @@ const SearchResultsTemplate = ({
   countryCode,
 }: SearchResultsTemplateProps) => {
   const pageNumber = page ? parseInt(page) : 1
+  const copy = getCopy(localeFromCountryCode(countryCode))
 
   return (
     <>
       <div className="flex justify-between border-b w-full py-6 px-8 small:px-14 items-center">
         <div className="flex flex-col items-start">
-          <Text className="text-ui-fg-muted">Search Results for:</Text>
+          <Text className="text-ui-fg-muted">{copy.search.resultsFor}</Text>
           <Heading>
             {decodeURI(query)} ({ids.length})
           </Heading>
@@ -36,7 +37,7 @@ const SearchResultsTemplate = ({
           href="/store"
           className="txt-medium text-ui-fg-subtle hover:text-ui-fg-base"
         >
-          Clear
+          {copy.search.clear}
         </LocalizedClientLink>
       </div>
       <div className="flex flex-col small:flex-row small:items-start p-6">
@@ -53,7 +54,7 @@ const SearchResultsTemplate = ({
             </div>
           </>
         ) : (
-          <Text className="ml-8 small:ml-14 mt-3">No results.</Text>
+          <Text className="ml-8 small:ml-14 mt-3">{copy.search.noResults}</Text>
         )}
       </div>
     </>

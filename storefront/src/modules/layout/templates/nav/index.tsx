@@ -1,13 +1,19 @@
 import { Suspense } from "react"
 
+import { getCopy, localeFromCountryCode } from "@lib/i18n"
 import { listRegions } from "@lib/data/regions"
 import { StoreRegion } from "@medusajs/types"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import CartButton from "@modules/layout/components/cart-button"
 import SideMenu from "@modules/layout/components/side-menu"
 
-export default async function Nav() {
+export default async function Nav({
+  countryCode,
+}: {
+  countryCode?: string
+}) {
   const regions = await listRegions().then((regions: StoreRegion[]) => regions)
+  const copy = getCopy(localeFromCountryCode(countryCode))
 
   return (
     <div className="fixed top-0 inset-x-0 z-50">
@@ -33,37 +39,37 @@ export default async function Nav() {
               href="/"
               className="text-orange-500 border-b-2 border-orange-500 pb-1"
             >
-              Trang chủ
+              {copy.nav.home}
             </LocalizedClientLink>
             <LocalizedClientLink
               href="/store"
               className="text-slate-600 hover:text-orange-500 transition-colors"
             >
-              Chảo chống dính
+              {copy.nav.store}
             </LocalizedClientLink>
             <LocalizedClientLink
               href="/store"
               className="text-slate-600 hover:text-orange-500 transition-colors"
             >
-              Giặt &amp; Sấy
+              {copy.nav.store}
             </LocalizedClientLink>
             <LocalizedClientLink
               href="/store"
               className="text-slate-600 hover:text-orange-500 transition-colors"
             >
-              Thiết bị gia dụng
+              {copy.nav.store}
             </LocalizedClientLink>
             <LocalizedClientLink
               href="/store"
               className="text-slate-600 hover:text-orange-500 transition-colors"
             >
-              Khuyến mãi
+              {copy.nav.promo}
             </LocalizedClientLink>
             <LocalizedClientLink
               href="/store"
               className="text-slate-600 hover:text-orange-500 transition-colors"
             >
-              Liên hệ
+              {copy.nav.contact}
             </LocalizedClientLink>
           </div>
 
@@ -73,7 +79,7 @@ export default async function Nav() {
             <div className="relative hidden lg:block">
               <input
                 className="bg-slate-100 border-none rounded-full py-2 px-6 w-64 text-sm focus:ring-2 focus:ring-orange-400 transition-all outline-none"
-                placeholder="Tìm kiếm sản phẩm..."
+                placeholder={copy.nav.searchPlaceholder}
                 type="text"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>

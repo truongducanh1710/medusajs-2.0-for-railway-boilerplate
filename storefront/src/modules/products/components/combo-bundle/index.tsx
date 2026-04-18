@@ -21,29 +21,37 @@ function formatVND(amount: number) {
 }
 
 function getPrice(product: HttpTypes.StoreProduct): number {
-  return product.variants?.[0]?.calculated_price?.calculated_amount
-    ?? product.variants?.[0]?.prices?.[0]?.amount
-    ?? 0
+  return (
+    product.variants?.[0]?.calculated_price?.calculated_amount ??
+    product.variants?.[0]?.prices?.[0]?.amount ??
+    0
+  )
 }
 
-export default function ComboBundle({ mainProduct, comboProducts, discountPercent = 15 }: Props) {
+export default function ComboBundle({
+  mainProduct,
+  comboProducts,
+  discountPercent = 15,
+}: Props) {
   const params = useParams()
   const countryCode = params.countryCode as string
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
 
   const [items, setItems] = useState<ComboItem[]>(
-    comboProducts.map(p => ({ product: p, selected: true }))
+    comboProducts.map((p) => ({ product: p, selected: true }))
   )
 
   const toggleItem = (idx: number) => {
-    setItems(prev => prev.map((item, i) =>
-      i === idx ? { ...item, selected: !item.selected } : item
-    ))
+    setItems((prev) =>
+      prev.map((item, i) =>
+        i === idx ? { ...item, selected: !item.selected } : item
+      )
+    )
   }
 
-  const selectedItems = items.filter(i => i.selected)
-  const allProducts = [mainProduct, ...selectedItems.map(i => i.product)]
+  const selectedItems = items.filter((i) => i.selected)
+  const allProducts = [mainProduct, ...selectedItems.map((i) => i.product)]
 
   const originalTotal = allProducts.reduce((sum, p) => sum + getPrice(p), 0)
   const totalSelected = selectedItems.length + 1
@@ -73,23 +81,32 @@ export default function ComboBundle({ mainProduct, comboProducts, discountPercen
 
   return (
     <div className="border border-blue-200 rounded-xl overflow-hidden">
-      {/* Header */}
       <div className="bg-blue-950 px-5 py-3">
-        <span className="text-white font-black text-sm">🎁 MUA KÈM TIẾT KIỆM {discountPercent}%</span>
+        <span className="text-white font-black text-sm">
+          🎁 MUA KÈM TIẾT KIỆM {discountPercent}%
+        </span>
       </div>
 
       <div className="p-4 bg-white">
-        {/* Products row */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {/* Main product */}
           <div className="flex flex-col items-center text-center w-20">
             {mainProduct.thumbnail ? (
-              <img src={mainProduct.thumbnail} alt={mainProduct.title} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+              <img
+                src={mainProduct.thumbnail}
+                alt={mainProduct.title}
+                className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+              />
             ) : (
-              <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">🛍️</div>
+              <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">
+                🛍️
+              </div>
             )}
-            <span className="text-xs text-gray-600 mt-1 line-clamp-2">{mainProduct.title}</span>
-            <span className="text-xs font-bold text-orange-500">{formatVND(getPrice(mainProduct))}</span>
+            <span className="text-xs text-gray-600 mt-1 line-clamp-2">
+              {mainProduct.title}
+            </span>
+            <span className="text-xs font-bold text-orange-500">
+              {formatVND(getPrice(mainProduct))}
+            </span>
           </div>
 
           {items.map((item, idx) => (
@@ -103,24 +120,47 @@ export default function ComboBundle({ mainProduct, comboProducts, discountPercen
               >
                 <div className="relative">
                   {item.product.thumbnail ? (
-                    <img src={item.product.thumbnail} alt={item.product.title} className={`w-16 h-16 object-cover rounded-lg border-2 transition-all ${item.selected ? "border-blue-500" : "border-gray-200"}`} />
+                    <img
+                      src={item.product.thumbnail}
+                      alt={item.product.title}
+                      className={`w-16 h-16 object-cover rounded-lg border-2 transition-all ${
+                        item.selected ? "border-blue-500" : "border-gray-200"
+                      }`}
+                    />
                   ) : (
-                    <div className={`w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-2xl border-2 ${item.selected ? "border-blue-500" : "border-gray-200"}`}>🛍️</div>
+                    <div
+                      className={`w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-2xl border-2 ${
+                        item.selected ? "border-blue-500" : "border-gray-200"
+                      }`}
+                    >
+                      🛍️
+                    </div>
                   )}
-                  <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${item.selected ? "bg-blue-500 text-white" : "bg-gray-300 text-gray-600"}`}>
+                  <div
+                    className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                      item.selected
+                        ? "bg-blue-500 text-white"
+                        : "bg-gray-300 text-gray-600"
+                    }`}
+                  >
                     {item.selected ? "✓" : "+"}
                   </div>
                 </div>
-                <span className="text-xs text-gray-600 mt-1 line-clamp-2">{item.product.title}</span>
-                <span className="text-xs font-bold text-orange-500">{formatVND(getPrice(item.product))}</span>
+                <span className="text-xs text-gray-600 mt-1 line-clamp-2">
+                  {item.product.title}
+                </span>
+                <span className="text-xs font-bold text-orange-500">
+                  {formatVND(getPrice(item.product))}
+                </span>
               </div>
             </div>
           ))}
         </div>
 
-        <p className="text-xs text-gray-400 mb-4">💡 Bấm vào sản phẩm để bỏ chọn / chọn lại</p>
+        <p className="text-xs text-gray-400 mb-4">
+          💡 Bấm vào sản phẩm để bỏ chọn / chọn lại
+        </p>
 
-        {/* Price summary */}
         <div className="bg-gray-50 rounded-xl p-4 space-y-2 mb-4">
           <div className="flex justify-between text-sm text-gray-600">
             <span>Giá gốc ({totalSelected} sản phẩm)</span>
@@ -138,7 +178,6 @@ export default function ComboBundle({ mainProduct, comboProducts, discountPercen
           </div>
         </div>
 
-        {/* CTA */}
         <button
           onClick={handleAddCombo}
           disabled={adding || added || totalSelected < 2}

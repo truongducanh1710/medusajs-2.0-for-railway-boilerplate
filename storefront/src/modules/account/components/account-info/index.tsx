@@ -1,9 +1,11 @@
+"use client"
+
 import { Disclosure } from "@headlessui/react"
 import { Badge, Button, clx } from "@medusajs/ui"
 import { useEffect } from "react"
-
 import useToggleState from "@lib/hooks/use-toggle-state"
 import { useFormStatus } from "react-dom"
+import { useLocaleCopy } from "@lib/locale-context"
 
 type AccountInfoProps = {
   label: string
@@ -22,11 +24,12 @@ const AccountInfo = ({
   isSuccess,
   isError,
   clearState,
-  errorMessage = "An error occurred, please try again",
+  errorMessage,
   children,
   'data-testid': dataTestid
 }: AccountInfoProps) => {
   const { state, close, toggle } = useToggleState()
+  const copy = useLocaleCopy()
 
   const { pending } = useFormStatus()
 
@@ -63,7 +66,7 @@ const AccountInfo = ({
             data-testid="edit-button"
             data-active={state}
           >
-            {state ? "Cancel" : "Edit"}
+            {state ? copy.common.cancel : copy.common.edit}
           </Button>
         </div>
       </div>
@@ -82,7 +85,9 @@ const AccountInfo = ({
           data-testid="success-message"
         >
           <Badge className="p-2 my-4" color="green">
-            <span>{label} updated succesfully</span>
+            <span>
+              {label} {copy.common.updatedSuccessfully}
+            </span>
           </Badge>
         </Disclosure.Panel>
       </Disclosure>
@@ -101,7 +106,7 @@ const AccountInfo = ({
           data-testid="error-message"
         >
           <Badge className="p-2 my-4" color="red">
-            <span>{errorMessage}</span>
+            <span>{errorMessage || copy.common.errorOccurred}</span>
           </Badge>
         </Disclosure.Panel>
       </Disclosure>
@@ -126,7 +131,7 @@ const AccountInfo = ({
                 type="submit"
                 data-testid="save-button"
               >
-                Save changes
+                {copy.common.saveChanges}
               </Button>
             </div>
           </div>

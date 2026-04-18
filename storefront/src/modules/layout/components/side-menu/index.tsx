@@ -8,17 +8,23 @@ import { Fragment } from "react"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import CountrySelect from "../country-select"
 import { HttpTypes } from "@medusajs/types"
+import { useLocaleCopy } from "@lib/locale-context"
 
 const SideMenuItems = {
-  Home: "/",
-  Store: "/store",
-  Search: "/search",
-  Account: "/account",
-  Cart: "/cart",
+  home: "/",
+  store: "/store",
+  search: "/search",
+  account: "/account",
+  cart: "/cart",
 }
 
-const SideMenu = ({ regions }: { regions: HttpTypes.StoreRegion[] | null }) => {
+const SideMenu = ({
+  regions,
+}: {
+  regions: HttpTypes.StoreRegion[] | null
+}) => {
   const toggleState = useToggleState()
+  const copy = useLocaleCopy()
 
   return (
     <div className="h-full">
@@ -31,7 +37,7 @@ const SideMenu = ({ regions }: { regions: HttpTypes.StoreRegion[] | null }) => {
                   data-testid="nav-menu-button"
                   className="relative h-full flex items-center transition-all ease-out duration-200 focus:outline-none hover:text-ui-fg-base"
                 >
-                  Menu
+                  {copy.nav.menu}
                 </Popover.Button>
               </div>
 
@@ -65,7 +71,7 @@ const SideMenu = ({ regions }: { regions: HttpTypes.StoreRegion[] | null }) => {
                               onClick={close}
                               data-testid={`${name.toLowerCase()}-link`}
                             >
-                              {name}
+                              {copy.nav[name as keyof typeof copy.nav] ?? name}
                             </LocalizedClientLink>
                           </li>
                         )
@@ -91,8 +97,8 @@ const SideMenu = ({ regions }: { regions: HttpTypes.StoreRegion[] | null }) => {
                         />
                       </div>
                       <Text className="flex justify-between txt-compact-small">
-                        © {new Date().getFullYear()} Medusa Store. All rights
-                        reserved.
+                        © {new Date().getFullYear()} {copy.checkout.storeName}.{" "}
+                        {copy.footer.rights}
                       </Text>
                     </div>
                   </div>

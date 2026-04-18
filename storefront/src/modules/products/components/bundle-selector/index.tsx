@@ -34,18 +34,14 @@ function Countdown({ minutes = 17 }: { minutes?: number }) {
   const [secs, setSecs] = useState(minutes * 60)
 
   useEffect(() => {
-    const t = setInterval(() => setSecs(s => (s > 0 ? s - 1 : 0)), 1000)
+    const t = setInterval(() => setSecs((s) => (s > 0 ? s - 1 : 0)), 1000)
     return () => clearInterval(t)
   }, [])
 
   const m = String(Math.floor(secs / 60)).padStart(2, "0")
   const s = String(secs % 60).padStart(2, "0")
 
-  return (
-    <span className="font-black tabular-nums">
-      {m}:{s}
-    </span>
-  )
+  return <span className="font-black tabular-nums">{m}:{s}</span>
 }
 
 export default function BundleSelector({ product, region }: Props) {
@@ -63,14 +59,12 @@ export default function BundleSelector({ product, region }: Props) {
 
   if (!basePrice || basePrice === 0) return null
 
-  // Parse gift items từ metadata nếu có
   let gifts: GiftItem[] = []
   try {
     const raw = product.metadata?.bundle_gifts as string
     if (raw) gifts = JSON.parse(raw)
   } catch {}
 
-  // Default gifts nếu chưa có metadata
   if (!gifts.length) {
     gifts = [
       { name: "Túi đựng sản phẩm cao cấp", value: 89000 },
@@ -105,7 +99,7 @@ export default function BundleSelector({ product, region }: Props) {
     },
   ]
 
-  const selectedOpt = options.find(o => o.qty === selected) || options[0]
+  const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
   const handleAdd = async () => {
     if (!variant?.id) return
@@ -116,7 +110,10 @@ export default function BundleSelector({ product, region }: Props) {
         variantId: variant.id,
         quantity: selected,
         countryCode,
-        metadata: giftsToSave.length > 0 ? { gifts: JSON.stringify(giftsToSave) } : undefined,
+        metadata:
+          giftsToSave.length > 0
+            ? { gifts: JSON.stringify(giftsToSave) }
+            : undefined,
       } as any)
       setAdded(true)
       setTimeout(() => setAdded(false), 2500)
@@ -129,23 +126,19 @@ export default function BundleSelector({ product, region }: Props) {
 
   return (
     <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
-      {/* Trial badge */}
       <div className="bg-gray-100 py-2 text-center text-xs font-semibold text-gray-500 tracking-widest uppercase">
         — Đổi trả 7 ngày — Hài lòng hoặc hoàn tiền —
       </div>
 
-      {/* Countdown */}
       <div className="bg-blue-600 text-white py-3 px-4 text-center">
         <p className="font-black text-base">
           🔥 NHANH! Ưu đãi kết thúc sau <Countdown minutes={17} /> ⏰
         </p>
       </div>
 
-      {/* Options */}
       <div className="p-3 space-y-2.5 bg-white">
         {options.map((opt) => {
           const isSelected = selected === opt.qty
-          const saving = opt.originalPrice - opt.price
 
           return (
             <div
@@ -157,22 +150,25 @@ export default function BundleSelector({ product, region }: Props) {
                   : "border-gray-200 hover:border-blue-300"
               }`}
             >
-              {/* Badge */}
               {opt.badge && (
-                <div className={`absolute top-0 right-0 ${opt.badgeColor} text-white text-[10px] font-black px-2 py-0.5 rounded-bl-lg`}>
+                <div
+                  className={`absolute top-0 right-0 ${opt.badgeColor} text-white text-[10px] font-black px-2 py-0.5 rounded-bl-lg`}
+                >
                   {opt.badge}
                 </div>
               )}
 
               <div className="p-3.5 flex items-center gap-3">
-                {/* Radio */}
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                  isSelected ? "border-blue-600" : "border-gray-300"
-                }`}>
-                  {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                <div
+                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                    isSelected ? "border-blue-600" : "border-gray-300"
+                  }`}
+                >
+                  {isSelected && (
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                  )}
                 </div>
 
-                {/* Product image */}
                 {product.thumbnail && (
                   <img
                     src={product.thumbnail}
@@ -181,7 +177,6 @@ export default function BundleSelector({ product, region }: Props) {
                   />
                 )}
 
-                {/* Info */}
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-gray-900 text-sm">{opt.label}</p>
                   {opt.gifts && opt.gifts.length > 0 && (
@@ -191,22 +186,28 @@ export default function BundleSelector({ product, region }: Props) {
                   )}
                 </div>
 
-                {/* Price */}
                 <div className="text-right flex-shrink-0">
                   <p className="font-black text-gray-900">{formatVND(opt.price)}</p>
-                  <p className="text-xs text-gray-400 line-through">{formatVND(opt.originalPrice)}</p>
+                  <p className="text-xs text-gray-400 line-through">
+                    {formatVND(opt.originalPrice)}
+                  </p>
                 </div>
               </div>
 
-              {/* Gift items */}
               {isSelected && opt.gifts && opt.gifts.length > 0 && (
                 <div className="border-t border-dashed border-blue-200 bg-blue-50 px-3.5 py-2.5 space-y-2">
                   {opt.gifts.map((gift, i) => (
                     <div key={i} className="flex items-center gap-2.5">
                       {gift.image ? (
-                        <img src={gift.image} alt={gift.name} className="w-10 h-10 object-cover rounded-lg border border-blue-200" />
+                        <img
+                          src={gift.image}
+                          alt={gift.name}
+                          className="w-10 h-10 object-cover rounded-lg border border-blue-200"
+                        />
                       ) : (
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0">🎁</div>
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
+                          🎁
+                        </div>
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-gray-700 line-clamp-1">
@@ -214,7 +215,9 @@ export default function BundleSelector({ product, region }: Props) {
                           {gift.name}
                         </p>
                       </div>
-                      <p className="text-xs text-gray-400 line-through flex-shrink-0">{formatVND(gift.value)}</p>
+                      <p className="text-xs text-gray-400 line-through flex-shrink-0">
+                        {formatVND(gift.value)}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -224,7 +227,6 @@ export default function BundleSelector({ product, region }: Props) {
         })}
       </div>
 
-      {/* CTA */}
       <div className="px-3 pb-4 pt-1 bg-white space-y-3">
         <button
           onClick={handleAdd}
@@ -242,23 +244,30 @@ export default function BundleSelector({ product, region }: Props) {
             : "🛒 THÊM VÀO GIỎ HÀNG"}
         </button>
 
-        {/* Trust icons */}
         <div className="flex justify-around items-center pt-1">
           <div className="flex flex-col items-center gap-1">
             <span className="text-2xl">⭐</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">4.8/5<br/>Đánh giá</span>
+            <span className="text-[10px] text-gray-500 font-semibold text-center">
+              4.8/5<br />Đánh giá
+            </span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <span className="text-2xl">🔄</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">Đổi trả<br/>7 ngày</span>
+            <span className="text-[10px] text-gray-500 font-semibold text-center">
+              Đổi trả<br />7 ngày
+            </span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <span className="text-2xl">🇻🇳</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">Hàng<br/>Chính hãng</span>
+            <span className="text-[10px] text-gray-500 font-semibold text-center">
+              Hàng<br />Chính hãng
+            </span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <span className="text-2xl">🔒</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">Thanh toán<br/>An toàn</span>
+            <span className="text-[10px] text-gray-500 font-semibold text-center">
+              Thanh toán<br />An toàn
+            </span>
           </div>
         </div>
       </div>

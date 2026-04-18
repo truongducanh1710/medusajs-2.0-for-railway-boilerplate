@@ -9,6 +9,7 @@ import X from "@modules/common/icons/x"
 import { getProductPrice } from "@lib/util/get-product-price"
 import OptionSelect from "./option-select"
 import { HttpTypes } from "@medusajs/types"
+import { useLocaleCopy } from "@lib/locale-context"
 
 type MobileActionsProps = {
   product: HttpTypes.StoreProduct
@@ -34,6 +35,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   optionsDisabled,
 }) => {
   const { state, open, close } = useToggleState()
+  const copy = useLocaleCopy()
 
   const price = getProductPrice({
     product: product,
@@ -106,7 +108,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   <span>
                     {variant
                       ? Object.values(options).join(" / ")
-                      : "Select Options"}
+                      : copy.product.selectOptions}
                   </span>
                   <ChevronDown />
                 </div>
@@ -119,10 +121,10 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 data-testid="mobile-cart-button"
               >
                 {!variant
-                  ? "Select variant"
+                  ? copy.product.selectVariant
                   : !inStock
-                  ? "Out of stock"
-                  : "Add to cart"}
+                  ? copy.product.soldOut
+                  : copy.product.addToCart}
               </Button>
             </div>
           </div>

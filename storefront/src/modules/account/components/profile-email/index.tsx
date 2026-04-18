@@ -8,6 +8,7 @@ import Input from "@modules/common/components/input"
 import AccountInfo from "../account-info"
 import { HttpTypes } from "@medusajs/types"
 // import { updateCustomer } from "@lib/data/customer"
+import { useLocaleCopy } from "@lib/locale-context"
 
 type MyInformationProps = {
   customer: HttpTypes.StoreCustomer
@@ -15,6 +16,7 @@ type MyInformationProps = {
 
 const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
   const [successState, setSuccessState] = React.useState(false)
+  const copy = useLocaleCopy()
 
   // TODO: It seems we don't support updating emails now?
   const updateCustomerEmail = (
@@ -49,7 +51,7 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
   return (
     <form action={formAction} className="w-full">
       <AccountInfo
-        label="Email"
+        label={copy.common.email}
         currentInfo={`${customer.email}`}
         isSuccess={successState}
         isError={!!state.error}
@@ -59,7 +61,7 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
       >
         <div className="grid grid-cols-1 gap-y-2">
           <Input
-            label="Email"
+            label={copy.common.email}
             name="email"
             type="email"
             autoComplete="email"

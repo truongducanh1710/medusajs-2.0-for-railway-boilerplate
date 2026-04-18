@@ -1,3 +1,5 @@
+"use client"
+
 import { useFormState } from "react-dom"
 
 import { LOGIN_VIEW } from "@modules/account/templates/login-template"
@@ -5,6 +7,7 @@ import Input from "@modules/common/components/input"
 import ErrorMessage from "@modules/checkout/components/error-message"
 import { SubmitButton } from "@modules/checkout/components/submit-button"
 import { login } from "@lib/data/customer"
+import { useLocaleCopy } from "@lib/locale-context"
 
 type Props = {
   setCurrentView: (view: LOGIN_VIEW) => void
@@ -12,15 +15,18 @@ type Props = {
 
 const Login = ({ setCurrentView }: Props) => {
   const [message, formAction] = useFormState(login, null)
+  const copy = useLocaleCopy()
 
   return (
     <div
       className="max-w-sm w-full flex flex-col items-center"
       data-testid="login-page"
     >
-      <h1 className="text-large-semi uppercase mb-6">Welcome back</h1>
+      <h1 className="text-large-semi uppercase mb-6">
+        {copy.common.loginPageTitle}
+      </h1>
       <p className="text-center text-base-regular text-ui-fg-base mb-8">
-        Sign in to access an enhanced shopping experience.
+        Đăng nhập để có trải nghiệm mua sắm tốt hơn.
       </p>
       <form className="w-full" action={formAction}>
         <div className="flex flex-col w-full gap-y-2">
@@ -34,7 +40,7 @@ const Login = ({ setCurrentView }: Props) => {
             data-testid="email-input"
           />
           <Input
-            label="Password"
+            label="Mật khẩu"
             name="password"
             type="password"
             autoComplete="current-password"
@@ -44,17 +50,17 @@ const Login = ({ setCurrentView }: Props) => {
         </div>
         <ErrorMessage error={message} data-testid="login-error-message" />
         <SubmitButton data-testid="sign-in-button" className="w-full mt-6">
-          Sign in
+          Đăng nhập
         </SubmitButton>
       </form>
       <span className="text-center text-ui-fg-base text-small-regular mt-6">
-        Not a member?{" "}
+        Chưa có tài khoản?{" "}
         <button
           onClick={() => setCurrentView(LOGIN_VIEW.REGISTER)}
           className="underline"
           data-testid="register-button"
         >
-          Join us
+          Đăng ký
         </button>
         .
       </span>

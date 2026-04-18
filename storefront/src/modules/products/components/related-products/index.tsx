@@ -23,24 +23,24 @@ export default async function RelatedProducts({
   const region = await getRegion(countryCode)
 
   if (!region) {
-  const queryParams: StoreProductParamsWithTags = {}
+    return null
   }
 
-  // edit this function to define your related products logic
-  const queryParams: StoreProductParamsWithTags = {}
-  if (region?.id) {
-    queryParams.region_id = region.id
+  const queryParams: any = {
+    region_id: region.id,
+    is_giftcard: false,
   }
-  if (product.collection_id) {
-    queryParams.collection_id = [product.collection_id]
+
+  if ((product as any).collection_id) {
+    queryParams.collection_id = [(product as any).collection_id]
   }
+
   const productWithTags = product as StoreProductWithTags
   if (productWithTags.tags) {
     queryParams.tags = productWithTags.tags
       .map((t) => t.value)
       .filter(Boolean) as string[]
   }
-  queryParams.is_giftcard = false
 
   const products = await getProductsList({
     queryParams,
@@ -59,18 +59,16 @@ export default async function RelatedProducts({
     <div className="product-page-constraint">
       <div className="flex flex-col items-center text-center mb-16">
         <span className="text-base-regular text-gray-600 mb-6">
-          Related products
+          Sản phẩm gợi ý
         </span>
         <p className="text-2xl-regular text-ui-fg-base max-w-lg">
-          You might also want to check out these products.
+          Có thể bạn cũng muốn xem những sản phẩm này.
         </p>
       </div>
 
       <ul className="grid grid-cols-2 small:grid-cols-3 medium:grid-cols-4 gap-x-6 gap-y-8">
         {products.map((product) => (
-          <li key={product.id}>
-            {region && <Product region={region} product={product} />}
-          </li>
+          <li key={product.id}>{region && <Product region={region} product={product} />}</li>
         ))}
       </ul>
     </div>
