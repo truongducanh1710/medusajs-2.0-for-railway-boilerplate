@@ -13,7 +13,7 @@ const Hero = () => {
           <img
             className="w-full h-full object-cover"
             src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCBtxbp_yIraPEtcOEiBoOm-LSUuFSWM6kLUwN1tsjho6s76Gg3jg0YmKH8YPsC558A7kJVL8qsWn9zwg-M-O1Hk8-lwu0i7GfaaFneLbj7WLIPf5muuAPmpjA4sHZnEwxPp5qqH9evHhbxytilDfvpuAwM4rqs71Q9DGvT1xr9La2c33DeTAjraoS7r02rIy5wifx3DexpOF2tv9mOODsKvy832LybwlCRxjUpcSZfvpeCel_IRdWC0eIME3t0Ed2jVmCDKfeB_Ns"
-            alt="Phan Viet Store"
+            alt="Phan Việt"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent" />
         </div>

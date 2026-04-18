@@ -9,6 +9,7 @@ const copy = {
     nav: {
       home: "Trang chủ",
       store: "Cửa hàng",
+      categories: "Danh mục",
       promo: "Khuyến mãi",
       contact: "Liên hệ",
       searchPlaceholder: "Tìm kiếm sản phẩm...",
@@ -20,7 +21,7 @@ const copy = {
     checkout: {
       backToCart: "Quay lại giỏ hàng",
       back: "Quay lại",
-      storeName: "Phan Viet Store",
+      storeName: "Phan Việt",
       shippingTitle: "Giao hàng",
       continueToPayment: "Tiếp tục thanh toán",
       shippingMethod: "Phương thức giao hàng",
@@ -29,7 +30,7 @@ const copy = {
       continueReview: "Tiếp tục kiểm tra",
       reviewTitle: "Xác nhận đơn hàng",
       reviewTerms:
-        "Khi bấm nút đặt hàng, bạn xác nhận đã đọc, hiểu và đồng ý với Điều khoản sử dụng, Điều khoản bán hàng và Chính sách đổi trả, đồng thời xác nhận đã đọc Chính sách quyền riêng tư của Phan Viet Store.",
+        "Khi bấm nút đặt hàng, bạn xác nhận đã đọc, hiểu và đồng ý với Điều khoản sử dụng, Điều khoản bán hàng và Chính sách đổi trả, đồng thời xác nhận đã đọc Chính sách quyền riêng tư của Phan Việt.",
       paymentMethod: "Phương thức thanh toán",
       paymentDetails: "Chi tiết thanh toán",
       giftCard: "Thẻ quà tặng",
@@ -147,7 +148,7 @@ const copy = {
       ordersDescription:
         "Xem lại các đơn hàng trước đây và trạng thái của chúng. Bạn cũng có thể tạo yêu cầu trả hàng hoặc đổi hàng nếu cần.",
       accountDescription: "Xem tổng quan các hoạt động tài khoản của bạn.",
-      loginDescription: "Đăng nhập vào tài khoản Phan Viet Store của bạn.",
+      loginDescription: "Đăng nhập vào tài khoản Phan Việt của bạn.",
       profilePageTitle: "Hồ sơ",
       addressesPageTitle: "Địa chỉ",
       ordersPageTitle: "Đơn hàng",
@@ -164,6 +165,27 @@ const copy = {
       latest: "Mới nhất",
       priceLowHigh: "Giá: Thấp đến Cao",
       priceHighLow: "Giá: Cao đến Thấp",
+    },
+    store: {
+      allProducts: "Tất cả sản phẩm",
+    },
+    cart: {
+      emptyTitle: "Giỏ hàng",
+      emptyDescription:
+        "Bạn chưa có sản phẩm nào trong giỏ. Hãy bắt đầu khám phá các sản phẩm bên dưới.",
+      exploreProducts: "Khám phá sản phẩm",
+      summaryTitle: "Trong giỏ hàng của bạn",
+      tableItem: "Sản phẩm",
+      tableQuantity: "Số lượng",
+      tablePrice: "Giá",
+      tableTotal: "Tổng cộng",
+      subtotal: "Tạm tính",
+      subtotalNote: "(chưa gồm phí ship và thuế)",
+      discount: "Giảm giá",
+      shipping: "Vận chuyển",
+      taxes: "Thuế",
+      giftCard: "Thẻ quà tặng",
+      total: "Tổng cộng",
     },
     discount: {
       addCode: "Thêm mã giảm giá",
@@ -182,6 +204,7 @@ const copy = {
     nav: {
       home: "Home",
       store: "Store",
+      categories: "Categories",
       promo: "Promotions",
       contact: "Contact",
       searchPlaceholder: "Search products...",
@@ -337,6 +360,27 @@ const copy = {
       latest: "Latest",
       priceLowHigh: "Price: Low to High",
       priceHighLow: "Price: High to Low",
+    },
+    store: {
+      allProducts: "All products",
+    },
+    cart: {
+      emptyTitle: "Cart",
+      emptyDescription:
+        "You don't have anything in your cart. Let's change that, use the link below to start browsing our products.",
+      exploreProducts: "Explore products",
+      summaryTitle: "In your Cart",
+      tableItem: "Item",
+      tableQuantity: "Quantity",
+      tablePrice: "Price",
+      tableTotal: "Total",
+      subtotal: "Subtotal",
+      subtotalNote: "(excl. shipping and taxes)",
+      discount: "Discount",
+      shipping: "Shipping",
+      taxes: "Taxes",
+      giftCard: "Gift card",
+      total: "Total",
     },
     discount: {
       addCode: "Add promotion code",

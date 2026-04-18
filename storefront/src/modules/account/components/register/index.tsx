@@ -22,10 +22,10 @@ const Register = ({ setCurrentView }: Props) => {
       data-testid="register-page"
     >
       <h1 className="text-large-semi uppercase mb-6">
-        Trở thành thành viên Phan Viet Store
+        Trở thành thành viên Phan Việt
       </h1>
       <p className="text-center text-base-regular text-ui-fg-base mb-4">
-        Tạo hồ sơ thành viên Phan Viet Store để nhận trải nghiệm mua sắm tốt hơn.
+        Tạo hồ sơ thành viên Phan Việt để nhận trải nghiệm mua sắm tốt hơn.
       </p>
       <form className="w-full flex flex-col" action={formAction}>
         <div className="flex flex-col w-full gap-y-2">

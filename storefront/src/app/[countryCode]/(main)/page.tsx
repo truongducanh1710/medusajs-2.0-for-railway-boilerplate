@@ -6,9 +6,9 @@ import { getCollectionsWithProducts } from "@lib/data/collections"
 import { getRegion } from "@lib/data/regions"
 
 export const metadata: Metadata = {
-  title: "Phan Viet Store",
+  title: "Phan Việt",
   description:
-    "Cửa hàng thương mại điện tử Phan Viet Store với trải nghiệm nhanh và thân thiện.",
+    "Cửa hàng thương mại điện tử Phan Việt với trải nghiệm nhanh và thân thiện.",
 }
 
 export default async function Home({

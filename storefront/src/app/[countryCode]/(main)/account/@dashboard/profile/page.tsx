@@ -12,7 +12,7 @@ import { getCustomer } from "@lib/data/customer"
 
 export const metadata: Metadata = {
   title: "Hồ sơ",
-  description: "Xem và chỉnh sửa hồ sơ Phan Viet Store của bạn.",
+  description: "Xem và chỉnh sửa hồ sơ Phan Việt của bạn.",
 }
 
 export default async function Profile() {
