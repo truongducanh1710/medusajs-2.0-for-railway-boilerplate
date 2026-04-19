@@ -140,7 +140,12 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     else delete m.faq
     if (showGifts) m.bundle_gifts = JSON.stringify(gifts.filter(g => g.name))
     else delete m.bundle_gifts
-    if (!m.page_content || !m.page_content.trim()) delete m.page_content
+    // Keep page_content unless explicitly cleared — never auto-delete it
+    if (overrides.page_content !== undefined) {
+      if (!overrides.page_content.trim()) delete m.page_content
+    } else if (!m.page_content || !m.page_content.trim()) {
+      delete m.page_content
+    }
     return m
   }
 
@@ -167,6 +172,8 @@ const ProductContentWidget = ({ data }: { data: any }) => {
 
   const hasPageContent = Boolean(meta.page_content && meta.page_content.trim())
   const handlePageBuilderSave = async (content: string) => {
+    // Update meta state first so subsequent saves don't overwrite page_content
+    setMeta(prev => ({ ...prev, page_content: content }))
     await save({ page_content: content })
     setBuilderOpen(false)
   }
