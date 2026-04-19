@@ -48,9 +48,9 @@ function VideoSection({ videoUrl }: { videoUrl: string }) {
     : videoUrl
 
   return (
-    <div className="py-12 bg-gray-50">
+    <div className="py-8 sm:py-12 bg-gray-50">
       <div className="max-w-4xl mx-auto px-4">
-        <h2 className="text-2xl font-extrabold text-center text-gray-900 mb-6">
+        <h2 className="text-xl sm:text-2xl font-extrabold text-center text-gray-900 mb-4 sm:mb-6">
           🎬 Xem sản phẩm hoạt động thực tế
         </h2>
         <div className="relative aspect-video rounded-xl overflow-hidden shadow-lg">
@@ -83,9 +83,9 @@ function PainSolutionSection({ product }: { product: HttpTypes.StoreProduct }) {
   if (!pains.length && !solutions.length) return null
 
   return (
-    <div className="py-12 bg-white">
+    <div className="py-8 sm:py-12 bg-white">
       <div className="max-w-4xl mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
           {pains.length > 0 && (
             <div className="bg-red-50 rounded-xl p-6 border border-red-100">
               <h3 className="font-extrabold text-lg text-red-700 mb-4">😤 Bạn có đang gặp?</h3>
@@ -130,10 +130,10 @@ function BenefitsSection({ product }: { product: HttpTypes.StoreProduct }) {
   if (!benefits.length) return null
 
   return (
-    <div className="py-12 bg-blue-950 text-white">
+    <div className="py-8 sm:py-12 bg-blue-950 text-white">
       <div className="max-w-5xl mx-auto px-4">
-        <h2 className="text-2xl font-extrabold text-center mb-10">Tại sao chọn {product.title}?</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <h2 className="text-xl sm:text-2xl font-extrabold text-center mb-6 sm:mb-10">Tại sao chọn {product.title}?</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
           {benefits.map((b, i) => (
             <div key={i} className="text-center">
               <div className="text-4xl mb-3">{b.icon}</div>
@@ -196,10 +196,10 @@ function ReviewsSection({ product }: { product: HttpTypes.StoreProduct }) {
   }
 
   return (
-    <div className="py-12 bg-white">
+    <div className="py-8 sm:py-12 bg-white">
       <div className="max-w-4xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-extrabold text-gray-900">💬 Khách hàng nói gì?</h2>
+        <div className="flex items-center justify-between mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">💬 Khách hàng nói gì?</h2>
           <div className="flex items-center gap-2">
             <span className="text-3xl font-black text-orange-500">4.8</span>
             <div>
@@ -246,9 +246,9 @@ function FAQSection({ product }: { product: HttpTypes.StoreProduct }) {
   }
 
   return (
-    <div className="py-12 bg-gray-50">
+    <div className="py-8 sm:py-12 bg-gray-50">
       <div className="max-w-3xl mx-auto px-4">
-        <h2 className="text-2xl font-extrabold text-gray-900 mb-8 text-center">❓ Câu hỏi thường gặp</h2>
+        <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 mb-6 sm:mb-8 text-center">❓ Câu hỏi thường gặp</h2>
         <div className="space-y-4">
           {faqs.map((faq, i) => (
             <div key={i} className="bg-white rounded-xl p-5 border border-gray-200">
@@ -265,10 +265,10 @@ function FAQSection({ product }: { product: HttpTypes.StoreProduct }) {
 // Section: Final CTA
 function FinalCTA({ product, region }: { product: HttpTypes.StoreProduct; region: HttpTypes.StoreRegion }) {
   return (
-    <div className="py-12 bg-gradient-to-r from-blue-950 to-blue-900 text-white">
+    <div className="py-8 sm:py-12 bg-gradient-to-r from-blue-950 to-blue-900 text-white">
       <div className="max-w-2xl mx-auto px-4 text-center">
-        <h2 className="text-2xl font-extrabold mb-2">{product.title}</h2>
-        <p className="text-blue-200 mb-6">Đừng bỏ lỡ — Còn hàng có hạn</p>
+        <h2 className="text-xl sm:text-2xl font-extrabold mb-2">{product.title}</h2>
+        <p className="text-blue-200 mb-4 sm:mb-6">Đừng bỏ lỡ — Còn hàng có hạn</p>
         <Suspense fallback={
           <LocalizedClientLink href="/cart" className="block bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-4 px-10 rounded-xl transition-colors">
             🛒 MUA NGAY

@@ -4,6 +4,7 @@ import { LocaleProvider } from "@lib/locale-context"
 import { localeFromCountryCode } from "@lib/i18n"
 import Footer from "@modules/layout/templates/footer"
 import Nav from "@modules/layout/templates/nav"
+import MobileBottomNav from "@modules/layout/components/mobile-bottom-nav"
 import { getBaseURL } from "@lib/util/env"
 
 export const metadata: Metadata = {
@@ -23,10 +24,11 @@ export default async function PageLayout({
   return (
     <LocaleProvider locale={locale}>
       <Nav countryCode={countryCode} />
-      <main className="pt-20">
+      <main className="pt-16 sm:pt-20 pb-16 sm:pb-0">
         {children}
       </main>
       <Footer countryCode={countryCode} />
+      <MobileBottomNav />
     </LocaleProvider>
   )
 }
