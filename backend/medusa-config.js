@@ -128,11 +128,6 @@ const medusaConfig = {
       resolve: '@medusajs/payment',
       options: {
         providers: [
-          // Manual payment for COD
-          {
-            resolve: '@medusajs/payment-manual',
-            id: 'manual',
-          },
           // Sepay for QR payments
           ...(SEPAY_ACCOUNT_NUMBER && SEPAY_BANK ? [{
             resolve: './src/modules/sepay-payment',
