@@ -614,6 +614,16 @@ export default function ProductPageBuilder({
       }
 
       editorRef.current = editor
+      // GrapesJS wraps blocks panel in overflow:hidden — override it
+      setTimeout(() => {
+        const el = document.querySelector('#product-page-builder-blocks')
+        if (el?.parentElement) {
+          const p = el.parentElement as HTMLElement
+          p.style.overflow = 'visible'
+          p.style.height = 'auto'
+          p.style.maxHeight = 'none'
+        }
+      }, 300)
       setReady(true)
       setLoading(false)
     }
