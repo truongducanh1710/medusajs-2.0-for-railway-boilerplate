@@ -159,7 +159,7 @@ export default function BundleSelector({ product, region }: Props) {
                 </div>
               )}
 
-              <div className="p-3.5 flex items-center gap-3">
+              <div className="p-3 sm:p-3.5 flex items-center gap-2 sm:gap-3">
                 <div
                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                     isSelected ? "border-blue-600" : "border-gray-300"
@@ -232,7 +232,7 @@ export default function BundleSelector({ product, region }: Props) {
         <button
           onClick={handleAdd}
           disabled={adding || added}
-          className={`w-full py-4 rounded-xl font-black text-lg tracking-wide transition-all ${
+          className={`w-full py-3 sm:py-4 rounded-xl font-black text-base sm:text-lg tracking-wide transition-all ${
             added
               ? "bg-green-500 text-white"
               : "bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98]"
@@ -245,31 +245,20 @@ export default function BundleSelector({ product, region }: Props) {
             : "🛒 THÊM VÀO GIỎ HÀNG"}
         </button>
 
-        <div className="flex justify-around items-center pt-1">
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-2xl">⭐</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">
-              4.8/5<br />Đánh giá
-            </span>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-2xl">🔄</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">
-              Đổi trả<br />7 ngày
-            </span>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-2xl">🇻🇳</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">
-              Hàng<br />Chính hãng
-            </span>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-2xl">🔒</span>
-            <span className="text-[10px] text-gray-500 font-semibold text-center">
-              Thanh toán<br />An toàn
-            </span>
-          </div>
+        <div className="grid grid-cols-4 gap-1 pt-1">
+          {[
+            { icon: "⭐", line1: "4.8/5", line2: "Đánh giá" },
+            { icon: "🔄", line1: "Đổi trả", line2: "7 ngày" },
+            { icon: "🇻🇳", line1: "Hàng", line2: "Chính hãng" },
+            { icon: "🔒", line1: "Thanh toán", line2: "An toàn" },
+          ].map((b) => (
+            <div key={b.line1} className="flex flex-col items-center gap-0.5">
+              <span className="text-xl sm:text-2xl">{b.icon}</span>
+              <span className="text-[10px] text-gray-500 font-semibold text-center leading-tight">
+                {b.line1}<br />{b.line2}
+              </span>
+            </div>
+          ))}
         </div>
 
       </div>

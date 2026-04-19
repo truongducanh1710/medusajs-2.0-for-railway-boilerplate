@@ -27,11 +27,11 @@ function TrustBar() {
   return (
     <div className="bg-orange-50 border-y border-orange-100 py-3">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 text-sm font-medium text-gray-700">
-          <span>📦 15.000+ đơn đã bán</span>
-          <span>⭐ 4.8/5 đánh giá</span>
-          <span>🚀 Giao trong 1-3 ngày</span>
-          <span>💰 Hoàn tiền nếu không hài lòng</span>
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:justify-center gap-x-4 sm:gap-x-8 gap-y-2 text-xs sm:text-sm font-medium text-gray-700">
+          <span className="text-center">📦 15.000+ đơn đã bán</span>
+          <span className="text-center">⭐ 4.8/5 đánh giá</span>
+          <span className="text-center">🚀 Giao trong 1-3 ngày</span>
+          <span className="text-center">💰 Hoàn tiền nếu không hài lòng</span>
         </div>
       </div>
     </div>
@@ -166,8 +166,8 @@ function SpecsSection({ product }: { product: HttpTypes.StoreProduct }) {
         <h2 className="text-xl font-extrabold text-gray-900 mb-6">📋 Thông số kỹ thuật</h2>
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {specs.map((spec, i) => (
-            <div key={i} className={`flex ${i % 2 === 0 ? "bg-white" : "bg-gray-50"} px-6 py-3`}>
-              <span className="w-40 text-sm font-semibold text-gray-500">{spec.label}</span>
+            <div key={i} className={`flex flex-col sm:flex-row ${i % 2 === 0 ? "bg-white" : "bg-gray-50"} px-4 sm:px-6 py-3 gap-0.5 sm:gap-0`}>
+              <span className="w-full sm:w-36 text-xs sm:text-sm font-semibold text-gray-500">{spec.label}</span>
               <span className="text-sm text-gray-900 font-medium">{spec.value}</span>
             </div>
           ))}
@@ -208,7 +208,7 @@ function ReviewsSection({ product }: { product: HttpTypes.StoreProduct }) {
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           {reviews.map((r, i) => (
             <div key={i} className="bg-gray-50 rounded-xl p-5 border border-gray-100">
               <div className="text-orange-400 text-sm mb-2">{"★".repeat(r.rating)}</div>
@@ -310,8 +310,8 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       </div>
 
       {/* HERO - 2 col */}
-      <div className="max-w-7xl mx-auto px-4 py-8" data-testid="product-container">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+      <div className="max-w-7xl mx-auto px-4 py-4 sm:py-8" data-testid="product-container">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
           {/* Left: Gallery */}
           <div className="lg:sticky lg:top-24 lg:self-start">
             <ImageGallery images={product?.images || []} />
@@ -339,13 +339,13 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             {/* Trust badges inline */}
             <div className="grid grid-cols-3 gap-2">
               {[
-                { icon: "✅", text: "Chính hãng 100%" },
+                { icon: "✅", text: "Chính hãng" },
                 { icon: "🔄", text: "Đổi trả 7 ngày" },
                 { icon: "🚚", text: "Ship từ 500K" },
               ].map((b) => (
                 <div key={b.text} className="flex flex-col items-center bg-gray-50 rounded-lg p-2 text-center">
-                  <span className="text-lg">{b.icon}</span>
-                  <span className="text-xs text-gray-600 font-medium mt-1">{b.text}</span>
+                  <span className="text-base sm:text-lg">{b.icon}</span>
+                  <span className="text-[11px] sm:text-xs text-gray-600 font-medium mt-1 leading-tight">{b.text}</span>
                 </div>
               ))}
             </div>
@@ -354,10 +354,10 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             <BundleSelector product={product} region={region} />
 
             {/* Delivery info */}
-            <div className="bg-blue-50 rounded-xl p-4 text-sm space-y-2">
-              <div className="flex gap-2"><span>📦</span><span><strong>Giao hàng:</strong> Nội thành 1-2 ngày, tỉnh 2-4 ngày</span></div>
-              <div className="flex gap-2"><span>🔒</span><span><strong>Thanh toán:</strong> COD, chuyển khoản, QR SePay</span></div>
-              <div className="flex gap-2"><span>🛡️</span><span><strong>Bảo hành:</strong> {meta(product, "bao_hanh") || "12 tháng"}</span></div>
+            <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Giao hàng:</strong> Nội thành 1-2 ngày, tỉnh 2-4 ngày</span></div>
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">🔒</span><span><strong>Thanh toán:</strong> COD, chuyển khoản, QR SePay</span></div>
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">🛡️</span><span><strong>Bảo hành:</strong> {meta(product, "bao_hanh") || "12 tháng"}</span></div>
             </div>
           </div>
         </div>
