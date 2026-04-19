@@ -1,5 +1,6 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
+import ProductPageBuilder from "../components/product-page-builder"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ type Meta = {
   reviews?: string
   faq?: string
   bundle_gifts?: string
+  page_content?: string
   [key: string]: string | undefined
 }
 
@@ -86,6 +88,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
+  const [builderOpen, setBuilderOpen] = useState(false)
 
   // Sections toggle state
   const [showVideo, setShowVideo] = useState(false)
@@ -121,8 +124,8 @@ const ProductContentWidget = ({ data }: { data: any }) => {
 
   const setM = (key: string, val: string) => setMeta(prev => ({ ...prev, [key]: val }))
 
-  const buildMeta = (): Meta => {
-    const m: Meta = { ...meta }
+  const buildMeta = (overrides: Partial<Meta> = {}): Meta => {
+    const m: Meta = { ...meta, ...overrides }
     if (!showVideo) { delete m.video_url }
     if (!showPain) { delete m.pain_1; delete m.pain_2; delete m.pain_3; delete m.solution_1; delete m.solution_2; delete m.solution_3 }
     if (!showBenefits) {
@@ -137,14 +140,15 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     else delete m.faq
     if (showGifts) m.bundle_gifts = JSON.stringify(gifts.filter(g => g.name))
     else delete m.bundle_gifts
+    if (!m.page_content || !m.page_content.trim()) delete m.page_content
     return m
   }
 
-  const save = async () => {
+  const save = async (overrides: Partial<Meta> = {}) => {
     setSaving(true)
     setError("")
     try {
-      const finalMeta = buildMeta()
+      const finalMeta = buildMeta(overrides)
       const res = await fetch(`/admin/products/${product.id}`, {
         method: "POST",
         credentials: "include",
@@ -161,6 +165,11 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     }
   }
 
+  const hasPageContent = Boolean(meta.page_content && meta.page_content.trim())
+  const handlePageBuilderSave = async (content: string) => {
+    await save({ page_content: content })
+    setBuilderOpen(false)
+  }
   const s: React.CSSProperties = { fontFamily: "Inter, sans-serif" }
 
   return (
@@ -178,6 +187,44 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {saved && <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>✓ Đã lưu!</span>}
           {error && <span style={{ fontSize: 12, color: "#ef4444" }}>{error}</span>}
+          {hasPageContent && (
+            <span style={{ fontSize: 12, color: "#f97316", fontWeight: 600 }}>
+              🎨 Page Builder
+            </span>
+          )}
+          <button
+            onClick={() => setBuilderOpen(true)}
+            style={{
+              background: "#111827",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 14px",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            🎨 Mở Page Builder
+          </button>
+          {hasPageContent && (
+            <button
+              onClick={() => save({ page_content: "" })}
+              disabled={saving}
+              style={{
+                background: "#fff7ed",
+                color: "#c2410c",
+                border: "1px solid #fdba74",
+                borderRadius: 8,
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              Xóa Page Builder
+            </button>
+          )}
           <button
             onClick={save}
             disabled={saving}
@@ -320,6 +367,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           + Thêm quà tặng
         </button>
       </Toggle>
+
+      <ProductPageBuilder
+        open={builderOpen}
+        productTitle={product.title || "Sản phẩm"}
+        initialContent={meta.page_content}
+        onClose={() => setBuilderOpen(false)}
+        onSave={handlePageBuilderSave}
+      />
 
       {/* Save button bottom */}
       <div style={{ textAlign: "right", marginTop: 8 }}>

@@ -9,6 +9,7 @@ import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-relat
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ComboBundle from "@modules/products/components/combo-bundle"
 import BundleSelector from "@modules/products/components/bundle-selector"
+import ProductPageContent from "@modules/products/components/product-page-content"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -290,6 +291,10 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
   if (!product || !product.id) return notFound()
 
   const videoUrl = meta(product, "video_url")
+  const pageContent =
+    typeof product.metadata?.page_content === "string"
+      ? (product.metadata.page_content as string)
+      : ""
 
   return (
     <div className="bg-white">
@@ -372,36 +377,42 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
         </div>
       )}
 
-      {/* Video */}
-      <VideoSection videoUrl={videoUrl} />
+      {pageContent ? (
+        <ProductPageContent content={pageContent} />
+      ) : (
+        <>
+          {/* Video */}
+          <VideoSection videoUrl={videoUrl} />
 
-      {/* Pain → Solution */}
-      <PainSolutionSection product={product} />
+          {/* Pain → Solution */}
+          <PainSolutionSection product={product} />
 
-      {/* Benefits */}
-      <BenefitsSection product={product} />
+          {/* Benefits */}
+          <BenefitsSection product={product} />
 
-      {/* Description đầy đủ */}
-      {product.description && (
-        <div className="py-12 bg-white">
-          <div className="max-w-4xl mx-auto px-4">
-            <h2 className="text-2xl font-extrabold text-gray-900 mb-6">📖 Mô tả sản phẩm</h2>
-            <div
-              className="prose prose-gray max-w-none text-gray-700 leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: product.description }}
-            />
-          </div>
-        </div>
+          {/* Description đầy đủ */}
+          {product.description && (
+            <div className="py-12 bg-white">
+              <div className="max-w-4xl mx-auto px-4">
+                <h2 className="text-2xl font-extrabold text-gray-900 mb-6">📖 Mô tả sản phẩm</h2>
+                <div
+                  className="prose prose-gray max-w-none text-gray-700 leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: product.description }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Specs */}
+          <SpecsSection product={product} />
+
+          {/* Reviews */}
+          <ReviewsSection product={product} />
+
+          {/* FAQ */}
+          <FAQSection product={product} />
+        </>
       )}
-
-      {/* Specs */}
-      <SpecsSection product={product} />
-
-      {/* Reviews */}
-      <ReviewsSection product={product} />
-
-      {/* FAQ */}
-      <FAQSection product={product} />
 
       {/* Final CTA */}
       <FinalCTA product={product} region={region} />
