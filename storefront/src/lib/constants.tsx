@@ -27,10 +27,13 @@ export const paymentInfoMap: Record<
     icon: <PayPal />,
   },
   pp_system_default: {
-    title: "Manual Payment",
+    title: "Thanh toán khi nhận hàng (COD)",
     icon: <CreditCard />,
   },
-  // Add more payment providers here
+  pp_sepay_sepay: {
+    title: "Chuyển khoản QR SePay",
+    icon: <CreditCard />,
+  },
 }
 
 // This only checks if it is native stripe for card payments, it ignores the other stripe-based providers
