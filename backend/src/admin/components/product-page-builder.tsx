@@ -124,8 +124,8 @@ const blocks: BuilderBlock[] = [
         .pvb-hero .btns{display:flex;flex-wrap:wrap;gap:10px}
         .pvb-hero .btn-white{background:#fff;color:#ea580c;padding:13px 22px;border-radius:999px;font-weight:800;text-decoration:none;font-size:15px}
         .pvb-hero .btn-outline{border:1px solid rgba(255,255,255,0.5);color:#fff;padding:13px 22px;border-radius:999px;font-weight:800;text-decoration:none;font-size:15px}
-        .pvb-hero .img-box{margin-top:24px;min-height:200px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:rgba(255,255,255,0.8)}
-        @media(min-width:768px){.pvb-hero{padding:64px 24px}.pvb-hero .inner{display:grid;grid-template-columns:1.1fr 0.9fr;gap:32px;align-items:center}.pvb-hero .img-box{margin-top:0;min-height:320px}}
+        .pvb-hero img.img{width:100%;height:100%;min-height:200px;border-radius:20px;object-fit:cover;display:block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2)}
+        @media(min-width:768px){.pvb-hero{padding:64px 24px}.pvb-hero .inner{display:grid;grid-template-columns:1.1fr 0.9fr;gap:32px;align-items:center}.pvb-hero img.img{min-height:320px}}
       </style>
       <section class=”pvb-hero”>
         <div class=”inner”>
@@ -138,7 +138,7 @@ const blocks: BuilderBlock[] = [
               <a href=”#” class=”btn-outline”>Xem chi tiết</a>
             </div>
           </div>
-          <div class=”img-box”>🖼️ Hero Image</div>
+          <img class=”img” src=”https://placehold.co/900x720/fef3c7/7c2d12?text=Hero+Image” alt=”Hero Image” />
         </div>
       </section>
     `,
@@ -151,17 +151,17 @@ const blocks: BuilderBlock[] = [
       <style>
         .pvb-itl{padding:40px 16px;background:#fff}
         .pvb-itl .inner{max-width:1100px;margin:0 auto}
-        .pvb-itl .img{min-height:220px;border-radius:20px;background:linear-gradient(135deg,#e5e7eb,#cbd5e1);display:flex;align-items:center;justify-content:center;color:#475569;font-weight:700;font-size:15px;margin-bottom:24px}
+        .pvb-itl img.img{width:100%;aspect-ratio:5/4;border-radius:20px;object-fit:cover;display:block;margin-bottom:24px;background:linear-gradient(135deg,#e5e7eb,#cbd5e1)}
         .pvb-itl h2{font-size:clamp(22px,5vw,32px);line-height:1.1;margin:0 0 14px;font-weight:900;color:#111827}
         .pvb-itl p{font-size:16px;line-height:1.8;color:#4b5563;margin:0 0 18px}
         .pvb-itl ul{margin:0 0 22px;padding:0;list-style:none;display:grid;gap:10px}
         .pvb-itl li{display:flex;gap:10px;align-items:flex-start;color:#374151;font-size:15px}
         .pvb-itl .btn{display:inline-flex;align-items:center;background:#f97316;color:#fff;padding:13px 22px;border-radius:14px;font-weight:800;text-decoration:none;font-size:15px}
-        @media(min-width:640px){.pvb-itl{padding:56px 24px}.pvb-itl .inner{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}.pvb-itl .img{min-height:360px;margin-bottom:0}}
+        @media(min-width:640px){.pvb-itl{padding:56px 24px}.pvb-itl .inner{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}.pvb-itl img.img{margin-bottom:0}}
       </style>
       <section class=”pvb-itl”>
         <div class=”inner”>
-          <div class=”img”>📸 Ảnh sản phẩm</div>
+          <img class=”img” src=”https://placehold.co/900x720/e5e7eb/475569?text=Click+de+doi+anh” alt=”Ảnh sản phẩm” />
           <div>
             <h2>Tiêu đề nội dung nổi bật</h2>
             <p>Trình bày lợi ích, giải pháp hoặc câu chuyện thương hiệu theo cấu trúc dễ đọc.</p>
@@ -184,13 +184,13 @@ const blocks: BuilderBlock[] = [
       <style>
         .pvb-itr{padding:40px 16px;background:#f9fafb}
         .pvb-itr .inner{max-width:1100px;margin:0 auto}
-        .pvb-itr .img{min-height:220px;border-radius:20px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);display:flex;align-items:center;justify-content:center;color:#1d4ed8;font-weight:700;font-size:15px;margin-top:24px}
+        .pvb-itr img.img{width:100%;aspect-ratio:5/4;border-radius:20px;object-fit:cover;display:block;margin-top:24px;background:linear-gradient(135deg,#dbeafe,#bfdbfe)}
         .pvb-itr h2{font-size:clamp(22px,5vw,32px);line-height:1.1;margin:0 0 14px;font-weight:900;color:#111827}
         .pvb-itr p{font-size:16px;line-height:1.8;color:#4b5563;margin:0 0 18px}
         .pvb-itr ul{margin:0 0 22px;padding:0;list-style:none;display:grid;gap:10px}
         .pvb-itr li{display:flex;gap:10px;align-items:flex-start;color:#374151;font-size:15px}
         .pvb-itr .btn{display:inline-flex;align-items:center;background:#111827;color:#fff;padding:13px 22px;border-radius:14px;font-weight:800;text-decoration:none;font-size:15px}
-        @media(min-width:640px){.pvb-itr{padding:56px 24px}.pvb-itr .inner{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}.pvb-itr .img{min-height:360px;margin-top:0}}
+        @media(min-width:640px){.pvb-itr{padding:56px 24px}.pvb-itr .inner{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}.pvb-itr img.img{margin-top:0}}
       </style>
       <section class=”pvb-itr”>
         <div class=”inner”>
@@ -204,7 +204,7 @@ const blocks: BuilderBlock[] = [
             </ul>
             <a href=”#” class=”btn”>Đặt hàng ngay</a>
           </div>
-          <div class=”img”>📸 Ảnh minh hoạ</div>
+          <img class=”img” src=”https://placehold.co/900x720/bfdbfe/1d4ed8?text=Click+de+doi+anh” alt=”Ảnh minh hoạ” />
         </div>
       </section>
     `,
@@ -217,24 +217,25 @@ const blocks: BuilderBlock[] = [
       <style>
         .pvb-how{padding:40px 16px;background:#fff}
         .pvb-how .inner{max-width:1100px;margin:0 auto}
-        .pvb-how h2{font-size:clamp(22px,5vw,32px);font-weight:900;margin:0 0 8px;text-align:center;color:#111827}
-        .pvb-how .sub{text-align:center;color:#6b7280;margin:0 0 24px;font-size:15px}
-        .pvb-how .steps{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-        .pvb-how .step{background:#fff7ed;border:1px solid #fed7aa;border-radius:18px;padding:18px;text-align:center}
-        .pvb-how .num{width:48px;height:48px;border-radius:50%;background:#f97316;color:#fff;font-weight:900;font-size:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
-        .pvb-how h3{margin:0 0 6px;font-size:16px;font-weight:900;color:#111827}
-        .pvb-how p{margin:0;color:#6b7280;font-size:13px;line-height:1.6}
-        @media(min-width:640px){.pvb-how{padding:56px 24px}.pvb-how .steps{grid-template-columns:repeat(4,1fr);gap:18px}.pvb-how .step{padding:22px}.pvb-how h3{font-size:18px}}
+        .pvb-how{padding:40px 16px;background:#fff}
+        .pvb-how .inner{max-width:1100px;margin:0 auto}
+        .pvb-how h2{font-size:26px;font-weight:900;margin:0 0 8px;text-align:center;color:#111827}
+        .pvb-how .sub{text-align:center;color:#6b7280;margin:0 0 20px;font-size:14px}
+        .pvb-how .steps{display:flex;flex-direction:column;gap:12px}
+        .pvb-how .step{background:#fff7ed;border:1px solid #fed7aa;border-radius:16px;padding:16px 20px;display:flex;align-items:center;gap:16px;text-align:left}
+        .pvb-how .num{width:44px;height:44px;min-width:44px;border-radius:50%;background:#f97316;color:#fff;font-weight:900;font-size:18px;display:flex;align-items:center;justify-content:center}
+        .pvb-how h3{margin:0 0 2px;font-size:15px;font-weight:900;color:#111827}
+        .pvb-how p{margin:0;color:#6b7280;font-size:13px;line-height:1.5}
       </style>
       <section class=”pvb-how”>
         <div class=”inner”>
           <h2>4 bước sử dụng đơn giản</h2>
           <p class=”sub”>Dẫn khách hàng từ mua hàng tới sử dụng sản phẩm.</p>
           <div class=”steps”>
-            <div class=”step”><div class=”num”>1</div><h3>Mở hộp</h3><p>Kiểm tra phụ kiện và hướng dẫn đi kèm.</p></div>
-            <div class=”step”><div class=”num”>2</div><h3>Lắp đặt</h3><p>Lắp theo đúng hướng dẫn trong vài phút.</p></div>
-            <div class=”step”><div class=”num”>3</div><h3>Sử dụng</h3><p>Vận hành hằng ngày để tối ưu trải nghiệm.</p></div>
-            <div class=”step”><div class=”num”>4</div><h3>Bảo quản</h3><p>Vệ sinh và bảo quản để dùng bền lâu.</p></div>
+            <div class=”step”><div class=”num”>1</div><div><h3>Mở hộp</h3><p>Kiểm tra phụ kiện và hướng dẫn đi kèm trong hộp.</p></div></div>
+            <div class=”step”><div class=”num”>2</div><div><h3>Lắp đặt</h3><p>Lắp theo đúng hướng dẫn, hoàn thành trong vài phút.</p></div></div>
+            <div class=”step”><div class=”num”>3</div><div><h3>Sử dụng</h3><p>Vận hành hằng ngày để tối ưu trải nghiệm.</p></div></div>
+            <div class=”step”><div class=”num”>4</div><div><h3>Bảo quản</h3><p>Vệ sinh và bảo quản để dùng bền lâu.</p></div></div>
           </div>
         </div>
       </section>
@@ -525,20 +526,20 @@ const blocks: BuilderBlock[] = [
         .pvb-gal .inner{max-width:1100px;margin:0 auto}
         .pvb-gal h2{font-size:clamp(22px,5vw,32px);font-weight:900;margin:0 0 18px;text-align:center;color:#111827}
         .pvb-gal .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-        .pvb-gal .img{aspect-ratio:1/1;border-radius:14px;background:linear-gradient(135deg,#e5e7eb,#cbd5e1);display:flex;align-items:center;justify-content:center;color:#475569;font-weight:700;font-size:13px}
+        .pvb-gal img.img{width:100%;aspect-ratio:1/1;border-radius:14px;object-fit:cover;display:block;background:linear-gradient(135deg,#e5e7eb,#cbd5e1)}
         @media(min-width:480px){.pvb-gal .grid{grid-template-columns:repeat(3,1fr)}}
-        @media(min-width:640px){.pvb-gal{padding:56px 24px}.pvb-gal .grid{gap:14px}.pvb-gal .img{border-radius:18px;font-size:15px}}
+        @media(min-width:640px){.pvb-gal{padding:56px 24px}.pvb-gal .grid{gap:14px}}
       </style>
       <section class=”pvb-gal”>
         <div class=”inner”>
           <h2>Gallery ảnh sản phẩm</h2>
           <div class=”grid”>
-            <div class=”img”>Ảnh 1</div>
-            <div class=”img”>Ảnh 2</div>
-            <div class=”img”>Ảnh 3</div>
-            <div class=”img”>Ảnh 4</div>
-            <div class=”img”>Ảnh 5</div>
-            <div class=”img”>Ảnh 6</div>
+            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=1” alt=”Ảnh 1” />
+            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=2” alt=”Ảnh 2” />
+            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=3” alt=”Ảnh 3” />
+            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=4” alt=”Ảnh 4” />
+            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=5” alt=”Ảnh 5” />
+            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=6” alt=”Ảnh 6” />
           </div>
         </div>
       </section>
@@ -566,6 +567,7 @@ export default function ProductPageBuilder({
     const script = document.createElement("script")
     script.src = "https://unpkg.com/grapesjs@0.21.7/dist/grapes.min.js"
     script.async = true
+    let injectedBlockStyle: HTMLStyleElement | null = null
 
     const initEditor = () => {
       const grapesjs = (window as any).grapesjs
@@ -582,6 +584,19 @@ export default function ProductPageBuilder({
           blocks,
         },
       })
+      injectedBlockStyle = document.createElement("style")
+      injectedBlockStyle.setAttribute("data-product-page-builder-blocks", "true")
+      injectedBlockStyle.textContent = `
+        #product-page-builder-blocks,
+        #product-page-builder-blocks .gjs-blocks-c,
+        #product-page-builder-blocks .gjs-blocks {
+          overflow: visible !important;
+        }
+        #product-page-builder-blocks .gjs-block {
+          margin-bottom: 8px;
+        }
+      `
+      document.head.appendChild(injectedBlockStyle)
 
       if (initialContent && initialContent !== "{}") {
         try {
@@ -620,6 +635,7 @@ export default function ProductPageBuilder({
     document.head.appendChild(script)
 
     return () => {
+      injectedBlockStyle?.remove()
       editorRef.current?.destroy()
       editorRef.current = null
       setReady(false)
@@ -677,12 +693,12 @@ export default function ProductPageBuilder({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr]">
-          <aside className="border-r border-gray-200 bg-gray-50 p-3">
+        <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr]">
+          <aside className="border-r border-gray-200 bg-gray-50 p-3 overflow-y-auto">
             <div className="mb-3 rounded-xl bg-white p-3 text-sm text-gray-600 border border-gray-200">
               Kéo block sang canvas. Nếu đã có `page_content`, editor sẽ nạp nội dung cũ.
             </div>
-            <div id="product-page-builder-blocks" className="space-y-2" />
+            <div id="product-page-builder-blocks" className="overflow-visible space-y-2" />
           </aside>
 
           <div className="min-h-0 bg-white">
