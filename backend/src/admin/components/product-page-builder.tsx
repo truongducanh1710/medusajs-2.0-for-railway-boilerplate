@@ -20,9 +20,9 @@ type BuilderBlock = {
 const blocks: BuilderBlock[] = [
   // ─── SECTIONS ───────────────────────────────────────────────────────────────
   {
-    id: “video-demo”,
-    label: “🎬 Video Demo”,
-    category: “Sections”,
+    id: "video-demo",
+    label: "🎬 Video Demo",
+    category: "Sections",
     content: `
       <style>
         .pvb-video{padding:40px 16px;background:#fff}
@@ -32,20 +32,20 @@ const blocks: BuilderBlock[] = [
         .pvb-video iframe{width:100%;height:100%;border:0}
         @media(min-width:768px){.pvb-video{padding:56px 24px}.pvb-video .frame{border-radius:20px}}
       </style>
-      <section class=”pvb-video”>
-        <div class=”inner”>
+      <section class="pvb-video">
+        <div class="inner">
           <h2>🎬 Video Demo sản phẩm</h2>
-          <div class=”frame”>
-            <iframe src=”https://www.youtube.com/embed/dQw4w9WgXcQ” allowfullscreen></iframe>
+          <div class="frame">
+            <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" allowfullscreen></iframe>
           </div>
         </div>
       </section>
     `,
   },
   {
-    id: “pain-solution”,
-    label: “😤 Pain / Solution”,
-    category: “Sections”,
+    id: "pain-solution",
+    label: "😤 Pain / Solution",
+    category: "Sections",
     content: `
       <style>
         .pvb-ps{padding:40px 16px;background:#f9fafb}
@@ -59,9 +59,9 @@ const blocks: BuilderBlock[] = [
         .pvb-ps ul{margin:0;padding-left:18px;line-height:1.9;color:#4b5563;font-size:15px}
         @media(min-width:640px){.pvb-ps{padding:56px 24px}.pvb-ps .inner{grid-template-columns:1fr 1fr;gap:24px}.pvb-ps h3{font-size:24px}}
       </style>
-      <section class=”pvb-ps”>
-        <div class=”inner”>
-          <div class=”box pain”>
+      <section class="pvb-ps">
+        <div class="inner">
+          <div class="box pain">
             <h3>😤 Vấn đề khách hàng gặp</h3>
             <ul>
               <li>Chảo dễ dính, khó vệ sinh</li>
@@ -69,7 +69,7 @@ const blocks: BuilderBlock[] = [
               <li>Dụng cụ nhanh hư, tốn tiền thay</li>
             </ul>
           </div>
-          <div class=”box solution”>
+          <div class="box solution">
             <h3>✅ Giải pháp của chúng tôi</h3>
             <ul>
               <li>Chống dính vượt trội, dễ lau chùi</li>
@@ -82,9 +82,9 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
-    id: “benefits-grid”,
-    label: “⭐ Benefits Grid”,
-    category: “Sections”,
+    id: "benefits-grid",
+    label: "⭐ Benefits Grid",
+    category: "Sections",
     content: `
       <style>
         .pvb-ben{padding:40px 16px;background:#fff}
@@ -97,23 +97,23 @@ const blocks: BuilderBlock[] = [
         .pvb-ben p{margin:0;color:#6b7280;font-size:13px}
         @media(min-width:640px){.pvb-ben{padding:56px 24px}.pvb-ben .grid{grid-template-columns:repeat(4,1fr);gap:18px}.pvb-ben .card{padding:20px}.pvb-ben .icon{font-size:32px}.pvb-ben h4{font-size:16px}}
       </style>
-      <section class=”pvb-ben”>
-        <div class=”inner”>
+      <section class="pvb-ben">
+        <div class="inner">
           <h2>Điểm nổi bật</h2>
-          <div class=”grid”>
-            <div class=”card”><div class=”icon”>🔥</div><h4>Chống dính</h4><p>Bề mặt dễ vệ sinh</p></div>
-            <div class=”card”><div class=”icon”>💧</div><h4>Tiết kiệm nước</h4><p>Rửa nhanh, gọn</p></div>
-            <div class=”card”><div class=”icon”>⚡</div><h4>Dùng bền</h4><p>Vật liệu chất lượng</p></div>
-            <div class=”card”><div class=”icon”>🛡️</div><h4>Bảo hành</h4><p>An tâm sử dụng</p></div>
+          <div class="grid">
+            <div class="card"><div class="icon">🔥</div><h4>Chống dính</h4><p>Bề mặt dễ vệ sinh</p></div>
+            <div class="card"><div class="icon">💧</div><h4>Tiết kiệm nước</h4><p>Rửa nhanh, gọn</p></div>
+            <div class="card"><div class="icon">⚡</div><h4>Dùng bền</h4><p>Vật liệu chất lượng</p></div>
+            <div class="card"><div class="icon">🛡️</div><h4>Bảo hành</h4><p>An tâm sử dụng</p></div>
           </div>
         </div>
       </section>
     `,
   },
   {
-    id: “hero-banner”,
-    label: “🖼️ Hero Banner”,
-    category: “Sections”,
+    id: "hero-banner",
+    label: "🖼️ Hero Banner",
+    category: "Sections",
     content: `
       <style>
         .pvb-hero{padding:40px 16px;background:linear-gradient(135deg,#f97316 0%,#ea580c 45%,#dc2626 100%);color:#fff}
@@ -127,26 +127,26 @@ const blocks: BuilderBlock[] = [
         .pvb-hero img.img{width:100%;height:100%;min-height:200px;border-radius:20px;object-fit:cover;display:block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2)}
         @media(min-width:768px){.pvb-hero{padding:64px 24px}.pvb-hero .inner{display:grid;grid-template-columns:1.1fr 0.9fr;gap:32px;align-items:center}.pvb-hero img.img{min-height:320px}}
       </style>
-      <section class=”pvb-hero”>
-        <div class=”inner”>
+      <section class="pvb-hero">
+        <div class="inner">
           <div>
-            <span class=”badge”>Bán chạy hôm nay</span>
+            <span class="badge">Bán chạy hôm nay</span>
             <h2>Tiêu đề nổi bật cho sản phẩm</h2>
             <p>Mô tả ngắn, mạnh mẽ để dẫn khách hàng tới hành động mua ngay.</p>
-            <div class=”btns”>
-              <a href=”#” class=”btn-white”>Mua ngay</a>
-              <a href=”#” class=”btn-outline”>Xem chi tiết</a>
+            <div class="btns">
+              <a href="#" class="btn-white">Mua ngay</a>
+              <a href="#" class="btn-outline">Xem chi tiết</a>
             </div>
           </div>
-          <img class=”img” src=”https://placehold.co/900x720/fef3c7/7c2d12?text=Hero+Image” alt=”Hero Image” />
+          <img class="img" src="https://placehold.co/900x720/fef3c7/7c2d12?text=Hero+Image" alt="Hero Image" />
         </div>
       </section>
     `,
   },
   {
-    id: “image-text-left”,
-    label: “📸 Ảnh trái + Text”,
-    category: “Sections”,
+    id: "image-text-left",
+    label: "📸 Ảnh trái + Text",
+    category: "Sections",
     content: `
       <style>
         .pvb-itl{padding:40px 16px;background:#fff}
@@ -159,9 +159,9 @@ const blocks: BuilderBlock[] = [
         .pvb-itl .btn{display:inline-flex;align-items:center;background:#f97316;color:#fff;padding:13px 22px;border-radius:14px;font-weight:800;text-decoration:none;font-size:15px}
         @media(min-width:640px){.pvb-itl{padding:56px 24px}.pvb-itl .inner{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}.pvb-itl img.img{margin-bottom:0}}
       </style>
-      <section class=”pvb-itl”>
-        <div class=”inner”>
-          <img class=”img” src=”https://placehold.co/900x720/e5e7eb/475569?text=Click+de+doi+anh” alt=”Ảnh sản phẩm” />
+      <section class="pvb-itl">
+        <div class="inner">
+          <img class="img" src="https://placehold.co/900x720/e5e7eb/475569?text=Click+de+doi+anh" alt="Ảnh sản phẩm" />
           <div>
             <h2>Tiêu đề nội dung nổi bật</h2>
             <p>Trình bày lợi ích, giải pháp hoặc câu chuyện thương hiệu theo cấu trúc dễ đọc.</p>
@@ -170,16 +170,16 @@ const blocks: BuilderBlock[] = [
               <li><span>✅</span><span>Điểm nhấn 2 của sản phẩm</span></li>
               <li><span>✅</span><span>Điểm nhấn 3 của sản phẩm</span></li>
             </ul>
-            <a href=”#” class=”btn”>Xem chi tiết</a>
+            <a href="#" class="btn">Xem chi tiết</a>
           </div>
         </div>
       </section>
     `,
   },
   {
-    id: “image-text-right”,
-    label: “📸 Text trái + Ảnh”,
-    category: “Sections”,
+    id: "image-text-right",
+    label: "📸 Text trái + Ảnh",
+    category: "Sections",
     content: `
       <style>
         .pvb-itr{padding:40px 16px;background:#f9fafb}
@@ -192,8 +192,8 @@ const blocks: BuilderBlock[] = [
         .pvb-itr .btn{display:inline-flex;align-items:center;background:#111827;color:#fff;padding:13px 22px;border-radius:14px;font-weight:800;text-decoration:none;font-size:15px}
         @media(min-width:640px){.pvb-itr{padding:56px 24px}.pvb-itr .inner{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}.pvb-itr img.img{margin-top:0}}
       </style>
-      <section class=”pvb-itr”>
-        <div class=”inner”>
+      <section class="pvb-itr">
+        <div class="inner">
           <div>
             <h2>Tiêu đề giải thích rõ ràng</h2>
             <p>Kể lợi ích trước, rồi đưa hình ảnh minh hoạ ở bên phải — tạo flow đọc tự nhiên.</p>
@@ -202,17 +202,17 @@ const blocks: BuilderBlock[] = [
               <li><span>⚡</span><span>Đẩy mạnh giá trị khác biệt</span></li>
               <li><span>🛡️</span><span>Tạo niềm tin trước khi mua</span></li>
             </ul>
-            <a href=”#” class=”btn”>Đặt hàng ngay</a>
+            <a href="#" class="btn">Đặt hàng ngay</a>
           </div>
-          <img class=”img” src=”https://placehold.co/900x720/bfdbfe/1d4ed8?text=Click+de+doi+anh” alt=”Ảnh minh hoạ” />
+          <img class="img" src="https://placehold.co/900x720/bfdbfe/1d4ed8?text=Click+de+doi+anh" alt="Ảnh minh hoạ" />
         </div>
       </section>
     `,
   },
   {
-    id: “how-to-use”,
-    label: “📋 Bước sử dụng”,
-    category: “Sections”,
+    id: "how-to-use",
+    label: "📋 Bước sử dụng",
+    category: "Sections",
     content: `
       <style>
         .pvb-how{padding:40px 16px;background:#fff}
@@ -227,24 +227,24 @@ const blocks: BuilderBlock[] = [
         .pvb-how h3{margin:0 0 2px;font-size:15px;font-weight:900;color:#111827}
         .pvb-how p{margin:0;color:#6b7280;font-size:13px;line-height:1.5}
       </style>
-      <section class=”pvb-how”>
-        <div class=”inner”>
+      <section class="pvb-how">
+        <div class="inner">
           <h2>4 bước sử dụng đơn giản</h2>
-          <p class=”sub”>Dẫn khách hàng từ mua hàng tới sử dụng sản phẩm.</p>
-          <div class=”steps”>
-            <div class=”step”><div class=”num”>1</div><div><h3>Mở hộp</h3><p>Kiểm tra phụ kiện và hướng dẫn đi kèm trong hộp.</p></div></div>
-            <div class=”step”><div class=”num”>2</div><div><h3>Lắp đặt</h3><p>Lắp theo đúng hướng dẫn, hoàn thành trong vài phút.</p></div></div>
-            <div class=”step”><div class=”num”>3</div><div><h3>Sử dụng</h3><p>Vận hành hằng ngày để tối ưu trải nghiệm.</p></div></div>
-            <div class=”step”><div class=”num”>4</div><div><h3>Bảo quản</h3><p>Vệ sinh và bảo quản để dùng bền lâu.</p></div></div>
+          <p class="sub">Dẫn khách hàng từ mua hàng tới sử dụng sản phẩm.</p>
+          <div class="steps">
+            <div class="step"><div class="num">1</div><div><h3>Mở hộp</h3><p>Kiểm tra phụ kiện và hướng dẫn đi kèm trong hộp.</p></div></div>
+            <div class="step"><div class="num">2</div><div><h3>Lắp đặt</h3><p>Lắp theo đúng hướng dẫn, hoàn thành trong vài phút.</p></div></div>
+            <div class="step"><div class="num">3</div><div><h3>Sử dụng</h3><p>Vận hành hằng ngày để tối ưu trải nghiệm.</p></div></div>
+            <div class="step"><div class="num">4</div><div><h3>Bảo quản</h3><p>Vệ sinh và bảo quản để dùng bền lâu.</p></div></div>
           </div>
         </div>
       </section>
     `,
   },
   {
-    id: “specs-table”,
-    label: “📋 Thông số kỹ thuật”,
-    category: “Sections”,
+    id: "specs-table",
+    label: "📋 Thông số kỹ thuật",
+    category: "Sections",
     content: `
       <style>
         .pvb-spec{padding:40px 16px;background:#f9fafb}
@@ -256,8 +256,8 @@ const blocks: BuilderBlock[] = [
         .pvb-spec td:last-child{color:#111827}
         @media(min-width:640px){.pvb-spec{padding:56px 24px}.pvb-spec table{font-size:15px}.pvb-spec td{padding:14px 18px}.pvb-spec td:first-child{width:34%}}
       </style>
-      <section class=”pvb-spec”>
-        <div class=”inner”>
+      <section class="pvb-spec">
+        <div class="inner">
           <h2>📋 Thông số kỹ thuật</h2>
           <table>
             <tbody>
@@ -273,9 +273,9 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
-    id: “reviews-cards”,
-    label: “💬 Reviews”,
-    category: “Sections”,
+    id: "reviews-cards",
+    label: "💬 Reviews",
+    category: "Sections",
     content: `
       <style>
         .pvb-rev{padding:40px 16px;background:#fff}
@@ -288,22 +288,22 @@ const blocks: BuilderBlock[] = [
         .pvb-rev strong{font-size:14px;color:#111827}
         @media(min-width:640px){.pvb-rev{padding:56px 24px}.pvb-rev .grid{grid-template-columns:repeat(3,1fr);gap:18px}}
       </style>
-      <section class=”pvb-rev”>
-        <div class=”inner”>
+      <section class="pvb-rev">
+        <div class="inner">
           <h2>💬 Khách hàng nói gì?</h2>
-          <div class=”grid”>
-            <div class=”card”><div class=”stars”>★★★★★</div><p>”Sản phẩm rất tốt, giao hàng nhanh, đóng gói cẩn thận!”</p><strong>Nguyễn Thị A — Hà Nội</strong></div>
-            <div class=”card”><div class=”stars”>★★★★★</div><p>”Chất lượng vượt mong đợi, sẽ mua lại lần sau!”</p><strong>Trần Văn B — TP.HCM</strong></div>
-            <div class=”card”><div class=”stars”>★★★★★</div><p>”Tư vấn nhiệt tình, sản phẩm đúng như mô tả!”</p><strong>Lê Thị C — Đà Nẵng</strong></div>
+          <div class="grid">
+            <div class="card"><div class="stars">★★★★★</div><p>"Sản phẩm rất tốt, giao hàng nhanh, đóng gói cẩn thận!"</p><strong>Nguyễn Thị A — Hà Nội</strong></div>
+            <div class="card"><div class="stars">★★★★★</div><p>"Chất lượng vượt mong đợi, sẽ mua lại lần sau!"</p><strong>Trần Văn B — TP.HCM</strong></div>
+            <div class="card"><div class="stars">★★★★★</div><p>"Tư vấn nhiệt tình, sản phẩm đúng như mô tả!"</p><strong>Lê Thị C — Đà Nẵng</strong></div>
           </div>
         </div>
       </section>
     `,
   },
   {
-    id: “faq-list”,
-    label: “❓ FAQ”,
-    category: “Sections”,
+    id: "faq-list",
+    label: "❓ FAQ",
+    category: "Sections",
     content: `
       <style>
         .pvb-faq{padding:40px 16px;background:#f9fafb}
@@ -314,21 +314,21 @@ const blocks: BuilderBlock[] = [
         .pvb-faq p{margin:0;color:#4b5563;font-size:14px;line-height:1.7}
         @media(min-width:640px){.pvb-faq{padding:56px 24px}.pvb-faq .item{padding:18px}}
       </style>
-      <section class=”pvb-faq”>
-        <div class=”inner”>
+      <section class="pvb-faq">
+        <div class="inner">
           <h2>❓ Câu hỏi thường gặp</h2>
-          <div class=”item”><strong>Sản phẩm có bảo hành không?</strong><p>Có, bảo hành 12 tháng kể từ ngày mua.</p></div>
-          <div class=”item”><strong>Giao hàng mất bao lâu?</strong><p>1-2 ngày nội thành, 2-4 ngày các tỉnh.</p></div>
-          <div class=”item”><strong>Có COD không?</strong><p>Có, hỗ trợ COD và chuyển khoản qua SePay.</p></div>
-          <div class=”item”><strong>Đổi trả như thế nào?</strong><p>Đổi trả miễn phí trong 7 ngày nếu lỗi sản xuất.</p></div>
+          <div class="item"><strong>Sản phẩm có bảo hành không?</strong><p>Có, bảo hành 12 tháng kể từ ngày mua.</p></div>
+          <div class="item"><strong>Giao hàng mất bao lâu?</strong><p>1-2 ngày nội thành, 2-4 ngày các tỉnh.</p></div>
+          <div class="item"><strong>Có COD không?</strong><p>Có, hỗ trợ COD và chuyển khoản qua SePay.</p></div>
+          <div class="item"><strong>Đổi trả như thế nào?</strong><p>Đổi trả miễn phí trong 7 ngày nếu lỗi sản xuất.</p></div>
         </div>
       </section>
     `,
   },
   {
-    id: “comparison-table”,
-    label: “⚖️ So sánh sản phẩm”,
-    category: “Sections”,
+    id: "comparison-table",
+    label: "⚖️ So sánh sản phẩm",
+    category: "Sections",
     content: `
       <style>
         .pvb-cmp{padding:40px 16px;background:#f9fafb}
@@ -347,23 +347,23 @@ const blocks: BuilderBlock[] = [
         .pvb-cmp .no{color:#ef4444}.pvb-cmp .yes{color:#22c55e}
         @media(min-width:640px){.pvb-cmp{padding:56px 24px}.pvb-cmp th,.pvb-cmp td{padding:14px 18px;font-size:14px}}
       </style>
-      <section class=”pvb-cmp”>
-        <div class=”inner”>
+      <section class="pvb-cmp">
+        <div class="inner">
           <h2>⚖️ So sánh trước khi mua</h2>
-          <p class=”sub”>Giúp khách nhìn thấy ngay giá trị vượt trội.</p>
-          <div class=”wrap”>
+          <p class="sub">Giúp khách nhìn thấy ngay giá trị vượt trội.</p>
+          <div class="wrap">
             <table>
               <thead><tr>
                 <th>Tính năng</th>
-                <th class=”other”>Thường</th>
-                <th class=”ours”>Sản phẩm này</th>
-                <th class=”other”>Cao cấp</th>
+                <th class="other">Thường</th>
+                <th class="ours">Sản phẩm này</th>
+                <th class="other">Cao cấp</th>
               </tr></thead>
               <tbody>
-                <tr><td>Chống dính</td><td class=”no”>✗</td><td class=”ours”>✓</td><td class=”yes”>✓</td></tr>
-                <tr><td>Dễ vệ sinh</td><td class=”no”>✗</td><td class=”ours”>✓</td><td class=”yes”>✓</td></tr>
-                <tr><td>Bảo hành</td><td>3 tháng</td><td class=”ours”>12 tháng</td><td>24 tháng</td></tr>
-                <tr><td>Giá trị</td><td>Cơ bản</td><td class=”ours”>Tối ưu nhất</td><td>Cao cấp</td></tr>
+                <tr><td>Chống dính</td><td class="no">✗</td><td class="ours">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Dễ vệ sinh</td><td class="no">✗</td><td class="ours">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Bảo hành</td><td>3 tháng</td><td class="ours">12 tháng</td><td>24 tháng</td></tr>
+                <tr><td>Giá trị</td><td>Cơ bản</td><td class="ours">Tối ưu nhất</td><td>Cao cấp</td></tr>
               </tbody>
             </table>
           </div>
@@ -372,9 +372,9 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
-    id: “promo-banner”,
-    label: “🎯 Banner Khuyến mãi”,
-    category: “Sections”,
+    id: "promo-banner",
+    label: "🎯 Banner Khuyến mãi",
+    category: "Sections",
     content: `
       <style>
         .pvb-promo{padding:32px 16px;background:#fff}
@@ -387,15 +387,15 @@ const blocks: BuilderBlock[] = [
         .pvb-promo .btn{display:inline-flex;align-items:center;background:#fff;color:#dc2626;padding:12px 22px;border-radius:999px;font-weight:900;text-decoration:none;font-size:14px}
         @media(min-width:640px){.pvb-promo{padding:40px 24px}.pvb-promo .box{padding:32px;display:flex;align-items:center;justify-content:space-between;gap:24px}.pvb-promo .right{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex-shrink:0}.pvb-promo p{margin-bottom:0}}
       </style>
-      <section class=”pvb-promo”>
-        <div class=”inner”>
-          <div class=”box”>
+      <section class="pvb-promo">
+        <div class="inner">
+          <div class="box">
             <div>
-              <span class=”badge”>Ưu đãi giới hạn</span>
+              <span class="badge">Ưu đãi giới hạn</span>
               <h2>Mã giảm giá cho đơn hôm nay</h2>
               <p>Dùng mã để nhận ưu đãi ngay hôm nay — chỉ áp dụng trong 24h.</p>
-              <div class=”code”>SALE10</div><br>
-              <a href=”#” class=”btn”>Nhận ưu đãi ngay</a>
+              <div class="code">SALE10</div><br>
+              <a href="#" class="btn">Nhận ưu đãi ngay</a>
             </div>
           </div>
         </div>
@@ -403,9 +403,9 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
-    id: “countdown-sale”,
-    label: “⏱️ Đếm ngược Sale”,
-    category: “Sections”,
+    id: "countdown-sale",
+    label: "⏱️ Đếm ngược Sale",
+    category: "Sections",
     content: `
       <style>
         .pvb-cd{padding:32px 16px;background:#fff}
@@ -420,16 +420,16 @@ const blocks: BuilderBlock[] = [
         .pvb-cd p{margin:0;color:#cbd5e1;font-size:14px}
         @media(min-width:640px){.pvb-cd{padding:40px 24px}.pvb-cd .unit{padding:16px 22px;min-width:80px}}
       </style>
-      <section class=”pvb-cd”>
-        <div class=”inner”>
-          <div class=”box”>
-            <div class=”label”>⚡ Sale sắp kết thúc</div>
-            <div class=”timer”>
-              <div class=”unit”><span class=”num”>17</span><span class=”uname”>Giờ</span></div>
-              <span class=”sep”>:</span>
-              <div class=”unit”><span class=”num”>59</span><span class=”uname”>Phút</span></div>
-              <span class=”sep”>:</span>
-              <div class=”unit”><span class=”num”>59</span><span class=”uname”>Giây</span></div>
+      <section class="pvb-cd">
+        <div class="inner">
+          <div class="box">
+            <div class="label">⚡ Sale sắp kết thúc</div>
+            <div class="timer">
+              <div class="unit"><span class="num">17</span><span class="uname">Giờ</span></div>
+              <span class="sep">:</span>
+              <div class="unit"><span class="num">59</span><span class="uname">Phút</span></div>
+              <span class="sep">:</span>
+              <div class="unit"><span class="num">59</span><span class="uname">Giây</span></div>
             </div>
             <p>Ưu đãi giới hạn — đặt hàng ngay để không bỏ lỡ.</p>
           </div>
@@ -438,9 +438,9 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
-    id: “trust-badges”,
-    label: “🛡️ Trust Badges”,
-    category: “Sections”,
+    id: "trust-badges",
+    label: "🛡️ Trust Badges",
+    category: "Sections",
     content: `
       <style>
         .pvb-trust{padding:32px 16px;background:#f9fafb}
@@ -452,14 +452,14 @@ const blocks: BuilderBlock[] = [
         @media(min-width:480px){.pvb-trust .grid{grid-template-columns:repeat(5,1fr)}}
         @media(min-width:640px){.pvb-trust{padding:40px 24px}.pvb-trust .badge{padding:20px}.pvb-trust .icon{font-size:28px}.pvb-trust span{font-size:14px}}
       </style>
-      <section class=”pvb-trust”>
-        <div class=”inner”>
-          <div class=”grid”>
-            <div class=”badge”><div class=”icon”>🛡️</div><span>Chính hãng</span></div>
-            <div class=”badge”><div class=”icon”>🔁</div><span>Đổi trả 7 ngày</span></div>
-            <div class=”badge”><div class=”icon”>🚚</div><span>Giao hàng nhanh</span></div>
-            <div class=”badge”><div class=”icon”>💵</div><span>Thanh toán COD</span></div>
-            <div class=”badge”><div class=”icon”>✅</div><span>Cam kết chất lượng</span></div>
+      <section class="pvb-trust">
+        <div class="inner">
+          <div class="grid">
+            <div class="badge"><div class="icon">🛡️</div><span>Chính hãng</span></div>
+            <div class="badge"><div class="icon">🔁</div><span>Đổi trả 7 ngày</span></div>
+            <div class="badge"><div class="icon">🚚</div><span>Giao hàng nhanh</span></div>
+            <div class="badge"><div class="icon">💵</div><span>Thanh toán COD</span></div>
+            <div class="badge"><div class="icon">✅</div><span>Cam kết chất lượng</span></div>
           </div>
         </div>
       </section>
@@ -467,24 +467,24 @@ const blocks: BuilderBlock[] = [
   },
   // ─── ELEMENTS ───────────────────────────────────────────────────────────────
   {
-    id: “cta-button”,
-    label: “🔘 Nút CTA”,
-    category: “Elements”,
+    id: "cta-button",
+    label: "🔘 Nút CTA",
+    category: "Elements",
     content: `
       <style>
         .pvb-cta{padding:28px 16px;background:#fff;text-align:center}
         .pvb-cta a{display:inline-flex;align-items:center;justify-content:center;background:#f97316;color:#fff;padding:15px 32px;border-radius:999px;font-size:17px;font-weight:900;text-decoration:none;box-shadow:0 8px 24px rgba(249,115,22,0.3);width:100%;max-width:340px}
         @media(min-width:480px){.pvb-cta a{width:auto}}
       </style>
-      <section class=”pvb-cta”>
-        <a href=”#”>🛒 Đặt hàng ngay</a>
+      <section class="pvb-cta">
+        <a href="#">🛒 Đặt hàng ngay</a>
       </section>
     `,
   },
   {
-    id: “divider”,
-    label: “─ Đường ngăn”,
-    category: “Elements”,
+    id: "divider",
+    label: "─ Đường ngăn",
+    category: "Elements",
     content: `
       <style>
         .pvb-div{padding:20px 16px;background:#fff}
@@ -492,15 +492,15 @@ const blocks: BuilderBlock[] = [
         .pvb-div .hr{height:1px;flex:1;background:#e5e7eb}
         .pvb-div span{font-size:11px;font-weight:900;letter-spacing:0.18em;text-transform:uppercase;color:#9ca3af;white-space:nowrap}
       </style>
-      <section class=”pvb-div”>
-        <div class=”line”><div class=”hr”></div><span>Phần tiếp theo</span><div class=”hr”></div></div>
+      <section class="pvb-div">
+        <div class="line"><div class="hr"></div><span>Phần tiếp theo</span><div class="hr"></div></div>
       </section>
     `,
   },
   {
-    id: “highlight-quote”,
-    label: “💬 Trích dẫn”,
-    category: “Elements”,
+    id: "highlight-quote",
+    label: "💬 Trích dẫn",
+    category: "Elements",
     content: `
       <style>
         .pvb-quote{padding:32px 16px;background:#fff}
@@ -508,18 +508,18 @@ const blocks: BuilderBlock[] = [
         .pvb-quote p{margin:0;font-size:clamp(16px,4vw,20px);line-height:1.8;color:#92400e;font-style:italic;font-weight:700;text-align:center}
         @media(min-width:640px){.pvb-quote{padding:48px 24px}.pvb-quote .box{padding:28px 32px}}
       </style>
-      <section class=”pvb-quote”>
-        <div class=”box”>
-          <p>”Một câu trích dẫn ấn tượng có thể làm nổi bật giá trị sản phẩm và tăng độ tin cậy cho khách hàng.”</p>
+      <section class="pvb-quote">
+        <div class="box">
+          <p>"Một câu trích dẫn ấn tượng có thể làm nổi bật giá trị sản phẩm và tăng độ tin cậy cho khách hàng."</p>
         </div>
       </section>
     `,
   },
   // ─── MEDIA ──────────────────────────────────────────────────────────────────
   {
-    id: “image-gallery”,
-    label: “🖼️ Gallery ảnh”,
-    category: “Media”,
+    id: "image-gallery",
+    label: "🖼️ Gallery ảnh",
+    category: "Media",
     content: `
       <style>
         .pvb-gal{padding:40px 16px;background:#f9fafb}
@@ -530,16 +530,16 @@ const blocks: BuilderBlock[] = [
         @media(min-width:480px){.pvb-gal .grid{grid-template-columns:repeat(3,1fr)}}
         @media(min-width:640px){.pvb-gal{padding:56px 24px}.pvb-gal .grid{gap:14px}}
       </style>
-      <section class=”pvb-gal”>
-        <div class=”inner”>
+      <section class="pvb-gal">
+        <div class="inner">
           <h2>Gallery ảnh sản phẩm</h2>
-          <div class=”grid”>
-            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=1” alt=”Ảnh 1” />
-            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=2” alt=”Ảnh 2” />
-            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=3” alt=”Ảnh 3” />
-            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=4” alt=”Ảnh 4” />
-            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=5” alt=”Ảnh 5” />
-            <img class=”img” src=”https://placehold.co/600x600/e5e7eb/475569?text=6” alt=”Ảnh 6” />
+          <div class="grid">
+            <img class="img" src="https://placehold.co/600x600/e5e7eb/475569?text=1" alt="Ảnh 1" />
+            <img class="img" src="https://placehold.co/600x600/e5e7eb/475569?text=2" alt="Ảnh 2" />
+            <img class="img" src="https://placehold.co/600x600/e5e7eb/475569?text=3" alt="Ảnh 3" />
+            <img class="img" src="https://placehold.co/600x600/e5e7eb/475569?text=4" alt="Ảnh 4" />
+            <img class="img" src="https://placehold.co/600x600/e5e7eb/475569?text=5" alt="Ảnh 5" />
+            <img class="img" src="https://placehold.co/600x600/e5e7eb/475569?text=6" alt="Ảnh 6" />
           </div>
         </div>
       </section>
