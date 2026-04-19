@@ -48,7 +48,6 @@ export default function BundleSelector({ product, region }: Props) {
   const [selected, setSelected] = useState(1)
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
-  const [confirmOpen, setConfirmOpen] = useState(false)
   const params = useParams()
   const countryCode = params.countryCode as string
   const router = useRouter()
@@ -118,7 +117,6 @@ export default function BundleSelector({ product, region }: Props) {
             : undefined,
       } as any)
       setAdded(true)
-      setConfirmOpen(true)
       setTimeout(() => setAdded(false), 2500)
     } catch (e) {
       console.error(e)
@@ -126,16 +124,6 @@ export default function BundleSelector({ product, region }: Props) {
       setAdding(false)
     }
   }
-
-  useEffect(() => {
-    if (!confirmOpen) return
-
-    const timeout = setTimeout(() => {
-      router.push(`/${countryCode}/checkout`)
-    }, 1800)
-
-    return () => clearTimeout(timeout)
-  }, [confirmOpen, countryCode, router])
 
   return (
     <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
@@ -284,64 +272,6 @@ export default function BundleSelector({ product, region }: Props) {
           </div>
         </div>
 
-        {confirmOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-            <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden border border-gray-100">
-              <div className="bg-orange-500 px-5 py-4 text-white">
-                <p className="text-xs font-black uppercase tracking-[0.25em] opacity-90">
-                  Xác nhận thêm vào giỏ
-                </p>
-                <h3 className="text-xl font-black mt-1">
-                  Đã thêm {selectedOpt.qty} sản phẩm vào giỏ
-                </h3>
-              </div>
-
-              <div className="p-5 space-y-4">
-                <div className="flex items-start gap-3">
-                  {product.thumbnail && (
-                    <img
-                      src={product.thumbnail}
-                      alt={product.title}
-                      className="w-16 h-16 rounded-2xl object-cover border border-gray-200 flex-shrink-0"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-extrabold text-gray-900 leading-tight">
-                      {selectedOpt.label}
-                    </p>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {formatVND(selectedOpt.price)}
-                    </p>
-                    {selectedOpt.gifts && selectedOpt.gifts.length > 0 && (
-                      <p className="text-xs text-blue-600 font-semibold mt-1">
-                        +{selectedOpt.gifts.length} quà tặng miễn phí
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-green-50 border border-green-100 p-4 text-sm text-green-800">
-                  Xác nhận xong sẽ chuyển sang trang checkout để bạn chọn COD hoặc SePay.
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setConfirmOpen(false)}
-                    className="flex-1 rounded-xl border border-gray-300 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    Tiếp tục xem
-                  </button>
-                  <button
-                    onClick={() => router.push(`/${countryCode}/checkout`)}
-                    className="flex-1 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white hover:bg-blue-700"
-                  >
-                    Sang checkout
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
