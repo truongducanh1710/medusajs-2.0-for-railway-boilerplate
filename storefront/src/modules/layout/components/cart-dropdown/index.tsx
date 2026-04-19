@@ -249,8 +249,8 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                 try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
               })()
               const thumb = item.variant?.product?.thumbnail || (item as any).thumbnail
-              const originalPrice = (item.unit_price || 0) * 1.5 / 100
-              const salePrice = (item.unit_price || 0) / 100
+              const salePrice = item.unit_price || 0
+              const originalPrice = Math.round(salePrice * 1.5)
               const savings = (originalPrice - salePrice) * item.quantity
               const variantText = item.variant?.options?.map(o => `${o.option?.title}: ${o.value}`).join(" | ") || ""
 
@@ -363,7 +363,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
             {/* Freeship Reminder */}
             {subtotal < freeshipThreshold ? (
               <div className="bg-yellow-100 text-amber-800 p-3 rounded-lg text-sm mb-3 text-center">
-                🎁 Mua thêm {fmtVND(freeshipThreshold - subtotal / 100)} để được FREESHIP
+                🎁 Mua thêm {fmtVND(freeshipThreshold - subtotal)} để được FREESHIP
               </div>
             ) : (
               <div className="bg-green-100 text-green-800 p-3 rounded-lg text-sm mb-3 text-center">
@@ -374,12 +374,12 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
             {savings > 0 && (
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-sm text-green-700 font-semibold">Tiết kiệm được</span>
-                <span className="text-sm text-green-700 font-bold">-{fmtVND(savings / 100)}</span>
+                <span className="text-sm text-green-700 font-bold">-{fmtVND(savings)}</span>
               </div>
             )}
             <div className="flex justify-between items-center mb-3.5">
               <span className="text-base font-black text-gray-900">Tổng cộng</span>
-              <span className="text-lg font-black text-orange-500">{fmtVND(subtotal / 100)}</span>
+              <span className="text-lg font-black text-orange-500">{fmtVND(subtotal)}</span>
             </div>
             <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} className="block w-full bg-orange-500 text-white font-black text-base py-3.5 rounded-lg text-center hover:bg-orange-600 transition-colors no-underline">
               Tiến hành thanh toán
