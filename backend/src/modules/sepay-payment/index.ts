@@ -1,4 +1,10 @@
-import { AbstractPaymentProvider, MedusaError, PaymentSessionStatus } from "@medusajs/framework/utils"
+import {
+  AbstractPaymentProvider,
+  MedusaError,
+  ModuleProvider,
+  Modules,
+  PaymentSessionStatus,
+} from "@medusajs/framework/utils"
 
 type SepayOptions = {
   accountNumber: string
@@ -128,4 +134,6 @@ class SepayPaymentProvider extends AbstractPaymentProvider<SepayOptions> {
   }
 }
 
-export default SepayPaymentProvider
+export default ModuleProvider(Modules.PAYMENT, {
+  services: [SepayPaymentProvider],
+})
