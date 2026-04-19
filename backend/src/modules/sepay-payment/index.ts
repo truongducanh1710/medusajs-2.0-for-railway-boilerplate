@@ -1,15 +1,36 @@
-import { AbstractPaymentProvider, PaymentSessionStatus } from "@medusajs/framework/utils"
+import { AbstractPaymentProvider, MedusaError, PaymentSessionStatus } from "@medusajs/framework/utils"
 
-class SepayPaymentProvider extends AbstractPaymentProvider {
+type SepayOptions = {
+  accountNumber: string
+  bank: string
+}
+
+class SepayPaymentProvider extends AbstractPaymentProvider<SepayOptions> {
   static identifier = "sepay"
 
   private accountNumber: string
   private bank: string
 
-  constructor(container, config) {
-    super(container, config)
-    this.accountNumber = config.accountNumber
-    this.bank = config.bank
+  constructor(container: Record<string, unknown>, options?: SepayOptions) {
+    super(container, options)
+    this.accountNumber = options?.accountNumber ?? ""
+    this.bank = options?.bank ?? ""
+  }
+
+  static validateOptions(options: Partial<SepayOptions>) {
+    if (!options.accountNumber) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "SEPAY_ACCOUNT_NUMBER is required in the provider options."
+      )
+    }
+
+    if (!options.bank) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "SEPAY_BANK is required in the provider options."
+      )
+    }
   }
 
   async initiatePayment(input) {
