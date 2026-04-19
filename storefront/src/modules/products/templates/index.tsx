@@ -8,7 +8,7 @@ import RelatedProducts from "@modules/products/components/related-products"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ComboBundle from "@modules/products/components/combo-bundle"
-import BundleSelector from "@modules/products/components/bundle-selector"
+import QuickOrder from "@modules/products/components/quick-order"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -345,8 +345,10 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
               ))}
             </div>
 
-            {/* Bundle Selector — Mua nhiều giảm giá + quà tặng */}
-            <BundleSelector product={product} region={region} />
+            {/* Quick order panel: bundle + COD + SePay */}
+            <div id="purchase-panel">
+              <QuickOrder product={product} region={region} />
+            </div>
 
             {/* Delivery info */}
             <div className="bg-blue-50 rounded-xl p-4 text-sm space-y-2">
