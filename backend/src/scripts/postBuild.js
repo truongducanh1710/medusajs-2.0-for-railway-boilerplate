@@ -31,10 +31,5 @@ execSync('pnpm i --prod --frozen-lockfile', {
   stdio: 'inherit'
 });
 
-// Run database migrations
-console.log('Running database migrations...');
-execSync('node_modules/.bin/medusa db:migrate', {
-  cwd: MEDUSA_SERVER_PATH,
-  stdio: 'inherit'
-});
-console.log('Migrations completed.');
+// Database migrations should run in deploy/start command only to avoid duplicate startup work.
+console.log('Skipping database migrations in post-build.');
