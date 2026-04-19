@@ -174,7 +174,13 @@ export default function ProductPageBuilder({
       if (initialContent && initialContent !== "{}") {
         try {
           const saved = JSON.parse(initialContent)
-          editor.loadProjectData(saved)
+          // New format: {html, css, projectData}
+          if (saved.projectData) {
+            editor.loadProjectData(saved.projectData)
+          } else {
+            // Old format: raw projectData JSON
+            editor.loadProjectData(saved)
+          }
         } catch {
           editor.setComponents(initialContent)
         }
@@ -214,8 +220,14 @@ export default function ProductPageBuilder({
     setError("")
 
     try {
-      const content = JSON.stringify(editorRef.current.getProjectData())
-      await onSave(content)
+      const editor = editorRef.current
+      // Save as {html, css, projectData} so storefront can render with styles
+      const payload = JSON.stringify({
+        html: editor.getHtml(),
+        css: editor.getCss(),
+        projectData: editor.getProjectData(),
+      })
+      await onSave(payload)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Luu that bai")
     } finally {
