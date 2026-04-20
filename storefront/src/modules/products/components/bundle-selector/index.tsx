@@ -123,43 +123,35 @@ export default function BundleSelector({ product, region }: Props) {
 
   const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     if (!variant?.id) return
     setAdding(true)
-    try {
-      const giftsToSave = selectedOpt.gifts || []
-      await addToCart({
-        variantId: variant.id,
-        quantity: selected,
-        countryCode,
-        metadata:
-          giftsToSave.length > 0
-            ? { gifts: JSON.stringify(giftsToSave) }
-            : undefined,
-      } as any)
-      // Fire AddToCart pixel event
-      if (typeof window !== "undefined" && window.fbq) {
-        const eventId = generateEventId()
-        window.fbq(
-          "track",
-          "AddToCart",
-          {
-            content_ids: [variant.id],
-            content_name: product.title,
-            content_type: "product",
-            value: selectedOpt.price / 100,
-            currency: "VND",
-            num_items: selected,
-          },
-          { eventID: eventId }
-        )
-      }
-      // Redirect thẳng vào checkout
-      router.push(`/${countryCode}/checkout`)
-    } catch (e) {
-      console.error(e)
-      setAdding(false)
+
+    // Fire pixel immediately (non-blocking)
+    if (typeof window !== "undefined" && window.fbq) {
+      window.fbq("track", "AddToCart", {
+        content_ids: [variant.id],
+        content_name: product.title,
+        content_type: "product",
+        value: selectedOpt.price / 100,
+        currency: "VND",
+        num_items: selected,
+      }, { eventID: generateEventId() })
     }
+
+    // addToCart chạy background — không await
+    const giftsToSave = selectedOpt.gifts || []
+    addToCart({
+      variantId: variant.id,
+      quantity: selected,
+      countryCode,
+      metadata: giftsToSave.length > 0
+        ? { gifts: JSON.stringify(giftsToSave) }
+        : undefined,
+    } as any).catch(e => console.error("[BundleSelector] addToCart failed", e))
+
+    // Redirect ngay lập tức
+    router.push(`/${countryCode}/checkout`)
   }
 
   return (
