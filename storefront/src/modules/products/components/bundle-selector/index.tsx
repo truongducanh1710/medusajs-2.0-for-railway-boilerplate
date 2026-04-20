@@ -19,6 +19,7 @@ type BundleOption = {
   price: number
   originalPrice: number
   gifts?: GiftItem[]
+  image?: string
 }
 
 type Props = {
@@ -83,6 +84,7 @@ export default function BundleSelector({ product, region }: Props) {
       }>
       options = parsed.map((o) => ({
         ...o,
+        image: o.image || undefined,
         gifts: o.gifts && o.gifts.filter(g => g.name).length > 0
           ? o.gifts.filter(g => g.name)
           : undefined,
@@ -189,10 +191,10 @@ export default function BundleSelector({ product, region }: Props) {
                   )}
                 </div>
 
-                {product.thumbnail && (
+                {(opt.image || product.thumbnail) && (
                   <img
-                    src={product.thumbnail}
-                    alt={product.title}
+                    src={opt.image || product.thumbnail!}
+                    alt={opt.label}
                     className="w-14 h-14 object-cover rounded-lg flex-shrink-0"
                   />
                 )}

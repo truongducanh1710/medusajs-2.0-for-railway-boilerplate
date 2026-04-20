@@ -38,7 +38,7 @@ type Benefit = { icon: string; title: string; desc: string }
 type FAQItem = { q: string; a: string }
 type GiftItem = { name: string; value: number; image?: string }
 type ReviewItem = { name: string; location: string; rating: number; text: string; date: string }
-type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string; gifts?: GiftItem[] }
+type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string; gifts?: GiftItem[]; image?: string }
 
 type Meta = {
   video_url?: string
@@ -420,7 +420,12 @@ const ProductContentWidget = ({ data }: { data: any }) => {
                   <Input label="Giá bán (đ)" value={String(opt.price || "")} onChange={v => updateOpt({ price: Number(v) })} placeholder="499000" />
                   <Input label="Giá gốc/gạch (đ)" value={String(opt.originalPrice || "")} onChange={v => updateOpt({ originalPrice: Number(v) })} placeholder="698000" />
                 </div>
-                {/* Row 2: badge, badge color */}
+                {/* Row 2: image URL */}
+                <Input label="URL ảnh (tùy chọn)" value={opt.image || ""}
+                  onChange={v => updateOpt({ image: v })}
+                  placeholder="https://... (để trống dùng ảnh thumbnail sản phẩm)" />
+
+                {/* Row 3: badge, badge color */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 8, marginBottom: 10 }}>
                   <Input label="Badge (tùy chọn)" value={opt.badge || ""} onChange={v => updateOpt({ badge: v })} placeholder="HÔM NAY THÔI" />
                   <div style={{ marginBottom: 8 }}>
