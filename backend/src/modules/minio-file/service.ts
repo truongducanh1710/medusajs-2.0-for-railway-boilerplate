@@ -301,8 +301,8 @@ class MinioFileProviderService extends AbstractFileProviderService {
     }
 
     try {
-      // Use the filename directly as the key (matches S3 provider behavior for presigned uploads)
-      const fileKey = fileData.filename
+      const parsedFilename = path.parse(fileData.filename)
+      const fileKey = `${parsedFilename.name}-${ulid()}${parsedFilename.ext}`
 
       // Generate presigned PUT URL that expires in 15 minutes
       const url = await this.client.presignedPutObject(
