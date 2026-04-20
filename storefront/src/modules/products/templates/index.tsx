@@ -336,20 +336,6 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
               <p className="text-gray-600 leading-relaxed line-clamp-3">{product.description}</p>
             )}
 
-            {/* Trust badges inline */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { icon: "✅", text: "Chính hãng" },
-                { icon: "🔄", text: "Đổi trả 7 ngày" },
-                { icon: "🚚", text: "Ship từ 500K" },
-              ].map((b) => (
-                <div key={b.text} className="flex flex-col items-center bg-gray-50 rounded-lg p-2 text-center">
-                  <span className="text-base sm:text-lg">{b.icon}</span>
-                  <span className="text-[11px] sm:text-xs text-gray-600 font-medium mt-1 leading-tight">{b.text}</span>
-                </div>
-              ))}
-            </div>
-
             {/* Bundle selector: add to cart then checkout */}
             <div id="bundle-selector">
               <BundleSelector product={product} region={region} />
@@ -364,9 +350,6 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
           </div>
         </div>
       </div>
-
-      {/* Trust Bar */}
-      <TrustBar />
 
       {/* Combo Bundle — Mua kèm tiết kiệm */}
       {product.metadata?.combo_products && (
