@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
 
-const GLOBAL_PIXEL_ID = process.env.NEXT_PUBLIC_FB_PIXEL_ID
+const GLOBAL_PIXEL_ID = process.env.NEXT_PUBLIC_FB_PIXEL_ID || "1253926913606924"
 
 export default async function PageLayout({
   children,
