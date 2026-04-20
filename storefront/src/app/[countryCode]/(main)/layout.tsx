@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
 
-const GLOBAL_PIXEL_ID = process.env.NEXT_PUBLIC_FB_PIXEL_ID || "1253926913606924"
+// pixel ID is read client-side in FacebookPixel component via process.env.NEXT_PUBLIC_FB_PIXEL_ID
 
 export default async function PageLayout({
   children,
@@ -25,11 +25,9 @@ export default async function PageLayout({
   const { countryCode } = await params
   const locale = localeFromCountryCode(countryCode)
 
-  const pixelIds = GLOBAL_PIXEL_ID ? [GLOBAL_PIXEL_ID] : []
-
   return (
     <LocaleProvider locale={locale}>
-      <FacebookPixel pixelIds={pixelIds} />
+      <FacebookPixel />
       <Suspense fallback={null}>
         <UtmCapture />
       </Suspense>

@@ -56,28 +56,29 @@ function loadFbScript(pixelId: string, onReady: () => void) {
   document.head.appendChild(script)
 }
 
-export default function FacebookPixel({ pixelIds }: { pixelIds: string[] }) {
+export default function FacebookPixel({ pixelIds: extraIds = [] }: { pixelIds?: string[] }) {
   const pathname = usePathname()
   const initialized = useRef(false)
 
-  useEffect(() => {
-    if (!pixelIds.length) return
+  // Read at client runtime — NEXT_PUBLIC vars are inlined at build time
+  const envPixelId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
+  const allIds = [...new Set([envPixelId, ...extraIds].filter(Boolean))]
 
-    loadFbScript(pixelIds[0], () => {
-      // Init additional pixel IDs
-      for (const id of pixelIds.slice(1)) {
+  useEffect(() => {
+    if (!allIds.length) return
+
+    loadFbScript(allIds[0], () => {
+      for (const id of allIds.slice(1)) {
         window.fbq?.("init", id)
       }
 
       if (!initialized.current) {
         initialized.current = true
-        // Fire initial PageView after script ready
         window.fbq?.("track", "PageView", {}, { eventID: generateEventId() })
       }
     })
   }, [])
 
-  // Subsequent navigation PageViews
   useEffect(() => {
     if (!initialized.current) return
     window.fbq?.("track", "PageView", {}, { eventID: generateEventId() })
