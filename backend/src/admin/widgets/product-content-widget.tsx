@@ -1,5 +1,5 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import ProductPageBuilder from "../components/product-page-builder"
 
 // Builds storefront link from current admin URL pattern
@@ -83,7 +83,7 @@ const Input = ({ label, value, onChange, placeholder }: {
 const Toggle = ({ label, enabled, onToggle, children }: {
   label: string; enabled: boolean; onToggle: () => void; children?: React.ReactNode
 }) => (
-  <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, marginBottom: 12, overflow: "hidden" }}>
+  <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, marginBottom: 12, overflow: "visible" }}>
     <div
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -114,6 +114,172 @@ const Toggle = ({ label, enabled, onToggle, children }: {
 
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
+function ImagePicker({
+  value,
+  onChange,
+  productImages,
+}: {
+  value: string
+  onChange: (url: string) => void
+  productImages: Array<{ id: string; url: string }>
+}) {
+  const [showPicker, setShowPicker] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const extractUploadedUrl = (data: any) =>
+    data?.files?.[0]?.url ||
+    data?.files?.[0]?.location ||
+    data?.uploads?.[0]?.url ||
+    data?.uploads?.[0]?.location ||
+    data?.url ||
+    data?.file?.url ||
+    data?.upload?.url ||
+    ""
+
+  const handleUpload = async (file: File) => {
+    try {
+      setUploading(true)
+      const formData = new FormData()
+      formData.append("files", file)
+      const res = await fetch("/admin/uploads", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      })
+      const data = await res.json()
+      const url = extractUploadedUrl(data)
+      if (url) {
+        onChange(url)
+        setShowPicker(false)
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="URL ảnh (để trống = dùng thumbnail SP)"
+          style={{
+            flex: 1,
+            padding: "6px 10px",
+            border: "1px solid #e5e7eb",
+            borderRadius: 6,
+            fontSize: 13,
+            boxSizing: "border-box",
+          }}
+        />
+        {productImages.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowPicker(v => !v)}
+            style={{
+              padding: "6px 10px",
+              border: "1px solid #e5e7eb",
+              borderRadius: 6,
+              fontSize: 12,
+              cursor: "pointer",
+              background: "white",
+              whiteSpace: "nowrap",
+            }}
+          >
+            📷 Chọn ảnh ▾
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          style={{
+            padding: "6px 10px",
+            border: "1px solid #e5e7eb",
+            borderRadius: 6,
+            fontSize: 12,
+            cursor: "pointer",
+            background: "white",
+            whiteSpace: "nowrap",
+            opacity: uploading ? 0.6 : 1,
+          }}
+        >
+          {uploading ? "..." : "⬆️ Upload"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) void handleUpload(f)
+            e.currentTarget.value = ""
+          }}
+        />
+      </div>
+
+      {value && (
+        <img
+          src={value}
+          alt=""
+          style={{
+            marginTop: 6,
+            width: 56,
+            height: 56,
+            objectFit: "cover",
+            borderRadius: 6,
+            border: "1px solid #e5e7eb",
+          }}
+        />
+      )}
+
+      {showPicker && productImages.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            zIndex: 50,
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            padding: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 60px)",
+            gap: 6,
+            overflow: "visible",
+          }}
+        >
+          {productImages.map(img => (
+            <img
+              key={img.id}
+              src={img.url}
+              alt=""
+              onClick={() => {
+                onChange(img.url)
+                setShowPicker(false)
+              }}
+              style={{
+                width: 60,
+                height: 60,
+                objectFit: "cover",
+                borderRadius: 6,
+                cursor: "pointer",
+                border: value === img.url ? "2px solid #3b82f6" : "2px solid transparent",
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const ProductContentWidget = ({ data }: { data: any }) => {
   const product = data
   const [meta, setMeta] = useState<Meta>({})
@@ -141,6 +307,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [reviews, setReviews] = useState<ReviewItem[]>([
     { name: "", location: "", rating: 5, text: "", date: "" }
   ])
+  const productImages = Array.isArray(product?.images)
+    ? product.images
+        .map((img: any, index: number) => ({
+          id: String(img?.id ?? index),
+          url: String(img?.url ?? img?.image_url ?? img?.src ?? ""),
+        }))
+        .filter((img: { id: string; url: string }) => Boolean(img.url))
+    : []
 
   useEffect(() => {
     const m: Meta = (product.metadata as Meta) || {}
@@ -401,7 +575,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
             setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x))
           const optGifts: GiftItem[] = opt.gifts || []
           return (
-            <div key={i} style={{ border: "1px solid #d1d5db", borderRadius: 10, marginBottom: 12, overflow: "hidden" }}>
+            <div key={i} style={{ border: "1px solid #d1d5db", borderRadius: 10, marginBottom: 12, overflow: "visible" }}>
               {/* Option header */}
               <div style={{ background: "#f9fafb", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
                 <span style={{ fontWeight: 700, fontSize: 13, color: "#374151" }}>GÓI {i + 1}</span>
@@ -421,9 +595,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
                   <Input label="Giá gốc/gạch (đ)" value={String(opt.originalPrice || "")} onChange={v => updateOpt({ originalPrice: Number(v) })} placeholder="698000" />
                 </div>
                 {/* Row 2: image URL */}
-                <Input label="URL ảnh (tùy chọn)" value={opt.image || ""}
-                  onChange={v => updateOpt({ image: v })}
-                  placeholder="https://... (để trống dùng ảnh thumbnail sản phẩm)" />
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Ảnh gói</label>
+                  <ImagePicker
+                    value={opt.image || ""}
+                    onChange={v => updateOpt({ image: v })}
+                    productImages={productImages}
+                  />
+                </div>
 
                 {/* Row 3: badge, badge color */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 8, marginBottom: 10 }}>
