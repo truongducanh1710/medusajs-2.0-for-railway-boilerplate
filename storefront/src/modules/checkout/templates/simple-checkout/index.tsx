@@ -187,10 +187,22 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   )
 }
 
+function useCountdown(minutes: number) {
+  const [secs, setSecs] = useState(minutes * 60)
+  useEffect(() => {
+    const t = setInterval(() => setSecs(s => (s > 0 ? s - 1 : 0)), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const m = String(Math.floor(secs / 60)).padStart(2, "0")
+  const s = String(secs % 60).padStart(2, "0")
+  return { m, s, expired: secs === 0 }
+}
+
 export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTypes.StoreCart, shippingOptions: any[] | null }) {
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
+  const countdown = useCountdown(12)
 
   const [form, setForm] = useState({ name: "", phone: "", address: "", note: "" })
   const [payment, setPayment] = useState<"cod" | "sepay">("cod")
@@ -440,6 +452,14 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       )}
 
       <div className="min-h-screen bg-gray-50">
+        {/* Countdown banner */}
+        <div className={`px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
+          {countdown.expired
+            ? "⚠️ Hết thời gian giữ đơn — hãy đặt hàng ngay!"
+            : <>⏳ Đơn hàng được giữ trong <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span> — Hoàn tất ngay kẻo mất!</>
+          }
+        </div>
+
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 py-4">
           <div className="max-w-4xl mx-auto flex items-center gap-3">
@@ -555,8 +575,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
               {/* Totals */}
               <div className="border-t border-gray-100 pt-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-500">
-                  <span>Tạm tính</span>
-                  <span>{convertToLocale({ amount: subtotal, currency_code: cart.currency_code })}</span>
+                  <span>Giá gốc</span>
+                  <span className="line-through">{convertToLocale({ amount: subtotal, currency_code: cart.currency_code })}</span>
                 </div>
                 {promoDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
@@ -574,6 +594,17 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                   <span>Tổng cộng</span>
                   <span className="text-orange-500">{formatVND(finalTotal)}</span>
                 </div>
+                {(() => {
+                  const saved = subtotal - finalTotal
+                  return saved > 0 ? (
+                    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                      <span className="text-green-500 text-lg">🎉</span>
+                      <p className="text-sm font-black text-green-700">
+                        Bạn tiết kiệm được <span className="text-green-600">{formatVND(saved)}</span> cho đơn hàng này!
+                      </p>
+                    </div>
+                  ) : null
+                })()}
               </div>
             </div>
           </div>
