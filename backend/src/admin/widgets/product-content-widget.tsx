@@ -460,7 +460,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
             </button>
           )}
           <button
-            onClick={save}
+            onClick={() => save()}
             disabled={saving}
             style={{
               background: saving ? "#9ca3af" : "#f97316", color: "white",
@@ -679,7 +679,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       {/* Save button bottom */}
       <div style={{ textAlign: "right", marginTop: 8 }}>
         <button
-          onClick={save}
+          onClick={() => save()}
           disabled={saving}
           style={{
             background: saving ? "#9ca3af" : "#f97316", color: "white",
