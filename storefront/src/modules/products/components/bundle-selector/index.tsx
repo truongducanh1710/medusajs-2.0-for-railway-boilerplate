@@ -148,7 +148,7 @@ export default function BundleSelector({ product, region }: Props) {
         metadata: giftsToSave.length > 0
           ? { gifts: JSON.stringify(giftsToSave) }
           : undefined,
-      } as any)
+      })
       // Chỉ redirect sau khi addToCart hoàn tất — đảm bảo số lượng đúng
       router.push(`/${countryCode}/checkout`)
     } catch (e) {

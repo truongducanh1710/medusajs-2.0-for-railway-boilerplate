@@ -8,6 +8,8 @@ import {
   setShippingMethod,
   ensurePaymentSession,
   applyPromotions,
+  updateLineItem,
+  deleteLineItem,
 } from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
@@ -200,6 +202,23 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [promoApplied, setPromoApplied] = useState(false)
   const [promoError, setPromoError] = useState("")
   const [promoLoading, setPromoLoading] = useState(false)
+  const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
+
+  const handleQtyChange = async (lineId: string, newQty: number) => {
+    setQtyLoading(s => ({ ...s, [lineId]: true }))
+    try {
+      if (newQty < 1) {
+        await deleteLineItem(lineId)
+      } else {
+        await updateLineItem({ lineId, quantity: newQty })
+      }
+      window.location.reload()
+    } catch (e) {
+      console.error("[SimpleCheckout] qty change failed", e)
+    } finally {
+      setQtyLoading(s => ({ ...s, [lineId]: false }))
+    }
+  }
 
   // Load saved form data
   useEffect(() => {
@@ -447,7 +466,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
                 return (
                   <div key={item.id}>
-                    <div className="flex gap-3 items-center">
+                    <div className="flex gap-3 items-start">
                       <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-gray-100">
                         <Thumbnail
                           thumbnail={item.variant?.product?.thumbnail}
@@ -457,10 +476,24 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-gray-900 line-clamp-2">{item.title}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Số lượng: {item.quantity}</p>
                         <p className="font-black text-orange-500 text-sm mt-1">
                           {convertToLocale({ amount: item.unit_price * item.quantity, currency_code: cart.currency_code })}
                         </p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            onClick={() => handleQtyChange(item.id, item.quantity - 1)}
+                            disabled={qtyLoading[item.id]}
+                            className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-40 font-bold text-base leading-none"
+                          >−</button>
+                          <span className="text-sm font-bold text-gray-900 w-6 text-center">
+                            {qtyLoading[item.id] ? "…" : item.quantity}
+                          </span>
+                          <button
+                            onClick={() => handleQtyChange(item.id, item.quantity + 1)}
+                            disabled={qtyLoading[item.id]}
+                            className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-40 font-bold text-base leading-none"
+                          >+</button>
+                        </div>
                       </div>
                     </div>
 
