@@ -32,8 +32,12 @@ export default function ProductPixelTracker({
   useEffect(() => {
     if (typeof window === "undefined" || !window.fbq) return
 
+    // Only init per-product pixels not already inited by global FacebookPixel
+    const globalId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
     for (const id of pixelIds) {
-      window.fbq("init", id)
+      if (id && id !== globalId) {
+        window.fbq("init", id)
+      }
     }
 
     window.fbq(
