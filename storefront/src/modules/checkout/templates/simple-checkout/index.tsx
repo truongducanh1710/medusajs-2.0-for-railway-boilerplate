@@ -407,57 +407,60 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 
-          {/* LEFT — Order summary */}
-          <div className="order-2 lg:order-1">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <h2 className="font-black text-base text-gray-900 mb-4">📦 Đơn hàng của bạn</h2>
+          {/* ĐƠN HÀNG — luôn hiện trên cùng */}
+          <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+            <div className="bg-orange-500 px-5 py-3 flex items-center justify-between">
+              <h2 className="font-black text-white text-base">📦 Đơn hàng của bạn</h2>
+              <span className="text-orange-100 text-xs font-semibold">{sortedItems.length} sản phẩm</span>
+            </div>
+            <div className="p-5 space-y-4">
+              {sortedItems.map((item) => {
+                const gifts = (() => {
+                  try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
+                })()
 
-              <div className="space-y-4">
-                {sortedItems.map((item) => {
-                  const gifts = (() => {
-                    try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
-                  })()
-
-                  return (
-                    <div key={item.id}>
-                      <div className="flex gap-3">
-                        <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0">
-                          <Thumbnail
-                            thumbnail={item.variant?.product?.thumbnail}
-                            images={item.variant?.product?.images}
-                            size="square"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm text-gray-900 line-clamp-2">{item.title}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">x{item.quantity}</p>
-                        </div>
-                        <p className="font-black text-orange-500 text-sm flex-shrink-0">
+                return (
+                  <div key={item.id}>
+                    <div className="flex gap-3 items-center">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-gray-100">
+                        <Thumbnail
+                          thumbnail={item.variant?.product?.thumbnail}
+                          images={item.variant?.product?.images}
+                          size="square"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-gray-900 line-clamp-2">{item.title}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Số lượng: {item.quantity}</p>
+                        <p className="font-black text-orange-500 text-sm mt-1">
                           {convertToLocale({ amount: item.unit_price * item.quantity, currency_code: cart.currency_code })}
                         </p>
                       </div>
-
-                      {/* Gifts */}
-                      {gifts.length > 0 && (
-                        <div className="mt-2 pl-[68px] space-y-1.5">
-                          {gifts.map((g: any, i: number) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <span className="text-sm">🎁</span>
-                              <span className="text-xs text-gray-600 flex-1"><strong className="text-orange-500">TẶNG!</strong> {g.name}</span>
-                              <span className="text-xs text-gray-400 line-through">{formatVND(g.value || 0)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
-                  )
-                })}
-              </div>
+
+                    {/* Gifts — hiện nổi bật */}
+                    {gifts.length > 0 && (
+                      <div className="mt-3 bg-orange-50 border border-orange-100 rounded-xl p-3 space-y-2">
+                        {gifts.map((g: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2.5">
+                            <span className="text-lg flex-shrink-0">🎁</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-orange-600">QUÀ TẶNG MIỄN PHÍ</p>
+                              <p className="text-xs text-gray-700 font-semibold line-clamp-1">{g.name}</p>
+                            </div>
+                            <span className="text-xs text-gray-400 line-through flex-shrink-0">{formatVND(g.value || 0)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
 
               {/* Totals */}
-              <div className="border-t border-gray-100 mt-5 pt-4 space-y-2">
+              <div className="border-t border-gray-100 pt-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Tạm tính</span>
                   <span>{convertToLocale({ amount: subtotal, currency_code: cart.currency_code })}</span>
@@ -468,7 +471,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                     <span>-{formatVND(SEPAY_DISCOUNT)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-black text-lg pt-2 border-t border-gray-100">
+                <div className="flex justify-between font-black text-xl pt-2 border-t border-gray-200">
                   <span>Tổng cộng</span>
                   <span className="text-orange-500">{formatVND(finalTotal)}</span>
                 </div>
@@ -476,8 +479,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
             </div>
           </div>
 
-          {/* RIGHT — Form */}
-          <div className="order-1 lg:order-2 space-y-4">
+          {/* FORM + PAYMENT — 1 cột, đơn giản */}
+          <div className="space-y-4">
             {/* Shipping info */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
               <h2 className="font-black text-base text-gray-900 mb-4">🚚 Thông tin giao hàng</h2>
@@ -549,20 +552,33 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
               </div>
             </div>
 
-            {/* Trust */}
-            <div className="flex justify-around text-xs text-gray-400 px-2">
-              <span>✅ Kiểm tra hàng trước khi thanh toán</span>
-              <span>🛡️ Bảo hành 12 tháng</span>
+            {/* Trust badges */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                { icon: "✅", text: "Kiểm tra hàng trước khi thanh toán" },
+                { icon: "🔄", text: "Đổi trả miễn phí trong 7 ngày" },
+                { icon: "🛡️", text: "Bảo hành chính hãng 12 tháng" },
+                { icon: "🚚", text: "Giao hàng toàn quốc 1-3 ngày" },
+              ].map(b => (
+                <div key={b.text} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2.5 py-2">
+                  <span>{b.icon}</span>
+                  <span className="text-gray-600 font-medium leading-tight">{b.text}</span>
+                </div>
+              ))}
             </div>
 
             {/* CTA */}
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-lg py-4 rounded-xl transition-all active:scale-95 disabled:opacity-70 shadow-lg"
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-5 rounded-xl transition-all active:scale-95 disabled:opacity-70 shadow-lg shadow-orange-200"
             >
-              {submitting ? "Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY"}
+              {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY →"}
             </button>
+
+            <p className="text-center text-xs text-gray-400">
+              Bằng cách đặt hàng, bạn đồng ý với <span className="underline">chính sách đổi trả</span> của chúng tôi
+            </p>
           </div>
         </div>
       </div>
