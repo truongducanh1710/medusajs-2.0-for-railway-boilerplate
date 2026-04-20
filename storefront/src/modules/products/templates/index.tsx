@@ -10,6 +10,7 @@ import LocalizedClientLink from "@modules/common/components/localized-client-lin
 import ComboBundle from "@modules/products/components/combo-bundle"
 import BundleSelector from "@modules/products/components/bundle-selector"
 import ProductPageContent from "@modules/products/components/product-page-content"
+import ProductPixelTracker from "@components/ProductPixelTracker"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -291,6 +292,17 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
   if (!product || !product.id) return notFound()
 
   const videoUrl = meta(product, "video_url")
+  const productPixelId = meta(product, "fb_pixel_id")
+  const globalPixelId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
+  const allPixelIds = [...new Set([globalPixelId, productPixelId].filter(Boolean))]
+
+  const variant = product.variants?.[0]
+  const basePrice =
+    (variant?.calculated_price?.calculated_amount ??
+      variant?.prices?.[0]?.amount ??
+      0) as number
+  const currency = region.currency_code?.toUpperCase() || "VND"
+
   const pageContent =
     typeof product.metadata?.page_content === "string"
       ? (product.metadata.page_content as string)
@@ -298,6 +310,13 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
 
   return (
     <div className="bg-white">
+      <ProductPixelTracker
+        pixelIds={allPixelIds}
+        productId={product.id}
+        productTitle={product.title || ""}
+        price={basePrice}
+        currency={currency}
+      />
       {/* Breadcrumb */}
       <div className="bg-gray-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 py-2.5 text-xs text-gray-500 flex gap-1">

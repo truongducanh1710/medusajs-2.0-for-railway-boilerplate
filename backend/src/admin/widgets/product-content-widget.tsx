@@ -55,6 +55,8 @@ type Meta = {
   bundle_gifts?: string
   bundle_options?: string
   page_content?: string
+  fb_pixel_id?: string
+  fb_capi_token?: string
   [key: string]: string | undefined
 }
 
@@ -675,6 +677,34 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         onClose={() => setBuilderOpen(false)}
         onSave={handlePageBuilderSave}
       />
+
+      {/* Facebook Pixel per product */}
+      <div style={{ background: "#f0f4ff", border: "1px solid #c7d7fc", borderRadius: 10, padding: "14px 16px", marginTop: 8 }}>
+        <p style={{ fontWeight: 700, fontSize: 14, color: "#1d4ed8", marginBottom: 10 }}>📊 Facebook Pixel (sản phẩm này)</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 3 }}>Pixel ID</label>
+            <input
+              type="text"
+              value={meta.fb_pixel_id || ""}
+              onChange={e => setMeta(m => ({ ...m, fb_pixel_id: e.target.value }))}
+              placeholder="Ví dụ: 1234567890123456"
+              style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 3 }}>Access Token CAPI (server-side)</label>
+            <input
+              type="password"
+              value={meta.fb_capi_token || ""}
+              onChange={e => setMeta(m => ({ ...m, fb_capi_token: e.target.value }))}
+              placeholder="EAAxxxx... (không lộ ra client)"
+              style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }}
+            />
+          </div>
+          <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Pixel này sẽ fire thêm ViewContent, AddToCart, Purchase riêng cho sản phẩm này.</p>
+        </div>
+      </div>
 
       {/* Save button bottom */}
       <div style={{ textAlign: "right", marginTop: 8 }}>

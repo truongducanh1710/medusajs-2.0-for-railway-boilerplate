@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { HttpTypes } from "@medusajs/types"
 import { addToCart } from "@lib/data/cart"
 import { useParams, useRouter } from "next/navigation"
+import { generateEventId } from "@lib/pixel"
 
 type GiftItem = {
   image?: string
@@ -139,6 +140,24 @@ export default function BundleSelector({ product, region }: Props) {
       } as any)
       setAdded(true)
       setTimeout(() => setAdded(false), 2500)
+
+      // Fire AddToCart pixel event
+      if (typeof window !== "undefined" && window.fbq) {
+        const eventId = generateEventId()
+        window.fbq(
+          "track",
+          "AddToCart",
+          {
+            content_ids: [variant.id],
+            content_name: product.title,
+            content_type: "product",
+            value: selectedOpt.price / 100,
+            currency: "VND",
+            num_items: selected,
+          },
+          { eventID: eventId }
+        )
+      }
     } catch (e) {
       console.error(e)
     } finally {

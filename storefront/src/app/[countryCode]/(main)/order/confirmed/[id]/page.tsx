@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import { enrichLineItems } from "@lib/data/cart"
 import { retrieveOrder } from "@lib/data/orders"
 import { HttpTypes } from "@medusajs/types"
+import PurchaseTracker from "@components/PurchaseTracker"
 
 type Props = {
   params: { id: string }
@@ -36,5 +37,19 @@ export default async function OrderConfirmedPage({ params }: Props) {
     return notFound()
   }
 
-  return <OrderCompletedTemplate order={order} />
+  const contentIds = order.items?.map((i) => i.variant_id || i.id) ?? []
+  const value = (order.total ?? 0) / 100
+  const currency = order.currency_code?.toUpperCase() ?? "VND"
+
+  return (
+    <>
+      <PurchaseTracker
+        orderId={order.id}
+        value={value}
+        currency={currency}
+        contentIds={contentIds}
+      />
+      <OrderCompletedTemplate order={order} />
+    </>
+  )
 }
