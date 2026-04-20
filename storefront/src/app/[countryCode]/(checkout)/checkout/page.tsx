@@ -10,14 +10,7 @@ export const metadata: Metadata = {
 }
 
 const fetchCart = async () => {
-  // Retry up to 6 times (3s total) in case addToCart is still in flight
-  let cart = null
-  for (let i = 0; i < 6; i++) {
-    cart = await retrieveCart()
-    if (cart?.items?.length) break
-    if (i < 5) await new Promise(r => setTimeout(r, 500))
-  }
-
+  const cart = await retrieveCart()
   if (!cart) return notFound()
 
   if (cart?.items?.length) {

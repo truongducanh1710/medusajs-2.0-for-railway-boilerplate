@@ -123,7 +123,7 @@ export default function BundleSelector({ product, region }: Props) {
 
   const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!variant?.id) return
     setAdding(true)
 
@@ -139,19 +139,22 @@ export default function BundleSelector({ product, region }: Props) {
       }, { eventID: generateEventId() })
     }
 
-    // addToCart chạy background — không await
-    const giftsToSave = selectedOpt.gifts || []
-    addToCart({
-      variantId: variant.id,
-      quantity: selected,
-      countryCode,
-      metadata: giftsToSave.length > 0
-        ? { gifts: JSON.stringify(giftsToSave) }
-        : undefined,
-    } as any).catch(e => console.error("[BundleSelector] addToCart failed", e))
-
-    // Redirect ngay lập tức
-    router.push(`/${countryCode}/checkout`)
+    try {
+      const giftsToSave = selectedOpt.gifts || []
+      await addToCart({
+        variantId: variant.id,
+        quantity: selected,
+        countryCode,
+        metadata: giftsToSave.length > 0
+          ? { gifts: JSON.stringify(giftsToSave) }
+          : undefined,
+      } as any)
+      // Chỉ redirect sau khi addToCart hoàn tất — đảm bảo số lượng đúng
+      router.push(`/${countryCode}/checkout`)
+    } catch (e) {
+      console.error("[BundleSelector] addToCart failed", e)
+      setAdding(false)
+    }
   }
 
   return (
@@ -263,7 +266,7 @@ export default function BundleSelector({ product, region }: Props) {
           disabled={adding}
           className="w-full py-3 sm:py-4 rounded-xl font-black text-base sm:text-lg tracking-wide transition-all bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98] disabled:opacity-70 shadow-lg"
         >
-          {adding ? "Đang xử lý..." : "🛒 ĐẶT HÀNG NGAY"}
+          {adding ? "⏳ Đang thêm vào giỏ..." : "🛒 ĐẶT HÀNG NGAY"}
         </button>
 
         <div className="grid grid-cols-4 gap-1 pt-1">
