@@ -4,6 +4,7 @@ import { HttpTypes } from "@medusajs/types"
 
 import ImageGallery from "@modules/products/components/image-gallery"
 import RelatedProducts from "@modules/products/components/related-products"
+import StickyBuyBar from "@modules/products/components/sticky-buy-bar"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ComboBundle from "@modules/products/components/combo-bundle"
@@ -427,6 +428,9 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
           </Suspense>
         </div>
       </div>
+
+      {/* Sticky buy bar — appears when BundleSelector scrolls off screen */}
+      <StickyBuyBar product={product} region={region} anchorId="bundle-selector" />
     </div>
   )
 }
