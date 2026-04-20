@@ -41,7 +41,14 @@ function Countdown({ minutes = 17 }: { minutes?: number }) {
   const m = String(Math.floor(secs / 60)).padStart(2, "0")
   const s = String(secs % 60).padStart(2, "0")
 
-  return <span className="font-black tabular-nums">{m}:{s}</span>
+  return (
+    <span
+      className="font-black tabular-nums"
+      style={{ display: "inline-block", minWidth: "3.2ch", textAlign: "center" }}
+    >
+      {m}:{s}
+    </span>
+  )
 }
 
 export default function BundleSelector({ product, region }: Props) {
@@ -131,8 +138,8 @@ export default function BundleSelector({ product, region }: Props) {
         — Đổi trả 7 ngày — Hài lòng hoặc hoàn tiền —
       </div>
 
-      <div className="bg-blue-600 text-white py-3 px-4 text-center">
-        <p className="font-black text-base">
+      <div className="bg-blue-600 text-white py-3 px-4 text-center" style={{ minHeight: "48px" }}>
+        <p className="font-black text-base" style={{ lineHeight: "1.5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           🔥 NHANH! Ưu đãi kết thúc sau <Countdown minutes={17} /> ⏰
         </p>
       </div>
