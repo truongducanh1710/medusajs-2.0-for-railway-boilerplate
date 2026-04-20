@@ -481,7 +481,11 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
             <div className="p-5 space-y-4">
               {sortedItems.map((item) => {
                 const gifts = (() => {
-                  try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
+                  try {
+                    const parsed = JSON.parse((item.metadata?.gifts as string) || "[]")
+                    console.log("[checkout debug] item", item.id, "metadata:", item.metadata, "gifts:", parsed)
+                    return parsed
+                  } catch { return [] }
                 })()
 
                 return (
