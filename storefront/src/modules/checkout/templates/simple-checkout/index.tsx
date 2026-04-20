@@ -204,7 +204,12 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const countryCode = params.countryCode as string
   const countdown = useCountdown(12)
 
-  const [form, setForm] = useState({ name: "", phone: "", address: "", note: "" })
+  const [form, setForm] = useState({ name: "", phone: "", street: "", note: "", province: "", ward: "" })
+  const [provinces, setProvinces] = useState<{ code: number; name: string }[]>([])
+  const [wards, setWards] = useState<{ code: number; name: string }[]>([])
+  const [wardSearch, setWardSearch] = useState("")
+  const [wardOpen, setWardOpen] = useState(false)
+  const [loadingWards, setLoadingWards] = useState(false)
   const [payment, setPayment] = useState<"cod" | "sepay">("cod")
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -232,13 +237,40 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     }
   }
 
+  // Load provinces on mount
+  useEffect(() => {
+    fetch("https://provinces.open-api.vn/api/?depth=1")
+      .then(r => r.json())
+      .then((data: any[]) => setProvinces(data.map((p: any) => ({ code: p.code, name: p.name }))))
+      .catch(() => {})
+  }, [])
+
+  // Load wards when province changes
+  useEffect(() => {
+    if (!form.province) { setWards([]); return }
+    const prov = provinces.find(p => p.name === form.province)
+    if (!prov) return
+    setLoadingWards(true)
+    setWards([])
+    setForm((f: typeof form) => ({ ...f, ward: "" }))
+    setWardSearch("")
+    fetch(`https://provinces.open-api.vn/api/p/${prov.code}?depth=3`)
+      .then(r => r.json())
+      .then((data: any) => {
+        const allWards = (data.districts || []).flatMap((d: any) => d.wards || [])
+        setWards(allWards.map((w: any) => ({ code: w.code, name: w.name })))
+      })
+      .catch(() => {})
+      .finally(() => setLoadingWards(false))
+  }, [form.province, provinces])
+
   // Load saved form data
   useEffect(() => {
     const saved = localStorage.getItem('phanviet_checkout_form')
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
-        setForm(parsed.form || { name: "", phone: "", address: "", note: "" })
+        setForm(parsed.form || { name: "", phone: "", street: "", note: "", province: "", ward: "" })
         setPayment(parsed.payment || "cod")
       } catch (e) {
         // ignore
@@ -288,11 +320,15 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     }
   }
 
+  const buildAddress = () =>
+    [form.street, form.ward, form.province].filter(Boolean).join(", ")
+
   const validate = () => {
     const e: Record<string, string> = {}
     if (!form.name.trim()) e.name = "Vui lòng nhập họ tên"
     if (!/^(0|\+84)[0-9]{8,9}$/.test(form.phone.replace(/\s/g, ""))) e.phone = "Số điện thoại không hợp lệ"
-    if (!form.address.trim()) e.address = "Vui lòng nhập địa chỉ"
+    if (!form.street.trim()) e.street = "Vui lòng nhập số nhà, tên đường"
+    if (!form.province) e.province = "Vui lòng chọn tỉnh/thành phố"
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -309,21 +345,22 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       // Cập nhật cart với thông tin giao hàng
+      const fullAddress = buildAddress()
       const updatedCart = await updateCart({
         email: `guest${Date.now()}@example.com`,
         shipping_address: {
           first_name: form.name,
           last_name: "",
-          address_1: form.address,
-          city: "Việt Nam",
+          address_1: fullAddress,
+          city: form.province || "Việt Nam",
           country_code: countryCode || "vn",
           phone: form.phone,
         },
         billing_address: {
           first_name: form.name,
           last_name: "",
-          address_1: form.address,
-          city: "Việt Nam",
+          address_1: fullAddress,
+          city: form.province || "Việt Nam",
           country_code: countryCode || "vn",
           phone: form.phone,
         },
@@ -639,15 +676,76 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                   />
                   {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                 </div>
+                {/* Tỉnh/Thành phố */}
+                <div>
+                  <select
+                    value={form.province}
+                    onChange={e => setForm(f => ({ ...f, province: e.target.value, ward: "" }))}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-400 transition-colors bg-white ${errors.province ? "border-red-400" : "border-gray-200"}`}
+                  >
+                    <option value="">-- Chọn Tỉnh / Thành phố * --</option>
+                    {provinces.map(p => (
+                      <option key={p.code} value={p.name}>{p.name}</option>
+                    ))}
+                  </select>
+                  {errors.province && <p className="text-red-500 text-xs mt-1">{errors.province}</p>}
+                </div>
+
+                {/* Phường/Xã — searchable */}
+                {form.province && (
+                  <div className="relative">
+                    <div
+                      onClick={() => { if (!loadingWards && wards.length > 0) setWardOpen(o => !o) }}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm cursor-pointer flex items-center justify-between bg-white"
+                    >
+                      <span className={form.ward ? "text-gray-900" : "text-gray-400"}>
+                        {loadingWards ? "Đang tải phường/xã..." : form.ward || "Chọn Phường / Xã (tuỳ chọn)"}
+                      </span>
+                      <span className="text-gray-400 text-xs">{wardOpen ? "▲" : "▼"}</span>
+                    </div>
+                    {wardOpen && (
+                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                        <div className="p-2 border-b border-gray-100">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={wardSearch}
+                            onChange={e => setWardSearch(e.target.value)}
+                            placeholder="Tìm phường/xã..."
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-orange-400"
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto">
+                          {wards
+                            .filter(w => w.name.toLowerCase().includes(wardSearch.toLowerCase()))
+                            .map(w => (
+                              <div
+                                key={w.code}
+                                onClick={() => { setForm(f => ({ ...f, ward: w.name })); setWardOpen(false); setWardSearch("") }}
+                                className={`px-4 py-2.5 text-sm cursor-pointer hover:bg-orange-50 ${form.ward === w.name ? "bg-orange-50 font-bold text-orange-600" : "text-gray-700"}`}
+                              >
+                                {w.name}
+                              </div>
+                            ))}
+                          {wards.filter(w => w.name.toLowerCase().includes(wardSearch.toLowerCase())).length === 0 && (
+                            <p className="px-4 py-3 text-sm text-gray-400">Không tìm thấy</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Số nhà, tên đường */}
                 <div>
                   <input
                     type="text"
-                    placeholder="Địa chỉ giao hàng *"
-                    value={form.address}
-                    onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                    className={`w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-400 transition-colors ${errors.address ? "border-red-400" : "border-gray-200"}`}
+                    placeholder="Số nhà, tên đường *"
+                    value={form.street}
+                    onChange={e => setForm(f => ({ ...f, street: e.target.value }))}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-400 transition-colors ${errors.street ? "border-red-400" : "border-gray-200"}`}
                   />
-                  {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
+                  {errors.street && <p className="text-red-500 text-xs mt-1">{errors.street}</p>}
                 </div>
                 <textarea
                   placeholder="Ghi chú (màu sắc, số lượng khác...)"
