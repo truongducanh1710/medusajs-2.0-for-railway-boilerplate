@@ -3,7 +3,6 @@ import { notFound } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
 
 import ImageGallery from "@modules/products/components/image-gallery"
-import ProductActionsWrapper from "./product-actions-wrapper"
 import RelatedProducts from "@modules/products/components/related-products"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
@@ -262,21 +261,21 @@ function FAQSection({ product }: { product: HttpTypes.StoreProduct }) {
   )
 }
 
-// Section: Final CTA
-function FinalCTA({ product, region }: { product: HttpTypes.StoreProduct; region: HttpTypes.StoreRegion }) {
+// Section: Final CTA — scroll-to-buy anchor
+function FinalCTA({ product }: { product: HttpTypes.StoreProduct; region: HttpTypes.StoreRegion }) {
   return (
     <div className="py-8 sm:py-12 bg-gradient-to-r from-blue-950 to-blue-900 text-white">
       <div className="max-w-2xl mx-auto px-4 text-center">
         <h2 className="text-xl sm:text-2xl font-extrabold mb-2">{product.title}</h2>
         <p className="text-blue-200 mb-4 sm:mb-6">Đừng bỏ lỡ — Còn hàng có hạn</p>
-        <Suspense fallback={
-          <LocalizedClientLink href="/cart" className="block bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-4 px-10 rounded-xl transition-colors">
-            🛒 MUA NGAY
-          </LocalizedClientLink>
-        }>
-          <ProductActionsWrapper id={product.id} region={region} />
-        </Suspense>
-        <div className="mt-6 flex justify-center gap-6 text-sm text-blue-200">
+        <a
+          href="#bundle-selector"
+          className="block w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-black text-lg sm:text-xl py-4 px-10 rounded-2xl transition-colors shadow-lg"
+          style={{ minHeight: 56 }}
+        >
+          🛒 ĐẶT HÀNG NGAY
+        </a>
+        <div className="mt-5 flex flex-wrap justify-center gap-4 sm:gap-6 text-sm text-blue-200">
           <span>🔒 Thanh toán an toàn</span>
           <span>🚚 Miễn phí ship từ 500K</span>
           <span>🔄 Đổi trả 7 ngày</span>
@@ -351,7 +350,9 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             </div>
 
             {/* Bundle selector: add to cart then checkout */}
-            <BundleSelector product={product} region={region} />
+            <div id="bundle-selector">
+              <BundleSelector product={product} region={region} />
+            </div>
 
             {/* Delivery info */}
             <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">
