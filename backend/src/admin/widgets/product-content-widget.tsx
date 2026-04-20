@@ -38,6 +38,7 @@ type Benefit = { icon: string; title: string; desc: string }
 type FAQItem = { q: string; a: string }
 type GiftItem = { name: string; value: number; image?: string }
 type ReviewItem = { name: string; location: string; rating: number; text: string; date: string }
+type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string }
 
 type Meta = {
   video_url?: string
@@ -52,6 +53,7 @@ type Meta = {
   reviews?: string
   faq?: string
   bundle_gifts?: string
+  bundle_options?: string
   page_content?: string
   [key: string]: string | undefined
 }
@@ -128,10 +130,16 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [showReviews, setShowReviews] = useState(false)
   const [showFaq, setShowFaq] = useState(false)
   const [showGifts, setShowGifts] = useState(false)
+  const [showBundleOptions, setShowBundleOptions] = useState(false)
 
-  // FAQ & Gift local state
+  // FAQ & Gift & Bundle local state
   const [faqs, setFaqs] = useState<FAQItem[]>([{ q: "", a: "" }])
   const [gifts, setGifts] = useState<GiftItem[]>([{ name: "", value: 0 }])
+  const [bundleOptions, setBundleOptions] = useState<BundleOptionMeta[]>([
+    { qty: 1, label: "1 SẢN PHẨM", price: 0, originalPrice: 0 },
+    { qty: 2, label: "MUA 1 TẶNG 1", price: 0, originalPrice: 0, badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500" },
+    { qty: 3, label: "MUA 2 TẶNG 1", price: 0, originalPrice: 0, badge: "TIẾT KIỆM NHẤT 🔥", badgeColor: "bg-red-500" },
+  ])
   const [reviews, setReviews] = useState<ReviewItem[]>([
     { name: "", location: "", rating: 5, text: "", date: "" }
   ])
@@ -146,10 +154,12 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     setShowReviews(!!m.reviews)
     setShowFaq(!!m.faq)
     setShowGifts(!!m.bundle_gifts)
+    setShowBundleOptions(!!m.bundle_options)
 
     if (m.faq) { try { setFaqs(JSON.parse(m.faq)) } catch {} }
     if (m.bundle_gifts) { try { setGifts(JSON.parse(m.bundle_gifts)) } catch {} }
     if (m.reviews) { try { setReviews(JSON.parse(m.reviews)) } catch {} }
+    if (m.bundle_options) { try { setBundleOptions(JSON.parse(m.bundle_options)) } catch {} }
   }, [product.id])
 
   const setM = (key: string, val: string) => setMeta(prev => ({ ...prev, [key]: val }))
@@ -170,6 +180,8 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     else delete m.faq
     if (showGifts) m.bundle_gifts = JSON.stringify(gifts.filter(g => g.name))
     else delete m.bundle_gifts
+    if (showBundleOptions) m.bundle_options = JSON.stringify(bundleOptions)
+    else delete m.bundle_options
     // Keep page_content unless explicitly cleared — never auto-delete it
     if (overrides.page_content !== undefined) {
       if (!overrides.page_content.trim()) delete m.page_content
@@ -405,6 +417,60 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         <button onClick={() => setGifts(prev => [...prev, { name: "", value: 0 }])}
           style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
           + Thêm quà tặng
+        </button>
+      </Toggle>
+
+      {/* 8. Bundle Options */}
+      <Toggle label="🛒 Giá gói Bundle (tùy chỉnh)" enabled={showBundleOptions} onToggle={() => setShowBundleOptions(!showBundleOptions)}>
+        <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 12 }}>
+          Nếu bật, giá này sẽ ghi đè công thức tự động. Nhập số nguyên (VD: 499000). Giá gốc là giá gạch.
+        </p>
+        {bundleOptions.map((opt, i) => (
+          <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr 1fr", gap: 8, marginBottom: 4 }}>
+              <Input label="Số lượng" value={String(opt.qty)}
+                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, qty: Number(v) } : x))}
+                placeholder="1" />
+              <Input label="Nhãn" value={opt.label}
+                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, label: v } : x))}
+                placeholder="1 SẢN PHẨM" />
+              <Input label="Giá bán (đ)" value={String(opt.price || "")}
+                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, price: Number(v) } : x))}
+                placeholder="499000" />
+              <Input label="Giá gốc (đ)" value={String(opt.originalPrice || "")}
+                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, originalPrice: Number(v) } : x))}
+                placeholder="698000" />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "end" }}>
+              <Input label="Badge (tùy chọn)" value={opt.badge || ""}
+                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, badge: v } : x))}
+                placeholder="HÔM NAY THÔI" />
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Màu badge</label>
+                <select
+                  value={opt.badgeColor || ""}
+                  onChange={e => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, badgeColor: e.target.value } : x))}
+                  style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}
+                >
+                  <option value="">Không có</option>
+                  <option value="bg-orange-500">Cam</option>
+                  <option value="bg-red-500">Đỏ</option>
+                  <option value="bg-blue-600">Xanh</option>
+                  <option value="bg-green-500">Xanh lá</option>
+                </select>
+              </div>
+              {bundleOptions.length > 1 && (
+                <button onClick={() => setBundleOptions(prev => prev.filter((_, j) => j !== i))}
+                  style={{ marginBottom: 8, fontSize: 18, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        <button onClick={() => setBundleOptions(prev => [...prev, { qty: prev.length + 1, label: "", price: 0, originalPrice: 0 }])}
+          style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
+          + Thêm gói
         </button>
       </Toggle>
 

@@ -80,32 +80,49 @@ export default function BundleSelector({ product, region }: Props) {
     ]
   }
 
-  const options: BundleOption[] = [
-    {
-      qty: 1,
-      label: "1 SẢN PHẨM",
-      price: basePrice,
-      originalPrice: Math.round(basePrice * 1.4),
-    },
-    {
-      qty: 2,
-      label: "MUA 1 TẶNG 1",
-      badge: "HÔM NAY THÔI",
-      badgeColor: "bg-orange-500",
-      price: Math.round(basePrice * 1.6),
-      originalPrice: Math.round(basePrice * 2.8),
-      gifts,
-    },
-    {
-      qty: 3,
-      label: "MUA 2 TẶNG 1",
-      badge: "TIẾT KIỆM NHẤT 🔥",
-      badgeColor: "bg-red-500",
-      price: Math.round(basePrice * 2.2),
-      originalPrice: Math.round(basePrice * 4.2),
-      gifts,
-    },
-  ]
+  // Load custom bundle options from metadata, fallback to ratio-based defaults
+  let options: BundleOption[] = []
+  try {
+    const rawOpts = product.metadata?.bundle_options as string
+    if (rawOpts) {
+      const parsed = JSON.parse(rawOpts) as Array<{
+        qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string
+      }>
+      options = parsed.map((o, idx) => ({
+        ...o,
+        gifts: idx > 0 ? gifts : undefined,
+      }))
+    }
+  } catch {}
+
+  if (!options.length) {
+    options = [
+      {
+        qty: 1,
+        label: "1 SẢN PHẨM",
+        price: basePrice,
+        originalPrice: Math.round(basePrice * 1.4),
+      },
+      {
+        qty: 2,
+        label: "MUA 1 TẶNG 1",
+        badge: "HÔM NAY THÔI",
+        badgeColor: "bg-orange-500",
+        price: Math.round(basePrice * 1.6),
+        originalPrice: Math.round(basePrice * 2.8),
+        gifts,
+      },
+      {
+        qty: 3,
+        label: "MUA 2 TẶNG 1",
+        badge: "TIẾT KIỆM NHẤT 🔥",
+        badgeColor: "bg-red-500",
+        price: Math.round(basePrice * 2.2),
+        originalPrice: Math.round(basePrice * 4.2),
+        gifts,
+      },
+    ]
+  }
 
   const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
