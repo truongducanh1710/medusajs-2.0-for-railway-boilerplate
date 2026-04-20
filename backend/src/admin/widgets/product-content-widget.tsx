@@ -38,7 +38,7 @@ type Benefit = { icon: string; title: string; desc: string }
 type FAQItem = { q: string; a: string }
 type GiftItem = { name: string; value: number; image?: string }
 type ReviewItem = { name: string; location: string; rating: number; text: string; date: string }
-type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string }
+type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string; gifts?: GiftItem[] }
 
 type Meta = {
   video_url?: string
@@ -129,16 +129,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [showSpecs, setShowSpecs] = useState(false)
   const [showReviews, setShowReviews] = useState(false)
   const [showFaq, setShowFaq] = useState(false)
-  const [showGifts, setShowGifts] = useState(false)
   const [showBundleOptions, setShowBundleOptions] = useState(false)
 
-  // FAQ & Gift & Bundle local state
+  // FAQ & Bundle local state
   const [faqs, setFaqs] = useState<FAQItem[]>([{ q: "", a: "" }])
-  const [gifts, setGifts] = useState<GiftItem[]>([{ name: "", value: 0 }])
   const [bundleOptions, setBundleOptions] = useState<BundleOptionMeta[]>([
-    { qty: 1, label: "1 SẢN PHẨM", price: 0, originalPrice: 0 },
-    { qty: 2, label: "MUA 1 TẶNG 1", price: 0, originalPrice: 0, badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500" },
-    { qty: 3, label: "MUA 2 TẶNG 1", price: 0, originalPrice: 0, badge: "TIẾT KIỆM NHẤT 🔥", badgeColor: "bg-red-500" },
+    { qty: 1, label: "1 SẢN PHẨM", price: 0, originalPrice: 0, gifts: [] },
+    { qty: 2, label: "MUA 1 TẶNG 1", price: 0, originalPrice: 0, badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500", gifts: [{ name: "", value: 0 }] },
+    { qty: 3, label: "MUA 2 TẶNG 1", price: 0, originalPrice: 0, badge: "TIẾT KIỆM NHẤT 🔥", badgeColor: "bg-red-500", gifts: [{ name: "", value: 0 }] },
   ])
   const [reviews, setReviews] = useState<ReviewItem[]>([
     { name: "", location: "", rating: 5, text: "", date: "" }
@@ -153,11 +151,9 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     setShowSpecs(!!(m.chat_lieu || m.kich_thuoc || m.xuat_xu || m.bao_hanh))
     setShowReviews(!!m.reviews)
     setShowFaq(!!m.faq)
-    setShowGifts(!!m.bundle_gifts)
     setShowBundleOptions(!!m.bundle_options)
 
     if (m.faq) { try { setFaqs(JSON.parse(m.faq)) } catch {} }
-    if (m.bundle_gifts) { try { setGifts(JSON.parse(m.bundle_gifts)) } catch {} }
     if (m.reviews) { try { setReviews(JSON.parse(m.reviews)) } catch {} }
     if (m.bundle_options) { try { setBundleOptions(JSON.parse(m.bundle_options)) } catch {} }
   }, [product.id])
@@ -178,8 +174,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     else delete m.reviews
     if (showFaq) m.faq = JSON.stringify(faqs.filter(f => f.q))
     else delete m.faq
-    if (showGifts) m.bundle_gifts = JSON.stringify(gifts.filter(g => g.name))
-    else delete m.bundle_gifts
+    delete m.bundle_gifts
     if (showBundleOptions) m.bundle_options = JSON.stringify(bundleOptions)
     else delete m.bundle_options
     // Keep page_content unless explicitly cleared — never auto-delete it
@@ -396,79 +391,81 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         </button>
       </Toggle>
 
-      {/* 7. Bundle Gifts */}
-      <Toggle label="🎁 Quà tặng kèm Bundle" enabled={showGifts} onToggle={() => setShowGifts(!showGifts)}>
-        {gifts.map((g, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 120px auto", gap: 8, marginBottom: 8, alignItems: "end" }}>
-            <Input label={i === 0 ? "Tên quà tặng" : ""} value={g.name}
-              onChange={v => setGifts(prev => prev.map((x, j) => j === i ? { ...x, name: v } : x))}
-              placeholder="Túi đựng cao cấp" />
-            <Input label={i === 0 ? "Giá trị (đ)" : ""} value={String(g.value || "")}
-              onChange={v => setGifts(prev => prev.map((x, j) => j === i ? { ...x, value: Number(v) } : x))}
-              placeholder="89000" />
-            {gifts.length > 1 && (
-              <button onClick={() => setGifts(prev => prev.filter((_, j) => j !== i))}
-                style={{ marginBottom: 8, fontSize: 18, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-        <button onClick={() => setGifts(prev => [...prev, { name: "", value: 0 }])}
-          style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
-          + Thêm quà tặng
-        </button>
-      </Toggle>
-
-      {/* 8. Bundle Options */}
-      <Toggle label="🛒 Giá gói Bundle (tùy chỉnh)" enabled={showBundleOptions} onToggle={() => setShowBundleOptions(!showBundleOptions)}>
+      {/* 7. Bundle Options + Gifts per option */}
+      <Toggle label="🛒 Gói Bundle & Quà tặng" enabled={showBundleOptions} onToggle={() => setShowBundleOptions(!showBundleOptions)}>
         <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 12 }}>
-          Nếu bật, giá này sẽ ghi đè công thức tự động. Nhập số nguyên (VD: 499000). Giá gốc là giá gạch.
+          Nhập giá từng gói (số nguyên, VD: 499000). Mỗi gói có thể có quà tặng riêng. Giá gốc là giá gạch đỏ.
         </p>
-        {bundleOptions.map((opt, i) => (
-          <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, marginBottom: 8 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr 1fr", gap: 8, marginBottom: 4 }}>
-              <Input label="Số lượng" value={String(opt.qty)}
-                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, qty: Number(v) } : x))}
-                placeholder="1" />
-              <Input label="Nhãn" value={opt.label}
-                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, label: v } : x))}
-                placeholder="1 SẢN PHẨM" />
-              <Input label="Giá bán (đ)" value={String(opt.price || "")}
-                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, price: Number(v) } : x))}
-                placeholder="499000" />
-              <Input label="Giá gốc (đ)" value={String(opt.originalPrice || "")}
-                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, originalPrice: Number(v) } : x))}
-                placeholder="698000" />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "end" }}>
-              <Input label="Badge (tùy chọn)" value={opt.badge || ""}
-                onChange={v => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, badge: v } : x))}
-                placeholder="HÔM NAY THÔI" />
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Màu badge</label>
-                <select
-                  value={opt.badgeColor || ""}
-                  onChange={e => setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, badgeColor: e.target.value } : x))}
-                  style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}
-                >
-                  <option value="">Không có</option>
-                  <option value="bg-orange-500">Cam</option>
-                  <option value="bg-red-500">Đỏ</option>
-                  <option value="bg-blue-600">Xanh</option>
-                  <option value="bg-green-500">Xanh lá</option>
-                </select>
+        {bundleOptions.map((opt, i) => {
+          const updateOpt = (patch: Partial<BundleOptionMeta>) =>
+            setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x))
+          const optGifts: GiftItem[] = opt.gifts || []
+          return (
+            <div key={i} style={{ border: "1px solid #d1d5db", borderRadius: 10, marginBottom: 12, overflow: "hidden" }}>
+              {/* Option header */}
+              <div style={{ background: "#f9fafb", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: "#374151" }}>GÓI {i + 1}</span>
+                {bundleOptions.length > 1 && (
+                  <button onClick={() => setBundleOptions(prev => prev.filter((_, j) => j !== i))}
+                    style={{ fontSize: 13, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>
+                    Xóa gói
+                  </button>
+                )}
               </div>
-              {bundleOptions.length > 1 && (
-                <button onClick={() => setBundleOptions(prev => prev.filter((_, j) => j !== i))}
-                  style={{ marginBottom: 8, fontSize: 18, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>
-                  ×
-                </button>
-              )}
+              <div style={{ padding: 12 }}>
+                {/* Row 1: qty, label, price, originalPrice */}
+                <div style={{ display: "grid", gridTemplateColumns: "70px 1fr 130px 130px", gap: 8, marginBottom: 8 }}>
+                  <Input label="Số lượng" value={String(opt.qty)} onChange={v => updateOpt({ qty: Number(v) })} placeholder="1" />
+                  <Input label="Nhãn hiển thị" value={opt.label} onChange={v => updateOpt({ label: v })} placeholder="1 SẢN PHẨM" />
+                  <Input label="Giá bán (đ)" value={String(opt.price || "")} onChange={v => updateOpt({ price: Number(v) })} placeholder="499000" />
+                  <Input label="Giá gốc/gạch (đ)" value={String(opt.originalPrice || "")} onChange={v => updateOpt({ originalPrice: Number(v) })} placeholder="698000" />
+                </div>
+                {/* Row 2: badge, badge color */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 8, marginBottom: 10 }}>
+                  <Input label="Badge (tùy chọn)" value={opt.badge || ""} onChange={v => updateOpt({ badge: v })} placeholder="HÔM NAY THÔI" />
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Màu badge</label>
+                    <select value={opt.badgeColor || ""}
+                      onChange={e => updateOpt({ badgeColor: e.target.value })}
+                      style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}>
+                      <option value="">Không có</option>
+                      <option value="bg-orange-500">Cam</option>
+                      <option value="bg-red-500">Đỏ</option>
+                      <option value="bg-blue-600">Xanh dương</option>
+                      <option value="bg-green-500">Xanh lá</option>
+                    </select>
+                  </div>
+                </div>
+                {/* Gifts for this option */}
+                <div style={{ borderTop: "1px dashed #e5e7eb", paddingTop: 10 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", marginBottom: 8 }}>🎁 Quà tặng kèm gói này</p>
+                  {optGifts.length === 0 && (
+                    <p style={{ fontSize: 11, color: "#9ca3af", marginBottom: 8 }}>Chưa có quà — gói này không kèm quà</p>
+                  )}
+                  {optGifts.map((g, gi) => (
+                    <div key={gi} style={{ display: "grid", gridTemplateColumns: "1fr 120px auto", gap: 8, marginBottom: 6, alignItems: "end" }}>
+                      <Input label={gi === 0 ? "Tên quà tặng" : ""} value={g.name}
+                        onChange={v => updateOpt({ gifts: optGifts.map((x, k) => k === gi ? { ...x, name: v } : x) })}
+                        placeholder="Túi đựng cao cấp" />
+                      <Input label={gi === 0 ? "Giá trị (đ)" : ""} value={String(g.value || "")}
+                        onChange={v => updateOpt({ gifts: optGifts.map((x, k) => k === gi ? { ...x, value: Number(v) } : x) })}
+                        placeholder="89000" />
+                      <button onClick={() => updateOpt({ gifts: optGifts.filter((_, k) => k !== gi) })}
+                        style={{ marginBottom: 8, fontSize: 18, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={() => updateOpt({ gifts: [...optGifts, { name: "", value: 0 }] })}
+                    style={{ fontSize: 12, color: "#3b82f6", background: "none", border: "1px dashed #3b82f6", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+                    + Thêm quà
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
-        <button onClick={() => setBundleOptions(prev => [...prev, { qty: prev.length + 1, label: "", price: 0, originalPrice: 0 }])}
+          )
+        })}
+        <button onClick={() => setBundleOptions(prev => [...prev, { qty: prev.length + 1, label: "", price: 0, originalPrice: 0, gifts: [] }])}
           style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
           + Thêm gói
         </button>

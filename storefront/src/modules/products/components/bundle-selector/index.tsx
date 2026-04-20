@@ -67,18 +67,10 @@ export default function BundleSelector({ product, region }: Props) {
 
   if (!basePrice || basePrice === 0) return null
 
-  let gifts: GiftItem[] = []
-  try {
-    const raw = product.metadata?.bundle_gifts as string
-    if (raw) gifts = JSON.parse(raw)
-  } catch {}
-
-  if (!gifts.length) {
-    gifts = [
-      { name: "Túi đựng sản phẩm cao cấp", value: 89000 },
-      { name: "Hướng dẫn sử dụng chi tiết", value: 49000 },
-    ]
-  }
+  const defaultGifts: GiftItem[] = [
+    { name: "Túi đựng sản phẩm cao cấp", value: 89000 },
+    { name: "Hướng dẫn sử dụng chi tiết", value: 49000 },
+  ]
 
   // Load custom bundle options from metadata, fallback to ratio-based defaults
   let options: BundleOption[] = []
@@ -86,11 +78,14 @@ export default function BundleSelector({ product, region }: Props) {
     const rawOpts = product.metadata?.bundle_options as string
     if (rawOpts) {
       const parsed = JSON.parse(rawOpts) as Array<{
-        qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string
+        qty: number; label: string; price: number; originalPrice: number
+        badge?: string; badgeColor?: string; gifts?: GiftItem[]
       }>
-      options = parsed.map((o, idx) => ({
+      options = parsed.map((o) => ({
         ...o,
-        gifts: idx > 0 ? gifts : undefined,
+        gifts: o.gifts && o.gifts.filter(g => g.name).length > 0
+          ? o.gifts.filter(g => g.name)
+          : undefined,
       }))
     }
   } catch {}
@@ -110,7 +105,7 @@ export default function BundleSelector({ product, region }: Props) {
         badgeColor: "bg-orange-500",
         price: Math.round(basePrice * 1.6),
         originalPrice: Math.round(basePrice * 2.8),
-        gifts,
+        gifts: defaultGifts,
       },
       {
         qty: 3,
@@ -119,7 +114,7 @@ export default function BundleSelector({ product, region }: Props) {
         badgeColor: "bg-red-500",
         price: Math.round(basePrice * 2.2),
         originalPrice: Math.round(basePrice * 4.2),
-        gifts,
+        gifts: defaultGifts,
       },
     ]
   }
