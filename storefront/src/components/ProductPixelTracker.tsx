@@ -1,7 +1,15 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { generateEventId } from "@lib/pixel"
+
+const SCROLL_MILESTONES = [25, 50, 75, 100]
+const TIME_MILESTONES = [10, 30, 60, 90, 120, 180, 300] // seconds
+
+function fireCustomEvent(name: string) {
+  if (typeof window === "undefined" || !window.fbq) return
+  window.fbq("trackCustom", name, {}, { eventID: generateEventId() })
+}
 
 export default function ProductPixelTracker({
   pixelIds,
@@ -16,13 +24,16 @@ export default function ProductPixelTracker({
   price: number
   currency: string
 }) {
+  const scrollFired = useRef(new Set<number>())
+  const timeFired = useRef(new Set<number>())
+  const startTime = useRef(Date.now())
+
+  // ViewContent + init per-product pixels
   useEffect(() => {
     if (typeof window === "undefined" || !window.fbq) return
 
-    const eventId = generateEventId()
-
-    for (const pixelId of pixelIds) {
-      window.fbq("init", pixelId)
+    for (const id of pixelIds) {
+      window.fbq("init", id)
     }
 
     window.fbq(
@@ -35,8 +46,52 @@ export default function ProductPixelTracker({
         value: price / 100,
         currency,
       },
-      { eventID: eventId }
+      { eventID: generateEventId() }
     )
+
+    scrollFired.current.clear()
+    timeFired.current.clear()
+    startTime.current = Date.now()
+  }, [productId])
+
+  // Scroll depth tracking
+  useEffect(() => {
+    function onScroll() {
+      const scrolled = window.scrollY + window.innerHeight
+      const total = document.documentElement.scrollHeight
+      const pct = Math.round((scrolled / total) * 100)
+
+      for (const milestone of SCROLL_MILESTONES) {
+        if (pct >= milestone && !scrollFired.current.has(milestone)) {
+          scrollFired.current.add(milestone)
+          fireCustomEvent(`ScrollDepth_${milestone}_percent`)
+        }
+      }
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [productId])
+
+  // Time on page tracking
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime.current) / 1000)
+
+      for (const milestone of TIME_MILESTONES) {
+        if (elapsed >= milestone && !timeFired.current.has(milestone)) {
+          timeFired.current.add(milestone)
+          fireCustomEvent(`TimeOnPage_${milestone}_seconds`)
+        }
+      }
+
+      // Stop checking after last milestone
+      if (elapsed >= TIME_MILESTONES[TIME_MILESTONES.length - 1]) {
+        clearInterval(interval)
+      }
+    }, 5000)
+
+    return () => clearInterval(interval)
   }, [productId])
 
   return null
