@@ -7,6 +7,7 @@ import {
   placeOrder,
   setShippingMethod,
   ensurePaymentSession,
+  applyPromotions,
 } from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
@@ -195,6 +196,10 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showQR, setShowQR] = useState(false)
   const [orderId, setOrderId] = useState("")
+  const [promoCode, setPromoCode] = useState("")
+  const [promoApplied, setPromoApplied] = useState(false)
+  const [promoError, setPromoError] = useState("")
+  const [promoLoading, setPromoLoading] = useState(false)
 
   // Load saved form data
   useEffect(() => {
@@ -230,8 +235,27 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   )
 
   const subtotal = cart.subtotal ?? 0
-  const sepayTotal = Math.max(0, subtotal - SEPAY_DISCOUNT)
-  const finalTotal = payment === "sepay" ? sepayTotal : subtotal
+  const promoDiscount = (cart as any).discount_total ?? 0
+  const sepayTotal = Math.max(0, subtotal - promoDiscount - SEPAY_DISCOUNT)
+  const baseTotal = Math.max(0, subtotal - promoDiscount)
+  const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
+
+  const handleApplyPromo = async () => {
+    if (!promoCode.trim()) return
+    setPromoLoading(true)
+    setPromoError("")
+    try {
+      await applyPromotions([promoCode.trim().toUpperCase()])
+      setPromoApplied(true)
+      // Reload page to get updated cart totals from server
+      window.location.reload()
+    } catch (e: any) {
+      setPromoError("Mã không hợp lệ hoặc đã hết hạn")
+      setPromoApplied(false)
+    } finally {
+      setPromoLoading(false)
+    }
+  }
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -459,12 +483,54 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                 )
               })}
 
+              {/* Promo code */}
+              <div className="border-t border-gray-100 pt-4">
+                {promoApplied || (cart as any).promotions?.length > 0 ? (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                    <span className="text-green-500 text-lg">✅</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-green-700">Mã giảm giá đã áp dụng!</p>
+                      <p className="text-xs text-green-600">Bạn tiết kiệm thêm {formatVND(promoDiscount)}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">🏷️ Mã giảm giá</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={promoCode}
+                        onChange={e => { setPromoCode(e.target.value); setPromoError("") }}
+                        onKeyDown={e => e.key === "Enter" && handleApplyPromo()}
+                        placeholder="Nhập mã (VD: LANHDAU5)"
+                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-orange-400 uppercase placeholder:normal-case"
+                      />
+                      <button
+                        onClick={handleApplyPromo}
+                        disabled={promoLoading || !promoCode.trim()}
+                        className="bg-gray-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-40 hover:bg-gray-700 transition-colors whitespace-nowrap"
+                      >
+                        {promoLoading ? "..." : "Áp dụng"}
+                      </button>
+                    </div>
+                    {promoError && <p className="text-red-500 text-xs mt-1.5">{promoError}</p>}
+                    <p className="text-xs text-blue-600 font-semibold mt-1.5">💡 Lần đầu mua? Dùng mã <strong>LANHDAU5</strong> giảm 5%</p>
+                  </div>
+                )}
+              </div>
+
               {/* Totals */}
               <div className="border-t border-gray-100 pt-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Tạm tính</span>
                   <span>{convertToLocale({ amount: subtotal, currency_code: cart.currency_code })}</span>
                 </div>
+                {promoDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600 font-semibold">
+                    <span>Mã giảm giá</span>
+                    <span>-{formatVND(promoDiscount)}</span>
+                  </div>
+                )}
                 {payment === "sepay" && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
                     <span>Giảm thanh toán QR</span>
