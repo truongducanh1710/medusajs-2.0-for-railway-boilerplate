@@ -56,7 +56,6 @@ function Countdown({ minutes = 17 }: { minutes?: number }) {
 export default function BundleSelector({ product, region }: Props) {
   const [selected, setSelected] = useState(1)
   const [adding, setAdding] = useState(false)
-  const [added, setAdded] = useState(false)
   const params = useParams()
   const countryCode = params.countryCode as string
   const router = useRouter()
@@ -138,9 +137,6 @@ export default function BundleSelector({ product, region }: Props) {
             ? { gifts: JSON.stringify(giftsToSave) }
             : undefined,
       } as any)
-      setAdded(true)
-      setTimeout(() => setAdded(false), 2500)
-
       // Fire AddToCart pixel event
       if (typeof window !== "undefined" && window.fbq) {
         const eventId = generateEventId()
@@ -158,9 +154,10 @@ export default function BundleSelector({ product, region }: Props) {
           { eventID: eventId }
         )
       }
+      // Redirect thẳng vào checkout
+      router.push(`/${countryCode}/checkout`)
     } catch (e) {
       console.error(e)
-    } finally {
       setAdding(false)
     }
   }
@@ -271,18 +268,10 @@ export default function BundleSelector({ product, region }: Props) {
       <div className="px-3 pb-4 pt-1 bg-white space-y-3">
         <button
           onClick={handleAdd}
-          disabled={adding || added}
-          className={`w-full py-3 sm:py-4 rounded-xl font-black text-base sm:text-lg tracking-wide transition-all ${
-            added
-              ? "bg-green-500 text-white"
-              : "bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98]"
-          } disabled:opacity-70 shadow-lg`}
+          disabled={adding}
+          className="w-full py-3 sm:py-4 rounded-xl font-black text-base sm:text-lg tracking-wide transition-all bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98] disabled:opacity-70 shadow-lg"
         >
-          {added
-            ? "✅ ĐÃ THÊM VÀO GIỎ!"
-            : adding
-            ? "Đang thêm..."
-            : "🛒 THÊM VÀO GIỎ HÀNG"}
+          {adding ? "Đang xử lý..." : "🛒 ĐẶT HÀNG NGAY"}
         </button>
 
         <div className="grid grid-cols-4 gap-1 pt-1">
