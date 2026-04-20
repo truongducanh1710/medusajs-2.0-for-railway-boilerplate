@@ -1,5 +1,5 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import ProductPageBuilder from "../components/product-page-builder"
 
 // Builds storefront link from current admin URL pattern
