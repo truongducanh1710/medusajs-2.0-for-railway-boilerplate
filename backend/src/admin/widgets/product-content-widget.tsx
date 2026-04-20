@@ -349,8 +349,21 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     if (showFaq) m.faq = JSON.stringify(faqs.filter(f => f.q))
     else delete m.faq
     delete m.bundle_gifts
-    if (showBundleOptions) m.bundle_options = JSON.stringify(bundleOptions)
-    else delete m.bundle_options
+    if (showBundleOptions) {
+      const sanitized = bundleOptions.map(o => ({
+        qty: Number(o.qty) || 0,
+        label: String(o.label || ""),
+        price: Number(o.price) || 0,
+        originalPrice: Number(o.originalPrice) || 0,
+        badge: o.badge ? String(o.badge) : undefined,
+        badgeColor: o.badgeColor ? String(o.badgeColor) : undefined,
+        image: o.image ? String(o.image) : undefined,
+        gifts: Array.isArray(o.gifts)
+          ? o.gifts.map(g => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined }))
+          : [],
+      }))
+      m.bundle_options = JSON.stringify(sanitized)
+    } else delete m.bundle_options
     // Keep page_content unless explicitly cleared — never auto-delete it
     if (overrides.page_content !== undefined) {
       if (!overrides.page_content.trim()) delete m.page_content
