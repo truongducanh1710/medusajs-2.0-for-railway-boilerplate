@@ -152,7 +152,7 @@ export default function BundleSelector({ product, region }: Props) {
             <div
               key={opt.qty}
               onClick={() => setSelected(opt.qty)}
-              className={`relative rounded-xl border-2 cursor-pointer transition-all overflow-hidden ${
+              className={`rounded-xl border-2 cursor-pointer transition-all overflow-hidden ${
                 isSelected
                   ? "border-blue-600 shadow-md"
                   : "border-gray-200 hover:border-blue-300"
@@ -160,7 +160,7 @@ export default function BundleSelector({ product, region }: Props) {
             >
               {opt.badge && (
                 <div
-                  className={`absolute top-0 right-0 ${opt.badgeColor} text-white text-[10px] font-black px-2 py-0.5 rounded-bl-lg`}
+                  className={`${opt.badgeColor} text-white text-[10px] font-black px-3 py-1 text-center tracking-wide`}
                 >
                   {opt.badge}
                 </div>
