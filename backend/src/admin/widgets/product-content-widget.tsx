@@ -2,6 +2,36 @@ import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import ProductPageBuilder from "../components/product-page-builder"
 
+// Builds storefront link from current admin URL pattern
+// Railway: backend = backend-xxx.railway.app, storefront = storefront-xxx.railway.app
+// Local: localhost:9000 → localhost:8000
+function getStorefrontBase(): string {
+  if (typeof window === "undefined") return "http://localhost:8000"
+  const host = window.location.host
+  // Railway pattern: replace "backend-production" with "storefront-production"
+  if (host.includes("backend-") && host.includes("railway.app")) {
+    return `https://${host.replace(/^backend-/, "storefront-")}`
+  }
+  // Local dev
+  return host.replace(":9000", ":8000").includes(":")
+    ? `http://${host.replace(":9000", ":8000")}`
+    : `https://${host}`
+}
+
+function StorefrontLink({ handle }: { handle: string }) {
+  const url = `${getStorefrontBase()}/vn/products/${handle}`
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      style={{ marginLeft: 10, color: "#f97316", fontWeight: 700, textDecoration: "none", fontSize: 12 }}
+    >
+      🔗 Xem trên storefront ↗
+    </a>
+  )
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Benefit = { icon: string; title: string; desc: string }
@@ -189,6 +219,9 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           </h3>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>
             Quản lý các section hiển thị trên trang sản phẩm
+            {product.handle && (
+              <StorefrontLink handle={product.handle} />
+            )}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
