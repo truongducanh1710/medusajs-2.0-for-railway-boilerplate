@@ -210,6 +210,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [wardSearch, setWardSearch] = useState("")
   const [wardOpen, setWardOpen] = useState(false)
   const [loadingWards, setLoadingWards] = useState(false)
+  const [provinceSearch, setProvinceSearch] = useState("")
+  const [provinceOpen, setProvinceOpen] = useState(false)
   const [payment, setPayment] = useState<"cod" | "sepay">("cod")
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -676,18 +678,44 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                   />
                   {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                 </div>
-                {/* Tỉnh/Thành phố */}
-                <div>
-                  <select
-                    value={form.province}
-                    onChange={e => setForm(f => ({ ...f, province: e.target.value, ward: "" }))}
-                    className={`w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-400 transition-colors bg-white ${errors.province ? "border-red-400" : "border-gray-200"}`}
+                {/* Tỉnh/Thành phố — searchable */}
+                <div className="relative">
+                  <div
+                    onClick={() => setProvinceOpen(o => !o)}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm cursor-pointer flex items-center justify-between bg-white ${errors.province ? "border-red-400" : "border-gray-200"}`}
                   >
-                    <option value="">-- Chọn Tỉnh / Thành phố * --</option>
-                    {provinces.map(p => (
-                      <option key={p.code} value={p.name}>{p.name}</option>
-                    ))}
-                  </select>
+                    <span className={form.province ? "text-gray-900" : "text-gray-400"}>
+                      {form.province || "-- Chọn Tỉnh / Thành phố * --"}
+                    </span>
+                    <span className="text-gray-400 text-xs">{provinceOpen ? "▲" : "▼"}</span>
+                  </div>
+                  {provinceOpen && (
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                      <div className="p-2 border-b border-gray-100">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={provinceSearch}
+                          onChange={e => setProvinceSearch(e.target.value)}
+                          placeholder="Tìm tỉnh/thành phố..."
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-orange-400"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {provinces
+                          .filter(p => p.name.toLowerCase().includes(provinceSearch.toLowerCase()))
+                          .map(p => (
+                            <div
+                              key={p.code}
+                              onClick={() => { setForm((f: typeof form) => ({ ...f, province: p.name, ward: "" })); setProvinceOpen(false); setProvinceSearch("") }}
+                              className={`px-4 py-2.5 text-sm cursor-pointer hover:bg-orange-50 ${form.province === p.name ? "bg-orange-50 font-bold text-orange-600" : "text-gray-700"}`}
+                            >
+                              {p.name}
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                   {errors.province && <p className="text-red-500 text-xs mt-1">{errors.province}</p>}
                 </div>
 
