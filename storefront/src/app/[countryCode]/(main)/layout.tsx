@@ -32,7 +32,7 @@ export default async function PageLayout({
         <UtmCapture />
       </Suspense>
       <Nav countryCode={countryCode} />
-      <main className="pt-16 sm:pt-20">
+      <main className="pt-24 sm:pt-28">
         {children}
       </main>
       <Footer countryCode={countryCode} />

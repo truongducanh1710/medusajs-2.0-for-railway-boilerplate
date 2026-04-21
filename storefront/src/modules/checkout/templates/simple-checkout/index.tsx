@@ -496,6 +496,15 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       )}
 
       <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 px-4 py-4">
+          <div className="max-w-5xl mx-auto flex items-center gap-3">
+            <span className="font-black text-lg text-gray-900">PHAN VIỆT</span>
+            <span className="text-gray-300">|</span>
+            <span className="text-gray-500 text-sm">Đặt hàng</span>
+          </div>
+        </div>
+
         {/* Countdown banner */}
         <div className={`px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
           {countdown.expired
@@ -504,19 +513,11 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           }
         </div>
 
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 py-4">
-          <div className="max-w-4xl mx-auto flex items-center gap-3">
-            <a href={`/${countryCode}`} className="text-gray-400 hover:text-gray-600 text-xl">←</a>
-            <span className="font-black text-lg text-gray-900">PHAN VIỆT</span>
-            <span className="text-gray-300">|</span>
-            <span className="text-gray-500 text-sm">Đặt hàng</span>
-          </div>
-        </div>
-
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <div className="max-w-5xl mx-auto px-4 py-6">
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
 
           {/* ĐƠN HÀNG — luôn hiện trên cùng */}
+          <div className="lg:w-[420px] lg:sticky lg:top-6 flex-shrink-0">
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
             <div className="bg-orange-500 px-5 py-3 flex items-center justify-between">
               <h2 className="font-black text-white text-base">📦 Đơn hàng của bạn</h2>
@@ -527,8 +528,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
                 const gifts = (() => {
                   try {
                     const parsed = JSON.parse((item.metadata?.gifts as string) || "[]")
-                    console.log("[checkout debug] item", item.id, "metadata:", item.metadata, "gifts:", parsed)
-                    return parsed
+return parsed
                   } catch { return [] }
                 })()
 
@@ -657,8 +657,10 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
             </div>
           </div>
 
+          </div>{/* end sticky wrapper */}
+
           {/* FORM + PAYMENT — 1 cột, đơn giản */}
-          <div className="space-y-4">
+          <div className="flex-1 space-y-4">
             {/* Shipping info */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
               <h2 className="font-black text-base text-gray-900 mb-4">🚚 Thông tin giao hàng</h2>
