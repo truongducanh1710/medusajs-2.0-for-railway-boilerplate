@@ -75,11 +75,51 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     }
   })
 
+  // Xác định phương thức thanh toán từ metadata
+  const paymentMethod = order.metadata?.payment_method as string | undefined
+  const isSepay = paymentMethod === 'sepay'
+
+  // Tổng tiền
+  const totalPrice = order.summary?.current_order_total ?? order.total ?? 0
+  const totalDiscount = order.summary?.discount_total ?? 0
+
+  // Nếu thanh toán SePay → đã trả trước, COD = 0
+  // Nếu COD → chưa trả, COD = tổng đơn
+  const prepaid = isSepay ? totalPrice : 0
+  const cash = 0
+  const cod = isSepay ? 0 : totalPrice
+
+  // Ghi chú: kết hợp ghi chú khách + gifts + payment method
+  const noteparts: string[] = []
+  if (order.metadata?.note) noteparts.push(order.metadata.note as string)
+  if (isSepay) noteparts.push('Đã thanh toán SePay')
+
+  // Gifts từ line item metadata — thêm vào ghi chú để sale biết
+  const giftLines: string[] = []
+  for (const item of order.items || []) {
+    try {
+      const gifts = JSON.parse((item.metadata?.gifts as string) || '[]')
+      for (const g of gifts) {
+        if (g.name) giftLines.push(`🎁 ${g.name}`)
+      }
+    } catch {}
+  }
+  if (giftLines.length > 0) noteparts.push('Quà tặng kèm:\n' + giftLines.join('\n'))
+
+  const note = noteparts.join('\n').trim()
+
+  // UTM từ order metadata (sẽ được ghi vào khi implement Facebook Pixel)
+  const utmSource = order.metadata?.utm_source as string | undefined
+  const utmMedium = order.metadata?.utm_medium as string | undefined
+  const utmCampaign = order.metadata?.utm_campaign as string | undefined
+  const utmContent = order.metadata?.utm_content as string | undefined
+  const utmTerm = order.metadata?.utm_term as string | undefined
+
   const payload: Record<string, any> = {
     shop_id: Number(PANCAKE_SHOP_ID),
     bill_full_name: billFullName,
     bill_phone_number: shippingAddress.phone || '',
-    note: order.metadata?.note || '',
+    note,
     shipping_address: {
       full_name: billFullName,
       phone_number: shippingAddress.phone || '',
@@ -90,16 +130,29 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
       country_code: shippingAddress.country_code || null,
     },
     items,
-    is_free_shipping: false,
+    is_free_shipping: true,
     received_at_shop: false,
     shipping_fee: 0,
-    total_discount: 0,
-    cash: 0,
+    total_discount: totalDiscount,
+    cash,
+    prepaid,
+    cod,
     status: 0,
   }
 
   if (PANCAKE_WAREHOUSE_ID) {
     payload.warehouse_id = PANCAKE_WAREHOUSE_ID
+  }
+
+  // UTM marketing data
+  if (utmSource || utmCampaign) {
+    payload.marketing = {
+      ...(utmSource && { p_utm_source: utmSource }),
+      ...(utmMedium && { p_utm_medium: utmMedium }),
+      ...(utmCampaign && { p_utm_campaign: utmCampaign }),
+      ...(utmContent && { p_utm_content: utmContent }),
+      ...(utmTerm && { p_utm_term: utmTerm }),
+    }
   }
 
   const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}`
