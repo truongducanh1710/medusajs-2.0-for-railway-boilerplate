@@ -499,7 +499,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 py-4">
           <div className="max-w-5xl mx-auto flex items-center gap-3">
-            <span className="font-black text-lg text-gray-900">PHAN VIỆT</span>
+            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-9 object-contain" />
             <span className="text-gray-300">|</span>
             <span className="text-gray-500 text-sm">Đặt hàng</span>
           </div>

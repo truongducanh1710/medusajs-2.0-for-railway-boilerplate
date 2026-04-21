@@ -1,163 +1,73 @@
-import { getCategoriesList } from "@lib/data/categories"
-import { getCollectionsList } from "@lib/data/collections"
-import { Text, clx } from "@medusajs/ui"
-
-import { getCopy, localeFromCountryCode } from "@lib/i18n"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
-import MedusaCTA from "@modules/layout/components/medusa-cta"
 
 export default async function Footer({
   countryCode,
 }: {
   countryCode?: string
 }) {
-  const { collections } = await getCollectionsList(0, 6)
-  const { product_categories } = await getCategoriesList(0, 6)
-  const copy = getCopy(localeFromCountryCode(countryCode))
-
   return (
-    <footer className="border-t border-ui-border-base w-full">
-      <div className="content-container flex flex-col w-full">
-        <div className="flex flex-col gap-y-6 xsmall:flex-row items-start justify-between py-10 sm:py-16 md:py-24">
-          <div>
-            <LocalizedClientLink
-              href="/"
-              className="txt-compact-xlarge-plus text-ui-fg-subtle hover:text-ui-fg-base uppercase"
-            >
-              {copy.checkout.storeName}
-            </LocalizedClientLink>
-          </div>
-          <div className="text-small-regular gap-10 md:gap-x-16 grid grid-cols-2 sm:grid-cols-3">
-            {product_categories && product_categories?.length > 0 && (
-              <div className="flex flex-col gap-y-2">
-                <span className="txt-small-plus txt-ui-fg-base">
-                  {copy.footer.categories}
-                </span>
-                <ul
-                  className="grid grid-cols-1 gap-2"
-                  data-testid="footer-categories"
-                >
-                  {product_categories?.slice(0, 6).map((c) => {
-                    if (c.parent_category) {
-                      return
-                    }
+    <footer className="bg-red-700 text-white">
+      <div className="max-w-6xl mx-auto px-4 py-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-10">
 
-                    const children =
-                      c.category_children?.map((child) => ({
-                        name: child.name,
-                        handle: child.handle,
-                        id: child.id,
-                      })) || null
-
-                    return (
-                      <li
-                        className="flex flex-col gap-2 text-ui-fg-subtle txt-small"
-                        key={c.id}
-                      >
-                        <LocalizedClientLink
-                          className={clx(
-                            "hover:text-ui-fg-base",
-                            children && "txt-small-plus"
-                          )}
-                          href={`/categories/${c.handle}`}
-                          data-testid="category-link"
-                        >
-                          {c.name}
-                        </LocalizedClientLink>
-                        {children && (
-                          <ul className="grid grid-cols-1 ml-3 gap-2">
-                            {children &&
-                              children.map((child) => (
-                                <li key={child.id}>
-                                  <LocalizedClientLink
-                                    className="hover:text-ui-fg-base"
-                                    href={`/categories/${child.handle}`}
-                                    data-testid="category-link"
-                                  >
-                                    {child.name}
-                                  </LocalizedClientLink>
-                                </li>
-                              ))}
-                          </ul>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            )}
-            {collections && collections.length > 0 && (
-              <div className="flex flex-col gap-y-2">
-                <span className="txt-small-plus txt-ui-fg-base">
-                  {copy.footer.collections}
-                </span>
-                <ul
-                  className={clx(
-                    "grid grid-cols-1 gap-2 text-ui-fg-subtle txt-small",
-                    {
-                      "grid-cols-2": (collections?.length || 0) > 3,
-                    }
-                  )}
-                >
-                  {collections?.slice(0, 6).map((c) => (
-                    <li key={c.id}>
-                      <LocalizedClientLink
-                        className="hover:text-ui-fg-base"
-                        href={`/collections/${c.handle}`}
-                      >
-                        {c.title}
-                      </LocalizedClientLink>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="flex flex-col gap-y-2">
-              <span className="txt-small-plus txt-ui-fg-base">
-                {copy.footer.medusa}
-              </span>
-              <ul className="grid grid-cols-1 gap-y-2 text-ui-fg-subtle txt-small">
-                <li>
-                  <a
-                    href="https://github.com/medusajs"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-ui-fg-base"
-                  >
-                    GitHub
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://docs.medusajs.com"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-ui-fg-base"
-                  >
-                    {copy.footer.docs}
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://github.com/medusajs/nextjs-starter-medusa"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-ui-fg-base"
-                  >
-                    {copy.footer.sourceCode}
-                  </a>
-                </li>
-              </ul>
-            </div>
+        {/* Cột 1: Thông tin công ty */}
+        <div className="space-y-2">
+          <img
+            src="/logo-vietmate.png.png"
+            alt="Vietmate Home Appliances"
+            className="h-14 object-contain mb-3"
+          />
+          <p className="font-bold text-sm">CÔNG TY TNHH PHAN VIỆT INVEST</p>
+          <p className="text-sm text-red-200">MST: 0109890417</p>
+          <p className="text-sm text-red-200">Ngày Cấp Phép: 18.01.2022</p>
+          <p className="text-sm text-red-200">Nơi Cấp Phép: Sở Kế hoạch và đầu tư TP Hà Nội</p>
+          <div className="pt-2 space-y-1">
+            <p className="text-sm">Email: <a href="mailto:hoanpd@phanviet.vn" className="hover:text-orange-300 transition-colors">hoanpd@phanviet.vn</a></p>
+            <p className="text-sm flex items-center gap-1">
+              <span>📍</span>
+              <a href="tel:0967993609" className="hover:text-orange-300 transition-colors">0967 993 609</a>
+            </p>
           </div>
         </div>
-        <div className="flex w-full mb-16 justify-between text-ui-fg-muted">
-          <Text className="txt-compact-small">
-            © {new Date().getFullYear()} {copy.checkout.storeName}.{" "}
-            {copy.footer.rights}
-          </Text>
-          <MedusaCTA locale={localeFromCountryCode(countryCode)} />
+
+        {/* Cột 2: Chính sách */}
+        <div className="space-y-3">
+          <h3 className="font-black text-base tracking-wide">CHÍNH SÁCH</h3>
+          <ul className="space-y-2 text-sm text-red-100">
+            <li><LocalizedClientLink href="/gioi-thieu" className="hover:text-white transition-colors">Giới thiệu về chúng tôi</LocalizedClientLink></li>
+            <li><LocalizedClientLink href="/chinh-sach-doi-tra" className="hover:text-white transition-colors">Chính sách đổi trả</LocalizedClientLink></li>
+            <li><LocalizedClientLink href="/chinh-sach-bao-mat" className="hover:text-white transition-colors">Chính sách bảo mật</LocalizedClientLink></li>
+            <li><LocalizedClientLink href="/chinh-sach-giao-hang" className="hover:text-white transition-colors">Chính sách giao hàng</LocalizedClientLink></li>
+            <li><LocalizedClientLink href="/chinh-sach-thanh-toan" className="hover:text-white transition-colors">Chính sách bảo mật thanh toán</LocalizedClientLink></li>
+            <li><LocalizedClientLink href="/chinh-sach-kiem-hang" className="hover:text-white transition-colors">Chính sách kiểm hàng</LocalizedClientLink></li>
+          </ul>
         </div>
+
+        {/* Cột 3: Hỗ trợ */}
+        <div className="space-y-3">
+          <h3 className="font-black text-base tracking-wide">HỖ TRỢ</h3>
+          <ul className="space-y-2 text-sm text-red-100">
+            <li><LocalizedClientLink href="/store" className="hover:text-white transition-colors">Tất cả sản phẩm</LocalizedClientLink></li>
+            <li><LocalizedClientLink href="/account/orders" className="hover:text-white transition-colors">Tra cứu đơn hàng</LocalizedClientLink></li>
+            <li><a href="tel:0967993609" className="hover:text-white transition-colors">Hotline: 0967 993 609</a></li>
+            <li><a href="mailto:hoanpd@phanviet.vn" className="hover:text-white transition-colors">Email hỗ trợ</a></li>
+          </ul>
+
+          <div className="pt-2 flex gap-3">
+            <a href="https://facebook.com" target="_blank" rel="noreferrer"
+              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors text-lg">
+              f
+            </a>
+            <a href="https://zalo.me" target="_blank" rel="noreferrer"
+              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors text-xs font-black">
+              Z
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom bar */}
+      <div className="border-t border-red-600 py-4 px-4 text-center text-xs text-red-300">
+        © {new Date().getFullYear()} CÔNG TY TNHH PHAN VIỆT INVEST — Bảo lưu mọi quyền
       </div>
     </footer>
   )

@@ -29,10 +29,10 @@ export default async function Nav({
           {/* Logo center on mobile, left on desktop */}
           <LocalizedClientLink
             href="/"
-            className="text-xl sm:text-2xl font-black tracking-tighter text-orange-500"
+            className="flex items-center"
             data-testid="nav-store-link"
           >
-            PHAN VIỆT
+            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-10 sm:h-12 object-contain" />
           </LocalizedClientLink>
 
           {/* Desktop nav links */}
