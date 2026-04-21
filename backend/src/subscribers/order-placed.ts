@@ -35,8 +35,8 @@ export default async function orderPlacedHandler({
 
   try {
     await pushOrderToPancake(order, shippingAddress)
-  } catch (error) {
-    console.error('Error pushing order to Pancake POS:', error)
+  } catch (error: any) {
+    console.error('[Pancake] Error pushing order to Pancake POS:', error?.message || error)
   }
 }
 

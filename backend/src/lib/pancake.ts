@@ -1,28 +1,79 @@
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from './constants'
 
+// Cache Pancake variation map: SKU (display_id) → variation UUID
+let variationMapCache: Map<string, string> | null = null
+let variationMapCachedAt = 0
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+async function getPancakeVariationMap(): Promise<Map<string, string>> {
+  const now = Date.now()
+  if (variationMapCache && now - variationMapCachedAt < CACHE_TTL_MS) {
+    return variationMapCache
+  }
+
+  const map = new Map<string, string>()
+  let page = 1
+  const limit = 100
+
+  while (true) {
+    const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/products?api_key=${PANCAKE_API_KEY}&page=${page}&limit=${limit}`
+    const res = await fetch(url)
+    if (!res.ok) break
+    const data = await res.json()
+    const products: any[] = data.products ?? data ?? []
+    if (!products.length) break
+
+    for (const product of products) {
+      for (const variation of product.variations ?? []) {
+        if (variation.display_id && variation.id) {
+          map.set(variation.display_id, variation.id)
+        }
+      }
+    }
+
+    if (products.length < limit) break
+    page++
+  }
+
+  variationMapCache = map
+  variationMapCachedAt = now
+  console.info(`[Pancake] Loaded ${map.size} variations into map`)
+  return map
+}
+
 export async function pushOrderToPancake(order: any, shippingAddress: any) {
   if (!PANCAKE_API_KEY || !PANCAKE_SHOP_ID) {
     console.warn('[Pancake] PANCAKE_API_KEY or PANCAKE_SHOP_ID is not set, skipping push')
     return
   }
 
+  const variationMap = await getPancakeVariationMap()
+
   const billFullName = [shippingAddress.first_name, shippingAddress.last_name]
     .filter(Boolean)
     .join(' ')
 
-  const items = (order.items || []).map((item: any) => ({
-    variation_id: item.variant?.sku || item.variant_id,
-    quantity: item.quantity,
-    is_bonus_product: false,
-    is_discount_percent: false,
-    is_wholesale: false,
-    one_time_product: false,
-    discount_each_product: 0,
-    variation_info: {
-      name: item.title,
-      retail_price: item.unit_price,
-    },
-  }))
+  const items = (order.items || []).map((item: any) => {
+    const sku = item.variant?.sku as string | undefined
+    const pancakeVariationId = sku ? (variationMap.get(sku) ?? null) : null
+    const matched = Boolean(pancakeVariationId)
+
+    console.info(`[Pancake] Item "${item.title}" sku=${sku} → variation_id=${pancakeVariationId ?? 'none (one_time_product)'}`)
+
+    return {
+      variation_id: pancakeVariationId,
+      quantity: item.quantity,
+      is_bonus_product: false,
+      is_discount_percent: false,
+      is_wholesale: false,
+      one_time_product: !matched,
+      discount_each_product: 0,
+      variation_info: {
+        name: item.title,
+        retail_price: item.unit_price,
+      },
+    }
+  })
 
   const payload: Record<string, any> = {
     shop_id: Number(PANCAKE_SHOP_ID),
