@@ -168,6 +168,8 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   }
 
   const result = await response.json()
-  console.log(`[Pancake] Order pushed successfully, Pancake order ID: ${result?.id || 'unknown'}`)
+  const pancakeOrderId = result?.id ?? result?.order?.id ?? result?.data?.id ?? 'unknown'
+  console.log(`[Pancake] Order pushed successfully, Pancake order ID: ${pancakeOrderId}`)
+  console.log(`[Pancake] Response keys: ${Object.keys(result || {}).join(', ')}`)
   return result
 }
