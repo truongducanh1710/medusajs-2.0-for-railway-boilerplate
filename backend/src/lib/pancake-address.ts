@@ -138,8 +138,8 @@ export async function getPancakeCommuneId(wardName: string, provinceName: string
 
     if (!foundWard) { wardCache.set(cacheKey, null); return null }
 
-    // Pancake commune format: "84_VN" + ward code (open-api ward code là 5 chữ số)
-    const communeId = `84_VN${foundWard.code}`
+    // Pancake commune format: "84_VN" + ward code zero-padded to 5 digits
+    const communeId = `84_VN${String(foundWard.code).padStart(5, '0')}`
     wardCache.set(cacheKey, communeId)
     return communeId
   } catch {

@@ -121,11 +121,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const wardName = order.metadata?.ward as string || shippingAddress.province || ''
 
   const provinceId = getPancakeProvinceId(provinceName)
-  const communeId = wardName && provinceName
-    ? await getPancakeCommuneId(wardName, provinceName)
-    : null
-
-  console.info(`[Pancake] Address lookup: province="${provinceName}" → ${provinceId}, ward="${wardName}" → ${communeId}`)
+  console.info(`[Pancake] Address lookup: province="${provinceName}" → ${provinceId}, ward="${wardName}" (not mapped — Pancake uses GHN format)`)
 
   const payload: Record<string, any> = {
     shop_id: Number(PANCAKE_SHOP_ID),
@@ -138,7 +134,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
       address: shippingAddress.address_1 || '',
       province_id: provinceId,
       district_id: null,
-      commune_id: communeId,
+      commune_id: null,
     },
     items,
     is_free_shipping: true,
