@@ -20,7 +20,7 @@ async function getPancakeVariationMap(): Promise<Map<string, string>> {
     const res = await fetch(url)
     if (!res.ok) break
     const data = await res.json()
-    const products: any[] = data.products ?? data ?? []
+    const products: any[] = data.data ?? data.products ?? []
     if (!products.length) break
 
     for (const product of products) {
@@ -31,7 +31,7 @@ async function getPancakeVariationMap(): Promise<Map<string, string>> {
       }
     }
 
-    if (products.length < limit) break
+    if (page >= (data.total_pages ?? 1)) break
     page++
   }
 
@@ -127,7 +127,6 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
       province_id: null,
       district_id: null,
       commune_id: null,
-      country_code: shippingAddress.country_code || null,
     },
     items,
     is_free_shipping: true,
