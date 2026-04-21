@@ -1,4 +1,5 @@
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from './constants'
+import { getPancakeProvinceId, getPancakeCommuneId } from './pancake-address'
 
 // Cache Pancake variation map: SKU (display_id) → variation UUID
 let variationMapCache: Map<string, string> | null = null
@@ -115,6 +116,17 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const utmContent = order.metadata?.utm_content as string | undefined
   const utmTerm = order.metadata?.utm_term as string | undefined
 
+  // Lookup province_id và commune_id từ tên tỉnh/phường
+  const provinceName = order.metadata?.province as string || shippingAddress.city || ''
+  const wardName = order.metadata?.ward as string || shippingAddress.province || ''
+
+  const provinceId = getPancakeProvinceId(provinceName)
+  const communeId = wardName && provinceName
+    ? await getPancakeCommuneId(wardName, provinceName)
+    : null
+
+  console.info(`[Pancake] Address lookup: province="${provinceName}" → ${provinceId}, ward="${wardName}" → ${communeId}`)
+
   const payload: Record<string, any> = {
     shop_id: Number(PANCAKE_SHOP_ID),
     bill_full_name: billFullName,
@@ -124,9 +136,9 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
       full_name: billFullName,
       phone_number: shippingAddress.phone || '',
       address: shippingAddress.address_1 || '',
-      province_id: null,
+      province_id: provinceId,
       district_id: null,
-      commune_id: null,
+      commune_id: communeId,
     },
     items,
     is_free_shipping: true,

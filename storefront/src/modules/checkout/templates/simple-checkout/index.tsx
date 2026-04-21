@@ -354,7 +354,9 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           first_name: form.name,
           last_name: "",
           address_1: fullAddress,
+          address_2: form.ward || "",
           city: form.province || "Việt Nam",
+          province: form.ward || "",
           country_code: countryCode || "vn",
           phone: form.phone,
         },
@@ -362,6 +364,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           first_name: form.name,
           last_name: "",
           address_1: fullAddress,
+          address_2: form.ward || "",
           city: form.province || "Việt Nam",
           country_code: countryCode || "vn",
           phone: form.phone,
@@ -369,6 +372,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         metadata: {
           note: form.note,
           payment_method: payment,
+          province: form.province || "",
+          ward: form.ward || "",
         }
       })
       console.info("[SimpleCheckout] cart updated", {
