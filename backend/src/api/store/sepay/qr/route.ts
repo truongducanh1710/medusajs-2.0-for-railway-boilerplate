@@ -52,6 +52,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       VietinBank: "970415",
       ICB: "970415",
       MB: "970422",
+      MBBank: "970422",
+      mbbank: "970422",
       VPBank: "970432",
       Techcombank: "970407",
       ACB: "970416",
