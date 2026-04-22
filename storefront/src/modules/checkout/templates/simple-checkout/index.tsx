@@ -73,6 +73,33 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [info, setInfo] = useState<any>(null)
   const [paid, setPaid] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const [showBankPicker, setShowBankPicker] = useState(false)
+
+  const BANKS = [
+    { name: "VietQR (tất cả)", app: "vietqr", logo: "🏦" },
+    { name: "VietinBank", app: "vietinbank", logo: "🟢" },
+    { name: "Vietcombank", app: "vcb", logo: "🟩" },
+    { name: "BIDV", app: "bidv", logo: "🔵" },
+    { name: "Agribank", app: "agribank", logo: "🌾" },
+    { name: "Techcombank", app: "techcombank", logo: "🔴" },
+    { name: "MB Bank", app: "mb", logo: "🟦" },
+    { name: "VPBank", app: "vpbank", logo: "🟧" },
+    { name: "ACB", app: "acb", logo: "⬛" },
+    { name: "Sacombank", app: "sacombank", logo: "🟥" },
+    { name: "TPBank", app: "tpbank", logo: "🔷" },
+    { name: "VIB", app: "vib", logo: "💜" },
+    { name: "OCB", app: "ocb", logo: "🟫" },
+    { name: "HDBank", app: "hdbank", logo: "🟡" },
+    { name: "SHB", app: "shb", logo: "🔶" },
+    { name: "MSB", app: "msb", logo: "🏅" },
+  ]
+
+  const openBankApp = (appCode: string) => {
+    if (!info?.accountNumber) return
+    const url = `https://dl.vietqr.io/pay?app=${appCode}&pa=${info.accountNumber}&pn=PHAN+VIET&am=${Math.round(amount)}&tn=PV${orderCode}&mc=970432`
+    window.open(url, "_blank")
+    setShowBankPicker(false)
+  }
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard?.writeText(text).then(() => {
@@ -215,8 +242,40 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
                   </div>
                 </div>
               )}
+              {info?.accountNumber && (
+                <button
+                  onClick={() => setShowBankPicker(true)}
+                  className="w-full py-3 rounded-xl text-white font-black text-sm flex items-center justify-center gap-2 mb-3"
+                  style={{ background: "#E8420A" }}
+                >
+                  🏦 Mở app ngân hàng
+                </button>
+              )}
               <p className="text-center text-xs text-gray-400 mb-3">🔄 Tự động xác nhận khi nhận được tiền</p>
               <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Quay lại chọn COD</button>
+
+              {showBankPicker && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center" onClick={() => setShowBankPicker(false)}>
+                  <div className="bg-white w-full max-w-sm rounded-t-2xl p-4 pb-8" onClick={e => e.stopPropagation()}>
+                    <div className="flex justify-between items-center mb-4">
+                      <p className="font-black text-base">Chọn app ngân hàng</p>
+                      <button onClick={() => setShowBankPicker(false)} className="text-gray-400 text-xl leading-none">✕</button>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto">
+                      {BANKS.map(bank => (
+                        <button
+                          key={bank.app}
+                          onClick={() => openBankApp(bank.app)}
+                          className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-orange-50 active:bg-orange-100 transition-colors"
+                        >
+                          <span className="text-2xl">{bank.logo}</span>
+                          <span className="text-[10px] text-gray-600 text-center leading-tight">{bank.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
