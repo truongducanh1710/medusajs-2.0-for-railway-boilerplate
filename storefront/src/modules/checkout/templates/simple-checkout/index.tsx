@@ -184,11 +184,13 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
               )}
               {isMobile && info?.accountNumber && (
                 <a
-                  href={`mbmobile://transfer?accountNo=${info.accountNumber}&amount=${Math.round(amount)}&content=PV${orderCode}`}
+                  href={`https://dl.vietqr.io/pay?app=&pa=${info.accountNumber}&pn=PHAN+VIET&am=${Math.round(amount)}&tn=PV${orderCode}&mc=970432`}
+                  target="_blank"
+                  rel="noreferrer"
                   className="w-full py-3 rounded-xl text-white font-black text-sm flex items-center justify-center gap-2 mb-3"
-                  style={{ background: "#0033A0" }}
+                  style={{ background: "#E8420A" }}
                 >
-                  🏦 Mở app MB Bank để chuyển khoản
+                  🏦 Mở app ngân hàng để chuyển khoản
                 </a>
               )}
               <p className="text-center text-xs text-gray-400 mb-3">🔄 Tự động xác nhận khi nhận được tiền</p>
