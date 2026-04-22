@@ -148,12 +148,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Match theo nội dung CK hoặc sub_account (VA)
     const targetOrderCode = `PV${orderCode}`.toUpperCase()
     const matchedTx = transactions.find((tx: any) => {
-      if (tx.transfer_type !== "in") return false
-      // Match nội dung chuyển khoản
+      // Chỉ lấy giao dịch tiền vào: amount_in > 0 (transfer_type không có trong SePay API response)
+      const isIncoming = parseFloat(tx.amount_in || "0") > 0
+      if (!isIncoming) return false
+      // Match nội dung chuyển khoản chứa orderCode
       if (tx.transaction_content?.toUpperCase().includes(targetOrderCode)) return true
-      // Match VA: kiểm tra nhiều field tên khác nhau SePay có thể dùng
-      const vaFields = [tx.sub_account, tx.virtual_account, tx.account_receiver, tx.to_account]
-      if (vaFields.some(f => f?.toUpperCase() === accountNumber?.toUpperCase())) return true
       return false
     })
 
