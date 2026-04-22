@@ -520,9 +520,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       if (payment === "sepay") {
-        // Dùng 8 ký tự cuối cart ID làm orderCode — ngắn gọn, đủ unique
-        const fullId = updatedCart.id.replace(/^cart_/, "")
-        const code = fullId.slice(-8).toUpperCase()
+        // Dùng full cart ID (không prefix) làm orderCode để match nội dung CK
+        const code = updatedCart.id.replace(/^cart_/, "").toUpperCase()
         setOrderId(code)
         setShowQR(true)
         setSubmitting(false)

@@ -114,7 +114,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Query SePay API để kiểm tra giao dịch
     const response = await fetch(
-      `https://my.sepay.vn/userapi/transactions/list?account_number=${accountNumber}&limit=20&transaction_date_min=${getDateMinusMinutes(30)}`,
+      `https://my.sepay.vn/userapi/transactions/list?account_number=${accountNumber}&limit=50&transaction_date_min=${getDateMinusMinutes(60)}`,
       {
         headers: {
           "Authorization": `Bearer ${apiToken}`,
