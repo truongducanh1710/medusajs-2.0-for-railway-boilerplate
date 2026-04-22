@@ -414,8 +414,10 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
   const subtotal = cart.subtotal ?? 0
   const promoDiscount = (cart as any).discount_total ?? 0
-  const sepayTotal = Math.max(1000, subtotal - promoDiscount - SEPAY_DISCOUNT)
-  const baseTotal = Math.max(0, subtotal - promoDiscount)
+  // Dùng cart.total (đã bao gồm tax, shipping, discount) làm base tính tiền thật
+  const cartTotal = (cart as any).total ?? subtotal - promoDiscount
+  const sepayTotal = Math.max(1000, cartTotal - SEPAY_DISCOUNT)
+  const baseTotal = Math.max(0, cartTotal)
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 
   const handleApplyPromo = async () => {
@@ -757,7 +759,7 @@ return parsed
                   <span className="text-orange-500">{formatVND(finalTotal)}</span>
                 </div>
                 {(() => {
-                  const saved = subtotal - finalTotal
+                  const saved = cartTotal - finalTotal
                   return saved > 0 ? (
                     <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
                       <span className="text-green-500 text-lg">🎉</span>
