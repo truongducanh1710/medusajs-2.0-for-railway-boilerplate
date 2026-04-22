@@ -137,11 +137,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const data = await response.json()
     const transactions = data?.transactions || []
 
-    // Tìm giao dịch có nội dung chứa orderCode
-    const matchedTx = transactions.find((tx: any) =>
-      tx.transaction_content?.toUpperCase().includes(`PV${orderCode}`.toUpperCase()) &&
-      tx.transfer_type === "in"
-    )
+    console.info("[SePay QR] transactions found", {
+      orderCode,
+      count: transactions.length,
+      sample: transactions[0] ? {
+        content: transactions[0].transaction_content,
+        sub_account: transactions[0].sub_account,
+        transfer_type: transactions[0].transfer_type,
+      } : null,
+    })
+
+    // Match theo nội dung CK hoặc sub_account (VA)
+    const targetOrderCode = `PV${orderCode}`.toUpperCase()
+    const matchedTx = transactions.find((tx: any) => {
+      if (tx.transfer_type !== "in") return false
+      // Match nội dung chuyển khoản
+      if (tx.transaction_content?.toUpperCase().includes(targetOrderCode)) return true
+      // Match VA sub_account (khi dùng tài khoản ảo)
+      if (tx.sub_account?.toUpperCase() === accountNumber?.toUpperCase()) return true
+      return false
+    })
 
     if (matchedTx) {
       return res.json({
