@@ -18,6 +18,12 @@ const SideMenuItems = {
   cart: "/cart",
 }
 
+const SideMenuExtra = [
+  { label: "Giới thiệu", href: "/gioi-thieu" },
+  { label: "Chính sách", href: "/chinh-sach-doi-tra" },
+  { label: "Liên hệ", href: "/lien-he" },
+]
+
 const SideMenu = ({
   regions,
 }: {
@@ -76,6 +82,17 @@ const SideMenu = ({
                           </li>
                         )
                       })}
+                      {SideMenuExtra.map((item) => (
+                        <li key={item.href}>
+                          <LocalizedClientLink
+                            href={item.href}
+                            className="text-3xl leading-10 hover:text-ui-fg-disabled"
+                            onClick={close}
+                          >
+                            {item.label}
+                          </LocalizedClientLink>
+                        </li>
+                      ))}
                     </ul>
                     <div className="flex flex-col gap-y-6">
                       <div

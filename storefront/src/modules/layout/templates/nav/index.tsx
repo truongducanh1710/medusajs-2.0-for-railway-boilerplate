@@ -46,7 +46,10 @@ export default async function Nav({
             <LocalizedClientLink href="/gioi-thieu" className="text-slate-600 hover:text-orange-500 transition-colors">
               Giới thiệu
             </LocalizedClientLink>
-            <LocalizedClientLink href="/gioi-thieu" className="text-slate-600 hover:text-orange-500 transition-colors">
+            <LocalizedClientLink href="/chinh-sach-doi-tra" className="text-slate-600 hover:text-orange-500 transition-colors">
+              Chính sách
+            </LocalizedClientLink>
+            <LocalizedClientLink href="/lien-he" className="text-slate-600 hover:text-orange-500 transition-colors">
               Liên hệ
             </LocalizedClientLink>
           </div>
