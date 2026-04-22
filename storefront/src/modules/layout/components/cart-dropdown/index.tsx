@@ -338,7 +338,7 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
             </div>
             <div className="flex flex-col items-center gap-1 flex-1">
               <span className="text-xl">📞</span>
-              <span className="text-[10px] font-semibold text-gray-700 text-center">HỖ TRỢ 24/7: 1900.XXX.XXX</span>
+              <span className="text-[10px] font-semibold text-gray-700 text-center">HỖ TRỢ 24/7: 0967 993 609</span>
             </div>
           </div>
         )}
