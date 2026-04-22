@@ -414,10 +414,10 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
   const subtotal = cart.subtotal ?? 0
   const promoDiscount = (cart as any).discount_total ?? 0
-  // Dùng cart.total (đã bao gồm tax, shipping, discount) làm base tính tiền thật
-  const cartTotal = (cart as any).total ?? subtotal - promoDiscount
+  // Không tính tax/shipping — khách chỉ trả tiền hàng sau giảm giá
+  const cartTotal = Math.max(0, subtotal - promoDiscount)
   const sepayTotal = Math.max(1000, cartTotal - SEPAY_DISCOUNT)
-  const baseTotal = Math.max(0, cartTotal)
+  const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 
   const handleApplyPromo = async () => {
@@ -748,15 +748,6 @@ return parsed
                     <span>-{formatVND(promoDiscount)}</span>
                   </div>
                 )}
-                {(() => {
-                  const taxTotal = (cart as any).tax_total ?? 0
-                  return taxTotal > 0 ? (
-                    <div className="flex justify-between text-sm text-gray-500">
-                      <span>Thuế</span>
-                      <span>{formatVND(taxTotal)}</span>
-                    </div>
-                  ) : null
-                })()}
                 {payment === "sepay" && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
                     <span>Giảm thanh toán QR</span>
