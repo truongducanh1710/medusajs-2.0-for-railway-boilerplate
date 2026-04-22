@@ -317,7 +317,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
   const subtotal = cart.subtotal ?? 0
   const promoDiscount = (cart as any).discount_total ?? 0
-  const sepayTotal = Math.max(0, subtotal - promoDiscount - SEPAY_DISCOUNT)
+  const sepayTotal = Math.max(1000, subtotal - promoDiscount - SEPAY_DISCOUNT)
   const baseTotal = Math.max(0, subtotal - promoDiscount)
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 

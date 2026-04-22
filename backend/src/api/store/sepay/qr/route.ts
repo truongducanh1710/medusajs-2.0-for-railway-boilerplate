@@ -27,9 +27,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const { orderCode, amount } = body
     console.info("[SePay QR] POST request", { orderCode, amount })
 
-    if (!orderCode || !amount) {
+    if (!orderCode || amount === undefined || amount === null) {
       return res.status(400).json({ message: "Thiếu orderCode hoặc amount" })
     }
+
+    // Minimum amount 1000đ để tránh lỗi VietQR với số tiền quá nhỏ
+    const finalAmount = Math.max(amount, 1000)
 
     const bank = process.env.SEPAY_BANK || "BIDV"
     const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER
@@ -44,13 +47,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     // Tạo QR code bằng VietQR (tương thích mọi ngân hàng VN)
     // Format: https://img.vietqr.io/image/{bank}-{accountNumber}-{template}.png
-    const qrUrl = `https://img.vietqr.io/image/${bank}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(content)}&accountName=PHAN VIET`
+    const qrUrl = `https://img.vietqr.io/image/${bank}-${accountNumber}-compact2.png?amount=${finalAmount}&addInfo=${encodeURIComponent(content)}&accountName=PHAN VIET`
 
     return res.json({
       qrUrl,
       bank,
       accountNumber,
-      amount,
+      amount: finalAmount,
       content,
       accountName: "PHAN VIET",
     })
