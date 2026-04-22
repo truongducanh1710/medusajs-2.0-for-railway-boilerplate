@@ -75,29 +75,40 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [copied, setCopied] = useState<string | null>(null)
   const [showBankPicker, setShowBankPicker] = useState(false)
 
+  // BIN ngân hàng nhận tiền (VPBank = 970432) — dùng trong ba=STK@BIN
+  const RECEIVER_BIN = "970432"
+  const STORE_URL = typeof window !== "undefined" ? window.location.origin : ""
+
   const BANKS = [
-    { name: "VietQR (tất cả)", app: "vietqr", logo: "🏦" },
-    { name: "VietinBank", app: "vietinbank", logo: "🟢" },
-    { name: "Vietcombank", app: "vcb", logo: "🟩" },
-    { name: "BIDV", app: "bidv", logo: "🔵" },
-    { name: "Agribank", app: "agribank", logo: "🌾" },
-    { name: "Techcombank", app: "techcombank", logo: "🔴" },
-    { name: "MB Bank", app: "mb", logo: "🟦" },
-    { name: "VPBank", app: "vpbank", logo: "🟧" },
-    { name: "ACB", app: "acb", logo: "⬛" },
-    { name: "Sacombank", app: "sacombank", logo: "🟥" },
-    { name: "TPBank", app: "tpbank", logo: "🔷" },
-    { name: "VIB", app: "vib", logo: "💜" },
-    { name: "OCB", app: "ocb", logo: "🟫" },
-    { name: "HDBank", app: "hdbank", logo: "🟡" },
-    { name: "SHB", app: "shb", logo: "🔶" },
-    { name: "MSB", app: "msb", logo: "🏅" },
+    { app: "bidv",        name: "BIDV",         autofill: true  },
+    { app: "icb",         name: "VietinBank",   autofill: true  },
+    { app: "vcb",         name: "Vietcombank",  autofill: false },
+    { app: "mb",          name: "MB Bank",      autofill: false },
+    { app: "vpbank",      name: "VPBank NEO",   autofill: false },
+    { app: "tpbank",      name: "TPBank",       autofill: false },
+    { app: "acb",         name: "ACB",          autofill: false },
+    { app: "sacombank",   name: "Sacombank",    autofill: false },
+    { app: "techcombank", name: "Techcombank",  autofill: false },
+    { app: "agribank",    name: "Agribank",     autofill: false },
+    { app: "shb",         name: "SHB",          autofill: false },
+    { app: "hdbank",      name: "HDBank",       autofill: false },
+    { app: "msb",         name: "MSB",          autofill: false },
+    { app: "vib",         name: "VIB",          autofill: false },
+    { app: "ocb",         name: "OCB",          autofill: false },
   ]
 
   const openBankApp = (appCode: string) => {
     if (!info?.accountNumber) return
-    const url = `https://dl.vietqr.io/pay?app=${appCode}&pa=${info.accountNumber}&pn=PHAN+VIET&am=${Math.round(amount)}&tn=PV${orderCode}&mc=970432`
-    window.open(url, "_blank")
+    const ba = `${info.accountNumber}@${RECEIVER_BIN}`
+    const params = new URLSearchParams({
+      app: appCode,
+      ba,
+      am: String(Math.round(amount)),
+      tn: `PV${orderCode}`,
+      bn: "PHAN VIET",
+      url: `${STORE_URL}/vn/checkout`,
+    })
+    window.open(`https://dl.vietqr.io/pay?${params.toString()}`, "_blank")
     setShowBankPicker(false)
   }
 
@@ -257,19 +268,24 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
               {showBankPicker && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center" onClick={() => setShowBankPicker(false)}>
                   <div className="bg-white w-full max-w-sm rounded-t-2xl p-4 pb-8" onClick={e => e.stopPropagation()}>
-                    <div className="flex justify-between items-center mb-4">
+                    <div className="flex justify-between items-center mb-1">
                       <p className="font-black text-base">Chọn app ngân hàng</p>
                       <button onClick={() => setShowBankPicker(false)} className="text-gray-400 text-xl leading-none">✕</button>
                     </div>
-                    <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto">
+                    <p className="text-xs text-gray-400 mb-3">
+                      <span className="text-green-600 font-bold">✓ Tự điền</span> = điền sẵn thông tin · còn lại mở app rồi nhập tay
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 max-h-72 overflow-y-auto">
                       {BANKS.map(bank => (
                         <button
                           key={bank.app}
                           onClick={() => openBankApp(bank.app)}
-                          className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-orange-50 active:bg-orange-100 transition-colors"
+                          className="flex flex-col items-center gap-1 px-2 py-3 rounded-xl border border-gray-100 hover:border-orange-300 hover:bg-orange-50 active:bg-orange-100 transition-colors relative"
                         >
-                          <span className="text-2xl">{bank.logo}</span>
-                          <span className="text-[10px] text-gray-600 text-center leading-tight">{bank.name}</span>
+                          {bank.autofill && (
+                            <span className="absolute top-1 right-1 text-[8px] font-black text-green-600 bg-green-50 px-1 rounded">✓</span>
+                          )}
+                          <span className="text-sm font-bold text-gray-700">{bank.name}</span>
                         </button>
                       ))}
                     </div>
