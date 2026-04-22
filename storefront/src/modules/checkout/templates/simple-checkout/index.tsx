@@ -739,8 +739,8 @@ return parsed
               {/* Totals */}
               <div className="border-t border-gray-100 pt-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-500">
-                  <span>Giá gốc</span>
-                  <span className="line-through">{convertToLocale({ amount: subtotal, currency_code: cart.currency_code })}</span>
+                  <span>Tạm tính</span>
+                  <span>{formatVND(subtotal)}</span>
                 </div>
                 {promoDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
@@ -748,6 +748,15 @@ return parsed
                     <span>-{formatVND(promoDiscount)}</span>
                   </div>
                 )}
+                {(() => {
+                  const taxTotal = (cart as any).tax_total ?? 0
+                  return taxTotal > 0 ? (
+                    <div className="flex justify-between text-sm text-gray-500">
+                      <span>Thuế</span>
+                      <span>{formatVND(taxTotal)}</span>
+                    </div>
+                  ) : null
+                })()}
                 {payment === "sepay" && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
                     <span>Giảm thanh toán QR</span>
@@ -759,7 +768,7 @@ return parsed
                   <span className="text-orange-500">{formatVND(finalTotal)}</span>
                 </div>
                 {(() => {
-                  const saved = cartTotal - finalTotal
+                  const saved = subtotal - finalTotal
                   return saved > 0 ? (
                     <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
                       <span className="text-green-500 text-lg">🎉</span>
