@@ -43,14 +43,11 @@ export default async function Nav({
             <LocalizedClientLink href="/store" className="text-slate-600 hover:text-orange-500 transition-colors">
               {copy.nav.store}
             </LocalizedClientLink>
-            <LocalizedClientLink href="/store" className="text-slate-600 hover:text-orange-500 transition-colors">
-              {copy.nav.categories}
-            </LocalizedClientLink>
-            <LocalizedClientLink href="/store" className="text-slate-600 hover:text-orange-500 transition-colors">
-              {copy.nav.promo}
+            <LocalizedClientLink href="/gioi-thieu" className="text-slate-600 hover:text-orange-500 transition-colors">
+              Giới thiệu
             </LocalizedClientLink>
             <LocalizedClientLink href="/gioi-thieu" className="text-slate-600 hover:text-orange-500 transition-colors">
-              {copy.nav.contact}
+              Liên hệ
             </LocalizedClientLink>
           </div>
 
