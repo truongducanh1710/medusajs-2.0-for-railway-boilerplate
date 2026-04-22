@@ -45,13 +45,34 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(500).json({ message: "Chưa cấu hình SEPAY_ACCOUNT_NUMBER" })
     }
 
+    // Map tên ngân hàng → BIN (dùng cho VietQR deep link ba=STK@BIN)
+    const BANK_BIN_MAP: Record<string, string> = {
+      BIDV: "970418",
+      VCB: "970436",
+      VietinBank: "970415",
+      ICB: "970415",
+      MB: "970422",
+      VPBank: "970432",
+      Techcombank: "970407",
+      ACB: "970416",
+      Sacombank: "970403",
+      TPBank: "970423",
+      VIB: "970441",
+      OCB: "970448",
+      HDBank: "970437",
+      SHB: "970443",
+      MSB: "970426",
+      Agribank: "970405",
+    }
+    const bankBin = process.env.SEPAY_BANK_BIN || BANK_BIN_MAP[bank] || BANK_BIN_MAP[bank.toUpperCase()] || ""
+
     // Tạo QR code bằng VietQR (tương thích mọi ngân hàng VN)
-    // Format: https://img.vietqr.io/image/{bank}-{accountNumber}-{template}.png
     const qrUrl = `https://img.vietqr.io/image/${bank}-${accountNumber}-compact2.png?amount=${finalAmount}&addInfo=${encodeURIComponent(content)}&accountName=PHAN VIET`
 
     return res.json({
       qrUrl,
       bank,
+      bankBin,
       accountNumber,
       amount: finalAmount,
       content,

@@ -75,8 +75,6 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [copied, setCopied] = useState<string | null>(null)
   const [showBankPicker, setShowBankPicker] = useState(false)
 
-  // BIN ngân hàng nhận tiền (VPBank = 970432) — dùng trong ba=STK@BIN
-  const RECEIVER_BIN = "970432"
   const STORE_URL = typeof window !== "undefined" ? window.location.origin : ""
 
   const BANKS = [
@@ -99,7 +97,9 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
 
   const openBankApp = (appCode: string) => {
     if (!info?.accountNumber) return
-    const ba = `${info.accountNumber}@${RECEIVER_BIN}`
+    const ba = info.bankBin
+      ? `${info.accountNumber}@${info.bankBin}`
+      : info.accountNumber
     const params = new URLSearchParams({
       app: appCode,
       ba,
