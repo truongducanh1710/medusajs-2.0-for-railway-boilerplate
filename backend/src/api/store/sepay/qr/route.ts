@@ -139,12 +139,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     console.info("[SePay QR] transactions found", {
       orderCode,
+      accountNumber,
       count: transactions.length,
-      sample: transactions[0] ? {
-        content: transactions[0].transaction_content,
-        sub_account: transactions[0].sub_account,
-        transfer_type: transactions[0].transfer_type,
-      } : null,
+      // Log toàn bộ fields của tx đầu để debug
+      firstTx: transactions[0] ?? null,
     })
 
     // Match theo nội dung CK hoặc sub_account (VA)
@@ -153,8 +151,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (tx.transfer_type !== "in") return false
       // Match nội dung chuyển khoản
       if (tx.transaction_content?.toUpperCase().includes(targetOrderCode)) return true
-      // Match VA sub_account (khi dùng tài khoản ảo)
-      if (tx.sub_account?.toUpperCase() === accountNumber?.toUpperCase()) return true
+      // Match VA: kiểm tra nhiều field tên khác nhau SePay có thể dùng
+      const vaFields = [tx.sub_account, tx.virtual_account, tx.account_receiver, tx.to_account]
+      if (vaFields.some(f => f?.toUpperCase() === accountNumber?.toUpperCase())) return true
       return false
     })
 
