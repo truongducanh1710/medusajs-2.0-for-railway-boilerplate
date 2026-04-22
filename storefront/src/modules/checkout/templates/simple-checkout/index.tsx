@@ -72,6 +72,11 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [qrUrl, setQrUrl] = useState("")
   const [info, setInfo] = useState<any>(null)
   const [paid, setPaid] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent))
+  }, [])
 
   useEffect(() => {
     console.info("[SimpleCheckout][SePay] open modal", { orderCode, amount })
@@ -176,6 +181,15 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
                   <div className="flex justify-between"><span className="text-gray-500">Số tiền</span><span className="font-black text-orange-500">{formatVND(amount)}</span></div>
                   <div className="flex justify-between border-t pt-2"><span className="text-gray-500">Nội dung CK</span><span className="font-black text-blue-600">PV{orderCode}</span></div>
                 </div>
+              )}
+              {isMobile && info?.accountNumber && (
+                <a
+                  href={`mbmobile://transfer?accountNo=${info.accountNumber}&amount=${Math.round(amount)}&content=PV${orderCode}`}
+                  className="w-full py-3 rounded-xl text-white font-black text-sm flex items-center justify-center gap-2 mb-3"
+                  style={{ background: "#0033A0" }}
+                >
+                  🏦 Mở app MB Bank để chuyển khoản
+                </a>
               )}
               <p className="text-center text-xs text-gray-400 mb-3">🔄 Tự động xác nhận khi nhận được tiền</p>
               <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Quay lại chọn COD</button>
