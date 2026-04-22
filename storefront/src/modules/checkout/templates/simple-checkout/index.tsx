@@ -72,11 +72,14 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [qrUrl, setQrUrl] = useState("")
   const [info, setInfo] = useState<any>(null)
   const [paid, setPaid] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
 
-  useEffect(() => {
-    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent))
-  }, [])
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(field)
+      setTimeout(() => setCopied(null), 2000)
+    })
+  }
 
   useEffect(() => {
     console.info("[SimpleCheckout][SePay] open modal", { orderCode, amount })
@@ -175,23 +178,42 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
                 }
               </div>
               {info && (
-                <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-2 mb-4">
-                  <div className="flex justify-between"><span className="text-gray-500">Ngân hàng</span><span className="font-bold">{info.bank}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Số tài khoản</span><span className="font-mono font-bold">{info.accountNumber}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Số tiền</span><span className="font-black text-orange-500">{formatVND(amount)}</span></div>
-                  <div className="flex justify-between border-t pt-2"><span className="text-gray-500">Nội dung CK</span><span className="font-black text-blue-600">PV{orderCode}</span></div>
+                <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-2 mb-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500">Ngân hàng</span>
+                    <span className="font-bold">{info.bank}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500">Số tài khoản</span>
+                    <button
+                      onClick={() => copyToClipboard(info.accountNumber, "stk")}
+                      className="font-mono font-bold text-blue-600 flex items-center gap-1"
+                    >
+                      {info.accountNumber}
+                      <span className="text-xs">{copied === "stk" ? "✅" : "📋"}</span>
+                    </button>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500">Số tiền</span>
+                    <button
+                      onClick={() => copyToClipboard(String(Math.round(amount)), "amount")}
+                      className="font-black text-orange-500 flex items-center gap-1"
+                    >
+                      {formatVND(amount)}
+                      <span className="text-xs">{copied === "amount" ? "✅" : "📋"}</span>
+                    </button>
+                  </div>
+                  <div className="flex justify-between items-center border-t pt-2">
+                    <span className="text-gray-500">Nội dung CK</span>
+                    <button
+                      onClick={() => copyToClipboard(`PV${orderCode}`, "content")}
+                      className="font-black text-blue-600 flex items-center gap-1"
+                    >
+                      PV{orderCode}
+                      <span className="text-xs">{copied === "content" ? "✅" : "📋"}</span>
+                    </button>
+                  </div>
                 </div>
-              )}
-              {isMobile && info?.accountNumber && (
-                <a
-                  href={`https://dl.vietqr.io/pay?app=&pa=${info.accountNumber}&pn=PHAN+VIET&am=${Math.round(amount)}&tn=PV${orderCode}&mc=970432`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full py-3 rounded-xl text-white font-black text-sm flex items-center justify-center gap-2 mb-3"
-                  style={{ background: "#E8420A" }}
-                >
-                  🏦 Mở app ngân hàng để chuyển khoản
-                </a>
               )}
               <p className="text-center text-xs text-gray-400 mb-3">🔄 Tự động xác nhận khi nhận được tiền</p>
               <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Quay lại chọn COD</button>
