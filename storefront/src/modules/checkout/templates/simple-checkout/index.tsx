@@ -410,7 +410,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         })
       }
 
-      const preferredProviderId = payment === "sepay" ? "sepay" : "pp_system_default"
+      const preferredProviderId = payment === "sepay" ? "pp_sepay_sepay" : "pp_system_default"
       const resolvedProviderId = await ensurePaymentSession(
         updatedCart.id,
         preferredProviderId
