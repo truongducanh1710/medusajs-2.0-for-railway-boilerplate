@@ -520,7 +520,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       if (payment === "sepay") {
-        const code = Date.now().toString(36).toUpperCase()
+        // Dùng cart ID (bỏ prefix "cart_") làm orderCode để SePay polling khớp
+        const code = updatedCart.id.replace(/^cart_/, "").toUpperCase()
         setOrderId(code)
         setShowQR(true)
         setSubmitting(false)
