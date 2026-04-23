@@ -282,6 +282,163 @@ function ImagePicker({
   )
 }
 
+// ─── Product Image Upload Section ────────────────────────────────────────────
+
+function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
+  productId: string
+  initialImages: Array<{ id: string; url: string }>
+  initialThumbnail: string
+}) {
+  const [images, setImages] = useState(initialImages)
+  const [thumbnail, setThumbnail] = useState(initialThumbnail)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState("")
+  const [dragOver, setDragOver] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    setUploading(true)
+    setError("")
+    const uploaded: Array<{ id: string; url: string }> = []
+    for (const file of Array.from(files)) {
+      try {
+        const formData = new FormData()
+        formData.append("files", file)
+        const res = await fetch("/admin/uploads", { method: "POST", credentials: "include", body: formData })
+        const data = await res.json()
+        const url = data?.files?.[0]?.url || data?.uploads?.[0]?.url || ""
+        if (url) uploaded.push({ id: url, url })
+      } catch {}
+    }
+    if (uploaded.length > 0) {
+      setImages(prev => {
+        const next = [...prev, ...uploaded]
+        if (!thumbnail && next.length > 0) setThumbnail(next[0].url)
+        return next
+      })
+    }
+    setUploading(false)
+  }
+
+  const removeImage = (url: string) => {
+    setImages(prev => prev.filter(img => img.url !== url))
+    if (thumbnail === url) setThumbnail(images.find(img => img.url !== url)?.url || "")
+  }
+
+  const saveImages = async () => {
+    setSaving(true)
+    setError("")
+    try {
+      const res = await fetch(`/admin/products/${productId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thumbnail: thumbnail || undefined,
+          images: images.map(img => ({ url: img.url })),
+        }),
+      })
+      if (!res.ok) throw new Error("Lưu ảnh thất bại")
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 16, overflow: "hidden" }}>
+      <div style={{ background: "#fafafa", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+        <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>🖼️ Ảnh sản phẩm (upload tối đa 5MB)</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {saved && <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>✓ Đã lưu!</span>}
+          {error && <span style={{ fontSize: 12, color: "#ef4444" }}>{error}</span>}
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            style={{ padding: "5px 12px", border: "1px dashed #f97316", borderRadius: 6, fontSize: 12, cursor: "pointer", background: "white", color: "#f97316", fontWeight: 600 }}
+          >
+            {uploading ? "Đang upload..." : "⬆️ Chọn ảnh"}
+          </button>
+          <button
+            onClick={saveImages}
+            disabled={saving || images.length === 0}
+            style={{ padding: "5px 12px", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", background: "#f97316", color: "white", fontWeight: 700, opacity: images.length === 0 ? 0.5 : 1 }}
+          >
+            {saving ? "Đang lưu..." : "💾 Lưu ảnh"}
+          </button>
+        </div>
+      </div>
+      <div
+        style={{ padding: 14, background: "white" }}
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files) }}
+      >
+        {/* Drop zone khi chưa có ảnh */}
+        {images.length === 0 && (
+          <div style={{
+            border: `2px dashed ${dragOver ? "#f97316" : "#d1d5db"}`,
+            borderRadius: 8, padding: "32px 16px", textAlign: "center",
+            color: "#9ca3af", fontSize: 13, background: dragOver ? "#fff7ed" : "#f9fafb",
+            transition: "all 0.2s", cursor: "pointer"
+          }} onClick={() => fileRef.current?.click()}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>📸</div>
+            <p style={{ margin: 0, fontWeight: 600 }}>Kéo thả ảnh vào đây hoặc click để chọn</p>
+            <p style={{ margin: "4px 0 0", fontSize: 11 }}>JPG, PNG — tối đa 5MB mỗi ảnh</p>
+          </div>
+        )}
+        {/* Grid ảnh đã có */}
+        {images.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 8 }}>
+            {images.map(img => (
+              <div key={img.url} style={{ position: "relative" }}>
+                <img
+                  src={img.url}
+                  alt=""
+                  onClick={() => setThumbnail(img.url)}
+                  style={{
+                    width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8,
+                    border: thumbnail === img.url ? "3px solid #f97316" : "2px solid #e5e7eb",
+                    cursor: "pointer", display: "block"
+                  }}
+                />
+                {thumbnail === img.url && (
+                  <div style={{ position: "absolute", top: 4, left: 4, background: "#f97316", color: "white", fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4 }}>
+                    THUMB
+                  </div>
+                )}
+                <button
+                  onClick={() => removeImage(img.url)}
+                  style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ef4444", color: "white", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, lineHeight: "20px", padding: 0, textAlign: "center" }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {/* Add more */}
+            <div
+              onClick={() => fileRef.current?.click()}
+              style={{ aspectRatio: "1", border: "2px dashed #d1d5db", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9ca3af", fontSize: 24, background: dragOver ? "#fff7ed" : "#f9fafb" }}
+            >
+              +
+            </div>
+          </div>
+        )}
+        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Click ảnh để đặt làm thumbnail (viền cam). Kéo thả để upload thêm.</p>
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+        onChange={e => { if (e.target.files) { uploadFiles(e.target.files); e.target.value = "" } }} />
+    </div>
+  )
+}
+
+// ─── Main Widget ──────────────────────────────────────────────────────────────
+
 const ProductContentWidget = ({ data }: { data: any }) => {
   const product = data
   const [meta, setMeta] = useState<Meta>({})
@@ -474,6 +631,13 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           </button>
         </div>
       </div>
+
+      {/* 0. Ảnh sản phẩm */}
+      <ProductImageUpload
+        productId={product.id}
+        initialImages={productImages}
+        initialThumbnail={product.thumbnail || ""}
+      />
 
       {/* 1. Video */}
       <Toggle label="🎬 Video Demo" enabled={showVideo} onToggle={() => setShowVideo(!showVideo)}>
