@@ -284,13 +284,11 @@ function ImagePicker({
 
 // ─── Product Image Upload Section ────────────────────────────────────────────
 
-function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
+function ProductImageUpload({ productId, initialImages }: {
   productId: string
   initialImages: Array<{ id: string; url: string }>
-  initialThumbnail: string
 }) {
   const [images, setImages] = useState(initialImages)
-  const [thumbnail, setThumbnail] = useState(initialThumbnail)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -313,18 +311,13 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
       } catch {}
     }
     if (uploaded.length > 0) {
-      setImages(prev => {
-        const next = [...prev, ...uploaded]
-        if (!thumbnail && next.length > 0) setThumbnail(next[0].url)
-        return next
-      })
+      setImages(prev => [...prev, ...uploaded])
     }
     setUploading(false)
   }
 
   const removeImage = (url: string) => {
     setImages(prev => prev.filter(img => img.url !== url))
-    if (thumbnail === url) setThumbnail(images.find(img => img.url !== url)?.url || "")
   }
 
   const moveImage = (from: number, to: number) => {
@@ -346,7 +339,6 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          thumbnail: thumbnail || undefined,
           images: images.map(img => ({ url: img.url })),
         }),
       })
@@ -419,18 +411,11 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
                 <img
                   src={img.url}
                   alt=""
-                  onClick={() => setThumbnail(img.url)}
                   style={{
                     width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8,
-                    border: thumbnail === img.url ? "3px solid #f97316" : "2px solid #e5e7eb",
-                    cursor: "pointer", display: "block"
+                    border: "2px solid #e5e7eb", display: "block"
                   }}
                 />
-                {thumbnail === img.url && (
-                  <div style={{ position: "absolute", top: 4, left: 4, background: "#f97316", color: "white", fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4, pointerEvents: "none" }}>
-                    THUMB
-                  </div>
-                )}
                 {/* Nút di chuyển trái/phải */}
                 <div style={{ position: "absolute", bottom: 4, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 2 }}>
                   {i > 0 && (
@@ -460,7 +445,7 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
             >+</div>
           </div>
         )}
-        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Click ảnh để đặt làm thumbnail (viền cam). Dùng ← → để đổi thứ tự. Kéo file từ máy vào đây để upload.</p>
+        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Dùng ← → để đổi thứ tự. Kéo file từ máy vào đây để upload.</p>
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
         onChange={e => { if (e.target.files) { uploadFiles(e.target.files); e.target.value = "" } }} />
@@ -673,7 +658,6 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       <ProductImageUpload
         productId={product.id}
         initialImages={productImages}
-        initialThumbnail={product.thumbnail || ""}
       />
 
       {/* 1. Video */}
