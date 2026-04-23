@@ -497,23 +497,24 @@ const ProductContentWidget = ({ data }: { data: any }) => {
 
   const setM = (key: string, val: string) => setMeta(prev => ({ ...prev, [key]: val }))
 
-  const buildMeta = (overrides: Partial<Meta> = {}): Meta => {
-    const m: Meta = { ...meta, ...overrides }
-    if (!showVideo) { delete m.video_url }
-    if (!showPain) { delete m.pain_1; delete m.pain_2; delete m.pain_3; delete m.solution_1; delete m.solution_2; delete m.solution_3 }
+  const buildMeta = (overrides: Partial<Meta> = {}): Record<string, any> => {
+    const m: Record<string, any> = { ...meta, ...overrides }
+    // Medusa merge metadata — phải set null để xóa key trên server
+    if (!showVideo) { m.video_url = null }
+    if (!showPain) { m.pain_1 = null; m.pain_2 = null; m.pain_3 = null; m.solution_1 = null; m.solution_2 = null; m.solution_3 = null }
     if (!showBenefits) {
       for (let i = 1; i <= 4; i++) {
-        delete m[`benefit_icon_${i}`]; delete m[`benefit_title_${i}`]; delete m[`benefit_desc_${i}`]
+        m[`benefit_icon_${i}`] = null; m[`benefit_title_${i}`] = null; m[`benefit_desc_${i}`] = null
       }
     }
-    if (!showSpecs) { delete m.chat_lieu; delete m.kich_thuoc; delete m.xuat_xu; delete m.bao_hanh; delete m.mau_sac; delete m.trong_luong }
+    if (!showSpecs) { m.chat_lieu = null; m.kich_thuoc = null; m.xuat_xu = null; m.bao_hanh = null; m.mau_sac = null; m.trong_luong = null }
     if (showReviews) m.reviews = JSON.stringify(reviews)
-    else delete m.reviews
-    if (showFaq) m.faq = JSON.stringify(faqs.filter(f => f.q))
-    else delete m.faq
-    delete m.bundle_gifts
+    else m.reviews = null
+    if (showFaq) m.faq = JSON.stringify(faqs.filter((f: any) => f.q))
+    else m.faq = null
+    m.bundle_gifts = null
     if (showBundleOptions) {
-      const sanitized = bundleOptions.map(o => ({
+      const sanitized = bundleOptions.map((o: any) => ({
         qty: Number(o.qty) || 0,
         label: String(o.label || ""),
         price: Number(o.price) || 0,
@@ -522,32 +523,34 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         badgeColor: o.badgeColor ? String(o.badgeColor) : undefined,
         image: o.image ? String(o.image) : undefined,
         gifts: Array.isArray(o.gifts)
-          ? o.gifts.map(g => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined }))
+          ? o.gifts.map((g: any) => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined }))
           : [],
       }))
       m.bundle_options = JSON.stringify(sanitized)
-    } else delete m.bundle_options
-    // Keep page_content unless explicitly cleared — never auto-delete it
+    } else m.bundle_options = null
+    // Keep page_content unless explicitly cleared
     if (overrides.page_content !== undefined) {
-      if (!overrides.page_content.trim()) delete m.page_content
-    } else if (!m.page_content || !m.page_content.trim()) {
-      delete m.page_content
+      if (!overrides.page_content || !String(overrides.page_content).trim()) m.page_content = null
+    } else if (!m.page_content || !String(m.page_content).trim()) {
+      m.page_content = null
     }
     return m
   }
 
-  const applyMeta = (m: Meta) => {
-    setMeta(m)
-    setShowVideo(!!m.video_url)
-    setShowPain(!!(m.pain_1 || m.pain_2 || m.pain_3))
-    setShowBenefits(!!(m.benefit_title_1))
-    setShowSpecs(!!(m.chat_lieu || m.kich_thuoc || m.xuat_xu || m.bao_hanh))
-    setShowReviews(!!m.reviews)
-    setShowFaq(!!m.faq)
-    setShowBundleOptions(!!m.bundle_options)
-    if (m.faq) { try { setFaqs(JSON.parse(m.faq)) } catch {} }
-    if (m.reviews) { try { setReviews(JSON.parse(m.reviews)) } catch {} }
-    if (m.bundle_options) { try { setBundleOptions(JSON.parse(m.bundle_options)) } catch {} }
+  const applyMeta = (m: Record<string, any>) => {
+    // Lọc null ra khỏi meta state (null = đã xóa trên server)
+    const clean: Meta = Object.fromEntries(Object.entries(m).filter(([, v]) => v !== null && v !== undefined)) as Meta
+    setMeta(clean)
+    setShowVideo(!!clean.video_url)
+    setShowPain(!!(clean.pain_1 || clean.pain_2 || clean.pain_3))
+    setShowBenefits(!!(clean.benefit_title_1))
+    setShowSpecs(!!(clean.chat_lieu || clean.kich_thuoc || clean.xuat_xu || clean.bao_hanh))
+    setShowReviews(!!clean.reviews)
+    setShowFaq(!!clean.faq)
+    setShowBundleOptions(!!clean.bundle_options)
+    if (clean.faq) { try { setFaqs(JSON.parse(clean.faq)) } catch {} }
+    if (clean.reviews) { try { setReviews(JSON.parse(clean.reviews)) } catch {} }
+    if (clean.bundle_options) { try { setBundleOptions(JSON.parse(clean.bundle_options)) } catch {} }
   }
 
   const save = async (overrides: Partial<Meta> = {}) => {
@@ -562,10 +565,8 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         body: JSON.stringify({ metadata: finalMeta })
       })
       if (!res.ok) throw new Error("Lưu thất bại")
-      // Sync state từ server response để tránh stale state
-      const saved_data = await res.json()
-      const serverMeta: Meta = saved_data?.product?.metadata || saved_data?.metadata || finalMeta
-      applyMeta(serverMeta)
+      // Dùng finalMeta (đã xóa keys tắt) thay vì server response (Medusa merge metadata)
+      applyMeta(finalMeta)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
