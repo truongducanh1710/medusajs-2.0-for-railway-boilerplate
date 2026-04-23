@@ -341,6 +341,15 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
         }),
       })
       if (!res.ok) throw new Error("Lưu ảnh thất bại")
+      // Revalidate storefront cache
+      try {
+        const storefrontBase = getStorefrontBase()
+        await fetch(`${storefrontBase}/api/revalidate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-revalidate-secret": "phanviet-revalidate" },
+          body: JSON.stringify({ tags: ["products"] }),
+        })
+      } catch {}
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
