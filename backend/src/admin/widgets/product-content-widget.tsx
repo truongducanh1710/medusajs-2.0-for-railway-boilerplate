@@ -516,19 +516,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     : []
 
   useEffect(() => {
-    const m: Meta = (product.metadata as Meta) || {}
-    setMeta(m)
-    setShowVideo(!!m.video_url)
-    setShowPain(!!(m.pain_1 || m.pain_2 || m.pain_3))
-    setShowBenefits(!!(m.benefit_title_1))
-    setShowSpecs(!!(m.chat_lieu || m.kich_thuoc || m.xuat_xu || m.bao_hanh))
-    setShowReviews(!!m.reviews)
-    setShowFaq(!!m.faq)
-    setShowBundleOptions(!!m.bundle_options)
-
-    if (m.faq) { try { setFaqs(JSON.parse(m.faq)) } catch {} }
-    if (m.reviews) { try { setReviews(JSON.parse(m.reviews)) } catch {} }
-    if (m.bundle_options) { try { setBundleOptions(JSON.parse(m.bundle_options)) } catch {} }
+    applyMeta((product.metadata as Meta) || {})
   }, [product.id])
 
   const setM = (key: string, val: string) => setMeta(prev => ({ ...prev, [key]: val }))
@@ -572,6 +560,20 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     return m
   }
 
+  const applyMeta = (m: Meta) => {
+    setMeta(m)
+    setShowVideo(!!m.video_url)
+    setShowPain(!!(m.pain_1 || m.pain_2 || m.pain_3))
+    setShowBenefits(!!(m.benefit_title_1))
+    setShowSpecs(!!(m.chat_lieu || m.kich_thuoc || m.xuat_xu || m.bao_hanh))
+    setShowReviews(!!m.reviews)
+    setShowFaq(!!m.faq)
+    setShowBundleOptions(!!m.bundle_options)
+    if (m.faq) { try { setFaqs(JSON.parse(m.faq)) } catch {} }
+    if (m.reviews) { try { setReviews(JSON.parse(m.reviews)) } catch {} }
+    if (m.bundle_options) { try { setBundleOptions(JSON.parse(m.bundle_options)) } catch {} }
+  }
+
   const save = async (overrides: Partial<Meta> = {}) => {
     setSaving(true)
     setError("")
@@ -584,6 +586,10 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         body: JSON.stringify({ metadata: finalMeta })
       })
       if (!res.ok) throw new Error("Lưu thất bại")
+      // Sync state từ server response để tránh stale state
+      const saved_data = await res.json()
+      const serverMeta: Meta = saved_data?.product?.metadata || saved_data?.metadata || finalMeta
+      applyMeta(serverMeta)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
