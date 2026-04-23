@@ -451,8 +451,10 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
                   ⠿
                 </div>
                 <button
-                  onClick={() => removeImage(img.url)}
-                  style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ef4444", color: "white", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, lineHeight: "20px", padding: 0, textAlign: "center" }}
+                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeImage(img.url) }}
+                  onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+                  onDragStart={(e: React.DragEvent) => e.preventDefault()}
+                  style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "#ef4444", color: "white", border: "2px solid white", cursor: "pointer", fontSize: 13, fontWeight: 700, lineHeight: "18px", padding: 0, textAlign: "center", zIndex: 10 }}
                 >
                   ×
                 </button>
