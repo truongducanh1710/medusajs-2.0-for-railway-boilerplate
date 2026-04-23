@@ -296,6 +296,8 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
   const [dragOver, setDragOver] = useState(false)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const uploadFiles = async (files: FileList | File[]) => {
@@ -325,6 +327,16 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
   const removeImage = (url: string) => {
     setImages(prev => prev.filter(img => img.url !== url))
     if (thumbnail === url) setThumbnail(images.find(img => img.url !== url)?.url || "")
+  }
+
+  const moveImage = (from: number, to: number) => {
+    if (from === to) return
+    setImages(prev => {
+      const next = [...prev]
+      const [item] = next.splice(from, 1)
+      next.splice(to, 0, item)
+      return next
+    })
   }
 
   const saveImages = async () => {
@@ -386,7 +398,7 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
         style={{ padding: 14, background: "white" }}
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
-        onDrop={e => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files) }}
+        onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files) }}
       >
         {/* Drop zone khi chưa có ảnh */}
         {images.length === 0 && (
@@ -404,8 +416,21 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
         {/* Grid ảnh đã có */}
         {images.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 8 }}>
-            {images.map(img => (
-              <div key={img.url} style={{ position: "relative" }}>
+            {images.map((img, i) => (
+              <div
+                key={img.url}
+                draggable
+                onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragIndex(i) }}
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropIndex(i) }}
+                onDragEnd={() => { if (dragIndex !== null && dropIndex !== null) moveImage(dragIndex, dropIndex); setDragIndex(null); setDropIndex(null) }}
+                style={{
+                  position: "relative",
+                  opacity: dragIndex === i ? 0.4 : 1,
+                  outline: dropIndex === i && dragIndex !== i ? "2px dashed #f97316" : "none",
+                  borderRadius: 10,
+                  cursor: "grab",
+                }}
+              >
                 <img
                   src={img.url}
                   alt=""
@@ -413,7 +438,7 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
                   style={{
                     width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8,
                     border: thumbnail === img.url ? "3px solid #f97316" : "2px solid #e5e7eb",
-                    cursor: "pointer", display: "block"
+                    cursor: "pointer", display: "block", pointerEvents: dragIndex !== null ? "none" : "auto"
                   }}
                 />
                 {thumbnail === img.url && (
@@ -421,6 +446,10 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
                     THUMB
                   </div>
                 )}
+                {/* Drag handle */}
+                <div style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,0.45)", color: "white", fontSize: 10, padding: "1px 4px", borderRadius: 3, userSelect: "none" }}>
+                  ⠿
+                </div>
                 <button
                   onClick={() => removeImage(img.url)}
                   style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ef4444", color: "white", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, lineHeight: "20px", padding: 0, textAlign: "center" }}
@@ -432,13 +461,13 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
             {/* Add more */}
             <div
               onClick={() => fileRef.current?.click()}
-              style={{ aspectRatio: "1", border: "2px dashed #d1d5db", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9ca3af", fontSize: 24, background: dragOver ? "#fff7ed" : "#f9fafb" }}
+              style={{ aspectRatio: "1", border: "2px dashed #d1d5db", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9ca3af", fontSize: 24, background: "#f9fafb" }}
             >
               +
             </div>
           </div>
         )}
-        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Click ảnh để đặt làm thumbnail (viền cam). Kéo thả để upload thêm.</p>
+        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Click ảnh để đặt làm thumbnail (viền cam). Kéo ảnh để đổi thứ tự. Kéo file từ máy vào đây để upload.</p>
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
         onChange={e => { if (e.target.files) { uploadFiles(e.target.files); e.target.value = "" } }} />
