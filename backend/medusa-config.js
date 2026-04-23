@@ -39,7 +39,8 @@ const medusaConfig = {
       authCors: AUTH_CORS,
       storeCors: STORE_CORS,
       jwtSecret: JWT_SECRET,
-      cookieSecret: COOKIE_SECRET
+      cookieSecret: COOKIE_SECRET,
+      uploadFileSizeLimit: 5242880, // 5MB
     },
     build: {
       rollupOptions: {

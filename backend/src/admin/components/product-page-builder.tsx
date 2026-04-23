@@ -676,9 +676,9 @@ export default function ProductPageBuilder({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/70">
-      <div className="flex h-full w-full flex-col bg-white">
-        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-black/70">
+      <div className="flex min-h-full w-full flex-col bg-white">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
               Page Builder
