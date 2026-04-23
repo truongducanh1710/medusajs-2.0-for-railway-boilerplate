@@ -298,6 +298,8 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
   const [dragOver, setDragOver] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const dragIndexRef = useRef<number | null>(null)
+  const dropIndexRef = useRef<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const uploadFiles = async (files: FileList | File[]) => {
@@ -420,9 +422,34 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
               <div
                 key={img.url}
                 draggable
-                onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragIndex(i) }}
-                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropIndex(i) }}
-                onDragEnd={() => { if (dragIndex !== null && dropIndex !== null) moveImage(dragIndex, dropIndex); setDragIndex(null); setDropIndex(null) }}
+                onDragStart={e => {
+                  e.dataTransfer.effectAllowed = "move"
+                  e.dataTransfer.setData("text/plain", String(i))
+                  dragIndexRef.current = i
+                  setDragIndex(i)
+                }}
+                onDragOver={e => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = "move"
+                  dropIndexRef.current = i
+                  setDropIndex(i)
+                }}
+                onDrop={(e: React.DragEvent) => {
+                  e.preventDefault()
+                  const from = dragIndexRef.current
+                  const to = dropIndexRef.current
+                  if (from !== null && to !== null && from !== to) moveImage(from, to)
+                  dragIndexRef.current = null
+                  dropIndexRef.current = null
+                  setDragIndex(null)
+                  setDropIndex(null)
+                }}
+                onDragEnd={() => {
+                  dragIndexRef.current = null
+                  dropIndexRef.current = null
+                  setDragIndex(null)
+                  setDropIndex(null)
+                }}
                 style={{
                   position: "relative",
                   opacity: dragIndex === i ? 0.4 : 1,
