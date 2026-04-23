@@ -296,10 +296,6 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
   const [dragOver, setDragOver] = useState(false)
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [dropIndex, setDropIndex] = useState<number | null>(null)
-  const dragIndexRef = useRef<number | null>(null)
-  const dropIndexRef = useRef<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const uploadFiles = async (files: FileList | File[]) => {
@@ -417,47 +413,9 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
         )}
         {/* Grid ảnh đã có */}
         {images.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
             {images.map((img, i) => (
-              <div
-                key={img.url}
-                draggable
-                onDragStart={e => {
-                  e.dataTransfer.effectAllowed = "move"
-                  e.dataTransfer.setData("text/plain", String(i))
-                  dragIndexRef.current = i
-                  setDragIndex(i)
-                }}
-                onDragOver={e => {
-                  e.preventDefault()
-                  e.dataTransfer.dropEffect = "move"
-                  dropIndexRef.current = i
-                  setDropIndex(i)
-                }}
-                onDrop={(e: React.DragEvent) => {
-                  e.preventDefault()
-                  const from = dragIndexRef.current
-                  const to = dropIndexRef.current
-                  if (from !== null && to !== null && from !== to) moveImage(from, to)
-                  dragIndexRef.current = null
-                  dropIndexRef.current = null
-                  setDragIndex(null)
-                  setDropIndex(null)
-                }}
-                onDragEnd={() => {
-                  dragIndexRef.current = null
-                  dropIndexRef.current = null
-                  setDragIndex(null)
-                  setDropIndex(null)
-                }}
-                style={{
-                  position: "relative",
-                  opacity: dragIndex === i ? 0.4 : 1,
-                  outline: dropIndex === i && dragIndex !== i ? "2px dashed #f97316" : "none",
-                  borderRadius: 10,
-                  cursor: "grab",
-                }}
-              >
+              <div key={img.url} style={{ position: "relative", borderRadius: 10 }}>
                 <img
                   src={img.url}
                   alt=""
@@ -465,38 +423,44 @@ function ProductImageUpload({ productId, initialImages, initialThumbnail }: {
                   style={{
                     width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8,
                     border: thumbnail === img.url ? "3px solid #f97316" : "2px solid #e5e7eb",
-                    cursor: "pointer", display: "block", pointerEvents: dragIndex !== null ? "none" : "auto"
+                    cursor: "pointer", display: "block"
                   }}
                 />
                 {thumbnail === img.url && (
-                  <div style={{ position: "absolute", top: 4, left: 4, background: "#f97316", color: "white", fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4 }}>
+                  <div style={{ position: "absolute", top: 4, left: 4, background: "#f97316", color: "white", fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4, pointerEvents: "none" }}>
                     THUMB
                   </div>
                 )}
-                {/* Drag handle */}
-                <div style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,0.45)", color: "white", fontSize: 10, padding: "1px 4px", borderRadius: 3, userSelect: "none" }}>
-                  ⠿
+                {/* Nút di chuyển trái/phải */}
+                <div style={{ position: "absolute", bottom: 4, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 2 }}>
+                  {i > 0 && (
+                    <button
+                      onClick={() => moveImage(i, i - 1)}
+                      style={{ width: 20, height: 20, borderRadius: 4, background: "rgba(0,0,0,0.6)", color: "white", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: 0, lineHeight: "20px" }}
+                    >←</button>
+                  )}
+                  {i < images.length - 1 && (
+                    <button
+                      onClick={() => moveImage(i, i + 1)}
+                      style={{ width: 20, height: 20, borderRadius: 4, background: "rgba(0,0,0,0.6)", color: "white", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: 0, lineHeight: "20px" }}
+                    >→</button>
+                  )}
                 </div>
+                {/* Nút xóa */}
                 <button
-                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeImage(img.url) }}
-                  onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
-                  onDragStart={(e: React.DragEvent) => e.preventDefault()}
+                  onClick={() => removeImage(img.url)}
                   style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "#ef4444", color: "white", border: "2px solid white", cursor: "pointer", fontSize: 13, fontWeight: 700, lineHeight: "18px", padding: 0, textAlign: "center", zIndex: 10 }}
-                >
-                  ×
-                </button>
+                >×</button>
               </div>
             ))}
             {/* Add more */}
             <div
               onClick={() => fileRef.current?.click()}
               style={{ aspectRatio: "1", border: "2px dashed #d1d5db", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9ca3af", fontSize: 24, background: "#f9fafb" }}
-            >
-              +
-            </div>
+            >+</div>
           </div>
         )}
-        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Click ảnh để đặt làm thumbnail (viền cam). Kéo ảnh để đổi thứ tự. Kéo file từ máy vào đây để upload.</p>
+        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>Click ảnh để đặt làm thumbnail (viền cam). Dùng ← → để đổi thứ tự. Kéo file từ máy vào đây để upload.</p>
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
         onChange={e => { if (e.target.files) { uploadFiles(e.target.files); e.target.value = "" } }} />
