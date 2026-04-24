@@ -1,17 +1,16 @@
 import { defineMiddlewares } from "@medusajs/medusa"
-import { NextFunction, Request, Response } from "express"
 
-// Re-parse JSON body with 100MB limit for our custom page-content route.
-// This runs BEFORE Medusa's own body-parser on this specific path.
-function largeJsonBody(limit: string) {
-  return (req: Request, res: Response, next: NextFunction) => {
+function largeJsonBody(limitMB: number) {
+  const maxBytes = limitMB * 1024 * 1024
+  return (req: any, res: any, next: any) => {
     if (!req.headers["content-type"]?.includes("application/json")) return next()
+    // Body already parsed by Medusa's body-parser — skip
+    if (req.body !== undefined) return next()
     let data = ""
     let size = 0
-    const maxBytes = parseInt(limit) * 1024 * 1024
     req.setEncoding("utf8")
     req.on("data", (chunk: string) => {
-      size += Buffer.byteLength(chunk)
+      size += Buffer.byteLength(chunk, "utf8")
       if (size > maxBytes) {
         res.status(413).json({ error: "Payload too large" })
         return
@@ -32,7 +31,7 @@ export default defineMiddlewares({
   routes: [
     {
       matcher: "/admin/product-content",
-      middlewares: [largeJsonBody("100")],
+      middlewares: [largeJsonBody(100)],
     },
   ],
 })
