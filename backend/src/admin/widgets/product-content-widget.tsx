@@ -763,14 +763,11 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     const isLarge = Object.keys(patch).some(k => k.startsWith("page_content"))
 
     if (isLarge) {
-      // Send as multipart/form-data to bypass Medusa's 1MB JSON body-parser limit
-      const fd = new FormData()
-      fd.append("productId", product.id)
-      fd.append("metadata", JSON.stringify(patch))
       const res = await fetch("/admin/product-content", {
         method: "POST",
         credentials: "include",
-        body: fd, // NO Content-Type header — browser sets multipart boundary automatically
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: product.id, metadata: patch }),
       })
       if (!res.ok) {
         const errText = await res.text().catch(() => "")
@@ -988,7 +985,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
             </button>
             {hasPageContent && (
               <button
-                onClick={() => { if (window.confirm("Xóa toàn bộ nội dung Page Builder? Storefront sẽ fallback về metadata sections bên dưới.")) save({ page_content: null } as any) }}
+                onClick={async () => { if (window.confirm("Xóa toàn bộ nội dung Page Builder? Storefront sẽ fallback về metadata sections bên dưới.")) { await patchProduct({ page_content: null, page_content_draft: null, page_content_versions: null }); setMeta(prev => ({ ...prev, page_content: undefined, page_content_draft: undefined })); setVersions([]); revalidate() } }}
                 disabled={saving}
                 style={{ background: "white", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 12px", fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
                 🗑 Xóa

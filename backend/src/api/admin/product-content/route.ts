@@ -1,29 +1,43 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
-// Nhận dữ liệu dạng multipart/form-data để bypass Medusa JSON body-parser limit.
-// Widget gửi: FormData { productId, metadata (JSON string) }
+const ALLOWED_METADATA_KEYS = new Set([
+  "page_content",
+  "page_content_draft",
+  "page_content_versions",
+  "page_content_backup",
+])
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  )
+}
+
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
-    // Medusa tự parse multipart — fields nằm trong req.body
-    const body = req.body as any
+    const { productId, metadata } = req.body as any
 
-    const productId = body?.productId
-    let metadata: Record<string, any>
-
-    try {
-      metadata = typeof body?.metadata === "string"
-        ? JSON.parse(body.metadata)
-        : body?.metadata
-    } catch {
-      return res.status(400).json({ error: "metadata must be valid JSON string" })
+    if (typeof productId !== "string" || !productId.trim()) {
+      return res.status(400).json({ error: "productId must be a non-empty string" })
     }
 
-    if (!productId || typeof metadata !== "object") {
-      return res.status(400).json({ error: "productId and metadata required" })
+    if (!isPlainObject(metadata)) {
+      return res.status(400).json({ error: "metadata must be an object" })
     }
 
-    // Medusa v2: updateProducts nhận array
+    const invalidKeys = Object.keys(metadata).filter(
+      (key) => !ALLOWED_METADATA_KEYS.has(key)
+    )
+    if (invalidKeys.length) {
+      return res.status(400).json({
+        error: "metadata contains unsupported keys",
+        keys: invalidKeys,
+      })
+    }
+
     const productModule = req.scope.resolve(Modules.PRODUCT)
     const [updated] = await productModule.updateProducts([{ id: productId, metadata }])
 
