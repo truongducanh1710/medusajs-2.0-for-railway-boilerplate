@@ -39,9 +39,9 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     }
 
     const productModule = req.scope.resolve(Modules.PRODUCT)
-    const [updated] = await productModule.updateProducts([{ id: productId, metadata }])
+    const updated = await productModule.updateProducts(productId, { metadata })
 
-    res.json({ ok: true, product: { id: updated.id } })
+    res.json({ ok: true, product: { id: (updated as any).id } })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
