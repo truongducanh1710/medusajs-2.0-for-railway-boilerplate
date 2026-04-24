@@ -8,16 +8,14 @@ import ProductPageBuilder from "../components/product-page-builder"
 function getStorefrontBase(): string {
   if (typeof window === "undefined") return "http://localhost:8000"
   const host = window.location.host
-  // Custom domain: api.phanviet.vn → www.phanviet.vn
-  if (host === "api.phanviet.vn") return "https://www.phanviet.vn"
+  // Custom domain
+  if (host === "api.phanviet.vn" || host === "phanviet.vn") return "https://www.phanviet.vn"
   // Railway pattern: replace "backend-production" with "storefront-production"
   if (host.includes("backend-") && host.includes("railway.app")) {
     return `https://${host.replace(/^backend-/, "storefront-")}`
   }
   // Local dev
-  return host.includes(":")
-    ? `http://${host.replace(":9000", ":8000")}`
-    : `https://${host}`
+  return host.includes(":") ? `http://${host.replace(":9000", ":8000")}` : `https://www.phanviet.vn`
 }
 
 function StorefrontLink({ handle }: { handle: string }) {
