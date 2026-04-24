@@ -134,26 +134,32 @@ function HomepageSettingsWidget() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState("")
   const [loadError, setLoadError] = useState("")
+  const [storeId, setStoreId] = useState("")
 
   const set = (key: string) => (v: string) => setMeta(m => ({ ...m, [key]: v }))
   const val = (key: string) => meta[key] ?? ""
 
   useEffect(() => {
-    fetch("/admin/store", { credentials: "include" })
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+    // GET /admin/stores returns { stores: [...] }
+    fetch("/admin/stores", { credentials: "include" })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status} — ${r.url}`); return r.json() })
       .then(data => {
-        const store = data.store
-        if (store) setMeta((store.metadata as Record<string, string>) ?? {})
-        else setLoadError("Không tìm thấy store")
+        const store = data.stores?.[0]
+        if (store) {
+          setStoreId(store.id)
+          setMeta((store.metadata as Record<string, string>) ?? {})
+        } else setLoadError("Không tìm thấy store")
       })
       .catch(e => setLoadError(e.message))
   }, [])
 
   const save = async () => {
+    if (!storeId) { setSaveError("Chưa load được store ID"); return }
     setSaving(true)
     setSaveError("")
     try {
-      const res = await fetch("/admin/store", {
+      // POST /admin/stores/{id} to update
+      const res = await fetch(`/admin/stores/${storeId}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
