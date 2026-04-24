@@ -343,15 +343,13 @@ function ProductImageUpload({ productId, initialImages }: {
         }),
       })
       if (!res.ok) throw new Error("Lưu ảnh thất bại")
-      // Revalidate storefront cache
-      try {
-        const storefrontBase = getStorefrontBase()
-        await fetch(`${storefrontBase}/api/revalidate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-revalidate-secret": "phanviet-revalidate" },
-          body: JSON.stringify({ tags: ["products"] }),
-        })
-      } catch {}
+      // Revalidate via backend proxy (avoid CORS)
+      fetch("/admin/revalidate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: ["products"] }),
+      }).catch(() => {})
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
@@ -565,8 +563,10 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         body: JSON.stringify({ metadata: finalMeta })
       })
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(`Lưu thất bại (${res.status}): ${errData?.message || JSON.stringify(errData)}`)
+        const errText = await res.text().catch(() => "")
+        let errMsg = errText
+        try { const d = JSON.parse(errText); errMsg = d.message || d.error || JSON.stringify(d) } catch {}
+        throw new Error(`Lưu thất bại (${res.status}): ${errMsg}`)
       }
       // Dùng finalMeta (đã xóa keys tắt) thay vì server response (Medusa merge metadata)
       applyMeta(finalMeta)
