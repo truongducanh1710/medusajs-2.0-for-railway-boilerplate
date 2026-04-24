@@ -583,6 +583,26 @@ export default function ProductPageBuilder({
           appendTo: "#product-page-builder-blocks",
           blocks,
         },
+        assetManager: {
+          upload: "/admin/uploads",
+          uploadName: "files",
+          credentials: "include",
+          multiUpload: true,
+          autoAdd: true,
+          uploadFile: async (e: any) => {
+            const files: File[] = e.dataTransfer ? [...e.dataTransfer.files] : [...e.target.files]
+            const formData = new FormData()
+            files.forEach((f: File) => formData.append("files", f))
+            const res = await fetch("/admin/uploads", {
+              method: "POST",
+              credentials: "include",
+              body: formData,
+            })
+            const data = await res.json()
+            const uploaded = (data.files || []).map((f: any) => ({ src: f.url, name: f.url.split("/").pop() }))
+            editor.AssetManager.add(uploaded)
+          },
+        },
       })
       injectedBlockStyle = document.createElement("style")
       injectedBlockStyle.setAttribute("data-product-page-builder-blocks", "true")
