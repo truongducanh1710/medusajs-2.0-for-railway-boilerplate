@@ -567,6 +567,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       if (!res.ok) throw new Error("Lưu thất bại")
       // Dùng finalMeta (đã xóa keys tắt) thay vì server response (Medusa merge metadata)
       applyMeta(finalMeta)
+      // Revalidate storefront cache
+      try {
+        await fetch(`${getStorefrontBase()}/api/revalidate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-revalidate-secret": "phanviet-revalidate" },
+          body: JSON.stringify({ tags: ["products"] }),
+        })
+      } catch {}
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
@@ -578,10 +586,19 @@ const ProductContentWidget = ({ data }: { data: any }) => {
 
   const hasPageContent = Boolean(meta.page_content && meta.page_content.trim())
   const handlePageBuilderSave = async (content: string) => {
-    // Update meta state first so subsequent saves don't overwrite page_content
-    setMeta(prev => ({ ...prev, page_content: content }))
-    await save({ page_content: content })
+    // Backup phiên bản hiện tại trước khi ghi đè
+    const backup = meta.page_content || null
+    setMeta(prev => ({ ...prev, page_content: content, page_content_backup: backup || undefined }))
+    await save({ page_content: content, page_content_backup: backup || undefined } as any)
     setBuilderOpen(false)
+  }
+
+  const handleRestoreBackup = async () => {
+    const backup = meta.page_content_backup as string | undefined
+    if (!backup) return
+    if (!window.confirm("Khôi phục phiên bản trước? Nội dung hiện tại sẽ bị thay thế.")) return
+    setMeta(prev => ({ ...prev, page_content: backup, page_content_backup: undefined }))
+    await save({ page_content: backup, page_content_backup: null } as any)
   }
   const s: React.CSSProperties = { fontFamily: "Inter, sans-serif" }
 
@@ -623,9 +640,28 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           >
             🎨 Mở Page Builder
           </button>
+          {hasPageContent && (meta as any).page_content_backup && (
+            <button
+              onClick={handleRestoreBackup}
+              disabled={saving}
+              title="Khôi phục phiên bản trước khi lưu lần cuối"
+              style={{
+                background: "#f0fdf4",
+                color: "#15803d",
+                border: "1px solid #86efac",
+                borderRadius: 8,
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              ↩ Khôi phục
+            </button>
+          )}
           {hasPageContent && (
             <button
-              onClick={() => save({ page_content: "" })}
+              onClick={() => save({ page_content: null } as any)}
               disabled={saving}
               style={{
                 background: "#fff7ed",
