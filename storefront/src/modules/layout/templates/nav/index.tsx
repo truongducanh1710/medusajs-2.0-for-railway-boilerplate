@@ -32,7 +32,7 @@ export default async function Nav({
             className="flex items-center"
             data-testid="nav-store-link"
           >
-            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-10 sm:h-12 object-contain" style={{ mixBlendMode: "multiply" }} />
+            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-14 sm:h-16 object-contain" style={{ mixBlendMode: "multiply" }} />
           </LocalizedClientLink>
 
           {/* Desktop nav links */}

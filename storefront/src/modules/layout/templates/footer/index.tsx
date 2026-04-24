@@ -14,7 +14,7 @@ export default async function Footer({
           <img
             src="/logo-vietmate.png.png"
             alt="Vietmate Home Appliances"
-            className="h-14 object-contain mb-3 bg-white rounded-lg px-2 py-1"
+            className="h-20 object-contain mb-3 bg-white rounded-xl px-3 py-2"
           />
           <p className="font-bold text-sm">CÔNG TY TNHH PHAN VIỆT INVEST</p>
           <p className="text-sm text-red-200">MST: 0109890417</p>
