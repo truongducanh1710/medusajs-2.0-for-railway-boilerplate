@@ -125,34 +125,49 @@ function HomepageSettingsWidget() {
   const [meta, setMeta] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string>("")
   const [storeId, setStoreId] = useState<string>("")
+  const [loadError, setLoadError] = useState<string>("")
 
   useEffect(() => {
     fetch("/admin/stores", { credentials: "include" })
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(data => {
         const store = data.stores?.[0] ?? data.store
         if (store) {
           setStoreId(store.id)
           setMeta((store.metadata as Record<string, string>) ?? {})
+        } else {
+          setLoadError("Không tìm thấy store")
         }
       })
-      .catch(() => {})
+      .catch(e => setLoadError(e.message))
   }, [])
 
   const save = async () => {
-    if (!storeId) return
     setSaving(true)
+    setSaveError("")
     try {
-      await fetch(`/admin/stores/${storeId}`, {
+      // Medusa v2: POST /admin/stores (no ID in path, single store)
+      const res = await fetch(`/admin/stores`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ metadata: meta }),
       })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch {}
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        setSaveError(`Lỗi ${res.status}: ${errData.message || errData.error || res.statusText}`)
+      } else {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      }
+    } catch (e: any) {
+      setSaveError(e.message)
+    }
     setSaving(false)
   }
 
@@ -168,6 +183,16 @@ function HomepageSettingsWidget() {
           {saved ? "✅ Đã lưu!" : saving ? "Đang lưu..." : "💾 Lưu"}
         </button>
       </div>
+      {loadError && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626" }}>
+          ⚠️ Lỗi load store: {loadError} {!storeId && "— Store ID chưa có, không thể lưu"}
+        </div>
+      )}
+      {saveError && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626" }}>
+          ❌ Lưu thất bại: {saveError}
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {FIELDS.map(field => (
