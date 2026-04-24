@@ -1,5 +1,8 @@
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import { getStoreMetadata } from "@lib/data/store"
+import { getProductsList } from "@lib/data/products"
+import { getRegion } from "@lib/data/regions"
+import ProductPreview from "@modules/products/components/product-preview"
 
 const DEFAULT_IMAGES = {
   hero: "https://lh3.googleusercontent.com/aida-public/AB6AXuDCBtxbp_yIraPEtcOEiBoOm-LSUuFSWM6kLUwN1tsjho6s76Gg3jg0YmKH8YPsC558A7kJVL8qsWn9zwg-M-O1Hk8-lwu0i7GfaaFneLbj7WLIPf5muuAPmpjA4sHZnEwxPp5qqH9evHhbxytilDfvpuAwM4rqs71Q9DGvT1xr9La2c33DeTAjraoS7r02rIy5wifx3DexpOF2tv9mOODsKvy832LybwlCRxjUpcSZfvpeCel_IRdWC0eIME3t0Ed2jVmCDKfeB_Ns",
@@ -37,8 +40,12 @@ const HERO_COPY = {
   ],
 }
 
-const Hero = async () => {
-  const meta = await getStoreMetadata()
+const Hero = async ({ countryCode = "vn" }: { countryCode?: string }) => {
+  const [meta, region, { response: { products } }] = await Promise.all([
+    getStoreMetadata(),
+    getRegion(countryCode),
+    getProductsList({ pageParam: 1, queryParams: { limit: 6 }, countryCode }),
+  ])
 
   const img = {
     hero: meta.hero_image || DEFAULT_IMAGES.hero,
@@ -58,8 +65,6 @@ const Hero = async () => {
     promoTitle: meta.promo_title || HERO_COPY.promoTitle,
     promoDesc: meta.promo_desc || HERO_COPY.promoDesc,
   }
-
-  const catImages = [img.cat1, img.cat2, img.cat3]
 
   return (
     <>
@@ -128,44 +133,32 @@ const Hero = async () => {
         </div>
       </section>
 
-      <section className="max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 py-12 sm:py-16 md:py-24">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 sm:mb-12">
-          <div className="mb-4 sm:mb-0">
-            <h2 className="font-extrabold text-2xl sm:text-3xl md:text-4xl tracking-tight mb-2 text-gray-900">
-              {copy.featuredTitle}
-            </h2>
-            <p className="text-gray-500 text-sm sm:text-base">{copy.featuredDesc}</p>
-          </div>
-          <LocalizedClientLink
-            href="/store"
-            className="text-orange-500 font-bold flex items-center gap-2 hover:underline text-sm sm:text-base"
-          >
-            {copy.viewAll}
-          </LocalizedClientLink>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
-          {copy.categories.map((cat, index) => (
-            <div
-              key={cat.title}
-              className="group relative h-[300px] sm:h-[400px] md:h-[500px] rounded-xl overflow-hidden cursor-pointer"
-            >
-              <img
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                src={catImages[index]}
-                alt={cat.title}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-              <div className="absolute bottom-0 left-0 p-4 sm:p-6 md:p-8 lg:p-12 w-full">
-                <h3 className="text-white text-xl sm:text-2xl md:text-3xl font-bold mb-2 sm:mb-4">{cat.title}</h3>
-                <p className="text-white/70 mb-4 sm:mb-6 md:mb-8 max-w-xs text-sm sm:text-base">{cat.desc}</p>
-                <span className="bg-white/10 backdrop-blur-md text-white px-4 sm:px-6 py-2 rounded-full text-xs sm:text-sm font-bold border border-white/20 group-hover:bg-orange-500 group-hover:border-orange-500 transition-all">
-                  Khám phá ngay
-                </span>
-              </div>
+      {products.length > 0 && region && (
+        <section className="max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 py-12 sm:py-16 md:py-24">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 sm:mb-12">
+            <div className="mb-4 sm:mb-0">
+              <h2 className="font-extrabold text-2xl sm:text-3xl md:text-4xl tracking-tight mb-2 text-gray-900">
+                {copy.featuredTitle}
+              </h2>
+              <p className="text-gray-500 text-sm sm:text-base">{copy.featuredDesc}</p>
             </div>
-          ))}
-        </div>
-      </section>
+            <LocalizedClientLink
+              href="/store"
+              className="text-orange-500 font-bold flex items-center gap-2 hover:underline text-sm sm:text-base"
+            >
+              {copy.viewAll}
+            </LocalizedClientLink>
+          </div>
+          <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
+            {products.map((product) => (
+              <li key={product.id}>
+                {/* @ts-ignore */}
+                <ProductPreview product={product} region={region} isFeatured />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="max-w-[1920px] mx-auto px-4 sm:px-6 md:px-12 py-8 sm:py-12">
         <div className="relative rounded-2xl overflow-hidden bg-orange-500 h-64 sm:h-72 md:h-80 flex items-center px-6 sm:px-8 md:px-12 lg:px-20">

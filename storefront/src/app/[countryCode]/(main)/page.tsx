@@ -26,7 +26,7 @@ export default async function Home({
 
   return (
     <>
-      <Hero />
+      <Hero countryCode={countryCode} />
       <div className="py-8 sm:py-12">
         <ul className="flex flex-col gap-x-6">
           <FeaturedProducts collections={collections} region={region} />
