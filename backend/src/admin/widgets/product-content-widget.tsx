@@ -8,12 +8,14 @@ import ProductPageBuilder from "../components/product-page-builder"
 function getStorefrontBase(): string {
   if (typeof window === "undefined") return "http://localhost:8000"
   const host = window.location.host
+  // Custom domain: api.phanviet.vn → www.phanviet.vn
+  if (host === "api.phanviet.vn") return "https://www.phanviet.vn"
   // Railway pattern: replace "backend-production" with "storefront-production"
   if (host.includes("backend-") && host.includes("railway.app")) {
     return `https://${host.replace(/^backend-/, "storefront-")}`
   }
   // Local dev
-  return host.replace(":9000", ":8000").includes(":")
+  return host.includes(":")
     ? `http://${host.replace(":9000", ":8000")}`
     : `https://${host}`
 }
@@ -567,11 +569,12 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       if (!res.ok) throw new Error("Lưu thất bại")
       // Dùng finalMeta (đã xóa keys tắt) thay vì server response (Medusa merge metadata)
       applyMeta(finalMeta)
-      // Revalidate storefront cache
+      // Revalidate storefront cache qua backend (tránh CORS)
       try {
-        await fetch(`${getStorefrontBase()}/api/revalidate`, {
+        await fetch("/admin/revalidate", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-revalidate-secret": "phanviet-revalidate" },
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tags: ["products"] }),
         })
       } catch {}
