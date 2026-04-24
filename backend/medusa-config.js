@@ -41,6 +41,7 @@ const medusaConfig = {
       jwtSecret: JWT_SECRET,
       cookieSecret: COOKIE_SECRET,
       uploadFileSizeLimit: 5242880, // 5MB
+      jsonLimit: "10mb",
     },
     build: {
       rollupOptions: {

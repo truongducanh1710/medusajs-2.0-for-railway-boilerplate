@@ -566,7 +566,10 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ metadata: finalMeta })
       })
-      if (!res.ok) throw new Error("Lưu thất bại")
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(`Lưu thất bại (${res.status}): ${errData?.message || JSON.stringify(errData)}`)
+      }
       // Dùng finalMeta (đã xóa keys tắt) thay vì server response (Medusa merge metadata)
       applyMeta(finalMeta)
       // Revalidate storefront cache qua backend (tránh CORS)
@@ -588,11 +591,43 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   }
 
   const hasPageContent = Boolean(meta.page_content && meta.page_content.trim())
+
+  const savePageContent = async (content: string | null, backup?: string | null) => {
+    setSaving(true)
+    setError("")
+    try {
+      const metaPatch: Record<string, any> = { page_content: content }
+      if (backup !== undefined) metaPatch.page_content_backup = backup
+      const res = await fetch(`/admin/products/${product.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata: metaPatch }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(`${res.status}: ${errData?.message || JSON.stringify(errData)}`)
+      }
+      try {
+        await fetch("/admin/revalidate", {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tags: ["products"] }),
+        })
+      } catch {}
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handlePageBuilderSave = async (content: string) => {
-    // Backup phiên bản hiện tại trước khi ghi đè
     const backup = meta.page_content || null
     setMeta(prev => ({ ...prev, page_content: content, page_content_backup: backup || undefined }))
-    await save({ page_content: content, page_content_backup: backup || undefined } as any)
+    await savePageContent(content, backup)
     setBuilderOpen(false)
   }
 
@@ -601,7 +636,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     if (!backup) return
     if (!window.confirm("Khôi phục phiên bản trước? Nội dung hiện tại sẽ bị thay thế.")) return
     setMeta(prev => ({ ...prev, page_content: backup, page_content_backup: undefined }))
-    await save({ page_content: backup, page_content_backup: null } as any)
+    await savePageContent(backup, null)
   }
   const s: React.CSSProperties = { fontFamily: "Inter, sans-serif" }
 
