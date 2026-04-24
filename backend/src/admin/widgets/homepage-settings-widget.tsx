@@ -139,10 +139,10 @@ function HomepageSettingsWidget() {
   const val = (key: string) => meta[key] ?? ""
 
   useEffect(() => {
-    fetch("/admin/stores", { credentials: "include" })
+    fetch("/admin/store", { credentials: "include" })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
       .then(data => {
-        const store = data.stores?.[0] ?? data.store
+        const store = data.store
         if (store) setMeta((store.metadata as Record<string, string>) ?? {})
         else setLoadError("Không tìm thấy store")
       })
@@ -153,7 +153,7 @@ function HomepageSettingsWidget() {
     setSaving(true)
     setSaveError("")
     try {
-      const res = await fetch("/admin/stores", {
+      const res = await fetch("/admin/store", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
