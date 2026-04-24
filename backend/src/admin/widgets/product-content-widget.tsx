@@ -840,7 +840,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const s: React.CSSProperties = { fontFamily: "Inter, sans-serif" }
 
   return (
-    <div style={{ ...s, padding: 20, background: "white", borderRadius: 12, border: "1px solid #e5e7eb", marginTop: 16 }}>
+    <div style={{ ...s, fontFamily: "Inter,system-ui,sans-serif", marginTop: 16 }}>
       {/* Version history modal */}
       {showVersions && (
         <VersionHistoryPanel
@@ -851,100 +851,117 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         />
       )}
 
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#111827" }}>
-            📦 Nội dung trang sản phẩm
-          </h3>
-          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>
-            Quản lý các section hiển thị trên trang sản phẩm
-            {product.handle && <StorefrontLink handle={product.handle} />}
-            {currentUser.email !== "unknown" && (
-              <span style={{ marginLeft: 8, background: "#f3f4f6", borderRadius: 20, padding: "2px 8px", fontSize: 11, color: "#374151" }}>
-                👤 {currentUser.email}
+      {/* ── HEADER BAR ── */}
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: "14px 20px", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 20 }}>📦</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: "#111827" }}>Nội dung trang sản phẩm</div>
+              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2, display: "flex", alignItems: "center", gap: 8 }}>
+                {currentUser.email !== "unknown" && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#f97316", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 10, fontWeight: 700 }}>
+                      {(currentUser.name || "?")[0].toUpperCase()}
+                    </span>
+                    {currentUser.email}
+                  </span>
+                )}
+                {product.handle && <StorefrontLink handle={product.handle} />}
+              </div>
+            </div>
+          </div>
+
+          {/* Status + save */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {saved && (
+              <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                ✓ Đã lưu!
               </span>
             )}
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {saved && <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>✓ Đã lưu!</span>}
-          {error && <span style={{ fontSize: 12, color: "#ef4444", maxWidth: 200 }}>{error}</span>}
-          {hasPageContent && (
-            <span style={{ fontSize: 12, color: "#f97316", fontWeight: 600 }}>
-              🎨 Page Builder
-            </span>
-          )}
-          <button
-            onClick={() => setBuilderOpen(true)}
-            style={{
-              background: "#111827",
-              color: "white",
-              border: "none",
-              borderRadius: 8,
-              padding: "8px 14px",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            🎨 Mở Page Builder
-          </button>
-          {hasPageContent && (
-            <button
-              onClick={() => setShowVersions(true)}
-              title={`Lịch sử ${versions.length} phiên bản`}
-              style={{
-                background: versions.length > 0 ? "#eff6ff" : "#f9fafb",
-                color: versions.length > 0 ? "#1d4ed8" : "#9ca3af",
-                border: `1px solid ${versions.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
-                borderRadius: 8,
-                padding: "8px 14px",
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: "pointer",
-              }}
-            >
-              🕐 Lịch sử {versions.length > 0 ? `(${versions.length})` : ""}
+            {error && (
+              <span style={{ fontSize: 11, color: "#dc2626", maxWidth: 220, lineHeight: 1.3 }}>{error}</span>
+            )}
+            <button onClick={() => save()} disabled={saving}
+              style={{ background: saving ? "#9ca3af" : "#f97316", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+              {saving ? "Đang lưu..." : "💾 Lưu thay đổi"}
             </button>
-          )}
-          {hasPageContent && (
-            <button
-              onClick={() => save({ page_content: null } as any)}
-              disabled={saving}
-              style={{
-                background: "#fff7ed",
-                color: "#c2410c",
-                border: "1px solid #fdba74",
-                borderRadius: 8,
-                padding: "8px 14px",
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: saving ? "not-allowed" : "pointer",
-              }}
-            >
-              Xóa Page Builder
-            </button>
-          )}
-          <button
-            onClick={() => save()}
-            disabled={saving}
-            style={{
-              background: saving ? "#9ca3af" : "#f97316", color: "white",
-              border: "none", borderRadius: 8, padding: "8px 16px",
-              fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer"
-            }}
-          >
-            {saving ? "Đang lưu..." : "💾 Lưu thay đổi"}
-          </button>
+          </div>
         </div>
       </div>
 
-      {/* 0. Ảnh sản phẩm */}
-      <ProductImageUpload
-        productId={product.id}
-        initialImages={productImages}
-      />
+      {/* ── IMAGES ── */}
+      <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 12 }}>
+        <ProductImageUpload productId={product.id} initialImages={productImages} />
+      </div>
+
+      {/* ── PAGE BUILDER CARD ── */}
+      <div style={{ background: hasPageContent ? "#fffbf5" : "white", border: `1px solid ${hasPageContent ? "#fed7aa" : "#e5e7eb"}`, borderRadius: 12, padding: 20, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", display: "flex", alignItems: "center", gap: 8 }}>
+              🎨 Page Builder
+              {hasPageContent && (
+                <span style={{ background: "#f97316", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
+                  ĐÃ CÓ NỘI DUNG
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              {hasPageContent
+                ? "Trang sản phẩm đang dùng nội dung từ Page Builder — kéo thả tự do, override metadata sections bên dưới."
+                : "Kéo thả blocks để thiết kế layout sản phẩm. Khi có nội dung, sẽ override toàn bộ metadata sections bên dưới."}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
+            {hasPageContent && (
+              <button onClick={() => setShowVersions(true)}
+                style={{ background: versions.length > 0 ? "#eff6ff" : "#f9fafb", color: versions.length > 0 ? "#1d4ed8" : "#6b7280", border: `1px solid ${versions.length > 0 ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 8, padding: "8px 12px", fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                🕐 {versions.length > 0 ? `${versions.length} phiên bản` : "Lịch sử"}
+              </button>
+            )}
+            <button onClick={() => setBuilderOpen(true)}
+              style={{ background: "#111827", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {hasPageContent ? "✏️ Chỉnh sửa" : "🎨 Mở Editor"}
+            </button>
+            {hasPageContent && (
+              <button
+                onClick={() => { if (window.confirm("Xóa toàn bộ nội dung Page Builder? Storefront sẽ fallback về metadata sections bên dưới.")) save({ page_content: null } as any) }}
+                disabled={saving}
+                style={{ background: "white", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 12px", fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                🗑 Xóa
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Version mini-list nếu có */}
+        {hasPageContent && versions.length > 0 && (
+          <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {versions.slice(0, 3).map((v, i) => (
+              <div key={v.id} style={{ background: "#f3f4f6", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 16, height: 16, borderRadius: "50%", background: `hsl(${(v.savedBy.charCodeAt(0) * 47) % 360},55%,55%)`, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 9, fontWeight: 700 }}>
+                  {v.savedByAvatar}
+                </span>
+                {v.savedBy.split("@")[0]} · {formatRelativeTime(v.savedAt)}
+              </div>
+            ))}
+            {versions.length > 3 && (
+              <div style={{ background: "#f3f4f6", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#6b7280" }}>
+                +{versions.length - 3} phiên bản khác
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── METADATA SECTIONS (dimmed when page builder active) ── */}
+      <div style={{ opacity: hasPageContent ? 0.5 : 1, pointerEvents: hasPageContent ? "none" : "auto", transition: "opacity 0.2s" }}>
+        {hasPageContent && (
+          <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 8, padding: "8px 14px", marginBottom: 10, fontSize: 12, color: "#92400e" }}>
+            ⚠️ Page Builder đang active — các section bên dưới bị ẩn trên storefront. Xóa Page Builder để dùng lại.
+          </div>
+        )}
 
       {/* 1. Video */}
       <Toggle label="🎬 Video Demo" enabled={showVideo} onToggle={() => setShowVideo(!showVideo)}>
@@ -1141,6 +1158,8 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         </button>
       </Toggle>
 
+      </div>{/* end metadata wrapper */}
+
       <ProductPageBuilder
         open={builderOpen}
         productTitle={product.title || "Sản phẩm"}
@@ -1150,7 +1169,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       />
 
       {/* Facebook Pixel per product */}
-      <div style={{ background: "#f0f4ff", border: "1px solid #c7d7fc", borderRadius: 10, padding: "14px 16px", marginTop: 8 }}>
+      <div style={{ background: "#f0f4ff", border: "1px solid #c7d7fc", borderRadius: 10, padding: "14px 16px", marginTop: 12 }}>
         <p style={{ fontWeight: 700, fontSize: 14, color: "#1d4ed8", marginBottom: 10 }}>📊 Facebook Pixel (sản phẩm này)</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div>
@@ -1177,17 +1196,10 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         </div>
       </div>
 
-      {/* Save button bottom */}
-      <div style={{ textAlign: "right", marginTop: 8 }}>
-        <button
-          onClick={() => save()}
-          disabled={saving}
-          style={{
-            background: saving ? "#9ca3af" : "#f97316", color: "white",
-            border: "none", borderRadius: 8, padding: "10px 24px",
-            fontWeight: 700, fontSize: 14, cursor: saving ? "not-allowed" : "pointer"
-          }}
-        >
+      {/* Save button bottom — sticky */}
+      <div style={{ position: "sticky", bottom: 16, zIndex: 10, display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+        <button onClick={() => save()} disabled={saving}
+          style={{ background: saving ? "#9ca3af" : "#f97316", color: "white", border: "none", borderRadius: 10, padding: "12px 28px", fontWeight: 800, fontSize: 14, cursor: saving ? "not-allowed" : "pointer", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
           {saving ? "Đang lưu..." : "💾 Lưu tất cả thay đổi"}
         </button>
       </div>
