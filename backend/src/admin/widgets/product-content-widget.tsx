@@ -1,5 +1,5 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
-import React, { useEffect, useRef, useState, useCallback } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import ProductPageBuilder from "../components/product-page-builder"
 
 // ─── Version history types ────────────────────────────────────────────────────
