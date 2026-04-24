@@ -1,6 +1,153 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
-import React, { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState, useCallback } from "react"
 import ProductPageBuilder from "../components/product-page-builder"
+
+// ─── Version history types ────────────────────────────────────────────────────
+type ContentVersion = {
+  id: string          // timestamp-based unique ID
+  savedAt: string     // ISO date string
+  savedBy: string     // user email or name
+  savedByAvatar: string // first letter
+  label: string       // auto-label: "Lần lưu 1", or custom
+  content: string     // page_content JSON
+  size: number        // content byte size
+}
+
+const MAX_VERSIONS = 5
+
+function buildVersionId() {
+  return `v_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
+function formatRelativeTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (mins < 1) return "vừa xong"
+  if (mins < 60) return `${mins} phút trước`
+  if (hours < 24) return `${hours} giờ trước`
+  return `${days} ngày trước`
+}
+
+// ─── Version History Panel ────────────────────────────────────────────────────
+function VersionHistoryPanel({
+  versions,
+  currentContent,
+  onRestore,
+  onClose,
+}: {
+  versions: ContentVersion[]
+  currentContent: string
+  onRestore: (v: ContentVersion) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState<ContentVersion | null>(null)
+  const [restoring, setRestoring] = useState(false)
+
+  const handleRestore = async (v: ContentVersion) => {
+    if (!window.confirm(`Khôi phục phiên bản lưu lúc ${new Date(v.savedAt).toLocaleString("vi-VN")} bởi ${v.savedBy}?\n\nNội dung hiện tại sẽ được lưu vào lịch sử.`)) return
+    setRestoring(true)
+    await onRestore(v)
+    setRestoring(false)
+    onClose()
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={onClose}>
+      <div style={{ background: "white", borderRadius: 16, width: 680, maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>🕐 Lịch sử phiên bản</div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Tối đa {MAX_VERSIONS} phiên bản gần nhất. Click để xem trước, bấm "Khôi phục" để dùng lại.</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#6b7280" }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          {/* Version list */}
+          <div style={{ width: 280, borderRight: "1px solid #e5e7eb", overflow: "y-auto", overflowY: "auto" }}>
+            {/* Current */}
+            <div style={{ padding: "12px 16px", background: "#f0fdf4", borderBottom: "1px solid #e5e7eb" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: 1 }}>● Hiện tại</div>
+              <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>{formatBytes(currentContent?.length || 0)}</div>
+            </div>
+            {versions.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>Chưa có phiên bản nào được lưu</div>
+            ) : (
+              versions.map((v, i) => (
+                <div key={v.id}
+                  onClick={() => setSelected(selected?.id === v.id ? null : v)}
+                  style={{ padding: "14px 16px", borderBottom: "1px solid #f3f4f6", cursor: "pointer", background: selected?.id === v.id ? "#eff6ff" : "white", transition: "background 0.15s" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: `hsl(${(v.savedBy.charCodeAt(0) * 47) % 360}, 60%, 55%)`, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                      {v.savedByAvatar}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>
+                        Phiên bản {versions.length - i}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>{v.savedBy}</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#9ca3af", textAlign: "right", flexShrink: 0 }}>
+                      <div>{formatRelativeTime(v.savedAt)}</div>
+                      <div>{formatBytes(v.size)}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>
+                    {new Date(v.savedAt).toLocaleString("vi-VN")}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Preview pane */}
+          <div style={{ flex: 1, overflow: "auto", padding: 20, background: "#f9fafb" }}>
+            {selected ? (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Xem trước nội dung</div>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>Lưu bởi {selected.savedBy} — {new Date(selected.savedAt).toLocaleString("vi-VN")}</div>
+                  </div>
+                  <button onClick={() => handleRestore(selected)} disabled={restoring}
+                    style={{ background: "#f97316", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: restoring ? "not-allowed" : "pointer" }}>
+                    {restoring ? "Đang khôi phục..." : "↩ Khôi phục phiên bản này"}
+                  </button>
+                </div>
+                <div style={{ background: "white", borderRadius: 8, border: "1px solid #e5e7eb", padding: 16, fontSize: 11, fontFamily: "monospace", color: "#374151", wordBreak: "break-all", maxHeight: 400, overflow: "auto", lineHeight: 1.6 }}>
+                  {(() => {
+                    try {
+                      const d = JSON.parse(selected.content)
+                      return d.html ? `HTML (${formatBytes(d.html.length)}):\n${d.html.slice(0, 800)}${d.html.length > 800 ? "..." : ""}` : selected.content.slice(0, 800)
+                    } catch { return selected.content.slice(0, 800) }
+                  })()}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "#9ca3af" }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>👈</div>
+                <div style={{ fontSize: 13 }}>Chọn một phiên bản để xem trước</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // Builds storefront link from current admin URL pattern
 // Railway: backend = backend-xxx.railway.app, storefront = storefront-xxx.railway.app
@@ -460,6 +607,20 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [showVersions, setShowVersions] = useState(false)
+  const [versions, setVersions] = useState<ContentVersion[]>([])
+  const [currentUser, setCurrentUser] = useState({ email: "unknown", name: "?" })
+
+  // Fetch current logged-in user
+  useEffect(() => {
+    fetch("/admin/me", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        const u = d.user
+        if (u) setCurrentUser({ email: u.email || "unknown", name: u.first_name || u.email?.split("@")[0] || "?" })
+      })
+      .catch(() => {})
+  }, [])
 
   // Sections toggle state
   const [showVideo, setShowVideo] = useState(false)
@@ -490,7 +651,13 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     : []
 
   useEffect(() => {
-    applyMeta((product.metadata as Meta) || {})
+    const m = (product.metadata as Meta) || {}
+    applyMeta(m)
+    // Load version history
+    try {
+      const vv = m.page_content_versions ? JSON.parse(m.page_content_versions as string) : []
+      setVersions(Array.isArray(vv) ? vv : [])
+    } catch { setVersions([]) }
   }, [product.id])
 
   const setM = (key: string, val: string) => setMeta(prev => ({ ...prev, [key]: val }))
@@ -590,12 +757,17 @@ const ProductContentWidget = ({ data }: { data: any }) => {
 
   const hasPageContent = Boolean(meta.page_content && meta.page_content.trim())
 
-  const savePageContent = async (content: string | null, backup?: string | null) => {
+  const savePageContent = async (content: string | null, newVersions?: ContentVersion[]) => {
     setSaving(true)
     setError("")
     try {
-      const metaPatch: Record<string, any> = { page_content: content }
-      if (backup !== undefined) metaPatch.page_content_backup = backup
+      const metaPatch: Record<string, any> = {
+        page_content: content,
+        page_content_backup: null, // clear old single-backup format
+      }
+      if (newVersions !== undefined) {
+        metaPatch.page_content_versions = JSON.stringify(newVersions)
+      }
       const res = await fetch(`/admin/products/${product.id}`, {
         method: "POST",
         credentials: "include",
@@ -603,16 +775,16 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         body: JSON.stringify({ metadata: metaPatch }),
       })
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(`${res.status}: ${errData?.message || JSON.stringify(errData)}`)
+        const errText = await res.text().catch(() => "")
+        let errMsg = errText
+        try { const d = JSON.parse(errText); errMsg = d.message || d.error || JSON.stringify(d) } catch {}
+        throw new Error(`Lưu thất bại (${res.status}): ${errMsg}`)
       }
-      try {
-        await fetch("/admin/revalidate", {
-          method: "POST", credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tags: ["products"] }),
-        })
-      } catch {}
+      fetch("/admin/revalidate", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: ["products"] }),
+      }).catch(() => {})
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
@@ -623,23 +795,62 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   }
 
   const handlePageBuilderSave = async (content: string) => {
-    const backup = meta.page_content || null
-    setMeta(prev => ({ ...prev, page_content: content, page_content_backup: backup || undefined }))
-    await savePageContent(content, backup)
+    // Push current content to version history before overwriting
+    const newVersions = [...versions]
+    if (meta.page_content && meta.page_content.trim()) {
+      const newV: ContentVersion = {
+        id: buildVersionId(),
+        savedAt: new Date().toISOString(),
+        savedBy: currentUser.email,
+        savedByAvatar: (currentUser.name || currentUser.email || "?")[0].toUpperCase(),
+        label: `Phiên bản ${newVersions.length + 1}`,
+        content: meta.page_content,
+        size: meta.page_content.length,
+      }
+      newVersions.unshift(newV)
+      // Keep only MAX_VERSIONS
+      if (newVersions.length > MAX_VERSIONS) newVersions.splice(MAX_VERSIONS)
+    }
+    setVersions(newVersions)
+    setMeta(prev => ({ ...prev, page_content: content }))
+    await savePageContent(content, newVersions)
     setBuilderOpen(false)
   }
 
-  const handleRestoreBackup = async () => {
-    const backup = meta.page_content_backup as string | undefined
-    if (!backup) return
-    if (!window.confirm("Khôi phục phiên bản trước? Nội dung hiện tại sẽ bị thay thế.")) return
-    setMeta(prev => ({ ...prev, page_content: backup, page_content_backup: undefined }))
-    await savePageContent(backup, null)
+  const handleRestoreVersion = async (v: ContentVersion) => {
+    // Push current to history before restoring
+    const newVersions = [...versions.filter(x => x.id !== v.id)]
+    if (meta.page_content && meta.page_content.trim()) {
+      const newV: ContentVersion = {
+        id: buildVersionId(),
+        savedAt: new Date().toISOString(),
+        savedBy: currentUser.email,
+        savedByAvatar: (currentUser.name || currentUser.email || "?")[0].toUpperCase(),
+        label: "Trước khi khôi phục",
+        content: meta.page_content,
+        size: meta.page_content.length,
+      }
+      newVersions.unshift(newV)
+      if (newVersions.length > MAX_VERSIONS) newVersions.splice(MAX_VERSIONS)
+    }
+    setVersions(newVersions)
+    setMeta(prev => ({ ...prev, page_content: v.content }))
+    await savePageContent(v.content, newVersions)
   }
   const s: React.CSSProperties = { fontFamily: "Inter, sans-serif" }
 
   return (
     <div style={{ ...s, padding: 20, background: "white", borderRadius: 12, border: "1px solid #e5e7eb", marginTop: 16 }}>
+      {/* Version history modal */}
+      {showVersions && (
+        <VersionHistoryPanel
+          versions={versions}
+          currentContent={meta.page_content || ""}
+          onRestore={handleRestoreVersion}
+          onClose={() => setShowVersions(false)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
@@ -648,14 +859,17 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           </h3>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>
             Quản lý các section hiển thị trên trang sản phẩm
-            {product.handle && (
-              <StorefrontLink handle={product.handle} />
+            {product.handle && <StorefrontLink handle={product.handle} />}
+            {currentUser.email !== "unknown" && (
+              <span style={{ marginLeft: 8, background: "#f3f4f6", borderRadius: 20, padding: "2px 8px", fontSize: 11, color: "#374151" }}>
+                👤 {currentUser.email}
+              </span>
             )}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {saved && <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>✓ Đã lưu!</span>}
-          {error && <span style={{ fontSize: 12, color: "#ef4444" }}>{error}</span>}
+          {error && <span style={{ fontSize: 12, color: "#ef4444", maxWidth: 200 }}>{error}</span>}
           {hasPageContent && (
             <span style={{ fontSize: 12, color: "#f97316", fontWeight: 600 }}>
               🎨 Page Builder
@@ -676,23 +890,22 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           >
             🎨 Mở Page Builder
           </button>
-          {hasPageContent && (meta as any).page_content_backup && (
+          {hasPageContent && (
             <button
-              onClick={handleRestoreBackup}
-              disabled={saving}
-              title="Khôi phục phiên bản trước khi lưu lần cuối"
+              onClick={() => setShowVersions(true)}
+              title={`Lịch sử ${versions.length} phiên bản`}
               style={{
-                background: "#f0fdf4",
-                color: "#15803d",
-                border: "1px solid #86efac",
+                background: versions.length > 0 ? "#eff6ff" : "#f9fafb",
+                color: versions.length > 0 ? "#1d4ed8" : "#9ca3af",
+                border: `1px solid ${versions.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
                 borderRadius: 8,
                 padding: "8px 14px",
                 fontWeight: 700,
                 fontSize: 13,
-                cursor: saving ? "not-allowed" : "pointer",
+                cursor: "pointer",
               }}
             >
-              ↩ Khôi phục
+              🕐 Lịch sử {versions.length > 0 ? `(${versions.length})` : ""}
             </button>
           )}
           {hasPageContent && (
