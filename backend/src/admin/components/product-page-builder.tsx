@@ -5,9 +5,11 @@ import { useEffect, useRef, useState } from "react"
 type Props = {
   open: boolean
   productTitle: string
-  initialContent?: string
+  initialContent?: string   // draft (page_content_draft) nếu có, else live
+  hasLiveContent?: boolean  // page_content live đã xuất bản chưa
   onClose: () => void
-  onSave: (content: string) => Promise<void>
+  onSaveDraft: (content: string) => Promise<void>    // lưu nháp, KHÔNG revalidate
+  onPublish: (content: string) => Promise<void>      // xuất bản, revalidate storefront
 }
 
 type BuilderBlock = {
@@ -551,15 +553,21 @@ export default function ProductPageBuilder({
   open,
   productTitle,
   initialContent,
+  hasLiveContent,
   onClose,
-  onSave,
+  onSaveDraft,
+  onPublish,
 }: Props) {
   const editorRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [draftSaved, setDraftSaved] = useState(false)
+  const [published, setPublished] = useState(false)
   const [error, setError] = useState("")
   const [ready, setReady] = useState(false)
+  const [hasDraftChanges, setHasDraftChanges] = useState(false)
 
   useEffect(() => {
     if (!open || !containerRef.current || editorRef.current) return
@@ -644,6 +652,13 @@ export default function ProductPageBuilder({
           p.style.maxHeight = 'none'
         }
       }, 300)
+      // Detect any change to show "unsaved" indicator
+      editor.on("component:update component:add component:remove", () => {
+        setHasDraftChanges(true)
+        setDraftSaved(false)
+        setPublished(false)
+      })
+
       setReady(true)
       setLoading(false)
     }
@@ -672,24 +687,45 @@ export default function ProductPageBuilder({
     }
   }, [open, initialContent])
 
-  const handleSave = async () => {
-    if (!editorRef.current) return
-    setSaving(true)
-    setError("")
+  const getPayload = () => {
+    const editor = editorRef.current
+    return JSON.stringify({
+      html: editor.getHtml(),
+      css: editor.getCss(),
+      projectData: editor.getProjectData(),
+    })
+  }
 
+  const handleSaveDraft = async () => {
+    if (!editorRef.current) return
+    setSavingDraft(true)
+    setError("")
     try {
-      const editor = editorRef.current
-      // Save as {html, css, projectData} so storefront can render with styles
-      const payload = JSON.stringify({
-        html: editor.getHtml(),
-        css: editor.getCss(),
-        projectData: editor.getProjectData(),
-      })
-      await onSave(payload)
+      await onSaveDraft(getPayload())
+      setDraftSaved(true)
+      setHasDraftChanges(false)
+      setTimeout(() => setDraftSaved(false), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Luu that bai")
+      setError(err instanceof Error ? err.message : "Lưu nháp thất bại")
     } finally {
-      setSaving(false)
+      setSavingDraft(false)
+    }
+  }
+
+  const handlePublish = async () => {
+    if (!editorRef.current) return
+    setPublishing(true)
+    setError("")
+    try {
+      await onPublish(getPayload())
+      setPublished(true)
+      setHasDraftChanges(false)
+      setDraftSaved(false)
+      setTimeout(() => setPublished(false), 4000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Xuất bản thất bại")
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -698,27 +734,55 @@ export default function ProductPageBuilder({
   return (
     <div className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-black/70">
       <div className="flex min-h-full w-full flex-col bg-white">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
-              Page Builder
-            </p>
-            <h2 className="text-lg font-black text-gray-900">{productTitle}</h2>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 gap-4">
+          {/* Left: title + status */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">Page Builder</p>
+              <h2 className="text-base font-black text-gray-900 truncate max-w-[280px]">{productTitle}</h2>
+            </div>
+            {/* Change indicator */}
+            {hasDraftChanges && !draftSaved && !published && (
+              <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-0.5 font-semibold whitespace-nowrap">
+                ● Chưa lưu
+              </span>
+            )}
+            {draftSaved && (
+              <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-0.5 font-semibold whitespace-nowrap">
+                ✓ Đã lưu nháp
+              </span>
+            )}
+            {published && (
+              <span className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5 font-semibold whitespace-nowrap">
+                🚀 Đã xuất bản!
+              </span>
+            )}
+            {hasLiveContent && !published && (
+              <span className="text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-0.5 whitespace-nowrap">
+                Live: đã xuất bản
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            {error && <span className="text-sm text-red-600">{error}</span>}
-            <button
-              onClick={onClose}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              Đóng
+
+          {/* Right: actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {error && <span className="text-xs text-red-600 max-w-[200px] text-right">{error}</span>}
+
+            <button onClick={onClose}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
+              ✕ Đóng
             </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || loading || !ready}
-              className="rounded-lg bg-orange-500 px-4 py-1.5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
-            >
-              {saving ? "Đang lưu..." : "Lưu Page Builder"}
+
+            {/* Save draft */}
+            <button onClick={handleSaveDraft} disabled={savingDraft || publishing || !ready}
+              className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-1.5 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50 whitespace-nowrap">
+              {savingDraft ? "Đang lưu..." : "💾 Lưu nháp"}
+            </button>
+
+            {/* Publish */}
+            <button onClick={handlePublish} disabled={savingDraft || publishing || !ready}
+              className="rounded-lg bg-orange-500 px-5 py-1.5 text-sm font-black text-white hover:bg-orange-600 disabled:opacity-50 whitespace-nowrap shadow-sm">
+              {publishing ? "Đang xuất bản..." : "🚀 Xuất bản"}
             </button>
           </div>
         </div>

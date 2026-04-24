@@ -756,35 +756,100 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   }
 
   const hasPageContent = Boolean(meta.page_content && meta.page_content.trim())
+  const hasDraft = Boolean((meta as any).page_content_draft && (meta as any).page_content_draft.trim())
 
+  // ── Core save to Medusa ──────────────────────────────────────────────────
+  const patchProduct = async (patch: Record<string, any>) => {
+    const res = await fetch(`/admin/products/${product.id}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metadata: patch }),
+    })
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "")
+      let errMsg = errText
+      try { const d = JSON.parse(errText); errMsg = d.message || d.error || JSON.stringify(d) } catch {}
+      throw new Error(`Lỗi ${res.status}: ${errMsg}`)
+    }
+  }
+
+  const revalidate = () => fetch("/admin/revalidate", {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags: ["products"] }),
+  }).catch(() => {})
+
+  // ── Page Builder: Lưu nháp (KHÔNG revalidate, KHÔNG đóng modal) ──────────
+  const handleSaveDraft = async (content: string) => {
+    await patchProduct({ page_content_draft: content })
+    setMeta(prev => ({ ...prev, page_content_draft: content }))
+    // NO revalidate — draft không lên storefront
+  }
+
+  // ── Page Builder: Xuất bản (copy draft → live, revalidate, add to history) ─
+  const handlePublish = async (content: string) => {
+    // Build version history — push live content vào lịch sử trước
+    const newVersions = [...versions]
+    const liveContent = meta.page_content
+    if (liveContent && liveContent.trim()) {
+      const newV: ContentVersion = {
+        id: buildVersionId(),
+        savedAt: new Date().toISOString(),
+        savedBy: currentUser.email,
+        savedByAvatar: (currentUser.name || currentUser.email || "?")[0].toUpperCase(),
+        label: `Xuất bản ${newVersions.length + 1}`,
+        content: liveContent,
+        size: liveContent.length,
+      }
+      newVersions.unshift(newV)
+      if (newVersions.length > MAX_VERSIONS) newVersions.splice(MAX_VERSIONS)
+    }
+    await patchProduct({
+      page_content: content,          // live → lên storefront
+      page_content_draft: null,       // xóa draft sau khi publish
+      page_content_backup: null,      // clear old format
+      page_content_versions: JSON.stringify(newVersions),
+    })
+    setVersions(newVersions)
+    setMeta(prev => ({ ...prev, page_content: content, page_content_draft: undefined }))
+    revalidate()  // storefront update
+  }
+
+  // ── Restore version ───────────────────────────────────────────────────────
+  const handleRestoreVersion = async (v: ContentVersion) => {
+    const newVersions = [...versions.filter(x => x.id !== v.id)]
+    const liveContent = meta.page_content
+    if (liveContent && liveContent.trim()) {
+      newVersions.unshift({
+        id: buildVersionId(),
+        savedAt: new Date().toISOString(),
+        savedBy: currentUser.email,
+        savedByAvatar: (currentUser.name || currentUser.email || "?")[0].toUpperCase(),
+        label: "Trước khi khôi phục",
+        content: liveContent,
+        size: liveContent.length,
+      })
+      if (newVersions.length > MAX_VERSIONS) newVersions.splice(MAX_VERSIONS)
+    }
+    await patchProduct({
+      page_content: v.content,
+      page_content_versions: JSON.stringify(newVersions),
+    })
+    setVersions(newVersions)
+    setMeta(prev => ({ ...prev, page_content: v.content }))
+    revalidate()
+  }
+
+  // ── Metadata save (non-page-builder fields) ───────────────────────────────
   const savePageContent = async (content: string | null, newVersions?: ContentVersion[]) => {
     setSaving(true)
     setError("")
     try {
-      const metaPatch: Record<string, any> = {
-        page_content: content,
-        page_content_backup: null, // clear old single-backup format
-      }
-      if (newVersions !== undefined) {
-        metaPatch.page_content_versions = JSON.stringify(newVersions)
-      }
-      const res = await fetch(`/admin/products/${product.id}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ metadata: metaPatch }),
-      })
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "")
-        let errMsg = errText
-        try { const d = JSON.parse(errText); errMsg = d.message || d.error || JSON.stringify(d) } catch {}
-        throw new Error(`Lưu thất bại (${res.status}): ${errMsg}`)
-      }
-      fetch("/admin/revalidate", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: ["products"] }),
-      }).catch(() => {})
+      const patch: Record<string, any> = { page_content: content, page_content_backup: null }
+      if (newVersions !== undefined) patch.page_content_versions = JSON.stringify(newVersions)
+      await patchProduct(patch)
+      if (content) revalidate()
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e: any) {
@@ -792,50 +857,6 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     } finally {
       setSaving(false)
     }
-  }
-
-  const handlePageBuilderSave = async (content: string) => {
-    // Push current content to version history before overwriting
-    const newVersions = [...versions]
-    if (meta.page_content && meta.page_content.trim()) {
-      const newV: ContentVersion = {
-        id: buildVersionId(),
-        savedAt: new Date().toISOString(),
-        savedBy: currentUser.email,
-        savedByAvatar: (currentUser.name || currentUser.email || "?")[0].toUpperCase(),
-        label: `Phiên bản ${newVersions.length + 1}`,
-        content: meta.page_content,
-        size: meta.page_content.length,
-      }
-      newVersions.unshift(newV)
-      // Keep only MAX_VERSIONS
-      if (newVersions.length > MAX_VERSIONS) newVersions.splice(MAX_VERSIONS)
-    }
-    setVersions(newVersions)
-    setMeta(prev => ({ ...prev, page_content: content }))
-    await savePageContent(content, newVersions)
-    setBuilderOpen(false)
-  }
-
-  const handleRestoreVersion = async (v: ContentVersion) => {
-    // Push current to history before restoring
-    const newVersions = [...versions.filter(x => x.id !== v.id)]
-    if (meta.page_content && meta.page_content.trim()) {
-      const newV: ContentVersion = {
-        id: buildVersionId(),
-        savedAt: new Date().toISOString(),
-        savedBy: currentUser.email,
-        savedByAvatar: (currentUser.name || currentUser.email || "?")[0].toUpperCase(),
-        label: "Trước khi khôi phục",
-        content: meta.page_content,
-        size: meta.page_content.length,
-      }
-      newVersions.unshift(newV)
-      if (newVersions.length > MAX_VERSIONS) newVersions.splice(MAX_VERSIONS)
-    }
-    setVersions(newVersions)
-    setMeta(prev => ({ ...prev, page_content: v.content }))
-    await savePageContent(v.content, newVersions)
   }
   const s: React.CSSProperties = { fontFamily: "Inter, sans-serif" }
 
@@ -899,18 +920,25 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       <div style={{ background: hasPageContent ? "#fffbf5" : "white", border: `1px solid ${hasPageContent ? "#fed7aa" : "#e5e7eb"}`, borderRadius: 12, padding: 20, marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               🎨 Page Builder
               {hasPageContent && (
-                <span style={{ background: "#f97316", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
-                  ĐÃ CÓ NỘI DUNG
+                <span style={{ background: "#22c55e", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
+                  🟢 LIVE
+                </span>
+              )}
+              {hasDraft && (
+                <span style={{ background: "#f59e0b", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
+                  ● NHÁP CHƯA ĐĂNG
                 </span>
               )}
             </div>
             <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-              {hasPageContent
-                ? "Trang sản phẩm đang dùng nội dung từ Page Builder — kéo thả tự do, override metadata sections bên dưới."
-                : "Kéo thả blocks để thiết kế layout sản phẩm. Khi có nội dung, sẽ override toàn bộ metadata sections bên dưới."}
+              {hasDraft
+                ? "Có nháp chưa xuất bản. Bấm 'Chỉnh sửa' → 'Xuất bản' để đưa lên storefront."
+                : hasPageContent
+                ? "Đang live trên storefront. Bấm 'Chỉnh sửa' để thay đổi."
+                : "Kéo thả blocks để thiết kế layout. Lưu nháp trước, xuất bản khi sẵn sàng."}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
@@ -920,9 +948,21 @@ const ProductContentWidget = ({ data }: { data: any }) => {
                 🕐 {versions.length > 0 ? `${versions.length} phiên bản` : "Lịch sử"}
               </button>
             )}
+            {hasDraft && (
+              <button onClick={async () => {
+                if (!window.confirm("Xuất bản nháp hiện tại lên storefront?")) return
+                setSaving(true)
+                try { await handlePublish((meta as any).page_content_draft) }
+                catch (e: any) { setError(e.message) }
+                setSaving(false)
+              }} disabled={saving}
+                style={{ background: "#f59e0b", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                🚀 Xuất bản nháp
+              </button>
+            )}
             <button onClick={() => setBuilderOpen(true)}
               style={{ background: "#111827", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
-              {hasPageContent ? "✏️ Chỉnh sửa" : "🎨 Mở Editor"}
+              {hasPageContent || hasDraft ? "✏️ Chỉnh sửa" : "🎨 Mở Editor"}
             </button>
             {hasPageContent && (
               <button
@@ -1163,9 +1203,11 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       <ProductPageBuilder
         open={builderOpen}
         productTitle={product.title || "Sản phẩm"}
-        initialContent={meta.page_content}
+        initialContent={(meta as any).page_content_draft || meta.page_content}
+        hasLiveContent={hasPageContent}
         onClose={() => setBuilderOpen(false)}
-        onSave={handlePageBuilderSave}
+        onSaveDraft={handleSaveDraft}
+        onPublish={handlePublish}
       />
 
       {/* Facebook Pixel per product */}
