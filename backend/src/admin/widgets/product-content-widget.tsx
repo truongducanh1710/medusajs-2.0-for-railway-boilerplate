@@ -759,12 +759,25 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const hasDraft = Boolean((meta as any).page_content_draft && (meta as any).page_content_draft.trim())
 
   // ── Core save to Medusa ──────────────────────────────────────────────────
-  const patchProduct = async (patch: Record<string, any>) => {
-    const res = await fetch(`/admin/products/${product.id}`, {
+  const patchProduct = async (patch: Record<string, any>, useLargeRoute = false) => {
+    // Use custom route for large payloads (page_content JSON from GrapesJS)
+    // to bypass Medusa's body-parser 1MB default limit
+    const isLarge = useLargeRoute ||
+      Object.keys(patch).some(k => k.startsWith("page_content"))
+
+    const url = isLarge
+      ? "/admin/product-content"
+      : `/admin/products/${product.id}`
+
+    const body = isLarge
+      ? JSON.stringify({ productId: product.id, metadata: patch })
+      : JSON.stringify({ metadata: patch })
+
+    const res = await fetch(url, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ metadata: patch }),
+      body,
     })
     if (!res.ok) {
       const errText = await res.text().catch(() => "")
