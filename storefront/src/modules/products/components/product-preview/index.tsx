@@ -16,18 +16,26 @@ export default async function ProductPreview({
   isFeatured?: boolean
   region: HttpTypes.StoreRegion
 }) {
-  const [pricedProduct] = await getProductsById({
-    ids: [product.id!],
-    regionId: region.id,
-  })
+  let pricedProduct: HttpTypes.StoreProduct | undefined
+  try {
+    ;[pricedProduct] = await getProductsById({
+      ids: [product.id!],
+      regionId: region.id,
+    })
+  } catch {
+    return null
+  }
 
   if (!pricedProduct) {
     return null
   }
 
-  const { cheapestPrice } = getProductPrice({
-    product: pricedProduct,
-  })
+  let cheapestPrice: ReturnType<typeof getProductPrice>["cheapestPrice"]
+  try {
+    cheapestPrice = getProductPrice({ product: pricedProduct }).cheapestPrice
+  } catch {
+    cheapestPrice = null
+  }
 
   return (
     <LocalizedClientLink href={`/products/${product.handle}`} className="group">
