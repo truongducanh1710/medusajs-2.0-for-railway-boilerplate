@@ -19,6 +19,7 @@ const SideMenuItems = {
 }
 
 const SideMenuExtra = [
+  { label: "Vietmate", href: "/collections/vietmate" },
   { label: "Giới thiệu", href: "/gioi-thieu" },
   { label: "Chính sách", href: "/chinh-sach-doi-tra" },
   { label: "Liên hệ", href: "/lien-he" },
