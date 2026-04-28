@@ -2,41 +2,72 @@ import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import React, { useEffect, useRef, useState } from "react"
 
 // ── Image upload + picker ──────────────────────────────────────────────────
-function ImageField({ label, hint, value, onChange, previewFit = "cover", previewBg = "transparent" }: {
+function ImageField({ label, hint, value, onChange, previewFit = "cover", previewBg = "transparent", previewValue }: {
   label: string
   hint?: string
   value: string
   onChange: (url: string) => void
   previewFit?: "cover" | "contain"
   previewBg?: string
+  previewValue?: string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [pickOpen, setPickOpen] = useState(false)
   const [mediaFiles, setMediaFiles] = useState<Array<{ id: string; url: string }>>([])
   const [loadingMedia, setLoadingMedia] = useState(false)
+  const [fieldError, setFieldError] = useState("")
+
+  const extractUploadedUrl = (data: any) =>
+    data?.files?.[0]?.url ||
+    data?.files?.[0]?.location ||
+    data?.uploads?.[0]?.url ||
+    data?.uploads?.[0]?.location ||
+    data?.url ||
+    data?.file?.url ||
+    data?.upload?.url ||
+    ""
+
+  const displayValue = previewValue ?? value
 
   const openPicker = async () => {
+    setFieldError("")
     setPickOpen(true)
     setLoadingMedia(true)
     try {
       const res = await fetch("/admin/uploads?limit=50", { credentials: "include" })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setMediaFiles(data.files ?? [])
-    } catch {}
+      const files = data.files || data.uploads || []
+      setMediaFiles(
+        files
+          .map((file: any, index: number) => ({
+            id: file.id || file.url || file.location || `media-${index}`,
+            url: file.url || file.location || "",
+          }))
+          .filter((file: { url: string }) => Boolean(file.url))
+      )
+    } catch (e: any) {
+      setFieldError(e?.message || "Khong tai duoc thu vien anh")
+    }
     setLoadingMedia(false)
   }
 
   const handleUpload = async (file: File) => {
     setUploading(true)
+    setFieldError("")
     try {
       const fd = new FormData()
       fd.append("files", file)
       const res = await fetch("/admin/uploads", { method: "POST", credentials: "include", body: fd })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      const url = data.files?.[0]?.url
+      const url = extractUploadedUrl(data)
       if (url) onChange(url)
-    } catch {}
+      else throw new Error("Upload khong tra ve URL anh")
+    } catch (e: any) {
+      setFieldError(e?.message || "Upload anh that bai")
+    }
     setUploading(false)
   }
 
@@ -52,19 +83,20 @@ function ImageField({ label, hint, value, onChange, previewFit = "cover", previe
           placeholder="URL ảnh..."
           style={{ flex: 1, padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, outline: "none" }}
         />
-        <button onClick={openPicker}
+        <button type="button" onClick={openPicker}
           style={{ padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, cursor: "pointer", background: "white", whiteSpace: "nowrap" }}>
           📁 Media
         </button>
-        <button onClick={() => fileRef.current?.click()} disabled={uploading}
+        <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
           style={{ padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, cursor: "pointer", background: "white", whiteSpace: "nowrap" }}>
           {uploading ? "..." : "⬆️ Upload"}
         </button>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
           onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
       </div>
-      {value && (
-        <img src={value} alt="" style={{ marginTop: 6, height: 64, width: 160, borderRadius: 6, border: "1px solid #e5e7eb", objectFit: previewFit, background: previewBg, maxWidth: 160 }} />
+      {fieldError && <div style={{ marginTop: 6, fontSize: 11, color: "#dc2626" }}>{fieldError}</div>}
+      {displayValue && (
+        <img src={displayValue} alt="" style={{ marginTop: 6, height: 64, width: 160, borderRadius: 6, border: "1px solid #e5e7eb", objectFit: previewFit, background: previewBg, maxWidth: 160 }} />
       )}
 
       {pickOpen && (
@@ -74,7 +106,7 @@ function ImageField({ label, hint, value, onChange, previewFit = "cover", previe
             onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
               <strong>📁 Chọn ảnh</strong>
-              <button onClick={() => setPickOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>✕</button>
+              <button type="button" onClick={() => setPickOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>✕</button>
             </div>
             {loadingMedia ? <p style={{ color: "#6b7280", textAlign: "center" }}>Đang tải...</p> :
               mediaFiles.length === 0 ? <p style={{ color: "#6b7280", textAlign: "center" }}>Chưa có ảnh nào</p> : (
@@ -246,6 +278,7 @@ function HomepageSettingsWidget() {
           onChange={set("store_logo")}
           previewFit="contain"
           previewBg="#ffffff"
+          previewValue={val("store_logo") || "/logo-vietmate.png.png"}
         />
       </Section>
 
