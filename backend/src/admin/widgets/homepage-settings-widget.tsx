@@ -2,11 +2,13 @@ import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import React, { useEffect, useRef, useState } from "react"
 
 // ── Image upload + picker ──────────────────────────────────────────────────
-function ImageField({ label, hint, value, onChange }: {
+function ImageField({ label, hint, value, onChange, previewFit = "cover", previewBg = "transparent" }: {
   label: string
   hint?: string
   value: string
   onChange: (url: string) => void
+  previewFit?: "cover" | "contain"
+  previewBg?: string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -62,7 +64,7 @@ function ImageField({ label, hint, value, onChange }: {
           onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
       </div>
       {value && (
-        <img src={value} alt="" style={{ marginTop: 6, height: 64, borderRadius: 6, border: "1px solid #e5e7eb", objectFit: "cover", maxWidth: 160 }} />
+        <img src={value} alt="" style={{ marginTop: 6, height: 64, width: 160, borderRadius: 6, border: "1px solid #e5e7eb", objectFit: previewFit, background: previewBg, maxWidth: 160 }} />
       )}
 
       {pickOpen && (
@@ -235,6 +237,17 @@ function HomepageSettingsWidget() {
           </div>
         </div>
       </div>
+
+      <Section title="🏷️ Logo thương hiệu" badge="Header + Footer">
+        <ImageField
+          label="Logo website"
+          hint="Logo hiển thị ở thanh điều hướng và footer. Nên dùng PNG/SVG nền trong suốt, tỷ lệ ngang."
+          value={val("store_logo")}
+          onChange={set("store_logo")}
+          previewFit="contain"
+          previewBg="#ffffff"
+        />
+      </Section>
 
       {/* Section 1: Hero Banner */}
       <Section title="🖼️ Section 1 — Hero Banner (ảnh nền toàn màn hình)" badge="Ảnh to nhất">

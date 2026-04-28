@@ -1,5 +1,6 @@
 import { Suspense } from "react"
 
+import { getStoreMetadata } from "@lib/data/store"
 import { getCopy, localeFromCountryCode } from "@lib/i18n"
 import { listRegions } from "@lib/data/regions"
 import { StoreRegion } from "@medusajs/types"
@@ -13,8 +14,12 @@ export default async function Nav({
 }: {
   countryCode?: string
 }) {
-  const regions = await listRegions().then((regions: StoreRegion[]) => regions)
+  const [regions, storeMeta] = await Promise.all([
+    listRegions().then((regions: StoreRegion[]) => regions),
+    getStoreMetadata(),
+  ])
   const copy = getCopy(localeFromCountryCode(countryCode))
+  const logoSrc = storeMeta.store_logo || "/logo-vietmate.png.png"
 
   return (
     <div className="fixed top-0 inset-x-0 z-50">
@@ -32,7 +37,7 @@ export default async function Nav({
             className="flex items-center"
             data-testid="nav-store-link"
           >
-            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-14 sm:h-16 object-contain" style={{ mixBlendMode: "multiply" }} />
+            <img src={logoSrc} alt="Vietmate" className="h-16 sm:h-20 object-contain" style={{ mixBlendMode: "multiply" }} />
           </LocalizedClientLink>
 
           {/* Desktop nav links */}

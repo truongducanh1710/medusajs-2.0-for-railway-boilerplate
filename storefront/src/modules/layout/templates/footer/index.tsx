@@ -1,3 +1,4 @@
+import { getStoreMetadata } from "@lib/data/store"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
 export default async function Footer({
@@ -5,6 +6,9 @@ export default async function Footer({
 }: {
   countryCode?: string
 }) {
+  const storeMeta = await getStoreMetadata()
+  const logoSrc = storeMeta.store_logo || "/logo-vietmate.png.png"
+
   return (
     <footer className="bg-red-700 text-white">
       <div className="max-w-6xl mx-auto px-4 py-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-10">
@@ -12,7 +16,7 @@ export default async function Footer({
         {/* Cột 1: Thông tin công ty */}
         <div className="space-y-2">
           <img
-            src="/logo-vietmate.png.png"
+            src={logoSrc}
             alt="Vietmate Home Appliances"
             className="h-20 object-contain mb-3 bg-white rounded-xl px-3 py-2"
           />
