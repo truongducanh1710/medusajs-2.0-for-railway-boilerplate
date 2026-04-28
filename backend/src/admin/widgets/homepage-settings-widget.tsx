@@ -13,9 +13,6 @@ function ImageField({ label, hint, value, onChange, previewFit = "cover", previe
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
-  const [pickOpen, setPickOpen] = useState(false)
-  const [mediaFiles, setMediaFiles] = useState<Array<{ id: string; url: string }>>([])
-  const [loadingMedia, setLoadingMedia] = useState(false)
   const [fieldError, setFieldError] = useState("")
 
   const extractUploadedUrl = (data: any) =>
@@ -29,29 +26,6 @@ function ImageField({ label, hint, value, onChange, previewFit = "cover", previe
     ""
 
   const displayValue = previewValue ?? value
-
-  const openPicker = async () => {
-    setFieldError("")
-    setPickOpen(true)
-    setLoadingMedia(true)
-    try {
-      const res = await fetch("/admin/uploads?limit=50", { credentials: "include" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      const files = data.files || data.uploads || []
-      setMediaFiles(
-        files
-          .map((file: any, index: number) => ({
-            id: file.id || file.url || file.location || `media-${index}`,
-            url: file.url || file.location || "",
-          }))
-          .filter((file: { url: string }) => Boolean(file.url))
-      )
-    } catch (e: any) {
-      setFieldError(e?.message || "Khong tai duoc thu vien anh")
-    }
-    setLoadingMedia(false)
-  }
 
   const handleUpload = async (file: File) => {
     setUploading(true)
@@ -83,10 +57,6 @@ function ImageField({ label, hint, value, onChange, previewFit = "cover", previe
           placeholder="URL ảnh..."
           style={{ flex: 1, padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, outline: "none" }}
         />
-        <button type="button" onClick={openPicker}
-          style={{ padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, cursor: "pointer", background: "white", whiteSpace: "nowrap" }}>
-          📁 Media
-        </button>
         <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
           style={{ padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, cursor: "pointer", background: "white", whiteSpace: "nowrap" }}>
           {uploading ? "..." : "⬆️ Upload"}
@@ -99,29 +69,6 @@ function ImageField({ label, hint, value, onChange, previewFit = "cover", previe
         <img src={displayValue} alt="" style={{ marginTop: 6, height: 64, width: 160, borderRadius: 6, border: "1px solid #e5e7eb", objectFit: previewFit, background: previewBg, maxWidth: 160 }} />
       )}
 
-      {pickOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={() => setPickOpen(false)}>
-          <div style={{ background: "white", borderRadius: 12, padding: 20, width: 580, maxHeight: "80vh", overflow: "auto" }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-              <strong>📁 Chọn ảnh</strong>
-              <button type="button" onClick={() => setPickOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}>✕</button>
-            </div>
-            {loadingMedia ? <p style={{ color: "#6b7280", textAlign: "center" }}>Đang tải...</p> :
-              mediaFiles.length === 0 ? <p style={{ color: "#6b7280", textAlign: "center" }}>Chưa có ảnh nào</p> : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
-                  {mediaFiles.map(f => (
-                    <img key={f.id} src={f.url} alt=""
-                      onClick={() => { onChange(f.url); setPickOpen(false) }}
-                      style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, cursor: "pointer",
-                        border: value === f.url ? "3px solid #f97316" : "2px solid transparent" }} />
-                  ))}
-                </div>
-              )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
