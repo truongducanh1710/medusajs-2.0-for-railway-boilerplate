@@ -153,10 +153,12 @@ function HomepageSettingsWidget() {
         setSaved(true)
         setTimeout(() => setSaved(false), 3000)
         // Revalidate storefront cache
-        fetch("/admin/revalidate", {
+        fetch("https://www.phanviet.vn/api/revalidate", {
           method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-revalidate-secret": "phanviet-revalidate",
+          },
           body: JSON.stringify({ tags: ["store", "homepage"] }),
         }).catch(() => {})
       }
