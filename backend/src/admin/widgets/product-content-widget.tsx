@@ -633,13 +633,21 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [showFaq, setShowFaq] = useState(false)
   const [showBundleOptions, setShowBundleOptions] = useState(false)
 
-  // Variant bundle state
-  const productVariants: Array<{ id: string; title: string }> = Array.isArray((product as any).variants)
-    ? (product as any).variants.filter((v: any) => v.title !== "Mặc định")
-    : []
+  // Variant bundle state — fetch variants vì data prop không include
+  const [productVariants, setProductVariants] = useState<Array<{ id: string; title: string }>>([])
   const isMultiVariant = productVariants.length > 1
   const [variantBundles, setVariantBundles] = useState<VariantBundleConfig[]>([])
   const [activeVariantTab, setActiveVariantTab] = useState(0)
+
+  useEffect(() => {
+    fetch(`/admin/products/${product.id}?fields=variants`, { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        const variants = d.product?.variants || []
+        setProductVariants(variants.filter((v: any) => v.title !== "Mặc định"))
+      })
+      .catch(() => {})
+  }, [product.id])
 
   // FAQ & Bundle local state
   const [faqs, setFaqs] = useState<FAQItem[]>([{ q: "", a: "" }])
