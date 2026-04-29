@@ -640,13 +640,15 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [activeVariantTab, setActiveVariantTab] = useState(0)
 
   useEffect(() => {
-    fetch(`/admin/products/${product.id}?fields=variants`, { credentials: "include" })
+    fetch(`/admin/products/${product.id}`, { credentials: "include" })
       .then(r => r.json())
       .then(d => {
-        const variants = d.product?.variants || []
-        setProductVariants(variants.filter((v: any) => v.title !== "Mặc định"))
+        const variants: Array<{ id: string; title: string }> = d.product?.variants || []
+        console.log("[widget] fetched variants:", variants)
+        const filtered = variants.filter(v => v.title !== "Default Title" && v.title !== "Mặc định" && v.title !== "default")
+        setProductVariants(filtered.length > 0 ? filtered : variants)
       })
-      .catch(() => {})
+      .catch(e => { console.error("[widget] fetch variants error:", e) })
   }, [product.id])
 
   // FAQ & Bundle local state
