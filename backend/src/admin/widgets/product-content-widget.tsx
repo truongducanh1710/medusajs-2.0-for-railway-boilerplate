@@ -186,7 +186,7 @@ type FAQItem = { q: string; a: string }
 type GiftItem = { name: string; value: number; image?: string }
 type ReviewItem = { name: string; location: string; rating: number; text: string; date: string }
 type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string; gifts?: GiftItem[]; image?: string }
-type VariantBundleConfig = { variantId: string; label: string; options: BundleOptionMeta[] }
+type VariantBundleConfig = { variantId: string; label: string; image?: string; options: BundleOptionMeta[] }
 
 type Meta = {
   video_url?: string
@@ -1192,8 +1192,17 @@ const ProductContentWidget = ({ data }: { data: any }) => {
               const vb = variantBundles[activeVariantTab]
               const setVbOptions = (newOpts: BundleOptionMeta[]) =>
                 setVariantBundles(prev => prev.map((x, i) => i === activeVariantTab ? { ...x, options: newOpts } : x))
+              const setVbImage = (url: string) =>
+                setVariantBundles(prev => prev.map((x, i) => i === activeVariantTab ? { ...x, image: url } : x))
               return (
                 <div>
+                  {/* Ảnh đại diện cho loại này (dùng để gallery đổi ảnh khi chọn) */}
+                  <div style={{ marginBottom: 12, padding: "10px 12px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd" }}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 6 }}>
+                      🖼️ Ảnh đại diện loại "{vb.label}" (gallery sẽ nhảy đến ảnh này khi khách chọn)
+                    </label>
+                    <ImagePicker value={vb.image || ""} onChange={setVbImage} productImages={productImages} />
+                  </div>
                   {vb.options.map((opt, i) => {
                     const updateOpt = (patch: Partial<BundleOptionMeta>) =>
                       setVbOptions(vb.options.map((x, j) => j === i ? { ...x, ...patch } : x))

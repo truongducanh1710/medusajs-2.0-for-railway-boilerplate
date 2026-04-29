@@ -2,7 +2,7 @@
 
 import { HttpTypes } from "@medusajs/types"
 import Image from "next/image"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 type ImageGalleryProps = {
   images: HttpTypes.StoreProductImage[]
@@ -10,6 +10,17 @@ type ImageGalleryProps = {
 
 const ImageGallery = ({ images }: ImageGalleryProps) => {
   const [active, setActive] = useState(0)
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const url = (e as CustomEvent<string>).detail
+      if (!url) return
+      const idx = images.findIndex(img => img.url === url)
+      if (idx >= 0) setActive(idx)
+    }
+    window.addEventListener("variant-image-change", handler)
+    return () => window.removeEventListener("variant-image-change", handler)
+  }, [images])
 
   if (!images.length) return null
 

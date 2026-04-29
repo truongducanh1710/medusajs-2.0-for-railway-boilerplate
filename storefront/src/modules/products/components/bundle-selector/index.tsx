@@ -26,6 +26,7 @@ type BundleOption = {
 type VariantBundleConfig = {
   variantId: string
   label: string
+  image?: string
   options: BundleOption[]
 }
 
@@ -185,7 +186,15 @@ export default function BundleSelector({ product, region }: Props) {
             {variantConfigs.map((vc, vi) => (
               <button
                 key={vc.variantId}
-                onClick={() => { setActiveVariantIdx(vi); setSelected(1) }}
+                onClick={() => {
+                  setActiveVariantIdx(vi)
+                  setSelected(1)
+                  // Dispatch event để gallery đổi ảnh chính
+                  const imgUrl = vc.image || vc.options?.[0]?.image
+                  if (imgUrl && typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("variant-image-change", { detail: imgUrl }))
+                  }
+                }}
                 className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition-all ${
                   activeVariantIdx === vi
                     ? "border-blue-600 bg-blue-600 text-white"
