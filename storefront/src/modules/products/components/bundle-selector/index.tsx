@@ -23,6 +23,12 @@ type BundleOption = {
   image?: string
 }
 
+type VariantBundleConfig = {
+  variantId: string
+  label: string
+  options: BundleOption[]
+}
+
 type Props = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
@@ -56,11 +62,30 @@ function Countdown({ minutes = 17 }: { minutes?: number }) {
 export default function BundleSelector({ product, region }: Props) {
   const [selected, setSelected] = useState(1)
   const [adding, setAdding] = useState(false)
+  const [activeVariantIdx, setActiveVariantIdx] = useState(0)
   const params = useParams()
   const countryCode = params.countryCode as string
   const router = useRouter()
 
-  const variant = product.variants?.[0]
+  // Check for v2 multi-variant bundle config
+  let variantConfigs: VariantBundleConfig[] = []
+  try {
+    const rawV2 = product.metadata?.bundle_options_v2 as string
+    if (rawV2) {
+      const parsed = JSON.parse(rawV2)
+      if (parsed?.variants?.length > 0) variantConfigs = parsed.variants
+    }
+  } catch {}
+
+  const isMultiVariant = variantConfigs.length > 1
+  const activeVarConfig = isMultiVariant ? variantConfigs[activeVariantIdx] : null
+
+  // Find actual Medusa variant for the active config
+  const activeVariant = isMultiVariant
+    ? product.variants?.find(v => v.id === activeVarConfig?.variantId) ?? product.variants?.[0]
+    : product.variants?.[0]
+
+  const variant = activeVariant
   const basePrice =
     variant?.calculated_price?.calculated_amount ??
     variant?.prices?.[0]?.amount ??
@@ -73,51 +98,34 @@ export default function BundleSelector({ product, region }: Props) {
     { name: "Hướng dẫn sử dụng chi tiết", value: 49000 },
   ]
 
-  // Load custom bundle options from metadata, fallback to ratio-based defaults
+  // Load bundle options: v2 (per-variant) → v1 (single) → defaults
   let options: BundleOption[] = []
-  try {
-    const rawOpts = product.metadata?.bundle_options as string
-    if (rawOpts) {
-      const parsed = JSON.parse(rawOpts) as Array<{
-        qty: number; label: string; price: number; originalPrice: number
-        badge?: string; badgeColor?: string; gifts?: GiftItem[]
-      }>
-      options = parsed.map((o) => ({
-        ...o,
-        image: o.image || undefined,
-        gifts: o.gifts && o.gifts.filter(g => g.name).length > 0
-          ? o.gifts.filter(g => g.name)
-          : undefined,
-      }))
-    }
-  } catch {}
+  if (isMultiVariant && activeVarConfig?.options?.length) {
+    options = activeVarConfig.options.map(o => ({
+      ...o,
+      gifts: o.gifts && o.gifts.filter(g => g.name).length > 0 ? o.gifts.filter(g => g.name) : undefined,
+    }))
+  } else {
+    try {
+      const rawOpts = product.metadata?.bundle_options as string
+      if (rawOpts) {
+        const parsed = JSON.parse(rawOpts)
+        options = parsed.map((o: any) => ({
+          ...o,
+          image: o.image || undefined,
+          gifts: o.gifts && o.gifts.filter((g: GiftItem) => g.name).length > 0
+            ? o.gifts.filter((g: GiftItem) => g.name)
+            : undefined,
+        }))
+      }
+    } catch {}
+  }
 
   if (!options.length) {
     options = [
-      {
-        qty: 1,
-        label: "1 SẢN PHẨM",
-        price: basePrice,
-        originalPrice: Math.round(basePrice * 1.4),
-      },
-      {
-        qty: 2,
-        label: "MUA 1 TẶNG 1",
-        badge: "HÔM NAY THÔI",
-        badgeColor: "bg-orange-500",
-        price: Math.round(basePrice * 1.6),
-        originalPrice: Math.round(basePrice * 2.8),
-        gifts: defaultGifts,
-      },
-      {
-        qty: 3,
-        label: "MUA 2 TẶNG 1",
-        badge: "TIẾT KIỆM NHẤT 🔥",
-        badgeColor: "bg-red-500",
-        price: Math.round(basePrice * 2.2),
-        originalPrice: Math.round(basePrice * 4.2),
-        gifts: defaultGifts,
-      },
+      { qty: 1, label: "1 SẢN PHẨM", price: basePrice, originalPrice: Math.round(basePrice * 1.4) },
+      { qty: 2, label: "MUA 1 TẶNG 1", badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500", price: Math.round(basePrice * 1.6), originalPrice: Math.round(basePrice * 2.8), gifts: defaultGifts },
+      { qty: 3, label: "MUA 2 TẶNG 1", badge: "TIẾT KIỆM NHẤT 🔥", badgeColor: "bg-red-500", price: Math.round(basePrice * 2.2), originalPrice: Math.round(basePrice * 4.2), gifts: defaultGifts },
     ]
   }
 
@@ -168,6 +176,28 @@ export default function BundleSelector({ product, region }: Props) {
           🔥 NHANH! Ưu đãi kết thúc sau <Countdown minutes={17} /> ⏰
         </p>
       </div>
+
+      {/* Variant selector — chỉ hiện khi có multi-variant config */}
+      {isMultiVariant && (
+        <div className="px-3 pt-3 pb-2 bg-white border-b border-gray-100">
+          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Chọn loại:</p>
+          <div className="flex gap-2 flex-wrap">
+            {variantConfigs.map((vc, vi) => (
+              <button
+                key={vc.variantId}
+                onClick={() => { setActiveVariantIdx(vi); setSelected(1) }}
+                className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition-all ${
+                  activeVariantIdx === vi
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-gray-300 bg-white text-gray-600 hover:border-blue-400"
+                }`}
+              >
+                {vc.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="p-3 space-y-2.5 bg-white">
         {options.map((opt) => {

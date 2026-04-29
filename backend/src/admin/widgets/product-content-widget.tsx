@@ -186,6 +186,7 @@ type FAQItem = { q: string; a: string }
 type GiftItem = { name: string; value: number; image?: string }
 type ReviewItem = { name: string; location: string; rating: number; text: string; date: string }
 type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string; gifts?: GiftItem[]; image?: string }
+type VariantBundleConfig = { variantId: string; label: string; options: BundleOptionMeta[] }
 
 type Meta = {
   video_url?: string
@@ -201,6 +202,7 @@ type Meta = {
   faq?: string
   bundle_gifts?: string
   bundle_options?: string
+  bundle_options_v2?: string
   page_content?: string
   fb_pixel_id?: string
   fb_capi_token?: string
@@ -631,6 +633,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   const [showFaq, setShowFaq] = useState(false)
   const [showBundleOptions, setShowBundleOptions] = useState(false)
 
+  // Variant bundle state
+  const productVariants: Array<{ id: string; title: string }> = Array.isArray((product as any).variants)
+    ? (product as any).variants.filter((v: any) => v.title !== "Mặc định")
+    : []
+  const isMultiVariant = productVariants.length > 1
+  const [variantBundles, setVariantBundles] = useState<VariantBundleConfig[]>([])
+  const [activeVariantTab, setActiveVariantTab] = useState(0)
+
   // FAQ & Bundle local state
   const [faqs, setFaqs] = useState<FAQItem[]>([{ q: "", a: "" }])
   const [bundleOptions, setBundleOptions] = useState<BundleOptionMeta[]>([
@@ -679,7 +689,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     else m.faq = null
     m.bundle_gifts = null
     if (showBundleOptions) {
-      const sanitized = bundleOptions.map((o: any) => ({
+      const sanitizeOpts = (opts: any[]) => opts.map((o: any) => ({
         qty: Number(o.qty) || 0,
         label: String(o.label || ""),
         price: Number(o.price) || 0,
@@ -691,8 +701,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           ? o.gifts.map((g: any) => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined }))
           : [],
       }))
-      m.bundle_options = JSON.stringify(sanitized)
-    } else m.bundle_options = null
+      if (isMultiVariant && variantBundles.length > 0) {
+        m.bundle_options_v2 = JSON.stringify({ variants: variantBundles.map(vb => ({ ...vb, options: sanitizeOpts(vb.options) })) })
+        m.bundle_options = null
+      } else {
+        m.bundle_options = JSON.stringify(sanitizeOpts(bundleOptions))
+        m.bundle_options_v2 = null
+      }
+    } else { m.bundle_options = null; m.bundle_options_v2 = null }
     // Keep page_content unless explicitly cleared
     if (overrides.page_content !== undefined) {
       if (!overrides.page_content || !String(overrides.page_content).trim()) m.page_content = null
@@ -712,10 +728,11 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     setShowSpecs(!!(clean.chat_lieu || clean.kich_thuoc || clean.xuat_xu || clean.bao_hanh))
     setShowReviews(!!clean.reviews)
     setShowFaq(!!clean.faq)
-    setShowBundleOptions(!!clean.bundle_options)
+    setShowBundleOptions(!!(clean.bundle_options || clean.bundle_options_v2))
     if (clean.faq) { try { setFaqs(JSON.parse(clean.faq)) } catch {} }
     if (clean.reviews) { try { setReviews(JSON.parse(clean.reviews)) } catch {} }
     if (clean.bundle_options) { try { setBundleOptions(JSON.parse(clean.bundle_options)) } catch {} }
+    if (clean.bundle_options_v2) { try { const v2 = JSON.parse(clean.bundle_options_v2); if (v2?.variants) setVariantBundles(v2.variants) } catch {} }
   }
 
   const save = async (overrides: Partial<Meta> = {}) => {
@@ -1128,11 +1145,116 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       </Toggle>
 
       {/* 7. Bundle Options + Gifts per option */}
-      <Toggle label="🛒 Gói Bundle & Quà tặng" enabled={showBundleOptions} onToggle={() => setShowBundleOptions(!showBundleOptions)}>
+      <Toggle label="🛒 Gói Bundle & Quà tặng" enabled={showBundleOptions} onToggle={() => {
+        if (!showBundleOptions && isMultiVariant && variantBundles.length === 0) {
+          // Init variant bundles từ product variants
+          setVariantBundles(productVariants.map(v => ({
+            variantId: v.id,
+            label: v.title,
+            options: [
+              { qty: 1, label: "1 SẢN PHẨM", price: 0, originalPrice: 0, gifts: [] },
+              { qty: 2, label: "MUA 1 TẶNG 1", price: 0, originalPrice: 0, badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500", gifts: [{ name: "", value: 0 }] },
+            ]
+          })))
+        }
+        setShowBundleOptions(!showBundleOptions)
+      }}>
         <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 12 }}>
           Nhập giá từng gói (số nguyên, VD: 499000). Mỗi gói có thể có quà tặng riêng. Giá gốc là giá gạch đỏ.
         </p>
-        {bundleOptions.map((opt, i) => {
+
+        {/* Multi-variant: Tab selector */}
+        {isMultiVariant && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+              {(variantBundles.length > 0 ? variantBundles : productVariants.map(v => ({ variantId: v.id, label: v.title, options: [] }))).map((vb, vi) => (
+                <button key={vb.variantId} onClick={() => setActiveVariantTab(vi)}
+                  style={{ padding: "6px 14px", borderRadius: 20, border: "1.5px solid", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    borderColor: activeVariantTab === vi ? "#f97316" : "#e5e7eb",
+                    background: activeVariantTab === vi ? "#fff7ed" : "white",
+                    color: activeVariantTab === vi ? "#f97316" : "#6b7280" }}>
+                  {vb.label}
+                </button>
+              ))}
+            </div>
+            {/* Bundle options for active variant */}
+            {variantBundles.length > 0 && variantBundles[activeVariantTab] && (() => {
+              const vb = variantBundles[activeVariantTab]
+              const setVbOptions = (newOpts: BundleOptionMeta[]) =>
+                setVariantBundles(prev => prev.map((x, i) => i === activeVariantTab ? { ...x, options: newOpts } : x))
+              return (
+                <div>
+                  {vb.options.map((opt, i) => {
+                    const updateOpt = (patch: Partial<BundleOptionMeta>) =>
+                      setVbOptions(vb.options.map((x, j) => j === i ? { ...x, ...patch } : x))
+                    const optGifts: GiftItem[] = opt.gifts || []
+                    return (
+                      <div key={i} style={{ border: "1px solid #d1d5db", borderRadius: 10, marginBottom: 12, overflow: "visible" }}>
+                        <div style={{ background: "#f9fafb", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e7eb" }}>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: "#374151" }}>GÓI {i + 1} — {vb.label}</span>
+                          {vb.options.length > 1 && (
+                            <button onClick={() => setVbOptions(vb.options.filter((_, j) => j !== i))}
+                              style={{ fontSize: 13, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>Xóa gói</button>
+                          )}
+                        </div>
+                        <div style={{ padding: 12 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "70px 1fr 130px 130px", gap: 8, marginBottom: 8 }}>
+                            <Input label="Số lượng" value={String(opt.qty)} onChange={v => updateOpt({ qty: Number(v) })} placeholder="1" />
+                            <Input label="Nhãn hiển thị" value={opt.label} onChange={v => updateOpt({ label: v })} placeholder="1 SẢN PHẨM" />
+                            <Input label="Giá bán (đ)" value={String(opt.price || "")} onChange={v => updateOpt({ price: Number(v) })} placeholder="299000" />
+                            <Input label="Giá gốc/gạch (đ)" value={String(opt.originalPrice || "")} onChange={v => updateOpt({ originalPrice: Number(v) })} placeholder="399000" />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Ảnh gói</label>
+                            <ImagePicker value={opt.image || ""} onChange={v => updateOpt({ image: v })} productImages={productImages} />
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 8, marginBottom: 10 }}>
+                            <Input label="Badge (tùy chọn)" value={opt.badge || ""} onChange={v => updateOpt({ badge: v })} placeholder="HÔM NAY THÔI" />
+                            <div style={{ marginBottom: 8 }}>
+                              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Màu badge</label>
+                              <select value={opt.badgeColor || ""} onChange={e => updateOpt({ badgeColor: e.target.value })}
+                                style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}>
+                                <option value="">Không có</option>
+                                <option value="bg-orange-500">Cam</option>
+                                <option value="bg-red-500">Đỏ</option>
+                                <option value="bg-blue-600">Xanh dương</option>
+                                <option value="bg-green-500">Xanh lá</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ borderTop: "1px dashed #e5e7eb", paddingTop: 10 }}>
+                            <p style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", marginBottom: 8 }}>🎁 Quà tặng kèm gói này</p>
+                            {optGifts.map((g, gi) => (
+                              <div key={gi} style={{ display: "grid", gridTemplateColumns: "1fr 120px auto", gap: 8, marginBottom: 6, alignItems: "end" }}>
+                                <Input label={gi === 0 ? "Tên quà tặng" : ""} value={g.name}
+                                  onChange={v => updateOpt({ gifts: optGifts.map((x, k) => k === gi ? { ...x, name: v } : x) })} placeholder="Túi đựng cao cấp" />
+                                <Input label={gi === 0 ? "Giá trị (đ)" : ""} value={String(g.value || "")}
+                                  onChange={v => updateOpt({ gifts: optGifts.map((x, k) => k === gi ? { ...x, value: Number(v) } : x) })} placeholder="89000" />
+                                <button onClick={() => updateOpt({ gifts: optGifts.filter((_, k) => k !== gi) })}
+                                  style={{ marginBottom: 8, fontSize: 18, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>×</button>
+                              </div>
+                            ))}
+                            <button onClick={() => updateOpt({ gifts: [...optGifts, { name: "", value: 0 }] })}
+                              style={{ fontSize: 12, color: "#3b82f6", background: "none", border: "1px dashed #3b82f6", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+                              + Thêm quà
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <button onClick={() => setVbOptions([...vb.options, { qty: vb.options.length + 1, label: "", price: 0, originalPrice: 0, gifts: [] }])}
+                    style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
+                    + Thêm gói cho {vb.label}
+                  </button>
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* Single-variant: original UI */}
+        {!isMultiVariant && bundleOptions.map((opt, i) => {
           const updateOpt = (patch: Partial<BundleOptionMeta>) =>
             setBundleOptions(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x))
           const optGifts: GiftItem[] = opt.gifts || []
@@ -1211,10 +1333,12 @@ const ProductContentWidget = ({ data }: { data: any }) => {
             </div>
           )
         })}
-        <button onClick={() => setBundleOptions(prev => [...prev, { qty: prev.length + 1, label: "", price: 0, originalPrice: 0, gifts: [] }])}
-          style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
-          + Thêm gói
-        </button>
+        {!isMultiVariant && (
+          <button onClick={() => setBundleOptions(prev => [...prev, { qty: prev.length + 1, label: "", price: 0, originalPrice: 0, gifts: [] }])}
+            style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
+            + Thêm gói
+          </button>
+        )}
       </Toggle>
 
       </div>{/* end metadata wrapper */}
