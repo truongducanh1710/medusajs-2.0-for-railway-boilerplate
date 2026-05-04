@@ -11,6 +11,7 @@ import ComboBundle from "@modules/products/components/combo-bundle"
 import BundleSelector from "@modules/products/components/bundle-selector"
 import ProductPageContent from "@modules/products/components/product-page-content"
 import ProductPixelTracker from "@components/ProductPixelTracker"
+import ProductChatContextInjector from "@components/ProductChatContextInjector"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -308,6 +309,16 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       ? (product.metadata.page_content as string)
       : ""
 
+  const productContext = [
+    `Tên sản phẩm: ${product.title}`,
+    product.description ? `Mô tả: ${product.description}` : "",
+    basePrice ? `Giá: ${new Intl.NumberFormat("vi-VN").format(basePrice)}đ` : "",
+    meta(product, "chat_lieu") ? `Chất liệu: ${meta(product, "chat_lieu")}` : "",
+    meta(product, "kich_thuoc") ? `Kích thước: ${meta(product, "kich_thuoc")}` : "",
+    meta(product, "xuat_xu") ? `Xuất xứ: ${meta(product, "xuat_xu")}` : "",
+    meta(product, "bao_hanh") ? `Bảo hành: ${meta(product, "bao_hanh")}` : "",
+  ].filter(Boolean).join("\n")
+
   return (
     <div className="bg-white">
       <ProductPixelTracker
@@ -433,6 +444,9 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
 
       {/* Sticky buy bar — appears when BundleSelector scrolls off screen */}
       <StickyBuyBar product={product} region={region} anchorId="bundle-selector" />
+
+      {/* Inject product context vào ChatBot global qua custom event */}
+      <ProductChatContextInjector context={productContext} />
     </div>
   )
 }

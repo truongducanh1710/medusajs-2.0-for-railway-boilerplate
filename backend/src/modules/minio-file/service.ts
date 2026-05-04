@@ -94,6 +94,7 @@ class MinioFileProviderService extends AbstractFileProviderService {
       secretKey: this.config_.secretKey,
       pathStyle: true,
       region: 'us-east-1',
+      partSize: 100 * 1024 * 1024, // 100MB — force single-part upload
     })
 
     // Initialize bucket and policy

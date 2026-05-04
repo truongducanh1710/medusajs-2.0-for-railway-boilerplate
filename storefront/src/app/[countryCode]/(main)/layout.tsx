@@ -9,12 +9,11 @@ import { getBaseURL } from "@lib/util/env"
 import FacebookPixel from "@components/FacebookPixel"
 import UtmCapture from "@components/UtmCapture"
 import FloatingContact from "@components/FloatingContact"
+import ChatBot from "@components/ChatBot"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
-
-// pixel ID is read client-side in FacebookPixel component via process.env.NEXT_PUBLIC_FB_PIXEL_ID
 
 export default async function PageLayout({
   children,
@@ -38,6 +37,7 @@ export default async function PageLayout({
       </main>
       <Footer countryCode={countryCode} />
       <FloatingContact />
+      <ChatBot />
     </LocaleProvider>
   )
 }
