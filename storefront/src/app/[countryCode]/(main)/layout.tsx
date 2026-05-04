@@ -37,7 +37,7 @@ export default async function PageLayout({
       </main>
       <Footer countryCode={countryCode} />
       <FloatingContact />
-      <ChatBot />
+      {/* <ChatBot /> */}
     </LocaleProvider>
   )
 }
