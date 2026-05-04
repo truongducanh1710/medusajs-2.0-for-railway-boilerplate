@@ -32,7 +32,7 @@ const CONTACTS = [
   },
   {
     key: "messenger",
-    href: "https://www.facebook.com/profile.php?id=61577385524644",
+    href: "https://m.me/61577385524644",
     label: "Messenger",
     title: "Facebook",
     bg: "linear-gradient(135deg,#0668E1 0%,#9B59B6 100%)",
