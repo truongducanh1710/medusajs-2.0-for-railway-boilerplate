@@ -8,6 +8,7 @@ import Nav from "@modules/layout/templates/nav"
 import { getBaseURL } from "@lib/util/env"
 import FacebookPixel from "@components/FacebookPixel"
 import UtmCapture from "@components/UtmCapture"
+import FloatingContact from "@components/FloatingContact"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
@@ -36,6 +37,7 @@ export default async function PageLayout({
         {children}
       </main>
       <Footer countryCode={countryCode} />
+      <FloatingContact />
     </LocaleProvider>
   )
 }
