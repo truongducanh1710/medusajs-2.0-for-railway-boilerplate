@@ -21,13 +21,10 @@ const CONTACTS = [
     href: "https://zalo.me/4385628039049498170",
     label: "Zalo",
     title: "Chat Zalo",
-    bg: "#0068FF",
-    shadow: "rgba(0,104,255,0.40)",
+    bg: "#fff",
+    shadow: "rgba(0,104,255,0.30)",
     icon: (
-      <svg viewBox="0 0 64 64" fill="none" width="26" height="26" xmlns="http://www.w3.org/2000/svg">
-        <path d="M14.5 38.1c.5-.4 1-.5 1.6-.2l5.2 2.5c.4.2.7.1.9-.3l1-2.7c.1-.3 0-.6-.3-.8C17.7 33.8 15 29.2 15 24c0-9.4 7.6-17 17-17s17 7.6 17 17-7.6 17-17 17c-1.6 0-3.1-.2-4.6-.6-.3-.1-.6 0-.8.2l-3.8 3.6c-.5.5-1.3.1-1.3-.6v-5.5z" fill="white"/>
-        <path d="M24.3 27.7h7.9c.5 0 .8-.4.8-.8v-.1c0-.3-.1-.5-.4-.7l-6.1-4.4h5.7c.5 0 .8-.4.8-.8v-.1c0-.5-.4-.8-.8-.8h-7.9c-.5 0-.8.4-.8.8v.1c0 .3.1.5.4.7l6.1 4.4h-5.7c-.5 0-.8.4-.8.8v.1c0 .4.3.8.8.8z" fill="#0068FF"/>
-      </svg>
+      <img src="/zalo-logo.png" alt="Zalo" width={32} height={32} style={{ objectFit: "contain" }} />
     ),
   },
   {
