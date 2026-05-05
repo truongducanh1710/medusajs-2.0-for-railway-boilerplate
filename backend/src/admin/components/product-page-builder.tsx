@@ -812,18 +812,87 @@ export default function ProductPageBuilder({
           if (el?.classList?.contains("stars")) {
             const count = (el.textContent?.match(/★/g) || []).length
             if (count > 0) {
+              // Cập nhật DOM trực tiếp
               const cardEl = el.closest(".card")
               if (cardEl) cardEl.setAttribute("data-stars", String(count))
-              // Cập nhật GrapesJS model để lưu vào projectData
-              const cardComp = component.parent?.()
-              if (cardComp?.getEl?.()?.classList?.contains("card")) {
-                const attrs = cardComp.getAttributes()
-                cardComp.setAttributes({ ...attrs, "data-stars": String(count) })
+              // Leo lên model GrapesJS tìm .card (có thể nhiều cấp)
+              let comp: any = component
+              for (let i = 0; i < 5; i++) {
+                comp = comp.parent?.()
+                if (!comp) break
+                if (comp.getEl?.()?.classList?.contains("card")) {
+                  const attrs = comp.getAttributes()
+                  comp.setAttributes({ ...attrs, "data-stars": String(count) })
+                  break
+                }
               }
             }
           }
         } catch {}
       })
+
+      // Inject filter JS vào canvas iframe (chạy mỗi khi canvas load hoặc component thêm mới)
+      const REV_FILTER_JS = `
+        (function(){
+          function initRevFilter(section){
+            var btns=section.querySelectorAll('.filter-btn');
+            var grid=section.querySelector('.grid');
+            if(!grid||!btns.length) return;
+            function getStars(card){
+              var s=card.getAttribute('data-stars');
+              if(s) return parseInt(s);
+              var st=card.querySelector('.stars');
+              return st?(st.textContent.match(/★/g)||[]).length:5;
+            }
+            function applyFilter(f){
+              grid.querySelectorAll('.card').forEach(function(c){
+                c.style.display=(f===0||getStars(c)===f)?'':'none';
+              });
+              btns.forEach(function(b){
+                var active=parseInt(b.getAttribute('data-filter'))===f;
+                b.style.borderColor=active?'#f59e0b':'#e5e7eb';
+                b.style.background=active?'#fef3c7':'#fff';
+                b.style.color=active?'#92400e':'#6b7280';
+              });
+            }
+            btns.forEach(function(btn){
+              if(btn.dataset.revBound) return;
+              btn.dataset.revBound='1';
+              btn.addEventListener('click',function(){
+                applyFilter(parseInt(btn.getAttribute('data-filter')));
+              });
+            });
+          }
+          function tryInit(){
+            document.querySelectorAll('.pvb-rev2').forEach(function(s){
+              initRevFilter(s);
+            });
+          }
+          tryInit();
+          // Re-init khi DOM thay đổi (thêm review mới)
+          if(window._revObserver) window._revObserver.disconnect();
+          window._revObserver=new MutationObserver(tryInit);
+          document.querySelectorAll('.pvb-rev2 .grid').forEach(function(g){
+            window._revObserver.observe(g,{childList:true});
+          });
+        })();
+      `
+
+      const injectFilterScript = () => {
+        try {
+          const doc = editor.Canvas.getDocument()
+          if (!doc) return
+          doc.querySelectorAll('.pvb-rev2').forEach((s: any) => {
+            if (!s.querySelector('.filter-btn')) return
+            const sc = doc.createElement('script')
+            sc.textContent = REV_FILTER_JS
+            doc.body.appendChild(sc)
+          })
+        } catch {}
+      }
+
+      editor.on("canvas:frame:load", injectFilterScript)
+      editor.on("component:add", () => setTimeout(injectFilterScript, 100))
 
       // ── "Thêm 5 đánh giá" command cho block customer-reviews ──────────────
       const REVIEW_POOL = [
