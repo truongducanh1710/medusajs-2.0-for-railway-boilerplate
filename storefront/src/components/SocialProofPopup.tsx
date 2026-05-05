@@ -105,10 +105,10 @@ export default function SocialProofPopup({
     <div
       style={{
         position: "fixed",
-        bottom: 24,
+        top: 88,
         left: 16,
         zIndex: 9997,
-        transform: visible ? "translateY(0) scale(1)" : "translateY(80px) scale(0.95)",
+        transform: visible ? "translateY(0) scale(1)" : "translateY(-20px) scale(0.95)",
         opacity: visible ? 1 : 0,
         transition: "all 0.4s cubic-bezier(.34,1.4,.64,1)",
         pointerEvents: visible ? "auto" : "none",
