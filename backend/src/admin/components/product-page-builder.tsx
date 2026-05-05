@@ -582,6 +582,12 @@ const blocks: BuilderBlock[] = [
         @media(max-width:480px){.pvb-rev2 .grid{columns:1}}
         @media(min-width:640px){.pvb-rev2{padding:56px 24px}}
       </style>
+      <style>
+        .pvb-rev2 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+        .pvb-rev2 .filter-btn{padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600;border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;cursor:pointer;transition:all 0.15s}
+        .pvb-rev2 .filter-btn.active{border-color:#f59e0b;background:#fef3c7;color:#92400e}
+        .pvb-rev2 .card[hidden]{display:none!important}
+      </style>
       <section class="pvb-rev2">
         <div class="inner">
           <h2>⭐ Đánh giá từ khách hàng thực tế</h2>
@@ -599,8 +605,14 @@ const blocks: BuilderBlock[] = [
               <div class="bar-row"><span class="bar-label">1★</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><span class="bar-pct">0%</span></div>
             </div>
           </div>
+          <div class="filters">
+            <button class="filter-btn active" data-filter="0">Tất cả</button>
+            <button class="filter-btn" data-filter="5">5★</button>
+            <button class="filter-btn" data-filter="4">4★</button>
+            <button class="filter-btn" data-filter="3">3★</button>
+          </div>
           <div class="grid">
-            <div class="card">
+            <div class="card" data-stars="5">
               <img class="card-img" src="https://placehold.co/600x300/fef3c7/92400e?text=Ảnh+khách+chụp" alt="Ảnh review" />
               <div class="card-body">
                 <div class="avatar-row">
@@ -611,7 +623,7 @@ const blocks: BuilderBlock[] = [
                 <p class="text">"Sản phẩm rất tốt, chất lượng vượt mong đợi! Giao hàng nhanh, đóng gói cẩn thận."</p>
               </div>
             </div>
-            <div class="card">
+            <div class="card" data-stars="5">
               <div class="card-body">
                 <div class="avatar-row">
                   <div class="avatar" style="background:linear-gradient(135deg,#4ECDC4,#44A08D)">TN</div>
@@ -621,7 +633,7 @@ const blocks: BuilderBlock[] = [
                 <p class="text">"Dùng được 1 tháng vẫn tốt, giá hợp lý. Chất lượng tương xứng với giá tiền, rất hài lòng."</p>
               </div>
             </div>
-            <div class="card">
+            <div class="card" data-stars="5">
               <div class="card-body">
                 <div class="avatar-row">
                   <div class="avatar" style="background:linear-gradient(135deg,#667eea,#764ba2)">LH</div>
@@ -631,7 +643,7 @@ const blocks: BuilderBlock[] = [
                 <p class="text">"Mua về tặng mẹ, mẹ thích lắm! Sản phẩm đúng như mô tả, shop tư vấn nhiệt tình."</p>
               </div>
             </div>
-            <div class="card">
+            <div class="card" data-stars="4">
               <img class="card-img" src="https://placehold.co/600x280/fef3c7/92400e?text=Ảnh+khách+chụp+2" alt="Ảnh review" />
               <div class="card-body">
                 <div class="avatar-row">
@@ -645,6 +657,42 @@ const blocks: BuilderBlock[] = [
           </div>
         </div>
       </section>
+      <script>
+        (function(){
+          function initRevFilter(section){
+            var btns = section.querySelectorAll('.filter-btn');
+            var grid = section.querySelector('.grid');
+            function getStars(card){
+              var s = card.getAttribute('data-stars');
+              if(s) return parseInt(s);
+              var st = card.querySelector('.stars');
+              if(!st) return 5;
+              return (st.textContent.match(/★/g)||[]).length;
+            }
+            function applyFilter(f){
+              var cards = grid.querySelectorAll('.card');
+              cards.forEach(function(c){
+                c.hidden = f !== 0 && getStars(c) !== f;
+              });
+              btns.forEach(function(b){
+                b.classList.toggle('active', parseInt(b.getAttribute('data-filter')) === f);
+              });
+            }
+            btns.forEach(function(btn){
+              btn.addEventListener('click', function(){
+                applyFilter(parseInt(btn.getAttribute('data-filter')));
+              });
+            });
+          }
+          function tryInit(){
+            document.querySelectorAll('.pvb-rev2').forEach(function(s){
+              if(!s.dataset.revInit){ s.dataset.revInit='1'; initRevFilter(s); }
+            });
+          }
+          if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',tryInit);
+          else tryInit();
+        })();
+      </script>
     `,
   },
 ]
@@ -779,7 +827,7 @@ export default function ProductPageBuilder({
       ]
 
       const makeReviewCard = (r: typeof REVIEW_POOL[0]) =>
-        `<div class="card">${r.hasImg ? `<img class="card-img" src="https://placehold.co/600x280/fef3c7/92400e?text=Ảnh+khách+chụp" alt="" />` : ""}<div class="card-body"><div class="avatar-row"><div class="avatar" style="background:linear-gradient(135deg,${r.grad})">${r.initials}</div><div><div class="reviewer-name">${r.name} <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">${r.loc} · ${r.date}</div></div></div><div class="stars">${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)}</div><p class="text">"${r.text}"</p></div></div>`
+        `<div class="card" data-stars="${r.stars}">${r.hasImg ? `<img class="card-img" src="https://placehold.co/600x280/fef3c7/92400e?text=Ảnh+khách+chụp" alt="" />` : ""}<div class="card-body"><div class="avatar-row"><div class="avatar" style="background:linear-gradient(135deg,${r.grad})">${r.initials}</div><div><div class="reviewer-name">${r.name} <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">${r.loc} · ${r.date}</div></div></div><div class="stars">${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)}</div><p class="text">"${r.text}"</p></div></div>`
 
       let reviewPoolIdx = 4 // block mặc định đã dùng 4 review đầu
 
