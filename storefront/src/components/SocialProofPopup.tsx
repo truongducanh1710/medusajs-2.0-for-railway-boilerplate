@@ -99,7 +99,7 @@ export default function SocialProofPopup({
     <div
       style={{
         position: "fixed",
-        bottom: 68,
+        bottom: 90,
         left: 0,
         right: 0,
         zIndex: 9997,
@@ -110,7 +110,7 @@ export default function SocialProofPopup({
         display: "flex",
         justifyContent: "flex-start",
         paddingLeft: 12,
-        paddingRight: 12,
+        paddingRight: 140,
       }}
     >
       <div
