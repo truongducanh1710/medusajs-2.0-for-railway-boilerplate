@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { generateEventId, sendCAPIEvent } from "@lib/pixel"
+import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
 import { getUtmFromCookie } from "@lib/utm"
 
 export default function PurchaseTracker({
@@ -9,15 +9,11 @@ export default function PurchaseTracker({
   value,
   currency,
   contentIds,
-  pixelId,
-  capiToken,
 }: {
   orderId: string
   value: number
   currency: string
   contentIds: string[]
-  pixelId?: string
-  capiToken?: string
 }) {
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -40,37 +36,20 @@ export default function PurchaseTracker({
       )
     }
 
-    // Server-side CAPI via global pixel
-    const globalPixelId = process.env.NEXT_PUBLIC_FB_PIXEL_ID
-    if (globalPixelId && capiToken) {
-      sendCAPIEvent({
-        pixelId: globalPixelId,
-        accessToken: capiToken,
-        eventName: "Purchase",
-        eventId,
-        eventSourceUrl: window.location.href,
-        customData: {
-          value,
-          currency,
-          order_id: orderId,
-          content_ids: contentIds,
-          content_type: "product",
-          ...utm,
-        },
-      })
-    }
-
-    // Per-product pixel CAPI
-    if (pixelId && pixelId !== globalPixelId && capiToken) {
-      sendCAPIEvent({
-        pixelId,
-        accessToken: capiToken,
-        eventName: "Purchase",
-        eventId,
-        eventSourceUrl: window.location.href,
-        customData: { value, currency, order_id: orderId, content_ids: contentIds, ...utm },
-      })
-    }
+    // CAPI via server route (token stays server-side)
+    sendCAPIViaRoute({
+      eventName: "Purchase",
+      eventId,
+      eventSourceUrl: window.location.href,
+      customData: {
+        value,
+        currency,
+        order_id: orderId,
+        content_ids: contentIds,
+        content_type: "product",
+        ...utm,
+      },
+    })
   }, [orderId])
 
   return null

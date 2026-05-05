@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { usePathname } from "next/navigation"
-import { generateEventId } from "@lib/pixel"
+import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
 
 declare global {
   interface Window {
@@ -74,14 +74,18 @@ export default function FacebookPixel({ pixelIds: extraIds = [] }: { pixelIds?: 
 
       if (!initialized.current) {
         initialized.current = true
-        window.fbq?.("track", "PageView", {}, { eventID: generateEventId() })
+        const eid = generateEventId()
+        window.fbq?.("track", "PageView", {}, { eventID: eid })
+        sendCAPIViaRoute({ eventName: "PageView", eventId: eid, eventSourceUrl: window.location.href })
       }
     })
   }, [])
 
   useEffect(() => {
     if (!initialized.current) return
-    window.fbq?.("track", "PageView", {}, { eventID: generateEventId() })
+    const eid = generateEventId()
+    window.fbq?.("track", "PageView", {}, { eventID: eid })
+    sendCAPIViaRoute({ eventName: "PageView", eventId: eid, eventSourceUrl: window.location.href })
   }, [pathname])
 
   return null

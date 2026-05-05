@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { generateEventId } from "@lib/pixel"
+import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
 
 const SCROLL_MILESTONES = [25, 50, 75, 100]
 const TIME_MILESTONES = [10, 30, 60, 90, 120, 180, 300] // seconds
@@ -40,6 +40,7 @@ export default function ProductPixelTracker({
       }
     }
 
+    const eventId = generateEventId()
     window.fbq(
       "track",
       "ViewContent",
@@ -50,8 +51,22 @@ export default function ProductPixelTracker({
         value: price / 100,
         currency,
       },
-      { eventID: generateEventId() }
+      { eventID: eventId }
     )
+
+    // CAPI dedup
+    sendCAPIViaRoute({
+      eventName: "ViewContent",
+      eventId,
+      eventSourceUrl: window.location.href,
+      customData: {
+        content_ids: [productId],
+        content_name: productTitle,
+        content_type: "product",
+        value: price / 100,
+        currency,
+      },
+    })
 
     scrollFired.current.clear()
     timeFired.current.clear()

@@ -2,6 +2,32 @@ export function generateEventId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+// Send CAPI event via server-side route (keeps access token server-only)
+export async function sendCAPIViaRoute({
+  eventName,
+  eventId,
+  eventSourceUrl,
+  userData = {},
+  customData = {},
+}: {
+  eventName: string
+  eventId: string
+  eventSourceUrl?: string
+  userData?: Record<string, string>
+  customData?: Record<string, unknown>
+}) {
+  if (typeof window === "undefined") return
+  try {
+    await fetch("/api/capi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventName, eventId, eventSourceUrl, userData, customData }),
+    })
+  } catch {
+    // non-fatal
+  }
+}
+
 export async function sendCAPIEvent({
   pixelId,
   accessToken,
