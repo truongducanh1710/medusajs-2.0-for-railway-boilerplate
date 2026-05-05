@@ -447,7 +447,13 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       <StickyBuyBar product={product} region={region} anchorId="bundle-selector" />
 
       <ProductChatContextInjector context={productContext} productName={product.title || ""} />
-      <SocialProofPopup products={[product.title || ""]} />
+      <SocialProofPopup
+        products={[product.title || ""]}
+        enabled={meta(product, "social_proof_enabled") !== "false"}
+        delaySec={Number(meta(product, "social_proof_delay") || 12)}
+        intervalSec={Number(meta(product, "social_proof_interval") || 30)}
+        displaySec={Number(meta(product, "social_proof_display") || 5)}
+      />
     </div>
   )
 }

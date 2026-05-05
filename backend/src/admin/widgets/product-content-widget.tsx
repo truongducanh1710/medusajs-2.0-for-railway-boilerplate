@@ -1400,6 +1400,50 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         </div>
       </div>
 
+      {/* Social Proof per product */}
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginTop: 12 }}>
+        <div style={{ background: "#f9fafb", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #e5e7eb" }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>🔔 Social Proof Popup</span>
+          <button
+            onClick={() => setMeta(m => ({ ...m, social_proof_enabled: m.social_proof_enabled === "false" ? "true" : "false" }))}
+            style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", background: meta.social_proof_enabled === "false" ? "#d1d5db" : "#22c55e", flexShrink: 0 }}
+          >
+            <span style={{ position: "absolute", top: 3, left: meta.social_proof_enabled === "false" ? 2 : 22, width: 18, height: 18, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
+          </button>
+        </div>
+        {meta.social_proof_enabled !== "false" && (
+          <div style={{ padding: "12px 14px", display: "flex", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Hiện sau (giây)</label>
+              <input
+                type="number" min={3} max={120}
+                value={meta.social_proof_delay || "12"}
+                onChange={e => setMeta(m => ({ ...m, social_proof_delay: e.target.value }))}
+                style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Lặp lại mỗi (giây)</label>
+              <input
+                type="number" min={10} max={300}
+                value={meta.social_proof_interval || "30"}
+                onChange={e => setMeta(m => ({ ...m, social_proof_interval: e.target.value }))}
+                style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Hiển thị trong (giây)</label>
+              <input
+                type="number" min={2} max={30}
+                value={meta.social_proof_display || "5"}
+                onChange={e => setMeta(m => ({ ...m, social_proof_display: e.target.value }))}
+                style={{ width: "100%", padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13 }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Save button bottom — sticky */}
       <div style={{ position: "sticky", bottom: 16, zIndex: 10, display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
         <button onClick={() => save()} disabled={saving}

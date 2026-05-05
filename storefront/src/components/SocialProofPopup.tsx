@@ -46,6 +46,8 @@ type Props = {
   products?: string[]
   intervalSec?: number
   displaySec?: number
+  delaySec?: number
+  enabled?: boolean
 }
 
 const DEFAULT_PRODUCTS = [
@@ -58,25 +60,18 @@ const DEFAULT_PRODUCTS = [
 
 export default function SocialProofPopup({
   products = DEFAULT_PRODUCTS,
-  intervalSec = 18,
+  intervalSec = 30,
   displaySec = 5,
+  delaySec = 12,
+  enabled: enabledProp = true,
 }: Props) {
   const [current, setCurrent] = useState<Notification | null>(null)
   const [visible, setVisible] = useState(false)
-  const [enabled, setEnabled] = useState(true)
+  const [enabled, setEnabled] = useState(enabledProp)
   const activeProducts = products
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Check store metadata để biết marketer đã tắt chưa
-  useEffect(() => {
-    fetch("/api/chat", { method: "HEAD" }).catch(() => {}) // warm up
-    fetch("/store/info", { headers: { "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || "" } })
-      .then(r => r.json())
-      .then(d => {
-        if (d?.store?.metadata?.social_proof_enabled === "false") setEnabled(false)
-      })
-      .catch(() => {})
-  }, [])
+  useEffect(() => { setEnabled(enabledProp) }, [enabledProp])
 
   useEffect(() => {
     if (!enabled) return
@@ -88,8 +83,7 @@ export default function SocialProofPopup({
       timerRef.current = setTimeout(() => setVisible(false), displaySec * 1000)
     }
 
-    // Delay lần đầu 12s
-    const first = setTimeout(show, 12000)
+    const first = setTimeout(show, delaySec * 1000)
     const interval = setInterval(show, intervalSec * 1000)
 
     return () => {
@@ -97,7 +91,7 @@ export default function SocialProofPopup({
       clearInterval(interval)
       clearTimeout(timerRef.current)
     }
-  }, [enabled, activeProducts, intervalSec, displaySec])
+  }, [enabled, activeProducts, intervalSec, displaySec, delaySec])
 
   if (!enabled || !current) return null
 
