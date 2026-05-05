@@ -47,12 +47,12 @@ export default function FloatingContact() {
 
   return (
     <div
+      className="hidden md:flex"
       style={{
         position: "fixed",
         bottom: 24,
         right: 20,
         zIndex: 9999,
-        display: "flex",
         flexDirection: "column",
         alignItems: "flex-end",
         gap: 10,
