@@ -12,6 +12,7 @@ import BundleSelector from "@modules/products/components/bundle-selector"
 import ProductPageContent from "@modules/products/components/product-page-content"
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import ProductChatContextInjector from "@components/ProductChatContextInjector"
+import SocialProofPopup from "@components/SocialProofPopup"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -446,6 +447,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       <StickyBuyBar product={product} region={region} anchorId="bundle-selector" />
 
       <ProductChatContextInjector context={productContext} productName={product.title || ""} />
+      <SocialProofPopup products={[product.title || ""]} />
     </div>
   )
 }

@@ -39,7 +39,7 @@ export default async function PageLayout({
       <Footer countryCode={countryCode} />
       <FloatingContact />
       {/* <ChatBot /> */}
-      <SocialProofPopup />
+      {/* SocialProofPopup chỉ render trong product page */}
     </LocaleProvider>
   )
 }

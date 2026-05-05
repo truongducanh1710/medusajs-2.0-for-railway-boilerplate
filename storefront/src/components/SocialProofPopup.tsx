@@ -64,18 +64,8 @@ export default function SocialProofPopup({
   const [current, setCurrent] = useState<Notification | null>(null)
   const [visible, setVisible] = useState(false)
   const [enabled, setEnabled] = useState(true)
-  const [activeProducts, setActiveProducts] = useState<string[]>(products)
+  const activeProducts = products
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
-
-  // Lắng nghe product page inject tên SP đang xem
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const name = (e as CustomEvent<string>).detail
-      setActiveProducts(name ? [name] : products)
-    }
-    window.addEventListener("socialproof-set-product", handler)
-    return () => window.removeEventListener("socialproof-set-product", handler)
-  }, [products])
 
   // Check store metadata để biết marketer đã tắt chưa
   useEffect(() => {
