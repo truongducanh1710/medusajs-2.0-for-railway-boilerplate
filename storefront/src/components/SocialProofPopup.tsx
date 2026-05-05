@@ -88,8 +88,8 @@ export default function SocialProofPopup({
       timerRef.current = setTimeout(() => setVisible(false), displaySec * 1000)
     }
 
-    // Delay lần đầu 4s
-    const first = setTimeout(show, 4000)
+    // Delay lần đầu 12s
+    const first = setTimeout(show, 12000)
     const interval = setInterval(show, intervalSec * 1000)
 
     return () => {
@@ -105,82 +105,68 @@ export default function SocialProofPopup({
     <div
       style={{
         position: "fixed",
-        top: 88,
-        left: 16,
+        bottom: 68,
+        left: 0,
+        right: 0,
         zIndex: 9997,
-        transform: visible ? "translateY(0) scale(1)" : "translateY(-20px) scale(0.95)",
+        transform: visible ? "translateY(0)" : "translateY(20px)",
         opacity: visible ? 1 : 0,
-        transition: "all 0.4s cubic-bezier(.34,1.4,.64,1)",
+        transition: "all 0.35s cubic-bezier(.34,1.2,.64,1)",
         pointerEvents: visible ? "auto" : "none",
+        display: "flex",
+        justifyContent: "flex-start",
+        paddingLeft: 12,
+        paddingRight: 12,
       }}
     >
       <div
         style={{
-          background: "#fff",
-          borderRadius: 16,
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
+          background: "rgba(255,255,255,0.97)",
+          borderRadius: 40,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
           border: "1px solid #f1f5f9",
-          padding: "10px 14px 10px 12px",
+          padding: "6px 12px 6px 8px",
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          maxWidth: 280,
-          minWidth: 220,
-          position: "relative",
+          gap: 7,
+          maxWidth: 320,
         }}
       >
-        {/* Close */}
-        <button
-          onClick={() => setVisible(false)}
-          style={{
-            position: "absolute",
-            top: 6,
-            right: 8,
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: 13,
-            color: "#94a3b8",
-            lineHeight: 1,
-            padding: 0,
-          }}
-        >
-          ✕
-        </button>
-
-        {/* Avatar */}
+        {/* Avatar nhỏ */}
         <div style={{
-          width: 42,
-          height: 42,
+          width: 28,
+          height: 28,
           borderRadius: "50%",
           background: "linear-gradient(135deg,#fff7ed,#ffedd5)",
-          border: "2px solid #fed7aa",
+          border: "1.5px solid #fed7aa",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 22,
+          fontSize: 15,
           flexShrink: 0,
         }}>
           {current.avatar}
         </div>
 
-        {/* Content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, color: "#1e293b", lineHeight: 1.4 }}>
-            <span style={{ fontWeight: 700 }}>{current.name}</span>
-            <span style={{ color: "#64748b" }}> ({current.city})</span>
-          </div>
-          <div style={{ fontSize: 12, color: "#374151", marginTop: 2, lineHeight: 1.35 }}>
-            vừa đặt{current.qty ? ` ${current.qty}x` : ""}{" "}
-            <span style={{ fontWeight: 700, color: "#E8420A" }}>
-              {current.product}
-            </span>
-          </div>
-          <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block", flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>{timeLabel(current.minsAgo)}</span>
-          </div>
-        </div>
+        {/* Text 1 dòng */}
+        <span style={{ fontSize: 12, color: "#374151", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <span style={{ fontWeight: 700 }}>{current.name}</span>
+          {" "}vừa đặt{" "}
+          <span style={{ fontWeight: 700, color: "#E8420A" }}>{current.product}</span>
+          {" · "}
+          <span style={{ color: "#94a3b8" }}>{timeLabel(current.minsAgo)}</span>
+        </span>
+
+        {/* Dot xanh */}
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
+
+        {/* Close */}
+        <button
+          onClick={() => setVisible(false)}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#cbd5e1", padding: 0, lineHeight: 1, flexShrink: 0 }}
+        >
+          ✕
+        </button>
       </div>
     </div>
   )
