@@ -804,19 +804,79 @@ export default function ProductPageBuilder({
         },
       })
 
+      // Command: thêm ảnh vào card review đang chọn
+      editor.Commands.add("pvb-add-review-img", {
+        run(ed: any) {
+          const selected = ed.getSelected()
+          if (!selected) return
+          const el = selected.getEl()
+          const card = el?.classList.contains("card") ? selected
+            : selected.closest?.(".card") || null
+          if (!card) return
+          // Kiểm tra đã có ảnh chưa
+          const existing = card.find(".card-img")
+          if (existing?.length) {
+            // Đã có ảnh → mở asset manager để đổi
+            ed.AssetManager.open({
+              select(asset: any) {
+                existing[0].set("attributes", { ...existing[0].getAttributes(), src: asset.get("src") })
+                ed.AssetManager.close()
+              }
+            })
+            return
+          }
+          // Chưa có ảnh → chèn img vào đầu card
+          card.components().unshift({
+            tagName: "img",
+            attributes: {
+              class: "card-img",
+              src: "https://placehold.co/600x280/fef3c7/92400e?text=Ảnh+khách+chụp",
+              alt: "Ảnh review",
+            },
+          })
+          // Mở asset manager để chọn ảnh ngay
+          setTimeout(() => {
+            ed.AssetManager.open({
+              select(asset: any) {
+                const imgs = card.find(".card-img")
+                if (imgs?.length) imgs[0].set("attributes", { class: "card-img", src: asset.get("src"), alt: "Ảnh review" })
+                ed.AssetManager.close()
+              }
+            })
+          }, 100)
+        },
+      })
+
       // Thêm toolbar button khi chọn component trong pvb-rev2
       editor.on("component:selected", (component: any) => {
         const el = component.getEl()
         if (!el) return
-        const isRevSection = el.classList.contains("pvb-rev2") || !!el.closest?.(".pvb-rev2")
-        if (!isRevSection) return
+        const inRevSection = el.classList.contains("pvb-rev2") || !!el.closest?.(".pvb-rev2")
+        if (!inRevSection) return
+
         const toolbar: any[] = component.get("toolbar") || []
-        if (toolbar.find((t: any) => t.command === "pvb-add-5-reviews")) return
-        toolbar.unshift({
-          attributes: { title: "Thêm 5 đánh giá", style: "font-size:11px;padding:0 6px;font-weight:700" },
-          label: "+5 ⭐",
-          command: "pvb-add-5-reviews",
-        })
+
+        // Nút +5 đánh giá — chỉ trên section hoặc grid
+        const isSection = el.classList.contains("pvb-rev2") || el.classList.contains("grid")
+        if (isSection && !toolbar.find((t: any) => t.command === "pvb-add-5-reviews")) {
+          toolbar.unshift({
+            attributes: { title: "Thêm 5 đánh giá", style: "font-size:11px;padding:0 6px;font-weight:700" },
+            label: "+5 ⭐",
+            command: "pvb-add-5-reviews",
+          })
+        }
+
+        // Nút 📷 Thêm/đổi ảnh — chỉ trên card review
+        const isCard = el.classList.contains("card") || !!el.closest?.(".card")
+        if (isCard && !toolbar.find((t: any) => t.command === "pvb-add-review-img")) {
+          const hasImg = !!el.querySelector?.(".card-img") || !!el.closest?.(".card")?.querySelector(".card-img")
+          toolbar.unshift({
+            attributes: { title: hasImg ? "Đổi ảnh" : "Thêm ảnh", style: "font-size:12px;padding:0 6px" },
+            label: hasImg ? "🔄" : "📷",
+            command: "pvb-add-review-img",
+          })
+        }
+
         component.set("toolbar", toolbar)
       })
       // ─────────────────────────────────────────────────────────────────────
