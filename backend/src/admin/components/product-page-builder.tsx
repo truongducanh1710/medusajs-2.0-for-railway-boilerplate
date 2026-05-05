@@ -801,10 +801,28 @@ export default function ProductPageBuilder({
         }
       }, 300)
       // Detect any change to show "unsaved" indicator
-      editor.on("component:update component:add component:remove", () => {
+      editor.on("component:update component:add component:remove", (component: any) => {
         setHasDraftChanges(true)
         setDraftSaved(false)
         setPublished(false)
+
+        // Nếu component có class "stars" → tự đếm ★ và cập nhật data-stars trên .card cha
+        try {
+          const el = component?.getEl?.()
+          if (el?.classList?.contains("stars")) {
+            const count = (el.textContent?.match(/★/g) || []).length
+            if (count > 0) {
+              const cardEl = el.closest(".card")
+              if (cardEl) cardEl.setAttribute("data-stars", String(count))
+              // Cập nhật GrapesJS model để lưu vào projectData
+              const cardComp = component.parent?.()
+              if (cardComp?.getEl?.()?.classList?.contains("card")) {
+                const attrs = cardComp.getAttributes()
+                cardComp.setAttributes({ ...attrs, "data-stars": String(count) })
+              }
+            }
+          }
+        } catch {}
       })
 
       // ── "Thêm 5 đánh giá" command cho block customer-reviews ──────────────
