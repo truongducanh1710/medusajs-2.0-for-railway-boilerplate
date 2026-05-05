@@ -10,6 +10,7 @@ import LocalizedClientLink from "@modules/common/components/localized-client-lin
 import ComboBundle from "@modules/products/components/combo-bundle"
 import BundleSelector from "@modules/products/components/bundle-selector"
 import ProductPageContent from "@modules/products/components/product-page-content"
+import ProductReviewsJudgeMe from "@modules/products/components/product-reviews-judgeme"
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import ProductChatContextInjector from "@components/ProductChatContextInjector"
 import SocialProofPopup from "@components/SocialProofPopup"
@@ -424,6 +425,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
 
           {/* Reviews */}
           <ReviewsSection product={product} />
+          <ProductReviewsJudgeMe product={product} />
 
           {/* FAQ */}
           <FAQSection product={product} />

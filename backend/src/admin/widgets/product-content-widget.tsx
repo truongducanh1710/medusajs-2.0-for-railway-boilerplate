@@ -184,7 +184,7 @@ function StorefrontLink({ handle }: { handle: string }) {
 type Benefit = { icon: string; title: string; desc: string }
 type FAQItem = { q: string; a: string }
 type GiftItem = { name: string; value: number; image?: string }
-type ReviewItem = { name: string; location: string; rating: number; text: string; date: string }
+type ReviewItem = { name: string; location: string; rating: number; text: string; date: string; photo_url?: string }
 type BundleOptionMeta = { qty: number; label: string; price: number; originalPrice: number; badge?: string; badgeColor?: string; gifts?: GiftItem[]; image?: string }
 type VariantBundleConfig = { variantId: string; label: string; image?: string; options: BundleOptionMeta[] }
 
@@ -1116,6 +1116,10 @@ const ProductContentWidget = ({ data }: { data: any }) => {
             </div>
             <Input label="Nội dung đánh giá" value={r.text} onChange={v => setReviews(prev => prev.map((x, j) => j === i ? { ...x, text: v } : x))} placeholder="Sản phẩm rất tốt..." />
             <Input label="Ngày" value={r.date} onChange={v => setReviews(prev => prev.map((x, j) => j === i ? { ...x, date: v } : x))} placeholder="2 ngày trước" />
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>📷 Ảnh khách chụp (tuỳ chọn)</label>
+              <ImagePicker value={r.photo_url || ""} onChange={v => setReviews(prev => prev.map((x, j) => j === i ? { ...x, photo_url: v } : x))} productImages={productImages} />
+            </div>
             {reviews.length > 1 && (
               <button onClick={() => setReviews(prev => prev.filter((_, j) => j !== i))}
                 style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
@@ -1124,7 +1128,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
             )}
           </div>
         ))}
-        <button onClick={() => setReviews(prev => [...prev, { name: "", location: "", rating: 5, text: "", date: "" }])}
+        <button onClick={() => setReviews(prev => [...prev, { name: "", location: "", rating: 5, text: "", date: "", photo_url: "" }])}
           style={{ fontSize: 12, color: "#f97316", background: "none", border: "1px dashed #f97316", borderRadius: 6, padding: "6px 12px", cursor: "pointer", width: "100%" }}>
           + Thêm đánh giá
         </button>

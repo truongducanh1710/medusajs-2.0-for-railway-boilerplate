@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 const CONTACTS = [
   {
@@ -44,18 +44,28 @@ const CONTACTS = [
 
 export default function FloatingContact() {
   const [open, setOpen] = useState(false)
+  const [stickyBarOn, setStickyBarOn] = useState(false)
+
+  useEffect(() => {
+    const handler = (e: Event) => setStickyBarOn((e as CustomEvent).detail)
+    window.addEventListener("sticky-bar-visible", handler)
+    return () => window.removeEventListener("sticky-bar-visible", handler)
+  }, [])
+
+  const bottomPx = stickyBarOn ? 80 : 24
 
   return (
     <div
-      className="hidden md:flex"
+      className="flex"
       style={{
         position: "fixed",
-        bottom: 24,
+        bottom: bottomPx,
         right: 20,
         zIndex: 9999,
         flexDirection: "column",
         alignItems: "flex-end",
         gap: 10,
+        transition: "bottom 0.3s ease",
       }}
     >
       {/* Contact buttons — animate in/out */}
@@ -122,10 +132,10 @@ export default function FloatingContact() {
         onClick={() => setOpen(o => !o)}
         aria-label={open ? "Đóng liên hệ" : "Liên hệ ngay"}
         style={{
-          width: 54,
-          height: 54,
+          width: 44,
+          height: 44,
           borderRadius: "50%",
-          background: open ? "#374151" : "#E8420A",
+          background: open ? "#374151" : "rgba(232,66,10,0.85)",
           color: "#fff",
           border: "none",
           cursor: "pointer",
@@ -133,24 +143,12 @@ export default function FloatingContact() {
           alignItems: "center",
           justifyContent: "center",
           boxShadow: open
-            ? "0 4px 20px rgba(55,65,81,0.45)"
-            : "0 4px 20px rgba(232,66,10,0.50)",
+            ? "0 2px 12px rgba(55,65,81,0.35)"
+            : "0 2px 12px rgba(232,66,10,0.35)",
           transition: "all 0.25s",
           position: "relative",
         }}
       >
-        {/* Pulse ring — only when closed */}
-        {!open && (
-          <span
-            style={{
-              position: "absolute",
-              inset: -4,
-              borderRadius: "50%",
-              border: "2px solid rgba(232,66,10,0.45)",
-              animation: "contact-pulse 1.8s ease-out infinite",
-            }}
-          />
-        )}
 
         {/* Icon: chat → X */}
         <span
@@ -163,25 +161,17 @@ export default function FloatingContact() {
           }}
         >
           {open ? (
-            <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
               <path d="M18 6L6 18M6 6l12 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none" />
             </svg>
           ) : (
-            <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
               <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-2 10H6v-2h12v2zm0-4H6V6h12v2z" />
             </svg>
           )}
         </span>
       </button>
 
-      {/* Keyframe for pulse */}
-      <style>{`
-        @keyframes contact-pulse {
-          0% { transform: scale(1); opacity: 0.8; }
-          70% { transform: scale(1.5); opacity: 0; }
-          100% { transform: scale(1.5); opacity: 0; }
-        }
-      `}</style>
     </div>
   )
 }

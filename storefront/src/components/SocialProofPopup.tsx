@@ -68,10 +68,17 @@ export default function SocialProofPopup({
   const [current, setCurrent] = useState<Notification | null>(null)
   const [visible, setVisible] = useState(false)
   const [enabled, setEnabled] = useState(enabledProp)
+  const [stickyBarOn, setStickyBarOn] = useState(false)
   const activeProducts = products
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => { setEnabled(enabledProp) }, [enabledProp])
+
+  useEffect(() => {
+    const handler = (e: Event) => setStickyBarOn((e as CustomEvent).detail)
+    window.addEventListener("sticky-bar-visible", handler)
+    return () => window.removeEventListener("sticky-bar-visible", handler)
+  }, [])
 
   useEffect(() => {
     if (!enabled) return
@@ -99,13 +106,13 @@ export default function SocialProofPopup({
     <div
       style={{
         position: "fixed",
-        bottom: 90,
+        bottom: stickyBarOn ? 80 : 24,
         left: 0,
         right: 0,
         zIndex: 9997,
         transform: visible ? "translateY(0)" : "translateY(20px)",
         opacity: visible ? 1 : 0,
-        transition: "all 0.35s cubic-bezier(.34,1.2,.64,1)",
+        transition: "bottom 0.3s ease, opacity 0.35s, transform 0.35s cubic-bezier(.34,1.2,.64,1)",
         pointerEvents: visible ? "auto" : "none",
         display: "flex",
         justifyContent: "flex-start",
