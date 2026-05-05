@@ -263,6 +263,46 @@ function HomepageSettingsWidget() {
         </div>
       </Section>
 
+      {/* Section: Social Proof Popup */}
+      <Section title="🔔 Thông báo khách vừa mua (Social Proof)">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#1e293b" }}>Hiển thị popup "Khách vừa đặt hàng"</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Popup nhỏ góc dưới trái, tự ẩn sau 5 giây, tăng trust cho khách mới</div>
+          </div>
+          <button
+            onClick={() => setMeta(m => ({ ...m, social_proof_enabled: m.social_proof_enabled === "false" ? "true" : "false" }))}
+            style={{
+              width: 48,
+              height: 26,
+              borderRadius: 13,
+              border: "none",
+              cursor: "pointer",
+              background: meta.social_proof_enabled === "false" ? "#d1d5db" : "#22c55e",
+              position: "relative",
+              transition: "background 0.2s",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: "absolute",
+              top: 3,
+              left: meta.social_proof_enabled === "false" ? 3 : 23,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "#fff",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+              transition: "left 0.2s",
+              display: "block",
+            }} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8, paddingLeft: 4 }}>
+          💡 Tên khách & thành phố được tạo ngẫu nhiên — chỉ mang tính tham khảo, không lấy data thật
+        </div>
+      </Section>
+
       {/* Save button bottom */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={save} disabled={saving}

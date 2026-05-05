@@ -10,6 +10,7 @@ import FacebookPixel from "@components/FacebookPixel"
 import UtmCapture from "@components/UtmCapture"
 import FloatingContact from "@components/FloatingContact"
 import ChatBot from "@components/ChatBot"
+import SocialProofPopup from "@components/SocialProofPopup"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
@@ -38,6 +39,7 @@ export default async function PageLayout({
       <Footer countryCode={countryCode} />
       <FloatingContact />
       {/* <ChatBot /> */}
+      <SocialProofPopup />
     </LocaleProvider>
   )
 }
