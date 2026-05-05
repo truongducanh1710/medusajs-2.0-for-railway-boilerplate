@@ -759,6 +759,68 @@ export default function ProductPageBuilder({
         setPublished(false)
       })
 
+      // ── "Thêm 5 đánh giá" command cho block customer-reviews ──────────────
+      const REVIEW_POOL = [
+        { initials:"PL", grad:"#f7971e,#ffd200", name:"Phạm Thị Linh",  loc:"Hải Phòng",   stars:5, text:"Sản phẩm dùng rất bền, đã mua lần 2. Giao hàng nhanh, shop chăm sóc khách hàng tốt.", date:"3 tuần trước", hasImg:false },
+        { initials:"HD", grad:"#11998e,#38ef7d", name:"Hoàng Văn Dũng",  loc:"Cần Thơ",     stars:5, text:"Đây là lần thứ 3 tôi mua. Không bao giờ thất vọng, chắc chắn sẽ tiếp tục ủng hộ shop!", date:"1 tháng trước", hasImg:true },
+        { initials:"MT", grad:"#ee0979,#ff6a00", name:"Mai Thị Thu",      loc:"Huế",         stars:5, text:"Hàng y như hình, chất lượng tốt. Đóng gói kỹ, không bị móp. Sẽ giới thiệu cho bạn bè.", date:"2 tuần trước", hasImg:false },
+        { initials:"NM", grad:"#667eea,#764ba2", name:"Ngô Văn Minh",    loc:"Đồng Nai",    stars:4, text:"Sản phẩm ổn, giá hợp lý. Giao hơi chậm 1 ngày nhưng chất lượng thì không chê vào đâu.", date:"5 ngày trước", hasImg:false },
+        { initials:"BH", grad:"#4ECDC4,#44A08D", name:"Bùi Thị Hằng",   loc:"Bình Dương",  stars:5, text:"Mua về dùng thử, thích quá nên mua thêm 2 cái nữa. Chất liệu tốt, không bị phai màu.", date:"1 tuần trước", hasImg:true },
+        { initials:"VT", grad:"#FF6B6B,#FF8E53", name:"Vũ Thị Thanh",   loc:"Hà Nội",      stars:5, text:"Shop nhiệt tình, hàng đẹp đúng như quảng cáo. Giao hàng nhanh trong ngày. 5 sao!", date:"4 ngày trước", hasImg:false },
+        { initials:"ĐQ", grad:"#f7971e,#ffd200", name:"Đặng Văn Quân",  loc:"Vũng Tàu",   stars:5, text:"Mua tặng vợ, vợ thích lắm. Sản phẩm chắc chắn, dùng hàng ngày vẫn không bị hỏng.", date:"2 tháng trước", hasImg:false },
+        { initials:"TL", grad:"#11998e,#38ef7d", name:"Trịnh Thị Lan",  loc:"Nam Định",    stars:5, text:"Lần đầu mua online mà nhận được hàng đúng như mô tả, rất hài lòng. Sẽ ủng hộ shop dài dài.", date:"3 ngày trước", hasImg:true },
+        { initials:"PH", grad:"#667eea,#764ba2", name:"Phan Văn Hùng",  loc:"Nghệ An",     stars:4, text:"Chất lượng tốt, giá cạnh tranh. Đóng gói đẹp, phù hợp làm quà tặng. Khá hài lòng.", date:"6 ngày trước", hasImg:false },
+        { initials:"LN", grad:"#ee0979,#ff6a00", name:"Lý Thị Nga",     loc:"Cà Mau",      stars:5, text:"Mua 3 lần rồi, lần nào cũng hài lòng. Hàng bền, đẹp, xứng đáng với giá tiền.", date:"2 tuần trước", hasImg:false },
+        { initials:"ĐL", grad:"#4ECDC4,#44A08D", name:"Đinh Thị Liên",  loc:"Thái Bình",   stars:5, text:"Giao hàng siêu nhanh, chỉ 1 ngày đã nhận được. Sản phẩm y chang hình, rất chất lượng!", date:"8 ngày trước", hasImg:true },
+        { initials:"TT", grad:"#FF6B6B,#FF8E53", name:"Tống Văn Tài",   loc:"Kiên Giang",  stars:5, text:"Shop tư vấn nhiệt tình, giao hàng đúng hẹn. Sản phẩm dùng rất tốt, đáng tiền.", date:"5 tuần trước", hasImg:false },
+        { initials:"HM", grad:"#f7971e,#ffd200", name:"Huỳnh Thị Mai",  loc:"Tiền Giang",  stars:5, text:"Đặt hàng tối, sáng hôm sau đã giao. Sản phẩm đẹp, đúng size, không bị lỗi. Rất hài lòng!", date:"1 tuần trước", hasImg:false },
+        { initials:"CV", grad:"#11998e,#38ef7d", name:"Cao Văn Vinh",   loc:"Lâm Đồng",    stars:4, text:"Chất lượng khá tốt so với giá. Chỉ mong shop có thêm màu sắc đa dạng hơn. Sẽ mua lại.", date:"2 ngày trước", hasImg:true },
+        { initials:"NQ", grad:"#667eea,#764ba2", name:"Nguyễn Thị Quỳnh", loc:"Hải Dương", stars:5, text:"Mua tặng sinh nhật mẹ, mẹ thích lắm. Đóng gói quà rất đẹp, shop còn kèm thiệp chúc mừng.", date:"4 tuần trước", hasImg:false },
+      ]
+
+      const makeReviewCard = (r: typeof REVIEW_POOL[0]) =>
+        `<div class="card">${r.hasImg ? `<img class="card-img" src="https://placehold.co/600x280/fef3c7/92400e?text=Ảnh+khách+chụp" alt="" />` : ""}<div class="card-body"><div class="avatar-row"><div class="avatar" style="background:linear-gradient(135deg,${r.grad})">${r.initials}</div><div><div class="reviewer-name">${r.name} <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">${r.loc} · ${r.date}</div></div></div><div class="stars">${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)}</div><p class="text">"${r.text}"</p></div></div>`
+
+      let reviewPoolIdx = 4 // block mặc định đã dùng 4 review đầu
+
+      editor.Commands.add("pvb-add-5-reviews", {
+        run(ed: any) {
+          const wrapper = ed.getWrapper()
+          const sections = wrapper.find(".pvb-rev2")
+          if (!sections.length) return
+          // Tìm section được select hoặc lấy cái đầu tiên
+          const selected = ed.getSelected()
+          const section = (selected && selected.getEl()?.closest(".pvb-rev2"))
+            ? selected.closest(".pvb-rev2") || sections[0]
+            : sections[0]
+          const grids = section.find ? section.find(".grid") : wrapper.find(".pvb-rev2 .grid")
+          const grid = grids[0] || wrapper.find(".pvb-rev2 .grid")[0]
+          if (!grid) return
+          for (let i = 0; i < 5; i++) {
+            const r = REVIEW_POOL[reviewPoolIdx % REVIEW_POOL.length]
+            reviewPoolIdx++
+            grid.append(makeReviewCard(r), { at: grid.components().length })
+          }
+        },
+      })
+
+      // Thêm toolbar button khi chọn component trong pvb-rev2
+      editor.on("component:selected", (component: any) => {
+        const el = component.getEl()
+        if (!el) return
+        const isRevSection = el.classList.contains("pvb-rev2") || !!el.closest?.(".pvb-rev2")
+        if (!isRevSection) return
+        const toolbar: any[] = component.get("toolbar") || []
+        if (toolbar.find((t: any) => t.command === "pvb-add-5-reviews")) return
+        toolbar.unshift({
+          attributes: { title: "Thêm 5 đánh giá", style: "font-size:11px;padding:0 6px;font-weight:700" },
+          label: "+5 ⭐",
+          command: "pvb-add-5-reviews",
+        })
+        component.set("toolbar", toolbar)
+      })
+      // ─────────────────────────────────────────────────────────────────────
+
       setReady(true)
       setLoading(false)
     }
