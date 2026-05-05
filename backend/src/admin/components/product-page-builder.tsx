@@ -547,6 +547,106 @@ const blocks: BuilderBlock[] = [
       </section>
     `,
   },
+  // ─── SOCIAL PROOF ────────────────────────────────────────────────────────────
+  {
+    id: "customer-reviews",
+    label: "⭐ Đánh giá khách hàng",
+    category: "Social Proof",
+    content: `
+      <style>
+        .pvb-rev2{padding:40px 16px;background:#fafafa}
+        .pvb-rev2 .inner{max-width:860px;margin:0 auto}
+        .pvb-rev2 h2{font-size:clamp(18px,4vw,24px);font-weight:900;color:#111827;margin:0 0 20px}
+        .pvb-rev2 .summary{display:flex;gap:20px;align-items:flex-start;background:#fff;border-radius:16px;padding:18px;border:1px solid #f1f5f9;box-shadow:0 1px 6px rgba(0,0,0,0.05);margin-bottom:20px;flex-wrap:wrap}
+        .pvb-rev2 .score-box{text-align:center;min-width:80px}
+        .pvb-rev2 .score-num{font-size:44px;font-weight:900;color:#111827;line-height:1}
+        .pvb-rev2 .score-stars{color:#f59e0b;font-size:16px;margin:4px 0}
+        .pvb-rev2 .score-count{font-size:11px;color:#9ca3af}
+        .pvb-rev2 .bars{flex:1;min-width:160px;display:flex;flex-direction:column;gap:5px}
+        .pvb-rev2 .bar-row{display:flex;align-items:center;gap:7px;font-size:12px}
+        .pvb-rev2 .bar-label{width:22px;text-align:right;color:#6b7280;font-weight:600}
+        .pvb-rev2 .bar-track{flex:1;height:7px;background:#f1f5f9;border-radius:4px;overflow:hidden}
+        .pvb-rev2 .bar-fill{height:100%;background:#f59e0b;border-radius:4px}
+        .pvb-rev2 .bar-pct{width:28px;color:#9ca3af;font-size:11px}
+        .pvb-rev2 .grid{columns:2 260px;gap:12px}
+        .pvb-rev2 .card{break-inside:avoid;margin-bottom:12px;background:#fff;border-radius:12px;border:1px solid #f1f5f9;box-shadow:0 1px 5px rgba(0,0,0,0.05);overflow:hidden}
+        .pvb-rev2 .card-img{width:100%;max-height:200px;object-fit:cover;display:block}
+        .pvb-rev2 .card-body{padding:12px 14px}
+        .pvb-rev2 .avatar-row{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+        .pvb-rev2 .avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}
+        .pvb-rev2 .reviewer-name{font-weight:700;font-size:13px;color:#111827}
+        .pvb-rev2 .reviewer-meta{font-size:11px;color:#9ca3af}
+        .pvb-rev2 .badge{font-size:10px;font-weight:700;color:#059669;background:#d1fae5;border-radius:4px;padding:1px 5px;margin-left:4px}
+        .pvb-rev2 .stars{color:#f59e0b;font-size:13px;margin-bottom:5px}
+        .pvb-rev2 .text{font-size:13px;color:#374151;line-height:1.6;margin:0}
+        @media(max-width:480px){.pvb-rev2 .grid{columns:1}}
+        @media(min-width:640px){.pvb-rev2{padding:56px 24px}}
+      </style>
+      <section class="pvb-rev2">
+        <div class="inner">
+          <h2>⭐ Đánh giá từ khách hàng thực tế</h2>
+          <div class="summary">
+            <div class="score-box">
+              <div class="score-num">4.8</div>
+              <div class="score-stars">★★★★★</div>
+              <div class="score-count">1,247 đánh giá</div>
+            </div>
+            <div class="bars">
+              <div class="bar-row"><span class="bar-label">5★</span><div class="bar-track"><div class="bar-fill" style="width:89%"></div></div><span class="bar-pct">89%</span></div>
+              <div class="bar-row"><span class="bar-label">4★</span><div class="bar-track"><div class="bar-fill" style="width:8%"></div></div><span class="bar-pct">8%</span></div>
+              <div class="bar-row"><span class="bar-label">3★</span><div class="bar-track"><div class="bar-fill" style="width:2%"></div></div><span class="bar-pct">2%</span></div>
+              <div class="bar-row"><span class="bar-label">2★</span><div class="bar-track"><div class="bar-fill" style="width:1%"></div></div><span class="bar-pct">1%</span></div>
+              <div class="bar-row"><span class="bar-label">1★</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><span class="bar-pct">0%</span></div>
+            </div>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <img class="card-img" src="https://placehold.co/600x300/fef3c7/92400e?text=Ảnh+khách+chụp" alt="Ảnh review" />
+              <div class="card-body">
+                <div class="avatar-row">
+                  <div class="avatar" style="background:linear-gradient(135deg,#FF6B6B,#FF8E53)">NL</div>
+                  <div><div class="reviewer-name">Nguyễn Thị Lan <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">Hà Nội · 2 ngày trước</div></div>
+                </div>
+                <div class="stars">★★★★★</div>
+                <p class="text">"Sản phẩm rất tốt, chất lượng vượt mong đợi! Giao hàng nhanh, đóng gói cẩn thận."</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-body">
+                <div class="avatar-row">
+                  <div class="avatar" style="background:linear-gradient(135deg,#4ECDC4,#44A08D)">TN</div>
+                  <div><div class="reviewer-name">Trần Văn Nam <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">TP.HCM · 1 tuần trước</div></div>
+                </div>
+                <div class="stars">★★★★★</div>
+                <p class="text">"Dùng được 1 tháng vẫn tốt, giá hợp lý. Chất lượng tương xứng với giá tiền, rất hài lòng."</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-body">
+                <div class="avatar-row">
+                  <div class="avatar" style="background:linear-gradient(135deg,#667eea,#764ba2)">LH</div>
+                  <div><div class="reviewer-name">Lê Thị Hoa <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">Đà Nẵng · 2 tuần trước</div></div>
+                </div>
+                <div class="stars">★★★★★</div>
+                <p class="text">"Mua về tặng mẹ, mẹ thích lắm! Sản phẩm đúng như mô tả, shop tư vấn nhiệt tình."</p>
+              </div>
+            </div>
+            <div class="card">
+              <img class="card-img" src="https://placehold.co/600x280/fef3c7/92400e?text=Ảnh+khách+chụp+2" alt="Ảnh review" />
+              <div class="card-body">
+                <div class="avatar-row">
+                  <div class="avatar" style="background:linear-gradient(135deg,#f7971e,#ffd200)">PL</div>
+                  <div><div class="reviewer-name">Phạm Thị Linh <span class="badge">✅ Đã mua</span></div><div class="reviewer-meta">Hải Phòng · 3 tuần trước</div></div>
+                </div>
+                <div class="stars">★★★★☆</div>
+                <p class="text">"Sản phẩm khá ổn, giao hàng đúng hẹn. Chỉ tiếc bao bì hơi đơn giản nhưng bên trong rất tốt."</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    `,
+  },
 ]
 
 export default function ProductPageBuilder({
