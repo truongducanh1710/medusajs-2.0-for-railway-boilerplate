@@ -445,7 +445,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       {/* Sticky buy bar — appears when BundleSelector scrolls off screen */}
       <StickyBuyBar product={product} region={region} anchorId="bundle-selector" />
 
-      {/* <ProductChatContextInjector context={productContext} /> */}
+      <ProductChatContextInjector context={productContext} productName={product.title || ""} />
     </div>
   )
 }

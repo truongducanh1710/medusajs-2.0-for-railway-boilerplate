@@ -2,14 +2,17 @@
 
 import { useEffect } from "react"
 
-export default function ProductChatContextInjector({ context }: { context: string }) {
+type Props = { context: string; productName: string }
+
+export default function ProductChatContextInjector({ context, productName }: Props) {
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("chatbot-set-context", { detail: context }))
+    window.dispatchEvent(new CustomEvent("socialproof-set-product", { detail: productName }))
     return () => {
-      // Reset context khi rời trang sản phẩm
       window.dispatchEvent(new CustomEvent("chatbot-set-context", { detail: "" }))
+      window.dispatchEvent(new CustomEvent("socialproof-set-product", { detail: "" }))
     }
-  }, [context])
+  }, [context, productName])
 
   return null
 }
