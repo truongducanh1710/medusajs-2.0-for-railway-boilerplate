@@ -1043,69 +1043,31 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         )}
       </div>
 
-      {/* ── METADATA SECTIONS (dimmed when page builder active) ── */}
-      <div style={{ opacity: hasPageContent ? 0.5 : 1, pointerEvents: hasPageContent ? "none" : "auto", transition: "opacity 0.2s" }}>
-        {hasPageContent && (
-          <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 8, padding: "8px 14px", marginBottom: 10, fontSize: 12, color: "#92400e" }}>
-            ⚠️ Page Builder đang active — các section bên dưới bị ẩn trên storefront. Xóa Page Builder để dùng lại.
-          </div>
-        )}
-
-      {/* 1. Video */}
-      <Toggle label="🎬 Video Demo" enabled={showVideo} onToggle={() => setShowVideo(!showVideo)}>
-        <Input
-          label="YouTube URL"
-          value={meta.video_url || ""}
-          onChange={v => setM("video_url", v)}
-          placeholder="https://youtube.com/watch?v=..."
-        />
-      </Toggle>
-
-      {/* 2. Pain Points */}
-      <Toggle label="😤 Pain Points & Giải pháp" enabled={showPain} onToggle={() => setShowPain(!showPain)}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <p style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", marginBottom: 8 }}>❌ Vấn đề khách hàng gặp</p>
-            {[1, 2, 3].map(i => (
-              <Input key={i} label={`Vấn đề ${i}`} value={meta[`pain_${i}` as keyof Meta] || ""}
-                onChange={v => setM(`pain_${i}`, v)} placeholder="VD: Chảo cũ hay dính, khó rửa" />
-            ))}
-          </div>
-          <div>
-            <p style={{ fontSize: 12, fontWeight: 700, color: "#22c55e", marginBottom: 8 }}>✅ Giải pháp của bạn</p>
-            {[1, 2, 3].map(i => (
-              <Input key={i} label={`Giải pháp ${i}`} value={meta[`solution_${i}` as keyof Meta] || ""}
-                onChange={v => setM(`solution_${i}`, v)} placeholder="VD: Chống dính vượt trội, 0 dầu" />
-            ))}
-          </div>
+      {/* ── HERO BULLET BENEFITS (luôn hiển thị, không bị ẩn bởi Page Builder) ── */}
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 8 }}>
+        <div style={{ background: "#fff7ed", padding: "10px 14px", borderBottom: "1px solid #fed7aa" }}>
+          <p style={{ fontWeight: 700, fontSize: 13, color: "#c2410c", margin: 0 }}>✨ Bullet Benefits — Hero Section</p>
+          <p style={{ fontSize: 11, color: "#9a3412", margin: "2px 0 0" }}>Hiển thị ngay dưới tên sản phẩm. Tối đa 4 dòng — để trống dòng nào thì ẩn dòng đó.</p>
         </div>
-      </Toggle>
-
-      {/* 3. Benefits */}
-      <Toggle label="⭐ Điểm nổi bật (4 benefit)" enabled={showBenefits} onToggle={() => setShowBenefits(!showBenefits)}>
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8, marginBottom: 8 }}>
-            <Input label={i === 1 ? "Icon" : ""} value={meta[`benefit_icon_${i}` as keyof Meta] || ""}
-              onChange={v => setM(`benefit_icon_${i}`, v)} placeholder="🔥" />
-            <Input label={i === 1 ? "Tiêu đề" : ""} value={meta[`benefit_title_${i}` as keyof Meta] || ""}
-              onChange={v => setM(`benefit_title_${i}`, v)} placeholder="Chống dính vượt trội" />
-            <Input label={i === 1 ? "Mô tả ngắn" : ""} value={meta[`benefit_desc_${i}` as keyof Meta] || ""}
-              onChange={v => setM(`benefit_desc_${i}`, v)} placeholder="Ceramic cao cấp..." />
-          </div>
-        ))}
-      </Toggle>
-
-      {/* 4. Specs */}
-      <Toggle label="📋 Thông số kỹ thuật" enabled={showSpecs} onToggle={() => setShowSpecs(!showSpecs)}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <Input label="Chất liệu" value={meta.chat_lieu || ""} onChange={v => setM("chat_lieu", v)} placeholder="Inox 304" />
-          <Input label="Kích thước" value={meta.kich_thuoc || ""} onChange={v => setM("kich_thuoc", v)} placeholder="28cm x 8cm" />
-          <Input label="Xuất xứ" value={meta.xuat_xu || ""} onChange={v => setM("xuat_xu", v)} placeholder="Việt Nam" />
-          <Input label="Bảo hành" value={meta.bao_hanh || ""} onChange={v => setM("bao_hanh", v)} placeholder="12 tháng" />
-          <Input label="Màu sắc" value={meta.mau_sac || ""} onChange={v => setM("mau_sac", v)} placeholder="Đen, Đỏ" />
-          <Input label="Trọng lượng" value={meta.trong_luong || ""} onChange={v => setM("trong_luong", v)} placeholder="500g" />
+        <div style={{ padding: "12px 14px" }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "56px 1fr", gap: 8, marginBottom: 8 }}>
+              <Input
+                label={i === 1 ? "Icon" : ""}
+                value={meta[`benefit_icon_${i}` as keyof Meta] || ""}
+                onChange={v => setM(`benefit_icon_${i}`, v)}
+                placeholder="🔥"
+              />
+              <Input
+                label={i === 1 ? "Nội dung bullet" : ""}
+                value={meta[`benefit_title_${i}` as keyof Meta] || ""}
+                onChange={v => setM(`benefit_title_${i}`, v)}
+                placeholder={["Chống dính vượt trội — lớp phủ ceramic cao cấp", "Tiết kiệm dầu mỡ — nấu ăn lành mạnh hơn", "Bền bỉ theo thời gian — bảo hành 12 tháng", "Thiết kế sang trọng — phù hợp mọi bếp"][i - 1]}
+              />
+            </div>
+          ))}
         </div>
-      </Toggle>
+      </div>
 
       {/* 5. Reviews */}
       <Toggle label="💬 Đánh giá khách hàng" enabled={showReviews} onToggle={() => setShowReviews(!showReviews)}>
@@ -1365,8 +1327,6 @@ const ProductContentWidget = ({ data }: { data: any }) => {
           </button>
         )}
       </Toggle>
-
-      </div>{/* end metadata wrapper */}
 
       <ProductPageBuilder
         open={builderOpen}
