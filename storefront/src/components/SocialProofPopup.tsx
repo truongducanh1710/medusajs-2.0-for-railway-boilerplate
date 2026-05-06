@@ -71,6 +71,7 @@ export default function SocialProofPopup({
   const [stickyBarOn, setStickyBarOn] = useState(false)
   const activeProducts = products
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const mountedRef = useRef(false)
 
   useEffect(() => { setEnabled(enabledProp) }, [enabledProp])
 
@@ -82,6 +83,9 @@ export default function SocialProofPopup({
 
   useEffect(() => {
     if (!enabled) return
+    // Guard against React StrictMode double-mount
+    if (mountedRef.current) return
+    mountedRef.current = true
 
     const show = () => {
       const notif = generateNotification(activeProducts)
@@ -94,6 +98,7 @@ export default function SocialProofPopup({
     const interval = setInterval(show, intervalSec * 1000)
 
     return () => {
+      mountedRef.current = false
       clearTimeout(first)
       clearInterval(interval)
       clearTimeout(timerRef.current)
