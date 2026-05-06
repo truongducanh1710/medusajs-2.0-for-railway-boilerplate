@@ -88,10 +88,13 @@ export default function SocialProofPopup({
     mountedRef.current = true
 
     const show = () => {
-      const notif = generateNotification(activeProducts)
-      setCurrent(notif)
-      setVisible(true)
-      timerRef.current = setTimeout(() => setVisible(false), displaySec * 1000)
+      // Hide first, then swap content, then show — prevents ghost overlap
+      setVisible(false)
+      setTimeout(() => {
+        setCurrent(generateNotification(activeProducts))
+        setVisible(true)
+        timerRef.current = setTimeout(() => setVisible(false), displaySec * 1000)
+      }, 400) // wait for hide transition (0.35s)
     }
 
     const first = setTimeout(show, delaySec * 1000)
@@ -112,17 +115,13 @@ export default function SocialProofPopup({
       style={{
         position: "fixed",
         bottom: stickyBarOn ? 80 : 24,
-        left: 0,
-        right: 0,
+        left: 12,
         zIndex: 9997,
+        maxWidth: "calc(100vw - 160px)",
         transform: visible ? "translateY(0)" : "translateY(20px)",
         opacity: visible ? 1 : 0,
         transition: "bottom 0.3s ease, opacity 0.35s, transform 0.35s cubic-bezier(.34,1.2,.64,1)",
         pointerEvents: visible ? "auto" : "none",
-        display: "flex",
-        justifyContent: "flex-start",
-        paddingLeft: 12,
-        paddingRight: 140,
       }}
     >
       <div
