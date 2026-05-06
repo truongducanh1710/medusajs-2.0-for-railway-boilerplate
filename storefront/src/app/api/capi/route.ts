@@ -4,10 +4,12 @@ import { getStoreMetadata } from "@lib/data/store"
 export async function POST(req: NextRequest) {
   const storeMeta = await getStoreMetadata()
   const pixelId =
-    process.env.FB_PIXEL_ID ||
     storeMeta.fb_pixel_id ||
+    process.env.FB_PIXEL_ID ||
     process.env.NEXT_PUBLIC_FB_PIXEL_ID
-  const accessToken = process.env.FB_CAPI_ACCESS_TOKEN
+  const accessToken =
+    storeMeta.fb_capi_token ||
+    process.env.FB_CAPI_ACCESS_TOKEN
 
   if (!pixelId || !accessToken) {
     return NextResponse.json({ ok: false, reason: "capi not configured" }, { status: 200 })

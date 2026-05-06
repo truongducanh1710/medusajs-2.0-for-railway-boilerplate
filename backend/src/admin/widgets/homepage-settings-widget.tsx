@@ -271,8 +271,22 @@ function HomepageSettingsWidget() {
           value={val("fb_pixel_id")}
           onChange={set("fb_pixel_id")}
         />
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 4 }}>CAPI Access Token</div>
+          <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 6 }}>Lấy từ Meta Events Manager → Pixel → Settings → Conversions API → Generate access token</div>
+          <input
+            type="password"
+            value={val("fb_capi_token")}
+            onChange={e => set("fb_capi_token")(e.target.value)}
+            placeholder="EAAxxxxx..."
+            style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, outline: "none", boxSizing: "border-box" }}
+          />
+          {val("fb_capi_token") && (
+            <div style={{ marginTop: 4, fontSize: 11, color: "#22c55e" }}>✅ Token đã được lưu ({val("fb_capi_token").slice(0, 8)}...)</div>
+          )}
+        </div>
         <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#0369a1" }}>
-          💡 Pixel ID này sẽ được áp dụng cho toàn bộ storefront (PageView, ViewContent, AddToCart, Purchase). Access Token CAPI vẫn cần cài trong Railway env var <strong>FB_CAPI_ACCESS_TOKEN</strong>.
+          💡 Pixel ID + Token được lưu trong store metadata (mã hóa). Storefront tự đọc — không cần env var Railway.
         </div>
       </Section>
 
