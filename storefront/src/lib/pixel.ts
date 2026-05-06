@@ -3,25 +3,30 @@ export function generateEventId(): string {
 }
 
 // Send CAPI event via server-side route (keeps access token server-only)
+// pixelId + capiToken: per-product overrides; omit to use global store settings
 export async function sendCAPIViaRoute({
   eventName,
   eventId,
   eventSourceUrl,
   userData = {},
   customData = {},
+  pixelId,
+  capiToken,
 }: {
   eventName: string
   eventId: string
   eventSourceUrl?: string
   userData?: Record<string, string>
   customData?: Record<string, unknown>
+  pixelId?: string
+  capiToken?: string
 }) {
   if (typeof window === "undefined") return
   try {
     await fetch("/api/capi", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventName, eventId, eventSourceUrl, userData, customData }),
+      body: JSON.stringify({ eventName, eventId, eventSourceUrl, userData, customData, pixelId, capiToken }),
     })
   } catch {
     // non-fatal

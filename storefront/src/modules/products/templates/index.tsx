@@ -295,6 +295,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
 
   const videoUrl = meta(product, "video_url")
   const productPixelId = meta(product, "fb_pixel_id")
+  const productCapiToken = meta(product, "fb_capi_token")
   const globalPixelId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
   const allPixelIds = [...new Set([globalPixelId, productPixelId].filter(Boolean))]
 
@@ -328,6 +329,8 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
         productTitle={product.title || ""}
         price={basePrice}
         currency={currency}
+        productPixelId={productPixelId}
+        productCapiToken={productCapiToken}
       />
       {/* Breadcrumb */}
       <div className="bg-gray-50 border-b border-gray-100">

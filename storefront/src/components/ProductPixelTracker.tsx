@@ -17,12 +17,16 @@ export default function ProductPixelTracker({
   productTitle,
   price,
   currency,
+  productPixelId,
+  productCapiToken,
 }: {
   pixelIds: string[]
   productId: string
   productTitle: string
   price: number
   currency: string
+  productPixelId?: string
+  productCapiToken?: string
 }) {
   const scrollFired = useRef(new Set<number>())
   const timeFired = useRef(new Set<number>())
@@ -54,7 +58,7 @@ export default function ProductPixelTracker({
       { eventID: eventId }
     )
 
-    // CAPI dedup
+    // CAPI dedup — global pixel
     sendCAPIViaRoute({
       eventName: "ViewContent",
       eventId,
@@ -67,6 +71,25 @@ export default function ProductPixelTracker({
         currency,
       },
     })
+
+    // CAPI dedup — per-product pixel (only if different from global)
+    const globalId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
+    if (productPixelId && productCapiToken && productPixelId !== globalId) {
+      sendCAPIViaRoute({
+        eventName: "ViewContent",
+        eventId,
+        eventSourceUrl: window.location.href,
+        pixelId: productPixelId,
+        capiToken: productCapiToken,
+        customData: {
+          content_ids: [productId],
+          content_name: productTitle,
+          content_type: "product",
+          value: price / 100,
+          currency,
+        },
+      })
+    }
 
     scrollFired.current.clear()
     timeFired.current.clear()

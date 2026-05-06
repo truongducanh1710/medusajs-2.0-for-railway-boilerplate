@@ -11,10 +11,6 @@ export async function POST(req: NextRequest) {
     storeMeta.fb_capi_token ||
     process.env.FB_CAPI_ACCESS_TOKEN
 
-  if (!pixelId || !accessToken) {
-    return NextResponse.json({ ok: false, reason: "capi not configured" }, { status: 200 })
-  }
-
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -22,8 +18,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "invalid json" }, { status: 400 })
   }
 
-  // Forward the event payload to Meta CAPI
-  const { eventName, eventId, eventSourceUrl, userData = {}, customData = {} } = body as any
+  const { eventName, eventId, eventSourceUrl, userData = {}, customData = {}, pixelId: bodyPixelId, capiToken: bodyCapiToken } = body as any
+
+  // Per-product override takes priority over store/env settings
+  const resolvedPixelId = bodyPixelId || pixelId
+  const resolvedToken = bodyCapiToken || accessToken
+
+  if (!resolvedPixelId || !resolvedToken) {
+    return NextResponse.json({ ok: false, reason: "capi not configured" }, { status: 200 })
+  }
 
   const clientIp =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
+      `https://graph.facebook.com/v19.0/${resolvedPixelId}/events?access_token=${resolvedToken}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
