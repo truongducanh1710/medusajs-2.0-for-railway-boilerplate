@@ -686,15 +686,13 @@ const ProductContentWidget = ({ data }: { data: any }) => {
 
   const buildMeta = (overrides: Partial<Meta> = {}): Record<string, any> => {
     const m: Record<string, any> = { ...meta, ...overrides }
-    // Medusa merge metadata — phải set null để xóa key trên server
-    if (!showVideo) { m.video_url = null }
-    if (!showPain) { m.pain_1 = null; m.pain_2 = null; m.pain_3 = null; m.solution_1 = null; m.solution_2 = null; m.solution_3 = null }
-    if (!showBenefits) {
-      for (let i = 1; i <= 4; i++) {
-        m[`benefit_icon_${i}`] = null; m[`benefit_title_${i}`] = null; m[`benefit_desc_${i}`] = null
-      }
+    // benefit_title/icon luôn được lưu (không có toggle UI)
+    // Xóa null cho benefit fields trống (user xóa trắng input)
+    for (let i = 1; i <= 4; i++) {
+      if (!m[`benefit_title_${i}`]) m[`benefit_title_${i}`] = null
+      if (!m[`benefit_icon_${i}`]) m[`benefit_icon_${i}`] = null
+      if (!m[`benefit_desc_${i}`]) m[`benefit_desc_${i}`] = null
     }
-    if (!showSpecs) { m.chat_lieu = null; m.kich_thuoc = null; m.xuat_xu = null; m.bao_hanh = null; m.mau_sac = null; m.trong_luong = null }
     if (showReviews) m.reviews = JSON.stringify(reviews)
     else m.reviews = null
     if (showFaq) m.faq = JSON.stringify(faqs.filter((f: any) => f.q))
@@ -752,21 +750,38 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     setError("")
     try {
       const finalMeta = buildMeta(overrides)
+
+      // Tách page_content ra — lưu qua route riêng nếu lớn
+      const { page_content, page_content_draft, page_content_versions, ...smallMeta } = finalMeta as any
+
+      // 1. Lưu metadata thường (không có page_content)
       const res = await fetch(`/admin/products/${product.id}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ metadata: finalMeta })
+        body: JSON.stringify({ metadata: smallMeta })
       })
       const resData = await res.json().catch(() => ({}))
       if (!res.ok) {
         throw new Error(`Lưu thất bại (${res.status}): ${resData.message || resData.error || JSON.stringify(resData)}`)
       }
-      // Dùng metadata từ server response để đảm bảo đồng bộ
-      const savedMeta = resData.product?.metadata || finalMeta
-      console.log("[widget] saved metadata:", savedMeta)
-      applyMeta(savedMeta)
-      // Revalidate storefront cache qua backend (tránh CORS)
+
+      // 2. Lưu page_content qua route riêng (nếu có)
+      if (page_content !== undefined || page_content_draft !== undefined || page_content_versions !== undefined) {
+        const contentPatch: Record<string, any> = {}
+        if (page_content !== undefined) contentPatch.page_content = page_content
+        if (page_content_draft !== undefined) contentPatch.page_content_draft = page_content_draft
+        if (page_content_versions !== undefined) contentPatch.page_content_versions = page_content_versions
+        await fetch("/admin/product-content", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: product.id, metadata: contentPatch }),
+        }).catch(() => {})
+      }
+
+      const savedMeta = resData.product?.metadata || smallMeta
+      applyMeta({ ...savedMeta, page_content, page_content_draft, page_content_versions })
       try {
         await fetch("/admin/revalidate", {
           method: "POST",
