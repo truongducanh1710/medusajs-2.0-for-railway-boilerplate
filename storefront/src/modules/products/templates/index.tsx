@@ -295,8 +295,12 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
   const videoUrl = meta(product, "video_url")
   const productPixelId = meta(product, "fb_pixel_id")
   const productCapiToken = meta(product, "fb_capi_token")
+  // globalPixelId is set in store metadata (admin) or env var fallback
+  // NOTE: storePixelId is passed to FacebookPixel in layout — we only need it here
+  // to avoid double-init of per-product pixel. Use env var as approximation at build time;
+  // actual dedup at CAPI level is handled by /api/capi route using store metadata.
   const globalPixelId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
-  const allPixelIds = [...new Set([globalPixelId, productPixelId].filter(Boolean))]
+  const allPixelIds = [...new Set([productPixelId].filter(Boolean))]
 
   const variant = product.variants?.[0]
   const basePrice =

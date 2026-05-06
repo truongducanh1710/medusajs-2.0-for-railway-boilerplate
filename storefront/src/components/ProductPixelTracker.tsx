@@ -34,52 +34,33 @@ export default function ProductPixelTracker({
 
   // ViewContent + init per-product pixels
   useEffect(() => {
-    if (typeof window === "undefined" || !window.fbq) return
+    if (typeof window === "undefined") return
 
-    // Only init per-product pixels not already inited by global FacebookPixel
-    const envGlobalId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
-    for (const id of pixelIds) {
-      if (id && id !== envGlobalId) {
-        window.fbq("init", id)
+    const fire = () => {
+      // Init per-product pixels (global already inited by FacebookPixel in layout)
+      for (const id of pixelIds) {
+        window.fbq?.("init", id)
       }
-    }
 
-    const eventId = generateEventId()
-    window.fbq(
-      "track",
-      "ViewContent",
-      {
-        content_ids: [productId],
-        content_name: productTitle,
-        content_type: "product",
-        value: price / 100,
-        currency,
-      },
-      { eventID: eventId }
-    )
+      const eventId = generateEventId()
+      window.fbq?.(
+        "track",
+        "ViewContent",
+        {
+          content_ids: [productId],
+          content_name: productTitle,
+          content_type: "product",
+          value: price / 100,
+          currency,
+        },
+        { eventID: eventId }
+      )
 
-    // CAPI dedup — global pixel
-    sendCAPIViaRoute({
-      eventName: "ViewContent",
-      eventId,
-      eventSourceUrl: window.location.href,
-      customData: {
-        content_ids: [productId],
-        content_name: productTitle,
-        content_type: "product",
-        value: price / 100,
-        currency,
-      },
-    })
-
-    // CAPI dedup — per-product pixel (only if different from global)
-    if (productPixelId && productCapiToken && productPixelId !== envGlobalId) {
+      // CAPI — global pixel (token from store metadata, handled server-side)
       sendCAPIViaRoute({
         eventName: "ViewContent",
         eventId,
         eventSourceUrl: window.location.href,
-        pixelId: productPixelId,
-        capiToken: productCapiToken,
         customData: {
           content_ids: [productId],
           content_name: productTitle,
@@ -88,11 +69,37 @@ export default function ProductPixelTracker({
           currency,
         },
       })
+
+      // CAPI — per-product pixel (only when has own token)
+      if (productPixelId && productCapiToken) {
+        sendCAPIViaRoute({
+          eventName: "ViewContent",
+          eventId,
+          eventSourceUrl: window.location.href,
+          pixelId: productPixelId,
+          capiToken: productCapiToken,
+          customData: {
+            content_ids: [productId],
+            content_name: productTitle,
+            content_type: "product",
+            value: price / 100,
+            currency,
+          },
+        })
+      }
+
+      scrollFired.current.clear()
+      timeFired.current.clear()
+      startTime.current = Date.now()
     }
 
-    scrollFired.current.clear()
-    timeFired.current.clear()
-    startTime.current = Date.now()
+    // Wait for fbq to be ready (FB script may not be loaded yet)
+    if (window.fbq) {
+      fire()
+    } else {
+      const timer = setTimeout(fire, 1500)
+      return () => clearTimeout(timer)
+    }
   }, [productId])
 
   // Scroll depth tracking
