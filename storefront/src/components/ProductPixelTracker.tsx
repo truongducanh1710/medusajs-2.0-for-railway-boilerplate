@@ -35,6 +35,7 @@ export default function ProductPixelTracker({
   // ViewContent + init per-product pixels
   useEffect(() => {
     if (typeof window === "undefined") return
+    console.log("[Pixel] productPixelId:", productPixelId, "hasToken:", !!productCapiToken)
 
     const fire = () => {
       // Init per-product pixels (global already inited by FacebookPixel in layout)
