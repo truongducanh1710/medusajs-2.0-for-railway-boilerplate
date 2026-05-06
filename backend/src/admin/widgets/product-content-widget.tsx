@@ -600,6 +600,78 @@ function ProductImageUpload({ productId, initialImages }: {
   )
 }
 
+// ─── Pixel Section (isolated to avoid hooks-in-render issues) ─────────────────
+
+function PixelSection({ productId, initialPixelId, initialCapiToken }: {
+  productId: string
+  initialPixelId: string
+  initialCapiToken: string
+}) {
+  const [pixelId, setPixelId] = useState(initialPixelId)
+  const [capiToken, setCapiToken] = useState(initialCapiToken)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState("")
+
+  // Sync nếu props thay đổi (sau khi widget reload metadata)
+  useEffect(() => { setPixelId(initialPixelId) }, [initialPixelId])
+  useEffect(() => { setCapiToken(initialCapiToken) }, [initialCapiToken])
+
+  const savePixel = async () => {
+    setSaving(true)
+    setError("")
+    try {
+      const res = await fetch(`/admin/products/${productId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metadata: {
+            fb_pixel_id: pixelId || null,
+            fb_capi_token: capiToken || null,
+          }
+        })
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(`Lỗi ${res.status}: ${d.message || d.error || "unknown"}`)
+      }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ background: "#f0f4ff", border: "1px solid #c7d7fc", borderRadius: 10, padding: "14px 16px", marginTop: 12 }}>
+      <p style={{ fontWeight: 700, fontSize: 14, color: "#1d4ed8", marginBottom: 10 }}>📊 Facebook Pixel (sản phẩm này)</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 3 }}>Pixel ID</label>
+          <input type="text" value={pixelId} onChange={e => setPixelId(e.target.value)}
+            placeholder="Ví dụ: 1234567890123456"
+            style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 3 }}>Access Token CAPI (server-side)</label>
+          <input type="password" value={capiToken} onChange={e => setCapiToken(e.target.value)}
+            placeholder="EAAxxxx... (không lộ ra client)"
+            style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }} />
+        </div>
+        <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Pixel này fire thêm ViewContent, AddToCart, Purchase riêng cho sản phẩm này.</p>
+        {error && <p style={{ fontSize: 12, color: "#ef4444", margin: 0 }}>{error}</p>}
+        <button onClick={savePixel} disabled={saving}
+          style={{ alignSelf: "flex-end", background: saved ? "#22c55e" : "#1d4ed8", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer" }}>
+          {saved ? "✓ Đã lưu Pixel" : saving ? "Đang lưu..." : "💾 Lưu Pixel"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
 const ProductContentWidget = ({ data }: { data: any }) => {
@@ -754,12 +826,17 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       // Tách page_content ra — lưu qua route riêng nếu lớn
       const { page_content, page_content_draft, page_content_versions, ...smallMeta } = finalMeta as any
 
+      // Lọc bỏ undefined — chỉ giữ string và null (null = xóa key trên Medusa)
+      const cleanMeta = Object.fromEntries(
+        Object.entries(smallMeta).filter(([, v]) => v !== undefined)
+      )
+
       // 1. Lưu metadata thường (không có page_content)
       const res = await fetch(`/admin/products/${product.id}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ metadata: smallMeta })
+        body: JSON.stringify({ metadata: cleanMeta })
       })
       const resData = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -1354,32 +1431,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       />
 
       {/* Facebook Pixel per product */}
-      <div style={{ background: "#f0f4ff", border: "1px solid #c7d7fc", borderRadius: 10, padding: "14px 16px", marginTop: 12 }}>
-        <p style={{ fontWeight: 700, fontSize: 14, color: "#1d4ed8", marginBottom: 10 }}>📊 Facebook Pixel (sản phẩm này)</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 3 }}>Pixel ID</label>
-            <input
-              type="text"
-              value={meta.fb_pixel_id || ""}
-              onChange={e => setMeta(m => ({ ...m, fb_pixel_id: e.target.value }))}
-              placeholder="Ví dụ: 1234567890123456"
-              style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }}
-            />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 3 }}>Access Token CAPI (server-side)</label>
-            <input
-              type="password"
-              value={meta.fb_capi_token || ""}
-              onChange={e => setMeta(m => ({ ...m, fb_capi_token: e.target.value }))}
-              placeholder="EAAxxxx... (không lộ ra client)"
-              style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }}
-            />
-          </div>
-          <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Pixel này sẽ fire thêm ViewContent, AddToCart, Purchase riêng cho sản phẩm này.</p>
-        </div>
-      </div>
+      <PixelSection productId={product.id} initialPixelId={meta.fb_pixel_id || ""} initialCapiToken={meta.fb_capi_token || ""} />
 
       {/* Social Proof per product */}
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginTop: 12 }}>
