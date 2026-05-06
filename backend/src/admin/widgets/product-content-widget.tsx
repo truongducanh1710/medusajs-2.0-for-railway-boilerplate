@@ -602,20 +602,26 @@ function ProductImageUpload({ productId, initialImages }: {
 
 // ─── Pixel Section (isolated to avoid hooks-in-render issues) ─────────────────
 
-function PixelSection({ productId, initialPixelId, initialCapiToken }: {
-  productId: string
-  initialPixelId: string
-  initialCapiToken: string
-}) {
-  const [pixelId, setPixelId] = useState(initialPixelId)
-  const [capiToken, setCapiToken] = useState(initialCapiToken)
+function PixelSection({ productId }: { productId: string }) {
+  const [pixelId, setPixelId] = useState("")
+  const [capiToken, setCapiToken] = useState("")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
+  const [loaded, setLoaded] = useState(false)
 
-  // Sync nếu props thay đổi (sau khi widget reload metadata)
-  useEffect(() => { setPixelId(initialPixelId) }, [initialPixelId])
-  useEffect(() => { setCapiToken(initialCapiToken) }, [initialCapiToken])
+  // Fetch pixel data trực tiếp — không phụ thuộc meta state của parent
+  useEffect(() => {
+    fetch(`/admin/products/${productId}`, { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        const m = d.product?.metadata || {}
+        setPixelId(m.fb_pixel_id || "")
+        setCapiToken(m.fb_capi_token || "")
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [productId])
 
   const savePixel = async () => {
     setSaving(true)
@@ -662,8 +668,9 @@ function PixelSection({ productId, initialPixelId, initialCapiToken }: {
             style={{ width: "100%", padding: "6px 10px", border: "1px solid #c7d7fc", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }} />
         </div>
         <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Pixel này fire thêm ViewContent, AddToCart, Purchase riêng cho sản phẩm này.</p>
+        {!loaded && <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Đang tải...</p>}
         {error && <p style={{ fontSize: 12, color: "#ef4444", margin: 0 }}>{error}</p>}
-        <button onClick={savePixel} disabled={saving}
+        <button onClick={savePixel} disabled={saving || !loaded}
           style={{ alignSelf: "flex-end", background: saved ? "#22c55e" : "#1d4ed8", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer" }}>
           {saved ? "✓ Đã lưu Pixel" : saving ? "Đang lưu..." : "💾 Lưu Pixel"}
         </button>
@@ -1431,7 +1438,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       />
 
       {/* Facebook Pixel per product */}
-      <PixelSection productId={product.id} initialPixelId={meta.fb_pixel_id || ""} initialCapiToken={meta.fb_capi_token || ""} />
+      <PixelSection productId={product.id} />
 
       {/* Social Proof per product */}
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginTop: 12 }}>
