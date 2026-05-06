@@ -48,11 +48,29 @@ export default async function ProductPage({ params }: Props) {
     notFound()
   }
 
+  const productPixelId = pricedProduct.metadata?.fb_pixel_id as string | undefined
+
   return (
-    <ProductTemplate
-      product={pricedProduct}
-      region={region}
-      countryCode={params.countryCode}
-    />
+    <>
+      {productPixelId && (
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  var f=window.fbq;
+  if(!f){var n=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!window._fbq)window._fbq=n;n.push=n;n.loaded=true;n.version='2.0';n.queue=[];window.fbq=n;}
+  window.fbq('init','${productPixelId}');
+})();
+`,
+          }}
+        />
+      )}
+      <ProductTemplate
+        product={pricedProduct}
+        region={region}
+        countryCode={params.countryCode}
+      />
+    </>
   )
 }
