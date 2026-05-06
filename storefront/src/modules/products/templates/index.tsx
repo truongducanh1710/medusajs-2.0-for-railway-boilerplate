@@ -12,7 +12,6 @@ import BundleSelector from "@modules/products/components/bundle-selector"
 import ProductPageContent from "@modules/products/components/product-page-content"
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import ProductChatContextInjector from "@components/ProductChatContextInjector"
-import SocialProofPopup from "@components/SocialProofPopup"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -447,16 +446,17 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       </div>
 
       {/* Sticky buy bar — appears when BundleSelector scrolls off screen */}
-      <StickyBuyBar product={product} region={region} anchorId="bundle-selector" />
+      <StickyBuyBar
+        product={product}
+        region={region}
+        anchorId="bundle-selector"
+        socialEnabled={meta(product, "social_proof_enabled") !== "false"}
+        socialDelaySec={Number(meta(product, "social_proof_delay") || 12)}
+        socialIntervalSec={Number(meta(product, "social_proof_interval") || 30)}
+        socialDisplaySec={Number(meta(product, "social_proof_display") || 5)}
+      />
 
       <ProductChatContextInjector context={productContext} productName={product.title || ""} />
-      <SocialProofPopup
-        products={[product.title || ""]}
-        enabled={meta(product, "social_proof_enabled") !== "false"}
-        delaySec={Number(meta(product, "social_proof_delay") || 12)}
-        intervalSec={Number(meta(product, "social_proof_interval") || 30)}
-        displaySec={Number(meta(product, "social_proof_display") || 5)}
-      />
     </div>
   )
 }
