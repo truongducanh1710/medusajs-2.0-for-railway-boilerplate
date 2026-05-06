@@ -263,6 +263,19 @@ function HomepageSettingsWidget() {
         </div>
       </Section>
 
+      {/* Section: Facebook Pixel */}
+      <Section title="📊 Facebook Pixel & Tracking">
+        <TextField
+          label="Facebook Pixel ID"
+          hint="Lấy từ Meta Business Manager → Events Manager → Pixel. VD: 1253926913606924"
+          value={val("fb_pixel_id")}
+          onChange={set("fb_pixel_id")}
+        />
+        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#0369a1" }}>
+          💡 Pixel ID này sẽ được áp dụng cho toàn bộ storefront (PageView, ViewContent, AddToCart, Purchase). Access Token CAPI vẫn cần cài trong Railway env var <strong>FB_CAPI_ACCESS_TOKEN</strong>.
+        </div>
+      </Section>
+
       {/* Section: Social Proof Popup */}
       <Section title="🔔 Thông báo khách vừa mua (Social Proof)">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e5e7eb" }}>

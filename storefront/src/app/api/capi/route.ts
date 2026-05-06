@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getStoreMetadata } from "@lib/data/store"
 
 export async function POST(req: NextRequest) {
-  const pixelId = process.env.FB_PIXEL_ID || process.env.NEXT_PUBLIC_FB_PIXEL_ID
+  const storeMeta = await getStoreMetadata()
+  const pixelId =
+    process.env.FB_PIXEL_ID ||
+    storeMeta.fb_pixel_id ||
+    process.env.NEXT_PUBLIC_FB_PIXEL_ID
   const accessToken = process.env.FB_CAPI_ACCESS_TOKEN
 
   if (!pixelId || !accessToken) {

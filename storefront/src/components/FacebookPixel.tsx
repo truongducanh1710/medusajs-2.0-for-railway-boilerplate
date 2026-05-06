@@ -56,13 +56,20 @@ function loadFbScript(pixelId: string, onReady: () => void) {
   document.head.appendChild(script)
 }
 
-export default function FacebookPixel({ pixelIds: extraIds = [] }: { pixelIds?: string[] }) {
+export default function FacebookPixel({
+  pixelIds: extraIds = [],
+  storePixelId = "",
+}: {
+  pixelIds?: string[]
+  storePixelId?: string
+}) {
   const pathname = usePathname()
   const initialized = useRef(false)
 
-  // Read at client runtime — NEXT_PUBLIC vars are inlined at build time
+  // storePixelId (from store metadata, set in admin) takes priority over env var
   const envPixelId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
-  const allIds = [...new Set([envPixelId, ...extraIds].filter(Boolean))]
+  const primaryId = storePixelId || envPixelId
+  const allIds = [...new Set([primaryId, ...extraIds].filter(Boolean))]
 
   useEffect(() => {
     if (!allIds.length) return

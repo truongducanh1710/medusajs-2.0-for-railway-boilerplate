@@ -11,6 +11,7 @@ import UtmCapture from "@components/UtmCapture"
 import FloatingContact from "@components/FloatingContact"
 import ChatBot from "@components/ChatBot"
 import SocialProofPopup from "@components/SocialProofPopup"
+import { getStoreMetadata } from "@lib/data/store"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
@@ -25,10 +26,12 @@ export default async function PageLayout({
 }) {
   const { countryCode } = await params
   const locale = localeFromCountryCode(countryCode)
+  const storeMeta = await getStoreMetadata()
+  const storePixelId = storeMeta.fb_pixel_id || ""
 
   return (
     <LocaleProvider locale={locale}>
-      <FacebookPixel />
+      <FacebookPixel storePixelId={storePixelId} />
       <Suspense fallback={null}>
         <UtmCapture />
       </Suspense>
