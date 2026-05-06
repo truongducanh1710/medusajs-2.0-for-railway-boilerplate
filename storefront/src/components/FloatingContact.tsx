@@ -56,7 +56,7 @@ export default function FloatingContact() {
 
   return (
     <div
-      className="flex"
+      className="hidden lg:flex"
       style={{
         position: "fixed",
         bottom: bottomPx,
