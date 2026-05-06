@@ -137,7 +137,7 @@ export default function ProductReviewsJudgeMe({ product }: { product: HttpTypes.
                 <img
                   src={r.photo_url}
                   alt={`Ảnh đánh giá của ${r.name}`}
-                  style={{ width: "100%", maxHeight: 220, objectFit: "cover", display: "block", cursor: "pointer" }}
+                  style={{ width: "100%", aspectRatio: "4/3", objectFit: "contain", background: "#f8f8f6", display: "block", cursor: "pointer" }}
                   onClick={() => window.open(r.photo_url, "_blank")}
                 />
               )}

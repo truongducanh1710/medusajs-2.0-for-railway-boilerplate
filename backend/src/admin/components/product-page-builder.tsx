@@ -570,7 +570,7 @@ const blocks: BuilderBlock[] = [
         .pvb-rev2 .bar-pct{width:28px;color:#9ca3af;font-size:11px}
         .pvb-rev2 .grid{columns:2 260px;gap:12px}
         .pvb-rev2 .card{break-inside:avoid;margin-bottom:12px;background:#fff;border-radius:12px;border:1px solid #f1f5f9;box-shadow:0 1px 5px rgba(0,0,0,0.05);overflow:hidden}
-        .pvb-rev2 .card-img{width:100%;max-height:200px;object-fit:cover;display:block}
+        .pvb-rev2 .card-img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#f8f8f6;display:block}
         .pvb-rev2 .card-body{padding:12px 14px}
         .pvb-rev2 .avatar-row{display:flex;align-items:center;gap:9px;margin-bottom:7px}
         .pvb-rev2 .avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}
