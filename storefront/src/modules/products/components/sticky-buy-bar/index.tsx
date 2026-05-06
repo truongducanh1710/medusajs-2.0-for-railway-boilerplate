@@ -124,16 +124,19 @@ export default function StickyBuyBar({
         visible ? "translate-y-0" : "translate-y-full"
       }`}
     >
-      {/* Social Proof row — dính ngay trên StickyBar */}
+      {/* Social Proof row — absolute above StickyBar, không chiếm height */}
       {socialEnabled && proof && (
         <div
           style={{
+            position: "absolute",
+            bottom: "100%",
+            left: 0,
+            right: 0,
             transform: proofVisible ? "translateY(0)" : "translateY(100%)",
             opacity: proofVisible ? 1 : 0,
             transition: "transform 0.35s cubic-bezier(.34,1.2,.64,1), opacity 0.3s",
             background: "rgba(255,255,255,0.96)",
             borderTop: "1px solid #f1f5f9",
-            borderBottom: "1px solid #f1f5f9",
             padding: "6px 12px",
             display: "flex",
             alignItems: "center",
