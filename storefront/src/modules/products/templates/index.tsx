@@ -12,6 +12,7 @@ import BundleSelector from "@modules/products/components/bundle-selector"
 import ProductPageContent from "@modules/products/components/product-page-content"
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import ProductChatContextInjector from "@components/ProductChatContextInjector"
+import ViewerCount from "@components/ViewerCount"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -356,12 +357,25 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
 
           {/* Right: Info + Actions */}
           <div className="flex flex-col gap-5">
-            {/* Rating */}
-            <div className="flex items-center gap-2">
-              <span className="text-orange-400 text-sm">★★★★★</span>
-              <span className="text-sm text-gray-500">4.8 (1.247 đánh giá)</span>
-              <span className="text-sm text-green-600 font-semibold">● Còn hàng</span>
-            </div>
+            {/* Rating — tính từ reviews metadata */}
+            {(() => {
+              let reviews: { rating: number }[] = []
+              try { reviews = JSON.parse(meta(product, "reviews") || "[]") } catch {}
+              const total = reviews.length
+              const avg = total > 0
+                ? (reviews.reduce((s, r) => s + r.rating, 0) / total).toFixed(1)
+                : "4.8"
+              const displayTotal = total > 0 ? total : 1247
+              const stars = Math.round(parseFloat(avg))
+              return (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-orange-400 text-base">{"★".repeat(stars)}{"☆".repeat(5 - stars)}</span>
+                  <span className="text-sm font-bold text-gray-800">{avg}</span>
+                  <span className="text-sm text-gray-400">({displayTotal.toLocaleString("vi-VN")} đánh giá)</span>
+                  <span className="text-sm text-green-600 font-semibold">● Còn hàng</span>
+                </div>
+              )
+            })()}
 
             {/* Title */}
             <h1 className="text-2xl lg:text-3xl font-extrabold text-gray-900 leading-tight" data-testid="product-title">
@@ -372,6 +386,29 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             {product.description && (
               <p className="text-gray-600 leading-relaxed line-clamp-3">{product.description}</p>
             )}
+
+            {/* Bullet benefits — đọc từ metadata benefit_title_1..4 hoặc fallback */}
+            {(() => {
+              const bullets: string[] = []
+              for (let i = 1; i <= 4; i++) {
+                const icon = meta(product, `benefit_icon_${i}`)
+                const title = meta(product, `benefit_title_${i}`)
+                if (title) bullets.push(`${icon || "✅"} ${title}`)
+              }
+              if (!bullets.length) return null
+              return (
+                <div className="flex flex-col gap-1.5">
+                  {bullets.slice(0, 3).map((b, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-700 font-medium">
+                      <span>{b}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
+            {/* Live viewer count */}
+            <ViewerCount />
 
             {/* Bundle selector: add to cart then checkout */}
             <div id="bundle-selector">
