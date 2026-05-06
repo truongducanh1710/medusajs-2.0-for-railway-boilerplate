@@ -67,7 +67,9 @@ export default function StickyBuyBar({
       ([entry]) => {
         const isVisible = !entry.isIntersecting
         setVisible(isVisible)
-        window.dispatchEvent(new CustomEvent("sticky-bar-visible", { detail: isVisible }))
+        const barEl = document.querySelector("[data-sticky-bar]") as HTMLElement
+        const barHeight = barEl ? barEl.offsetHeight : 64
+        window.dispatchEvent(new CustomEvent("sticky-bar-visible", { detail: isVisible ? barHeight : 0 }))
       },
       { threshold: 0, rootMargin: "0px" }
     )
@@ -117,6 +119,7 @@ export default function StickyBuyBar({
 
   return (
     <div
+      data-sticky-bar
       className={`lg:hidden fixed bottom-0 inset-x-0 z-40 transition-transform duration-300 ${
         visible ? "translate-y-0" : "translate-y-full"
       }`}

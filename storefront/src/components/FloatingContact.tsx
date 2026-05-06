@@ -44,15 +44,15 @@ const CONTACTS = [
 
 export default function FloatingContact() {
   const [open, setOpen] = useState(false)
-  const [stickyBarOn, setStickyBarOn] = useState(false)
+  const [barHeight, setBarHeight] = useState(0)
 
   useEffect(() => {
-    const handler = (e: Event) => setStickyBarOn((e as CustomEvent).detail)
+    const handler = (e: Event) => setBarHeight((e as CustomEvent<number>).detail)
     window.addEventListener("sticky-bar-visible", handler)
     return () => window.removeEventListener("sticky-bar-visible", handler)
   }, [])
 
-  const bottomPx = stickyBarOn ? 80 : 24
+  const bottomPx = barHeight > 0 ? barHeight + 8 : 24
 
   return (
     <div
