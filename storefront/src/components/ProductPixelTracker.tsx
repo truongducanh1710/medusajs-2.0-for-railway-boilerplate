@@ -37,9 +37,9 @@ export default function ProductPixelTracker({
     if (typeof window === "undefined" || !window.fbq) return
 
     // Only init per-product pixels not already inited by global FacebookPixel
-    const globalId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
+    const envGlobalId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
     for (const id of pixelIds) {
-      if (id && id !== globalId) {
+      if (id && id !== envGlobalId) {
         window.fbq("init", id)
       }
     }
@@ -73,8 +73,7 @@ export default function ProductPixelTracker({
     })
 
     // CAPI dedup — per-product pixel (only if different from global)
-    const globalId = process.env.NEXT_PUBLIC_FB_PIXEL_ID || ""
-    if (productPixelId && productCapiToken && productPixelId !== globalId) {
+    if (productPixelId && productCapiToken && productPixelId !== envGlobalId) {
       sendCAPIViaRoute({
         eventName: "ViewContent",
         eventId,
