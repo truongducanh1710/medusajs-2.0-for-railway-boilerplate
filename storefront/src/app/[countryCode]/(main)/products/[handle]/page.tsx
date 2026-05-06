@@ -61,6 +61,7 @@ export default async function ProductPage({ params }: Props) {
   if(!f){var n=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
   if(!window._fbq)window._fbq=n;n.push=n;n.loaded=true;n.version='2.0';n.queue=[];window.fbq=n;}
   window.fbq('init','${productPixelId}');
+  window.fbq('track','PageView');
 })();
 `,
           }}
