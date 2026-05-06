@@ -644,11 +644,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
       .then(r => r.json())
       .then(d => {
         const variants: Array<{ id: string; title: string }> = d.product?.variants || []
-        console.log("[widget] fetched variants:", variants)
         const filtered = variants.filter(v => v.title !== "Default Title" && v.title !== "Mặc định" && v.title !== "default")
         setProductVariants(filtered.length > 0 ? filtered : variants)
+        // Load metadata từ server (không dùng prop — có thể stale)
+        if (d.product?.metadata) {
+          applyMeta(d.product.metadata)
+        }
       })
-      .catch(e => { console.error("[widget] fetch variants error:", e) })
+      .catch(e => { console.error("[widget] fetch product error:", e) })
   }, [product.id])
 
   // FAQ & Bundle local state
@@ -671,9 +674,8 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     : []
 
   useEffect(() => {
+    // Version history từ prop (OK vì không thay đổi thường xuyên)
     const m = (product.metadata as Meta) || {}
-    applyMeta(m)
-    // Load version history
     try {
       const vv = m.page_content_versions ? JSON.parse(m.page_content_versions as string) : []
       setVersions(Array.isArray(vv) ? vv : [])
@@ -756,14 +758,14 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ metadata: finalMeta })
       })
+      const resData = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const errText = await res.text().catch(() => "")
-        let errMsg = errText
-        try { const d = JSON.parse(errText); errMsg = d.message || d.error || JSON.stringify(d) } catch {}
-        throw new Error(`Lưu thất bại (${res.status}): ${errMsg}`)
+        throw new Error(`Lưu thất bại (${res.status}): ${resData.message || resData.error || JSON.stringify(resData)}`)
       }
-      // Dùng finalMeta (đã xóa keys tắt) thay vì server response (Medusa merge metadata)
-      applyMeta(finalMeta)
+      // Dùng metadata từ server response để đảm bảo đồng bộ
+      const savedMeta = resData.product?.metadata || finalMeta
+      console.log("[widget] saved metadata:", savedMeta)
+      applyMeta(savedMeta)
       // Revalidate storefront cache qua backend (tránh CORS)
       try {
         await fetch("/admin/revalidate", {
