@@ -150,15 +150,20 @@ export default function BundleSelector({ product, region }: Props) {
 
     try {
       const giftsToSave = selectedOpt.gifts || []
+      // quantity = số thật khách chọn, bundle_price = tổng giá bundle
+      // bundle_options lưu lại để cart-drawer tính lại giá khi +/-
       await addToCart({
         variantId: variant.id,
         quantity: selected,
         countryCode,
-        metadata: giftsToSave.length > 0
-          ? { gifts: JSON.stringify(giftsToSave) }
-          : undefined,
+        metadata: {
+          bundle_qty: selected,
+          bundle_price: selectedOpt.price,
+          bundle_label: selectedOpt.label,
+          bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts }))),
+          ...(giftsToSave.length > 0 ? { gifts: JSON.stringify(giftsToSave) } : {}),
+        },
       })
-      // Chỉ redirect sau khi addToCart hoàn tất — đảm bảo số lượng đúng
       router.push(`/${countryCode}/checkout`)
     } catch (e) {
       console.error("[BundleSelector] addToCart failed", e)
@@ -189,7 +194,6 @@ export default function BundleSelector({ product, region }: Props) {
                 onClick={() => {
                   setActiveVariantIdx(vi)
                   setSelected(1)
-                  // Dispatch event để gallery đổi ảnh chính
                   const imgUrl = vc.image || vc.options?.[0]?.image
                   if (imgUrl && typeof window !== "undefined") {
                     window.dispatchEvent(new CustomEvent("variant-image-change", { detail: imgUrl }))

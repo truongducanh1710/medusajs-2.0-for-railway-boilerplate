@@ -412,7 +412,12 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
 
-  const subtotal = cart.subtotal ?? 0
+  // Use bundle_price from metadata if available (bundle selector stores correct total there)
+  // Medusa unit_price × qty is wrong for bundles (qty is always 1, bundle_price = real total)
+  const subtotal = sortedItems.reduce((sum, item) => {
+    const bundlePrice = (item.metadata as any)?.bundle_price
+    return sum + (bundlePrice != null ? Number(bundlePrice) : item.unit_price * item.quantity)
+  }, 0)
   const promoDiscount = (cart as any).discount_total ?? 0
   // Không tính tax/shipping — khách chỉ trả tiền hàng sau giảm giá
   const cartTotal = Math.max(0, subtotal - promoDiscount)
@@ -659,9 +664,20 @@ return parsed
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-gray-900 line-clamp-2">{item.title}</p>
+                        <p className="font-bold text-sm text-gray-900 line-clamp-2">
+                          {item.title}
+                          {(item.metadata as any)?.bundle_label && (
+                            <span className="ml-1.5 text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                              {(item.metadata as any).bundle_label}
+                            </span>
+                          )}
+                        </p>
                         <p className="font-black text-orange-500 text-sm mt-1">
-                          {convertToLocale({ amount: item.unit_price * item.quantity, currency_code: cart.currency_code })}
+                          {formatVND(
+                            (item.metadata as any)?.bundle_price != null
+                              ? Number((item.metadata as any).bundle_price)
+                              : item.unit_price * item.quantity
+                          )}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           <button

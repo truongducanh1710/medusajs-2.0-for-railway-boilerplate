@@ -61,9 +61,15 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
     console.info(`[Pancake] Item "${item.title}" sku=${sku} → variation_id=${pancakeVariationId ?? 'none (one_time_product)'}`)
 
+    // bundle_qty = số thật khách chọn, bundle_price = tổng giá bundle
+    // unit_price trong Medusa là giá 1 SP từ DB — không dùng để tính tổng
+    const bundleQty: number = (item.metadata?.bundle_qty as number) || item.quantity
+    const bundlePrice: number = (item.metadata?.bundle_price as number) || (item.unit_price * item.quantity)
+    const unitPriceForPancake = bundleQty > 0 ? Math.round(bundlePrice / bundleQty) : item.unit_price
+
     return {
       variation_id: pancakeVariationId,
-      quantity: item.quantity,
+      quantity: bundleQty,
       is_bonus_product: false,
       is_discount_percent: false,
       is_wholesale: false,
@@ -71,7 +77,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
       discount_each_product: 0,
       variation_info: {
         name: item.title,
-        retail_price: item.unit_price,
+        retail_price: unitPriceForPancake,
       },
     }
   })

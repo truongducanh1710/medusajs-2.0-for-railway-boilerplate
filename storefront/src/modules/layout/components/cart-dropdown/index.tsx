@@ -49,9 +49,63 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
   }
 
   const handleQtyChange = async (id: string, qty: number) => {
-    if (qty < 1) return
+    if (qty < 1 || qty > 10) return
     setUpdating(id)
-    await updateLineItem({ lineId: id, quantity: qty })
+    const item = cart?.items?.find(i => i.id === id)
+    const meta = item?.metadata as any
+
+    // Tính lại bundle_price nếu item có bundle_options
+    let newMeta: Record<string, unknown> | undefined
+    try {
+      const bundleOptions: Array<{ qty: number; price: number; originalPrice: number; label: string; gifts?: any[] }> =
+        JSON.parse(meta?.bundle_options || "[]")
+      if (bundleOptions.length > 0) {
+        const sorted = [...bundleOptions].sort((a, b) => a.qty - b.qty)
+        const maxOpt = sorted[sorted.length - 1]
+
+        let newPrice: number
+        const exact = sorted.find(o => o.qty === qty)
+        if (exact) {
+          newPrice = exact.price
+        } else if (qty > maxOpt.qty) {
+          const unitPriceMax = maxOpt.price / maxOpt.qty
+          let stepPerUnit = 0
+          if (sorted.length >= 2) {
+            const prev = sorted[sorted.length - 2]
+            stepPerUnit = (prev.price / prev.qty - unitPriceMax) / (maxOpt.qty - prev.qty)
+          }
+          const extraQty = qty - maxOpt.qty
+          const unitExtra = Math.max(unitPriceMax * 0.85, unitPriceMax - stepPerUnit * extraQty)
+          newPrice = Math.round(maxOpt.price + unitExtra * extraQty)
+        } else {
+          // nội suy giữa 2 preset
+          let newP = maxOpt.price
+          for (let i = 0; i < sorted.length - 1; i++) {
+            const lo = sorted[i], hi = sorted[i + 1]
+            if (qty > lo.qty && qty < hi.qty) {
+              newP = Math.round(lo.price + (hi.price - lo.price) * (qty - lo.qty) / (hi.qty - lo.qty))
+              break
+            }
+          }
+          newPrice = newP
+        }
+
+        // Quà: dùng max tier nếu qty >= max preset qty
+        const giftSource = qty >= maxOpt.qty ? maxOpt : (sorted.find(o => o.qty === qty) ?? sorted.filter(o => o.qty <= qty).reverse()[0])
+        const newLabel = exact?.label ?? `${qty} SẢN PHẨM`
+        const newGifts = giftSource?.gifts
+
+        newMeta = {
+          ...meta,
+          bundle_qty: qty,
+          bundle_price: newPrice,
+          bundle_label: newLabel,
+          ...(newGifts && newGifts.length > 0 ? { gifts: JSON.stringify(newGifts) } : { gifts: "[]" }),
+        }
+      }
+    } catch {}
+
+    await updateLineItem({ lineId: id, quantity: qty, metadata: newMeta })
     setUpdating(null)
   }
 
