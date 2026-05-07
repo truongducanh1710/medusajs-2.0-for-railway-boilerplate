@@ -697,7 +697,29 @@ const blocks: BuilderBlock[] = [
   },
 ]
 
-// ─── Webcake-style sidebar ───────────────────────────────────────────────────
+// ─── Section tips ────────────────────────────────────────────────────────────
+const SECTION_TIPS: Record<string, string[]> = {
+  "pvb-rev2":  ["Bấm +5⭐ trên toolbar để thêm đánh giá", "Click vào card → 📷 để thêm/đổi ảnh review", "Double-click chữ để sửa nội dung"],
+  "pvb-video": ["Double-click vào iframe để sửa", "Đổi src= thành link dạng youtube.com/embed/VIDEO_ID"],
+  "pvb-ps":    ["Double-click từng dòng để sửa Pain / Solution", "Thêm dòng mới bằng cách nhân đôi item"],
+  "pvb-ben":   ["Double-click icon/tiêu đề/mô tả để sửa", "Đổi emoji icon trực tiếp trong ô chữ"],
+  "pvb-spec":  ["Double-click ô để sửa thông số kỹ thuật", "Chọn <tr> → nhân đôi để thêm hàng mới"],
+  "pvb-faq":   ["Double-click câu hỏi/trả lời để sửa", "Nhân đôi 1 item để thêm câu hỏi mới"],
+  "pvb-hero":  ["Double-click tiêu đề/mô tả để sửa text", "Double-click ảnh để đổi URL hình"],
+  "pvb-itl":   ["Double-click ảnh trái để đổi URL hình", "Double-click text phải để sửa nội dung"],
+  "pvb-itr":   ["Double-click text trái để sửa nội dung", "Double-click ảnh phải để đổi URL hình"],
+  "pvb-how":   ["Double-click số/tiêu đề/mô tả để sửa", "Nhân đôi 1 bước để thêm bước mới"],
+  "pvb-cmp":   ["Double-click ô trong bảng để sửa nội dung", "✓ và ✗ có thể đổi thành bất kỳ ký tự"],
+  "pvb-promo": ["Double-click mã giảm giá để đổi mã", "Double-click tiêu đề/mô tả để sửa text"],
+  "pvb-cd":    ["Double-click số giờ/phút/giây để đổi thời gian đếm ngược"],
+  "pvb-trust": ["Double-click icon hoặc text để sửa từng badge", "Nhân đôi badge để thêm badge mới"],
+  "pvb-gal":   ["Double-click từng ảnh để đổi URL hình", "Nhân đôi ô ảnh để thêm ảnh mới vào gallery"],
+  "pvb-cta":   ["Double-click text nút để đổi nội dung", "Đổi màu nút trong Style panel bên phải GrapesJS"],
+  "pvb-quote": ["Double-click để sửa nội dung trích dẫn"],
+  "pvb-div":   ["Dùng để tạo khoảng cách giữa các section"],
+}
+
+// ─── Webcake-style sidebar ────────────────────────────────────────────────────
 const CATEGORIES = [
   { id: "Sections",     icon: "⊞", label: "Sections" },
   { id: "Elements",     icon: "✦", label: "Elements" },
@@ -725,7 +747,7 @@ export default function ProductPageBuilder({
   const [ready, setReady] = useState(false)
   const [hasDraftChanges, setHasDraftChanges] = useState(false)
   const [activePanel, setActivePanel] = useState<string | null>("Sections")
-  const [selectedSection, setSelectedSection] = useState<{ label: string; isTopLevel: boolean } | null>(null)
+  const [selectedSection, setSelectedSection] = useState<{ label: string; isTopLevel: boolean; pvbClass: string } | null>(null)
 
   useEffect(() => {
     if (!open || !containerRef.current || editorRef.current) return
@@ -1115,7 +1137,11 @@ export default function ProductPageBuilder({
           return pvbMatch && bcls[1].includes(pvbMatch[0])
         })
         const label = blockDef?.label ?? (pvbMatch ? pvbMatch[1] : "Section")
-        setSelectedSection({ label, isTopLevel: !!topComp })
+        // Find pvb-* class on element or closest ancestor
+        const pvbClass = [...(el.classList || [])].find((c: string) => c.startsWith("pvb-"))
+          ?? [...((el.closest?.("[class*='pvb-']") as HTMLElement | null)?.classList || [])].find((c: string) => c.startsWith("pvb-"))
+          ?? ""
+        setSelectedSection({ label, isTopLevel: !!topComp, pvbClass })
       })
       editor.on("component:deselected", () => setSelectedSection(null))
       // ─────────────────────────────────────────────────────────────────────
@@ -1436,7 +1462,7 @@ export default function ProductPageBuilder({
                 ))}
               </div>
 
-              {/* Tips */}
+              {/* Keyboard shortcuts */}
               <div style={{ margin: "4px 10px 0", padding: "10px", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", margin: "0 0 6px" }}>Phím tắt</p>
                 {[
@@ -1450,6 +1476,23 @@ export default function ProductPageBuilder({
                   </div>
                 ))}
               </div>
+
+              {/* Section-specific tips */}
+              {(() => {
+                const tips = SECTION_TIPS[selectedSection.pvbClass] ?? []
+                if (!tips.length) return null
+                return (
+                  <div style={{ margin: "8px 10px 10px", padding: 10, background: "#fffbeb", borderRadius: 8, border: "1px solid #fde68a" }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", margin: "0 0 8px" }}>💡 Có thể làm gì?</p>
+                    {tips.map((tip, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                        <span style={{ color: "#f59e0b", fontWeight: 900, flexShrink: 0, fontSize: 12 }}>•</span>
+                        <span style={{ fontSize: 11, color: "#78350f", lineHeight: 1.5 }}>{tip}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>
