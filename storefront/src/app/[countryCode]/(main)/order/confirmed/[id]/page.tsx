@@ -8,7 +8,7 @@ import { HttpTypes } from "@medusajs/types"
 import PurchaseTracker from "@components/PurchaseTracker"
 
 type Props = {
-  params: { id: string }
+  params: { id: string; countryCode: string }
 }
 
 async function getOrder(id: string) {
@@ -49,7 +49,7 @@ export default async function OrderConfirmedPage({ params }: Props) {
         currency={currency}
         contentIds={contentIds}
       />
-      <OrderCompletedTemplate order={order} />
+      <OrderCompletedTemplate order={order} countryCode={params.countryCode} />
     </>
   )
 }
