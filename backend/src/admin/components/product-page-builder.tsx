@@ -767,6 +767,10 @@ export default function ProductPageBuilder({
         storageManager: false,
         fromElement: false,
         noticeOnUnload: false,
+        panels: { defaults: [] },
+        styleManager: { appendTo: "#pvb-styles-panel" },
+        traitManager: { appendTo: "#pvb-styles-panel" },
+        selectorManager: { appendTo: "#pvb-styles-panel" },
         blockManager: {
           appendTo: "#product-page-builder-blocks",
           blocks,
@@ -1419,13 +1423,13 @@ export default function ProductPageBuilder({
             <div ref={containerRef} className="h-full min-h-0" />
           </div>
 
-          {/* Right panel — shows when a section is selected */}
-          {selectedSection && (
-            <div style={{
-              width: 220, flexShrink: 0, height: "100%",
-              borderLeft: "1px solid #e5e7eb", background: "#f9fafb",
-              display: "flex", flexDirection: "column", overflowY: "auto",
-            }}>
+          {/* Right panel — always rendered so GrapesJS can mount style manager */}
+          <div style={{
+            width: 240, flexShrink: 0, height: "100%",
+            borderLeft: "1px solid #e5e7eb", background: "#f9fafb",
+            display: "flex", flexDirection: "column",
+          }}>
+          {selectedSection && (<div style={{ display: "contents" }}>
               {/* Header */}
               <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: "#f97316", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Section đang chọn</p>
@@ -1493,8 +1497,16 @@ export default function ProductPageBuilder({
                   </div>
                 )
               })()}
-            </div>
-          )}
+
+              {/* GrapesJS styles header */}
+              <div style={{ borderTop: "1px solid #e5e7eb", marginTop: 4 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", margin: "10px 14px 6px", letterSpacing: "0.08em" }}>Style</p>
+              </div>
+            </div>)}
+
+            {/* GrapesJS Style/Selector/Trait managers — always in DOM */}
+            <div id="pvb-styles-panel" style={{ flex: 1, overflowY: "auto", minHeight: 0 }} />
+          </div>
         </div>
       </div>
     </div>
