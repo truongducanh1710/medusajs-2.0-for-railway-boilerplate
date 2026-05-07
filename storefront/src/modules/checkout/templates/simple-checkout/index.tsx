@@ -335,16 +335,75 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [promoError, setPromoError] = useState("")
   const [promoLoading, setPromoLoading] = useState(false)
   const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
+  const [localItems, setLocalItems] = useState<any[] | null>(null)
+
+  const roundThousand = (n: number) => Math.round(n / 1000) * 1000
 
   const handleQtyChange = async (lineId: string, newQty: number) => {
+    if (newQty < 1) {
+      setQtyLoading(s => ({ ...s, [lineId]: true }))
+      try {
+        await deleteLineItem(lineId)
+        window.location.reload()
+      } catch (e) {
+        console.error("[SimpleCheckout] delete failed", e)
+      } finally {
+        setQtyLoading(s => ({ ...s, [lineId]: false }))
+      }
+      return
+    }
+    const items = localItems ?? cart.items ?? []
+    const item = items.find((i: any) => i.id === lineId)
+    if (!item) return
+    const meta = item.metadata as any
+    const opts: Array<{ qty: number; price: number }> = (() => {
+      try { return meta?.bundle_options ? JSON.parse(meta.bundle_options) : [] } catch { return [] }
+    })()
+    let newPrice: number
+    if (opts.length === 0) {
+      newPrice = item.unit_price * newQty
+    } else {
+      const sorted = [...opts].sort((a, b) => a.qty - b.qty)
+      const exact = sorted.find(o => o.qty === newQty)
+      if (exact) {
+        newPrice = exact.price
+      } else {
+        const maxOpt = sorted[sorted.length - 1]
+        if (newQty > maxOpt.qty) {
+          const unitPerItem = maxOpt.price / maxOpt.qty
+          const discount = 1 - unitPerItem / (item.unit_price || unitPerItem)
+          const extraDiscount = discount * 0.5
+          const unitExtra = item.unit_price * (1 - discount - extraDiscount)
+          newPrice = roundThousand(maxOpt.price + unitExtra * (newQty - maxOpt.qty))
+        } else {
+          const lo = [...sorted].reverse().find(o => o.qty < newQty) ?? sorted[0]
+          const hi = sorted.find(o => o.qty > newQty) ?? maxOpt
+          if (lo.qty === hi.qty) {
+            newPrice = lo.price
+          } else {
+            newPrice = roundThousand(lo.price + (hi.price - lo.price) * (newQty - lo.qty) / (hi.qty - lo.qty))
+          }
+        }
+      }
+    }
+    newPrice = roundThousand(newPrice)
+    // Optimistic update
+    setLocalItems(prev => {
+      const base = prev ?? cart.items ?? []
+      return base.map((i: any) => i.id === lineId
+        ? { ...i, metadata: { ...i.metadata, bundle_qty: newQty, bundle_price: newPrice } }
+        : i)
+    })
     setQtyLoading(s => ({ ...s, [lineId]: true }))
     try {
-      if (newQty < 1) {
-        await deleteLineItem(lineId)
-      } else {
-        await updateLineItem({ lineId, quantity: newQty })
-      }
-      window.location.reload()
+      const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
+      const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+      const cartId = cart.id
+      await fetch(`${backendUrl}/store/carts/${cartId}/line-items/${lineId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
+        body: JSON.stringify({ quantity: newQty, metadata: { ...meta, bundle_qty: newQty, bundle_price: newPrice } }),
+      })
     } catch (e) {
       console.error("[SimpleCheckout] qty change failed", e)
     } finally {
@@ -408,7 +467,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     })
   }, [cart.id, countryCode, payment, shippingOptions?.length])
 
-  const sortedItems = [...(cart.items || [])].sort((a, b) =>
+  const sortedItems = [...(localItems ?? cart.items ?? [])].sort((a: any, b: any) =>
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
 
@@ -690,15 +749,23 @@ return parsed
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           <button
-                            onClick={() => handleQtyChange(item.id, item.quantity - 1)}
+                            onClick={() => {
+                              const cur = (localItems ?? cart.items ?? []).find((i: any) => i.id === item.id)?.metadata as any
+                              const curQty = cur?.bundle_qty != null ? Number(cur.bundle_qty) : item.quantity
+                              handleQtyChange(item.id, curQty - 1)
+                            }}
                             disabled={qtyLoading[item.id]}
                             className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-40 font-bold text-base leading-none"
                           >−</button>
                           <span className="text-sm font-bold text-gray-900 w-6 text-center">
-                            {qtyLoading[item.id] ? "…" : item.quantity}
+                            {qtyLoading[item.id] ? "…" : ((item.metadata as any)?.bundle_qty ?? item.quantity)}
                           </span>
                           <button
-                            onClick={() => handleQtyChange(item.id, item.quantity + 1)}
+                            onClick={() => {
+                              const cur = (localItems ?? cart.items ?? []).find((i: any) => i.id === item.id)?.metadata as any
+                              const curQty = cur?.bundle_qty != null ? Number(cur.bundle_qty) : item.quantity
+                              handleQtyChange(item.id, curQty + 1)
+                            }}
                             disabled={qtyLoading[item.id]}
                             className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-40 font-bold text-base leading-none"
                           >+</button>
