@@ -7,9 +7,6 @@ import {
   placeOrder,
   setShippingMethod,
   ensurePaymentSession,
-  applyPromotions,
-  updateLineItem,
-  deleteLineItem,
 } from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
@@ -339,16 +336,22 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
   const roundThousand = (n: number) => Math.round(n / 1000) * 1000
 
+  const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
+  const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+
   const handleQtyChange = async (lineId: string, newQty: number) => {
     if (newQty < 1) {
-      setQtyLoading(s => ({ ...s, [lineId]: true }))
+      // Optimistic remove
+      setLocalItems(prev => (prev ?? cart.items ?? []).filter((i: any) => i.id !== lineId))
       try {
-        await deleteLineItem(lineId)
-        window.location.reload()
+        await fetch(`${backendUrl}/store/carts/${cart.id}/line-items/${lineId}`, {
+          method: "DELETE",
+          headers: { "x-publishable-api-key": pubKey },
+        })
       } catch (e) {
         console.error("[SimpleCheckout] delete failed", e)
-      } finally {
-        setQtyLoading(s => ({ ...s, [lineId]: false }))
+        // revert
+        setLocalItems(null)
       }
       return
     }
@@ -396,10 +399,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     })
     setQtyLoading(s => ({ ...s, [lineId]: true }))
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
-      const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
-      const cartId = cart.id
-      await fetch(`${backendUrl}/store/carts/${cartId}/line-items/${lineId}`, {
+      await fetch(`${backendUrl}/store/carts/${cart.id}/line-items/${lineId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
         body: JSON.stringify({ quantity: newQty, metadata: { ...meta, bundle_qty: newQty, bundle_price: newPrice } }),
@@ -477,22 +477,31 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     const bundlePrice = (item.metadata as any)?.bundle_price
     return sum + (bundlePrice != null ? Number(bundlePrice) : item.unit_price * item.quantity)
   }, 0)
-  const promoDiscount = (cart as any).discount_total ?? 0
+  const promoDiscount = liveDiscount ?? (cart as any).discount_total ?? 0
   // Không tính tax/shipping — khách chỉ trả tiền hàng sau giảm giá
   const cartTotal = Math.max(0, subtotal - promoDiscount)
   const sepayTotal = Math.max(1000, cartTotal - SEPAY_DISCOUNT)
   const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 
+  const [liveDiscount, setLiveDiscount] = useState<number | null>(null)
+
   const handleApplyPromo = async () => {
     if (!promoCode.trim()) return
     setPromoLoading(true)
     setPromoError("")
     try {
-      await applyPromotions([promoCode.trim().toUpperCase()])
+      // Gọi thẳng Medusa API — không dùng server action để tránh revalidateTag → reload
+      const res = await fetch(`${backendUrl}/store/carts/${cart.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
+        body: JSON.stringify({ promo_codes: [promoCode.trim().toUpperCase()] }),
+      })
+      if (!res.ok) throw new Error("invalid")
+      const data = await res.json()
+      const discount = data.cart?.discount_total ?? 0
+      setLiveDiscount(discount)
       setPromoApplied(true)
-      // Reload page to get updated cart totals from server
-      window.location.reload()
     } catch (e: any) {
       setPromoError("Mã không hợp lệ hoặc đã hết hạn")
       setPromoApplied(false)
