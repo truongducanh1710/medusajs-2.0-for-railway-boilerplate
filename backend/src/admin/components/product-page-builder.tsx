@@ -252,24 +252,23 @@ const blocks: BuilderBlock[] = [
         .pvb-spec{padding:40px 16px;background:#f9fafb}
         .pvb-spec .inner{max-width:860px;margin:0 auto}
         .pvb-spec h2{font-size:clamp(20px,5vw,32px);font-weight:900;margin:0 0 18px;text-align:center}
-        .pvb-spec table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;font-size:14px}
-        .pvb-spec td{padding:13px 16px;border-bottom:1px solid #f3f4f6}
-        .pvb-spec td:first-child{font-weight:700;color:#374151;width:38%;background:#f9fafb}
-        .pvb-spec td:last-child{color:#111827}
-        @media(min-width:640px){.pvb-spec{padding:56px 24px}.pvb-spec table{font-size:15px}.pvb-spec td{padding:14px 18px}.pvb-spec td:first-child{width:34%}}
+        .pvb-spec .spec-table{width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;font-size:14px}
+        .pvb-spec .spec-row{display:flex;border-bottom:1px solid #f3f4f6}
+        .pvb-spec .spec-row:last-child{border-bottom:none}
+        .pvb-spec .spec-key{font-weight:700;color:#374151;width:38%;background:#f9fafb;padding:13px 16px;flex-shrink:0}
+        .pvb-spec .spec-val{color:#111827;padding:13px 16px;flex:1}
+        @media(min-width:640px){.pvb-spec{padding:56px 24px}.pvb-spec .spec-table{font-size:15px}.pvb-spec .spec-key,.pvb-spec .spec-val{padding:14px 18px}.pvb-spec .spec-key{width:34%}}
       </style>
       <section class="pvb-spec">
         <div class="inner">
           <h2>📋 Thông số kỹ thuật</h2>
-          <table>
-            <tbody>
-              <tr><td>Chất liệu</td><td>Inox 304</td></tr>
-              <tr><td>Kích thước</td><td>28cm x 8cm</td></tr>
-              <tr><td>Xuất xứ</td><td>Việt Nam</td></tr>
-              <tr><td>Bảo hành</td><td>12 tháng</td></tr>
-              <tr><td>Màu sắc</td><td>Bạc / Đen</td></tr>
-            </tbody>
-          </table>
+          <div class="spec-table">
+            <div class="spec-row"><div class="spec-key">Chất liệu</div><div class="spec-val">Inox 304</div></div>
+            <div class="spec-row"><div class="spec-key">Kích thước</div><div class="spec-val">28cm x 8cm</div></div>
+            <div class="spec-row"><div class="spec-key">Xuất xứ</div><div class="spec-val">Việt Nam</div></div>
+            <div class="spec-row"><div class="spec-key">Bảo hành</div><div class="spec-val">12 tháng</div></div>
+            <div class="spec-row"><div class="spec-key">Màu sắc</div><div class="spec-val">Bạc / Đen</div></div>
+          </div>
         </div>
       </section>
     `,
@@ -703,7 +702,7 @@ const SECTION_TIPS: Record<string, string[]> = {
   "pvb-video": ["Double-click vào iframe để sửa", "Đổi src= thành link dạng youtube.com/embed/VIDEO_ID"],
   "pvb-ps":    ["Double-click từng dòng để sửa Pain / Solution", "Thêm dòng mới bằng cách nhân đôi item"],
   "pvb-ben":   ["Double-click icon/tiêu đề/mô tả để sửa", "Đổi emoji icon trực tiếp trong ô chữ"],
-  "pvb-spec":  ["Double-click ô để sửa thông số kỹ thuật", "Chọn <tr> → nhân đôi để thêm hàng mới"],
+  "pvb-spec":  ["Double-click ô tên / giá trị để sửa trực tiếp", "Bấm '+ Dòng' trên toolbar để thêm dòng mới", "Click vào 1 dòng → bấm '- Dòng' để xóa dòng đó"],
   "pvb-faq":   ["Double-click câu hỏi/trả lời để sửa", "Nhân đôi 1 item để thêm câu hỏi mới"],
   "pvb-hero":  ["Double-click tiêu đề/mô tả để sửa text", "Double-click ảnh để đổi URL hình"],
   "pvb-itl":   ["Double-click ảnh trái để đổi URL hình", "Double-click text phải để sửa nội dung"],
@@ -1048,7 +1047,73 @@ export default function ProductPageBuilder({
           })
         }
 
+        // Spec section: thêm nút + Thêm dòng / - Xóa dòng
+        const inSpec = el.classList.contains("pvb-spec") || !!el.closest?.(".pvb-spec")
+        if (inSpec) {
+          if (!toolbar.find((t: any) => t.command === "pvb-spec-add-row")) {
+            toolbar.unshift({
+              attributes: { title: "Thêm dòng thông số", style: "font-size:11px;padding:0 6px;font-weight:700;color:#16a34a" },
+              label: "+ Dòng",
+              command: "pvb-spec-add-row",
+            })
+          }
+          const inRow = el.classList.contains("spec-row") || !!el.closest?.(".spec-row")
+          if (inRow && !toolbar.find((t: any) => t.command === "pvb-spec-del-row")) {
+            toolbar.unshift({
+              attributes: { title: "Xóa dòng này", style: "font-size:11px;padding:0 6px;font-weight:700;color:#dc2626" },
+              label: "- Dòng",
+              command: "pvb-spec-del-row",
+            })
+          }
+        }
+
         component.set("toolbar", toolbar)
+      })
+      // ─────────────────────────────────────────────────────────────────────
+
+      // ── Spec row commands ─────────────────────────────────────────────────
+      editor.Commands.add("pvb-spec-add-row", {
+        run(ed: any) {
+          const sel = ed.getSelected()
+          if (!sel) return
+          // Walk up to find .spec-table
+          let comp: any = sel
+          for (let i = 0; i < 6; i++) {
+            const el = comp.getEl?.()
+            if (el?.classList?.contains("spec-table")) break
+            if (el?.classList?.contains("pvb-spec")) {
+              // find spec-table child
+              comp = comp.components().find((c: any) => c.getEl?.()?.classList?.contains("spec-table"))
+              break
+            }
+            comp = comp.parent?.()
+            if (!comp) return
+          }
+          if (!comp) return
+          comp.append('<div class="spec-row"><div class="spec-key">Tên thông số</div><div class="spec-val">Giá trị</div></div>')
+        },
+      })
+      editor.Commands.add("pvb-spec-del-row", {
+        run(ed: any) {
+          const sel = ed.getSelected()
+          if (!sel) return
+          const el = sel.getEl?.()
+          // Must be a spec-row or inside one
+          const isRow = el?.classList?.contains("spec-row")
+          const inRow = el?.closest?.(".spec-row")
+          if (!isRow && !inRow) return
+          let rowComp: any = sel
+          if (!isRow) {
+            // walk up to spec-row
+            let c: any = sel
+            for (let i = 0; i < 4; i++) {
+              if (c.getEl?.()?.classList?.contains("spec-row")) { rowComp = c; break }
+              c = c.parent?.()
+              if (!c) return
+            }
+          }
+          rowComp.remove()
+        },
       })
       // ─────────────────────────────────────────────────────────────────────
 
