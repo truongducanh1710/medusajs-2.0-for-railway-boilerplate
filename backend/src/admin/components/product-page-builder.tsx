@@ -1089,8 +1089,8 @@ export default function ProductPageBuilder({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-black/70">
-      <div className="flex min-h-full w-full flex-col bg-white">
+    <div className="fixed inset-0 z-[9999] bg-black/70">
+      <div className="flex h-full w-full flex-col bg-white">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 gap-4">
           {/* Left: title + status */}
           <div className="flex items-center gap-3 min-w-0">
@@ -1145,14 +1145,14 @@ export default function ProductPageBuilder({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr]">
-          <aside className="border-r border-gray-200 bg-gray-50 p-3 overflow-y-auto">
+          <aside className="border-r border-gray-200 bg-gray-50 p-3 overflow-y-auto h-full">
             <div className="mb-3 rounded-xl bg-white p-3 text-sm text-gray-600 border border-gray-200">
               Kéo block sang canvas. Nếu đã có `page_content`, editor sẽ nạp nội dung cũ.
             </div>
             <div id="product-page-builder-blocks" className="overflow-visible space-y-2" />
           </aside>
 
-          <div className="min-h-0 bg-white">
+          <div className="h-full overflow-y-auto bg-white">
             {loading && (
               <div className="flex h-full items-center justify-center text-sm text-gray-500">
                 Đang tải GrapesJS...
