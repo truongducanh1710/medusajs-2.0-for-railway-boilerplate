@@ -1289,7 +1289,17 @@ export default function ProductPageBuilder({
                           return
                         }
                         try {
-                          const added = editor.addComponents(b.content.trim())
+                          const wrapper = editor.getWrapper()
+                          const selected = editor.getSelected()
+                          // Find insertion index: after the selected top-level section, or at end
+                          let insertAt = wrapper.components().length
+                          if (selected) {
+                            // Walk up to find direct child of wrapper
+                            let comp: any = selected
+                            while (comp && comp.parent() !== wrapper) comp = comp.parent()
+                            if (comp) insertAt = wrapper.components().indexOf(comp) + 1
+                          }
+                          const added = editor.addComponents(b.content.trim(), { at: insertAt })
                           // Select + scroll canvas to the newly added component
                           if (added && added.length) {
                             const lastComp = added[added.length - 1]
