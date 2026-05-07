@@ -1218,7 +1218,22 @@ export default function ProductPageBuilder({
                         }
                         try {
                           const added = editor.addComponents(b.content.trim())
-                          console.log("[PVB] added", added)
+                          // Select + scroll canvas to the newly added component
+                          if (added && added.length) {
+                            const lastComp = added[added.length - 1]
+                            editor.select(lastComp)
+                            setTimeout(() => {
+                              const frameDoc = editor.Canvas.getFrameEl()?.contentDocument
+                              if (!frameDoc) return
+                              const el = lastComp.getEl ? lastComp.getEl() : null
+                              if (el) {
+                                el.scrollIntoView({ behavior: "smooth", block: "nearest" })
+                              } else {
+                                // fallback: scroll iframe body to bottom
+                                frameDoc.documentElement.scrollTop = frameDoc.documentElement.scrollHeight
+                              }
+                            }, 150)
+                          }
                         } catch(e) {
                           console.error("[PVB] addComponents error", e)
                         }
