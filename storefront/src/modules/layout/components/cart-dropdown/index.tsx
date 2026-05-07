@@ -73,10 +73,14 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
     setUpdating(null)
   }
 
+  const roundHundred = (n: number) => Math.round(n / 100) * 100
+
   const handleQtyChange = async (id: string, qty: number) => {
     if (qty < 1 || qty > 10) return
     setUpdating(id)
-    const item = cart?.items?.find(i => i.id === id)
+    // Đọc từ localItems (state hiện tại) thay vì cart prop để tránh closure stale
+    const currentItems = localItems ?? (cart?.items ?? [])
+    const item = currentItems.find(i => i.id === id)
     const meta = item?.metadata as any
 
     // Tính lại bundle_price theo công thức
@@ -101,13 +105,13 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
           }
           const extraQty = qty - maxOpt.qty
           const unitExtra = Math.max(unitPriceMax * 0.85, unitPriceMax - stepPerUnit * extraQty)
-          newPrice = Math.round(maxOpt.price + unitExtra * extraQty)
+          newPrice = roundHundred(maxOpt.price + unitExtra * extraQty)
         } else {
           let newP = maxOpt.price
           for (let i = 0; i < sorted.length - 1; i++) {
             const lo = sorted[i], hi = sorted[i + 1]
             if (qty > lo.qty && qty < hi.qty) {
-              newP = Math.round(lo.price + (hi.price - lo.price) * (qty - lo.qty) / (hi.qty - lo.qty))
+              newP = roundHundred(lo.price + (hi.price - lo.price) * (qty - lo.qty) / (hi.qty - lo.qty))
               break
             }
           }
@@ -348,15 +352,17 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
              </div>
           ) : (
             sortedItems.map((item) => {
+              // Đọc từ localItems (state hiện tại) để tránh stale closure sau optimistic update
+              const liveItem = (localItems ?? cart?.items ?? []).find(i => i.id === item.id)
+              const liveMeta = liveItem?.metadata as any
               const gifts = (() => {
-                try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
+                try { return JSON.parse((liveMeta?.gifts as string) || "[]") } catch { return [] }
               })()
-              const itemMeta = item.metadata as any
-              const bundlePrice = itemMeta?.bundle_price != null ? Number(itemMeta.bundle_price) : null
-              const bundleQty = itemMeta?.bundle_qty != null ? Number(itemMeta.bundle_qty) : item.quantity
-              const bundleLabel = itemMeta?.bundle_label as string | undefined
+              const bundlePrice = liveMeta?.bundle_price != null ? Number(liveMeta.bundle_price) : null
+              const bundleQty = liveMeta?.bundle_qty != null ? Number(liveMeta.bundle_qty) : item.quantity
+              const bundleLabel = liveMeta?.bundle_label as string | undefined
               const displayPrice = bundlePrice ?? (item.unit_price * item.quantity)
-              const originalPrice = Math.round(displayPrice * 1.4)
+              const originalPrice = roundHundred(displayPrice * 1.4)
               const savings = originalPrice - displayPrice
               const thumb = item.variant?.product?.thumbnail || (item as any).thumbnail
               const variantText = item.variant?.options?.map(o => `${o.option?.title}: ${o.value}`).join(" | ") || ""
@@ -385,13 +391,21 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
                       <p className="text-xs text-green-600 font-medium mt-1">✓ Bạn tiết kiệm {fmtVND(savings)}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <button
-                          onClick={() => handleQtyChange(item.id, bundleQty - 1)}
+                          onClick={() => {
+                            const cur = (localItems ?? cart?.items ?? []).find(i => i.id === item.id)?.metadata as any
+                            const curQty = cur?.bundle_qty != null ? Number(cur.bundle_qty) : item.quantity
+                            handleQtyChange(item.id, curQty - 1)
+                          }}
                           disabled={!!updating}
                           className={`w-7 h-7 rounded-full border border-gray-300 bg-white flex items-center justify-center text-sm hover:bg-gray-50 transition-colors ${updating ? 'opacity-40' : ''}`}
                         >−</button>
                         <span className="font-bold text-sm min-w-[20px] text-center">{bundleQty}</span>
                         <button
-                          onClick={() => handleQtyChange(item.id, bundleQty + 1)}
+                          onClick={() => {
+                            const cur = (localItems ?? cart?.items ?? []).find(i => i.id === item.id)?.metadata as any
+                            const curQty = cur?.bundle_qty != null ? Number(cur.bundle_qty) : item.quantity
+                            handleQtyChange(item.id, curQty + 1)
+                          }}
                           disabled={!!updating}
                           className={`w-7 h-7 rounded-full border border-gray-300 bg-white flex items-center justify-center text-sm hover:bg-gray-50 transition-colors ${updating ? 'opacity-40' : ''}`}
                         >+</button>
