@@ -19,6 +19,24 @@ export default function OrderCompletedTemplate({
 }: OrderCompletedTemplateProps) {
   const isOnboarding = cookies().get("_medusa_onboarding")?.value === "true"
 
+  // Tính lại subtotal từ bundle_price nếu có
+  const bundleSubtotal = (order.items || []).reduce((sum, item) => {
+    const meta = item.metadata as any
+    const bundlePrice = meta?.bundle_price != null ? Number(meta.bundle_price) : null
+    return sum + (bundlePrice != null ? bundlePrice : (item.unit_price * item.quantity))
+  }, 0)
+
+  const shippingTotal = order.shipping_total ?? 0
+  const taxTotal = order.tax_total ?? 0
+  const discountTotal = order.discount_total ?? 0
+  const bundleTotal = Math.max(0, bundleSubtotal - discountTotal) + shippingTotal + taxTotal
+
+  const correctedTotals = {
+    ...order,
+    subtotal: bundleSubtotal,
+    total: bundleTotal,
+  }
+
   return (
     <div className="py-6 min-h-[calc(100vh-64px)]">
       <div className="content-container flex flex-col justify-center items-center gap-y-10 max-w-4xl h-full w-full">
@@ -39,7 +57,7 @@ export default function OrderCompletedTemplate({
             Tóm tắt
           </Heading>
           <Items items={order.items} />
-          <CartTotals totals={order} />
+          <CartTotals totals={correctedTotals} />
           <ShippingDetails order={order} />
           <PaymentDetails order={order} />
           <Help />
