@@ -725,6 +725,7 @@ export default function ProductPageBuilder({
   const [ready, setReady] = useState(false)
   const [hasDraftChanges, setHasDraftChanges] = useState(false)
   const [activePanel, setActivePanel] = useState<string | null>("Sections")
+  const [selectedSection, setSelectedSection] = useState<{ label: string; isTopLevel: boolean } | null>(null)
 
   useEffect(() => {
     if (!open || !containerRef.current || editorRef.current) return
@@ -1097,6 +1098,28 @@ export default function ProductPageBuilder({
       })
       // ─────────────────────────────────────────────────────────────────────
 
+      // ── Right panel: track selected section ──────────────────────────────
+      editor.on("component:selected", (comp: any) => {
+        const el = comp.getEl()
+        if (!el) { setSelectedSection(null); return }
+        // Walk up to find top-level section (direct child of wrapper)
+        let topComp: any = comp
+        while (topComp && topComp.parent() !== editor.getWrapper()) topComp = topComp.parent()
+        const isTopLevel = !!topComp && topComp === comp
+        // Guess label from pvb class
+        const cls = (el.className || "") as string
+        const pvbMatch = cls.match(/pvb-(\w+)/)
+        const blockDef = blocks.find(b => {
+          const bcls = b.content.match(/class="([^"]*pvb-\w+[^"]*)"/)
+          if (!bcls) return false
+          return pvbMatch && bcls[1].includes(pvbMatch[0])
+        })
+        const label = blockDef?.label ?? (pvbMatch ? pvbMatch[1] : "Section")
+        setSelectedSection({ label, isTopLevel: !!topComp })
+      })
+      editor.on("component:deselected", () => setSelectedSection(null))
+      // ─────────────────────────────────────────────────────────────────────
+
       setReady(true)
       setLoading(false)
     }
@@ -1369,6 +1392,66 @@ export default function ProductPageBuilder({
             )}
             <div ref={containerRef} className="h-full min-h-0" />
           </div>
+
+          {/* Right panel — shows when a section is selected */}
+          {selectedSection && (
+            <div style={{
+              width: 220, flexShrink: 0, height: "100%",
+              borderLeft: "1px solid #e5e7eb", background: "#f9fafb",
+              display: "flex", flexDirection: "column", overflowY: "auto",
+            }}>
+              {/* Header */}
+              <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#f97316", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Section đang chọn</p>
+                <p style={{ fontSize: 13, fontWeight: 800, color: "#111827", margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {selectedSection.label}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div style={{ padding: "10px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 4px 2px" }}>Thao tác nhanh</p>
+
+                {[
+                  { icon: "↑", label: "Di chuyển lên", cmd: "pvb-move-up" },
+                  { icon: "↓", label: "Di chuyển xuống", cmd: "pvb-move-down" },
+                  { icon: "⧉", label: "Nhân đôi section", cmd: "core:copy" },
+                  { icon: "✂", label: "Cắt section", cmd: "core:cut" },
+                  { icon: "🗑", label: "Xóa section", cmd: "core:component-delete", danger: true },
+                ].map(action => (
+                  <button key={action.cmd}
+                    onClick={() => editorRef.current?.runCommand(action.cmd)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      width: "100%", padding: "8px 10px",
+                      borderRadius: 8, border: `1px solid ${(action as any).danger ? "#fca5a5" : "#e5e7eb"}`,
+                      background: (action as any).danger ? "#fff1f2" : "#fff",
+                      color: (action as any).danger ? "#dc2626" : "#374151",
+                      fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left",
+                    }}
+                  >
+                    <span style={{ fontSize: 16, width: 20, textAlign: "center" }}>{action.icon}</span>
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tips */}
+              <div style={{ margin: "4px 10px 0", padding: "10px", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", margin: "0 0 6px" }}>Phím tắt</p>
+                {[
+                  ["Alt + ↑↓", "Di chuyển section"],
+                  ["Del / Backspace", "Xóa section"],
+                  ["Ctrl+Z", "Hoàn tác"],
+                ].map(([key, desc]) => (
+                  <div key={key} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, gap: 6 }}>
+                    <code style={{ fontSize: 10, background: "#f3f4f6", padding: "2px 5px", borderRadius: 4, color: "#374151", whiteSpace: "nowrap" }}>{key}</code>
+                    <span style={{ fontSize: 10, color: "#6b7280", textAlign: "right" }}>{desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
