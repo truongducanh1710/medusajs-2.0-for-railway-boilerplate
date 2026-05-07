@@ -702,7 +702,7 @@ const SECTION_TIPS: Record<string, string[]> = {
   "pvb-video": ["Double-click vào iframe để sửa", "Đổi src= thành link dạng youtube.com/embed/VIDEO_ID"],
   "pvb-ps":    ["Double-click từng dòng để sửa Pain / Solution", "Thêm dòng mới bằng cách nhân đôi item"],
   "pvb-ben":   ["Double-click icon/tiêu đề/mô tả để sửa", "Đổi emoji icon trực tiếp trong ô chữ"],
-  "pvb-spec":  ["Double-click ô tên / giá trị để sửa trực tiếp", "Bấm '+ Dòng' trên toolbar để thêm dòng mới", "Click vào 1 dòng → bấm '- Dòng' để xóa dòng đó"],
+  "pvb-spec":  ["Double-click ô tên / giá trị để sửa trực tiếp", "Bấm '＋ Thêm dòng mới' trong panel phải để thêm", "Click vào 1 dòng → bấm '－ Xóa dòng đang chọn' để xóa"],
   "pvb-faq":   ["Double-click câu hỏi/trả lời để sửa", "Nhân đôi 1 item để thêm câu hỏi mới"],
   "pvb-hero":  ["Double-click tiêu đề/mô tả để sửa text", "Double-click ảnh để đổi URL hình"],
   "pvb-itl":   ["Double-click ảnh trái để đổi URL hình", "Double-click text phải để sửa nội dung"],
@@ -1048,25 +1048,6 @@ export default function ProductPageBuilder({
           })
         }
 
-        // Spec section: thêm nút + Thêm dòng / - Xóa dòng
-        if (inSpec) {
-          if (!toolbar.find((t: any) => t.command === "pvb-spec-add-row")) {
-            toolbar.unshift({
-              attributes: { title: "Thêm dòng thông số", style: "font-size:11px;padding:0 6px;font-weight:700;color:#16a34a" },
-              label: "+ Dòng",
-              command: "pvb-spec-add-row",
-            })
-          }
-          const inRow = el.classList.contains("spec-row") || !!el.closest?.(".spec-row")
-          if (inRow && !toolbar.find((t: any) => t.command === "pvb-spec-del-row")) {
-            toolbar.unshift({
-              attributes: { title: "Xóa dòng này", style: "font-size:11px;padding:0 6px;font-weight:700;color:#dc2626" },
-              label: "- Dòng",
-              command: "pvb-spec-del-row",
-            })
-          }
-        }
-
         component.set("toolbar", toolbar)
       })
       // ─────────────────────────────────────────────────────────────────────
@@ -1074,23 +1055,23 @@ export default function ProductPageBuilder({
       // ── Spec row commands ─────────────────────────────────────────────────
       editor.Commands.add("pvb-spec-add-row", {
         run(ed: any) {
-          const sel = ed.getSelected()
-          if (!sel) return
-          // Walk up to find .spec-table
-          let comp: any = sel
-          for (let i = 0; i < 6; i++) {
-            const el = comp.getEl?.()
-            if (el?.classList?.contains("spec-table")) break
-            if (el?.classList?.contains("pvb-spec")) {
-              // find spec-table child
-              comp = comp.components().find((c: any) => c.getEl?.()?.classList?.contains("spec-table"))
-              break
+          // Find spec-table directly from wrapper — no reliance on current selection
+          const tables = ed.getWrapper().find(".spec-table")
+          if (!tables.length) return
+          let target = tables[0]
+          // If multiple spec sections, find the one closest to current selection
+          if (tables.length > 1) {
+            const sel = ed.getSelected()
+            if (sel) {
+              let c: any = sel
+              for (let i = 0; i < 12; i++) {
+                const el = c.getEl?.()
+                if (el?.classList?.contains("spec-table")) { target = c; break }
+                c = c.parent?.(); if (!c) break
+              }
             }
-            comp = comp.parent?.()
-            if (!comp) return
           }
-          if (!comp) return
-          comp.append('<div class="spec-row"><div class="spec-key">Tên thông số</div><div class="spec-val">Giá trị</div></div>')
+          target.append('<div class="spec-row"><div class="spec-key">Tên thông số</div><div class="spec-val">Giá trị</div></div>')
         },
       })
       editor.Commands.add("pvb-spec-del-row", {
@@ -1530,6 +1511,27 @@ export default function ProductPageBuilder({
                   </button>
                 ))}
               </div>
+
+              {/* Spec-specific row actions — always reliable via right panel */}
+              {selectedSection.pvbClass === "pvb-spec" && (
+                <div style={{ padding: "0 10px 6px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 2px 2px" }}>Thêm / Xóa dòng</p>
+                  <button
+                    onClick={() => editorRef.current?.runCommand("pvb-spec-add-row")}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid #86efac", background: "#dcfce7", color: "#15803d", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    <span style={{ fontSize: 16, width: 20, textAlign: "center" }}>＋</span>
+                    Thêm dòng mới
+                  </button>
+                  <button
+                    onClick={() => editorRef.current?.runCommand("pvb-spec-del-row")}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff1f2", color: "#dc2626", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    <span style={{ fontSize: 16, width: 20, textAlign: "center" }}>－</span>
+                    Xóa dòng đang chọn
+                  </button>
+                </div>
+              )}
 
               {/* Keyboard shortcuts */}
               <div style={{ margin: "4px 10px 0", padding: "10px", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
