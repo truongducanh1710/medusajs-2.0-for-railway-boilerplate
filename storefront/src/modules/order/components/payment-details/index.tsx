@@ -7,9 +7,10 @@ import { HttpTypes } from "@medusajs/types"
 
 type PaymentDetailsProps = {
   order: HttpTypes.StoreOrder
+  correctedTotal?: number
 }
 
-const PaymentDetails = ({ order }: PaymentDetailsProps) => {
+const PaymentDetails = ({ order, correctedTotal }: PaymentDetailsProps) => {
   const payment = order.payment_collections?.[0].payments?.[0]
 
   return (
@@ -43,7 +44,7 @@ const PaymentDetails = ({ order }: PaymentDetailsProps) => {
                   {isStripe(payment.provider_id) && payment.data?.card_last4
                     ? `**** **** **** ${payment.data.card_last4}`
                     : `${convertToLocale({
-                        amount: payment.amount,
+                        amount: correctedTotal ?? payment.amount,
                         currency_code: order.currency_code,
                       })} đã thanh toán lúc ${new Date(
                         payment.created_at ?? ""

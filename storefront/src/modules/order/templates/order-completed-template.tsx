@@ -59,7 +59,7 @@ export default function OrderCompletedTemplate({
           <Items items={order.items} />
           <CartTotals totals={correctedTotals} />
           <ShippingDetails order={order} />
-          <PaymentDetails order={order} />
+          <PaymentDetails order={order} correctedTotal={bundleTotal} />
           <Help />
         </div>
       </div>
