@@ -374,7 +374,7 @@ const blocks: BuilderBlock[] = [
   },
   {
     id: "promo-banner",
-    label: "🎯 Banner Khuyến mãi",
+    label: "🎯 Promo — Đỏ cam",
     category: "Sections",
     content: `
       <style>
@@ -397,6 +397,161 @@ const blocks: BuilderBlock[] = [
               <p>Dùng mã để nhận ưu đãi ngay hôm nay — chỉ áp dụng trong 24h.</p>
               <div class="code">SALE10</div><br>
               <a href="#" class="btn">Nhận ưu đãi ngay</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    `,
+  },
+  {
+    id: "promo-flash",
+    label: "⚡ Promo — Flash Sale",
+    category: "Sections",
+    content: `
+      <style>
+        .pvb-promo-flash{padding:32px 16px;background:#fff}
+        .pvb-promo-flash .inner{max-width:1100px;margin:0 auto}
+        .pvb-promo-flash .box{background:#0f172a;border-radius:20px;padding:24px 20px;color:#fff;position:relative;overflow:hidden}
+        .pvb-promo-flash .box::before{content:'';position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:radial-gradient(circle,rgba(251,191,36,0.15),transparent 70%);pointer-events:none}
+        .pvb-promo-flash .badge{display:inline-flex;align-items:center;gap:6px;background:#fbbf24;color:#0f172a;padding:5px 12px;border-radius:999px;font-size:11px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px}
+        .pvb-promo-flash .left h2{font-size:clamp(24px,6vw,40px);font-weight:900;color:#fbbf24;margin:0 0 6px;line-height:1.1}
+        .pvb-promo-flash .left p{margin:0 0 10px;color:#94a3b8;font-size:14px}
+        .pvb-promo-flash .stock{display:inline-flex;align-items:center;gap:6px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700}
+        .pvb-promo-flash .right{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:18px 20px;margin-top:16px}
+        .pvb-promo-flash .price-orig{font-size:14px;color:#64748b;text-decoration:line-through;margin:0 0 4px}
+        .pvb-promo-flash .price-now{font-size:clamp(28px,7vw,40px);font-weight:900;color:#fbbf24;margin:0 0 14px;line-height:1}
+        .pvb-promo-flash .btn{display:inline-flex;align-items:center;gap:8px;background:#fbbf24;color:#0f172a;padding:12px 22px;border-radius:999px;font-weight:900;font-size:15px;text-decoration:none;border:none;cursor:pointer}
+        @media(min-width:640px){
+          .pvb-promo-flash{padding:40px 24px}
+          .pvb-promo-flash .box{padding:32px 36px;display:flex;align-items:center;gap:32px}
+          .pvb-promo-flash .left{flex:1}
+          .pvb-promo-flash .right{margin-top:0;min-width:220px;flex-shrink:0}
+        }
+      </style>
+      <section class="pvb-promo-flash">
+        <div class="inner">
+          <div class="box">
+            <div class="left">
+              <div class="badge">⚡ Flash Sale</div>
+              <h2>GIẢM 30%</h2>
+              <p>Toàn bộ sản phẩm — Chỉ trong hôm nay!</p>
+              <div class="stock">🔥 Chỉ còn 47 sản phẩm</div>
+            </div>
+            <div class="right">
+              <div class="price-orig">Giá gốc: 599.000đ</div>
+              <div class="price-now">399.000đ</div>
+              <a href="#" class="btn">Mua ngay →</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    `,
+  },
+  {
+    id: "promo-gift",
+    label: "🎁 Promo — Quà tặng kèm",
+    category: "Sections",
+    content: `
+      <style>
+        .pvb-promo-gift{padding:32px 16px;background:#fff}
+        .pvb-promo-gift .inner{max-width:1100px;margin:0 auto}
+        .pvb-promo-gift .box{background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:28px 20px;text-align:center}
+        .pvb-promo-gift h2{font-size:clamp(18px,5vw,28px);font-weight:900;color:#9a3412;margin:0 0 6px}
+        .pvb-promo-gift .sub{color:#c2410c;font-size:14px;margin:0 0 20px}
+        .pvb-promo-gift .gifts{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+        .pvb-promo-gift .gift-item{background:#fff;border:1px solid #fed7aa;border-radius:14px;padding:12px 14px;min-width:90px;text-align:center}
+        .pvb-promo-gift .gift-icon{font-size:28px;display:block;margin-bottom:4px}
+        .pvb-promo-gift .gift-name{font-size:12px;font-weight:700;color:#9a3412}
+        .pvb-promo-gift .gift-val{font-size:11px;color:#c2410c;text-decoration:line-through}
+        .pvb-promo-gift .mystery{background:#f97316;color:#fff;border-radius:14px;padding:12px 14px;min-width:90px;text-align:center}
+        .pvb-promo-gift .mystery .gift-icon{font-size:28px}
+        .pvb-promo-gift .mystery .gift-name{color:#fff}
+        .pvb-promo-gift .total{font-size:14px;color:#78350f;margin:0 0 16px}
+        .pvb-promo-gift .total strong{color:#9a3412;font-size:16px}
+        .pvb-promo-gift .btn{display:inline-flex;align-items:center;gap:8px;background:#ea580c;color:#fff;padding:13px 28px;border-radius:999px;font-weight:900;font-size:15px;text-decoration:none}
+        @media(min-width:640px){.pvb-promo-gift{padding:40px 24px}.pvb-promo-gift .box{padding:36px}}
+      </style>
+      <section class="pvb-promo-gift">
+        <div class="inner">
+          <div class="box">
+            <h2>🎁 Mua ngay — Nhận quà liền tay</h2>
+            <p class="sub">Đặt hàng hôm nay, quà tặng kèm MIỄN PHÍ</p>
+            <div class="gifts">
+              <div class="gift-item">
+                <span class="gift-icon">👜</span>
+                <div class="gift-name">Túi vải</div>
+                <div class="gift-val">89.000đ</div>
+              </div>
+              <div class="gift-item">
+                <span class="gift-icon">📗</span>
+                <div class="gift-name">Sách nấu ăn</div>
+                <div class="gift-val">120.000đ</div>
+              </div>
+              <div class="gift-item">
+                <span class="gift-icon">🧴</span>
+                <div class="gift-name">Nước rửa chén</div>
+                <div class="gift-val">49.000đ</div>
+              </div>
+              <div class="gift-item mystery">
+                <span class="gift-icon">🎁</span>
+                <div class="gift-name">Quà bí ẩn</div>
+                <div class="gift-val" style="color:rgba(255,255,255,0.7)">???</div>
+              </div>
+            </div>
+            <p class="total">Tổng giá trị quà tặng: <strong>258.000đ — MIỄN PHÍ</strong></p>
+            <a href="#" class="btn">Đặt hàng ngay 🎁</a>
+          </div>
+        </div>
+      </section>
+    `,
+  },
+  {
+    id: "promo-deal",
+    label: "💰 Promo — Deal + Social Proof",
+    category: "Sections",
+    content: `
+      <style>
+        .pvb-promo-deal{padding:32px 16px;background:#fff}
+        .pvb-promo-deal .inner{max-width:1100px;margin:0 auto}
+        .pvb-promo-deal .box{border:2px solid #e5e7eb;border-radius:20px;overflow:hidden;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,0.06)}
+        .pvb-promo-deal .img-side{background:linear-gradient(135deg,#fff7ed,#fef3c7);display:flex;align-items:center;justify-content:center;padding:28px;min-height:200px}
+        .pvb-promo-deal .img-side img{width:100%;max-width:240px;height:180px;object-fit:contain;border-radius:12px}
+        .pvb-promo-deal .info-side{padding:24px 22px}
+        .pvb-promo-deal .stars{color:#f97316;font-size:16px;margin-bottom:4px}
+        .pvb-promo-deal .review-count{font-size:12px;color:#6b7280;margin:0 0 14px}
+        .pvb-promo-deal .price-orig{font-size:14px;color:#9ca3af;text-decoration:line-through;margin:0 0 2px}
+        .pvb-promo-deal .price-now{font-size:clamp(28px,7vw,38px);font-weight:900;color:#dc2626;margin:0 0 4px;line-height:1}
+        .pvb-promo-deal .saving{display:inline-block;background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:14px}
+        .pvb-promo-deal .perks{display:flex;flex-direction:column;gap:6px;margin-bottom:18px}
+        .pvb-promo-deal .perk{font-size:13px;color:#374151;display:flex;align-items:center;gap:6px}
+        .pvb-promo-deal .perk::before{content:'✓';color:#16a34a;font-weight:900;flex-shrink:0}
+        .pvb-promo-deal .btn{display:flex;align-items:center;justify-content:center;background:#dc2626;color:#fff;padding:13px;border-radius:12px;font-weight:900;font-size:15px;text-decoration:none;text-align:center}
+        @media(min-width:640px){
+          .pvb-promo-deal{padding:40px 24px}
+          .pvb-promo-deal .box{display:flex}
+          .pvb-promo-deal .img-side{width:40%;flex-shrink:0;min-height:280px}
+          .pvb-promo-deal .info-side{flex:1;padding:32px 28px}
+          .pvb-promo-deal .btn{width:auto;display:inline-flex;padding:13px 28px}
+        }
+      </style>
+      <section class="pvb-promo-deal">
+        <div class="inner">
+          <div class="box">
+            <div class="img-side">
+              <img src="https://placehold.co/400x300/fff7ed/ea580c?text=Ảnh+Sản+phẩm" alt="Sản phẩm" />
+            </div>
+            <div class="info-side">
+              <div class="stars">★★★★★</div>
+              <p class="review-count">1.247 đánh giá 5 sao</p>
+              <div class="price-orig">Giá gốc: 899.000đ</div>
+              <div class="price-now">599.000đ</div>
+              <span class="saving">Tiết kiệm 300.000đ 🏷️</span>
+              <div class="perks">
+                <div class="perk">Giao hàng trong 2 giờ (nội thành)</div>
+                <div class="perk">Đổi trả miễn phí trong 30 ngày</div>
+                <div class="perk">Bảo hành chính hãng 12 tháng</div>
+              </div>
+              <a href="#" class="btn">ĐẶT HÀNG NGAY</a>
             </div>
           </div>
         </div>
@@ -710,6 +865,9 @@ const SECTION_TIPS: Record<string, string[]> = {
   "pvb-how":   ["Double-click số/tiêu đề/mô tả để sửa", "Nhân đôi 1 bước để thêm bước mới"],
   "pvb-cmp":   ["Double-click ô trong bảng để sửa nội dung", "✓ và ✗ có thể đổi thành bất kỳ ký tự"],
   "pvb-promo": ["Double-click mã giảm giá để đổi mã", "Double-click tiêu đề/mô tả để sửa text"],
+  "pvb-promo-flash": ["Double-click % giảm, giá gốc, giá mới để sửa", "Double-click số lượng còn lại để tạo urgency"],
+  "pvb-promo-gift":  ["Double-click icon/tên/giá quà để sửa", "Nhân đôi gift-item để thêm quà mới"],
+  "pvb-promo-deal":  ["Double-click ảnh sản phẩm để đổi URL hình", "Double-click giá, số đánh giá, perks để sửa"],
   "pvb-cd":    ["Double-click số giờ/phút/giây để đổi thời gian đếm ngược"],
   "pvb-trust": ["Double-click icon hoặc text để sửa từng badge", "Nhân đôi badge để thêm badge mới"],
   "pvb-gal":   ["Double-click từng ảnh để đổi URL hình", "Nhân đôi ô ảnh để thêm ảnh mới vào gallery"],
