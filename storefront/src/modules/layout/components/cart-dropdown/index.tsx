@@ -73,7 +73,7 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
     setUpdating(null)
   }
 
-  const roundHundred = (n: number) => Math.round(n / 100) * 100
+  const roundHundred = (n: number) => Math.round(n / 1000) * 1000
 
   const handleQtyChange = async (id: string, qty: number) => {
     if (qty < 1 || qty > 10) return
