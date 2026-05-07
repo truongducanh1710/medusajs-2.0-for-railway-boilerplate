@@ -1213,13 +1213,7 @@ export default function ProductPageBuilder({
                       onClick={() => {
                         const editor = editorRef.current
                         if (!editor) return
-                        const block = editor.BlockManager.get(b.id)
-                        if (block) {
-                          editor.BlockManager.render()
-                          // Add block to canvas at end
-                          const wrapper = editor.getWrapper()
-                          if (wrapper) wrapper.append(block.get("content"))
-                        }
+                        editor.getWrapper().append(b.content)
                       }}
                       style={{
                         display: "flex",
