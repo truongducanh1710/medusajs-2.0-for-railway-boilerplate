@@ -1212,8 +1212,16 @@ export default function ProductPageBuilder({
                       key={b.id}
                       onClick={() => {
                         const editor = editorRef.current
-                        if (!editor) return
-                        editor.getWrapper().append(b.content)
+                        if (!editor) {
+                          console.warn("[PVB] editor not ready")
+                          return
+                        }
+                        try {
+                          const added = editor.addComponents(b.content.trim())
+                          console.log("[PVB] added", added)
+                        } catch(e) {
+                          console.error("[PVB] addComponents error", e)
+                        }
                       }}
                       style={{
                         display: "flex",
