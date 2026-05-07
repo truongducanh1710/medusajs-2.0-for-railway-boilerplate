@@ -697,6 +697,14 @@ const blocks: BuilderBlock[] = [
   },
 ]
 
+// ─── Webcake-style sidebar ───────────────────────────────────────────────────
+const CATEGORIES = [
+  { id: "Sections",     icon: "⊞", label: "Sections" },
+  { id: "Elements",     icon: "✦", label: "Elements" },
+  { id: "Media",        icon: "🖼", label: "Media" },
+  { id: "Social Proof", icon: "⭐", label: "Social" },
+]
+
 export default function ProductPageBuilder({
   open,
   productTitle,
@@ -716,6 +724,7 @@ export default function ProductPageBuilder({
   const [error, setError] = useState("")
   const [ready, setReady] = useState(false)
   const [hasDraftChanges, setHasDraftChanges] = useState(false)
+  const [activePanel, setActivePanel] = useState<string | null>("Sections")
 
   useEffect(() => {
     if (!open || !containerRef.current || editorRef.current) return
@@ -1144,15 +1153,116 @@ export default function ProductPageBuilder({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr]">
-          <aside className="border-r border-gray-200 bg-gray-50 p-3 overflow-y-auto h-full">
-            <div className="mb-3 rounded-xl bg-white p-3 text-sm text-gray-600 border border-gray-200">
-              Kéo block sang canvas. Nếu đã có `page_content`, editor sẽ nạp nội dung cũ.
-            </div>
-            <div id="product-page-builder-blocks" className="overflow-visible space-y-2" />
-          </aside>
+        {/* ── Webcake layout: icon strip | sliding panel | canvas ── */}
+        <div className="flex min-h-0 flex-1">
+          {/* Icon strip — always visible, fixed width */}
+          <div className="flex flex-col items-center gap-1 border-r border-gray-200 bg-gray-900 py-3 w-[52px] flex-shrink-0">
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setActivePanel(p => p === cat.id ? null : cat.id)}
+                title={cat.label}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 3,
+                  width: 44,
+                  padding: "8px 4px",
+                  borderRadius: 8,
+                  border: "none",
+                  cursor: "pointer",
+                  background: activePanel === cat.id ? "#f97316" : "transparent",
+                  color: activePanel === cat.id ? "#fff" : "#9ca3af",
+                  fontSize: 18,
+                  transition: "background 0.15s",
+                }}
+              >
+                <span>{cat.icon}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1, letterSpacing: "0.04em" }}>
+                  {cat.label.split(" ")[0].substring(0, 6).toUpperCase()}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          <div className="h-full overflow-y-auto bg-white">
+          {/* Sliding block panel */}
+          {activePanel && (
+            <div className="flex flex-col border-r border-gray-200 bg-gray-50 w-[240px] flex-shrink-0 h-full">
+              {/* Panel header */}
+              <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-200 bg-white">
+                <span className="text-xs font-black uppercase tracking-widest text-gray-700">
+                  {CATEGORIES.find(c => c.id === activePanel)?.label}
+                </span>
+                <button
+                  onClick={() => setActivePanel(null)}
+                  className="text-gray-400 hover:text-gray-600 text-xs font-bold leading-none"
+                >✕</button>
+              </div>
+              {/* Tip */}
+              <div className="px-3 pt-2.5 pb-1">
+                <p className="text-[10px] text-gray-400 leading-relaxed">Kéo block vào canvas hoặc click để thêm.</p>
+              </div>
+              {/* Block list — scrollable */}
+              <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1.5">
+                {blocks
+                  .filter(b => b.category === activePanel)
+                  .map(b => (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        const editor = editorRef.current
+                        if (!editor) return
+                        const block = editor.BlockManager.get(b.id)
+                        if (block) {
+                          editor.BlockManager.render()
+                          // Add block to canvas at end
+                          const wrapper = editor.getWrapper()
+                          if (wrapper) wrapper.append(block.get("content"))
+                        }
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        width: "100%",
+                        padding: "9px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "#374151",
+                        transition: "box-shadow 0.12s, border-color 0.12s",
+                      }}
+                      onMouseEnter={e => {
+                        ;(e.currentTarget as HTMLElement).style.borderColor = "#f97316"
+                        ;(e.currentTarget as HTMLElement).style.boxShadow = "0 0 0 2px #fed7aa"
+                      }}
+                      onMouseLeave={e => {
+                        ;(e.currentTarget as HTMLElement).style.borderColor = "#e5e7eb"
+                        ;(e.currentTarget as HTMLElement).style.boxShadow = "none"
+                      }}
+                    >
+                      <span style={{ fontSize: 18, lineHeight: 1 }}>
+                        {b.label.match(/^(\p{Emoji})/u)?.[0] ?? "◻"}
+                      </span>
+                      <span style={{ flex: 1, lineHeight: 1.3 }}>
+                        {b.label.replace(/^(\p{Emoji}\s*)/u, "")}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* GrapesJS block manager renders here — kept off-screen to support drag */}
+          <div id="product-page-builder-blocks" style={{ position: "absolute", left: -9999, top: 0, width: 220, pointerEvents: "none", visibility: "hidden" }} />
+
+          {/* Canvas */}
+          <div className="flex-1 h-full overflow-y-auto bg-white min-w-0">
             {loading && (
               <div className="flex h-full items-center justify-center text-sm text-gray-500">
                 Đang tải GrapesJS...
