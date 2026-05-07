@@ -333,6 +333,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [promoLoading, setPromoLoading] = useState(false)
   const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
   const [localItems, setLocalItems] = useState<any[] | null>(null)
+  const [liveDiscount, setLiveDiscount] = useState<number | null>(null)
 
   const roundThousand = (n: number) => Math.round(n / 1000) * 1000
 
@@ -483,8 +484,6 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const sepayTotal = Math.max(1000, cartTotal - SEPAY_DISCOUNT)
   const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
-
-  const [liveDiscount, setLiveDiscount] = useState<number | null>(null)
 
   const handleApplyPromo = async () => {
     if (!promoCode.trim()) return
