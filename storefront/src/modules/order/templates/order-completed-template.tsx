@@ -2,13 +2,8 @@ import { Heading } from "@medusajs/ui"
 import { cookies } from "next/headers"
 import { Suspense } from "react"
 
-import CartTotals from "@modules/common/components/cart-totals"
-import Help from "@modules/order/components/help"
-import Items from "@modules/order/components/items"
 import OnboardingCta from "@modules/order/components/onboarding-cta"
 import OrderDetails from "@modules/order/components/order-details"
-import ShippingDetails from "@modules/order/components/shipping-details"
-import PaymentDetails from "@modules/order/components/payment-details"
 import ProductPreview from "@modules/products/components/product-preview"
 import { getProductsList } from "@lib/data/products"
 import { getRegion } from "@lib/data/regions"
@@ -104,14 +99,42 @@ export default function OrderCompletedTemplate({
             </div>
           </div>
 
-          <Heading level="h2" className="flex flex-row text-3xl-regular">
-            Tóm tắt
-          </Heading>
-          <Items items={order.items} />
-          <CartTotals totals={correctedTotals} />
-          <ShippingDetails order={order} />
-          <PaymentDetails order={order} correctedTotal={bundleTotal} />
-          <Help />
+          {/* Tóm tắt gọn */}
+          <div style={{ background: "#f9fafb", borderRadius: 12, padding: "16px 20px", fontSize: 14 }}>
+            <p style={{ fontWeight: 700, color: "#374151", marginBottom: 10, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em" }}>Tóm tắt đơn hàng</p>
+
+            {/* Items gọn */}
+            {(order.items || []).map((item: any) => {
+              const meta = item.metadata as any
+              const bundlePrice = meta?.bundle_price != null ? Number(meta.bundle_price) : item.unit_price * item.quantity
+              const bundleQty = meta?.bundle_qty ?? item.quantity
+              return (
+                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+                  <span style={{ color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.title} <span style={{ color: "#9ca3af" }}>×{bundleQty}</span>
+                  </span>
+                  <span style={{ fontWeight: 700, color: "#111827", flexShrink: 0 }}>
+                    {new Intl.NumberFormat("vi-VN").format(bundlePrice)}đ
+                  </span>
+                </div>
+              )
+            })}
+
+            {/* Tổng */}
+            <div style={{ borderTop: "1px solid #e5e7eb", marginTop: 10, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 700, color: "#111827" }}>Tổng cộng</span>
+              <span style={{ fontWeight: 900, color: "#e8420a", fontSize: 18 }}>
+                {new Intl.NumberFormat("vi-VN").format(bundleTotal)}đ
+              </span>
+            </div>
+
+            {/* Địa chỉ + Thanh toán gọn 1 dòng */}
+            <div style={{ borderTop: "1px solid #e5e7eb", marginTop: 10, paddingTop: 10, display: "flex", gap: 16, flexWrap: "wrap", color: "#6b7280", fontSize: 13 }}>
+              <span>📍 {[order.shipping_address?.address_1, order.shipping_address?.city].filter(Boolean).join(", ")}</span>
+              <span>💳 {order.payment_collections?.[0]?.payments?.[0]?.provider_id === "pp_system_default" ? "COD — Thu khi nhận" : "Đã thanh toán"}</span>
+              <span>📞 {order.shipping_address?.phone}</span>
+            </div>
+          </div>
 
           <Suspense fallback={<div style={{ height: 200 }} />}>
             <OrderCrossSell order={order} countryCode={countryCode} />
