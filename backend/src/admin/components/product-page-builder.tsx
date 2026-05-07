@@ -1022,7 +1022,8 @@ export default function ProductPageBuilder({
         const el = component.getEl()
         if (!el) return
         const inRevSection = el.classList.contains("pvb-rev2") || !!el.closest?.(".pvb-rev2")
-        if (!inRevSection) return
+        const inSpec = el.classList.contains("pvb-spec") || !!el.closest?.(".pvb-spec")
+        if (!inRevSection && !inSpec) return
 
         const toolbar: any[] = component.get("toolbar") || []
 
@@ -1048,7 +1049,6 @@ export default function ProductPageBuilder({
         }
 
         // Spec section: thêm nút + Thêm dòng / - Xóa dòng
-        const inSpec = el.classList.contains("pvb-spec") || !!el.closest?.(".pvb-spec")
         if (inSpec) {
           if (!toolbar.find((t: any) => t.command === "pvb-spec-add-row")) {
             toolbar.unshift({
