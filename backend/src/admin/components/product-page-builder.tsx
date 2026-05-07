@@ -1025,6 +1025,78 @@ export default function ProductPageBuilder({
       })
       // ─────────────────────────────────────────────────────────────────────
 
+      // ── Move up / Move down commands ──────────────────────────────────────
+      editor.Commands.add("pvb-move-up", {
+        run(ed: any) {
+          const sel = ed.getSelected()
+          if (!sel) return
+          const parent = sel.parent()
+          if (!parent) return
+          const idx = parent.components().indexOf(sel)
+          if (idx <= 0) return
+          parent.components().remove(sel, { temporary: true })
+          parent.components().add(sel, { at: idx - 1 })
+          ed.select(sel)
+        },
+      })
+      editor.Commands.add("pvb-move-down", {
+        run(ed: any) {
+          const sel = ed.getSelected()
+          if (!sel) return
+          const parent = sel.parent()
+          if (!parent) return
+          const comps = parent.components()
+          const idx = comps.indexOf(sel)
+          if (idx >= comps.length - 1) return
+          comps.remove(sel, { temporary: true })
+          comps.add(sel, { at: idx + 1 })
+          ed.select(sel)
+        },
+      })
+
+      // Add move buttons to toolbar of every direct child of wrapper (top-level sections)
+      editor.on("component:selected", (component: any) => {
+        const parent = component.parent()
+        if (!parent) return
+        // Only add to top-level sections (direct children of wrapper)
+        if (parent !== editor.getWrapper()) return
+
+        const toolbar: any[] = component.get("toolbar") || []
+        if (!toolbar.find((t: any) => t.command === "pvb-move-up")) {
+          toolbar.push({
+            attributes: { title: "Di chuyển lên", style: "font-size:14px;padding:0 6px" },
+            label: "↑",
+            command: "pvb-move-up",
+          })
+          toolbar.push({
+            attributes: { title: "Di chuyển xuống", style: "font-size:14px;padding:0 6px" },
+            label: "↓",
+            command: "pvb-move-down",
+          })
+          component.set("toolbar", toolbar)
+        }
+      })
+
+      // Keyboard arrow keys to move selected section
+      editor.on("canvas:frame:load", () => {
+        try {
+          const doc = editor.Canvas.getDocument()
+          if (!doc) return
+          doc.addEventListener("keydown", (e: KeyboardEvent) => {
+            const sel = editor.getSelected()
+            if (!sel) return
+            if (e.key === "ArrowUp" && (e.altKey || e.metaKey)) {
+              e.preventDefault()
+              editor.runCommand("pvb-move-up")
+            } else if (e.key === "ArrowDown" && (e.altKey || e.metaKey)) {
+              e.preventDefault()
+              editor.runCommand("pvb-move-down")
+            }
+          })
+        } catch {}
+      })
+      // ─────────────────────────────────────────────────────────────────────
+
       setReady(true)
       setLoading(false)
     }
