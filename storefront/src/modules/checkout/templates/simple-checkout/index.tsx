@@ -502,16 +502,25 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         shippingMethods: updatedCart.shipping_methods?.length ?? 0,
       })
 
-      // Set default shipping method
+      // Set shipping method — ưu tiên option miễn phí (amount=0), bỏ qua nếu không có
       if (shippingOptions && shippingOptions.length > 0) {
-        await setShippingMethod({
-          cartId: updatedCart.id,
-          shippingMethodId: shippingOptions[0].id,
-        })
-        console.info("[SimpleCheckout] shipping method set", {
-          cartId: updatedCart.id,
-          shippingMethodId: shippingOptions[0].id,
-        })
+        const freeOption = shippingOptions.find((o: any) => (o.amount ?? 0) === 0)
+        if (freeOption) {
+          await setShippingMethod({
+            cartId: updatedCart.id,
+            shippingMethodId: freeOption.id,
+          })
+          console.info("[SimpleCheckout] free shipping method set", {
+            cartId: updatedCart.id,
+            shippingMethodId: freeOption.id,
+          })
+        } else {
+          // Không có free shipping option — bỏ qua, không tính phí ship
+          console.info("[SimpleCheckout] no free shipping option found, skipping", {
+            cartId: updatedCart.id,
+            options: shippingOptions.map((o: any) => ({ id: o.id, amount: o.amount, name: o.name })),
+          })
+        }
       }
 
       const preferredProviderId = payment === "sepay" ? "pp_sepay_sepay" : "pp_system_default"

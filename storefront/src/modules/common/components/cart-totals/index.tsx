@@ -52,12 +52,14 @@ const CartTotals: React.FC<CartTotalsProps> = ({ totals }) => {
             </span>
           </div>
         )}
-        <div className="flex items-center justify-between">
-          <span>{copy.cart.shipping}</span>
-          <span data-testid="cart-shipping" data-value={shipping_total || 0}>
-            {convertToLocale({ amount: shipping_total ?? 0, currency_code })}
-          </span>
-        </div>
+        {(shipping_total ?? 0) > 0 && (
+          <div className="flex items-center justify-between">
+            <span>{copy.cart.shipping}</span>
+            <span data-testid="cart-shipping" data-value={shipping_total || 0}>
+              {convertToLocale({ amount: shipping_total ?? 0, currency_code })}
+            </span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span className="flex gap-x-1 items-center ">{copy.cart.taxes}</span>
           <span data-testid="cart-taxes" data-value={tax_total || 0}>
