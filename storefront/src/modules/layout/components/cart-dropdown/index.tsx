@@ -1,10 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
-import { deleteLineItem, updateLineItem, applyPromotions } from "@lib/data/cart"
+import { deleteLineItem, applyPromotions } from "@lib/data/cart"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+
+const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
+const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 
 function fmtVND(amount: number) {
   return new Intl.NumberFormat("vi-VN").format(amount) + " ₫"
@@ -21,13 +24,25 @@ function Countdown({ seconds = 299 }: { seconds?: number }) {
   return <span style={{ fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>{m}:{s}</span>
 }
 
-const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
+const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null }) => {
   const [open, setOpen] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
   const [promoCode, setPromoCode] = useState("")
   const [applyingPromo, setApplyingPromo] = useState(false)
+  // localItems: optimistic state để cập nhật UI ngay mà không trigger server rerender
+  const [localItems, setLocalItems] = useState<HttpTypes.StoreCartLineItem[] | null>(null)
   const itemRef = useRef(0)
   const pathname = usePathname()
+  const router = useRouter()
+
+  // Sync localItems khi cart prop thay đổi (sau delete, promoCode, v.v.)
+  useEffect(() => {
+    setLocalItems(null)
+  }, [initialCart?.id, initialCart?.items?.length])
+
+  const cart = localItems != null
+    ? { ...initialCart, items: localItems } as typeof initialCart
+    : initialCart
 
   const totalItems = cart?.items?.reduce((acc, i) => {
     const meta = i.metadata as any
@@ -64,8 +79,8 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
     const item = cart?.items?.find(i => i.id === id)
     const meta = item?.metadata as any
 
-    // Tính lại bundle_price nếu item có bundle_options
-    let newMeta: Record<string, unknown> | undefined
+    // Tính lại bundle_price theo công thức
+    let newMeta: Record<string, unknown> = { ...meta }
     try {
       const bundleOptions: Array<{ qty: number; price: number; originalPrice: number; label: string; gifts?: any[] }> =
         JSON.parse(meta?.bundle_options || "[]")
@@ -88,7 +103,6 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
           const unitExtra = Math.max(unitPriceMax * 0.85, unitPriceMax - stepPerUnit * extraQty)
           newPrice = Math.round(maxOpt.price + unitExtra * extraQty)
         } else {
-          // nội suy giữa 2 preset
           let newP = maxOpt.price
           for (let i = 0; i < sorted.length - 1; i++) {
             const lo = sorted[i], hi = sorted[i + 1]
@@ -100,7 +114,6 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
           newPrice = newP
         }
 
-        // Quà: dùng max tier nếu qty >= max preset qty
         const giftSource = qty >= maxOpt.qty ? maxOpt : (sorted.find(o => o.qty === qty) ?? sorted.filter(o => o.qty <= qty).reverse()[0])
         const newLabel = exact?.label ?? `${qty} SẢN PHẨM`
         const newGifts = giftSource?.gifts
@@ -112,10 +125,36 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
           bundle_label: newLabel,
           ...(newGifts && newGifts.length > 0 ? { gifts: JSON.stringify(newGifts) } : { gifts: "[]" }),
         }
+
+        // Optimistic update — cập nhật UI ngay, không reload
+        setLocalItems(prev => {
+          const base = prev ?? (cart?.items ?? [])
+          return base.map(i => i.id === id
+            ? { ...i, quantity: qty, metadata: newMeta } as any
+            : i
+          )
+        })
       }
     } catch {}
 
-    await updateLineItem({ lineId: id, quantity: qty, metadata: newMeta })
+    // Gọi API trực tiếp (không dùng server action) để tránh revalidateTag → timer reset
+    try {
+      const cartId = cart?.id
+      if (cartId) {
+        await fetch(`${BACKEND}/store/carts/${cartId}/line-items/${id}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-publishable-api-key": PUB_KEY,
+          },
+          body: JSON.stringify({ quantity: qty, metadata: newMeta }),
+          credentials: "include",
+        })
+      }
+    } catch (e) {
+      console.error("[CartDropdown] updateLineItem failed", e)
+      setLocalItems(null) // rollback optimistic
+    }
     setUpdating(null)
   }
 
