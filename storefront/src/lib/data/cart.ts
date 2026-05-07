@@ -163,12 +163,26 @@ export async function updateLineItem({
   const body: Record<string, unknown> = { quantity }
   if (metadata) body.metadata = metadata
 
-  await sdk.store.cart
-    .updateLineItem(cartId, lineId, body as any, {}, await getAuthHeaders())
-    .then(() => {
-      revalidateTag("cart")
-    })
-    .catch(medusaError)
+  const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
+  const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+  const authHeaders = await getAuthHeaders()
+
+  const res = await fetch(`${backendUrl}/store/carts/${cartId}/line-items/${lineId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-publishable-api-key": pubKey,
+      ...authHeaders,
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`updateLineItem failed: ${err}`)
+  }
+
+  revalidateTag("cart")
 }
 
 export async function deleteLineItem(lineId: string) {

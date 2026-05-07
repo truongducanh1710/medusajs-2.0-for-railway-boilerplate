@@ -29,9 +29,19 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
   const itemRef = useRef(0)
   const pathname = usePathname()
 
-  const totalItems = cart?.items?.reduce((acc, i) => acc + i.quantity, 0) || 0
-  const subtotal = cart?.subtotal ?? 0
-  const originalTotal = cart?.items?.reduce((acc, item) => acc + (item.unit_price || 0) * item.quantity, 0) || 0
+  const totalItems = cart?.items?.reduce((acc, i) => {
+    const meta = i.metadata as any
+    return acc + (meta?.bundle_qty != null ? Number(meta.bundle_qty) : i.quantity)
+  }, 0) || 0
+  const subtotal = cart?.items?.reduce((sum, i) => {
+    const meta = i.metadata as any
+    return sum + (meta?.bundle_price != null ? Number(meta.bundle_price) : i.unit_price * i.quantity)
+  }, 0) ?? 0
+  const originalTotal = cart?.items?.reduce((acc, item) => {
+    const meta = item.metadata as any
+    const bPrice = meta?.bundle_price != null ? Number(meta.bundle_price) : item.unit_price * item.quantity
+    return acc + Math.round(bPrice * 1.4)
+  }, 0) || 0
   const savings = originalTotal - subtotal
   const freeshipThreshold = 500000
 
@@ -302,10 +312,14 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
               const gifts = (() => {
                 try { return JSON.parse((item.metadata?.gifts as string) || "[]") } catch { return [] }
               })()
+              const itemMeta = item.metadata as any
+              const bundlePrice = itemMeta?.bundle_price != null ? Number(itemMeta.bundle_price) : null
+              const bundleQty = itemMeta?.bundle_qty != null ? Number(itemMeta.bundle_qty) : item.quantity
+              const bundleLabel = itemMeta?.bundle_label as string | undefined
+              const displayPrice = bundlePrice ?? (item.unit_price * item.quantity)
+              const originalPrice = Math.round(displayPrice * 1.4)
+              const savings = originalPrice - displayPrice
               const thumb = item.variant?.product?.thumbnail || (item as any).thumbnail
-              const salePrice = item.unit_price || 0
-              const originalPrice = Math.round(salePrice * 1.5)
-              const savings = (originalPrice - salePrice) * item.quantity
               const variantText = item.variant?.options?.map(o => `${o.option?.title}: ${o.value}`).join(" | ") || ""
 
               return (
@@ -322,23 +336,23 @@ const CartDropdown = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm text-gray-900 line-clamp-2">{item.title || (item as any).product_title}</p>
+                      {bundleLabel && <p className="text-xs text-blue-600 font-bold mt-0.5">{bundleLabel}</p>}
                       {variantText && <p className="text-xs text-gray-500 mt-0.5">{variantText}</p>}
                       <div className="flex items-center mt-1">
                         <span className="text-xs text-gray-400 line-through mr-2">{fmtVND(originalPrice)}</span>
-                        <span className="text-sm font-bold text-red-600 mr-2">{fmtVND(salePrice)}</span>
                         <span className="bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded uppercase">ƯU ĐÃI GIỚI HẠN</span>
                       </div>
-                      <p className="text-sm font-black text-orange-500 mt-1">{fmtVND(salePrice * item.quantity)}</p>
+                      <p className="text-sm font-black text-orange-500 mt-1">{fmtVND(displayPrice)}</p>
                       <p className="text-xs text-green-600 font-medium mt-1">✓ Bạn tiết kiệm {fmtVND(savings)}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <button
-                          onClick={() => handleQtyChange(item.id, item.quantity - 1)}
+                          onClick={() => handleQtyChange(item.id, bundleQty - 1)}
                           disabled={!!updating}
                           className={`w-7 h-7 rounded-full border border-gray-300 bg-white flex items-center justify-center text-sm hover:bg-gray-50 transition-colors ${updating ? 'opacity-40' : ''}`}
                         >−</button>
-                        <span className="font-bold text-sm min-w-[20px] text-center">{item.quantity}</span>
+                        <span className="font-bold text-sm min-w-[20px] text-center">{bundleQty}</span>
                         <button
-                          onClick={() => handleQtyChange(item.id, item.quantity + 1)}
+                          onClick={() => handleQtyChange(item.id, bundleQty + 1)}
                           disabled={!!updating}
                           className={`w-7 h-7 rounded-full border border-gray-300 bg-white flex items-center justify-center text-sm hover:bg-gray-50 transition-colors ${updating ? 'opacity-40' : ''}`}
                         >+</button>
