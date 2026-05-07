@@ -41,14 +41,16 @@ const PaymentDetails = ({ order, correctedTotal }: PaymentDetailsProps) => {
                   {paymentInfoMap[payment.provider_id].icon}
                 </Container>
                 <Text data-testid="payment-amount">
-                  {isStripe(payment.provider_id) && payment.data?.card_last4
-                    ? `**** **** **** ${payment.data.card_last4}`
-                    : `${convertToLocale({
-                        amount: correctedTotal ?? payment.amount,
-                        currency_code: order.currency_code,
-                      })} đã thanh toán lúc ${new Date(
-                        payment.created_at ?? ""
-                      ).toLocaleString()}`}
+                  {payment.provider_id === "pp_system_default"
+                    ? "Thu tiền khi nhận hàng"
+                    : isStripe(payment.provider_id) && payment.data?.card_last4
+                      ? `**** **** **** ${payment.data.card_last4}`
+                      : `${convertToLocale({
+                          amount: correctedTotal ?? payment.amount,
+                          currency_code: order.currency_code,
+                        })} đã thanh toán lúc ${new Date(
+                          payment.created_at ?? ""
+                        ).toLocaleString()}`}
                 </Text>
               </div>
             </div>

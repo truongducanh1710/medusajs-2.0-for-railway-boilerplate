@@ -7,18 +7,21 @@ type OrderDetailsProps = {
 }
 
 const OrderDetails = ({ order, showStatus }: OrderDetailsProps) => {
+  const isGuestEmail = !order.email || order.email.startsWith("guest") || order.email.includes("@example.com")
   return (
     <div>
-      <Text>
-        Chúng tôi đã gửi xác nhận đơn hàng đến{" "}
-        <span
-          className="text-ui-fg-medium-plus font-semibold"
-          data-testid="order-email"
-        >
-          {order.email}
-        </span>
-        .
-      </Text>
+      {!isGuestEmail && (
+        <Text>
+          Chúng tôi đã gửi xác nhận đơn hàng đến{" "}
+          <span
+            className="text-ui-fg-medium-plus font-semibold"
+            data-testid="order-email"
+          >
+            {order.email}
+          </span>
+          .
+        </Text>
+      )}
       <Text className="mt-2">
         Ngày đặt hàng:{" "}
         <span data-testid="order-date">

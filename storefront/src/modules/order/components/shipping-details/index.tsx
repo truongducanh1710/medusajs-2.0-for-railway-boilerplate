@@ -9,6 +9,12 @@ type ShippingDetailsProps = {
 }
 
 const ShippingDetails = ({ order }: ShippingDetailsProps) => {
+  const isGuestEmail = !order.email || order.email.startsWith("guest") || order.email.includes("@example.com")
+  const shippingTotal = order.shipping_methods?.[0]?.total ?? 0
+  const shippingLabel = shippingTotal === 0
+    ? "Giao hàng tiêu chuẩn — Miễn phí"
+    : `Giao hàng tiêu chuẩn — ${convertToLocale({ amount: shippingTotal, currency_code: order.currency_code })}`
+
   return (
     <div>
       <Heading level="h2" className="flex flex-row text-3xl-regular my-6">
@@ -26,28 +32,30 @@ const ShippingDetails = ({ order }: ShippingDetailsProps) => {
             {order.shipping_address?.first_name}{" "}
             {order.shipping_address?.last_name}
           </Text>
-          <Text className="txt-medium text-ui-fg-subtle">
-            {order.shipping_address?.address_1}{" "}
-            {order.shipping_address?.address_2}
-          </Text>
-          <Text className="txt-medium text-ui-fg-subtle">
-            {order.shipping_address?.postal_code},{" "}
-            {order.shipping_address?.city}
-          </Text>
-          <Text className="txt-medium text-ui-fg-subtle">
-            {order.shipping_address?.country_code?.toUpperCase()}
-          </Text>
+          {order.shipping_address?.address_1 && (
+            <Text className="txt-medium text-ui-fg-subtle">
+              {order.shipping_address.address_1}
+              {order.shipping_address?.address_2 ? `, ${order.shipping_address.address_2}` : ""}
+            </Text>
+          )}
+          {order.shipping_address?.city && (
+            <Text className="txt-medium text-ui-fg-subtle">
+              {order.shipping_address.city}
+            </Text>
+          )}
         </div>
 
         <div
-          className="flex flex-col w-1/3 "
+          className="flex flex-col w-1/3"
           data-testid="shipping-contact-summary"
         >
           <Text className="txt-medium-plus text-ui-fg-base mb-1">Liên hệ</Text>
           <Text className="txt-medium text-ui-fg-subtle">
             {order.shipping_address?.phone}
           </Text>
-          <Text className="txt-medium text-ui-fg-subtle">{order.email}</Text>
+          {!isGuestEmail && (
+            <Text className="txt-medium text-ui-fg-subtle">{order.email}</Text>
+          )}
         </div>
 
         <div
@@ -55,16 +63,7 @@ const ShippingDetails = ({ order }: ShippingDetailsProps) => {
           data-testid="shipping-method-summary"
         >
           <Text className="txt-medium-plus text-ui-fg-base mb-1">Phương thức</Text>
-          <Text className="txt-medium text-ui-fg-subtle">
-            {(order as any).shipping_methods[0]?.name} (
-            {convertToLocale({
-              amount: order.shipping_methods?.[0].total ?? 0,
-              currency_code: order.currency_code,
-            })
-              .replace(/,/g, "")
-              .replace(/\./g, ",")}
-            )
-          </Text>
+          <Text className="txt-medium text-ui-fg-subtle">{shippingLabel}</Text>
         </div>
       </div>
       <Divider className="mt-8" />
