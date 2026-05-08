@@ -45,6 +45,31 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
+    id: "tiktok-video",
+    label: "🎵 Video TikTok",
+    category: "Sections",
+    content: `
+      <style>
+        .pvb-tiktok{padding:40px 16px;background:#fff}
+        .pvb-tiktok .inner{max-width:420px;margin:0 auto;text-align:center}
+        .pvb-tiktok h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 14px}
+        .pvb-tiktok .frame{border-radius:16px;overflow:hidden;background:#000;position:relative}
+        .pvb-tiktok iframe{width:100%;height:740px;border:0;display:block}
+        .pvb-tiktok .url-hint{font-size:12px;color:#9ca3af;margin-top:10px}
+        @media(min-width:768px){.pvb-tiktok{padding:56px 24px}}
+      </style>
+      <section class="pvb-tiktok">
+        <div class="inner">
+          <h2>🎵 Video thực tế từ khách hàng</h2>
+          <div class="frame">
+            <iframe src="https://www.tiktok.com/embed/v2/7000000000000000000" allowfullscreen allow="autoplay"></iframe>
+          </div>
+          <p class="url-hint">← Double-click vào iframe, đổi số ID trong src thành ID video TikTok của bạn</p>
+        </div>
+      </section>
+    `,
+  },
+  {
     id: "pain-solution",
     label: "😤 Pain / Solution",
     category: "Sections",
@@ -854,7 +879,8 @@ const blocks: BuilderBlock[] = [
 // ─── Section tips ────────────────────────────────────────────────────────────
 const SECTION_TIPS: Record<string, string[]> = {
   "pvb-rev2":  ["Bấm +5⭐ trên toolbar để thêm đánh giá", "Click vào card → 📷 để thêm/đổi ảnh review", "Double-click chữ để sửa nội dung"],
-  "pvb-video": ["Double-click vào iframe để sửa", "Đổi src= thành link dạng youtube.com/embed/VIDEO_ID"],
+  "pvb-video": ["Double-click vào iframe để sửa src=", "YouTube: dùng dạng youtube.com/embed/VIDEO_ID", "Lấy VIDEO_ID từ link youtu.be/VIDEO_ID hoặc ?v=VIDEO_ID"],
+  "pvb-tiktok": ["Double-click vào iframe → sửa số ID cuối src=", "Lấy ID từ link TikTok: tiktok.com/@user/video/ID_SỐ_DÀI", "Chỉ dùng phần số dài (ví dụ: 7284123456789012345)"],
   "pvb-ps":    ["Double-click từng dòng để sửa Pain / Solution", "Thêm dòng mới bằng cách nhân đôi item"],
   "pvb-ben":   ["Double-click icon/tiêu đề/mô tả để sửa", "Đổi emoji icon trực tiếp trong ô chữ"],
   "pvb-spec":  ["Double-click ô tên / giá trị để sửa trực tiếp", "Bấm '＋ Thêm dòng mới' trong panel phải để thêm", "Click vào 1 dòng → bấm '－ Xóa dòng đang chọn' để xóa"],
