@@ -78,8 +78,16 @@ export default function BundleSelector({ product, region }: Props) {
     }
   } catch {}
 
-  const isMultiVariant = variantConfigs.length > 1
-  const activeVarConfig = isMultiVariant ? variantConfigs[activeVariantIdx] : null
+  // Override label từ variant title thực tế (tránh stale label trong metadata)
+  const variantConfigs2 = variantConfigs.map(vc => {
+    const realVariant = product.variants?.find(v => v.id === vc.variantId)
+    return realVariant && realVariant.title !== vc.label
+      ? { ...vc, label: realVariant.title }
+      : vc
+  })
+
+  const isMultiVariant = variantConfigs2.length > 1
+  const activeVarConfig = isMultiVariant ? variantConfigs2[activeVariantIdx] : null
 
   // Find actual Medusa variant for the active config
   const activeVariant = isMultiVariant
@@ -188,7 +196,7 @@ export default function BundleSelector({ product, region }: Props) {
         <div className="px-3 pt-3 pb-2 bg-white border-b border-gray-100">
           <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Chọn loại:</p>
           <div className="flex gap-2 flex-wrap">
-            {variantConfigs.map((vc, vi) => (
+            {variantConfigs2.map((vc, vi) => (
               <button
                 key={vc.variantId}
                 onClick={() => {
