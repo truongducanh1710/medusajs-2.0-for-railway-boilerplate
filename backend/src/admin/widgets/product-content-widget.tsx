@@ -741,7 +741,8 @@ const [showPain, setShowPain] = useState(false)
       if (prev.length === 0) return prev
       const synced = productVariants.map(v => {
         const existing = prev.find(vb => vb.variantId === v.id)
-        if (existing) return existing
+        // Cập nhật label nếu variant title đã đổi
+        if (existing) return existing.label !== v.title ? { ...existing, label: v.title } : existing
         // Variant mới chưa có config → tạo entry trống
         return {
           variantId: v.id,
