@@ -78,13 +78,15 @@ export default function BundleSelector({ product, region }: Props) {
     }
   } catch {}
 
-  // Override label từ variant title thực tế (tránh stale label trong metadata)
-  const variantConfigs2 = variantConfigs.map(vc => {
-    const realVariant = product.variants?.find(v => v.id === vc.variantId)
-    return realVariant && realVariant.title !== vc.label
-      ? { ...vc, label: realVariant.title }
-      : vc
-  })
+  // Chỉ giữ config cho variant còn tồn tại, override label theo title thực tế
+  const variantConfigs2 = variantConfigs
+    .filter(vc => product.variants?.some(v => v.id === vc.variantId))
+    .map(vc => {
+      const realVariant = product.variants?.find(v => v.id === vc.variantId)
+      return realVariant && realVariant.title !== vc.label
+        ? { ...vc, label: realVariant.title }
+        : vc
+    })
 
   const isMultiVariant = variantConfigs2.length > 1
   const activeVarConfig = isMultiVariant ? variantConfigs2[activeVariantIdx] : null
