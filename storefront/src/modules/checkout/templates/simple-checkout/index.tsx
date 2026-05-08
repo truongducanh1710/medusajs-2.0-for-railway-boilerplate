@@ -740,14 +740,14 @@ return parsed
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-gray-900 line-clamp-2">
-                          {item.title}
-                          {(item.metadata as any)?.bundle_label && (
-                            <span className="ml-1.5 text-[10px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                              {(item.metadata as any).bundle_label}
-                            </span>
-                          )}
-                        </p>
+                        {(item.metadata as any)?.bundle_label ? (
+                          <>
+                            <p className="font-black text-sm text-blue-600">{(item.metadata as any).bundle_label}</p>
+                            <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{item.title}</p>
+                          </>
+                        ) : (
+                          <p className="font-bold text-sm text-gray-900 line-clamp-2">{item.title}</p>
+                        )}
                         <p className="font-black text-orange-500 text-sm mt-1">
                           {formatVND(
                             (item.metadata as any)?.bundle_price != null
