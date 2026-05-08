@@ -1,5 +1,5 @@
 import { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { enrichLineItems, retrieveCart } from "@lib/data/cart"
 import { listCartShippingMethods } from "@lib/data/fulfillment"
 import { HttpTypes } from "@medusajs/types"
@@ -9,20 +9,20 @@ export const metadata: Metadata = {
   title: "Đặt hàng | Phan Viet",
 }
 
-const fetchCart = async () => {
+export default async function Checkout({
+  params,
+}: {
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await params
   const cart = await retrieveCart()
-  if (!cart) return notFound()
+  if (!cart) redirect(`/${countryCode}`)
 
   if (cart?.items?.length) {
     const enrichedItems = await enrichLineItems(cart.items, cart.region_id!)
     cart.items = enrichedItems as HttpTypes.StoreCartLineItem[]
   }
 
-  return cart
-}
-
-export default async function Checkout() {
-  const cart = await fetchCart()
   const shippingOptions = await listCartShippingMethods(cart.id)
   return <SimpleCheckout cart={cart} shippingOptions={shippingOptions} />
 }
