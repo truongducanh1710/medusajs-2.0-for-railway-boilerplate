@@ -77,6 +77,65 @@ const blocks: BuilderBlock[] = [
     `,
   },
   {
+    id: "tiktok-gallery",
+    label: "🎵 TikTok Gallery (3 video)",
+    category: "Sections",
+    content: `
+      <style>
+        .pvb-tkg{padding:32px 16px;background:#fff}
+        .pvb-tkg h2{font-size:clamp(18px,4vw,26px);font-weight:900;text-align:center;margin:0 0 16px}
+        .pvb-tkg .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:700px;margin:0 auto}
+        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:#111;cursor:pointer}
+        .pvb-tkg .card .preview{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+        .pvb-tkg .card .preview iframe{width:400%;height:400%;transform:scale(0.25);transform-origin:top left;border:0}
+        .pvb-tkg .card .overlay{position:absolute;inset:0;background:rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;transition:background 0.2s}
+        .pvb-tkg .card:hover .overlay{background:rgba(0,0,0,0.1)}
+        .pvb-tkg .play{width:44px;height:44px;background:rgba(255,255,255,0.9);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;padding-left:3px}
+        .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center}
+        .pvb-tkg-pop.open{display:flex}
+        .pvb-tkg-pop .pop-inner{position:relative;width:100%;max-width:400px;height:85vh}
+        .pvb-tkg-pop .pop-inner iframe{width:100%;height:100%;border:0;border-radius:12px}
+        .pvb-tkg-pop .tkg-close{position:absolute;top:-40px;right:0;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;line-height:1;padding:0}
+        .pvb-tkg .admin-panel{margin-top:20px;padding:14px;background:#f9fafb;border-radius:10px;border:1px dashed #d1d5db}
+        .pvb-tkg .admin-panel p{font-size:11px;color:#6b7280;margin:0 0 10px;font-weight:600}
+        .pvb-tkg .tt-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+        .pvb-tkg .tt-lbl{font-size:11px;color:#374151;white-space:nowrap;width:52px}
+        .pvb-tkg .tt-inp{flex:1;padding:6px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;outline:none}
+        .pvb-tkg .tt-btn{padding:6px 10px;background:#111827;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+        @media(min-width:768px){.pvb-tkg{padding:48px 24px}.pvb-tkg .grid{gap:12px}}
+      </style>
+      <section class="pvb-tkg">
+        <h2>🎵 Video thực tế từ khách hàng</h2>
+        <div class="grid">
+          <div class="card" data-vid="7000000000000000001" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+            <div class="preview"><iframe src="https://www.tiktok.com/embed/v2/7000000000000000001" allow="autoplay"></iframe></div>
+            <div class="overlay"><div class="play">&#9654;</div></div>
+          </div>
+          <div class="card" data-vid="7000000000000000002" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+            <div class="preview"><iframe src="https://www.tiktok.com/embed/v2/7000000000000000002" allow="autoplay"></iframe></div>
+            <div class="overlay"><div class="play">&#9654;</div></div>
+          </div>
+          <div class="card" data-vid="7000000000000000003" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+            <div class="preview"><iframe src="https://www.tiktok.com/embed/v2/7000000000000000003" allow="autoplay"></iframe></div>
+            <div class="overlay"><div class="play">&#9654;</div></div>
+          </div>
+        </div>
+        <div class="admin-panel">
+          <p>&#128295; Nhập link TikTok cho từng video rồi bấm Áp dụng</p>
+          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u1');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Không tìm thấy ID. Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[0]){cards[0].setAttribute('data-vid',vid);var fr=cards[0].querySelector('.preview iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;}})()">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u2');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Không tìm thấy ID. Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[1]){cards[1].setAttribute('data-vid',vid);var fr=cards[1].querySelector('.preview iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;}})()">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u3');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Không tìm thấy ID. Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[2]){cards[2].setAttribute('data-vid',vid);var fr=cards[2].querySelector('.preview iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;}})()">Áp dụng</button></div>
+        </div>
+      </section>
+      <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="if(event.target===this){document.getElementById('pvb-tkg-iframe').src='';this.classList.remove('open');}">
+        <div class="pop-inner">
+          <button class="tkg-close" onclick="document.getElementById('pvb-tkg-iframe').src='';document.getElementById('pvb-tkg-pop').classList.remove('open')">&#10005;</button>
+          <iframe id="pvb-tkg-iframe" src="" allow="autoplay" allowfullscreen></iframe>
+        </div>
+      </div>
+    `,
+  },
+  {
     id: "pain-solution",
     label: "😤 Pain / Solution",
     category: "Sections",
@@ -888,6 +947,7 @@ const SECTION_TIPS: Record<string, string[]> = {
   "pvb-rev2":  ["Bấm +5⭐ trên toolbar để thêm đánh giá", "Click vào card → 📷 để thêm/đổi ảnh review", "Double-click chữ để sửa nội dung"],
   "pvb-video": ["Double-click vào iframe để sửa src=", "YouTube: dùng dạng youtube.com/embed/VIDEO_ID", "Lấy VIDEO_ID từ link youtu.be/VIDEO_ID hoặc ?v=VIDEO_ID"],
   "pvb-tiktok": ["Dán link TikTok vào ô input → bấm 'Áp dụng' để load video", "Link dạng: tiktok.com/@user/video/1234567890", "Sau khi áp dụng nhớ bấm 'Lưu nội dung' để lưu lại"],
+  "pvb-tkg":    ["Dán link TikTok vào ô Video 1/2/3 → bấm Áp dụng để cập nhật preview", "Trên storefront khách click vào card → popup fullscreen tự mở", "Chỉ nên dùng 1 block Gallery per trang"],
   "pvb-ps":    ["Double-click từng dòng để sửa Pain / Solution", "Thêm dòng mới bằng cách nhân đôi item"],
   "pvb-ben":   ["Double-click icon/tiêu đề/mô tả để sửa", "Đổi emoji icon trực tiếp trong ô chữ"],
   "pvb-spec":  ["Double-click ô tên / giá trị để sửa trực tiếp", "Bấm '＋ Thêm dòng mới' trong panel phải để thêm", "Click vào 1 dòng → bấm '－ Xóa dòng đang chọn' để xóa"],
@@ -957,6 +1017,7 @@ export default function ProductPageBuilder({
         storageManager: false,
         fromElement: false,
         noticeOnUnload: false,
+        allowScripts: 1,
         panels: { defaults: [] },
         styleManager: { appendTo: "#pvb-styles-panel" },
         traitManager: { appendTo: "#pvb-styles-panel" },
