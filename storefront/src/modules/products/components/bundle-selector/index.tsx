@@ -159,6 +159,26 @@ export default function BundleSelector({ product, region }: Props) {
     }
 
     try {
+      const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
+      const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
+
+      // Lấy cart ID từ cookie để xóa item cũ cùng variantId (replace thay vì cộng thêm)
+      const cartIdMatch = document.cookie.match(/(?:^|;\s*)_medusa_cart_id=([^;]+)/)
+      const cartId = cartIdMatch?.[1]
+      if (cartId) {
+        const cartRes = await fetch(`${backendUrl}/store/carts/${cartId}?fields=+items,+items.variant_id`, {
+          headers: { "x-publishable-api-key": pubKey },
+        }).then(r => r.ok ? r.json() : null).catch(() => null)
+
+        const existingItem = cartRes?.cart?.items?.find((i: any) => i.variant_id === variant.id)
+        if (existingItem) {
+          await fetch(`${backendUrl}/store/carts/${cartId}/line-items/${existingItem.id}`, {
+            method: "DELETE",
+            headers: { "x-publishable-api-key": pubKey },
+          }).catch(() => {})
+        }
+      }
+
       const giftsToSave = selectedOpt.gifts || []
       // quantity = số thật khách chọn, bundle_price = tổng giá bundle
       // bundle_options lưu lại để cart-drawer tính lại giá khi +/-
