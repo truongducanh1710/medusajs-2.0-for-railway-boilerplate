@@ -732,14 +732,17 @@ const [showPain, setShowPain] = useState(false)
       .catch(e => { console.error("[widget] fetch product error:", e) })
   }, [product.id])
 
-  // Sync variantBundles khi productVariants load — đảm bảo variant mới luôn có tab
+  // Sync variantBundles với productVariants — xóa stale, thêm mới
+  // Chạy mỗi khi productVariants load xong (không phụ thuộc showBundleOptions)
   useEffect(() => {
-    if (productVariants.length <= 1) return
-    if (!showBundleOptions) return
+    if (productVariants.length === 0) return
     setVariantBundles(prev => {
+      // Nếu chưa có bundle config nào (chưa lưu lần nào), không tự khởi tạo
+      if (prev.length === 0) return prev
       const synced = productVariants.map(v => {
         const existing = prev.find(vb => vb.variantId === v.id)
         if (existing) return existing
+        // Variant mới chưa có config → tạo entry trống
         return {
           variantId: v.id,
           label: v.title,
@@ -749,10 +752,11 @@ const [showPain, setShowPain] = useState(false)
           ]
         }
       })
+      // "Loại vừa" cũ bị xóa khỏi variants → không còn trong synced → tự drop
       const changed = synced.length !== prev.length || synced.some((s, i) => s.variantId !== prev[i]?.variantId)
       return changed ? synced : prev
     })
-  }, [productVariants, showBundleOptions])
+  }, [productVariants])
 
   // FAQ & Bundle local state
   const [faqs, setFaqs] = useState<FAQItem[]>([{ q: "", a: "" }])
