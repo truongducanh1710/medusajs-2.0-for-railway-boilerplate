@@ -704,8 +704,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
   }, [])
 
   // Sections toggle state
-  const [showVideo, setShowVideo] = useState(false)
-  const [showPain, setShowPain] = useState(false)
+const [showPain, setShowPain] = useState(false)
   const [showBenefits, setShowBenefits] = useState(false)
   const [showSpecs, setShowSpecs] = useState(false)
   const [showReviews, setShowReviews] = useState(false)
@@ -811,8 +810,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
     // Lọc null ra khỏi meta state (null = đã xóa trên server)
     const clean: Meta = Object.fromEntries(Object.entries(m).filter(([, v]) => v !== null && v !== undefined)) as Meta
     setMeta(clean)
-    setShowVideo(!!clean.video_url)
-    setShowPain(!!(clean.pain_1 || clean.pain_2 || clean.pain_3))
+setShowPain(!!(clean.pain_1 || clean.pain_2 || clean.pain_3))
     setShowBenefits(!!(clean.benefit_title_1))
     setShowSpecs(!!(clean.chat_lieu || clean.kich_thuoc || clean.xuat_xu || clean.bao_hanh))
     setShowReviews(!!clean.reviews)
@@ -1168,20 +1166,7 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         </div>
       </div>
 
-      {/* Video Demo */}
-      <Toggle label="🎬 Video Demo" enabled={showVideo} onToggle={() => { setShowVideo(!showVideo); if (showVideo) setM("video_url", "") }}>
-        <Input
-          label="URL Video (YouTube hoặc TikTok)"
-          value={meta.video_url || ""}
-          onChange={v => setM("video_url", v)}
-          placeholder="https://youtu.be/xxx hoặc https://www.tiktok.com/@user/video/123..."
-        />
-        <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-          YouTube: dán link bình thường — TikTok: dán link bài video (có /video/ID)
-        </p>
-      </Toggle>
-
-      {/* 5. Reviews */}
+{/* 5. Reviews */}
       <Toggle label="💬 Đánh giá khách hàng" enabled={showReviews} onToggle={() => setShowReviews(!showReviews)}>
         {reviews.map((r, i) => (
           <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, marginBottom: 8 }}>
