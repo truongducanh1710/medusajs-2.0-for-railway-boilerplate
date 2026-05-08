@@ -162,21 +162,29 @@ export default function BundleSelector({ product, region }: Props) {
       const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
       const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 
-      // Lấy cart ID từ cookie để xóa item cũ cùng variantId (replace thay vì cộng thêm)
+      // Xóa tất cả items của cùng product trước khi add (replace thay vì cộng thêm)
       const cartIdMatch = document.cookie.match(/(?:^|;\s*)_medusa_cart_id=([^;]+)/)
       const cartId = cartIdMatch?.[1]
       if (cartId) {
-        const cartRes = await fetch(`${backendUrl}/store/carts/${cartId}?fields=+items,+items.variant_id`, {
-          headers: { "x-publishable-api-key": pubKey },
-        }).then(r => r.ok ? r.json() : null).catch(() => null)
+        const cartRes = await fetch(
+          `${backendUrl}/store/carts/${cartId}?fields=id,+items.id,+items.variant_id`,
+          { headers: { "x-publishable-api-key": pubKey } }
+        ).then(r => r.ok ? r.json() : null).catch(() => null)
 
-        const existingItem = cartRes?.cart?.items?.find((i: any) => i.variant_id === variant.id)
-        if (existingItem) {
-          await fetch(`${backendUrl}/store/carts/${cartId}/line-items/${existingItem.id}`, {
-            method: "DELETE",
-            headers: { "x-publishable-api-key": pubKey },
-          }).catch(() => {})
-        }
+        const items: any[] = cartRes?.cart?.items || []
+        // Lấy tất cả variantId của product này để xóa dù chọn variant nào
+        const productVariantIds = new Set(product.variants?.map(v => v.id) || [])
+        const itemsToRemove = items.filter(
+          (i: any) => productVariantIds.has(i.variant_id)
+        )
+        await Promise.all(
+          itemsToRemove.map((i: any) =>
+            fetch(`${backendUrl}/store/carts/${cartId}/line-items/${i.id}`, {
+              method: "DELETE",
+              headers: { "x-publishable-api-key": pubKey },
+            }).catch(() => {})
+          )
+        )
       }
 
       const giftsToSave = selectedOpt.gifts || []
