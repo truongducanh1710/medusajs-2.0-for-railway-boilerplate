@@ -55,16 +55,23 @@ const blocks: BuilderBlock[] = [
         .pvb-tiktok h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 14px}
         .pvb-tiktok .frame{border-radius:16px;overflow:hidden;background:#000;position:relative}
         .pvb-tiktok iframe{width:100%;height:740px;border:0;display:block}
-        .pvb-tiktok .url-hint{font-size:12px;color:#9ca3af;margin-top:10px}
+        .pvb-tiktok .tt-input-row{display:flex;gap:8px;margin-top:14px;align-items:center}
+        .pvb-tiktok .tt-input{flex:1;padding:8px 12px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;outline:none}
+        .pvb-tiktok .tt-btn{padding:8px 14px;background:#111827;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+        .pvb-tiktok .tt-hint{font-size:11px;color:#9ca3af;margin-top:6px;text-align:left}
         @media(min-width:768px){.pvb-tiktok{padding:56px 24px}}
       </style>
       <section class="pvb-tiktok">
         <div class="inner">
           <h2>🎵 Video thực tế từ khách hàng</h2>
           <div class="frame">
-            <iframe src="https://www.tiktok.com/embed/v2/7000000000000000000" allowfullscreen allow="autoplay"></iframe>
+            <iframe id="tt-frame" src="https://www.tiktok.com/embed/v2/7000000000000000000" allowfullscreen allow="autoplay"></iframe>
           </div>
-          <p class="url-hint">← Double-click vào iframe, đổi số ID trong src thành ID video TikTok của bạn</p>
+          <div class="tt-input-row">
+            <input class="tt-input" id="tt-url-input" type="text" placeholder="Dán link TikTok vào đây... (vd: tiktok.com/@user/video/123456)" />
+            <button class="tt-btn" onclick="(function(){var inp=document.getElementById('tt-url-input');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(m){var fr=document.getElementById('tt-frame');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+m[1];inp.style.borderColor='#22c55e';}else{inp.style.borderColor='#ef4444';alert('Không tìm thấy ID video. Hãy dán link dạng: tiktok.com/@user/video/12345678');}})()">Áp dụng</button>
+          </div>
+          <p class="tt-hint">Lấy link từ TikTok → Copy link → Dán vào ô trên → Bấm Áp dụng</p>
         </div>
       </section>
     `,
@@ -880,7 +887,7 @@ const blocks: BuilderBlock[] = [
 const SECTION_TIPS: Record<string, string[]> = {
   "pvb-rev2":  ["Bấm +5⭐ trên toolbar để thêm đánh giá", "Click vào card → 📷 để thêm/đổi ảnh review", "Double-click chữ để sửa nội dung"],
   "pvb-video": ["Double-click vào iframe để sửa src=", "YouTube: dùng dạng youtube.com/embed/VIDEO_ID", "Lấy VIDEO_ID từ link youtu.be/VIDEO_ID hoặc ?v=VIDEO_ID"],
-  "pvb-tiktok": ["Double-click vào iframe → sửa số ID cuối src=", "Lấy ID từ link TikTok: tiktok.com/@user/video/ID_SỐ_DÀI", "Chỉ dùng phần số dài (ví dụ: 7284123456789012345)"],
+  "pvb-tiktok": ["Dán link TikTok vào ô input → bấm 'Áp dụng' để load video", "Link dạng: tiktok.com/@user/video/1234567890", "Sau khi áp dụng nhớ bấm 'Lưu nội dung' để lưu lại"],
   "pvb-ps":    ["Double-click từng dòng để sửa Pain / Solution", "Thêm dòng mới bằng cách nhân đôi item"],
   "pvb-ben":   ["Double-click icon/tiêu đề/mô tả để sửa", "Đổi emoji icon trực tiếp trong ô chữ"],
   "pvb-spec":  ["Double-click ô tên / giá trị để sửa trực tiếp", "Bấm '＋ Thêm dòng mới' trong panel phải để thêm", "Click vào 1 dòng → bấm '－ Xóa dòng đang chọn' để xóa"],

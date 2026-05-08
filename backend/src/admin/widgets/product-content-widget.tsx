@@ -732,6 +732,28 @@ const [showPain, setShowPain] = useState(false)
       .catch(e => { console.error("[widget] fetch product error:", e) })
   }, [product.id])
 
+  // Sync variantBundles khi productVariants load — đảm bảo variant mới luôn có tab
+  useEffect(() => {
+    if (productVariants.length <= 1) return
+    if (!showBundleOptions) return
+    setVariantBundles(prev => {
+      const synced = productVariants.map(v => {
+        const existing = prev.find(vb => vb.variantId === v.id)
+        if (existing) return existing
+        return {
+          variantId: v.id,
+          label: v.title,
+          options: [
+            { qty: 1, label: "1 SẢN PHẨM", price: 0, originalPrice: 0, gifts: [] },
+            { qty: 2, label: "MUA 1 TẶNG 1", price: 0, originalPrice: 0, badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500", gifts: [{ name: "", value: 0 }] },
+          ]
+        }
+      })
+      const changed = synced.length !== prev.length || synced.some((s, i) => s.variantId !== prev[i]?.variantId)
+      return changed ? synced : prev
+    })
+  }, [productVariants, showBundleOptions])
+
   // FAQ & Bundle local state
   const [faqs, setFaqs] = useState<FAQItem[]>([{ q: "", a: "" }])
   const [bundleOptions, setBundleOptions] = useState<BundleOptionMeta[]>([
@@ -1244,6 +1266,7 @@ setShowPain(!!(clean.pain_1 || clean.pain_2 || clean.pain_3))
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
               {(variantBundles.length > 0 ? variantBundles : productVariants.map(v => ({ variantId: v.id, label: v.title, options: [] }))).map((vb, vi) => (
                 <button key={vb.variantId} onClick={() => setActiveVariantTab(vi)}
+                  title={`Variant ID: ${vb.variantId}`}
                   style={{ padding: "6px 14px", borderRadius: 20, border: "1.5px solid", fontSize: 12, fontWeight: 700, cursor: "pointer",
                     borderColor: activeVariantTab === vi ? "#f97316" : "#e5e7eb",
                     background: activeVariantTab === vi ? "#fff7ed" : "white",
