@@ -44,6 +44,41 @@ function TrustBar() {
 // Section: Video Demo
 function VideoSection({ videoUrl }: { videoUrl: string }) {
   if (!videoUrl) return null
+
+  // TikTok: tiktok.com/@user/video/123... hoặc vm.tiktok.com/xxx
+  const isTikTok = videoUrl.includes("tiktok.com") || videoUrl.includes("vm.tiktok.com")
+
+  if (isTikTok) {
+    // Trích video ID: /video/1234567890
+    const match = videoUrl.match(/\/video\/(\d+)/)
+    const videoId = match?.[1]
+    const embedUrl = videoId
+      ? `https://www.tiktok.com/embed/v2/${videoId}`
+      : videoUrl
+
+    return (
+      <div className="py-8 sm:py-12 bg-gray-50">
+        <div className="max-w-4xl mx-auto px-4">
+          <h2 className="text-xl sm:text-2xl font-extrabold text-center text-gray-900 mb-4 sm:mb-6">
+            🎬 Xem sản phẩm hoạt động thực tế
+          </h2>
+          <div className="flex justify-center">
+            <div style={{ width: "100%", maxWidth: 380 }}>
+              <iframe
+                src={embedUrl}
+                style={{ width: "100%", height: 740, border: "none", borderRadius: 16, overflow: "hidden" }}
+                allowFullScreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                scrolling="no"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // YouTube
   const embedUrl = videoUrl.includes("youtube.com/watch")
     ? videoUrl.replace("watch?v=", "embed/")
     : videoUrl.includes("youtu.be/")

@@ -1168,6 +1168,19 @@ const ProductContentWidget = ({ data }: { data: any }) => {
         </div>
       </div>
 
+      {/* Video Demo */}
+      <Toggle label="🎬 Video Demo" enabled={showVideo} onToggle={() => { setShowVideo(!showVideo); if (showVideo) setM("video_url", "") }}>
+        <Input
+          label="URL Video (YouTube hoặc TikTok)"
+          value={meta.video_url || ""}
+          onChange={v => setM("video_url", v)}
+          placeholder="https://youtu.be/xxx hoặc https://www.tiktok.com/@user/video/123..."
+        />
+        <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+          YouTube: dán link bình thường — TikTok: dán link bài video (có /video/ID)
+        </p>
+      </Toggle>
+
       {/* 5. Reviews */}
       <Toggle label="💬 Đánh giá khách hàng" enabled={showReviews} onToggle={() => setShowReviews(!showReviews)}>
         {reviews.map((r, i) => (
