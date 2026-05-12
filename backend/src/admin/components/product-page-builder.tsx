@@ -86,11 +86,12 @@ const blocks: BuilderBlock[] = [
         .pvb-tkg h2{font-size:clamp(18px,4vw,26px);font-weight:900;text-align:center;margin:0 0 16px}
         .pvb-tkg .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:700px;margin:0 auto}
         .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:#111;cursor:pointer}
-        .pvb-tkg .card .preview{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-        .pvb-tkg .card .preview iframe{width:400%;height:400%;transform:scale(0.25);transform-origin:top left;border:0}
-        .pvb-tkg .card .overlay{position:absolute;inset:0;background:rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;transition:background 0.2s}
-        .pvb-tkg .card:hover .overlay{background:rgba(0,0,0,0.1)}
-        .pvb-tkg .play{width:44px;height:44px;background:rgba(255,255,255,0.9);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;padding-left:3px}
+        .pvb-tkg .card .preview{position:absolute;inset:0;overflow:hidden;border-radius:12px;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%)}
+        .pvb-tkg .card .preview img{width:100%;height:100%;object-fit:cover;display:block}
+        .pvb-tkg .card .tt-logo{position:absolute;top:10px;left:10px;width:28px;height:28px;background:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#010101;font-family:sans-serif}
+        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:opacity 0.2s}
+        .pvb-tkg .card:hover .overlay{opacity:0.85}
+        .pvb-tkg .play{width:52px;height:52px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;padding-left:4px;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
         .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center}
         .pvb-tkg-pop.open{display:flex}
         .pvb-tkg-pop .pop-inner{position:relative;width:100%;max-width:400px;height:85vh}
@@ -107,24 +108,24 @@ const blocks: BuilderBlock[] = [
       <section class="pvb-tkg">
         <h2>🎵 Video thực tế từ khách hàng</h2>
         <div class="grid">
-          <div class="card" data-vid="7000000000000000001" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
-            <div class="preview"><iframe src="https://www.tiktok.com/embed/v2/7000000000000000001" allow="autoplay"></iframe></div>
+          <div class="card" data-vid="7622160135820954900" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+            <div class="preview"><div class="tt-logo">&#9835;</div></div>
             <div class="overlay"><div class="play">&#9654;</div></div>
           </div>
-          <div class="card" data-vid="7000000000000000002" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
-            <div class="preview"><iframe src="https://www.tiktok.com/embed/v2/7000000000000000002" allow="autoplay"></iframe></div>
+          <div class="card" data-vid="7622160135820954900" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+            <div class="preview"><div class="tt-logo">&#9835;</div></div>
             <div class="overlay"><div class="play">&#9654;</div></div>
           </div>
-          <div class="card" data-vid="7000000000000000003" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
-            <div class="preview"><iframe src="https://www.tiktok.com/embed/v2/7000000000000000003" allow="autoplay"></iframe></div>
+          <div class="card" data-vid="7622160135820954900" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+            <div class="preview"><div class="tt-logo">&#9835;</div></div>
             <div class="overlay"><div class="play">&#9654;</div></div>
           </div>
         </div>
         <div class="admin-panel">
           <p>&#128295; Nhập link TikTok cho từng video rồi bấm Áp dụng</p>
-          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u1');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Không tìm thấy ID. Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[0]){cards[0].setAttribute('data-vid',vid);var fr=cards[0].querySelector('.preview iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;}})()">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u2');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Không tìm thấy ID. Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[1]){cards[1].setAttribute('data-vid',vid);var fr=cards[1].querySelector('.preview iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;}})()">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u3');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Không tìm thấy ID. Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[2]){cards[2].setAttribute('data-vid',vid);var fr=cards[2].querySelector('.preview iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;}})()">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u1');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[0]){cards[0].setAttribute('data-vid',vid);fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid).then(function(r){return r.json();}).then(function(d){var prev=cards[0].querySelector('.preview');if(prev&&d.thumbnail_url){prev.innerHTML='<img src=\"'+d.thumbnail_url+'\" style=\"width:100%;height:100%;object-fit:cover\">';}}).catch(function(){});}})()">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u2');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[1]){cards[1].setAttribute('data-vid',vid);fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid).then(function(r){return r.json();}).then(function(d){var prev=cards[1].querySelector('.preview');if(prev&&d.thumbnail_url){prev.innerHTML='<img src=\"'+d.thumbnail_url+'\" style=\"width:100%;height:100%;object-fit:cover\">';}}).catch(function(){});}})()">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u3');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[2]){cards[2].setAttribute('data-vid',vid);fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid).then(function(r){return r.json();}).then(function(d){var prev=cards[2].querySelector('.preview');if(prev&&d.thumbnail_url){prev.innerHTML='<img src=\"'+d.thumbnail_url+'\" style=\"width:100%;height:100%;object-fit:cover\">';}}).catch(function(){});}})()">Áp dụng</button></div>
         </div>
       </section>
       <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="if(event.target===this){document.getElementById('pvb-tkg-iframe').src='';this.classList.remove('open');}">
