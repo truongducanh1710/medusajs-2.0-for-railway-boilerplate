@@ -86,11 +86,10 @@ const blocks: BuilderBlock[] = [
         .pvb-tkg h2{font-size:clamp(18px,4vw,26px);font-weight:900;text-align:center;margin:0 0 16px}
         .pvb-tkg .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:700px;margin:0 auto}
         .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:#111;cursor:pointer}
-        .pvb-tkg .card .preview{position:absolute;inset:0;overflow:hidden;border-radius:12px;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%)}
-        .pvb-tkg .card .preview img{width:100%;height:100%;object-fit:cover;display:block}
-        .pvb-tkg .card .tt-logo{position:absolute;top:10px;left:10px;width:28px;height:28px;background:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#010101;font-family:sans-serif}
-        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:opacity 0.2s}
-        .pvb-tkg .card:hover .overlay{opacity:0.85}
+        .pvb-tkg .card .preview{position:absolute;inset:0;overflow:hidden;border-radius:12px;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);display:flex;align-items:center;justify-content:center}
+        .pvb-tkg .card .preview img{width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0}
+        .pvb-tkg .card .tt-logo{width:32px;height:32px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;z-index:1}
+        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
         .pvb-tkg .play{width:52px;height:52px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;padding-left:4px;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
         .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center}
         .pvb-tkg-pop.open{display:flex}
@@ -106,34 +105,58 @@ const blocks: BuilderBlock[] = [
         @media(min-width:768px){.pvb-tkg{padding:48px 24px}.pvb-tkg .grid{gap:12px}}
       </style>
       <section class="pvb-tkg">
-        <h2>🎵 Video thực tế từ khách hàng</h2>
+        <h2>&#127925; Video thực tế từ khách hàng</h2>
         <div class="grid">
-          <div class="card" data-vid="7622160135820954900" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+          <div class="card" data-vid="7622160135820954900" data-idx="0" onclick="pvbTkgOpen(this)">
             <div class="preview"><div class="tt-logo">&#9835;</div></div>
             <div class="overlay"><div class="play">&#9654;</div></div>
           </div>
-          <div class="card" data-vid="7622160135820954900" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+          <div class="card" data-vid="7622160135820954900" data-idx="1" onclick="pvbTkgOpen(this)">
             <div class="preview"><div class="tt-logo">&#9835;</div></div>
             <div class="overlay"><div class="play">&#9654;</div></div>
           </div>
-          <div class="card" data-vid="7622160135820954900" onclick="(function(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');})(this)">
+          <div class="card" data-vid="7622160135820954900" data-idx="2" onclick="pvbTkgOpen(this)">
             <div class="preview"><div class="tt-logo">&#9835;</div></div>
             <div class="overlay"><div class="play">&#9654;</div></div>
           </div>
         </div>
         <div class="admin-panel">
           <p>&#128295; Nhập link TikTok cho từng video rồi bấm Áp dụng</p>
-          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u1');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[0]){cards[0].setAttribute('data-vid',vid);fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid).then(function(r){return r.json();}).then(function(d){var prev=cards[0].querySelector('.preview');if(prev&&d.thumbnail_url){prev.innerHTML='<img src=\"'+d.thumbnail_url+'\" style=\"width:100%;height:100%;object-fit:cover\">';}}).catch(function(){});}})()">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u2');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[1]){cards[1].setAttribute('data-vid',vid);fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid).then(function(r){return r.json();}).then(function(d){var prev=cards[1].querySelector('.preview');if(prev&&d.thumbnail_url){prev.innerHTML='<img src=\"'+d.thumbnail_url+'\" style=\"width:100%;height:100%;object-fit:cover\">';}}).catch(function(){});}})()">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="(function(){var inp=document.getElementById('tkg-u3');var url=inp?inp.value.trim():'';var m=url.match(/\/video\/(\d+)/);if(!m){inp.style.borderColor='#ef4444';alert('Dán link dạng: tiktok.com/@user/video/12345');return;}var vid=m[1];inp.style.borderColor='#22c55e';var cards=document.querySelectorAll('.pvb-tkg .card');if(cards[2]){cards[2].setAttribute('data-vid',vid);fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid).then(function(r){return r.json();}).then(function(d){var prev=cards[2].querySelector('.preview');if(prev&&d.thumbnail_url){prev.innerHTML='<img src=\"'+d.thumbnail_url+'\" style=\"width:100%;height:100%;object-fit:cover\">';}}).catch(function(){});}})()">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="pvbTkgSet(0,'tkg-u1')">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="pvbTkgSet(1,'tkg-u2')">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="pvbTkgSet(2,'tkg-u3')">Áp dụng</button></div>
         </div>
       </section>
-      <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="if(event.target===this){document.getElementById('pvb-tkg-iframe').src='';this.classList.remove('open');}">
+      <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="pvbTkgBgClose(event)">
         <div class="pop-inner">
-          <button class="tkg-close" onclick="document.getElementById('pvb-tkg-iframe').src='';document.getElementById('pvb-tkg-pop').classList.remove('open')">&#10005;</button>
+          <button class="tkg-close" onclick="pvbTkgClose()">&#10005;</button>
           <iframe id="pvb-tkg-iframe" src="" allow="autoplay" allowfullscreen></iframe>
         </div>
       </div>
+      <script>
+      function pvbTkgOpen(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');}
+      function pvbTkgClose(){document.getElementById('pvb-tkg-iframe').src='';document.getElementById('pvb-tkg-pop').classList.remove('open');}
+      function pvbTkgBgClose(e){if(e.target===e.currentTarget)pvbTkgClose();}
+      function pvbTkgSet(idx,inputId){
+        var inp=document.getElementById(inputId);
+        var url=inp?inp.value.trim():'';
+        var m=url.match(/\/video\/(\d+)/);
+        if(!m){if(inp)inp.style.borderColor='#ef4444';alert('Dan link dang: tiktok.com/@user/video/12345');return;}
+        var vid=m[1];
+        if(inp)inp.style.borderColor='#22c55e';
+        var cards=document.querySelectorAll('.pvb-tkg .card');
+        if(cards[idx]){
+          cards[idx].setAttribute('data-vid',vid);
+          var prev=cards[idx].querySelector('.preview');
+          if(prev){
+            fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid)
+              .then(function(r){return r.json();})
+              .then(function(d){if(d.thumbnail_url&&prev){prev.innerHTML='<img src='+d.thumbnail_url+' style=width:100%;height:100%;object-fit:cover;position:absolute;inset:0>';} })
+              .catch(function(){});
+          }
+        }
+      }
+      </script>
     `,
   },
   {
