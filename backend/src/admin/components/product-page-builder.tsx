@@ -977,6 +977,37 @@ const CATEGORIES = [
   { id: "Social Proof", icon: "⭐", label: "Social" },
 ]
 
+// Strip <script> tags from HTML string
+function stripScripts(html: string): string {
+  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+}
+
+// Strip script components from GrapesJS projectData recursively
+function stripScriptsFromProjectData(pd: any): any {
+  if (!pd) return pd
+  const walk = (comps: any[]): any[] => {
+    if (!Array.isArray(comps)) return comps
+    return comps
+      .filter((c: any) => (c.tagName || "").toLowerCase() !== "script")
+      .map((c: any) => ({ ...c, components: walk(c.components || []) }))
+  }
+  try {
+    const clone = JSON.parse(JSON.stringify(pd))
+    if (clone.pages) {
+      clone.pages = clone.pages.map((page: any) => ({
+        ...page,
+        frames: (page.frames || []).map((frame: any) => ({
+          ...frame,
+          component: frame.component
+            ? { ...frame.component, components: walk(frame.component.components || []) }
+            : frame.component,
+        })),
+      }))
+    }
+    return clone
+  } catch { return pd }
+}
+
 export default function ProductPageBuilder({
   open,
   productTitle,
@@ -1066,13 +1097,13 @@ export default function ProductPageBuilder({
           const saved = JSON.parse(initialContent)
           // New format: {html, css, projectData}
           if (saved.projectData) {
-            editor.loadProjectData(saved.projectData)
+            editor.loadProjectData(stripScriptsFromProjectData(saved.projectData))
           } else {
             // Old format: raw projectData JSON
-            editor.loadProjectData(saved)
+            editor.loadProjectData(stripScriptsFromProjectData(saved))
           }
         } catch {
-          editor.setComponents(initialContent)
+          editor.setComponents(stripScripts(initialContent))
         }
       }
 
@@ -1557,10 +1588,11 @@ export default function ProductPageBuilder({
 
   const getPayload = () => {
     const editor = editorRef.current
+    const html = stripScripts(editor.getHtml())
     return JSON.stringify({
-      html: editor.getHtml(),
+      html,
       css: editor.getCss(),
-      projectData: editor.getProjectData(),
+      projectData: stripScriptsFromProjectData(editor.getProjectData()),
     })
   }
 
