@@ -133,30 +133,6 @@ const blocks: BuilderBlock[] = [
           <iframe id="pvb-tkg-iframe" src="" allow="autoplay" allowfullscreen></iframe>
         </div>
       </div>
-      <script>
-      function pvbTkgOpen(c){var vid=c.getAttribute('data-vid');document.getElementById('pvb-tkg-iframe').src='https://www.tiktok.com/embed/v2/'+vid;document.getElementById('pvb-tkg-pop').classList.add('open');}
-      function pvbTkgClose(){document.getElementById('pvb-tkg-iframe').src='';document.getElementById('pvb-tkg-pop').classList.remove('open');}
-      function pvbTkgBgClose(e){if(e.target===e.currentTarget)pvbTkgClose();}
-      function pvbTkgSet(idx,inputId){
-        var inp=document.getElementById(inputId);
-        var url=inp?inp.value.trim():'';
-        var m=url.match(/\/video\/(\d+)/);
-        if(!m){if(inp)inp.style.borderColor='#ef4444';alert('Dan link dang: tiktok.com/@user/video/12345');return;}
-        var vid=m[1];
-        if(inp)inp.style.borderColor='#22c55e';
-        var cards=document.querySelectorAll('.pvb-tkg .card');
-        if(cards[idx]){
-          cards[idx].setAttribute('data-vid',vid);
-          var prev=cards[idx].querySelector('.preview');
-          if(prev){
-            fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/'+vid)
-              .then(function(r){return r.json();})
-              .then(function(d){if(d.thumbnail_url&&prev){prev.innerHTML='<img src='+d.thumbnail_url+' style=width:100%;height:100%;object-fit:cover;position:absolute;inset:0>';} })
-              .catch(function(){});
-          }
-        }
-      }
-      </script>
     `,
   },
   {
@@ -1204,6 +1180,62 @@ export default function ProductPageBuilder({
 
       editor.on("canvas:frame:load", injectFilterScript)
       editor.on("component:add", () => setTimeout(injectFilterScript, 100))
+
+      // ── TikTok Gallery interactive functions ──────────────────────────────
+      const TIKTOK_GALLERY_JS = `
+        (function(){
+          if(window._pvbTkgInited) return;
+          window._pvbTkgInited = true;
+          window.pvbTkgOpen = function(c){
+            var vid = c.getAttribute('data-vid');
+            var pop = document.getElementById('pvb-tkg-pop');
+            var fr = document.getElementById('pvb-tkg-iframe');
+            if(fr) fr.src = 'https://www.tiktok.com/embed/v2/' + vid;
+            if(pop) pop.classList.add('open');
+          };
+          window.pvbTkgClose = function(){
+            var pop = document.getElementById('pvb-tkg-pop');
+            var fr = document.getElementById('pvb-tkg-iframe');
+            if(fr) fr.src = '';
+            if(pop) pop.classList.remove('open');
+          };
+          window.pvbTkgBgClose = function(e){
+            if(e.target === e.currentTarget) window.pvbTkgClose();
+          };
+          window.pvbTkgSet = function(idx, inputId){
+            var inp = document.getElementById(inputId);
+            var url = inp ? inp.value.trim() : '';
+            var m = url.match(/\\/video\\/(\\d+)/);
+            if(!m){ if(inp) inp.style.borderColor='#ef4444'; alert('Dan link dang: tiktok.com/@user/video/12345'); return; }
+            var vid = m[1];
+            if(inp) inp.style.borderColor = '#22c55e';
+            var cards = document.querySelectorAll('.pvb-tkg .card');
+            if(cards[idx]){
+              cards[idx].setAttribute('data-vid', vid);
+              var prev = cards[idx].querySelector('.preview');
+              if(prev){
+                fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/' + vid)
+                  .then(function(r){ return r.json(); })
+                  .then(function(d){ if(d.thumbnail_url && prev){ prev.innerHTML = '<img src="' + d.thumbnail_url + '" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">'; } })
+                  .catch(function(){});
+              }
+            }
+          };
+        })();
+      `
+
+      const injectTkgScript = () => {
+        try {
+          const doc = editor.Canvas.getDocument()
+          if (!doc || !doc.querySelector('.pvb-tkg')) return
+          const sc = doc.createElement('script')
+          sc.textContent = TIKTOK_GALLERY_JS
+          doc.body.appendChild(sc)
+        } catch {}
+      }
+
+      editor.on("canvas:frame:load", injectTkgScript)
+      editor.on("component:add", () => setTimeout(injectTkgScript, 100))
 
       // ── "Thêm 5 đánh giá" command cho block customer-reviews ──────────────
       const REVIEW_POOL = [

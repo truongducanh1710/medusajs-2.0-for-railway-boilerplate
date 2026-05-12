@@ -1,3 +1,4 @@
+import Script from "next/script"
 import { parseGrapesContent } from "@lib/grapes"
 
 /**
@@ -260,12 +261,20 @@ type Props = {
   content: string
 }
 
+const TIKTOK_GALLERY_JS = `
+window.pvbTkgOpen=function(c){var vid=c.getAttribute('data-vid');var pop=document.getElementById('pvb-tkg-pop');var fr=document.getElementById('pvb-tkg-iframe');if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;if(pop)pop.classList.add('open');};
+window.pvbTkgClose=function(){var pop=document.getElementById('pvb-tkg-pop');var fr=document.getElementById('pvb-tkg-iframe');if(fr)fr.src='';if(pop)pop.classList.remove('open');};
+window.pvbTkgBgClose=function(e){if(e.target===e.currentTarget)window.pvbTkgClose();};
+`
+
 export default function ProductPageContent({ content }: Props) {
   const html = parseGrapesContent(content)
 
   if (!html) {
     return null
   }
+
+  const hasTikTokGallery = html.includes('pvb-tkg')
 
   return (
     <>
@@ -274,6 +283,9 @@ export default function ProductPageContent({ content }: Props) {
         className="product-page-content"
         dangerouslySetInnerHTML={{ __html: html }}
       />
+      {hasTikTokGallery && (
+        <Script id="pvb-tkg-fns" strategy="afterInteractive">{TIKTOK_GALLERY_JS}</Script>
+      )}
     </>
   )
 }
