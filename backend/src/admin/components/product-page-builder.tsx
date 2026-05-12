@@ -122,9 +122,9 @@ const blocks: BuilderBlock[] = [
         </div>
         <div class="admin-panel">
           <p>&#128295; Nhập link TikTok cho từng video rồi bấm Áp dụng</p>
-          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="pvbTkgSet(0,'tkg-u1')">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="pvbTkgSet(1,'tkg-u2')">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="pvbTkgSet(2,'tkg-u3')">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="var i=document.getElementById('tkg-u1');window.parent.pvbTkgSet(0,i.value,i)">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="var i=document.getElementById('tkg-u2');window.parent.pvbTkgSet(1,i.value,i)">Áp dụng</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="var i=document.getElementById('tkg-u3');window.parent.pvbTkgSet(2,i.value,i)">Áp dụng</button></div>
         </div>
       </section>
       <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="pvbTkgBgClose(event)">
@@ -1181,7 +1181,47 @@ export default function ProductPageBuilder({
       editor.on("canvas:frame:load", injectFilterScript)
       editor.on("component:add", () => setTimeout(injectFilterScript, 100))
 
-      // ── TikTok Gallery interactive functions ──────────────────────────────
+      // ── TikTok Gallery: Áp dụng link via GrapesJS component API ─────────────
+      // pvbTkgSet is called from inside the canvas iframe onclick.
+      // It must update GrapesJS component model (not just DOM) so the change persists on save.
+      // We expose it on window (parent frame) so canvas iframes can call window.parent.pvbTkgSet.
+      ;(window as any).pvbTkgSet = (idx: number, url: string, inputEl: HTMLElement | null) => {
+        const m = url.match(/\/video\/(\d+)/)
+        if (!m) {
+          if (inputEl) (inputEl as HTMLInputElement).style.borderColor = '#ef4444'
+          alert('Dán link dạng: tiktok.com/@user/video/12345')
+          return
+        }
+        const vid = m[1]
+        if (inputEl) (inputEl as HTMLInputElement).style.borderColor = '#22c55e'
+
+        // Find the card component in GrapesJS model and update data-vid
+        const allComps = editor.getComponents()
+        const findCards = (comps: any): any[] => {
+          let found: any[] = []
+          comps.each((c: any) => {
+            if (c.getClasses().includes('card') && c.parent()?.getClasses().includes('grid')) found.push(c)
+            found = found.concat(findCards(c.components()))
+          })
+          return found
+        }
+        const cards = findCards(allComps)
+        if (cards[idx]) {
+          cards[idx].addAttributes({ 'data-vid': vid })
+          // Also update thumbnail in DOM preview
+          try {
+            const cardEl = cards[idx].getEl()
+            const prev = cardEl?.querySelector('.preview')
+            if (prev) {
+              fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/' + vid)
+                .then((r) => r.json())
+                .then((d) => { if (d.thumbnail_url && prev) prev.innerHTML = `<img src="${d.thumbnail_url}" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">` })
+                .catch(() => {})
+            }
+          } catch {}
+        }
+      }
+
       const TIKTOK_GALLERY_JS = `
         (function(){
           if(window._pvbTkgInited) return;
@@ -1202,40 +1242,23 @@ export default function ProductPageBuilder({
           window.pvbTkgBgClose = function(e){
             if(e.target === e.currentTarget) window.pvbTkgClose();
           };
-          window.pvbTkgSet = function(idx, inputId){
-            var inp = document.getElementById(inputId);
-            var url = inp ? inp.value.trim() : '';
-            var m = url.match(/\\/video\\/(\\d+)/);
-            if(!m){ if(inp) inp.style.borderColor='#ef4444'; alert('Dan link dang: tiktok.com/@user/video/12345'); return; }
-            var vid = m[1];
-            if(inp) inp.style.borderColor = '#22c55e';
-            var cards = document.querySelectorAll('.pvb-tkg .card');
-            if(cards[idx]){
-              cards[idx].setAttribute('data-vid', vid);
-              var prev = cards[idx].querySelector('.preview');
-              if(prev){
-                fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/' + vid)
-                  .then(function(r){ return r.json(); })
-                  .then(function(d){ if(d.thumbnail_url && prev){ prev.innerHTML = '<img src="' + d.thumbnail_url + '" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">'; } })
-                  .catch(function(){});
-              }
-            }
-          };
         })();
       `
 
       const injectTkgScript = () => {
         try {
           const doc = editor.Canvas.getDocument()
-          if (!doc || !doc.querySelector('.pvb-tkg')) return
+          if (!doc) return
+          if (doc.querySelector('[data-tkg-init]')) return
           const sc = doc.createElement('script')
+          sc.setAttribute('data-tkg-init', '1')
           sc.textContent = TIKTOK_GALLERY_JS
           doc.body.appendChild(sc)
         } catch {}
       }
 
       editor.on("canvas:frame:load", injectTkgScript)
-      editor.on("component:add", () => setTimeout(injectTkgScript, 100))
+      editor.on("component:add", () => setTimeout(injectTkgScript, 150))
 
       // ── "Thêm 5 đánh giá" command cho block customer-reviews ──────────────
       const REVIEW_POOL = [
