@@ -8,8 +8,9 @@ const PANCAKE_STATUS_LABEL: Record<number, string> = {
   3: "Chờ giao",
   4: "Đang giao",
   5: "Hoàn thành",
-  7: "Đã hủy",     // Pancake dùng 7 cho hủy, không phải -1
+  7: "Đã hủy",
   9: "Đã gửi ĐVVC",
+  11: "Chờ hàng",
   [-1]: "Đã hủy",
   [-2]: "Hoàn hàng",
 }

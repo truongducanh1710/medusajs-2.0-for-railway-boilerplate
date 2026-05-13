@@ -8,6 +8,9 @@ const PANCAKE_STATUS_MAP: Record<number, { label: string; cls: string }> = {
   3: { label: "Chờ giao", cls: "bg-orange-100 text-orange-700" },
   4: { label: "Đang giao", cls: "bg-blue-100 text-blue-600" },
   5: { label: "Hoàn thành", cls: "bg-green-100 text-green-700" },
+  9: { label: "Đã gửi VC", cls: "bg-blue-100 text-blue-700" },
+  11: { label: "Chờ hàng", cls: "bg-gray-100 text-gray-600" },
+  7: { label: "Đã hủy", cls: "bg-red-100 text-red-700" },
   [-1]: { label: "Đã hủy", cls: "bg-red-100 text-red-700" },
   [-2]: { label: "Hoàn hàng", cls: "bg-purple-100 text-purple-700" },
 }
