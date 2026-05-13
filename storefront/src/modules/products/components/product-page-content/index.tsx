@@ -271,8 +271,14 @@ const TIKTOK_GALLERY_JS = `
   function pvbClose(){
     var pop=document.getElementById('pvb-tkg-pop');
     var v=document.getElementById('pvb-tkg-video');
-    if(v){v.pause();v.src='';}
-    if(pop)pop.classList.remove('open');
+    if(v){v.pause();v.removeAttribute('src');v.load();}
+    if(pop){pop.classList.remove('open');pop.style.display='none';}
+  }
+  function pvbOpen(src){
+    var pop=document.getElementById('pvb-tkg-pop');
+    var v=document.getElementById('pvb-tkg-video');
+    if(v){v.src=src;v.play().catch(function(){});}
+    if(pop){pop.style.display='';pop.classList.add('open');}
   }
 
   // Inject video preview vào mỗi card có data-src
@@ -281,20 +287,34 @@ const TIKTOK_GALLERY_JS = `
     cards.forEach(function(card){
       var src=card.getAttribute('data-src');
       if(!src)return;
-      // Ẩn overlay để thấy video
       var overlay=card.querySelector('.overlay');
       if(overlay)overlay.style.display='none';
-      // Thêm video nếu chưa có
-      if(!card.querySelector('video')){
-        var vid=document.createElement('video');
-        vid.src=src;
+      var vid=card.querySelector('video');
+      if(!vid){
+        vid=document.createElement('video');
         vid.muted=true;
         vid.loop=true;
-        vid.autoplay=true;
         vid.setAttribute('playsinline','');
         vid.setAttribute('preload','metadata');
         vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block';
         card.insertBefore(vid,card.firstChild);
+      }
+      // Load src nếu chưa có
+      if(!vid.src||vid.src!==src){
+        vid.src=src;
+        vid.load();
+      }
+      // Play khi vào viewport (tránh bị browser block)
+      if('IntersectionObserver' in window){
+        var obs=new IntersectionObserver(function(entries){
+          entries.forEach(function(en){
+            if(en.isIntersecting){vid.play().catch(function(){});}
+            else{vid.pause();}
+          });
+        },{threshold:0.3});
+        obs.observe(card);
+      } else {
+        vid.autoplay=true;
         vid.play().catch(function(){});
       }
     });
@@ -303,7 +323,7 @@ const TIKTOK_GALLERY_JS = `
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',initCardPreviews);
   } else {
-    initCardPreviews();
+    setTimeout(initCardPreviews,100);
   }
 
   document.addEventListener('click',function(e){
@@ -311,12 +331,7 @@ const TIKTOK_GALLERY_JS = `
     while(t&&t!==document){
       if(t.classList&&t.classList.contains('card')&&t.closest&&t.closest('.pvb-tkg')){
         var src=t.getAttribute('data-src');
-        if(src){
-          var pop=document.getElementById('pvb-tkg-pop');
-          var v=document.getElementById('pvb-tkg-video');
-          if(v){v.src=src;v.play();}
-          if(pop)pop.classList.add('open');
-        }
+        if(src)pvbOpen(src);
         return;
       }
       if(t.id==='pvb-tkg-pop'||t.classList&&t.classList.contains('tkg-close')){pvbClose();return;}
