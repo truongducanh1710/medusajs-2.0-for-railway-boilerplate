@@ -1,6 +1,11 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+
+// Get route param without react-router-dom import
+const useOrderId = () => {
+  const parts = window.location.pathname.split("/")
+  return parts[parts.length - 1] || ""
+}
 
 // ---- Status helpers ----
 
@@ -79,9 +84,10 @@ function formatFullDate(dateStr: string) {
 
 // ---- Component ----
 
+const navigate = (path: string) => { window.location.href = path }
+
 const PancakeOrderDetailPage = () => {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const id = useOrderId()
   const [order, setOrder] = useState<any>(null)
   const [medusaOrder, setMedusaOrder] = useState<any>(null)
   const [loading, setLoading] = useState(true)

@@ -6,14 +6,14 @@ const PancakeOrder = model.define("pancake_order", {
   source: model.text().default("unknown"),     // 'medusa' | 'facebook' | 'zalo' | 'tiktok' | 'manual' | ...
   status: model.number().default(0),
   status_name: model.text().default(""),
-  status_history: model.json().default([]),    // [{status, status_name, changed_at, source: 'webhook'|'sync'}]
+  status_history: model.json().default([] as any),    // [{status, status_name, changed_at, source: 'webhook'|'sync'}]
   customer_name: model.text().default(""),
   customer_phone: model.text().default(""),
   province: model.text().default(""),
   total: model.bigNumber().default(0),
   shipping_fee: model.bigNumber().default(0),
   cod_amount: model.bigNumber().default(0),
-  items: model.json().default([]),             // [{name, qty, price}]
+  items: model.json().default([] as any),             // [{name, qty, price}]
   items_count: model.number().default(0),
   tracking_code: model.text().default(""),
   currency: model.text().default("VND"),

@@ -116,7 +116,7 @@ function detectSource(order: any): string {
 
 // ---- Mapping ----
 
-function mapPancakeOrder(raw: any): Partial<typeof PancakeOrder.prototype> {
+function mapPancakeOrder(raw: any): Record<string, any> {
   const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
     name: item.variation_info?.name ?? item.name ?? "—",
     qty: item.quantity ?? 1,
@@ -257,10 +257,10 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                   await this.updatePancakeOrders({
                     id: mapped.id,
                     ...mapped,
-                    status_history: newHistory,
+                    status_history: newHistory as any,
                     raw: mapped.raw,
                     raw_version: "v1",
-                  })
+                  } as any)
                   updated++
                 } else {
                   // Non-force: only update status if changed
@@ -279,9 +279,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                           changed_at: new Date().toISOString(),
                           source: "sync",
                         },
-                      ],
+                      ] as any,
                       synced_at: new Date(),
-                    })
+                    } as any)
                     updated++
                   }
                 }

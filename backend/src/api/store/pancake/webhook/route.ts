@@ -96,7 +96,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           id: pancakeOrderId,
           status: pancakeStatus,
           status_name: label,
-          status_history: statusChanged
+          status_history: (statusChanged
             ? [
                 ...prevHistory,
                 {
@@ -106,12 +106,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
                   source: "webhook",
                 },
               ]
-            : prevHistory,
+            : prevHistory) as any,
           ...(body?.partner?.extend_code
             ? { tracking_code: body.partner.extend_code }
             : {}),
           synced_at: new Date(),
-        })
+        } as any)
 
         if (statusChanged) {
           console.log(`[Pancake Webhook] Updated pancake_order #${pancakeOrderId} → ${label}`)
@@ -127,7 +127,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             status_name: label,
             changed_at: new Date().toISOString(),
             source: "webhook",
-          }],
+          }] as any,
           customer_name: body?.bill_full_name ?? "",
           customer_phone: body?.bill_phone_number ?? "",
           total: body?.total_price ?? 0,
