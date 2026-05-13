@@ -1705,38 +1705,6 @@ export default function ProductPageBuilder({
         onChange={handleVideoFileChange}
       />
 
-      {/* Video Gallery upload panel — hiện phía trên canvas khi có block pvb-tkg */}
-      {showVideoPanel && (
-        <div style={{
-          position: "fixed", bottom: 80, right: 16, zIndex: 10001,
-          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
-          padding: "12px 14px", boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
-          minWidth: 280,
-        }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            📹 Video Gallery
-          </p>
-          {[0, 1, 2].map(idx => (
-            <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: "#374151", width: 50, flexShrink: 0 }}>Video {idx + 1}</span>
-              <span style={{ fontSize: 11, color: videoSlots[idx] ? "#16a34a" : "#9ca3af", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {videoSlots[idx] ? "✅ Đã upload" : "Chưa có video"}
-              </span>
-              <button
-                onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
-                disabled={videoUploading[idx]}
-                style={{
-                  padding: "5px 10px", background: videoUploading[idx] ? "#9ca3af" : "#111827",
-                  color: "#fff", border: "none", borderRadius: 6, fontSize: 11,
-                  fontWeight: 700, cursor: videoUploading[idx] ? "not-allowed" : "pointer", flexShrink: 0,
-                }}
-              >
-                {videoUploading[idx] ? "⏳..." : "↑ Tải lên"}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="flex h-full w-full flex-col bg-white">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 gap-4">
