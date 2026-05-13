@@ -90,8 +90,17 @@ function detectSource(order: any): string {
   if (srcName === "tiktok") return "tiktok"
   if (srcName === "shopee") return "shopee"
   if (srcName === "lazada") return "lazada"
-  // "Webcake" = tạo thủ công trên Pancake web (không phải website Medusa)
-  if (srcName === "webcake") return "manual"
+  // "Webcake" = tạo thủ công trên Pancake — nhưng đơn từ phanviet.vn cũng là Webcake
+  // Phân biệt bằng tag "phanviet-web" hoặc p_utm_source = "phanviet.vn"
+  if (srcName === "webcake") {
+    const tags: string[] = Array.isArray(order.tags)
+      ? order.tags.map((t: any) => String(t?.name ?? t).toLowerCase())
+      : []
+    if (tags.includes("phanviet-web")) return "medusa"
+    const utm0 = String(order.p_utm_source ?? "").toLowerCase()
+    if (utm0 === "phanviet.vn") return "medusa"
+    return "manual"
+  }
 
   // Fallback: UTM source
   const utm = String(order.p_utm_source ?? order.marketing?.p_utm_source ?? order.marketing?.utm_source ?? "").toLowerCase()

@@ -157,15 +157,16 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     payload.warehouse_id = PANCAKE_WAREHOUSE_ID
   }
 
+  // Tag để nhận diện đơn từ website khi sync ngược lại
+  payload.tags = [{ name: "phanviet-web" }]
+
   // UTM marketing data
-  if (utmSource || utmCampaign) {
-    payload.marketing = {
-      ...(utmSource && { p_utm_source: utmSource }),
-      ...(utmMedium && { p_utm_medium: utmMedium }),
-      ...(utmCampaign && { p_utm_campaign: utmCampaign }),
-      ...(utmContent && { p_utm_content: utmContent }),
-      ...(utmTerm && { p_utm_term: utmTerm }),
-    }
+  payload.marketing = {
+    p_utm_source: utmSource || "phanviet.vn",
+    ...(utmMedium && { p_utm_medium: utmMedium }),
+    ...(utmCampaign && { p_utm_campaign: utmCampaign }),
+    ...(utmContent && { p_utm_content: utmContent }),
+    ...(utmTerm && { p_utm_term: utmTerm }),
   }
 
   const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}`
