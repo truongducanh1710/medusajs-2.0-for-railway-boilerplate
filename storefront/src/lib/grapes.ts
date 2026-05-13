@@ -12,6 +12,7 @@ const ALLOWED_ATTRS = new Set([
   "class","id","style","href","src","alt","title","width","height","target",
   "rel","type","placeholder","name","value","controls","autoplay","muted","loop",
   "allowfullscreen","frameborder","loading","decoding","srcset","sizes",
+  "referrerpolicy","allow",
   "data-vid","data-idx","data-filter","data-rev-bound",
 ])
 

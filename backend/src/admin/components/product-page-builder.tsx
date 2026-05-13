@@ -130,7 +130,7 @@ const blocks: BuilderBlock[] = [
       <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="pvbTkgBgClose(event)">
         <div class="pop-inner">
           <button class="tkg-close" onclick="pvbTkgClose()">&#10005;</button>
-          <iframe id="pvb-tkg-iframe" src="" allow="autoplay" allowfullscreen></iframe>
+          <iframe id="pvb-tkg-iframe" src="" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>
         </div>
       </div>
     `,

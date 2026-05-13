@@ -24,6 +24,11 @@ import { parseGrapesContent } from "@lib/grapes"
  */
 const MOBILE_OVERRIDE_CSS = `
 
+/* TikTok Gallery — ẩn admin panel trên storefront */
+.pvb-tkg .admin-panel { display: none !important; }
+
+
+
 /* ────────────────────────────────────────────
    MOBILE  ≤ 639px  (phones — 320px to 639px)
    ──────────────────────────────────────────── */
