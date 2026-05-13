@@ -85,17 +85,28 @@ const blocks: BuilderBlock[] = [
         .pvb-tkg{padding:32px 16px;background:#fff}
         .pvb-tkg h2{font-size:clamp(18px,4vw,26px);font-weight:900;text-align:center;margin:0 0 16px}
         .pvb-tkg .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:700px;margin:0 auto}
-        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);cursor:pointer}
+        /* Card entrance animation khi scroll vào */
+        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);cursor:pointer;transition:transform .2s ease,box-shadow .2s ease;opacity:0;transform:translateY(20px)}
+        .pvb-tkg .card.tkg-visible{opacity:1;transform:translateY(0)}
+        .pvb-tkg .card:active{transform:scale(0.96)}
         .pvb-tkg .card video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);transition:background .2s}
-        .pvb-tkg .card:hover .overlay{background:rgba(0,0,0,0.1)}
+        /* Overlay chỉ hiện khi chưa có video — ẩn khi có video */
+        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);transition:opacity .3s}
+        .pvb-tkg .card.has-video .overlay{display:none}
         .pvb-tkg .card .tt-logo{width:40px;height:40px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px}
-        .pvb-tkg .play{width:52px;height:52px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;padding-left:4px;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
-        .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);align-items:center;justify-content:center}
-        .pvb-tkg-pop.open{display:flex}
-        .pvb-tkg-pop .pop-inner{position:relative;width:100%;max-width:360px;height:80vh}
-        .pvb-tkg-pop video{width:100%;height:100%;object-fit:contain;border-radius:12px;background:#000}
-        .pvb-tkg-pop .tkg-close{position:absolute;top:-44px;right:0;background:none;border:none;color:#fff;font-size:36px;cursor:pointer;line-height:1;padding:0}
+        /* Play hint — hiện khi có video, mờ đi sau 1.5s */
+        .pvb-tkg .card .play-hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.55);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;opacity:1;transition:opacity 1s;pointer-events:none}
+        .pvb-tkg .card.hint-gone .play-hint{opacity:0}
+        /* Popup — slide-up từ dưới */
+        .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0);align-items:flex-end;justify-content:center;transition:background .25s}
+        .pvb-tkg-pop.open{display:flex;background:rgba(0,0,0,0.88)}
+        .pvb-tkg-pop .pop-inner{position:relative;width:100%;max-width:400px;height:85vh;transform:translateY(100%);transition:transform .3s cubic-bezier(.32,1,.45,1);border-radius:20px 20px 0 0;overflow:hidden;background:#000}
+        .pvb-tkg-pop.open .pop-inner{transform:translateY(0)}
+        .pvb-tkg-pop video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+        /* Close button — pill trên cùng */
+        .pvb-tkg-pop .tkg-close{position:absolute;top:12px;right:12px;width:36px;height:36px;background:rgba(0,0,0,0.6);border:none;color:#fff;font-size:20px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1}
+        /* Drag handle */
+        .pvb-tkg-pop .tkg-handle{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:40px;height:4px;background:rgba(255,255,255,0.4);border-radius:2px;z-index:10}
         .pvb-tkg .admin-panel{margin-top:20px;padding:14px;background:#f9fafb;border-radius:10px;border:1px dashed #d1d5db}
         .pvb-tkg .admin-panel p{font-size:11px;color:#6b7280;margin:0 0 10px;font-weight:600}
         .pvb-tkg .tt-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
@@ -103,19 +114,22 @@ const blocks: BuilderBlock[] = [
         .pvb-tkg .tt-status{font-size:11px;color:#6b7280;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .pvb-tkg .tt-btn{padding:6px 10px;background:#111827;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
         .pvb-tkg .tt-btn:disabled{opacity:.5;cursor:not-allowed}
-        @media(min-width:768px){.pvb-tkg{padding:48px 24px}.pvb-tkg .grid{gap:12px}}
+        @media(min-width:768px){.pvb-tkg{padding:48px 24px}.pvb-tkg .grid{gap:12px}.pvb-tkg-pop .pop-inner{height:80vh;border-radius:20px;margin-bottom:20px}}
       </style>
       <section class="pvb-tkg">
         <h2>&#127925; Video thực tế từ khách hàng</h2>
         <div class="grid">
           <div class="card" data-src="" data-idx="0">
             <div class="overlay"><div class="tt-logo">&#127925;</div></div>
+            <div class="play-hint">&#9654; Xem video</div>
           </div>
           <div class="card" data-src="" data-idx="1">
             <div class="overlay"><div class="tt-logo">&#127925;</div></div>
+            <div class="play-hint">&#9654; Xem video</div>
           </div>
           <div class="card" data-src="" data-idx="2">
             <div class="overlay"><div class="tt-logo">&#127925;</div></div>
+            <div class="play-hint">&#9654; Xem video</div>
           </div>
         </div>
         <div class="admin-panel">
@@ -125,8 +139,9 @@ const blocks: BuilderBlock[] = [
           <div class="tt-row"><span class="tt-lbl">Video 3</span><span class="tt-status" id="tkg-s2">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(2)">&#8679; Tải lên</button></div>
         </div>
       </section>
-      <div class="pvb-tkg-pop" id="pvb-tkg-pop">
+      <div class="pvb-tkg-pop" id="pvb-tkg-pop" style="display:none">
         <div class="pop-inner">
+          <div class="tkg-handle"></div>
           <button class="tkg-close" onclick="pvbTkgClose()">&#10005;</button>
           <video id="pvb-tkg-video" src="" controls autoplay playsinline></video>
         </div>

@@ -27,6 +27,55 @@ const MOBILE_OVERRIDE_CSS = `
 /* TikTok Gallery — ẩn admin panel trên storefront */
 .pvb-tkg .admin-panel { display: none !important; }
 
+/* Card entrance transition */
+.pvb-tkg .card { transition: opacity .4s ease, transform .4s ease, box-shadow .2s ease; }
+.pvb-tkg .card:active { transform: scale(0.96) !important; }
+
+/* Popup slide-up */
+.pvb-tkg-pop .pop-inner { transition: transform .3s cubic-bezier(.32,1,.45,1); }
+
+/* Play hint fade */
+.pvb-tkg .play-hint {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; font-weight: 700;
+  padding: 4px 10px; border-radius: 20px; white-space: nowrap;
+  opacity: 1; transition: opacity 1s; pointer-events: none; z-index: 2;
+}
+.pvb-tkg .card.hint-gone .play-hint { opacity: 0; }
+.pvb-tkg .card.has-video .overlay { display: none !important; }
+
+/* Popup full redesign */
+.pvb-tkg-pop {
+  align-items: flex-end !important;
+  background: rgba(0,0,0,0) !important;
+  transition: background .25s !important;
+}
+.pvb-tkg-pop.open { background: rgba(0,0,0,0.88) !important; }
+.pvb-tkg-pop .pop-inner {
+  border-radius: 20px 20px 0 0 !important;
+  overflow: hidden !important;
+  max-width: 420px !important;
+  height: 85vh !important;
+  background: #000 !important;
+}
+.pvb-tkg-pop .tkg-close {
+  position: absolute; top: 12px; right: 12px;
+  width: 36px; height: 36px;
+  background: rgba(0,0,0,0.6) !important;
+  border-radius: 50% !important;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px !important; z-index: 10;
+}
+.pvb-tkg-pop .tkg-handle {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 40px; height: 4px; background: rgba(255,255,255,0.35);
+  border-radius: 2px; z-index: 10;
+}
+@media (min-width: 768px) {
+  .pvb-tkg-pop { align-items: center !important; }
+  .pvb-tkg-pop .pop-inner { border-radius: 16px !important; height: 80vh !important; }
+}
+
 
 
 /* ────────────────────────────────────────────
@@ -268,27 +317,65 @@ type Props = {
 
 const TIKTOK_GALLERY_JS = `
 (function(){
+  /* ── CLOSE popup ── */
   function pvbClose(){
     var pop=document.getElementById('pvb-tkg-pop');
     var v=document.getElementById('pvb-tkg-video');
-    if(v){v.pause();v.removeAttribute('src');v.load();}
-    if(pop){pop.classList.remove('open');pop.style.display='none';}
+    if(!pop)return;
+    var inner=pop.querySelector('.pop-inner');
+    // Slide-down trước rồi mới ẩn
+    if(inner)inner.style.transform='translateY(100%)';
+    pop.style.background='rgba(0,0,0,0)';
+    setTimeout(function(){
+      pop.classList.remove('open');
+      pop.style.display='none';
+      if(v){v.pause();v.removeAttribute('src');v.load();}
+      if(inner)inner.style.transform='';
+      pop.style.background='';
+      // Resume card previews
+      document.querySelectorAll('.pvb-tkg .card video').forEach(function(cv){
+        cv.play().catch(function(){});
+      });
+    },280);
   }
+
+  /* ── OPEN popup ── */
   function pvbOpen(src){
     var pop=document.getElementById('pvb-tkg-pop');
     var v=document.getElementById('pvb-tkg-video');
-    if(v){v.src=src;v.play().catch(function(){});}
-    if(pop){pop.style.display='';pop.classList.add('open');}
+    if(!pop||!v)return;
+    // Pause card previews để giảm tải
+    document.querySelectorAll('.pvb-tkg .card video').forEach(function(cv){cv.pause();});
+    v.src=src;
+    pop.style.display='flex';
+    // Force reflow rồi add class để trigger CSS transition
+    pop.getBoundingClientRect();
+    pop.classList.add('open');
+    v.play().catch(function(){});
   }
 
-  // Inject video preview vào mỗi card có data-src
+  /* ── INIT card previews ── */
   function initCardPreviews(){
-    var cards=document.querySelectorAll('.pvb-tkg .card[data-src]');
-    cards.forEach(function(card){
+    var cards=document.querySelectorAll('.pvb-tkg .card');
+    if(!cards.length)return;
+
+    cards.forEach(function(card,i){
       var src=card.getAttribute('data-src');
+
+      // Entrance animation — stagger theo index
+      setTimeout(function(){
+        card.classList.add('tkg-visible');
+      }, i * 120);
+
       if(!src)return;
-      var overlay=card.querySelector('.overlay');
-      if(overlay)overlay.style.display='none';
+
+      // Mark card có video
+      card.classList.add('has-video');
+
+      // Ẩn play-hint sau 2s
+      setTimeout(function(){card.classList.add('hint-gone');}, 2000 + i*200);
+
+      // Tạo video preview
       var vid=card.querySelector('video');
       if(!vid){
         vid=document.createElement('video');
@@ -299,33 +386,54 @@ const TIKTOK_GALLERY_JS = `
         vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block';
         card.insertBefore(vid,card.firstChild);
       }
-      // Load src nếu chưa có
-      if(!vid.src||vid.src!==src){
+      if(vid.getAttribute('data-loaded')!==src){
         vid.src=src;
         vid.load();
+        vid.setAttribute('data-loaded',src);
       }
-      // Play khi vào viewport (tránh bị browser block)
+
+      // Play/pause theo viewport
       if('IntersectionObserver' in window){
-        var obs=new IntersectionObserver(function(entries){
+        new IntersectionObserver(function(entries){
           entries.forEach(function(en){
             if(en.isIntersecting){vid.play().catch(function(){});}
             else{vid.pause();}
           });
-        },{threshold:0.3});
-        obs.observe(card);
+        },{threshold:0.25}).observe(card);
       } else {
-        vid.autoplay=true;
         vid.play().catch(function(){});
       }
     });
   }
 
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',initCardPreviews);
-  } else {
-    setTimeout(initCardPreviews,100);
+  /* ── SWIPE to close (mobile) ── */
+  function initSwipeClose(){
+    var pop=document.getElementById('pvb-tkg-pop');
+    if(!pop)return;
+    var inner=pop.querySelector('.pop-inner');
+    if(!inner)return;
+    var startY=0,dragging=false;
+    inner.addEventListener('touchstart',function(e){startY=e.touches[0].clientY;dragging=true;},{passive:true});
+    inner.addEventListener('touchmove',function(e){
+      if(!dragging)return;
+      var dy=e.touches[0].clientY-startY;
+      if(dy>0)inner.style.transform='translateY('+dy+'px)';
+    },{passive:true});
+    inner.addEventListener('touchend',function(e){
+      dragging=false;
+      var dy=e.changedTouches[0].clientY-startY;
+      if(dy>80){pvbClose();}
+      else{inner.style.transform='';}
+    });
   }
 
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){initCardPreviews();initSwipeClose();});
+  } else {
+    setTimeout(function(){initCardPreviews();initSwipeClose();},100);
+  }
+
+  /* ── Click delegation ── */
   document.addEventListener('click',function(e){
     var t=e.target;
     while(t&&t!==document){
@@ -338,6 +446,7 @@ const TIKTOK_GALLERY_JS = `
       t=t.parentElement;
     }
   });
+
   window.pvbTkgClose=pvbClose;
 })();
 `
