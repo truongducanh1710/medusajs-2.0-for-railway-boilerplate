@@ -51,7 +51,14 @@ export default async function orderPlacedHandler({
   }
 
   try {
-    await pushOrderToPancake(order, shippingAddress)
+    const pancakeResult = await pushOrderToPancake(order, shippingAddress)
+    if (pancakeResult) {
+      const pancakeOrderId = pancakeResult?.id ?? pancakeResult?.order?.id ?? pancakeResult?.data?.id
+      if (pancakeOrderId) {
+        await orderModuleService.updateOrders({ id: order.id, metadata: { ...order.metadata, pancake_order_id: String(pancakeOrderId) } } as any)
+        console.info(`[Pancake] Saved pancake_order_id=${pancakeOrderId} to order ${order.id}`)
+      }
+    }
   } catch (error: any) {
     console.error('[Pancake] Error pushing order to Pancake POS:', error?.message || error)
   }

@@ -47,6 +47,15 @@ function FulfillmentBadge({ status }: { status: string }) {
   )
 }
 
+function POSBadge({ info }: { info?: { label: string; cls: string } | null }) {
+  if (!info) return <span className="text-xs text-gray-400">—</span>
+  return (
+    <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${info.cls}`}>
+      {info.label}
+    </span>
+  )
+}
+
 const LIMIT = 50
 
 const DonHangPage = () => {
@@ -56,6 +65,7 @@ const DonHangPage = () => {
   const [offset, setOffset] = useState(0)
   const [search, setSearch] = useState("")
   const [searchInput, setSearchInput] = useState("")
+  const [posStatuses, setPosStatuses] = useState<Record<string, { label: string; cls: string }>>({})
 
   const fetchOrders = async (off: number, q: string) => {
     setLoading(true)
@@ -72,12 +82,33 @@ const DonHangPage = () => {
 
       const res = await fetch(url, { credentials: "include" })
       const data = await res.json()
-      setOrders(data.orders || [])
+      const fetchedOrders = data.orders || []
+      setOrders(fetchedOrders)
       setTotal(data.count || 0)
+
+      // Fetch Pancake POS statuses for orders that have pancake_order_id
+      const pancakeIds = fetchedOrders
+        .map((o: any) => o.metadata?.pancake_order_id)
+        .filter(Boolean) as string[]
+
+      if (pancakeIds.length > 0) {
+        fetchPosStatuses(pancakeIds)
+      }
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchPosStatuses = async (ids: string[]) => {
+    try {
+      const res = await fetch(`/admin/pancake-status?ids=${ids.join(",")}`, { credentials: "include" })
+      if (!res.ok) return
+      const data = await res.json()
+      setPosStatuses(data.statuses || {})
+    } catch {
+      // ignore — POS status is non-critical
     }
   }
 
@@ -155,6 +186,7 @@ const DonHangPage = () => {
                     <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tổng tiền</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Thanh toán</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Giao hàng</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">POS</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -168,6 +200,8 @@ const DonHangPage = () => {
                     const itemTitle = firstItem
                       ? firstItem.title + (order.items.length > 1 ? ` +${order.items.length - 1}` : "")
                       : "—"
+                    const pancakeId = order.metadata?.pancake_order_id as string | undefined
+                    const posInfo = pancakeId ? posStatuses[pancakeId] : undefined
 
                     return (
                       <tr
@@ -201,6 +235,9 @@ const DonHangPage = () => {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <FulfillmentBadge status={order.fulfillment_status} />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <POSBadge info={posInfo} />
                         </td>
                         <td className="px-4 py-3 text-right">
                           <a
