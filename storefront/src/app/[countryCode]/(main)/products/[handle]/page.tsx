@@ -25,12 +25,25 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     notFound()
   }
 
+  const ogImage = product.thumbnail
+    ? [{ url: product.thumbnail, width: 800, height: 800, alt: product.title }]
+    : []
+
   return {
     title: `${product.title} | Phan Việt`,
-    description: `${product.title}`,
+    description: product.description || product.title,
     openGraph: {
       title: `${product.title} | Phan Việt`,
-      description: `${product.title}`,
+      description: product.description || product.title,
+      url: `https://phanviet.vn/vn/products/${handle}`,
+      siteName: "Phan Việt",
+      images: ogImage,
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${product.title} | Phan Việt`,
+      description: product.description || product.title,
       images: product.thumbnail ? [product.thumbnail] : [],
     },
   }
