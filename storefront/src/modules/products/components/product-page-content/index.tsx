@@ -31,6 +31,33 @@ const MOBILE_OVERRIDE_CSS = `
 .pvb-tkg .card { transition: opacity .4s ease, transform .4s ease, box-shadow .2s ease; }
 .pvb-tkg .card:active { transform: scale(0.96) !important; }
 
+/* Mobile: horizontal scroll thay vì 3 cột nhỏ */
+@media (max-width: 639px) {
+  .pvb-tkg { padding: 24px 0 24px !important; }
+  .pvb-tkg h2 { padding: 0 16px; margin-bottom: 14px !important; }
+  .pvb-tkg .grid {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scroll-snap-type: x mandatory !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 10px !important;
+    padding: 0 16px 12px !important;
+    max-width: none !important;
+    scrollbar-width: none !important;
+  }
+  .pvb-tkg .grid::-webkit-scrollbar { display: none !important; }
+  .pvb-tkg .card {
+    flex: 0 0 52vw !important;
+    width: 52vw !important;
+    min-width: 52vw !important;
+    aspect-ratio: 9/16 !important;
+    scroll-snap-align: center !important;
+    border-radius: 14px !important;
+  }
+}
+
 /* Popup slide-up */
 .pvb-tkg-pop .pop-inner { transition: transform .3s cubic-bezier(.32,1,.45,1); }
 
