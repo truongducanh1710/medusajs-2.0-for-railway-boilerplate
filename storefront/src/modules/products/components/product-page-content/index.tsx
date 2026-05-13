@@ -274,6 +274,38 @@ const TIKTOK_GALLERY_JS = `
     if(v){v.pause();v.src='';}
     if(pop)pop.classList.remove('open');
   }
+
+  // Inject video preview vào mỗi card có data-src
+  function initCardPreviews(){
+    var cards=document.querySelectorAll('.pvb-tkg .card[data-src]');
+    cards.forEach(function(card){
+      var src=card.getAttribute('data-src');
+      if(!src)return;
+      // Ẩn overlay để thấy video
+      var overlay=card.querySelector('.overlay');
+      if(overlay)overlay.style.display='none';
+      // Thêm video nếu chưa có
+      if(!card.querySelector('video')){
+        var vid=document.createElement('video');
+        vid.src=src;
+        vid.muted=true;
+        vid.loop=true;
+        vid.autoplay=true;
+        vid.setAttribute('playsinline','');
+        vid.setAttribute('preload','metadata');
+        vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block';
+        card.insertBefore(vid,card.firstChild);
+        vid.play().catch(function(){});
+      }
+    });
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',initCardPreviews);
+  } else {
+    initCardPreviews();
+  }
+
   document.addEventListener('click',function(e){
     var t=e.target;
     while(t&&t!==document){
