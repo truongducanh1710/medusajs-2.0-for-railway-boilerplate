@@ -143,7 +143,7 @@ const blocks: BuilderBlock[] = [
         <div class="pop-inner">
           <div class="tkg-handle"></div>
           <button class="tkg-close" onclick="pvbTkgClose()">&#10005;</button>
-          <video id="pvb-tkg-video" src="" controls autoplay playsinline></video>
+          <video id="pvb-tkg-video" src="" controls autoplay playsinline webkit-playsinline x5-playsinline></video>
         </div>
       </div>
     `,

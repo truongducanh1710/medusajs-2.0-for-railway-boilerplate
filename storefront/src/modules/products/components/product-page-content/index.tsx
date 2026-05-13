@@ -402,15 +402,18 @@ const TIKTOK_GALLERY_JS = `
       // Ẩn play-hint sau 2s
       setTimeout(function(){card.classList.add('hint-gone');}, 2000 + i*200);
 
-      // Tạo video preview
+      // Tạo video preview — KHÔNG autoplay, chỉ hiện thumbnail frame
       var vid=card.querySelector('video');
       if(!vid){
         vid=document.createElement('video');
         vid.muted=true;
         vid.loop=true;
+        // Cả 2 attribute cần thiết để iOS Safari KHÔNG fullscreen
         vid.setAttribute('playsinline','');
+        vid.setAttribute('webkit-playsinline','');
         vid.setAttribute('preload','metadata');
-        vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block';
+        vid.setAttribute('x5-playsinline',''); // Android WeChat
+        vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none';
         card.insertBefore(vid,card.firstChild);
       }
       if(vid.getAttribute('data-loaded')!==src){
@@ -419,16 +422,18 @@ const TIKTOK_GALLERY_JS = `
         vid.setAttribute('data-loaded',src);
       }
 
-      // Play/pause theo viewport
+      // Chỉ play khi >50% visible — dừng ngay khi out
       if('IntersectionObserver' in window){
         new IntersectionObserver(function(entries){
           entries.forEach(function(en){
-            if(en.isIntersecting){vid.play().catch(function(){});}
-            else{vid.pause();}
+            if(en.isIntersecting){
+              // play() với muted + playsinline → không fullscreen trên iOS
+              vid.play().catch(function(){});
+            } else {
+              vid.pause();
+            }
           });
-        },{threshold:0.25}).observe(card);
-      } else {
-        vid.play().catch(function(){});
+        },{threshold:0.5}).observe(card);
       }
     });
   }
