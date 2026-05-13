@@ -84,7 +84,22 @@ export default function StickyBuyBar({
     return null
   }
 
-  const basePrice = getBundleStartPrice() ?? medusaPrice
+  const [syncedPrice, setSyncedPrice] = useState<number | null>(null)
+  const [syncedLabel, setSyncedLabel] = useState<string | null>(null)
+
+  // Lắng nghe BundleSelector thay đổi lựa chọn
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.price) setSyncedPrice(detail.price)
+      if (detail?.label) setSyncedLabel(detail.label)
+    }
+    window.addEventListener("pvb-bundle-select", handler)
+    return () => window.removeEventListener("pvb-bundle-select", handler)
+  }, [])
+
+  const basePrice = syncedPrice ?? getBundleStartPrice() ?? medusaPrice
+  const displayLabel = syncedLabel
 
   // StickyBar visibility
   useEffect(() => {
@@ -192,7 +207,7 @@ export default function StickyBuyBar({
         <div className="flex items-center gap-3 px-4 py-3">
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-gray-400 font-medium leading-none mb-0.5 truncate">
-              {product.title}
+              {displayLabel ?? product.title}
             </p>
             <p className="text-lg font-black text-gray-900 leading-none">
               {formatVND(basePrice)}
@@ -203,7 +218,7 @@ export default function StickyBuyBar({
             onClick={scrollToBuy}
             className="flex-shrink-0 h-12 px-4 rounded-xl border-2 border-blue-600 text-blue-600 font-bold text-sm whitespace-nowrap"
           >
-            Chọn gói
+            {syncedLabel ? "Đổi gói" : "Chọn gói"}
           </button>
 
           <button

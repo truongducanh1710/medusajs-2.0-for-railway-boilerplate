@@ -142,6 +142,19 @@ export default function BundleSelector({ product, region }: Props) {
 
   const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
+  // Sync lựa chọn hiện tại lên StickyBar qua CustomEvent
+  useEffect(() => {
+    if (!selectedOpt) return
+    window.dispatchEvent(new CustomEvent("pvb-bundle-select", {
+      detail: {
+        price: selectedOpt.price,
+        label: selectedOpt.label,
+        qty: selectedOpt.qty,
+        variantLabel: isMultiVariant ? activeVarConfig?.label : undefined,
+      }
+    }))
+  }, [selected, activeVariantIdx, selectedOpt?.price])
+
   const handleAdd = async () => {
     if (!variant?.id) return
     setAdding(true)
