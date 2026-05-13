@@ -1980,6 +1980,34 @@ export default function ProductPageBuilder({
                 ))}
               </div>
 
+              {/* Video Gallery upload — right panel, React onClick trực tiếp (không qua iframe) */}
+              {selectedSection.pvbClass === "pvb-tkg" && (
+                <div style={{ padding: "0 10px 6px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 2px 2px" }}>📹 Upload video</p>
+                  {[0, 1, 2].map(idx => (
+                    <button
+                      key={idx}
+                      disabled={videoUploading[idx]}
+                      onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, width: "100%",
+                        padding: "9px 10px", borderRadius: 8,
+                        border: videoSlots[idx] ? "1px solid #86efac" : "1px solid #e5e7eb",
+                        background: videoSlots[idx] ? "#dcfce7" : "#fff",
+                        color: videoUploading[idx] ? "#9ca3af" : videoSlots[idx] ? "#15803d" : "#374151",
+                        fontSize: 12, fontWeight: 700, cursor: videoUploading[idx] ? "not-allowed" : "pointer",
+                        opacity: videoUploading[idx] ? 0.7 : 1,
+                      }}
+                    >
+                      <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>
+                        {videoUploading[idx] ? "⏳" : videoSlots[idx] ? "✅" : "↑"}
+                      </span>
+                      {videoUploading[idx] ? "Đang tải..." : videoSlots[idx] ? `Video ${idx + 1} đã up` : `Tải video ${idx + 1}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Spec-specific row actions — always reliable via right panel */}
               {selectedSection.pvbClass === "pvb-spec" && (
                 <div style={{ padding: "0 10px 6px", display: "flex", flexDirection: "column", gap: 6 }}>
