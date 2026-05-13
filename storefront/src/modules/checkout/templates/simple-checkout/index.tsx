@@ -12,6 +12,7 @@ import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
 import { useParams } from "next/navigation"
 import Thumbnail from "@modules/products/components/thumbnail"
+import { getUtmFromCookie } from "@lib/utm"
 
 const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
 const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
@@ -560,6 +561,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           payment_method: payment,
           province: form.province || "",
           ward: form.ward || "",
+          ...getUtmFromCookie(),
         }
       })
       console.info("[SimpleCheckout] cart updated", {
