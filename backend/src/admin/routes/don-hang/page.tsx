@@ -2,7 +2,8 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 
 function formatVND(amount: number) {
-  return new Intl.NumberFormat("vi-VN").format(Math.round(amount / 100)) + "đ"
+  // Medusa lưu giá dạng integer (VND không có decimal), không cần chia 100
+  return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
 }
 
 function formatDate(dateStr: string) {
@@ -14,9 +15,13 @@ function formatDate(dateStr: string) {
 function PaymentBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     paid: { label: "Đã TT", cls: "bg-green-100 text-green-700" },
+    authorized: { label: "Đã duyệt", cls: "bg-green-100 text-green-700" },
+    captured: { label: "Đã thu", cls: "bg-green-100 text-green-700" },
     awaiting: { label: "Chờ TT", cls: "bg-yellow-100 text-yellow-700" },
     not_paid: { label: "Chưa TT", cls: "bg-red-100 text-red-700" },
     refunded: { label: "Hoàn tiền", cls: "bg-purple-100 text-purple-700" },
+    partially_refunded: { label: "Hoàn 1 phần", cls: "bg-purple-100 text-purple-700" },
+    canceled: { label: "Hủy", cls: "bg-red-100 text-red-700" },
   }
   const s = map[status] || { label: status, cls: "bg-gray-100 text-gray-600" }
   return (
@@ -58,8 +63,8 @@ const DonHangPage = () => {
       const fields = [
         "id", "display_id", "created_at", "total", "payment_status", "fulfillment_status",
         "+shipping_address.first_name", "+shipping_address.last_name",
-        "+shipping_address.phone", "+shipping_address.province",
-        "+items.title", "+items.quantity",
+        "+shipping_address.phone", "+shipping_address.province", "+shipping_address.city",
+        "+items.title", "+items.quantity", "+metadata",
       ].join(",")
 
       let url = `/admin/orders?limit=${LIMIT}&offset=${off}&fields=${encodeURIComponent(fields)}&order=-created_at`
@@ -157,8 +162,8 @@ const DonHangPage = () => {
                   {orders.map((order) => {
                     const addr = order.shipping_address || {}
                     const fullName = [addr.first_name, addr.last_name].filter(Boolean).join(" ") || "—"
-                    const phone = addr.phone || "—"
-                    const province = addr.province || "—"
+                    const phone = addr.phone || order.metadata?.phone || "—"
+                    const province = addr.province || addr.city || order.metadata?.province || "—"
                     const firstItem = order.items?.[0]
                     const itemTitle = firstItem
                       ? firstItem.title + (order.items.length > 1 ? ` +${order.items.length - 1}` : "")
