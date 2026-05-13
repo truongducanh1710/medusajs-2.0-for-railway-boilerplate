@@ -1027,6 +1027,47 @@ export default function ProductPageBuilder({
   const [hasDraftChanges, setHasDraftChanges] = useState(false)
   const [activePanel, setActivePanel] = useState<string | null>("Sections")
   const [selectedSection, setSelectedSection] = useState<{ label: string; isTopLevel: boolean; pvbClass: string } | null>(null)
+  const [videoSlots, setVideoSlots] = useState<(string | null)[]>([null, null, null])
+  const [videoUploading, setVideoUploading] = useState<boolean[]>([false, false, false])
+  const [showVideoPanel, setShowVideoPanel] = useState(false)
+  const videoInputRef = useRef<HTMLInputElement>(null)
+  const uploadingSlotRef = useRef<number>(-1)
+
+  // Lắng nghe canvas gọi pvbTkgUpload → trigger file input thật trong React DOM
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const idx = (e as CustomEvent).detail?.idx ?? 0
+      uploadingSlotRef.current = idx
+      videoInputRef.current?.click()
+    }
+    window.addEventListener('pvb-tkg-upload-request', handler)
+    return () => window.removeEventListener('pvb-tkg-upload-request', handler)
+  }, [])
+
+  const handleVideoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const idx = uploadingSlotRef.current
+    e.target.value = '' // reset để có thể chọn lại file cũ
+
+    setVideoUploading(prev => { const n = [...prev]; n[idx] = true; return n })
+    try {
+      const formData = new FormData()
+      formData.append('files', file, file.name)
+      const res = await fetch('/admin/uploads', { method: 'POST', credentials: 'include', body: formData })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      const url: string = data.files?.[0]?.url || ''
+      if (!url) throw new Error('No URL')
+      setVideoSlots(prev => { const n = [...prev]; n[idx] = url; return n })
+      // Cập nhật GrapesJS model + canvas preview
+      ;(window as any).pvbTkgSetVideoUrl?.(idx, url, file.name)
+    } catch (err: any) {
+      alert('Upload lỗi: ' + err.message)
+    } finally {
+      setVideoUploading(prev => { const n = [...prev]; n[idx] = false; return n })
+    }
+  }
 
   useEffect(() => {
     if (!open || !containerRef.current || editorRef.current) return
@@ -1106,6 +1147,15 @@ export default function ProductPageBuilder({
       }
 
       editorRef.current = editor
+
+      // Theo dõi block pvb-tkg để hiện/ẩn video panel
+      const checkTkg = () => {
+        try {
+          const hasTkg = !!editor.Canvas.getDocument()?.querySelector('.pvb-tkg')
+          setShowVideoPanel(hasTkg)
+        } catch {}
+      }
+      editor.on('component:add component:remove canvas:frame:load', checkTkg)
       // GrapesJS wraps blocks panel in overflow:hidden — override it
       setTimeout(() => {
         const el = document.querySelector('#product-page-builder-blocks')
@@ -1221,75 +1271,40 @@ export default function ProductPageBuilder({
         return found
       }
 
+      // pvbTkgUpload: canvas iframe gọi → dispatch event lên React component
+      // React component có <input type="file"> thật → không bị browser block
       ;(window as any).pvbTkgUpload = (idx: number) => {
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.accept = 'video/mp4,video/mov,video/quicktime,video/*'
-        input.onchange = async () => {
-          const file = input.files?.[0]
-          if (!file) return
+        window.dispatchEvent(new CustomEvent('pvb-tkg-upload-request', { detail: { idx } }))
+      }
 
-          // Tìm status element trong canvas iframe để cập nhật UI
-          const doc = editor.Canvas.getDocument()
-          const statusEl = doc?.getElementById(`tkg-s${idx}`)
-          const btn = statusEl?.nextElementSibling as HTMLButtonElement | null
-          if (statusEl) statusEl.textContent = '⏳ Đang upload...'
-          if (btn) btn.disabled = true
-
+      // Hàm cập nhật GrapesJS model sau khi upload xong (gọi từ React handler)
+      ;(window as any).pvbTkgSetVideoUrl = (idx: number, url: string, filename: string) => {
+        const cards = findTkgCards(editor.getComponents())
+        if (cards[idx]) {
+          cards[idx].addAttributes({ 'data-src': url })
           try {
-            const formData = new FormData()
-            formData.append('files', file, file.name)
-
-            const token = document.cookie.match(/medusa_auth_token=([^;]+)/)?.[1]
-              || localStorage.getItem('medusa_auth_token')
-              || ''
-
-            const res = await fetch('/admin/uploads', {
-              method: 'POST',
-              headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-              credentials: 'include',
-              body: formData,
-            })
-
-            if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-            const data = await res.json()
-            const url: string = data.files?.[0]?.url || data.file?.url || ''
-            if (!url) throw new Error('No URL returned')
-
-            // Update GrapesJS component model → persist on save
-            const cards = findTkgCards(editor.getComponents())
-            if (cards[idx]) {
-              cards[idx].addAttributes({ 'data-src': url })
-              // Update DOM preview in canvas
-              try {
-                const cardEl = cards[idx].getEl()
-                if (cardEl) {
-                  let vid = cardEl.querySelector('video')
-                  if (!vid) {
-                    vid = doc!.createElement('video')
-                    vid.setAttribute('muted', '')
-                    vid.setAttribute('loop', '')
-                    vid.setAttribute('playsinline', '')
-                    vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover'
-                    cardEl.insertBefore(vid, cardEl.firstChild)
-                  }
-                  vid.src = url
-                  vid.load()
-                  // Ẩn overlay music icon khi có video
-                  const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
-                  if (overlay) overlay.style.display = 'none'
-                }
-              } catch {}
+            const doc = editor.Canvas.getDocument()
+            const cardEl = cards[idx].getEl()
+            if (cardEl && doc) {
+              let vid = cardEl.querySelector('video') as HTMLVideoElement | null
+              if (!vid) {
+                vid = doc.createElement('video') as HTMLVideoElement
+                vid.setAttribute('muted', '')
+                vid.setAttribute('loop', '')
+                vid.setAttribute('playsinline', '')
+                vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover'
+                cardEl.insertBefore(vid, cardEl.firstChild)
+              }
+              vid.src = url
+              vid.load()
+              const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
+              if (overlay) overlay.style.display = 'none'
             }
-
-            if (statusEl) statusEl.textContent = '✅ ' + file.name
-            if (btn) btn.disabled = false
-          } catch (e: any) {
-            if (statusEl) statusEl.textContent = '❌ Lỗi: ' + e.message
-            if (btn) btn.disabled = false
-          }
+            // Cập nhật status text trong canvas
+            const statusEl = doc?.getElementById(`tkg-s${idx}`)
+            if (statusEl) statusEl.textContent = '✅ ' + filename
+          } catch {}
         }
-        input.click()
       }
 
       // Canvas inline functions — chỉ cần close popup, open từ event delegation
@@ -1681,6 +1696,48 @@ export default function ProductPageBuilder({
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/70">
+      {/* Hidden file input cho video upload — React DOM, không qua iframe */}
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/mp4,video/mov,video/quicktime,video/*"
+        style={{ display: "none" }}
+        onChange={handleVideoFileChange}
+      />
+
+      {/* Video Gallery upload panel — hiện phía trên canvas khi có block pvb-tkg */}
+      {showVideoPanel && (
+        <div style={{
+          position: "fixed", bottom: 80, right: 16, zIndex: 10001,
+          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
+          padding: "12px 14px", boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
+          minWidth: 280,
+        }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            📹 Video Gallery
+          </p>
+          {[0, 1, 2].map(idx => (
+            <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "#374151", width: 50, flexShrink: 0 }}>Video {idx + 1}</span>
+              <span style={{ fontSize: 11, color: videoSlots[idx] ? "#16a34a" : "#9ca3af", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {videoSlots[idx] ? "✅ Đã upload" : "Chưa có video"}
+              </span>
+              <button
+                onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
+                disabled={videoUploading[idx]}
+                style={{
+                  padding: "5px 10px", background: videoUploading[idx] ? "#9ca3af" : "#111827",
+                  color: "#fff", border: "none", borderRadius: 6, fontSize: 11,
+                  fontWeight: 700, cursor: videoUploading[idx] ? "not-allowed" : "pointer", flexShrink: 0,
+                }}
+              >
+                {videoUploading[idx] ? "⏳..." : "↑ Tải lên"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex h-full w-full flex-col bg-white">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 gap-4">
           {/* Left: title + status */}
