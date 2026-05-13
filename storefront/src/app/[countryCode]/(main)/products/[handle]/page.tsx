@@ -25,8 +25,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     notFound()
   }
 
-  const ogImage = product.thumbnail
-    ? [{ url: product.thumbnail, width: 800, height: 800, alt: product.title }]
+  const imageUrl = product.thumbnail || (product.images?.[0] as any)?.url || ""
+  const ogImage = imageUrl
+    ? [{ url: imageUrl, width: 800, height: 800, alt: product.title }]
     : []
 
   return {
@@ -44,7 +45,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       card: "summary_large_image",
       title: `${product.title} | Phan Việt`,
       description: product.description || product.title,
-      images: product.thumbnail ? [product.thumbnail] : [],
+      images: imageUrl ? [imageUrl] : [],
     },
   }
 }
