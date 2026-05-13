@@ -1,20 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-// Pancake order status → label (chỉ để log)
-const PANCAKE_STATUS_LABEL: Record<number, string> = {
-  0: "Chờ xử lý",
-  1: "Đã xác nhận",
-  2: "Đang giao",   // shipped (đã lấy hàng từ kho)
-  3: "Chờ giao",
-  4: "Đang giao",
-  5: "Hoàn thành",
-  7: "Đã hủy",
-  9: "Đã gửi ĐVVC",
-  11: "Chờ hàng",
-  [-1]: "Đã hủy",
-  [-2]: "Hoàn hàng",
-}
-
 /**
  * POST /store/pancake/webhook
  * Pancake POS gọi endpoint này khi có bất kỳ thay đổi nào (đơn hàng, kho, sản phẩm...)
@@ -39,11 +24,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const isOrderEvent = /^\d+$/.test(pancakeOrderId) && pancakeStatus !== -999
 
     if (!isOrderEvent) {
-      // Không phải order event có thể xử lý
       return res.json({ success: true })
     }
 
-    const statusLabel = PANCAKE_STATUS_LABEL[pancakeStatus] ?? `status_${pancakeStatus}`
+    // Đọc tên trạng thái trực tiếp từ Pancake payload — không cần hardcode map
+    const statusLabel: string = body?.status_name || `status_${pancakeStatus}`
     console.log(`[Pancake Webhook] ✅ Đơn #${pancakeOrderId} → ${statusLabel} (${pancakeStatus})`)
 
     // Tìm Medusa order có metadata.pancake_order_id khớp

@@ -1,18 +1,14 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../../lib/constants"
 
-const PANCAKE_STATUS_MAP: Record<number, { label: string; cls: string }> = {
-  0: { label: "Chờ xử lý", cls: "bg-yellow-100 text-yellow-700" },
-  1: { label: "Đã xác nhận", cls: "bg-blue-100 text-blue-700" },
-  2: { label: "Đang đóng gói", cls: "bg-blue-100 text-blue-700" },
-  3: { label: "Chờ giao", cls: "bg-orange-100 text-orange-700" },
-  4: { label: "Đang giao", cls: "bg-blue-100 text-blue-600" },
-  5: { label: "Hoàn thành", cls: "bg-green-100 text-green-700" },
-  9: { label: "Đã gửi VC", cls: "bg-blue-100 text-blue-700" },
-  11: { label: "Chờ hàng", cls: "bg-gray-100 text-gray-600" },
-  7: { label: "Đã hủy", cls: "bg-red-100 text-red-700" },
-  [-1]: { label: "Đã hủy", cls: "bg-red-100 text-red-700" },
-  [-2]: { label: "Hoàn hàng", cls: "bg-purple-100 text-purple-700" },
+// CSS class theo nhóm trạng thái — dùng status_name từ Pancake API
+function getStatusCls(statusName: string, status: number): string {
+  if (status === 5) return "bg-green-100 text-green-700"                         // Hoàn thành
+  if (status === 7 || status === -1) return "bg-red-100 text-red-700"            // Đã hủy
+  if (status === -2) return "bg-purple-100 text-purple-700"                      // Hoàn hàng
+  if (status === 2 || status === 4 || status === 9) return "bg-blue-100 text-blue-700" // Đang giao / Đã gửi VC
+  if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"      // Chờ xử lý / Chờ hàng
+  return "bg-gray-100 text-gray-600"
 }
 
 // GET /admin/pancake-status?ids=id1,id2,...
@@ -42,8 +38,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse): Promise<void
         const data = await r.json()
         const order = data?.order ?? data?.data ?? data
         const status: number = order?.status ?? order?.order_status ?? 0
-        const info = PANCAKE_STATUS_MAP[status] ?? { label: `#${status}`, cls: "bg-gray-100 text-gray-600" }
-        statuses[id] = { status, ...info }
+        // Đọc tên từ API Pancake trực tiếp — không hardcode
+        const label: string = order?.status_name || `status_${status}`
+        const cls = getStatusCls(label, status)
+        statuses[id] = { status, label, cls }
       } catch {
         // timeout hoặc lỗi → bỏ qua
       }
