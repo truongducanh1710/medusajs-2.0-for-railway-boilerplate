@@ -102,7 +102,7 @@ const DonHangPage = () => {
           </p>
         </div>
         <a
-          href="/orders"
+          href="/app/orders"
           className="text-sm text-blue-600 hover:underline"
         >
           Xem bảng mặc định →
@@ -173,7 +173,7 @@ const DonHangPage = () => {
                       <tr
                         key={order.id}
                         className="hover:bg-blue-50 cursor-pointer transition-colors"
-                        onClick={() => window.location.href = `/orders/${order.id}`}
+                        onClick={() => window.location.href = `/app/orders/${order.id}`}
                       >
                         <td className="px-4 py-3 font-mono font-bold text-gray-900">
                           #{order.display_id}
@@ -204,7 +204,7 @@ const DonHangPage = () => {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <a
-                            href={`/orders/${order.id}`}
+                            href={`/app/orders/${order.id}`}
                             onClick={(e) => e.stopPropagation()}
                             className="text-blue-600 hover:underline whitespace-nowrap text-xs"
                           >
