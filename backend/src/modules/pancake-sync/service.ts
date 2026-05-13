@@ -1,0 +1,406 @@
+import { MedusaService } from "@medusajs/framework/utils"
+import PancakeOrder from "./models/pancake-order"
+import PancakeSyncJob from "./models/pancake-sync-job"
+import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../lib/constants"
+
+// ---- Types ----
+
+export type SyncResult = {
+  imported: number
+  updated: number
+  failed_pages: number[]
+  errors: Array<{ orderId?: string; message: string }>
+  duration_ms: number
+}
+
+type PancakeListResponse = {
+  data?: any[]
+  orders?: any[]
+  total_pages?: number
+  total?: number
+  page_number?: number
+}
+
+// ---- Helpers ----
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+  let lastErr: Error | undefined
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
+    try {
+      const res = await fetch(url, { signal: controller.signal }).finally(() =>
+        clearTimeout(timeout)
+      )
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10)
+        console.warn(`[PancakeSync] Rate limited, waiting ${retryAfter}s...`)
+        await delay(retryAfter * 1000)
+        continue
+      }
+      if (!res.ok) {
+        const body = await res.text().catch(() => "")
+        throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`)
+      }
+      return res
+    } catch (err: any) {
+      lastErr = err
+      if (attempt < retries) {
+        const backoff = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 500, 10_000)
+        console.warn(`[PancakeSync] Request failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${backoff}ms`)
+        await delay(backoff)
+      }
+    }
+  }
+  throw lastErr ?? new Error("Unknown fetch error")
+}
+
+// ---- Status helpers ----
+
+const STATUS_VI: Record<number, string> = {
+  0: "Chờ xử lý",
+  1: "Đã xác nhận",
+  2: "Đang đóng gói",
+  3: "Chờ giao hàng",
+  4: "Đang giao",
+  5: "Hoàn thành",
+  6: "Đã gửi VC",
+  7: "Đã hủy",
+  9: "Đã gửi VC",
+  11: "Chờ hàng",
+  "-1": "Đã hủy",
+  "-2": "Hoàn hàng",
+} as any
+
+function statusLabel(status: number): string {
+  return STATUS_VI[status] ?? STATUS_VI[String(status)] ?? `Trạng thái ${status}`
+}
+
+// ---- Detect source ----
+
+function detectSource(order: any): string {
+  // Try explicit channel field
+  if (order.channel) {
+    const ch = String(order.channel).toLowerCase()
+    if (ch.includes("facebook") || ch.includes("fb")) return "facebook"
+    if (ch.includes("zalo")) return "zalo"
+    if (ch.includes("tiktok")) return "tiktok"
+    if (ch.includes("shopee")) return "shopee"
+    if (ch.includes("web") || ch.includes("website")) return "medusa"
+  }
+
+  // Try tags
+  if (Array.isArray(order.tags)) {
+    const tags = order.tags.map((t: any) => String(t?.name ?? t).toLowerCase())
+    if (tags.some((t: string) => t.includes("facebook") || t.includes("fb"))) return "facebook"
+    if (tags.some((t: string) => t.includes("zalo"))) return "zalo"
+    if (tags.some((t: string) => t.includes("tiktok"))) return "tiktok"
+    if (tags.some((t: string) => t.includes("medusa") || t.includes("web"))) return "medusa"
+  }
+
+  // Try marketing UTM
+  const marketing = order.marketing
+  if (marketing) {
+    const src = String(marketing.p_utm_source ?? marketing.utm_source ?? "").toLowerCase()
+    if (src.includes("facebook") || src.includes("fb")) return "facebook"
+    if (src.includes("zalo")) return "zalo"
+    if (src.includes("tiktok")) return "tiktok"
+  }
+
+  return "unknown"
+}
+
+// ---- Mapping ----
+
+function mapPancakeOrder(raw: any): Partial<typeof PancakeOrder.prototype> {
+  const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
+    name: item.variation_info?.name ?? item.name ?? "—",
+    qty: item.quantity ?? 1,
+    price: item.variation_info?.retail_price ?? item.price ?? 0,
+  })) : []
+
+  return {
+    id: String(raw.system_id || raw.id || ""),
+    source: detectSource(raw),
+    status: raw.status ?? 0,
+    status_name: statusLabel(raw.status ?? 0),
+    customer_name: raw.bill_full_name ?? raw.customer?.name ?? "",
+    customer_phone: raw.bill_phone_number ?? raw.customer?.phone ?? "",
+    province: raw.shipping_address?.province_name ?? raw.customer?.province ?? "",
+    total: raw.total_price ?? raw.total ?? 0,
+    shipping_fee: raw.shipping_fee ?? 0,
+    cod_amount: raw.cod ?? 0,
+    items,
+    items_count: items.length,
+    tracking_code: raw.partner?.extend_code ?? raw.tracking_code ?? "",
+    raw: raw,
+    pancake_created_at: raw.created_at ? new Date(raw.created_at) : null,
+    synced_at: new Date(),
+    data_quality: Array.isArray(raw.items) ? "complete" : "partial",
+  }
+}
+
+// ---- Service ----
+
+class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob }) {
+  /**
+   * Pull orders from Pancake in a date range and upsert into DB.
+   * Runs inside a Postgres advisory lock to prevent concurrent syncs.
+   */
+  async pullByDateRange(
+    from: Date,
+    to: Date,
+    opts?: { force?: boolean }
+  ): Promise<{ jobId: string }> {
+    // Create job record
+    const job = await this.createPancakeSyncJobs({
+      status: "queued",
+      from_date: from,
+      to_date: to,
+    })
+    const jobId = job.id
+
+    // Run async — caller polls /status
+    this._executeSync(jobId, from, to, opts).catch((err) => {
+      console.error(`[PancakeSync] Job ${jobId} failed:`, err.message)
+    })
+
+    return { jobId }
+  }
+
+  private async _executeSync(
+    jobId: string,
+    from: Date,
+    to: Date,
+    opts?: { force?: boolean }
+  ): Promise<void> {
+    const startedAt = Date.now()
+    const errors: Array<{ orderId?: string; message: string }> = []
+    const failedPages: number[] = []
+    let imported = 0
+    let updated = 0
+
+    try {
+      // Advisory lock — fail fast if another sync is running
+      const mgr = (this as any).__container?.manager
+      if (mgr) {
+        const [lockResult] = await mgr.execute(
+          `SELECT pg_try_advisory_lock(hashtext('pancake-sync')) as locked`
+        )
+        if (!lockResult?.locked) {
+          await this.updatePancakeSyncJobs({
+            id: jobId,
+            status: "failed",
+            finished_at: new Date(),
+            error: "SYNC_IN_PROGRESS: Another sync job is already running",
+          })
+          return
+        }
+      }
+
+      // Mark running
+      await this.updatePancakeSyncJobs({
+        id: jobId,
+        status: "running",
+        started_at: new Date(),
+      })
+
+      let page = 1
+      const pageSize = 50
+      let totalPages = 1
+
+      while (page <= totalPages) {
+        try {
+          const fromStr = from.toISOString()
+          const toStr = to.toISOString()
+          const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&page_size=${pageSize}&page_number=${page}&startDateTime=${encodeURIComponent(fromStr)}&endDateTime=${encodeURIComponent(toStr)}`
+
+          const res = await fetchWithRetry(url)
+          const body: PancakeListResponse = await res.json()
+
+          // Normalize response — Pancake may wrap in different keys
+          const orders: any[] = body.data ?? body.orders ?? []
+          totalPages = body.total_pages ?? 1
+
+          for (const raw of orders) {
+            try {
+              const mapped = mapPancakeOrder(raw)
+              if (!mapped.id) continue
+
+              const existing = await this.listPancakeOrders(
+                { id: mapped.id },
+                { take: 1 }
+              )
+
+              if (existing.length > 0) {
+                if (opts?.force) {
+                  // Force: overwrite status_history too, keeping old entries
+                  const prev = existing[0]
+                  const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
+                  const hasChanged = prev.status !== mapped.status
+                  const newHistory = hasChanged
+                    ? [
+                        ...prevHistory,
+                        {
+                          status: mapped.status,
+                          status_name: mapped.status_name,
+                          changed_at: new Date().toISOString(),
+                          source: "sync",
+                        },
+                      ]
+                    : prevHistory
+
+                  await this.updatePancakeOrders({
+                    id: mapped.id,
+                    ...mapped,
+                    status_history: newHistory,
+                    raw: mapped.raw,
+                    raw_version: "v1",
+                  })
+                  updated++
+                } else {
+                  // Non-force: only update status if changed
+                  const prev = existing[0]
+                  if (prev.status !== mapped.status) {
+                    const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
+                    await this.updatePancakeOrders({
+                      id: mapped.id,
+                      status: mapped.status,
+                      status_name: mapped.status_name,
+                      status_history: [
+                        ...prevHistory,
+                        {
+                          status: mapped.status,
+                          status_name: mapped.status_name,
+                          changed_at: new Date().toISOString(),
+                          source: "sync",
+                        },
+                      ],
+                      synced_at: new Date(),
+                    })
+                    updated++
+                  }
+                }
+              } else {
+                // Insert new
+                await this.createPancakeOrders([mapped])
+                imported++
+              }
+            } catch (orderErr: any) {
+              console.error(`[PancakeSync] Error upserting order ${raw.system_id ?? raw.id}:`, orderErr.message)
+              errors.push({
+                orderId: String(raw.system_id ?? raw.id ?? ""),
+                message: orderErr.message,
+              })
+            }
+          }
+
+          console.log(
+            `[PancakeSync] Page ${page}/${totalPages} done — imported=${imported} updated=${updated}`
+          )
+
+          if (page < totalPages) {
+            await delay(200) // rate limit buffer between pages
+          }
+        } catch (pageErr: any) {
+          console.error(`[PancakeSync] Page ${page} failed:`, pageErr.message)
+          failedPages.push(page)
+          errors.push({ message: `Page ${page}: ${pageErr.message}` })
+        }
+
+        page++
+      }
+
+      // Release lock
+      if (mgr) {
+        await mgr.execute(`SELECT pg_advisory_unlock(hashtext('pancake-sync'))`)
+      }
+    } finally {
+      const durationMs = Date.now() - startedAt
+      await this.updatePancakeSyncJobs({
+        id: jobId,
+        status: errors.length > 0 && imported === 0 && updated === 0 ? "failed" : "done",
+        finished_at: new Date(),
+        stats: {
+          imported,
+          updated,
+          failed_pages: failedPages,
+          errors: errors.slice(0, 100), // cap error log
+          duration_ms: durationMs,
+        },
+        ...(errors.length > 0 && imported === 0 && updated === 0
+          ? { error: errors[0]?.message ?? "Unknown error" }
+          : {}),
+      })
+    }
+  }
+
+  /**
+   * Detect source from a Pancake order (exposed for API)
+   */
+  detectSource(order: any): string {
+    return detectSource(order)
+  }
+
+  /**
+   * Reconcile: link medusa_order_id for rows that were synced before the column existed.
+   * Scans pancake_order rows without medusa_order_id and tries to match via customer phone + total.
+   */
+  async reconcileMedusaLinks(): Promise<{ linked: number }> {
+    let linked = 0
+
+    const unlinked = await this.listPancakeOrders(
+      { medusa_order_id: null },
+      { take: 500 }
+    )
+
+    if (unlinked.length === 0) return { linked }
+
+    // Try to resolve orderModuleService via container
+    const container = (this as any).__container
+    const orderService = container?.resolve?.("orderModuleService") as any
+
+    if (!orderService) {
+      console.warn("[PancakeSync] Cannot access orderModuleService for reconciliation")
+      return { linked }
+    }
+
+    for (const po of unlinked) {
+      try {
+        // Match: phone + approximate total
+        const orders = await orderService.listOrders(
+          {},
+          { take: 300, order: { created_at: "DESC" } }
+        )
+
+        const match = orders.find((o: any) => {
+          const phone = o.shipping_address?.phone || o.metadata?.phone || ""
+          const total = o.total ?? 0
+          return (
+            phone &&
+            phone === po.customer_phone &&
+            Math.abs(Number(total) - Number(po.total)) < 1000
+          )
+        })
+
+        if (match) {
+          await this.updatePancakeOrders({
+            id: po.id,
+            medusa_order_id: match.id,
+          })
+          linked++
+        }
+      } catch {
+        // skip individual errors
+      }
+    }
+
+    return { linked }
+  }
+}
+
+export default PancakeSyncService

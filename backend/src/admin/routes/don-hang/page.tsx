@@ -1,8 +1,9 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 
+// ---- Formatters ----
+
 function formatVND(amount: number) {
-  // Medusa lưu giá dạng integer (VND không có decimal), không cần chia 100
   return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
 }
 
@@ -11,6 +12,8 @@ function formatDate(dateStr: string) {
   const pad = (n: number) => String(n).padStart(2, "0")
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+// ---- Badges ----
 
 function PaymentBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
@@ -47,16 +50,58 @@ function FulfillmentBadge({ status }: { status: string }) {
   )
 }
 
-function POSBadge({ info }: { info?: { label: string; cls: string } | null }) {
-  if (!info) return <span className="text-xs text-gray-400">—</span>
+const STATUS_VI: Record<number, string> = {
+  0: "Chờ xử lý", 1: "Đã xác nhận", 2: "Đang đóng gói", 3: "Chờ giao hàng",
+  4: "Đang giao", 5: "Hoàn thành", 6: "Đã gửi VC", 7: "Đã hủy",
+  9: "Đã gửi VC", 11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
+}
+
+function getPancakeStatusLabel(status: number): string {
+  return STATUS_VI[status] ?? `Trạng thái ${status}`
+}
+
+function getPancakeStatusCls(status: number): string {
+  if (status === 5) return "bg-green-100 text-green-700"
+  if (status === 7 || status === -1) return "bg-red-100 text-red-700"
+  if (status === -2) return "bg-purple-100 text-purple-700"
+  if (status === 2 || status === 4 || status === 6 || status === 9) return "bg-blue-100 text-blue-700"
+  if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"
+  if (status === 1 || status === 3) return "bg-orange-100 text-orange-700"
+  return "bg-gray-100 text-gray-600"
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    medusa: { label: "Website", cls: "bg-indigo-100 text-indigo-700" },
+    facebook: { label: "Facebook", cls: "bg-blue-100 text-blue-700" },
+    zalo: { label: "Zalo", cls: "bg-sky-100 text-sky-700" },
+    tiktok: { label: "TikTok", cls: "bg-pink-100 text-pink-700" },
+    shopee: { label: "Shopee", cls: "bg-orange-100 text-orange-700" },
+    manual: { label: "Thủ công", cls: "bg-gray-100 text-gray-700" },
+    unknown: { label: "Khác", cls: "bg-gray-100 text-gray-600" },
+  }
+  const s = map[source] || { label: source, cls: "bg-gray-100 text-gray-600" }
   return (
-    <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${info.cls}`}>
-      {info.label}
+    <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${s.cls}`}>
+      {s.label}
     </span>
   )
 }
 
+// ---- Constants ----
+
 const LIMIT = 50
+const SOURCES = [
+  { value: "all", label: "Tất cả nguồn" },
+  { value: "medusa", label: "Website" },
+  { value: "facebook", label: "Facebook" },
+  { value: "zalo", label: "Zalo" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "shopee", label: "Shopee" },
+  { value: "unknown", label: "Khác" },
+]
+
+// ---- Component ----
 
 const DonHangPage = () => {
   const [orders, setOrders] = useState<any[]>([])
@@ -65,34 +110,37 @@ const DonHangPage = () => {
   const [offset, setOffset] = useState(0)
   const [search, setSearch] = useState("")
   const [searchInput, setSearchInput] = useState("")
-  const [posStatuses, setPosStatuses] = useState<Record<string, { label: string; cls: string }>>({})
+  const [sourceFilter, setSourceFilter] = useState("all")
+  // Medusa statuses for linked orders: medusa_order_id → { payment_status, fulfillment_status, display_id }
+  const [medusaStatuses, setMedusaStatuses] = useState<Record<string, any>>({})
 
-  const fetchOrders = async (off: number, q: string) => {
+  const fetchOrders = async (off: number, q: string, src: string) => {
     setLoading(true)
     try {
-      const fields = [
-        "id", "display_id", "created_at", "total", "payment_status", "fulfillment_status",
-        "+shipping_address.first_name", "+shipping_address.last_name",
-        "+shipping_address.phone", "+shipping_address.province", "+shipping_address.city",
-        "+items.title", "+items.quantity", "+metadata",
-      ].join(",")
+      const params = new URLSearchParams()
+      params.set("limit", String(LIMIT))
+      params.set("offset", String(off))
+      if (src && src !== "all") params.set("source", src)
+      if (q) params.set("q", q)
 
-      let url = `/admin/orders?limit=${LIMIT}&offset=${off}&fields=${encodeURIComponent(fields)}&order=-created_at`
-      if (q) url += `&q=${encodeURIComponent(q)}`
-
-      const res = await fetch(url, { credentials: "include" })
+      const res = await fetch(
+        `/admin/pancake-sync/orders?${params.toString()}`,
+        { credentials: "include" }
+      )
       const data = await res.json()
       const fetchedOrders = data.orders || []
       setOrders(fetchedOrders)
       setTotal(data.count || 0)
 
-      // Fetch Pancake POS statuses for orders that have pancake_order_id
-      const pancakeIds = fetchedOrders
-        .map((o: any) => o.metadata?.pancake_order_id)
+      // Batch fetch Medusa payment/fulfillment for linked orders
+      const medusaIds = fetchedOrders
+        .map((o: any) => o.medusa_order_id)
         .filter(Boolean) as string[]
 
-      if (pancakeIds.length > 0) {
-        fetchPosStatuses(pancakeIds)
+      if (medusaIds.length > 0) {
+        fetchMedusaStatuses(medusaIds)
+      } else {
+        setMedusaStatuses({})
       }
     } catch (e) {
       console.error(e)
@@ -101,18 +149,36 @@ const DonHangPage = () => {
     }
   }
 
-  const fetchPosStatuses = async (ids: string[]) => {
+  const fetchMedusaStatuses = async (ids: string[]) => {
     try {
-      const res = await fetch(`/admin/pancake-status?ids=${ids.join(",")}`, { credentials: "include" })
+      // Use the Medusa admin orders endpoint with id filter
+      // We batch by querying recent orders and matching ids
+      const fields = [
+        "id", "display_id", "payment_status", "fulfillment_status",
+      ].join(",")
+      const res = await fetch(
+        `/admin/orders?limit=200&fields=${encodeURIComponent(fields)}&order=-created_at`,
+        { credentials: "include" }
+      )
       if (!res.ok) return
       const data = await res.json()
-      setPosStatuses(data.statuses || {})
+      const statuses: Record<string, any> = {}
+      for (const o of data.orders || []) {
+        if (ids.includes(o.id)) {
+          statuses[o.id] = {
+            display_id: o.display_id,
+            payment_status: o.payment_status,
+            fulfillment_status: o.fulfillment_status,
+          }
+        }
+      }
+      setMedusaStatuses(statuses)
     } catch {
-      // ignore — POS status is non-critical
+      // non-critical
     }
   }
 
-  useEffect(() => { fetchOrders(offset, search) }, [offset, search])
+  useEffect(() => { fetchOrders(offset, search, sourceFilter) }, [offset, search, sourceFilter])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -132,39 +198,61 @@ const DonHangPage = () => {
             {total > 0 ? `${total} đơn hàng` : "Đang tải..."}
           </p>
         </div>
-        <a
-          href="/app/orders"
-          className="text-sm text-blue-600 hover:underline"
-        >
-          Xem bảng mặc định →
-        </a>
+        <div className="flex gap-3">
+          <a
+            href="/app/pancake-sync"
+            className="text-sm text-blue-600 hover:underline self-center"
+          >
+            Đồng bộ Pancake →
+          </a>
+          <a
+            href="/app/orders"
+            className="text-sm text-gray-500 hover:underline self-center"
+          >
+            Bảng mặc định
+          </a>
+        </div>
       </div>
 
-      {/* Search bar */}
-      <form onSubmit={handleSearch} className="mb-4 flex gap-2">
-        <input
-          type="text"
-          placeholder="Tìm theo tên, SĐT, mã đơn..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 max-w-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+      {/* Filters row */}
+      <div className="mb-4 flex gap-3 flex-wrap items-center">
+        {/* Source filter */}
+        <select
+          value={sourceFilter}
+          onChange={(e) => { setSourceFilter(e.target.value); setOffset(0) }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
         >
-          Tìm
-        </button>
-        {search && (
+          {SOURCES.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className="flex gap-2 flex-1 max-w-sm">
+          <input
+            type="text"
+            placeholder="Tìm theo SĐT..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
           <button
-            type="button"
-            onClick={() => { setSearchInput(""); setSearch(""); setOffset(0) }}
-            className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
+            type="submit"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
           >
-            Xóa lọc
+            Tìm
           </button>
-        )}
-      </form>
+          {search && (
+            <button
+              type="button"
+              onClick={() => { setSearchInput(""); setSearch(""); setOffset(0) }}
+              className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
+            >
+              Xóa lọc
+            </button>
+          )}
+        </form>
+      </div>
 
       {loading ? (
         <div className="text-center py-16 text-gray-400">Đang tải...</div>
@@ -177,54 +265,66 @@ const DonHangPage = () => {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">#Đơn</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">#POS</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Nguồn</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Ngày đặt</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tên khách</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">SĐT</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tỉnh/TP</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sản phẩm</th>
                     <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tổng tiền</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">TT POS</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Thanh toán</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Giao hàng</th>
-                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Mã POS</th>
-                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">TT POS</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {orders.map((order) => {
-                    const addr = order.shipping_address || {}
-                    const fullName = [addr.first_name, addr.last_name].filter(Boolean).join(" ") || "—"
-                    const phone = addr.phone || order.metadata?.phone || "—"
-                    const province = addr.province || addr.city || order.metadata?.province || "—"
-                    const firstItem = order.items?.[0]
+                    const medusaInfo = order.medusa_order_id
+                      ? medusaStatuses[order.medusa_order_id]
+                      : null
+
+                    const items: any[] = Array.isArray(order.items) ? order.items : []
+                    const firstItem = items[0]
                     const itemTitle = firstItem
-                      ? firstItem.title + (order.items.length > 1 ? ` +${order.items.length - 1}` : "")
+                      ? firstItem.name + (items.length > 1 ? ` +${items.length - 1}` : "")
                       : "—"
-                    const pancakeId = order.metadata?.pancake_order_id as string | undefined
-                    const posInfo = pancakeId ? posStatuses[pancakeId] : undefined
+
+                    // Click handler: Medusa-linked → Medusa detail, Pancake-only → Pancake detail
+                    const detailUrl = order.medusa_order_id
+                      ? `/app/orders/${order.medusa_order_id}`
+                      : `/app/pancake-orders/${order.id}`
 
                     return (
                       <tr
                         key={order.id}
                         className="hover:bg-blue-50 cursor-pointer transition-colors"
-                        onClick={() => window.location.href = `/app/orders/${order.id}`}
+                        onClick={() => window.location.href = detailUrl}
                       >
                         <td className="px-4 py-3 font-mono font-bold text-gray-900">
-                          #{order.display_id}
+                          #{order.id}
+                          {medusaInfo?.display_id && (
+                            <span className="text-gray-400 font-normal ml-1 text-xs">
+                              (MD#{medusaInfo.display_id})
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <SourceBadge source={order.source} />
                         </td>
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {formatDate(order.created_at)}
+                          {formatDate(order.pancake_created_at || order.synced_at || order.created_at)}
                         </td>
                         <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
-                          {fullName}
+                          {order.customer_name || "—"}
                         </td>
                         <td
                           className="px-4 py-3 text-gray-600 whitespace-nowrap"
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (phone !== "—") {
-                              navigator.clipboard.writeText(phone)
+                            if (order.customer_phone) {
+                              navigator.clipboard.writeText(order.customer_phone)
                               const el = e.currentTarget
                               const orig = el.textContent
                               el.textContent = "✓ Đã cop!"
@@ -235,10 +335,10 @@ const DonHangPage = () => {
                           title="Bấm để copy SĐT"
                           style={{ cursor: "copy" }}
                         >
-                          {phone}
+                          {order.customer_phone || "—"}
                         </td>
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {province}
+                          {order.province || "—"}
                         </td>
                         <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={itemTitle}>
                           {itemTitle}
@@ -247,31 +347,25 @@ const DonHangPage = () => {
                           {formatVND(order.total)}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <PaymentBadge status={order.payment_status} />
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${getPancakeStatusCls(order.status)}`}>
+                            {order.status_name || getPancakeStatusLabel(order.status)}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <FulfillmentBadge status={order.fulfillment_status} />
-                        </td>
-                        <td className="px-4 py-3 text-center font-mono text-xs text-gray-500">
-                          {pancakeId
-                            ? <a
-                                href={`https://pancake.vn/orders/${pancakeId}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-blue-500 hover:underline"
-                              >
-                                #{pancakeId}
-                              </a>
-                            : <span className="text-gray-300">—</span>
+                          {medusaInfo
+                            ? <PaymentBadge status={medusaInfo.payment_status} />
+                            : <span className="text-xs text-gray-400">—</span>
                           }
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <POSBadge info={posInfo} />
+                          {medusaInfo
+                            ? <FulfillmentBadge status={medusaInfo.fulfillment_status} />
+                            : <span className="text-xs text-gray-400">—</span>
+                          }
                         </td>
                         <td className="px-4 py-3 text-right">
                           <a
-                            href={`/app/orders/${order.id}`}
+                            href={detailUrl}
                             onClick={(e) => e.stopPropagation()}
                             className="text-blue-600 hover:underline whitespace-nowrap text-xs"
                           >

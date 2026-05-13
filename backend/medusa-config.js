@@ -126,6 +126,10 @@ const medusaConfig = {
       key: "pageModule",
     },
     {
+      resolve: "./src/modules/pancake-sync",
+      key: "pancakeSyncModule",
+    },
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {
