@@ -1,5 +1,4 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
 
 // Pancake order status → label (chỉ để log)
 const PANCAKE_STATUS_LABEL: Record<number, string> = {
@@ -48,10 +47,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     // Tìm Medusa order có metadata.pancake_order_id khớp
     try {
-      const orderService = req.scope.resolve(Modules.ORDER) as any
+      const orderService = req.scope.resolve("orderModuleService") as any
 
       // Lấy các đơn gần đây (200 đơn) và filter theo pancake_order_id
-      const { orders } = await orderService.listAndCountOrders(
+      const orders = await orderService.listOrders(
         {},
         { take: 200, order: { created_at: "DESC" } }
       )
