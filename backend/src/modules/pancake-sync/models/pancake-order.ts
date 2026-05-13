@@ -10,9 +10,9 @@ const PancakeOrder = model.define("pancake_order", {
   customer_name: model.text().default(""),
   customer_phone: model.text().default(""),
   province: model.text().default(""),
-  total: model.bigNumber().default(0),
-  shipping_fee: model.bigNumber().default(0),
-  cod_amount: model.bigNumber().default(0),
+  total: model.number().default(0),
+  shipping_fee: model.number().default(0),
+  cod_amount: model.number().default(0),
   items: model.json().default([] as any),             // [{name, qty, price}]
   items_count: model.number().default(0),
   tracking_code: model.text().default(""),
