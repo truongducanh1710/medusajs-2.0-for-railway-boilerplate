@@ -138,7 +138,7 @@ function mapPancakeOrder(raw: any): Record<string, any> {
     items_count: items.length,
     tracking_code: raw.partner?.extend_code ?? raw.tracking_code ?? "",
     raw: raw,
-    pancake_created_at: raw.created_at ? new Date(raw.created_at) : null,
+    pancake_created_at: raw.inserted_at ? new Date(raw.inserted_at) : (raw.created_at ? new Date(raw.created_at) : null),
     synced_at: new Date(),
     data_quality: Array.isArray(raw.items) ? "complete" : "partial",
   }
@@ -212,12 +212,13 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       let page = 1
       const pageSize = 50
       let totalPages = 1
+      // Pancake API không hỗ trợ filter theo ngày — trả về đơn mới nhất trước (DESC inserted_at).
+      // Dừng khi gặp trang đầu tiên toàn đơn nằm ngoài khoảng [from, to].
+      let reachedBefore = false
 
-      while (page <= totalPages) {
+      while (page <= totalPages && !reachedBefore) {
         try {
-          const fromStr = from.toISOString()
-          const toStr = to.toISOString()
-          const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&page_size=${pageSize}&page_number=${page}&startDateTime=${encodeURIComponent(fromStr)}&endDateTime=${encodeURIComponent(toStr)}`
+          const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&page_size=${pageSize}&page_number=${page}`
 
           const res = await fetchWithRetry(url)
           const body: PancakeListResponse = await res.json()
@@ -226,7 +227,20 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
           const orders: any[] = body.data ?? body.orders ?? []
           totalPages = body.total_pages ?? 1
 
-          for (const raw of orders) {
+          // Nếu cả trang đều sau to → bỏ qua và tiếp tục (đơn mới hơn khoảng)
+          // Nếu cả trang đều trước from → dừng hẳn (đã qua khoảng)
+          const ordersInRange = orders.filter((raw: any) => {
+            const d = raw.inserted_at ? new Date(raw.inserted_at) : null
+            if (!d) return true // không có ngày → include
+            return d >= from && d <= to
+          })
+          const hasAnyBeforeFrom = orders.some((raw: any) => {
+            const d = raw.inserted_at ? new Date(raw.inserted_at) : null
+            return d && d < from
+          })
+          if (hasAnyBeforeFrom) reachedBefore = true
+
+          for (const raw of ordersInRange) {
             try {
               const mapped = mapPancakeOrder(raw)
               if (!mapped.id) continue
