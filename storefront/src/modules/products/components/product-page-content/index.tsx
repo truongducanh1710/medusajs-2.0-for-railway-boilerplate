@@ -33,8 +33,8 @@ const MOBILE_OVERRIDE_CSS = `
 
 /* Mobile: horizontal scroll thay vì 3 cột nhỏ */
 @media (max-width: 639px) {
-  .pvb-tkg { padding: 24px 0 24px !important; }
-  .pvb-tkg h2 { padding: 0 16px; margin-bottom: 14px !important; }
+  .pvb-tkg { padding: 20px 0 16px !important; }
+  .pvb-tkg h2 { padding: 0 16px; margin-bottom: 12px !important; }
   .pvb-tkg .grid {
     display: flex !important;
     flex-direction: row !important;
@@ -43,17 +43,17 @@ const MOBILE_OVERRIDE_CSS = `
     scroll-snap-type: x mandatory !important;
     -webkit-overflow-scrolling: touch !important;
     gap: 10px !important;
-    padding: 0 16px 12px !important;
+    padding: 0 16px 10px !important;
     max-width: none !important;
     scrollbar-width: none !important;
   }
   .pvb-tkg .grid::-webkit-scrollbar { display: none !important; }
   .pvb-tkg .card {
-    flex: 0 0 52vw !important;
-    width: 52vw !important;
-    min-width: 52vw !important;
+    flex: 0 0 68vw !important;
+    width: 68vw !important;
+    min-width: 68vw !important;
     aspect-ratio: 9/16 !important;
-    scroll-snap-align: center !important;
+    scroll-snap-align: start !important;
     border-radius: 14px !important;
   }
 }
