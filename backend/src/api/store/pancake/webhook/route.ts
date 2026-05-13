@@ -1,80 +1,84 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
 
-// Pancake order status → Medusa fulfillment_status mapping
-const PANCAKE_TO_FULFILLMENT: Record<number, string> = {
-  0: "not_fulfilled",   // Chờ xử lý
-  1: "not_fulfilled",   // Đã xác nhận
-  2: "not_fulfilled",   // Đang đóng gói
-  3: "not_fulfilled",   // Chờ giao hàng
-  4: "shipped",         // Đang giao
-  5: "fulfilled",       // Hoàn thành
-  [-1]: "canceled",     // Đã hủy
-  [-2]: "returned",     // Hoàn hàng
+// Pancake order status → label (chỉ để log)
+const PANCAKE_STATUS_LABEL: Record<number, string> = {
+  0: "Chờ xử lý",
+  1: "Đã xác nhận",
+  2: "Đang giao",   // shipped (đã lấy hàng từ kho)
+  3: "Chờ giao",
+  4: "Đang giao",
+  5: "Hoàn thành",
+  7: "Đã hủy",     // Pancake dùng 7 cho hủy, không phải -1
+  9: "Đã gửi ĐVVC",
+  [-1]: "Đã hủy",
+  [-2]: "Hoàn hàng",
 }
 
 /**
  * POST /store/pancake/webhook
- * Pancake POS gọi endpoint này khi đơn hàng cập nhật trạng thái
+ * Pancake POS gọi endpoint này khi có bất kỳ thay đổi nào (đơn hàng, kho, sản phẩm...)
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const body = req.body as any
 
-  // Log toàn bộ payload để biết cấu trúc Pancake gửi
-  console.log("[Pancake Webhook] RAW BODY:", JSON.stringify(body, null, 2))
-
   try {
-    // Pancake thường gửi dạng: { id, status, ... } hoặc { order: { id, status } }
-    const pancakeOrder = body?.order ?? body
-    const pancakeOrderId = String(pancakeOrder?.id ?? "")
-    const pancakeStatus: number = Number(pancakeOrder?.status ?? pancakeOrder?.order_status ?? -999)
+    // Pancake gửi nhiều loại event: đơn hàng có field "system_id" hoặc "id" là số + có "status"
+    // Bỏ qua event kho (có "type": "variations_warehouses") và event sản phẩm (có "variations" array)
+    const isWarehouseEvent = body?.type === "variations_warehouses" || body?.order_id
+    const isProductEvent = Array.isArray(body?.variations) && !body?.system_id
 
-    console.log("[Pancake Webhook] order_id:", pancakeOrderId, "status:", pancakeStatus)
-
-    if (!pancakeOrderId || pancakeStatus === -999) {
-      console.warn("[Pancake Webhook] Không đọc được order_id hoặc status từ payload")
-      return res.json({ success: true, message: "logged" })
+    if (isWarehouseEvent || isProductEvent) {
+      // Không phải đơn hàng — bỏ qua im lặng
+      return res.json({ success: true })
     }
 
-    const fulfillmentStatus = PANCAKE_TO_FULFILLMENT[pancakeStatus]
-    console.log("[Pancake Webhook] → fulfillment_status:", fulfillmentStatus ?? "unknown")
+    // Đơn hàng Pancake: có "system_id" (số nguyên) hoặc "id" (số nguyên) + "status"
+    const pancakeOrderId = String(body?.system_id || body?.id || "")
+    const pancakeStatus: number = Number(body?.status ?? -999)
+    const isOrderEvent = /^\d+$/.test(pancakeOrderId) && pancakeStatus !== -999
 
-    // Tìm Medusa order có pancake_order_id trong metadata
+    if (!isOrderEvent) {
+      // Không phải order event có thể xử lý
+      return res.json({ success: true })
+    }
+
+    const statusLabel = PANCAKE_STATUS_LABEL[pancakeStatus] ?? `status_${pancakeStatus}`
+    console.log(`[Pancake Webhook] ✅ Đơn #${pancakeOrderId} → ${statusLabel} (${pancakeStatus})`)
+
+    // Tìm Medusa order có metadata.pancake_order_id khớp
     try {
-      const orderService = req.scope.resolve("orderModuleService") as any
-      const orders = await orderService.listOrders(
-        {},
-        { take: 1, skip: 0 }
-      )
+      const orderService = req.scope.resolve(Modules.ORDER) as any
 
-      // listOrders không filter theo metadata — cần dùng query trực tiếp
-      // Tìm bằng cách list gần đây và filter
-      const allOrders = await orderService.listOrders(
+      // Lấy các đơn gần đây (200 đơn) và filter theo pancake_order_id
+      const { orders } = await orderService.listAndCountOrders(
         {},
         { take: 200, order: { created_at: "DESC" } }
       )
 
-      const medusaOrder = allOrders.find(
+      const medusaOrder = orders.find(
         (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
       )
 
       if (!medusaOrder) {
-        console.warn("[Pancake Webhook] Không tìm thấy Medusa order với pancake_order_id:", pancakeOrderId)
-        return res.json({ success: true, message: "order not found" })
+        console.warn(`[Pancake Webhook] Không tìm thấy Medusa order cho pancake_order_id=${pancakeOrderId}`)
+        return res.json({ success: true })
       }
 
-      console.log("[Pancake Webhook] Tìm thấy order:", medusaOrder.id, "display_id:", medusaOrder.display_id)
-
-      // Update metadata với trạng thái Pancake mới nhất
+      // Cập nhật metadata với trạng thái mới nhất từ Pancake
       await orderService.updateOrders([{
         id: medusaOrder.id,
         metadata: {
           ...medusaOrder.metadata,
           pancake_status: pancakeStatus,
+          pancake_status_name: statusLabel,
           pancake_status_updated_at: new Date().toISOString(),
+          // Lưu mã vận đơn nếu có
+          ...(body?.partner?.extend_code ? { vtp_tracking: body.partner.extend_code } : {}),
         }
       }])
 
-      console.log("[Pancake Webhook] ✅ Updated order", medusaOrder.display_id, "pancake_status →", pancakeStatus)
+      console.log(`[Pancake Webhook] ✅ Updated Medusa order #${medusaOrder.display_id} (${medusaOrder.id}) → ${statusLabel}`)
 
     } catch (orderErr: any) {
       console.error("[Pancake Webhook] Lỗi cập nhật order:", orderErr.message)
