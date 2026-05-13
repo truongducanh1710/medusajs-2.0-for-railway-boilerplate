@@ -29,7 +29,7 @@ const ClarityWidget = () => {
 }
 
 export const config = defineWidgetConfig({
-  zone: "order.list.before",
+  zone: "product.list.before",
 })
 
 export default ClarityWidget

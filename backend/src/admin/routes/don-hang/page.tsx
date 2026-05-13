@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 function formatVND(amount: number) {
   // Medusa lưu giá dạng integer (VND không có decimal), không cần chia 100
@@ -59,6 +59,23 @@ function POSBadge({ info }: { info?: { label: string; cls: string } | null }) {
 const LIMIT = 50
 
 const DonHangPage = () => {
+  const clarityRef = useRef(false)
+  useEffect(() => {
+    if (clarityRef.current || (window as any)._clarityAdminInited) return
+    clarityRef.current = true
+    ;(window as any)._clarityAdminInited = true
+    const w = window as any
+    w.clarity = w.clarity || function (...args: any[]) {
+      (w.clarity.q = w.clarity.q || []).push(args)
+    }
+    const s = document.createElement("script")
+    s.async = true
+    s.src = "https://www.clarity.ms/tag/wfm2h22kzr"
+    s.onload = () => console.info("[Clarity Admin] loaded OK")
+    s.onerror = (e) => console.error("[Clarity Admin] load failed", e)
+    document.head.appendChild(s)
+  }, [])
+
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
