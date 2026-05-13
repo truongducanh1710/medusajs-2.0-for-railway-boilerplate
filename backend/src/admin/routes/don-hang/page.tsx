@@ -186,7 +186,8 @@ const DonHangPage = () => {
                     <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tổng tiền</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Thanh toán</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Giao hàng</th>
-                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">POS</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Mã POS</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">TT POS</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -218,7 +219,22 @@ const DonHangPage = () => {
                         <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
                           {fullName}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                        <td
+                          className="px-4 py-3 text-gray-600 whitespace-nowrap"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (phone !== "—") {
+                              navigator.clipboard.writeText(phone)
+                              const el = e.currentTarget
+                              const orig = el.textContent
+                              el.textContent = "✓ Đã cop!"
+                              el.classList.add("text-green-600")
+                              setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
+                            }
+                          }}
+                          title="Bấm để copy SĐT"
+                          style={{ cursor: "copy" }}
+                        >
                           {phone}
                         </td>
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
@@ -235,6 +251,20 @@ const DonHangPage = () => {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <FulfillmentBadge status={order.fulfillment_status} />
+                        </td>
+                        <td className="px-4 py-3 text-center font-mono text-xs text-gray-500">
+                          {pancakeId
+                            ? <a
+                                href={`https://pancake.vn/orders/${pancakeId}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-blue-500 hover:underline"
+                              >
+                                #{pancakeId}
+                              </a>
+                            : <span className="text-gray-300">—</span>
+                          }
                         </td>
                         <td className="px-4 py-3 text-center">
                           <POSBadge info={posInfo} />
