@@ -55,9 +55,36 @@ export default function StickyBuyBar({
   const proofTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const variant = product.variants?.[0]
-  const basePrice =
+  const medusaPrice =
     variant?.calculated_price?.calculated_amount ??
     variant?.prices?.[0]?.amount ?? 0
+
+  // Đọc bundle price từ metadata — ưu tiên bundle_options_v2, fallback v1
+  function getBundleStartPrice(): number | null {
+    try {
+      const v2 = product.metadata?.bundle_options_v2 as string
+      if (v2) {
+        const parsed = JSON.parse(v2)
+        const prices: number[] = []
+        for (const vv of (parsed.variants || [])) {
+          const qty1 = (vv.options || []).find((o: any) => o.qty === 1) || vv.options?.[0]
+          if (qty1?.price) prices.push(qty1.price)
+        }
+        if (prices.length > 0) return Math.min(...prices)
+      }
+    } catch {}
+    try {
+      const v1 = product.metadata?.bundle_options as string
+      if (v1) {
+        const parsed = JSON.parse(v1)
+        const qty1 = parsed.find((o: any) => o.qty === 1) || parsed[0]
+        if (qty1?.price) return qty1.price
+      }
+    } catch {}
+    return null
+  }
+
+  const basePrice = getBundleStartPrice() ?? medusaPrice
 
   // StickyBar visibility
   useEffect(() => {
