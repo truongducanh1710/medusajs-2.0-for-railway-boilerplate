@@ -1362,6 +1362,23 @@ export default function ProductPageBuilder({
                 }
                 vid.src = url
                 vid.load()
+                // Capture frame đầu → lưu data-poster để storefront hiện thumbnail ngay
+                const capturePoster = () => {
+                  try {
+                    const c = doc.createElement('canvas') as HTMLCanvasElement
+                    c.width = vid!.videoWidth || 360
+                    c.height = vid!.videoHeight || 640
+                    const ctx = c.getContext('2d')
+                    if (ctx) {
+                      ctx.drawImage(vid!, 0, 0, c.width, c.height)
+                      const poster = c.toDataURL('image/jpeg', 0.7)
+                      cardEl.setAttribute('data-poster', poster)
+                      if (cardComp) cardComp.addAttributes({ 'data-poster': poster })
+                    }
+                  } catch {}
+                }
+                vid.addEventListener('seeked', capturePoster, { once: true })
+                vid.addEventListener('loadeddata', () => { try { vid!.currentTime = 0.1 } catch {} }, { once: true })
                 const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
                 if (overlay) overlay.style.display = 'none'
               }
