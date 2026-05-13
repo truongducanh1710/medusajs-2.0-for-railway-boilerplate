@@ -17,6 +17,8 @@ const PancakeOrder = model.define("pancake_order", {
   items_count: model.number().default(0),
   tracking_code: model.text().default(""),
   currency: model.text().default("VND"),
+  marketer_name: model.text().default(""),   // raw.marketer.name
+  sale_name: model.text().default(""),       // raw.assigning_care.name
   raw: model.json().default({}),               // full Pancake response — exclude khỏi list query
   raw_version: model.text().default("v1"),
   data_quality: model.text().default("complete"), // 'complete' | 'partial' (đơn cũ thiếu field)

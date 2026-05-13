@@ -83,33 +83,27 @@ function statusLabel(status: number): string {
 // ---- Detect source ----
 
 function detectSource(order: any): string {
-  // Try explicit channel field
-  if (order.channel) {
-    const ch = String(order.channel).toLowerCase()
-    if (ch.includes("facebook") || ch.includes("fb")) return "facebook"
-    if (ch.includes("zalo")) return "zalo"
-    if (ch.includes("tiktok")) return "tiktok"
-    if (ch.includes("shopee")) return "shopee"
-    if (ch.includes("web") || ch.includes("website")) return "medusa"
-  }
+  // order_sources_name là field chính xác nhất từ Pancake
+  const srcName = String(order.order_sources_name ?? "").toLowerCase()
+  if (srcName === "facebook") return "facebook"
+  if (srcName === "zalo") return "zalo"
+  if (srcName === "tiktok") return "tiktok"
+  if (srcName === "shopee") return "shopee"
+  if (srcName === "lazada") return "lazada"
+  // "Webcake" = tạo thủ công trên Pancake web (không phải website Medusa)
+  if (srcName === "webcake") return "manual"
 
-  // Try tags
-  if (Array.isArray(order.tags)) {
-    const tags = order.tags.map((t: any) => String(t?.name ?? t).toLowerCase())
-    if (tags.some((t: string) => t.includes("facebook") || t.includes("fb"))) return "facebook"
-    if (tags.some((t: string) => t.includes("zalo"))) return "zalo"
-    if (tags.some((t: string) => t.includes("tiktok"))) return "tiktok"
-    if (tags.some((t: string) => t.includes("medusa") || t.includes("web"))) return "medusa"
-  }
+  // Fallback: UTM source
+  const utm = String(order.p_utm_source ?? order.marketing?.p_utm_source ?? order.marketing?.utm_source ?? "").toLowerCase()
+  if (utm.includes("facebook") || utm.includes("fb")) return "facebook"
+  if (utm.includes("zalo")) return "zalo"
+  if (utm.includes("tiktok")) return "tiktok"
+  if (utm.includes("shopee")) return "shopee"
 
-  // Try marketing UTM
-  const marketing = order.marketing
-  if (marketing) {
-    const src = String(marketing.p_utm_source ?? marketing.utm_source ?? "").toLowerCase()
-    if (src.includes("facebook") || src.includes("fb")) return "facebook"
-    if (src.includes("zalo")) return "zalo"
-    if (src.includes("tiktok")) return "tiktok"
-  }
+  // Fallback: page_id prefix
+  const pageId = String(order.page_id ?? "").toLowerCase()
+  if (pageId.startsWith("spo_")) return "shopee"
+  if (pageId.startsWith("tts_")) return "tiktok"
 
   return "unknown"
 }
@@ -137,6 +131,8 @@ function mapPancakeOrder(raw: any): Record<string, any> {
     items,
     items_count: items.length,
     tracking_code: raw.partner?.extend_code ?? raw.tracking_code ?? "",
+    marketer_name: raw.marketer?.name ?? "",
+    sale_name: raw.assigning_care?.name ?? "",
     raw: raw,
     pancake_created_at: raw.inserted_at ? new Date(raw.inserted_at) : (raw.created_at ? new Date(raw.created_at) : null),
     synced_at: new Date(),

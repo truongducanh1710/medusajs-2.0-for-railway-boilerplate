@@ -272,6 +272,8 @@ const DonHangPage = () => {
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">SĐT</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tỉnh/TP</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sản phẩm</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Marketer</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sale</th>
                     <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tổng tiền</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">TT POS</th>
                     <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Thanh toán</th>
@@ -342,6 +344,12 @@ const DonHangPage = () => {
                         </td>
                         <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={itemTitle}>
                           {itemTitle}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                          {order.marketer_name || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                          {order.sale_name || "—"}
                         </td>
                         <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">
                           {formatVND(order.total)}

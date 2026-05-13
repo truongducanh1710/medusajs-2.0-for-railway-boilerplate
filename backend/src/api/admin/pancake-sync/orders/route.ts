@@ -69,6 +69,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       "items_count",
       "tracking_code",
       "currency",
+      "marketer_name",
+      "sale_name",
       "data_quality",
       "pancake_created_at",
       "synced_at",
