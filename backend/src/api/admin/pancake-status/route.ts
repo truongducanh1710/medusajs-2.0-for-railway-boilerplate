@@ -1,13 +1,32 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../../lib/constants"
 
-// CSS class theo nhóm trạng thái — dùng status_name từ Pancake API
-function getStatusCls(statusName: string, status: number): string {
-  if (status === 5) return "bg-green-100 text-green-700"                         // Hoàn thành
-  if (status === 7 || status === -1) return "bg-red-100 text-red-700"            // Đã hủy
-  if (status === -2) return "bg-purple-100 text-purple-700"                      // Hoàn hàng
-  if (status === 2 || status === 4 || status === 9) return "bg-blue-100 text-blue-700" // Đang giao / Đã gửi VC
-  if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"      // Chờ xử lý / Chờ hàng
+const STATUS_VI: Record<number, string> = {
+  0: "Chờ xử lý",
+  1: "Đã xác nhận",
+  2: "Đang đóng gói",
+  3: "Chờ giao hàng",
+  4: "Đang giao",
+  5: "Hoàn thành",
+  6: "Đã gửi VC",
+  7: "Đã hủy",
+  9: "Đã gửi VC",
+  11: "Chờ hàng",
+  "-1": "Đã hủy",
+  "-2": "Hoàn hàng",
+} as any
+
+function getStatusLabel(status: number): string {
+  return STATUS_VI[status] ?? STATUS_VI[String(status)] ?? `Trạng thái ${status}`
+}
+
+function getStatusCls(status: number): string {
+  if (status === 5) return "bg-green-100 text-green-700"
+  if (status === 7 || status === -1) return "bg-red-100 text-red-700"
+  if (status === -2) return "bg-purple-100 text-purple-700"
+  if (status === 2 || status === 4 || status === 9) return "bg-blue-100 text-blue-700"
+  if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"
+  if (status === 1 || status === 3) return "bg-orange-100 text-orange-700"
   return "bg-gray-100 text-gray-600"
 }
 
@@ -38,9 +57,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse): Promise<void
         const data = await r.json()
         const order = data?.order ?? data?.data ?? data
         const status: number = order?.status ?? order?.order_status ?? 0
-        // Đọc tên từ API Pancake trực tiếp — không hardcode
-        const label: string = order?.status_name || `status_${status}`
-        const cls = getStatusCls(label, status)
+        const label = getStatusLabel(status)
+        const cls = getStatusCls(status)
         statuses[id] = { status, label, cls }
       } catch {
         // timeout hoặc lỗi → bỏ qua

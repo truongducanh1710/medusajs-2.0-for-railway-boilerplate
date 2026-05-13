@@ -27,8 +27,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ success: true })
     }
 
-    // Đọc tên trạng thái trực tiếp từ Pancake payload — không cần hardcode map
-    const statusLabel: string = body?.status_name || `status_${pancakeStatus}`
+    const STATUS_VI: Record<number, string> = {
+      0: "Chờ xử lý", 1: "Đã xác nhận", 2: "Đang đóng gói", 3: "Chờ giao hàng",
+      4: "Đang giao", 5: "Hoàn thành", 6: "Đã gửi VC", 7: "Đã hủy",
+      9: "Đã gửi VC", 11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
+    }
+    const statusLabel: string = STATUS_VI[pancakeStatus] ?? body?.status_name ?? `Trạng thái ${pancakeStatus}`
     console.log(`[Pancake Webhook] ✅ Đơn #${pancakeOrderId} → ${statusLabel} (${pancakeStatus})`)
 
     // Tìm Medusa order có metadata.pancake_order_id khớp
