@@ -55,7 +55,7 @@ export default async function orderPlacedHandler({
     if (pancakeResult) {
       const pancakeOrderId = pancakeResult?.id ?? pancakeResult?.order?.id ?? pancakeResult?.data?.id
       if (pancakeOrderId) {
-        await orderModuleService.updateOrders({ id: order.id, metadata: { ...order.metadata, pancake_order_id: String(pancakeOrderId) } } as any)
+        await orderModuleService.updateOrders([{ id: order.id, metadata: { ...order.metadata, pancake_order_id: String(pancakeOrderId) } }] as any)
         console.info(`[Pancake] Saved pancake_order_id=${pancakeOrderId} to order ${order.id}`)
       }
     }
