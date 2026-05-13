@@ -418,8 +418,28 @@ const TIKTOK_GALLERY_JS = `
       }
       if(vid.getAttribute('data-loaded')!==src){
         vid.src=src;
-        vid.load();
         vid.setAttribute('data-loaded',src);
+        // Capture frame đầu làm poster để tránh màn hình đen
+        vid.addEventListener('loadeddata',function(){
+          try{
+            if(vid.poster)return; // đã có poster từ data-poster
+            vid.currentTime=0.1;
+          }catch(e){}
+        },{once:true});
+        vid.addEventListener('seeked',function onSeeked(){
+          try{
+            if(vid.poster)return;
+            var c=document.createElement('canvas');
+            c.width=vid.videoWidth||360;c.height=vid.videoHeight||640;
+            var ctx=c.getContext('2d');
+            if(ctx){ctx.drawImage(vid,0,0,c.width,c.height);vid.poster=c.toDataURL('image/jpeg',0.7);}
+            vid.removeEventListener('seeked',onSeeked);
+          }catch(e){}
+        });
+        // Poster attribute từ data-poster nếu có (ưu tiên)
+        var poster=card.getAttribute('data-poster');
+        if(poster)vid.poster=poster;
+        vid.load();
       }
 
       // Chỉ play khi >50% visible — dừng ngay khi out
