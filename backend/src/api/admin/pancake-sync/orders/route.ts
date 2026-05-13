@@ -75,14 +75,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       "created_at",
     ]
 
-    const [orders, count] = await Promise.all([
+    const [orders, [, count]] = await Promise.all([
       syncService.listPancakeOrders(filters, {
         take,
         skip,
         select: fields,
         order: { pancake_created_at: "DESC" },
       }),
-      syncService.listPancakeOrders(filters, { select: ["id"] }).then((r: any[]) => r.length),
+      syncService.listAndCountPancakeOrders(filters, {
+        take,
+        skip,
+        select: ["id"],
+      }),
     ])
 
     const hasMore = skip + take < count
