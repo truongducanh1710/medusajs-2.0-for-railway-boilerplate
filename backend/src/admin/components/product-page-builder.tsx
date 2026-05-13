@@ -1148,6 +1148,23 @@ export default function ProductPageBuilder({
 
       editorRef.current = editor
 
+      // Restore videoSlots state từ projectData đã lưu (nút right panel hiện đúng)
+      const restoreVideoSlots = () => {
+        try {
+          const tkgSections = editor.getWrapper().find('.pvb-tkg')
+          if (!tkgSections.length) return
+          const cards = tkgSections[0].find('.card')
+          const slots: (string | null)[] = [null, null, null]
+          cards.forEach((card: any, i: number) => {
+            const src = card.getAttributes()['data-src']
+            if (src && i < 3) slots[i] = src
+          })
+          if (slots.some(Boolean)) setVideoSlots(slots)
+        } catch {}
+      }
+      // Chạy sau khi GrapesJS load xong content (dùng timeout vì loadProjectData async)
+      setTimeout(restoreVideoSlots, 300)
+
       // Theo dõi block pvb-tkg để hiện/ẩn video panel
       const checkTkg = () => {
         try {
@@ -1280,40 +1297,66 @@ export default function ProductPageBuilder({
       // Hàm cập nhật GrapesJS model sau khi upload xong (gọi từ React handler)
       ;(window as any).pvbTkgSetVideoUrl = (idx: number, url: string, filename: string) => {
         try {
-          const doc = editor.Canvas.getDocument()
-          if (!doc) return
+          // Dùng GrapesJS find() với CSS selector — đáng tin nhất, serialize đúng khi save
+          // Chỉ lấy card trong section pvb-tkg, đúng index
+          const tkgSections = editor.getWrapper().find('.pvb-tkg')
+          // Lấy section đang được select, hoặc section đầu tiên
+          const selected = editor.getSelected()
+          const tkgSection = (selected && selected.getEl()?.closest?.('.pvb-tkg'))
+            ? (tkgSections.find((s: any) => s.getEl()?.contains?.(selected.getEl())) || tkgSections[0])
+            : tkgSections[0]
 
-          // Tìm trực tiếp trên DOM canvas — đáng tin hơn component tree traversal
-          const allCards = doc.querySelectorAll('.pvb-tkg .grid .card')
-          const cardEl = allCards[idx] as HTMLElement | undefined
+          if (!tkgSection) { console.warn('[pvbTkgSetVideoUrl] no pvb-tkg section found'); return }
 
-          if (cardEl) {
-            // Update DOM để preview ngay
-            cardEl.setAttribute('data-src', url)
-            let vid = cardEl.querySelector('video') as HTMLVideoElement | null
-            if (!vid) {
-              vid = doc.createElement('video') as HTMLVideoElement
-              vid.setAttribute('muted', '')
-              vid.setAttribute('loop', '')
-              vid.setAttribute('playsinline', '')
-              vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block'
-              cardEl.insertBefore(vid, cardEl.firstChild)
+          const cards = tkgSection.find('.card')
+          const cardComp = cards[idx]
+
+          if (cardComp) {
+            // Update GrapesJS model → được serialize vào projectData khi save
+            cardComp.addAttributes({ 'data-src': url })
+
+            // Update component inner HTML để chứa video tag → persist khi reload
+            const videoHtml = `<video src="${url}" muted loop playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"></video>`
+            const overlayComp = cardComp.find('.overlay')[0]
+            // Xóa video cũ nếu có, thêm video mới
+            const existingVideo = cardComp.find('video')[0]
+            if (existingVideo) {
+              existingVideo.addAttributes({ src: url })
+            } else {
+              cardComp.components().add(videoHtml, { at: 0 })
             }
-            vid.src = url
-            vid.load()
-            const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
-            if (overlay) overlay.style.display = 'none'
+            // Ẩn overlay trong model
+            if (overlayComp) overlayComp.addStyle({ display: 'none' })
           }
 
-          // Update GrapesJS component model để data-src được serialize khi save
-          const cards = findTkgCards(editor.getComponents())
-          if (cards[idx]) {
-            cards[idx].addAttributes({ 'data-src': url })
-          }
+          // Update DOM canvas cho preview ngay (song song với model update)
+          try {
+            const doc = editor.Canvas.getDocument()
+            if (doc) {
+              const allCards = doc.querySelectorAll('.pvb-tkg .grid .card')
+              const cardEl = allCards[idx] as HTMLElement | undefined
+              if (cardEl) {
+                cardEl.setAttribute('data-src', url)
+                let vid = cardEl.querySelector('video') as HTMLVideoElement | null
+                if (!vid) {
+                  vid = doc.createElement('video') as HTMLVideoElement
+                  Object.assign(vid, { muted: true, loop: true })
+                  vid.setAttribute('playsinline', '')
+                  vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block'
+                  cardEl.insertBefore(vid, cardEl.firstChild)
+                }
+                vid.src = url
+                vid.load()
+                const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
+                if (overlay) overlay.style.display = 'none'
+              }
+              // Cập nhật status text trong admin-panel của canvas
+              const statusEl = doc.getElementById(`tkg-s${idx}`)
+              if (statusEl) statusEl.textContent = '✅ ' + filename
+            }
+          } catch {}
 
-          // Cập nhật status text trong admin-panel của canvas
-          const statusEl = doc.getElementById(`tkg-s${idx}`)
-          if (statusEl) statusEl.textContent = '✅ ' + filename
+          console.log(`[pvbTkgSetVideoUrl] slot ${idx} → ${url}`)
         } catch (err) {
           console.warn('[pvbTkgSetVideoUrl] error:', err)
         }
@@ -1355,11 +1398,35 @@ export default function ProductPageBuilder({
         try {
           const doc = editor.Canvas.getDocument()
           if (!doc) return
-          if (doc.querySelector('[data-tkg-init]')) return
-          const sc = doc.createElement('script')
-          sc.setAttribute('data-tkg-init', '1')
-          sc.textContent = TIKTOK_GALLERY_JS
-          doc.body.appendChild(sc)
+          if (!doc.querySelector('[data-tkg-init]')) {
+            const sc = doc.createElement('script')
+            sc.setAttribute('data-tkg-init', '1')
+            sc.textContent = TIKTOK_GALLERY_JS
+            doc.body.appendChild(sc)
+          }
+          // Restore video preview từ data-src đã lưu (khi reload editor)
+          const cards = doc.querySelectorAll('.pvb-tkg .grid .card')
+          cards.forEach((card: Element, i: number) => {
+            const src = (card as HTMLElement).getAttribute('data-src')
+            if (!src) return
+            let vid = card.querySelector('video') as HTMLVideoElement | null
+            if (!vid) {
+              vid = doc.createElement('video') as HTMLVideoElement
+              ;(vid as any).muted = true
+              ;(vid as any).loop = true
+              vid.setAttribute('playsinline', '')
+              vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block'
+              card.insertBefore(vid, card.firstChild)
+            }
+            if (vid.src !== src) { vid.src = src; vid.load() }
+            const overlay = card.querySelector('.overlay') as HTMLElement | null
+            if (overlay) overlay.style.display = 'none'
+            // Update admin-panel status
+            const statusEl = doc.getElementById(`tkg-s${i}`)
+            if (statusEl && statusEl.textContent === 'Chưa có video') {
+              statusEl.textContent = '✅ ' + src.split('/').pop()
+            }
+          })
         } catch {}
       }
 
