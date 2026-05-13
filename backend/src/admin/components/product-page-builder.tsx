@@ -78,59 +78,57 @@ const blocks: BuilderBlock[] = [
   },
   {
     id: "tiktok-gallery",
-    label: "🎵 TikTok Gallery (3 video)",
+    label: "🎵 Video Gallery (3 video)",
     category: "Sections",
     content: `
       <style>
         .pvb-tkg{padding:32px 16px;background:#fff}
         .pvb-tkg h2{font-size:clamp(18px,4vw,26px);font-weight:900;text-align:center;margin:0 0 16px}
         .pvb-tkg .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:700px;margin:0 auto}
-        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:#111;cursor:pointer}
-        .pvb-tkg .card .preview{position:absolute;inset:0;overflow:hidden;border-radius:12px;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);display:flex;align-items:center;justify-content:center}
-        .pvb-tkg .card .preview img{width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0}
-        .pvb-tkg .card .tt-logo{width:32px;height:32px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;z-index:1}
-        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);cursor:pointer}
+        .pvb-tkg .card video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);transition:background .2s}
+        .pvb-tkg .card:hover .overlay{background:rgba(0,0,0,0.1)}
+        .pvb-tkg .card .tt-logo{width:40px;height:40px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px}
         .pvb-tkg .play{width:52px;height:52px;background:rgba(255,255,255,0.95);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;padding-left:4px;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
-        .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center}
+        .pvb-tkg-pop{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);align-items:center;justify-content:center}
         .pvb-tkg-pop.open{display:flex}
-        .pvb-tkg-pop .pop-inner{position:relative;width:100%;max-width:400px;height:85vh}
-        .pvb-tkg-pop .pop-inner iframe{width:100%;height:100%;border:0;border-radius:12px}
-        .pvb-tkg-pop .tkg-close{position:absolute;top:-40px;right:0;background:none;border:none;color:#fff;font-size:32px;cursor:pointer;line-height:1;padding:0}
+        .pvb-tkg-pop .pop-inner{position:relative;width:100%;max-width:360px;height:80vh}
+        .pvb-tkg-pop video{width:100%;height:100%;object-fit:contain;border-radius:12px;background:#000}
+        .pvb-tkg-pop .tkg-close{position:absolute;top:-44px;right:0;background:none;border:none;color:#fff;font-size:36px;cursor:pointer;line-height:1;padding:0}
         .pvb-tkg .admin-panel{margin-top:20px;padding:14px;background:#f9fafb;border-radius:10px;border:1px dashed #d1d5db}
         .pvb-tkg .admin-panel p{font-size:11px;color:#6b7280;margin:0 0 10px;font-weight:600}
         .pvb-tkg .tt-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
         .pvb-tkg .tt-lbl{font-size:11px;color:#374151;white-space:nowrap;width:52px}
-        .pvb-tkg .tt-inp{flex:1;padding:6px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;outline:none}
-        .pvb-tkg .tt-btn{padding:6px 10px;background:#111827;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+        .pvb-tkg .tt-status{font-size:11px;color:#6b7280;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .pvb-tkg .tt-btn{padding:6px 10px;background:#111827;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+        .pvb-tkg .tt-btn:disabled{opacity:.5;cursor:not-allowed}
         @media(min-width:768px){.pvb-tkg{padding:48px 24px}.pvb-tkg .grid{gap:12px}}
       </style>
       <section class="pvb-tkg">
         <h2>&#127925; Video thực tế từ khách hàng</h2>
         <div class="grid">
-          <div class="card" data-vid="7622160135820954900" data-idx="0" onclick="pvbTkgOpen(this)">
-            <div class="preview"><div class="tt-logo">&#9835;</div></div>
-            <div class="overlay"><div class="play">&#9654;</div></div>
+          <div class="card" data-src="" data-idx="0">
+            <div class="overlay"><div class="tt-logo">&#127925;</div></div>
           </div>
-          <div class="card" data-vid="7622160135820954900" data-idx="1" onclick="pvbTkgOpen(this)">
-            <div class="preview"><div class="tt-logo">&#9835;</div></div>
-            <div class="overlay"><div class="play">&#9654;</div></div>
+          <div class="card" data-src="" data-idx="1">
+            <div class="overlay"><div class="tt-logo">&#127925;</div></div>
           </div>
-          <div class="card" data-vid="7622160135820954900" data-idx="2" onclick="pvbTkgOpen(this)">
-            <div class="preview"><div class="tt-logo">&#9835;</div></div>
-            <div class="overlay"><div class="play">&#9654;</div></div>
+          <div class="card" data-src="" data-idx="2">
+            <div class="overlay"><div class="tt-logo">&#127925;</div></div>
           </div>
         </div>
         <div class="admin-panel">
-          <p>&#128295; Nhập link TikTok cho từng video rồi bấm Áp dụng</p>
-          <div class="tt-row"><span class="tt-lbl">Video 1</span><input class="tt-inp" id="tkg-u1" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="var i=document.getElementById('tkg-u1');window.parent.pvbTkgSet(0,i.value,i)">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 2</span><input class="tt-inp" id="tkg-u2" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="var i=document.getElementById('tkg-u2');window.parent.pvbTkgSet(1,i.value,i)">Áp dụng</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 3</span><input class="tt-inp" id="tkg-u3" placeholder="tiktok.com/@user/video/..."/><button class="tt-btn" onclick="var i=document.getElementById('tkg-u3');window.parent.pvbTkgSet(2,i.value,i)">Áp dụng</button></div>
+          <p>&#128247; Tải video TikTok (mp4) lên cho từng ô</p>
+          <div class="tt-row"><span class="tt-lbl">Video 1</span><span class="tt-status" id="tkg-s0">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(0)">&#8679; Tải lên</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 2</span><span class="tt-status" id="tkg-s1">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(1)">&#8679; Tải lên</button></div>
+          <div class="tt-row"><span class="tt-lbl">Video 3</span><span class="tt-status" id="tkg-s2">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(2)">&#8679; Tải lên</button></div>
         </div>
       </section>
-      <div class="pvb-tkg-pop" id="pvb-tkg-pop" onclick="pvbTkgBgClose(event)">
+      <div class="pvb-tkg-pop" id="pvb-tkg-pop">
         <div class="pop-inner">
           <button class="tkg-close" onclick="pvbTkgClose()">&#10005;</button>
-          <iframe id="pvb-tkg-iframe" src="" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>
+          <video id="pvb-tkg-video" src="" controls autoplay playsinline></video>
         </div>
       </div>
     `,
@@ -1212,67 +1210,117 @@ export default function ProductPageBuilder({
       editor.on("canvas:frame:load", injectFilterScript)
       editor.on("component:add", () => setTimeout(injectFilterScript, 100))
 
-      // ── TikTok Gallery: Áp dụng link via GrapesJS component API ─────────────
-      // pvbTkgSet is called from inside the canvas iframe onclick.
-      // It must update GrapesJS component model (not just DOM) so the change persists on save.
-      // We expose it on window (parent frame) so canvas iframes can call window.parent.pvbTkgSet.
-      ;(window as any).pvbTkgSet = (idx: number, url: string, inputEl: HTMLElement | null) => {
-        const m = url.match(/\/video\/(\d+)/)
-        if (!m) {
-          if (inputEl) (inputEl as HTMLInputElement).style.borderColor = '#ef4444'
-          alert('Dán link dạng: tiktok.com/@user/video/12345')
-          return
-        }
-        const vid = m[1]
-        if (inputEl) (inputEl as HTMLInputElement).style.borderColor = '#22c55e'
-
-        // Find the card component in GrapesJS model and update data-vid
-        const allComps = editor.getComponents()
-        const findCards = (comps: any): any[] => {
-          let found: any[] = []
-          comps.each((c: any) => {
-            if (c.getClasses().includes('card') && c.parent()?.getClasses().includes('grid')) found.push(c)
-            found = found.concat(findCards(c.components()))
-          })
-          return found
-        }
-        const cards = findCards(allComps)
-        if (cards[idx]) {
-          cards[idx].addAttributes({ 'data-vid': vid })
-          // Also update thumbnail in DOM preview
-          try {
-            const cardEl = cards[idx].getEl()
-            const prev = cardEl?.querySelector('.preview')
-            if (prev) {
-              fetch('https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/' + vid)
-                .then((r) => r.json())
-                .then((d) => { if (d.thumbnail_url && prev) prev.innerHTML = `<img src="${d.thumbnail_url}" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">` })
-                .catch(() => {})
-            }
-          } catch {}
-        }
+      // ── Video Gallery: upload mp4 lên Minio qua Medusa /admin/uploads ──────
+      // Chạy trên parent frame để có auth token Medusa
+      const findTkgCards = (comps: any): any[] => {
+        let found: any[] = []
+        comps.each((c: any) => {
+          if (c.getClasses().includes('card') && c.parent()?.getClasses().includes('grid')) found.push(c)
+          found = found.concat(findTkgCards(c.components()))
+        })
+        return found
       }
 
+      ;(window as any).pvbTkgUpload = (idx: number) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = 'video/mp4,video/mov,video/quicktime,video/*'
+        input.onchange = async () => {
+          const file = input.files?.[0]
+          if (!file) return
+
+          // Tìm status element trong canvas iframe để cập nhật UI
+          const doc = editor.Canvas.getDocument()
+          const statusEl = doc?.getElementById(`tkg-s${idx}`)
+          const btn = statusEl?.nextElementSibling as HTMLButtonElement | null
+          if (statusEl) statusEl.textContent = '⏳ Đang upload...'
+          if (btn) btn.disabled = true
+
+          try {
+            const formData = new FormData()
+            formData.append('files', file, file.name)
+
+            const token = document.cookie.match(/medusa_auth_token=([^;]+)/)?.[1]
+              || localStorage.getItem('medusa_auth_token')
+              || ''
+
+            const res = await fetch('/admin/uploads', {
+              method: 'POST',
+              headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+              credentials: 'include',
+              body: formData,
+            })
+
+            if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+            const data = await res.json()
+            const url: string = data.files?.[0]?.url || data.file?.url || ''
+            if (!url) throw new Error('No URL returned')
+
+            // Update GrapesJS component model → persist on save
+            const cards = findTkgCards(editor.getComponents())
+            if (cards[idx]) {
+              cards[idx].addAttributes({ 'data-src': url })
+              // Update DOM preview in canvas
+              try {
+                const cardEl = cards[idx].getEl()
+                if (cardEl) {
+                  let vid = cardEl.querySelector('video')
+                  if (!vid) {
+                    vid = doc!.createElement('video')
+                    vid.setAttribute('muted', '')
+                    vid.setAttribute('loop', '')
+                    vid.setAttribute('playsinline', '')
+                    vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover'
+                    cardEl.insertBefore(vid, cardEl.firstChild)
+                  }
+                  vid.src = url
+                  vid.load()
+                  // Ẩn overlay music icon khi có video
+                  const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
+                  if (overlay) overlay.style.display = 'none'
+                }
+              } catch {}
+            }
+
+            if (statusEl) statusEl.textContent = '✅ ' + file.name
+            if (btn) btn.disabled = false
+          } catch (e: any) {
+            if (statusEl) statusEl.textContent = '❌ Lỗi: ' + e.message
+            if (btn) btn.disabled = false
+          }
+        }
+        input.click()
+      }
+
+      // Canvas inline functions — chỉ cần close popup, open từ event delegation
       const TIKTOK_GALLERY_JS = `
         (function(){
           if(window._pvbTkgInited) return;
           window._pvbTkgInited = true;
-          window.pvbTkgOpen = function(c){
-            var vid = c.getAttribute('data-vid');
-            var pop = document.getElementById('pvb-tkg-pop');
-            var fr = document.getElementById('pvb-tkg-iframe');
-            if(fr) fr.src = 'https://www.tiktok.com/embed/v2/' + vid;
-            if(pop) pop.classList.add('open');
-          };
           window.pvbTkgClose = function(){
             var pop = document.getElementById('pvb-tkg-pop');
-            var fr = document.getElementById('pvb-tkg-iframe');
-            if(fr) fr.src = '';
+            var v = document.getElementById('pvb-tkg-video');
+            if(v){ v.pause(); v.src = ''; }
             if(pop) pop.classList.remove('open');
           };
-          window.pvbTkgBgClose = function(e){
-            if(e.target === e.currentTarget) window.pvbTkgClose();
-          };
+          // Event delegation: click card → mở popup
+          document.addEventListener('click', function(e){
+            var t = e.target;
+            while(t && t !== document){
+              if(t.classList && t.classList.contains('card') && t.closest && t.closest('.pvb-tkg')){
+                var src = t.getAttribute('data-src');
+                if(src){
+                  var pop = document.getElementById('pvb-tkg-pop');
+                  var v = document.getElementById('pvb-tkg-video');
+                  if(v){ v.src = src; v.play(); }
+                  if(pop) pop.classList.add('open');
+                }
+                return;
+              }
+              if(t.id === 'pvb-tkg-pop'){ window.pvbTkgClose(); return; }
+              t = t.parentElement;
+            }
+          });
         })();
       `
 

@@ -13,7 +13,8 @@ const ALLOWED_ATTRS = new Set([
   "rel","type","placeholder","name","value","controls","autoplay","muted","loop",
   "allowfullscreen","frameborder","loading","decoding","srcset","sizes",
   "referrerpolicy","allow",
-  "data-vid","data-idx","data-filter","data-rev-bound",
+  "data-vid","data-idx","data-filter","data-rev-bound","data-src",
+  "muted","loop","playsinline","preload","poster",
 ])
 
 // Strip dangerous CSS patterns (javascript:, expression(), behavior:)

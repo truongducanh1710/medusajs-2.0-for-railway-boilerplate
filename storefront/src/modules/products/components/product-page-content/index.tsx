@@ -268,39 +268,30 @@ type Props = {
 
 const TIKTOK_GALLERY_JS = `
 (function(){
-  function pvbOpen(vid){
-    var pop=document.getElementById('pvb-tkg-pop');
-    var fr=document.getElementById('pvb-tkg-iframe');
-    if(fr)fr.src='https://www.tiktok.com/embed/v2/'+vid;
-    if(pop)pop.classList.add('open');
-  }
   function pvbClose(){
     var pop=document.getElementById('pvb-tkg-pop');
-    var fr=document.getElementById('pvb-tkg-iframe');
-    if(fr)fr.src='';
+    var v=document.getElementById('pvb-tkg-video');
+    if(v){v.pause();v.src='';}
     if(pop)pop.classList.remove('open');
   }
-  // Event delegation — works even if onclick attrs were stripped
   document.addEventListener('click',function(e){
     var t=e.target;
-    // Walk up to find .card with data-vid
     while(t&&t!==document){
-      if(t.classList&&t.classList.contains('card')&&t.getAttribute('data-vid')){
-        pvbOpen(t.getAttribute('data-vid'));
+      if(t.classList&&t.classList.contains('card')&&t.closest&&t.closest('.pvb-tkg')){
+        var src=t.getAttribute('data-src');
+        if(src){
+          var pop=document.getElementById('pvb-tkg-pop');
+          var v=document.getElementById('pvb-tkg-video');
+          if(v){v.src=src;v.play();}
+          if(pop)pop.classList.add('open');
+        }
         return;
       }
-      // Close button
-      if(t.classList&&(t.classList.contains('tkg-close')||t.id==='pvb-tkg-pop')){
-        pvbClose();
-        return;
-      }
+      if(t.id==='pvb-tkg-pop'||t.classList&&t.classList.contains('tkg-close')){pvbClose();return;}
       t=t.parentElement;
     }
   });
-  // Also expose for inline onclick (GrapesJS editor)
-  window.pvbTkgOpen=function(c){pvbOpen(c.getAttribute('data-vid'));};
   window.pvbTkgClose=pvbClose;
-  window.pvbTkgBgClose=function(e){if(e.target===e.currentTarget)pvbClose();};
 })();
 `
 
