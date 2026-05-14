@@ -25,6 +25,12 @@ function toISO(d: Date): string {
   return d.toISOString()
 }
 
+function todayVN(): string {
+  const d = new Date()
+  const vn = new Date(d.getTime() + 7 * 3600 * 1000)
+  return vn.toISOString().slice(0, 10)
+}
+
 // ---- Source labels ----
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -92,7 +98,25 @@ const BaoCaoPage = () => {
   const [report, setReport] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<"overview" | "source" | "product">("overview")
+  const [view, setView] = useState<"overview" | "source" | "product" | "sale">("overview")
+  const [perfDate, setPerfDate] = useState(todayVN)
+  const [perfData, setPerfData] = useState<any>(null)
+  const [perfLoading, setPerfLoading] = useState(false)
+
+  const fetchPerf = async (date: string) => {
+    setPerfLoading(true)
+    try {
+      const res = await apiFetch(`/admin/pancake-sync/report/sale-performance?date=${date}`)
+      if (!res.ok) throw new Error(`Lỗi ${res.status}`)
+      setPerfData(await res.json())
+    } catch {
+      setPerfData(null)
+    } finally {
+      setPerfLoading(false)
+    }
+  }
+
+  useEffect(() => { if (view === "sale") fetchPerf(perfDate) }, [view, perfDate])
 
   const fetchReport = async (y: number, m: number) => {
     setLoading(true)
@@ -196,6 +220,7 @@ const BaoCaoPage = () => {
               { key: "overview", label: "Tổng quan theo ngày" },
               { key: "source", label: "Theo nguồn" },
               { key: "product", label: "Top sản phẩm" },
+              { key: "sale", label: "Hiệu suất Sale" },
             ] as const).map((tab) => (
               <button
                 key={tab.key}
@@ -301,6 +326,117 @@ const BaoCaoPage = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Hiệu suất Sale */}
+          {view === "sale" && (
+            <div className="space-y-4">
+              {/* Date picker riêng cho tab này */}
+              <div className="flex items-center gap-3">
+                <input
+                  type="date"
+                  value={perfDate}
+                  onChange={(e) => setPerfDate(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                <button
+                  onClick={() => fetchPerf(perfDate)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+                >
+                  🔄 Làm mới
+                </button>
+                {perfData && (
+                  <span className="text-sm text-gray-400">
+                    {perfData.summary.total_orders} đơn · {perfData.summary.total_confirmed} xác nhận · tỷ lệ {perfData.summary.overall_confirm_rate}%
+                  </span>
+                )}
+              </div>
+
+              {perfLoading ? (
+                <div className="text-center py-12 text-gray-400">Đang tải...</div>
+              ) : !perfData || perfData.sales.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">Không có dữ liệu cho ngày này</div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-600">Sale</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Tổng</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Chưa t/đ</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Đã gọi</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 1</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 2</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 3+</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Xác nhận</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Hủy</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Tỷ lệ XN</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {perfData.sales.map((s: any) => {
+                        const needsPush = s.no_action > 3
+                        const isGood = s.confirm_rate >= 30 && s.total >= 3
+                        const isBad = s.confirm_rate < 10 && s.total >= 5
+                        return (
+                          <tr key={s.sale_name} className={needsPush ? "bg-red-50/60" : ""}>
+                            <td className="px-4 py-3 font-semibold text-gray-800">{s.sale_name}</td>
+                            <td className="px-3 py-3 text-center font-mono text-gray-700">{s.total}</td>
+                            <td className={`px-3 py-3 text-center font-mono font-semibold ${s.no_action > 3 ? "text-red-600" : s.no_action > 0 ? "text-orange-500" : "text-gray-400"}`}>
+                              {s.no_action}
+                              {s.overdue > 0 && <span className="text-xs ml-1">⏰</span>}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-gray-600">{s.called}</td>
+                            <td className="px-3 py-3 text-center font-mono text-yellow-700">{s.knm_1 || "—"}</td>
+                            <td className="px-3 py-3 text-center font-mono text-orange-600">{s.knm_2 || "—"}</td>
+                            <td className="px-3 py-3 text-center font-mono font-bold text-red-600">
+                              {s.knm_3_plus > 0 ? <span>{s.knm_3_plus} ⚠️</span> : "—"}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-green-700 font-semibold">{s.confirmed || "—"}</td>
+                            <td className="px-3 py-3 text-center font-mono text-gray-400">{s.cancelled || "—"}</td>
+                            <td className={`px-4 py-3 text-right font-semibold ${isGood ? "text-green-600" : isBad ? "text-red-500" : "text-gray-700"}`}>
+                              {s.confirm_rate}%
+                              {isGood && " ✓"}
+                              {isBad && s.total >= 5 && " ↓"}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t border-gray-200">
+                      <tr>
+                        <td className="px-4 py-2 font-semibold text-gray-600">Tổng cộng</td>
+                        <td className="px-3 py-2 text-center font-mono font-semibold">{perfData.summary.total_orders}</td>
+                        <td className="px-3 py-2 text-center font-mono text-red-600 font-semibold">
+                          {perfData.sales.reduce((s: number, x: any) => s + x.no_action, 0)}
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono">
+                          {perfData.sales.reduce((s: number, x: any) => s + x.called, 0)}
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono text-yellow-700">
+                          {perfData.sales.reduce((s: number, x: any) => s + x.knm_1, 0)}
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono text-orange-600">
+                          {perfData.sales.reduce((s: number, x: any) => s + x.knm_2, 0)}
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono text-red-600 font-bold">
+                          {perfData.sales.reduce((s: number, x: any) => s + x.knm_3_plus, 0)}
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono text-green-700 font-semibold">
+                          {perfData.summary.total_confirmed}
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono text-gray-400">
+                          {perfData.sales.reduce((s: number, x: any) => s + x.cancelled, 0)}
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-gray-700">
+                          {perfData.summary.overall_confirm_rate}%
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
