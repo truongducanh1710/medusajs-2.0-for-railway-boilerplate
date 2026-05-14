@@ -57,10 +57,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   try {
     // Lấy đơn trong ngày từ DB
-    let orders: any[] = await syncService.listPancakeOrders(
-      {},
-      { take: MAX_ORDERS, order: { created_at: "DESC" } }
-    )
+    let orders: any[]
+    try {
+      orders = await syncService.listPancakeOrders(
+        {},
+        { take: MAX_ORDERS, order: { created_at: "DESC" } }
+      )
+    } catch (listErr: any) {
+      runningUntil = 0
+      return res.status(500).json({ error: "listPancakeOrders failed", detail: listErr.message })
+    }
+
     orders = orders.filter((o: any) => {
       const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
       return d && d >= dayStart && d <= dayEnd && o.status === 0
@@ -89,13 +96,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           tags,
         })
         updated++
-      } catch {
+      } catch (orderErr: any) {
+        console.error(`[sync-notes] order ${order.id} failed:`, orderErr.message)
         failed++
       }
       await delay(REQUEST_DELAY_MS)
     }
 
     res.json({ ok: true, total: orders.length, updated, failed })
+  } catch (err: any) {
+    runningUntil = 0
+    return res.status(500).json({ error: "sync-notes failed", detail: err.message })
   } finally {
     runningUntil = 0
   }
