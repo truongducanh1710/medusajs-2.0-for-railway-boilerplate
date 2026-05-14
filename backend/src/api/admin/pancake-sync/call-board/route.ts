@@ -61,10 +61,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.status(500).json({ error: err.message })
   }
 
-  // Filter theo ngày
+  // Filter theo ngày + chỉ đơn mới (status = 0)
   orders = orders.filter((o: any) => {
     const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
-    return d && d >= dayStart && d <= dayEnd
+    return d && d >= dayStart && d <= dayEnd && o.status === 0
   })
 
   // Filter theo sale

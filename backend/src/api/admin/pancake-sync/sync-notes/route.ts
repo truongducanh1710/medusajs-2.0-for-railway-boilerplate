@@ -52,7 +52,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     )
     orders = orders.filter((o: any) => {
       const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
-      return d && d >= dayStart && d <= dayEnd
+      return d && d >= dayStart && d <= dayEnd && o.status === 0
     })
 
     let updated = 0
