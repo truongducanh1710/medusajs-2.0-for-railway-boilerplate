@@ -133,6 +133,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           customer_phone: body?.bill_phone_number ?? "",
           total: body?.total_price ?? 0,
           tracking_code: body?.partner?.extend_code ?? "",
+          pancake_created_at: body?.inserted_at ? new Date(body.inserted_at) : new Date(),
           data_quality: "partial",
           synced_at: new Date(),
         }])
