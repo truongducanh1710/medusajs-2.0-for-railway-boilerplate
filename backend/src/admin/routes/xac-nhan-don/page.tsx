@@ -48,6 +48,12 @@ const SOURCE_BADGE: Record<string, string> = {
 // ---- Note timeline modal ----
 
 function NoteModal({ order, onClose }: { order: any; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    navigator.clipboard.writeText(order.customer_phone)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
@@ -60,7 +66,18 @@ function NoteModal({ order, onClose }: { order: any; onClose: () => void }) {
         <div className="flex items-start justify-between">
           <div>
             <h3 className="font-bold text-base">{order.customer_name}</h3>
-            <p className="text-sm text-gray-500">{order.customer_phone}</p>
+            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+              <button
+                onClick={handleCopy}
+                className={`text-sm transition-colors ${copied ? "text-green-500" : "text-gray-500 hover:text-violet-600"}`}
+                title="Click để copy số điện thoại"
+              >
+                {copied ? "✓ Đã copy!" : `📋 ${order.customer_phone}`}
+              </button>
+              {order.id && (
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">#{order.id}</span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
@@ -139,7 +156,15 @@ const XacNhanDonPage = () => {
   const [lastRefresh, setLastRefresh] = useState(new Date())
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null)
   const LIMIT = 50
+
+  const copyPhone = (phone: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(phone)
+    setCopiedPhone(phone)
+    setTimeout(() => setCopiedPhone(null), 1500)
+  }
 
   const fetchData = async (p = page) => {
     setLoading(true)
@@ -332,7 +357,14 @@ const XacNhanDonPage = () => {
                   >
                     <td className="px-4 py-3">
                       <div className="font-medium">{o.customer_name}</div>
-                      <div className="text-gray-400 text-xs">{o.customer_phone}</div>
+                      <button
+                        onClick={(e) => copyPhone(o.customer_phone, e)}
+                        className={`text-xs mt-0.5 transition-colors ${copiedPhone === o.customer_phone ? "text-green-500" : "text-gray-400 hover:text-violet-600"}`}
+                        title="Click để copy số điện thoại"
+                      >
+                        {copiedPhone === o.customer_phone ? "✓ Đã copy!" : o.customer_phone}
+                      </button>
+                      {o.id && <div className="text-gray-300 text-xs">#{o.id}</div>}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-gray-600 max-w-xs truncate">
                       {o.product_summary || "—"}
