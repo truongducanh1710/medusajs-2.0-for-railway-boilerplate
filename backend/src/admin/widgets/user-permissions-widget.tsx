@@ -1,14 +1,33 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { useState } from "react"
-import { toast, Button } from "@medusajs/ui"
 import { apiFetch } from "../lib/api-client"
 import { PERMISSIONS, ROLE_PRESETS } from "../lib/permissions"
+
+const Btn = ({ onClick, disabled, children, variant = "secondary" }: {
+  onClick: () => void
+  disabled?: boolean
+  children: React.ReactNode
+  variant?: "primary" | "secondary"
+}) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`px-3 py-1.5 text-xs font-medium rounded border transition-colors disabled:opacity-50 ${
+      variant === "primary"
+        ? "bg-violet-600 text-white border-violet-600 hover:bg-violet-700"
+        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+    }`}
+  >
+    {children}
+  </button>
+)
 
 const UserPermissionsWidget = ({ data }: { data: any }) => {
   const [perms, setPerms] = useState<string[]>(
     Array.isArray(data?.metadata?.permissions) ? data.metadata.permissions : []
   )
   const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   const toggle = (p: string) =>
     setPerms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
@@ -17,6 +36,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
 
   const save = async () => {
     setSaving(true)
+    setMsg(null)
     try {
       const res = await apiFetch(`/admin/users/${data.id}`, {
         method: "POST",
@@ -25,15 +45,12 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
           metadata: { ...(data.metadata ?? {}), permissions: perms },
         }),
       })
-      if (res.ok) {
-        toast.success("Đã cập nhật quyền thành công")
-      } else {
-        toast.error("Lưu thất bại")
-      }
+      setMsg(res.ok ? { text: "Đã cập nhật quyền thành công", ok: true } : { text: "Lưu thất bại", ok: false })
     } catch {
-      toast.error("Lỗi kết nối")
+      setMsg({ text: "Lỗi kết nối", ok: false })
     } finally {
       setSaving(false)
+      setTimeout(() => setMsg(null), 3000)
     }
   }
 
@@ -42,18 +59,10 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-semibold text-base">Phân quyền truy cập</h3>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="secondary" size="small" onClick={() => applyPreset("admin")}>
-            Preset Admin
-          </Button>
-          <Button variant="secondary" size="small" onClick={() => applyPreset("marketing")}>
-            Marketing
-          </Button>
-          <Button variant="secondary" size="small" onClick={() => applyPreset("sale")}>
-            Sale
-          </Button>
-          <Button variant="secondary" size="small" onClick={() => setPerms([])}>
-            Xóa hết
-          </Button>
+          <Btn onClick={() => applyPreset("admin")}>Preset Admin</Btn>
+          <Btn onClick={() => applyPreset("marketing")}>Marketing</Btn>
+          <Btn onClick={() => applyPreset("sale")}>Sale</Btn>
+          <Btn onClick={() => setPerms([])}>Xóa hết</Btn>
         </div>
       </div>
 
@@ -83,13 +92,18 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
         ))}
       </div>
 
-      <div className="flex gap-3 items-center pt-2 border-t">
-        <Button onClick={save} disabled={saving} size="small">
+      <div className="flex gap-3 items-center pt-2 border-t flex-wrap">
+        <Btn onClick={save} disabled={saving} variant="primary">
           {saving ? "Đang lưu..." : "Lưu quyền"}
-        </Button>
+        </Btn>
         <span className="text-xs text-gray-400">
           {perms.length}/{Object.keys(PERMISSIONS).length} quyền được cấp
         </span>
+        {msg && (
+          <span className={`text-xs font-medium ${msg.ok ? "text-green-600" : "text-red-600"}`}>
+            {msg.text}
+          </span>
+        )}
       </div>
     </div>
   )

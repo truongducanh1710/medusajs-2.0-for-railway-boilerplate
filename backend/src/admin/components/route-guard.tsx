@@ -1,5 +1,4 @@
 import { useEffect } from "react"
-import { toast } from "@medusajs/ui"
 import { useCurrentPermissions } from "../lib/use-permissions"
 import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
 
@@ -31,7 +30,7 @@ export const RouteGuard = () => {
     const path = window.location.pathname.replace(/^\/app/, "")
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
       if (path.startsWith(prefix) && !has(perm)) {
-        toast.error("Bạn không có quyền truy cập trang này")
+        alert("Bạn không có quyền truy cập trang này")
         setTimeout(() => {
           window.location.href = "/app"
         }, 600)
