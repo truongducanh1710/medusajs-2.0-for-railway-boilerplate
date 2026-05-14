@@ -268,9 +268,24 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                   } as any)
                   updated++
                 } else {
-                  // Non-force: only update status if changed
                   const prev = existing[0]
-                  if (prev.status !== mapped.status) {
+                  const isPartial = prev.data_quality === "partial"
+                  if (isPartial) {
+                    // Partial row từ webhook — fill đầy đủ data
+                    const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
+                    const hasChanged = prev.status !== mapped.status
+                    await this.updatePancakeOrders({
+                      id: mapped.id,
+                      ...mapped,
+                      status_history: (hasChanged ? [
+                        ...prevHistory,
+                        { status: mapped.status, status_name: mapped.status_name, changed_at: new Date().toISOString(), source: "sync" },
+                      ] : prevHistory) as any,
+                      raw_version: "v1",
+                    } as any)
+                    updated++
+                  } else if (prev.status !== mapped.status) {
+                    // Non-force: chỉ update status nếu thay đổi
                     const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
                     await this.updatePancakeOrders({
                       id: mapped.id,
