@@ -1,18 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-function computeActionStatus(notes: any[], tags: any[]): string {
-  const tagNames = (tags ?? []).map((t: any) => String(t?.name ?? "").toLowerCase())
-  if (tagNames.some((t) => t.includes("xác nhận") || t.includes("cho đi"))) return "confirmed"
-  if (tagNames.some((t) => t.includes("hủy") || t.includes("cancel"))) return "cancelled"
-  if (tagNames.some((t) => t.includes("sale chốt") || t.includes("rmk") || t.includes("remarketing"))) return "confirmed"
-  const noteList = notes ?? []
-  const knmCount = noteList.filter((n: any) => String(n.message ?? "").toUpperCase().includes("KNM")).length
-  if (knmCount >= 3) return "knm_3"
-  if (knmCount === 2) return "knm_2"
-  if (knmCount === 1) return "knm_1"
-  if (noteList.length > 0) return "called"
-  return "no_action"
-}
+const CONFIRMED_STATUSES = [2, 3, 4, 5, 6]
+const CANCELLED_STATUSES = [-1, -2, 7]
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -21,7 +10,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const dayStart = new Date(`${date}T00:00:00+07:00`)
     const dayEnd   = new Date(`${date}T23:59:59+07:00`)
 
-    // Lấy tất cả đơn trong ngày bất kể status — để thấy cả đơn đã xác nhận/hủy
+    // Lấy tất cả đơn trong ngày bất kể status
     const all = await syncService.listPancakeOrders(
       {},
       { take: 1000, order: { pancake_created_at: "DESC" } }
@@ -47,18 +36,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       for (const o of list) {
         const notes = Array.isArray(o.notes) ? o.notes : []
         const tags  = Array.isArray(o.tags)  ? o.tags  : []
-        const as_ = computeActionStatus(notes, tags)
         total_notes += notes.length
 
-        if (as_ === "no_action") {
-          no_action++
-          if (o.pancake_created_at && now > dayEnd) overdue++
-        } else if (as_ === "called")     called++
-        else if (as_ === "knm_1")        knm_1++
-        else if (as_ === "knm_2")        knm_2++
-        else if (as_ === "knm_3")        knm_3_plus++
-        else if (as_ === "confirmed")    confirmed++
-        else if (as_ === "cancelled")    cancelled++
+        if (CONFIRMED_STATUSES.includes(o.status)) {
+          // Đơn đã lên kho — xác nhận thực sự
+          confirmed++
+        } else if (CANCELLED_STATUSES.includes(o.status)) {
+          cancelled++
+        } else {
+          // status=0 — còn chờ xử lý, tính từ notes/tags
+          const tagNames = tags.map((t: any) => String(t?.name ?? "").toLowerCase())
+          if (tagNames.some((t: string) => t.includes("hủy") || t.includes("cancel"))) {
+            cancelled++
+          } else {
+            const knmCount = notes.filter((n: any) =>
+              String(n.message ?? "").toUpperCase().includes("KNM")
+            ).length
+            if (knmCount >= 3)         knm_3_plus++
+            else if (knmCount === 2)   knm_2++
+            else if (knmCount === 1)   knm_1++
+            else if (notes.length > 0) called++
+            else {
+              no_action++
+              if (o.pancake_created_at && now > dayEnd) overdue++
+            }
+          }
+        }
       }
 
       const total = list.length

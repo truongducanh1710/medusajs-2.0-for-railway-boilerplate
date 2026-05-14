@@ -364,14 +364,14 @@ const BaoCaoPage = () => {
                       <tr>
                         <th className="text-left px-4 py-3 font-semibold text-gray-600">Sale</th>
                         <th className="text-center px-3 py-3 font-semibold text-gray-600">Tổng</th>
-                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Chưa t/đ</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Còn chờ</th>
                         <th className="text-center px-3 py-3 font-semibold text-gray-600">Đã gọi</th>
                         <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 1</th>
                         <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 2</th>
                         <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 3+</th>
-                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Xác nhận</th>
+                        <th className="text-center px-3 py-3 font-semibold text-gray-600">Lên kho</th>
                         <th className="text-center px-3 py-3 font-semibold text-gray-600">Hủy</th>
-                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Tỷ lệ XN</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Tỷ lệ lên kho</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
