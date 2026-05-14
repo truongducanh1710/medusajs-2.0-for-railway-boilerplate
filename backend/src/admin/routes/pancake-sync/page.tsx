@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback } from "react"
+import { apiFetch } from "../../lib/api-client"
 
 // ---- Helpers ----
 
@@ -62,9 +63,7 @@ const PancakeSyncPage = () => {
   // Poll job status
   const pollStatus = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/admin/pancake-sync/status?jobId=${id}`, {
-        credentials: "include",
-      })
+      const res = await apiFetch(`/admin/pancake-sync/status?jobId=${id}`)
       if (!res.ok) return
       const data = await res.json()
       setJobStatus(data)
@@ -116,10 +115,9 @@ const PancakeSyncPage = () => {
     setShowErrors(false)
 
     try {
-      const res = await fetch("/admin/pancake-sync", {
+      const res = await apiFetch("/admin/pancake-sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           from: toISO(fromDate),
           to: toISO(toDate, true),

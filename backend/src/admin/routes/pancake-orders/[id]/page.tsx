@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
+import { apiFetch } from "../../../lib/api-client"
 
 // Get route param without react-router-dom import
 const useOrderId = () => {
@@ -99,9 +100,7 @@ const PancakeOrderDetailPage = () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/admin/pancake-sync/orders/${id}`, {
-        credentials: "include",
-      })
+      const res = await apiFetch(`/admin/pancake-sync/orders/${id}`)
       if (!res.ok) {
         if (res.status === 404) throw new Error("Không tìm thấy đơn hàng")
         throw new Error(`Lỗi ${res.status}`)
@@ -123,9 +122,7 @@ const PancakeOrderDetailPage = () => {
     setRefreshing(true)
     try {
       // Call the existing pancake-status proxy to get latest Pancake status
-      const res = await fetch(`/admin/pancake-status?ids=${order.id}`, {
-        credentials: "include",
-      })
+      const res = await apiFetch(`/admin/pancake-status?ids=${order.id}`)
       if (res.ok) {
         const data = await res.json()
         const statusInfo = data.statuses?.[order.id]

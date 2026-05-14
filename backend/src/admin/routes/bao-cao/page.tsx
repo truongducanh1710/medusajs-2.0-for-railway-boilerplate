@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
+import { apiFetch } from "../../lib/api-client"
 
 // ---- Helpers ----
 
@@ -98,9 +99,8 @@ const BaoCaoPage = () => {
     setError(null)
     try {
       const { from, to } = getMonthRange(y, m)
-      const res = await fetch(
-        `/admin/pancake-sync/report?from=${encodeURIComponent(toISO(from))}&to=${encodeURIComponent(toISO(to))}`,
-        { credentials: "include" }
+      const res = await apiFetch(
+        `/admin/pancake-sync/report?from=${encodeURIComponent(toISO(from))}&to=${encodeURIComponent(toISO(to))}`
       )
       if (!res.ok) throw new Error(`Lỗi ${res.status}`)
       const data = await res.json()

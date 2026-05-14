@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
+import { apiFetch } from "../../lib/api-client"
 
 // ---- Formatters ----
 
@@ -124,10 +125,7 @@ const DonHangPage = () => {
       if (src && src !== "all") params.set("source", src)
       if (q) params.set("q", q)
 
-      const res = await fetch(
-        `/admin/pancake-sync/orders?${params.toString()}`,
-        { credentials: "include" }
-      )
+      const res = await apiFetch(`/admin/pancake-sync/orders?${params.toString()}`)
       const data = await res.json()
       const fetchedOrders = data.orders || []
       setOrders(fetchedOrders)
@@ -157,10 +155,7 @@ const DonHangPage = () => {
       const fields = [
         "id", "display_id", "payment_status", "fulfillment_status",
       ].join(",")
-      const res = await fetch(
-        `/admin/orders?limit=200&fields=${encodeURIComponent(fields)}&order=-created_at`,
-        { credentials: "include" }
-      )
+      const res = await apiFetch(`/admin/orders?limit=200&fields=${encodeURIComponent(fields)}&order=-created_at`)
       if (!res.ok) return
       const data = await res.json()
       const statuses: Record<string, any> = {}

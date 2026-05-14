@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
+import { apiFetch } from "../../lib/api-client"
 
 const PagesListPage = () => {
   const [pages, setPages] = useState<any[]>([])
@@ -10,7 +11,7 @@ const PagesListPage = () => {
 
   const fetchPages = async () => {
     try {
-      const res = await fetch("/admin/pages", { credentials: "include" })
+      const res = await apiFetch("/admin/pages")
       const data = await res.json()
       setPages(data.pages || [])
     } catch (e) {
@@ -24,9 +25,8 @@ const PagesListPage = () => {
 
   const createPage = async () => {
     if (!newTitle || !newSlug) return
-    await fetch("/admin/pages", {
+    await apiFetch("/admin/pages", {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: newTitle, slug: newSlug }),
     })
@@ -38,7 +38,7 @@ const PagesListPage = () => {
 
   const deletePage = async (id: string) => {
     if (!confirm("Xóa trang này?")) return
-    await fetch(`/admin/pages/${id}`, { method: "DELETE", credentials: "include" })
+    await apiFetch(`/admin/pages/${id}`, { method: "DELETE" })
     fetchPages()
   }
 

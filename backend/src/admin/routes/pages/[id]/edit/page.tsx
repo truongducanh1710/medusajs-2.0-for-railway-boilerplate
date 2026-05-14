@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { apiFetch } from "../../../lib/api-client"
 
 // Helper to get route param without react-router-dom import
 const usePageId = () => {
@@ -19,7 +20,7 @@ const PageEditorPage = () => {
 
   // Load page data
   useEffect(() => {
-    fetch(`/admin/pages/${id}`, { credentials: "include" })
+    apiFetch(`/admin/pages/${id}`)
       .then((r) => r.json())
       .then((data) => setPage(data.page))
   }, [id])
@@ -197,9 +198,8 @@ const PageEditorPage = () => {
     const content = JSON.stringify(editorRef.current.getProjectData())
     const status = publish ? "published" : "draft"
 
-    await fetch(`/admin/pages/${id}`, {
+    await apiFetch(`/admin/pages/${id}`, {
       method: "PUT",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content, status }),
     })
