@@ -9,7 +9,7 @@ const STATUS_VI: Record<number, string> = {
   4: "Đang giao",
   5: "Hoàn thành",
   6: "Đã gửi VC",
-  7: "Đã hủy",
+  7: "Đã xóa",
   9: "Đã gửi VC",
   11: "Chờ hàng",
   "-1": "Đã hủy",
