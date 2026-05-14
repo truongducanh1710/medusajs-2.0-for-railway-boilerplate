@@ -217,39 +217,25 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       let page = 1
       const pageSize = 50
       let totalPages = 1
-      // Pancake API không hỗ trợ filter theo ngày — trả về đơn mới nhất trước (DESC inserted_at).
-      // Dừng khi gặp trang đầu tiên toàn đơn nằm ngoài khoảng [from, to].
-      let reachedBefore = false
+      // Pancake API sort theo updated_at DESC (không phải inserted_at) — không thể dừng sớm.
+      // Phải đọc toàn bộ, insert đơn có inserted_at trong [from,to], update đơn đã có bất kể ngày.
 
-      while (page <= totalPages && !reachedBefore) {
+      while (page <= totalPages) {
         try {
           const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&page_size=${pageSize}&page_number=${page}`
 
           const res = await fetchWithRetry(url)
           const body: PancakeListResponse = await res.json()
 
-          // Normalize response — Pancake may wrap in different keys
           const orders: any[] = body.data ?? body.orders ?? []
           totalPages = body.total_pages ?? 1
 
-          // Nếu cả trang đều sau to → bỏ qua và tiếp tục (đơn mới hơn khoảng)
-          // Nếu cả trang đều trước from → dừng hẳn (đã qua khoảng)
-          const ordersInRange = orders.filter((raw: any) => {
-            const d = raw.inserted_at ? new Date(raw.inserted_at) : null
-            if (!d) return true // không có ngày → include
-            return d >= from && d <= to
-          })
-          const hasAnyBeforeFrom = orders.some((raw: any) => {
-            const d = raw.inserted_at ? new Date(raw.inserted_at) : null
-            return d && d < from
-          })
-          if (hasAnyBeforeFrom) reachedBefore = true
-
-          for (const raw of ordersInRange) {
+          for (const raw of orders) {
             try {
               const mapped = mapPancakeOrder(raw)
               if (!mapped.id) continue
 
+              // Kiểm tra đơn đã có trong DB chưa
               const existing = await this.listPancakeOrders(
                 { id: mapped.id },
                 { take: 1 }
@@ -305,7 +291,11 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                   }
                 }
               } else {
-                // Insert new
+                // Insert mới — chỉ import đơn có inserted_at trong khoảng [from, to]
+                const orderDate = mapped.pancake_created_at as Date | null
+                if (orderDate && (orderDate < from || orderDate > to)) {
+                  continue // bỏ qua đơn ngoài khoảng ngày khi insert lần đầu
+                }
                 await this.createPancakeOrders([mapped])
                 imported++
               }

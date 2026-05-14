@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHmac, timingSafeEqual } from "crypto"
+import { Modules } from "@medusajs/framework/utils"
 import { PANCAKE_WEBHOOK_SECRET } from "../../../../lib/constants"
 
 const STATUS_VI: Record<number, string> = {
@@ -144,7 +145,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     // --- 2. Update Medusa order metadata (backward compat) ---
     try {
-      const orderService = req.scope.resolve("orderModuleService") as any
+      const orderService = req.scope.resolve(Modules.ORDER) as any
 
       const orders = await orderService.listOrders(
         {},
