@@ -452,6 +452,19 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       }
     }
 
+    // One-time heal: fix status_name sai từ code cũ — chỉ lấy đơn status=7 vì đó là mapping từng bị sai
+    try {
+      const wrongRows = await this.listPancakeOrders({ status: 7 }, { take: 100 })
+      for (const o of wrongRows) {
+        if (o.status_name !== "Đã xóa") {
+          await this.updatePancakeOrders({ id: o.id, status_name: "Đã xóa" } as any)
+          console.log(`[syncActiveOrders] Healed status_name for #${o.id}: "${o.status_name}" → "Đã xóa"`)
+        }
+      }
+    } catch (healErr: any) {
+      console.warn("[syncActiveOrders] status_name heal failed:", healErr.message)
+    }
+
     console.log(`[syncActiveOrders] Done — total=${total} updated=${updated} created=${created} errors=${errors}`)
     return { updated, created, total, errors }
   }
