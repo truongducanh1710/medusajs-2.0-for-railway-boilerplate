@@ -166,45 +166,54 @@ const XacNhanDonPage = () => {
     }
   }
 
+  // Sync active orders (status=0) từ Pancake — silent option để auto-trigger không hiện msg
+  const syncActiveOrders = async (silent = false) => {
+    setSyncing(true)
+    if (!silent) setSyncMsg(null)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/active-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      })
+      const data = await res.json()
+      if (res.status === 429) {
+        if (!silent) setSyncMsg(data.error ?? "Đang sync, thử lại sau")
+      } else if (res.ok) {
+        if (!silent) setSyncMsg(`✓ ${data.updated} cập nhật / ${data.created} mới / ${data.total} tổng`)
+        await fetchData(page)
+      } else {
+        if (!silent) setSyncMsg("Sync thất bại")
+      }
+    } catch {
+      if (!silent) setSyncMsg("Lỗi kết nối")
+    } finally {
+      setSyncing(false)
+      if (!silent) setTimeout(() => setSyncMsg(null), 5000)
+    }
+  }
+
+  // Auto-sync khi mount lần đầu (silent — không hiện msg)
+  const didInitSync = useRef(false)
+  useEffect(() => {
+    if (didInitSync.current) return
+    didInitSync.current = true
+    syncActiveOrders(true)
+  }, [])
+
   // Fetch khi filter thay đổi
   useEffect(() => {
     setPage(0)
     fetchData(0)
   }, [date, sellerFilter, statusFilter])
 
-  // Auto refresh mỗi 2 phút
+  // Auto refresh mỗi 2 phút — silent sync + reload
   useEffect(() => {
-    const id = setInterval(() => fetchData(page), 2 * 60 * 1000)
+    const id = setInterval(() => syncActiveOrders(true), 2 * 60 * 1000)
     return () => clearInterval(id)
   }, [date, sellerFilter, statusFilter, page])
 
   const minutesAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 60000)
-
-  const syncNotes = async () => {
-    setSyncing(true)
-    setSyncMsg(null)
-    try {
-      const res = await apiFetch("/admin/pancake-sync/sync-notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date }),
-      })
-      const data = await res.json()
-      if (res.status === 429) {
-        setSyncMsg(data.error ?? "Đang sync, thử lại sau")
-      } else if (res.ok) {
-        setSyncMsg(`✓ Cập nhật ${data.updated}/${data.total} đơn`)
-        fetchData(page)
-      } else {
-        setSyncMsg("Sync thất bại")
-      }
-    } catch {
-      setSyncMsg("Lỗi kết nối")
-    } finally {
-      setSyncing(false)
-      setTimeout(() => setSyncMsg(null), 5000)
-    }
-  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
@@ -221,11 +230,11 @@ const XacNhanDonPage = () => {
             <span className="text-xs text-gray-500">{syncMsg}</span>
           )}
           <button
-            onClick={syncNotes}
+            onClick={() => syncActiveOrders(false)}
             disabled={syncing}
             className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 transition-colors disabled:opacity-50"
           >
-            {syncing ? "⏳ Đang sync..." : "📥 Sync notes"}
+            {syncing ? "⏳ Đang đồng bộ..." : "📥 Đồng bộ Pancake"}
           </button>
           <button
             onClick={() => fetchData(page)}

@@ -2,6 +2,7 @@ import { MedusaService } from "@medusajs/framework/utils"
 import PancakeOrder from "./models/pancake-order"
 import PancakeSyncJob from "./models/pancake-sync-job"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../lib/constants"
+import { extractNotesForOrder, extractTags } from "./extractors"
 
 // ---- Types ----
 
@@ -371,6 +372,88 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
    */
   detectSource(order: any): string {
     return detectSource(order)
+  }
+
+  /**
+   * Sync toàn bộ đơn status=0 (đơn mới chưa xác nhận) từ Pancake.
+   *
+   * Pancake list endpoint trả về đầy đủ customer.notes + tags trong response — không cần
+   * fetch detail từng đơn. Lọc notes theo order_id (UUID extract từ order_link) để tránh
+   * lấy nhầm note của đơn khác cùng khách.
+   *
+   * Snapshot strategy: replace toàn bộ notes/tags mỗi lần sync. POS là source of truth.
+   */
+  async syncActiveOrders(): Promise<{ updated: number; created: number; total: number; errors: number }> {
+    let page = 1
+    const pageSize = 200
+    let totalPages = 1
+    let updated = 0
+    let created = 0
+    let total = 0
+    let errors = 0
+
+    while (page <= totalPages) {
+      try {
+        const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&status=0&page_size=${pageSize}&page_number=${page}`
+        const res = await fetchWithRetry(url)
+        const body: PancakeListResponse = await res.json()
+        totalPages = body.total_pages ?? 1
+
+        const orders: any[] = body.data ?? body.orders ?? []
+        total += orders.length
+
+        for (const raw of orders) {
+          try {
+            const mapped = mapPancakeOrder(raw)
+            if (!mapped.id) continue
+
+            const { notes, lastNoteAt, callCount } = extractNotesForOrder(raw)
+            const tags = extractTags(raw)
+
+            const existing = await this.listPancakeOrders({ id: mapped.id }, { take: 1 })
+
+            if (existing.length > 0) {
+              await this.updatePancakeOrders({
+                id: mapped.id,
+                ...mapped,
+                notes,
+                last_note_at: lastNoteAt,
+                call_count: callCount,
+                tags,
+                data_quality: "complete",
+                raw_version: "v1",
+              } as any)
+              updated++
+            } else {
+              await this.createPancakeOrders([{
+                ...mapped,
+                notes,
+                last_note_at: lastNoteAt,
+                call_count: callCount,
+                tags,
+                raw_version: "v1",
+              }])
+              created++
+            }
+          } catch (orderErr: any) {
+            console.error(`[syncActiveOrders] Order ${raw.system_id ?? raw.id} failed:`, orderErr.message)
+            errors++
+          }
+        }
+
+        if (page < totalPages) {
+          await delay(200)
+        }
+        page++
+      } catch (pageErr: any) {
+        console.error(`[syncActiveOrders] Page ${page} failed:`, pageErr.message)
+        errors++
+        break
+      }
+    }
+
+    console.log(`[syncActiveOrders] Done — total=${total} updated=${updated} created=${created} errors=${errors}`)
+    return { updated, created, total, errors }
   }
 
   /**
