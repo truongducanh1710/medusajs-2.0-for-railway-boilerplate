@@ -59,18 +59,34 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const dayStart = new Date(`${date}T00:00:00+07:00`)
     const dayEnd = new Date(`${date}T23:59:59+07:00`)
 
-    let orders: any[]
+    // Lấy nhiều batch để tìm đủ đơn trong ngày (đơn cũ bị đẩy ra ngoài top 100)
+    let orders: any[] = []
     try {
-      orders = await syncService.listPancakeOrders({}, { take: MAX_ORDERS, order: { created_at: "DESC" } })
+      let offset = 0
+      const batchSize = 500
+      while (true) {
+        const batch: any[] = await syncService.listPancakeOrders(
+          {},
+          { take: batchSize, skip: offset, order: { pancake_created_at: "DESC" } }
+        )
+        if (!batch.length) break
+        // Lọc đơn trong ngày
+        const inDay = batch.filter((o: any) => {
+          const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
+          return d && d >= dayStart && d <= dayEnd && o.status === 0
+        })
+        orders.push(...inDay)
+        // Nếu batch cuối có pancake_created_at nhỏ hơn dayStart thì dừng
+        const last = batch[batch.length - 1]
+        const lastDate = last?.pancake_created_at ? new Date(last.pancake_created_at) : null
+        if (!lastDate || lastDate < dayStart) break
+        offset += batchSize
+        if (orders.length >= MAX_ORDERS) break
+      }
     } catch (e: any) {
       runningUntil = 0
       return res.status(500).json({ error: "list_failed", detail: e.message })
     }
-
-    orders = orders.filter((o: any) => {
-      const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
-      return d && d >= dayStart && d <= dayEnd && o.status === 0
-    })
 
     let updated = 0
     let failed = 0
