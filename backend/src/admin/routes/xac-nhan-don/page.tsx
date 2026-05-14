@@ -137,6 +137,8 @@ const XacNhanDonPage = () => {
   const [page, setPage] = useState(0)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const LIMIT = 50
 
   const fetchData = async (p = page) => {
@@ -178,6 +180,32 @@ const XacNhanDonPage = () => {
 
   const minutesAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 60000)
 
+  const syncNotes = async () => {
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/sync-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      })
+      const data = await res.json()
+      if (res.status === 429) {
+        setSyncMsg(data.error ?? "Đang sync, thử lại sau")
+      } else if (res.ok) {
+        setSyncMsg(`✓ Cập nhật ${data.updated}/${data.total} đơn`)
+        fetchData(page)
+      } else {
+        setSyncMsg("Sync thất bại")
+      }
+    } catch {
+      setSyncMsg("Lỗi kết nối")
+    } finally {
+      setSyncing(false)
+      setTimeout(() => setSyncMsg(null), 5000)
+    }
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
       {/* Header */}
@@ -188,12 +216,24 @@ const XacNhanDonPage = () => {
             Cập nhật {minutesAgo === 0 ? "vừa xong" : `${minutesAgo} phút trước`}
           </p>
         </div>
-        <button
-          onClick={() => fetchData(page)}
-          className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
-          🔄 Làm mới
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {syncMsg && (
+            <span className="text-xs text-gray-500">{syncMsg}</span>
+          )}
+          <button
+            onClick={syncNotes}
+            disabled={syncing}
+            className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 transition-colors disabled:opacity-50"
+          >
+            {syncing ? "⏳ Đang sync..." : "📥 Sync notes"}
+          </button>
+          <button
+            onClick={() => fetchData(page)}
+            className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          >
+            🔄 Làm mới
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
