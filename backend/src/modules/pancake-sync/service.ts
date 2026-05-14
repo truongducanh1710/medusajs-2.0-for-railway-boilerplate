@@ -432,7 +432,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                 call_count: callCount,
                 tags,
                 raw_version: "v1",
-              }])
+              }] as any)
               created++
             }
           } catch (orderErr: any) {
