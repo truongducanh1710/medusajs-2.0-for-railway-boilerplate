@@ -72,13 +72,13 @@ function getPancakeStatusCls(status: number): string {
 
 function SourceBadge({ source }: { source: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    medusa: { label: "Website", cls: "bg-indigo-100 text-indigo-700" },
-    facebook: { label: "Facebook", cls: "bg-blue-100 text-blue-700" },
-    zalo: { label: "Zalo", cls: "bg-sky-100 text-sky-700" },
-    tiktok: { label: "TikTok", cls: "bg-pink-100 text-pink-700" },
-    shopee: { label: "Shopee", cls: "bg-orange-100 text-orange-700" },
-    manual: { label: "Thủ công", cls: "bg-gray-100 text-gray-700" },
-    unknown: { label: "Khác", cls: "bg-gray-100 text-gray-600" },
+    medusa: { label: "🌐 Website", cls: "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300" },
+    facebook: { label: "📘 Facebook", cls: "bg-blue-100 text-blue-800 ring-1 ring-blue-300" },
+    zalo: { label: "💬 Zalo", cls: "bg-sky-100 text-sky-800 ring-1 ring-sky-300" },
+    tiktok: { label: "🎵 TikTok", cls: "bg-pink-100 text-pink-800 ring-1 ring-pink-300" },
+    shopee: { label: "🛒 Shopee", cls: "bg-orange-100 text-orange-800 ring-1 ring-orange-300" },
+    manual: { label: "✏️ Webcake", cls: "bg-yellow-100 text-yellow-800 ring-1 ring-yellow-300" },
+    unknown: { label: "❓ Khác", cls: "bg-gray-100 text-gray-600 ring-1 ring-gray-300" },
   }
   const s = map[source] || { label: source, cls: "bg-gray-100 text-gray-600" }
   return (
@@ -98,6 +98,7 @@ const SOURCES = [
   { value: "zalo", label: "Zalo" },
   { value: "tiktok", label: "TikTok" },
   { value: "shopee", label: "Shopee" },
+  { value: "manual", label: "Webcake" },
   { value: "unknown", label: "Khác" },
 ]
 
