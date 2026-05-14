@@ -59,7 +59,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // Lấy đơn trong ngày từ DB
     let orders: any[] = await syncService.listPancakeOrders(
       {},
-      { take: MAX_ORDERS, order: { pancake_created_at: "DESC" } }
+      { take: MAX_ORDERS, order: { created_at: "DESC" } }
     )
     orders = orders.filter((o: any) => {
       const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
