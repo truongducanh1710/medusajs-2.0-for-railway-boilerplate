@@ -91,14 +91,17 @@ function detectSource(order: any): string {
   if (srcName === "shopee") return "shopee"
   if (srcName === "lazada") return "lazada"
   // "Webcake" = tạo thủ công trên Pancake — nhưng đơn từ phanviet.vn cũng là Webcake
-  // Phân biệt bằng tag "phanviet-web" hoặc p_utm_source = "phanviet.vn"
-  if (srcName === "webcake") {
+  // Phân biệt bằng tag "phanviet-web", p_utm_source = "phanviet.vn", hoặc note chứa "[phanviet.vn]"
+  if (srcName === "webcake" || srcName === "") {
     const tags: string[] = Array.isArray(order.tags)
       ? order.tags.map((t: any) => String(t?.name ?? t).toLowerCase())
       : []
     if (tags.includes("phanviet-web")) return "medusa"
     const utm0 = String(order.p_utm_source ?? "").toLowerCase()
     if (utm0 === "phanviet.vn") return "medusa"
+    const note = String(order.note ?? "").toLowerCase()
+    if (note.includes("[phanviet.vn]")) return "medusa"
+    if (srcName === "") return "unknown"
     return "manual"
   }
 

@@ -97,7 +97,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const cod = isSepay ? 0 : totalPrice
 
   // Ghi chú: kết hợp ghi chú khách + gifts + payment method
-  const noteparts: string[] = []
+  const noteparts: string[] = ["[phanviet.vn]"]
   if (order.metadata?.note) noteparts.push(order.metadata.note as string)
   if (isSepay) noteparts.push('Đã thanh toán SePay')
 
