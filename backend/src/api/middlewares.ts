@@ -48,7 +48,7 @@ export default defineMiddlewares({
     { matcher: "/admin/product-content*", method: ["POST"], middlewares: [requirePerm("page.san-pham.edit")] },
     { matcher: "/admin/pancake-status*", middlewares: [requirePerm("page.don-hang.view")] },
 
-    // Quản lý user
-    { matcher: "/admin/users*", method: ["POST", "PUT", "DELETE", "PATCH"], middlewares: [requirePerm("users.manage")] },
+    // Quản lý user — không chặn ở đây vì Medusa native auth đã guard /admin/users
+    // requirePerm chạy trước auth_context được inject nên sẽ 401
   ],
 })
