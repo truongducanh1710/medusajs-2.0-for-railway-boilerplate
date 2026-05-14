@@ -12,7 +12,18 @@ function delay(ms: number) {
 }
 
 function extractNotes(raw: any): { notes: any[]; lastNoteAt: Date | null; callCount: number } {
-  const customerNotes: any[] = raw?.customer?.notes ?? []
+  const orderUUID = (() => {
+    try {
+      const link: string = raw?.order_link ?? ""
+      return new URL(link).searchParams.get("order_id") ?? ""
+    } catch { return "" }
+  })()
+
+  const allNotes: any[] = raw?.customer?.notes ?? []
+  const customerNotes = orderUUID
+    ? allNotes.filter((n: any) => String(n.order_id ?? "") === orderUUID)
+    : allNotes
+
   const notes = customerNotes.map((n: any) => ({
     message: n.message ?? "",
     by: n.created_by?.name ?? n.created_by?.fb_name ?? "",
