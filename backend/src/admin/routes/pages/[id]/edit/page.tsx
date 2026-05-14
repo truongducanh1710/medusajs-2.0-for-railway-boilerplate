@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { apiFetch } from "../../../lib/api-client"
+import { apiFetch } from "../../../../lib/api-client"
 
 // Helper to get route param without react-router-dom import
 const usePageId = () => {
