@@ -19,6 +19,20 @@ if (!fs.existsSync(medusaBin)) {
 
 console.log(`[startup] Medusa server directory: ${medusaServerPath}`);
 console.log(`[startup] Medusa executable: ${medusaBin}`);
+
+// Run migrations before starting
+console.log('[startup] Running db:migrate...');
+const { spawnSync } = require('child_process');
+const migrateResult = spawnSync(medusaBin, ['db:migrate'], {
+  cwd: medusaServerPath,
+  stdio: 'inherit',
+});
+if (migrateResult.status !== 0) {
+  console.error('[startup] db:migrate failed, aborting');
+  process.exit(migrateResult.status || 1);
+}
+console.log('[startup] db:migrate done');
+
 console.log('[startup] Launching medusa start --verbose');
 
 const child = spawn(medusaBin, ['start', '--verbose'], {
