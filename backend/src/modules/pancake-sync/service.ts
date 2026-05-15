@@ -274,7 +274,14 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                 const prev = existing[0]
 
                 // Skip terminal-in-DB orders that haven't changed status
-                if (!opts?.force && TERMINAL_STATUSES.has(prev.status) && prev.status === mapped.status) {
+                // (BUT: nếu row đang `partial` từ webhook → vẫn cần fill data đầy đủ, không skip)
+                const isPartial = prev.data_quality === "partial"
+                if (
+                  !opts?.force &&
+                  !isPartial &&
+                  TERMINAL_STATUSES.has(prev.status) &&
+                  prev.status === mapped.status
+                ) {
                   skippedTerminal++
                   pageTerminalCount++
                   continue
@@ -305,7 +312,6 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                   } as any)
                   updated++
                 } else {
-                  const isPartial = prev.data_quality === "partial"
                   if (isPartial) {
                     // Partial row từ webhook — fill đầy đủ data
                     const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
@@ -345,7 +351,13 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                 // Insert mới — chỉ import đơn có inserted_at trong khoảng [from, to]
                 const orderDate = mapped.pancake_created_at as Date | null
                 if (orderDate && (orderDate < from || orderDate > to)) {
-                  continue // bỏ qua đơn ngoài khoảng ngày khi insert lần đầu
+                  // Đơn cũ ngoài date range, chưa có trong DB:
+                  // - Nếu Pancake đã terminal → coi như "stable", đếm vào pageTerminalCount để early-stop
+                  // - Nếu chưa terminal → vẫn skip nhưng KHÔNG đếm (không kích early-stop)
+                  if (!opts?.force && TERMINAL_STATUSES.has(mapped.status)) {
+                    pageTerminalCount++
+                  }
+                  continue
                 }
                 await this.createPancakeOrders([mapped])
                 imported++

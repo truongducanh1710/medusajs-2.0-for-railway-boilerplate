@@ -318,18 +318,22 @@ const PancakeSyncPage = () => {
           })()}
 
           {/* Hint badges — sync optimization signals */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {(jobStatus.stats?.skipped_terminal ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-                ⏭️ Bỏ qua {jobStatus.stats.skipped_terminal} đơn đã chốt cuối
-              </span>
-            )}
-            {jobStatus.stats?.stopped_early_at_page != null && (
-              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-1">
-                 Dừng sớm ở trang {jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}
-              </span>
-            )}
-          </div>
+          {((jobStatus.stats?.skipped_terminal ?? 0) > 0 || jobStatus.stats?.stopped_early_at_page != null) && (
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {(jobStatus.stats?.skipped_terminal ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 rounded-full px-2.5 py-1">
+                  <span aria-hidden>⏭️</span>
+                  Bỏ qua <b>{jobStatus.stats.skipped_terminal.toLocaleString("vi-VN")}</b> đơn đã chốt cuối
+                </span>
+              )}
+              {jobStatus.stats?.stopped_early_at_page != null && (
+                <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-1">
+                  <span aria-hidden>🛑</span>
+                  Dừng sớm ở trang <b>{jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}</b> — các page sau toàn đơn cũ
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Stats cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
