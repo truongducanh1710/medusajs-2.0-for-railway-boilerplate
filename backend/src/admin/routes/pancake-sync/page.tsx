@@ -230,7 +230,7 @@ const PancakeSyncPage = () => {
       </div>
 
       {/* Action */}
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex items-center gap-3 flex-wrap">
         <button
           onClick={startSync}
           disabled={isRunning || !fromDate || !toDate}
@@ -250,6 +250,32 @@ const PancakeSyncPage = () => {
             Ngừng theo dõi
           </button>
         )}
+        <div className="ml-auto">
+          <button
+            onClick={async () => {
+              if (!confirm("Đánh dấu TẤT CẢ job đang running/queued thành failed?\n\nDùng khi sync bị stuck (backend restart). KHÔNG dùng nếu sync thật sự đang chạy.")) return
+              try {
+                const res = await apiFetch("/admin/pancake-sync/cleanup", { method: "POST" })
+                const data = await res.json()
+                if (!res.ok) {
+                  alert(`Lỗi: ${data.error}`)
+                  return
+                }
+                alert(`✅ Đã cleanup ${data.cleaned} job stuck`)
+                setSyncing(false)
+                setJobId(null)
+                setJobStatus(null)
+                setError(null)
+              } catch (err: any) {
+                alert(`Lỗi: ${err.message}`)
+              }
+            }}
+            className="text-xs text-gray-500 hover:text-red-600 underline"
+            title="Mark tất cả job running/queued thành failed (dùng khi UI bị stuck vào zombie job)"
+          >
+            🧹 Cleanup zombie jobs
+          </button>
+        </div>
       </div>
 
       {/* Error */}

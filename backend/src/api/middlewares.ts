@@ -38,6 +38,7 @@ export default defineMiddlewares({
 
     // Custom routes — permission guards
     { matcher: "/admin/pancake-sync", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
+    { matcher: "/admin/pancake-sync/cleanup", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
     { matcher: "/admin/pancake-sync/active-orders", method: ["POST"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/status*", method: ["GET"], middlewares: [requirePerm("page.pancake-sync.view")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
