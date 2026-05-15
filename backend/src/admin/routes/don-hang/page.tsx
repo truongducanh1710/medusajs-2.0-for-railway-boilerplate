@@ -59,11 +59,11 @@ function FulfillmentBadge({ status }: { status: string }) {
   return <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${s.cls}`}>{s.label}</span>
 }
 
-// Mapping đúng theo Pancake (verify bằng partner_status thật)
+// Mapping đúng theo Pancake (verify bằng status_name thật từ API)
 const STATUS_VI: Record<number, string> = {
   0: "Chờ xử lý", 1: "Sale đã chốt", 2: "Đang giao", 3: "Giao thành công",
-  4: "Đang hoàn về", 5: "Đã hoàn về kho", 6: "Đã gửi VC", 7: "Đã xóa",
-  9: "Chờ VTP lấy", 11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
+  4: "Đang hoàn về", 5: "Đã hoàn về kho", 6: "Đã hủy", 7: "Đã xóa",
+  11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
 }
 
 function getPancakeStatusLabel(status: number): string {
@@ -74,11 +74,11 @@ function getPancakeStatusCls(status: number): string {
   // Xanh lá = giao thành công (revenue thực thu)
   if (status === 3) return "bg-green-100 text-green-700"
   // Đỏ = hủy/xóa/hoàn về kho (mất tiền)
-  if (status === 7 || status === -1 || status === 5) return "bg-red-100 text-red-700"
+  if (status === 7 || status === -1 || status === 5 || status === 6) return "bg-red-100 text-red-700"
   // Tím = hoàn hàng manual / đang hoàn về
   if (status === -2 || status === 4) return "bg-purple-100 text-purple-700"
   // Xanh dương = đang vận chuyển
-  if (status === 2 || status === 6 || status === 9) return "bg-blue-100 text-blue-700"
+  if (status === 2) return "bg-blue-100 text-blue-700"
   // Vàng = chờ xử lý
   if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"
   // Cam = sale đã chốt, chưa lên kho

@@ -1,14 +1,12 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-// Mapping đúng theo Pancake (verify bằng partner_status thật):
-//   2 = VTP đã lấy, đang giao
-//   3 = giao thành công (delivered)
-//   6, 9 = đã đẩy VTP (đã chốt sale)
-//   4 = đang hoàn về, 5 = đã hoàn về kho (mất tiền) → cancelled
-//   -1 = hủy, -2 = hoàn manual, 7 = xóa
-// "confirmed" = đã chốt sale = đã đẩy ra VTP (gồm cả đang giao và đã giao)
-const CONFIRMED_STATUSES = [2, 3, 6, 9]
-const CANCELLED_STATUSES = [-1, -2, 4, 5, 7]
+// Mapping đúng theo Pancake (verify bằng status_name thật từ API):
+//   2 = shipped (đang giao), 3 = delivered (giao thành công)
+//   4 = returning (đang hoàn về), 5 = returned (đã hoàn về kho)
+//   6 = canceled (đã hủy bởi sale/admin), 7 = deleted
+// "confirmed" = đã chốt sale thực sự = đã đẩy ra VTP và đang/đã giao
+const CONFIRMED_STATUSES = [2, 3]
+const CANCELLED_STATUSES = [-1, -2, 4, 5, 6, 7]
 
 function dayRangeVN(date: string) {
   return {

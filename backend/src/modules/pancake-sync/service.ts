@@ -62,10 +62,11 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 
 // ---- Status helpers ----
 
-// Mapping theo Pancake thực tế (verify bằng partner_status):
-//   0=mới về, 1=sale chốt, 9=chờ VTP lấy, 2=VTP đã lấy đang giao,
+// Mapping theo Pancake thực tế (verify bằng status_name từ API):
+//   0=new (mới về), 1=submitted (sale chốt), 2=shipped (đang giao),
 //   3=delivered (giao thành công), 4=returning (đang hoàn về),
-//   5=returned (đã hoàn về kho), 7=deleted, -1=cancelled, -2=hoàn hàng manual
+//   5=returned (đã hoàn về kho), 6=canceled (đã hủy bởi sale/admin),
+//   7=deleted, 11=waitting (chờ hàng)
 const STATUS_VI: Record<number, string> = {
   0: "Chờ xử lý",
   1: "Sale đã chốt",
@@ -73,9 +74,8 @@ const STATUS_VI: Record<number, string> = {
   3: "Giao thành công",
   4: "Đang hoàn về",
   5: "Đã hoàn về kho",
-  6: "Đã gửi VC",
+  6: "Đã hủy",
   7: "Đã xóa",
-  9: "Chờ VTP lấy",
   11: "Chờ hàng",
   "-1": "Đã hủy",
   "-2": "Hoàn hàng",
@@ -89,11 +89,12 @@ function statusLabel(status: number): string {
 
 /**
  * Terminal statuses: orders that never change again on Pancake POS.
- * 3=Giao thành công, 5=Đã hoàn về kho, 7=Đã xóa, -1=Đã hủy, -2=Hoàn hàng manual.
+ * 3=Giao thành công, 5=Đã hoàn về kho, 6=Đã hủy (canceled), 7=Đã xóa,
+ * -1=Đã hủy (legacy), -2=Hoàn hàng manual (legacy).
  *
  * Status 4 "Đang hoàn về" is NOT terminal — still tracked until it becomes 5.
  */
-const TERMINAL_STATUSES = new Set([3, 5, 7, -1, -2])
+const TERMINAL_STATUSES = new Set([3, 5, 6, 7, -1, -2])
 
 /**
  * Stop early if N consecutive pages are "stable" — meaning either:
@@ -605,9 +606,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     }
 
     // One-time heal: fix status_name sai từ code cũ (mapping đã update đúng theo Pancake)
-    // Heal tất cả status đã đổi label so với code cũ
+    // Status 6 đặc biệt: trước mapped là "Đã gửi VC", giờ đúng là "Đã hủy"
     try {
-      const statusesToHeal = [1, 2, 3, 4, 5, 7, 9]
+      const statusesToHeal = [1, 2, 3, 4, 5, 6, 7]
       for (const st of statusesToHeal) {
         const wrongRows = await this.listPancakeOrders({ status: st }, { take: 500 })
         const expected = statusLabel(st)

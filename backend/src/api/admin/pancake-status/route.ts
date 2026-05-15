@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../../lib/constants"
 
-// Mapping đúng theo Pancake (verify bằng partner_status thật)
+// Mapping đúng theo Pancake (verify bằng status_name thật từ API)
 const STATUS_VI: Record<number, string> = {
   0: "Chờ xử lý",
   1: "Sale đã chốt",
@@ -9,9 +9,8 @@ const STATUS_VI: Record<number, string> = {
   3: "Giao thành công",
   4: "Đang hoàn về",
   5: "Đã hoàn về kho",
-  6: "Đã gửi VC",
+  6: "Đã hủy",
   7: "Đã xóa",
-  9: "Chờ VTP lấy",
   11: "Chờ hàng",
   "-1": "Đã hủy",
   "-2": "Hoàn hàng",
@@ -23,9 +22,9 @@ function getStatusLabel(status: number): string {
 
 function getStatusCls(status: number): string {
   if (status === 3) return "bg-green-100 text-green-700"
-  if (status === 7 || status === -1 || status === 5) return "bg-red-100 text-red-700"
+  if (status === 7 || status === -1 || status === 5 || status === 6) return "bg-red-100 text-red-700"
   if (status === -2 || status === 4) return "bg-purple-100 text-purple-700"
-  if (status === 2 || status === 6 || status === 9) return "bg-blue-100 text-blue-700"
+  if (status === 2) return "bg-blue-100 text-blue-700"
   if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"
   if (status === 1) return "bg-orange-100 text-orange-700"
   return "bg-gray-100 text-gray-600"
