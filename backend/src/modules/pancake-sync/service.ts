@@ -192,9 +192,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     // 2) Reject nếu đã có job thực sự đang chạy trong 30 phút qua
     const recentRunning = await this.listPancakeSyncJobs(
       {
-        status: ["queued", "running"] as any,
+        status: { $in: ["queued", "running"] } as any,
         started_at: { $gte: new Date(Date.now() - 30 * 60 * 1000) } as any,
-      },
+      } as any,
       { take: 1 }
     )
     if (recentRunning.length > 0) {
@@ -230,9 +230,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       const cutoff = new Date(Date.now() - 30 * 60 * 1000)
       const zombies = await this.listPancakeSyncJobs(
         {
-          status: ["queued", "running"] as any,
+          status: { $in: ["queued", "running"] } as any,
           started_at: { $lt: cutoff } as any,
-        },
+        } as any,
         { take: 50 }
       )
       for (const z of zombies as any[]) {
