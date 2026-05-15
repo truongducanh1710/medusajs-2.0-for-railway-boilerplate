@@ -204,17 +204,22 @@ const PancakeSyncPage = () => {
         </div>
 
         {/* Force checkbox */}
-        <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
+        <label className="flex items-start gap-2 mt-4 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={force}
             onChange={(e) => setForce(e.target.checked)}
             disabled={isRunning}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-400"
+            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-400 mt-0.5"
           />
-          <span className="text-sm text-gray-600">
-            Force re-sync (ghi đè tất cả dữ liệu, kể cả đơn đã sync)
-          </span>
+          <div>
+            <span className="text-sm text-gray-700 font-medium">
+              Re-sync cả đơn đã chốt cuối (giao, hủy, hoàn về kho)
+            </span>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Mặc định bỏ qua đơn đã đạt trạng thái cuối để chạy nhanh hơn. Bật khi nghi ngờ data sai cần verify lại.
+            </p>
+          </div>
         </label>
       </div>
 
@@ -311,6 +316,20 @@ const PancakeSyncPage = () => {
               </div>
             )
           })()}
+
+          {/* Hint badges — sync optimization signals */}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {(jobStatus.stats?.skipped_terminal ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
+                ⏭️ Bỏ qua {jobStatus.stats.skipped_terminal} đơn đã chốt cuối
+              </span>
+            )}
+            {jobStatus.stats?.stopped_early_at_page != null && (
+              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-1">
+                 Dừng sớm ở trang {jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}
+              </span>
+            )}
+          </div>
 
           {/* Stats cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

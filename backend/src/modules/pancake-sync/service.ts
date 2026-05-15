@@ -85,6 +85,22 @@ function statusLabel(status: number): string {
   return STATUS_VI[status] ?? STATUS_VI[String(status)] ?? `Trạng thái ${status}`
 }
 
+// ---- Sync optimization ----
+
+/**
+ * Terminal statuses: orders that never change again on Pancake POS.
+ * 3=Giao thành công, 5=Đã hoàn về kho, 7=Đã xóa, -1=Đã hủy, -2=Hoàn hàng manual.
+ *
+ * Status 4 "Đang hoàn về" is NOT terminal — still tracked until it becomes 5.
+ */
+const TERMINAL_STATUSES = new Set([3, 5, 7, -1, -2])
+
+/**
+ * Stop early if N consecutive pages consist of 100% terminal-in-DB orders
+ * (Pancake API sorts updated_at DESC, so once terminal pages start they continue).
+ */
+const EARLY_STOP_CONSECUTIVE_PAGES = 3
+
 // ---- Detect source ----
 
 function detectSource(order: any): string {
@@ -196,6 +212,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     const failedPages: number[] = []
     let imported = 0
     let updated = 0
+    let skippedTerminal = 0
+    let stoppedEarlyAtPage: number | null = null
+    let consecutiveTerminalPages = 0
     let page = 1
     let totalPages = 1
 
@@ -225,10 +244,12 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       })
 
       const pageSize = 50
-      // Pancake API sort theo updated_at DESC (không phải inserted_at) — không thể dừng sớm.
-      // Phải đọc toàn bộ, insert đơn có inserted_at trong [from,to], update đơn đã có bất kể ngày.
+      // Pancake API sort theo updated_at DESC.
+      // Skip terminal-in-DB orders + early-stop sau N page liên tiếp toàn terminal.
 
       while (page <= totalPages) {
+        let pageTerminalCount = 0
+
         try {
           const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&page_size=${pageSize}&page_number=${page}`
 
@@ -250,9 +271,17 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
               )
 
               if (existing.length > 0) {
+                const prev = existing[0]
+
+                // Skip terminal-in-DB orders that haven't changed status
+                if (!opts?.force && TERMINAL_STATUSES.has(prev.status) && prev.status === mapped.status) {
+                  skippedTerminal++
+                  pageTerminalCount++
+                  continue
+                }
+
                 if (opts?.force) {
                   // Force: overwrite status_history too, keeping old entries
-                  const prev = existing[0]
                   const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
                   const hasChanged = prev.status !== mapped.status
                   const newHistory = hasChanged
@@ -276,7 +305,6 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                   } as any)
                   updated++
                 } else {
-                  const prev = existing[0]
                   const isPartial = prev.data_quality === "partial"
                   if (isPartial) {
                     // Partial row từ webhook — fill đầy đủ data
@@ -331,8 +359,22 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
             }
           }
 
+          // Early-stop: dừng nếu N page liên tiếp 100% đơn đã terminal-in-DB
+          if (!opts?.force && orders.length > 0 && pageTerminalCount === orders.length) {
+            consecutiveTerminalPages++
+            if (consecutiveTerminalPages >= EARLY_STOP_CONSECUTIVE_PAGES) {
+              console.log(
+                `[PancakeSync] Stop early at page ${page}/${totalPages} — ${consecutiveTerminalPages} consecutive pages all terminal-in-DB`
+              )
+              stoppedEarlyAtPage = page
+              break
+            }
+          } else {
+            consecutiveTerminalPages = 0
+          }
+
           console.log(
-            `[PancakeSync] Page ${page}/${totalPages} done — imported=${imported} updated=${updated}`
+            `[PancakeSync] Page ${page}/${totalPages} done — imported=${imported} updated=${updated} skipped=${skippedTerminal}`
           )
 
           // Update progress incremental để frontend poll thấy tiến trình
@@ -342,6 +384,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
               stats: {
                 imported,
                 updated,
+                skipped_terminal: skippedTerminal,
+                stopped_early_at_page: stoppedEarlyAtPage,
                 current_page: page,
                 total_pages: totalPages,
                 failed_pages: failedPages,
@@ -358,6 +402,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
           console.error(`[PancakeSync] Page ${page} failed:`, pageErr.message)
           failedPages.push(page)
           errors.push({ message: `Page ${page}: ${pageErr.message}` })
+          // Reset consecutive counter on failed page — don't trust missing data
+          consecutiveTerminalPages = 0
         }
 
         page++
@@ -378,6 +424,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
         stats: {
           imported,
           updated,
+          skipped_terminal: skippedTerminal,
+          stopped_early_at_page: stoppedEarlyAtPage,
           current_page: finalCurrentPage,
           total_pages: totalPages,
           failed_pages: failedPages,
