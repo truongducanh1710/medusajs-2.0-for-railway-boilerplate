@@ -1,7 +1,10 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-const CONFIRMED_STATUSES = [2, 3, 4, 5, 6]
-const CANCELLED_STATUSES = [-1, -2, 7]
+// Mapping đúng theo Pancake (verify bằng partner_status thật)
+// "confirmed" = đã chốt sale = đã đẩy ra VTP (status 2/3/6/9)
+// "cancelled" = hủy/hoàn (status -1/-2/4/5/7)
+const CONFIRMED_STATUSES = [2, 3, 6, 9]
+const CANCELLED_STATUSES = [-1, -2, 4, 5, 7]
 
 function dayRangeVN(dateStr: string) {
   return {

@@ -62,16 +62,20 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 
 // ---- Status helpers ----
 
+// Mapping theo Pancake thực tế (verify bằng partner_status):
+//   0=mới về, 1=sale chốt, 9=chờ VTP lấy, 2=VTP đã lấy đang giao,
+//   3=delivered (giao thành công), 4=returning (đang hoàn về),
+//   5=returned (đã hoàn về kho), 7=deleted, -1=cancelled, -2=hoàn hàng manual
 const STATUS_VI: Record<number, string> = {
   0: "Chờ xử lý",
-  1: "Đã xác nhận",
-  2: "Đang đóng gói",
-  3: "Chờ giao hàng",
-  4: "Đang giao",
-  5: "Hoàn thành",
+  1: "Sale đã chốt",
+  2: "Đang giao",
+  3: "Giao thành công",
+  4: "Đang hoàn về",
+  5: "Đã hoàn về kho",
   6: "Đã gửi VC",
   7: "Đã xóa",
-  9: "Đã gửi VC",
+  9: "Chờ VTP lấy",
   11: "Chờ hàng",
   "-1": "Đã hủy",
   "-2": "Hoàn hàng",
@@ -452,13 +456,17 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       }
     }
 
-    // One-time heal: fix status_name sai từ code cũ — chỉ lấy đơn status=7 vì đó là mapping từng bị sai
+    // One-time heal: fix status_name sai từ code cũ (mapping đã update đúng theo Pancake)
+    // Heal tất cả status đã đổi label so với code cũ
     try {
-      const wrongRows = await this.listPancakeOrders({ status: 7 }, { take: 100 })
-      for (const o of wrongRows) {
-        if (o.status_name !== "Đã xóa") {
-          await this.updatePancakeOrders({ id: o.id, status_name: "Đã xóa" } as any)
-          console.log(`[syncActiveOrders] Healed status_name for #${o.id}: "${o.status_name}" → "Đã xóa"`)
+      const statusesToHeal = [1, 2, 3, 4, 5, 7, 9]
+      for (const st of statusesToHeal) {
+        const wrongRows = await this.listPancakeOrders({ status: st }, { take: 500 })
+        const expected = statusLabel(st)
+        for (const o of wrongRows) {
+          if (o.status_name !== expected) {
+            await this.updatePancakeOrders({ id: o.id, status_name: expected } as any)
+          }
         }
       }
     } catch (healErr: any) {

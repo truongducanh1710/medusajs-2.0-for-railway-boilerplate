@@ -3,10 +3,11 @@ import { createHmac, timingSafeEqual } from "crypto"
 import { Modules } from "@medusajs/framework/utils"
 import { PANCAKE_WEBHOOK_SECRET } from "../../../../lib/constants"
 
+// Mapping đúng theo Pancake (verify bằng partner_status thật)
 const STATUS_VI: Record<number, string> = {
-  0: "Chờ xử lý", 1: "Đã xác nhận", 2: "Đang đóng gói", 3: "Chờ giao hàng",
-  4: "Đang giao", 5: "Hoàn thành", 6: "Đã gửi VC", 7: "Đã xóa",
-  9: "Đã gửi VC", 11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
+  0: "Chờ xử lý", 1: "Sale đã chốt", 2: "Đang giao", 3: "Giao thành công",
+  4: "Đang hoàn về", 5: "Đã hoàn về kho", 6: "Đã gửi VC", 7: "Đã xóa",
+  9: "Chờ VTP lấy", 11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
 }
 
 function statusLabel(status: number): string {

@@ -10,16 +10,17 @@ const useOrderId = () => {
 
 // ---- Status helpers ----
 
+// Mapping đúng theo Pancake (verify bằng partner_status thật)
 const STATUS_VI: Record<number, string> = {
   0: "Chờ xử lý",
-  1: "Đã xác nhận",
-  2: "Đang đóng gói",
-  3: "Chờ giao hàng",
-  4: "Đang giao",
-  5: "Hoàn thành",
+  1: "Sale đã chốt",
+  2: "Đang giao",
+  3: "Giao thành công",
+  4: "Đang hoàn về",
+  5: "Đã hoàn về kho",
   6: "Đã gửi VC",
   7: "Đã xóa",
-  9: "Đã gửi VC",
+  9: "Chờ VTP lấy",
   11: "Chờ hàng",
   "-1": "Đã hủy",
   "-2": "Hoàn hàng",
@@ -30,12 +31,12 @@ function getStatusLabel(status: number): string {
 }
 
 function getStatusBadgeCls(status: number): string {
-  if (status === 5) return "bg-green-100 text-green-700 border-green-300"
-  if (status === 7 || status === -1) return "bg-red-100 text-red-700 border-red-300"
-  if (status === -2) return "bg-purple-100 text-purple-700 border-purple-300"
-  if (status === 2 || status === 4 || status === 9 || status === 6) return "bg-blue-100 text-blue-700 border-blue-300"
+  if (status === 3) return "bg-green-100 text-green-700 border-green-300"
+  if (status === 7 || status === -1 || status === 5) return "bg-red-100 text-red-700 border-red-300"
+  if (status === -2 || status === 4) return "bg-purple-100 text-purple-700 border-purple-300"
+  if (status === 2 || status === 9 || status === 6) return "bg-blue-100 text-blue-700 border-blue-300"
   if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700 border-yellow-300"
-  if (status === 1 || status === 3) return "bg-orange-100 text-orange-700 border-orange-300"
+  if (status === 1) return "bg-orange-100 text-orange-700 border-orange-300"
   return "bg-gray-100 text-gray-600 border-gray-300"
 }
 

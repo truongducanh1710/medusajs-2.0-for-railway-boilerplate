@@ -52,8 +52,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const totalOrders = allOrders.length
     const totalRevenue = allOrders.reduce((sum: number, o: any) => sum + Number(o.total ?? 0), 0)
 
-    const successCount = allOrders.filter((o: any) => o.status === 5).length
-    const returnCount = allOrders.filter((o: any) => o.status === -2).length
+    // Mapping đúng theo Pancake (verify bằng partner_status):
+    //   3 = giao thành công (delivered) — revenue thực thu
+    //   4 = đang hoàn về, 5 = đã hoàn về kho, -2 = hoàn manual
+    //   7 = xóa, -1 = hủy
+    const successCount = allOrders.filter((o: any) => o.status === 3).length
+    const returnCount = allOrders.filter((o: any) =>
+      o.status === 4 || o.status === 5 || o.status === -2
+    ).length
     const cancelCount = allOrders.filter((o: any) => o.status === 7 || o.status === -1).length
 
     const successRate = totalOrders > 0 ? Math.round((successCount / totalOrders) * 100) : 0
