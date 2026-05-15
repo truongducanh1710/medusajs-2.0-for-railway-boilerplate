@@ -172,6 +172,7 @@ function mapPancakeOrder(raw: any): Record<string, any> {
     tracking_code: raw.partner?.extend_code ?? raw.tracking_code ?? "",
     marketer_name: raw.marketer?.name ?? "",
     sale_name: raw.assigning_seller?.name ?? "",
+    care_name: raw.assigning_care?.name ?? "",
     raw: raw,
     pancake_created_at: raw.inserted_at ? new Date(raw.inserted_at) : (raw.created_at ? new Date(raw.created_at) : null),
     synced_at: new Date(),

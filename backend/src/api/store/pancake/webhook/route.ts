@@ -112,6 +112,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           ...(body?.partner?.extend_code
             ? { tracking_code: body.partner.extend_code }
             : {}),
+          ...(body?.assigning_care?.name
+            ? { care_name: body.assigning_care.name }
+            : {}),
           synced_at: new Date(),
         } as any)
 
@@ -134,6 +137,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           customer_phone: body?.bill_phone_number ?? "",
           total: body?.total_price ?? 0,
           tracking_code: body?.partner?.extend_code ?? "",
+          care_name: body?.assigning_care?.name ?? "",
           pancake_created_at: body?.inserted_at ? new Date(body.inserted_at) : new Date(),
           data_quality: "partial",
           synced_at: new Date(),
