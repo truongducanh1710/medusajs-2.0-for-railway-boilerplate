@@ -219,7 +219,7 @@ const PancakeSyncPage = () => {
       </div>
 
       {/* Action */}
-      <div className="mb-6">
+      <div className="mb-6 flex items-center gap-3">
         <button
           onClick={startSync}
           disabled={isRunning || !fromDate || !toDate}
@@ -227,6 +227,18 @@ const PancakeSyncPage = () => {
         >
           {isRunning ? "⏳ Đang đồng bộ..." : "Bắt đầu đồng bộ"}
         </button>
+        {isRunning && (
+          <button
+            onClick={() => {
+              setSyncing(false)
+              setJobId(null)
+              setError("Đã ngừng theo dõi (job vẫn chạy nền trên server)")
+            }}
+            className="text-sm text-red-600 hover:text-red-700 underline"
+          >
+            Ngừng theo dõi
+          </button>
+        )}
       </div>
 
       {/* Error */}
@@ -244,6 +256,9 @@ const PancakeSyncPage = () => {
             {jobStatus.status === "running" && (
               <span className="text-blue-600 font-normal">(đang chạy...)</span>
             )}
+            {jobStatus.status === "queued" && (
+              <span className="text-gray-500 font-normal">(đang khởi tạo...)</span>
+            )}
             {jobStatus.status === "done" && (
               <span className="text-green-600 font-normal">✓ Hoàn thành</span>
             )}
@@ -251,6 +266,51 @@ const PancakeSyncPage = () => {
               <span className="text-red-600 font-normal">✗ Thất bại</span>
             )}
           </h2>
+
+          {/* Progress bar */}
+          {(() => {
+            const cp = jobStatus.stats?.current_page ?? 0
+            const tp = jobStatus.stats?.total_pages ?? 0
+            const isRunningOrQueued = jobStatus.status === "running" || jobStatus.status === "queued"
+            const pct = tp > 0 ? Math.min(100, Math.round((cp / tp) * 100)) : 0
+            // Estimate ETA dựa trên tốc độ trung bình
+            const elapsed = jobStatus.stats?.duration_ms ?? 0
+            const eta = cp > 0 && tp > cp && elapsed > 0
+              ? Math.round((elapsed / cp) * (tp - cp))
+              : 0
+
+            if (!isRunningOrQueued && jobStatus.status !== "done" && jobStatus.status !== "failed") return null
+
+            return (
+              <div className="mb-4">
+                <div className="flex justify-between items-center mb-1.5 text-xs text-gray-600">
+                  <span>
+                    {tp > 0 ? (
+                      <>
+                        <span className="font-semibold text-gray-800">Trang {cp}/{tp}</span>
+                        {isRunningOrQueued && eta > 0 && (
+                          <span className="text-gray-400 ml-2">· còn ~{formatDuration(eta)}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-gray-400">Đang kết nối Pancake...</span>
+                    )}
+                  </span>
+                  <span className="font-mono font-semibold text-blue-600">{pct}%</span>
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      jobStatus.status === "failed" ? "bg-red-500" :
+                      jobStatus.status === "done" ? "bg-green-500" :
+                      "bg-blue-500 animate-pulse"
+                    }`}
+                    style={{ width: `${Math.max(pct, isRunningOrQueued && tp === 0 ? 5 : 0)}%` }}
+                  />
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Stats cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

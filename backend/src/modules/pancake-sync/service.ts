@@ -196,6 +196,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     const failedPages: number[] = []
     let imported = 0
     let updated = 0
+    let page = 1
+    let totalPages = 1
 
     try {
       // Advisory lock — fail fast if another sync is running
@@ -222,9 +224,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
         started_at: new Date(),
       })
 
-      let page = 1
       const pageSize = 50
-      let totalPages = 1
       // Pancake API sort theo updated_at DESC (không phải inserted_at) — không thể dừng sớm.
       // Phải đọc toàn bộ, insert đơn có inserted_at trong [from,to], update đơn đã có bất kể ngày.
 
@@ -335,6 +335,22 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
             `[PancakeSync] Page ${page}/${totalPages} done — imported=${imported} updated=${updated}`
           )
 
+          // Update progress incremental để frontend poll thấy tiến trình
+          try {
+            await this.updatePancakeSyncJobs({
+              id: jobId,
+              stats: {
+                imported,
+                updated,
+                current_page: page,
+                total_pages: totalPages,
+                failed_pages: failedPages,
+                errors: errors.slice(0, 100),
+                duration_ms: Date.now() - startedAt,
+              },
+            } as any)
+          } catch {}
+
           if (page < totalPages) {
             await delay(200) // rate limit buffer between pages
           }
@@ -353,6 +369,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       }
     } finally {
       const durationMs = Date.now() - startedAt
+      // Lấy total_pages hiện tại từ scope (có thể chưa được set nếu fail page đầu)
+      const finalCurrentPage = page - 1 // page đã ++ sau khi xong page cuối
       await this.updatePancakeSyncJobs({
         id: jobId,
         status: errors.length > 0 && imported === 0 && updated === 0 ? "failed" : "done",
@@ -360,6 +378,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
         stats: {
           imported,
           updated,
+          current_page: finalCurrentPage,
+          total_pages: totalPages,
           failed_pages: failedPages,
           errors: errors.slice(0, 100), // cap error log
           duration_ms: durationMs,
