@@ -185,7 +185,27 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     to: Date,
     opts?: { force?: boolean }
   ): Promise<{ jobId: string }> {
-    // Create job record
+    // 1) Cleanup zombie jobs: mark "running" quá 30 phút thành "failed"
+    //    (xảy ra khi backend restart giữa chừng — job stuck status=running)
+    await this._cleanupZombieJobs()
+
+    // 2) Reject nếu đã có job thực sự đang chạy trong 30 phút qua
+    const recentRunning = await this.listPancakeSyncJobs(
+      {
+        status: ["queued", "running"] as any,
+        started_at: { $gte: new Date(Date.now() - 30 * 60 * 1000) } as any,
+      },
+      { take: 1 }
+    )
+    if (recentRunning.length > 0) {
+      const existing = recentRunning[0] as any
+      throw Object.assign(
+        new Error(`SYNC_IN_PROGRESS: Đã có job ${existing.id} đang chạy (status=${existing.status})`),
+        { code: "SYNC_IN_PROGRESS", existingJobId: existing.id }
+      )
+    }
+
+    // 3) Create new job
     const job = await this.createPancakeSyncJobs({
       status: "queued",
       from_date: from,
@@ -199,6 +219,34 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     })
 
     return { jobId }
+  }
+
+  /**
+   * Đánh dấu job stuck "running" hoặc "queued" quá 30 phút thành "failed".
+   * Lý do: backend restart giữa chừng → process chết nhưng row job vẫn status=running.
+   */
+  private async _cleanupZombieJobs(): Promise<void> {
+    try {
+      const cutoff = new Date(Date.now() - 30 * 60 * 1000)
+      const zombies = await this.listPancakeSyncJobs(
+        {
+          status: ["queued", "running"] as any,
+          started_at: { $lt: cutoff } as any,
+        },
+        { take: 50 }
+      )
+      for (const z of zombies as any[]) {
+        await this.updatePancakeSyncJobs({
+          id: z.id,
+          status: "failed",
+          finished_at: new Date(),
+          error: "Backend restarted before sync finished (zombie cleanup)",
+        } as any)
+        console.warn(`[PancakeSync] Cleaned zombie job ${z.id} (started ${z.started_at})`)
+      }
+    } catch (err: any) {
+      console.warn(`[PancakeSync] Zombie cleanup failed: ${err.message}`)
+    }
   }
 
   private async _executeSync(

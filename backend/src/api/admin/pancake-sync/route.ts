@@ -35,8 +35,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (err: any) {
     console.error("[PancakeSync API] Error:", err.message)
 
-    if (err.message?.includes("SYNC_IN_PROGRESS")) {
-      return res.status(409).json({ error: "Một job sync khác đang chạy. Vui lòng đợi." })
+    if (err.code === "SYNC_IN_PROGRESS" || err.message?.includes("SYNC_IN_PROGRESS")) {
+      return res.status(409).json({
+        error: "Một job sync khác đang chạy. Vui lòng đợi job đó hoàn tất.",
+        existingJobId: err.existingJobId,
+      })
     }
 
     return res.status(500).json({ error: err.message })

@@ -128,6 +128,12 @@ const PancakeSyncPage = () => {
       const data = await res.json()
 
       if (res.status === 409) {
+        // Có job đang chạy — tự động theo dõi job đó
+        if (data.existingJobId) {
+          setJobId(data.existingJobId)
+          setError(`Đã có job đang chạy — chuyển sang theo dõi job ${data.existingJobId.slice(-8)}`)
+          return
+        }
         setError(data.error || "Một job sync khác đang chạy")
         setSyncing(false)
         return
