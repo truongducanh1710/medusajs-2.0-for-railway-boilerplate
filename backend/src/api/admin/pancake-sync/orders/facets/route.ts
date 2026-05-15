@@ -1,21 +1,29 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 /**
- * GET /admin/pancake-sync/orders/facets
- * Trả về danh sách distinct value để render dropdown filter:
- *   { sales: [], marketers: [], provinces: [], statuses: [{value, label, count}] }
+ * GET /admin/pancake-sync/orders/facets?from=ISO&to=ISO
+ * Trả về danh sách distinct value để render dropdown filter + tabs status:
+ *   { sales: [], marketers: [], provinces: [], statuses: [{value, label, count}], total: number }
  *
- * Strategy: lấy mẫu 5000 đơn mới nhất → distinct trên các trường text.
- * Đủ tốt cho UX (sale/marketer mới sẽ xuất hiện sau khi có đơn).
+ * Strategy:
+ *   - Nếu có from/to → lọc đúng date range, cap 10000
+ *   - Nếu không → lấy 5000 đơn mới nhất (mặc định khi mới mở trang)
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const syncService = req.scope.resolve("pancakeSyncModule") as any
+    const { from, to } = req.query as Record<string, string | undefined>
+
+    const filters: any = {}
+    if (from) filters.pancake_created_at = { ...filters.pancake_created_at, $gte: new Date(from) }
+    if (to)   filters.pancake_created_at = { ...filters.pancake_created_at, $lte: new Date(to) }
+
+    const take = (from || to) ? 10000 : 5000
 
     const orders = await syncService.listPancakeOrders(
-      {},
+      filters,
       {
-        take: 5000,
+        take,
         select: ["sale_name", "marketer_name", "province", "status", "status_name"],
         order: { pancake_created_at: "DESC" },
       }
@@ -46,6 +54,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       marketers: Array.from(marketers).sort((a, b) => a.localeCompare(b, "vi")),
       provinces: Array.from(provinces).sort((a, b) => a.localeCompare(b, "vi")),
       statuses:  Array.from(statusMap.values()).sort((a, b) => a.value - b.value),
+      total:     orders.length,
     })
   } catch (err: any) {
     console.error("[PancakeSync Facets API] Error:", err.message)

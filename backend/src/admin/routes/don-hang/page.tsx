@@ -203,8 +203,9 @@ const DonHangPage = () => {
   const [medusaStatuses, setMedusaStatuses] = useState<Record<string, any>>({})
   const [facets, setFacets] = useState<{
     sales: string[]; marketers: string[]; provinces: string[];
-    statuses: { value: number; label: string; count: number }[]
-  }>({ sales: [], marketers: [], provinces: [], statuses: [] })
+    statuses: { value: number; label: string; count: number }[];
+    total: number
+  }>({ sales: [], marketers: [], provinces: [], statuses: [], total: 0 })
   const [statusOpen, setStatusOpen] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -220,13 +221,22 @@ const DonHangPage = () => {
     }
   }, [filters])
 
-  // Fetch facets once
+  // Fetch facets theo date range (debounce 300ms để tránh spam)
   useEffect(() => {
-    apiFetch("/admin/pancake-sync/orders/facets")
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d) setFacets(d) })
-      .catch(() => {})
-  }, [])
+    const id = setTimeout(() => {
+      const params = new URLSearchParams()
+      if (filters.date_from) params.set("from", `${filters.date_from}T00:00:00+07:00`)
+      if (filters.date_to)   params.set("to",   `${filters.date_to}T23:59:59+07:00`)
+      const url = params.toString()
+        ? `/admin/pancake-sync/orders/facets?${params}`
+        : "/admin/pancake-sync/orders/facets"
+      apiFetch(url)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => { if (d) setFacets(d) })
+        .catch(() => {})
+    }, 300)
+    return () => clearTimeout(id)
+  }, [filters.date_from, filters.date_to])
 
   // Fetch orders when filters change
   useEffect(() => {
@@ -491,6 +501,45 @@ const DonHangPage = () => {
           Tìm
         </button>
       </form>
+
+      {/* ===== Status tabs (single-select) ===== */}
+      {facets.statuses.length > 0 && (
+        <div className="flex items-center gap-0 mb-3 border-b border-gray-200 overflow-x-auto">
+          {/* "Tất cả" tab */}
+          <button
+            onClick={() => update({ status: [] })}
+            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+              filters.status.length === 0
+                ? "border-blue-600 text-blue-600 font-semibold"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
+            }`}
+          >
+            Tất cả
+            <span className="ml-1.5 text-xs text-gray-500">
+              {facets.total?.toLocaleString("vi-VN") ?? 0}
+            </span>
+          </button>
+
+          {facets.statuses.map((s) => {
+            const isActive = filters.status.length === 1 && filters.status[0] === s.value
+            return (
+              <button
+                key={s.value}
+                onClick={() => update({ status: isActive ? [] : [s.value] })}
+                className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${
+                  isActive
+                    ? "border-blue-600 text-blue-600 font-semibold"
+                    : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                <span className={`inline-block w-2 h-2 rounded-full ${getPancakeStatusCls(s.value).split(" ")[0]}`} />
+                {s.label}
+                <span className="text-xs text-gray-500">{s.count.toLocaleString("vi-VN")}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* ===== Applied badges ===== */}
       {appliedBadges.length > 0 && (
