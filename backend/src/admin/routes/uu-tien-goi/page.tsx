@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
+import SalePeriodSummary from "../../components/sale-period-summary"
 
 // ---- Helpers ----
 
@@ -238,6 +239,9 @@ const UuTienGoiPage = () => {
           </button>
         </div>
       </div>
+
+      {/* Tổng kết hiệu suất 7/14/30 ngày — sale tự xem */}
+      <SalePeriodSummary defaultSeller={sellerFilter} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-3">
