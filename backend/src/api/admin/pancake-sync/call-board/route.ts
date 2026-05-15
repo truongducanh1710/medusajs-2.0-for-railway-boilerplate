@@ -10,15 +10,12 @@ function computeActionStatus(notes: any[], tags: any[]): string {
   if (tagNames.some((t) => t.includes("cho đi"))) return "send"
   if (tagNames.some((t) => t.includes("sale chốt") || t.includes("rmk") || t.includes("remarketing"))) return "confirmed"
 
-  const noteList = notes ?? []
-  const knmCount = noteList.filter((n: any) =>
-    String(n.message ?? "").toUpperCase().includes("KNM")
-  ).length
+  // Mỗi note = 1 lần tác động (bất kỳ nội dung gì)
+  const noteCount = (notes ?? []).length
 
-  if (knmCount >= 3) return "knm_3"
-  if (knmCount === 2) return "knm_2"
-  if (knmCount === 1) return "knm_1"
-  if (noteList.length > 0) return "called"
+  if (noteCount >= 3) return "knm_3"
+  if (noteCount === 2) return "knm_2"
+  if (noteCount === 1) return "knm_1"
   return "no_action"
 }
 

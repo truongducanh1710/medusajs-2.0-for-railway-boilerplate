@@ -45,9 +45,8 @@ export function extractNotesForOrder(raw: any): ExtractedNotes {
   const lastNoteMs = notes.reduce((max, n) => Math.max(max, n.at_ms ?? 0), 0)
   const lastNoteAt = lastNoteMs > 0 ? new Date(lastNoteMs) : null
 
-  const callCount = notes.filter((n) =>
-    String(n.message ?? "").toUpperCase().includes("KNM")
-  ).length
+  // Mỗi note = 1 lần tác động (không phụ thuộc nội dung — sale ghi gì cũng tính)
+  const callCount = notes.length
 
   return { notes, lastNoteAt, callCount }
 }

@@ -5,9 +5,8 @@ function calcPriority(o: any): { score: number; level: string; reason: string } 
   const tags: any[]  = Array.isArray(o.tags)  ? o.tags  : []
   const tagNames = tags.map((t: any) => String(t?.name ?? "").toLowerCase().replace(/\s/g, ""))
 
-  const knmCount = notes.filter((n: any) =>
-    String(n.message ?? "").toUpperCase().includes("KNM")
-  ).length
+  // Mỗi note = 1 lần tác động (bất kỳ nội dung gì)
+  const noteCount = notes.length
 
   const hasGoiThatBai = tagNames.some((t) =>
     t.includes("trangthaigoilan1thatbai") || t.includes("thatbai")
@@ -24,11 +23,10 @@ function calcPriority(o: any): { score: number; level: string; reason: string } 
   let base = 0
   let reason = ""
 
-  if (knmCount >= 3)         { base = 40; reason = `KNM ${knmCount} lần` }
-  else if (knmCount === 2)   { base = 35; reason = "KNM 2 lần — cần gọi lần 3" }
-  else if (knmCount === 1)   { base = 25; reason = "KNM 1 lần — cần follow up" }
-  else if (notes.length > 0) { base = 15; reason = "Đã gọi, chưa KNM" }
-  else                       { base = 30; reason = "Chưa tác động" }
+  if (noteCount >= 3)       { base = 40; reason = `KNM ${noteCount} lần` }
+  else if (noteCount === 2) { base = 35; reason = "KNM 2 lần — cần gọi lần 3" }
+  else if (noteCount === 1) { base = 25; reason = "KNM 1 lần — cần follow up" }
+  else                      { base = 30; reason = "Chưa tác động" }
 
   const score = Math.round(
     base +

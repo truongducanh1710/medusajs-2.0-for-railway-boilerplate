@@ -36,13 +36,11 @@ function computeStats(orders: any[], now: Date, periodEnd: Date) {
       if (tagNames.some((t: string) => t.includes("hủy") || t.includes("cancel"))) {
         cancelled++
       } else {
-        const knmCount = notes.filter((n: any) =>
-          String(n.message ?? "").toUpperCase().includes("KNM")
-        ).length
-        if (knmCount >= 3)         knm_3_plus++
-        else if (knmCount === 2)   knm_2++
-        else if (knmCount === 1)   knm_1++
-        else if (notes.length > 0) called++
+        // Mỗi note = 1 lần tác động (bất kỳ nội dung gì)
+        const noteCount = notes.length
+        if (noteCount >= 3)        knm_3_plus++
+        else if (noteCount === 2)  knm_2++
+        else if (noteCount === 1)  knm_1++
         else {
           no_action++
           if (o.pancake_created_at && now > periodEnd) overdue++

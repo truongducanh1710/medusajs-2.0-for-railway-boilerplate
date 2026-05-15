@@ -403,7 +403,6 @@ const BaoCaoPage = () => {
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">Sale</th>
                     <th className="text-center px-3 py-3 font-semibold text-gray-600">Tổng</th>
                     <th className="text-center px-3 py-3 font-semibold text-gray-600">Còn chờ</th>
-                    <th className="text-center px-3 py-3 font-semibold text-gray-600">Đã gọi</th>
                     <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 1</th>
                     <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 2</th>
                     <th className="text-center px-3 py-3 font-semibold text-gray-600">KNM 3+</th>
@@ -424,7 +423,6 @@ const BaoCaoPage = () => {
                         <td className={`px-3 py-3 text-center font-mono font-semibold ${s.no_action > 3 ? "text-red-600" : s.no_action > 0 ? "text-orange-500" : "text-gray-400"}`}>
                           {s.no_action}{s.overdue > 0 && <span className="text-xs ml-1">⏰</span>}
                         </td>
-                        <td className="px-3 py-3 text-center font-mono text-gray-600">{s.called}</td>
                         <td className="px-3 py-3 text-center font-mono text-yellow-700">{s.knm_1 || "—"}</td>
                         <td className="px-3 py-3 text-center font-mono text-orange-600">{s.knm_2 || "—"}</td>
                         <td className="px-3 py-3 text-center font-mono font-bold text-red-600">
