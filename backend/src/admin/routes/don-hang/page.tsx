@@ -1,6 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
 import { apiFetch } from "../../lib/api-client"
 
 // ============ Formatters ============
@@ -184,11 +183,8 @@ function paramsToFilters(p: URLSearchParams): Filters {
 // ============ Component ============
 
 const DonHangPage = () => {
-  const location = useLocation()
-  const navigate = useNavigate()
-
   const [filters, setFilters] = useState<Filters>(() =>
-    paramsToFilters(new URLSearchParams(location.search))
+    paramsToFilters(new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""))
   )
   const [searchInput, setSearchInput] = useState(filters.q)
   const [minInput, setMinInput] = useState(filters.min_total)
@@ -205,12 +201,15 @@ const DonHangPage = () => {
   const [statusOpen, setStatusOpen] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
-  // Sync URL when filters change
+  // Sync URL when filters change (dùng history API thay vì react-router để tránh import external)
   useEffect(() => {
+    if (typeof window === "undefined") return
     const p = filtersToParams(filters)
     const newSearch = p.toString()
-    if (newSearch !== location.search.replace(/^\?/, "")) {
-      navigate({ pathname: location.pathname, search: newSearch ? `?${newSearch}` : "" }, { replace: true })
+    const currentSearch = window.location.search.replace(/^\?/, "")
+    if (newSearch !== currentSearch) {
+      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "")
+      window.history.replaceState(null, "", newUrl)
     }
   }, [filters])
 
