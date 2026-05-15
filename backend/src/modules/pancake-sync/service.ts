@@ -96,10 +96,15 @@ function statusLabel(status: number): string {
 const TERMINAL_STATUSES = new Set([3, 5, 7, -1, -2])
 
 /**
- * Stop early if N consecutive pages consist of 100% terminal-in-DB orders
- * (Pancake API sorts updated_at DESC, so once terminal pages start they continue).
+ * Stop early if N consecutive pages are "stable" — meaning either:
+ *   A. >= STABLE_TERMINAL_RATIO % orders are terminal-in-DB and unchanged
+ *      (Pancake sorts updated_at DESC, so once stable pages start they continue)
+ *   B. 100% orders have inserted_at older than STABLE_OLD_DAYS days
+ *      (đơn 30+ ngày coi như không cần sync — business rule)
  */
 const EARLY_STOP_CONSECUTIVE_PAGES = 3
+const STABLE_TERMINAL_RATIO = 0.95   // 95% terminal trong page → coi như stable
+const STABLE_OLD_DAYS = 30           // page toàn đơn > 30 ngày → cũng coi stable
 
 // ---- Detect source ----
 
@@ -419,18 +424,33 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
             }
           }
 
-          // Early-stop: dừng nếu N page liên tiếp 100% đơn đã terminal-in-DB
-          if (!opts?.force && orders.length > 0 && pageTerminalCount === orders.length) {
-            consecutiveTerminalPages++
-            if (consecutiveTerminalPages >= EARLY_STOP_CONSECUTIVE_PAGES) {
-              console.log(
-                `[PancakeSync] Stop early at page ${page}/${totalPages} — ${consecutiveTerminalPages} consecutive pages all terminal-in-DB`
-              )
-              stoppedEarlyAtPage = page
-              break
+          // Early-stop: page "stable" nếu một trong 2 điều kiện:
+          //   A. >= 95% đơn đã terminal-in-DB
+          //   B. 100% đơn có inserted_at > 30 ngày trước
+          if (!opts?.force && orders.length > 0) {
+            const terminalRatio = pageTerminalCount / orders.length
+            const oldCutoff = Date.now() - STABLE_OLD_DAYS * 24 * 3600 * 1000
+            const allOld = orders.every((raw: any) => {
+              const inserted = raw.inserted_at ? new Date(raw.inserted_at).getTime() : 0
+              return inserted > 0 && inserted < oldCutoff
+            })
+            const isStablePage = terminalRatio >= STABLE_TERMINAL_RATIO || allOld
+
+            if (isStablePage) {
+              consecutiveTerminalPages++
+              if (consecutiveTerminalPages >= EARLY_STOP_CONSECUTIVE_PAGES) {
+                const reason = allOld
+                  ? `all orders older than ${STABLE_OLD_DAYS}d`
+                  : `terminal ratio ${(terminalRatio * 100).toFixed(0)}%`
+                console.log(
+                  `[PancakeSync] Stop early at page ${page}/${totalPages} — ${consecutiveTerminalPages} consecutive stable pages (${reason})`
+                )
+                stoppedEarlyAtPage = page
+                break
+              }
+            } else {
+              consecutiveTerminalPages = 0
             }
-          } else {
-            consecutiveTerminalPages = 0
           }
 
           console.log(

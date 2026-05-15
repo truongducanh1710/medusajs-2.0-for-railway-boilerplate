@@ -361,7 +361,7 @@ const PancakeSyncPage = () => {
               {jobStatus.stats?.stopped_early_at_page != null && (
                 <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-1">
                   <span aria-hidden>🛑</span>
-                  Dừng sớm ở trang <b>{jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}</b> — các page sau toàn đơn cũ
+                  Dừng sớm ở trang <b>{jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}</b> — tiết kiệm {jobStatus.stats.total_pages - jobStatus.stats.stopped_early_at_page} trang
                 </span>
               )}
             </div>
