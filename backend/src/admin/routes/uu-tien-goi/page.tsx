@@ -201,22 +201,19 @@ const UuTienGoiPage = () => {
     }
   }
 
-  // Auto-sync on mount
+  // Mount lần đầu: chỉ fetch data từ DB, không sync Pancake (để tiết kiệm)
+  // User bấm "Đồng bộ & làm mới" khi cần data mới nhất
   const didInit = useRef(false)
   useEffect(() => {
     if (didInit.current) return
     didInit.current = true
-    syncAndRefresh(true)
+    fetchData()
   }, [])
 
   // Refetch khi filter thay đổi
   useEffect(() => { fetchData() }, [date, sellerFilter])
 
-  // Auto refresh mỗi 2 phút
-  useEffect(() => {
-    const id = setInterval(() => syncAndRefresh(true), 2 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [date, sellerFilter])
+  // Auto-refresh đã tắt để tiết kiệm chi phí — user dùng nút "Đồng bộ" thủ công
 
   const minutesAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 60000)
 

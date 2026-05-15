@@ -232,11 +232,7 @@ const XacNhanDonPage = () => {
     fetchData(0)
   }, [date, sellerFilter, statusFilter])
 
-  // Auto refresh mỗi 2 phút — silent sync + reload
-  useEffect(() => {
-    const id = setInterval(() => syncActiveOrders(true), 2 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [date, sellerFilter, statusFilter, page])
+  // Auto-refresh đã tắt để tiết kiệm chi phí — user dùng nút "Đồng bộ" thủ công
 
   const minutesAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 60000)
 
