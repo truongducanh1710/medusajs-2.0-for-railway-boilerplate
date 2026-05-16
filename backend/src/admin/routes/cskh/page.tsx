@@ -288,7 +288,7 @@ export default function CskhPage() {
     { id: "call_time",  label: "Gọi lúc",          default: 110, min: 80  },
   ] as const satisfies ResizableColDef[]
 
-  const { colWidths, onResizeMouseDown } = useResizableColumns("cskh.col-widths.v1", columns)
+  const { colWidths, onResizeMouseDown, totalWidth } = useResizableColumns("cskh.col-widths.v1", columns)
 
   if (permLoading) return <div className="p-6 text-ui-fg-muted">Đang kiểm tra quyền...</div>
   if (!has("page.cskh.view")) return <div className="p-6 text-red-500">Bạn không có quyền xem trang này.</div>
@@ -326,22 +326,24 @@ export default function CskhPage() {
         <div className="p-8 text-center text-ui-fg-muted">Đang tải...</div>
       ) : (
         <div className="overflow-x-auto rounded border border-ui-border-base">
-          <table className="w-full text-sm border-collapse" style={{ minWidth: 1400 }}>
+          <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: `${totalWidth}px` }}>
+            <colgroup>
+              {columns.map(c => <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />)}
+            </colgroup>
             <thead className="bg-ui-bg-subtle sticky top-0 z-10">
               <tr>
                 {columns.map((col, i) => (
                   <th
                     key={col.id}
-                    className="text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base select-none relative whitespace-nowrap"
-                    style={{ width: colWidths[col.id] }}
+                    className="relative text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base select-none overflow-hidden whitespace-nowrap"
                   >
-                    {col.label}
-                    {i < columns.length - 1 && (
-                      <div
-                        onMouseDown={onResizeMouseDown(col.id)}
-                        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-ui-border-strong"
-                      />
-                    )}
+                    <span className="block truncate">{col.label}</span>
+                    <span
+                      onMouseDown={onResizeMouseDown(col.id)}
+                      onClick={e => e.stopPropagation()}
+                      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500"
+                      style={{ touchAction: "none" }}
+                    />
                   </th>
                 ))}
               </tr>
@@ -360,35 +362,62 @@ export default function CskhPage() {
                   className={`border-b border-ui-border-base cursor-pointer hover:brightness-95 transition-all ${getRowCls(order)}`}
                   onClick={() => { window.location.href = `/app/pancake-orders/${order.id}` }}
                 >
-                  {/* Mã đơn */}
-                  <td className="px-3 py-2 font-mono text-xs text-ui-fg-base whitespace-nowrap">
-                    #{order.id}
-                    {order.urgency === "critical" && <span className="ml-1 text-red-600 animate-pulse">🚨</span>}
+                  {/* Mã đơn — click để copy */}
+                  <td
+                    className="px-3 py-2 font-mono text-xs text-ui-fg-base overflow-hidden"
+                    title="Bấm để copy mã đơn"
+                    style={{ cursor: "copy" }}
+                    onClick={e => {
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(order.id)
+                      const el = e.currentTarget.querySelector("span")
+                      if (!el) return
+                      const orig = el.textContent
+                      el.textContent = "✓ Đã copy!"
+                      el.classList.add("text-green-600")
+                      setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
+                    }}
+                  >
+                    <span className="block truncate">
+                      #{order.id}
+                      {order.urgency === "critical" && <span className="ml-1 text-red-600 animate-pulse">🚨</span>}
+                    </span>
                   </td>
 
-                  {/* Khách */}
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-ui-fg-base text-xs leading-tight">{order.customer_name}</div>
+                  {/* Khách — SĐT click để copy */}
+                  <td className="px-3 py-2 overflow-hidden">
+                    <div className="font-medium text-ui-fg-base text-xs leading-tight truncate" title={order.customer_name}>{order.customer_name}</div>
                     <div
-                      className="text-xs text-ui-fg-muted font-mono mt-0.5 cursor-pointer hover:text-blue-600"
+                      className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
+                      title="Bấm để copy SĐT"
+                      style={{ cursor: "copy" }}
                       onClick={e => {
                         e.stopPropagation()
-                        navigator.clipboard.writeText(order.customer_phone ?? "")
+                        if (!order.customer_phone) return
+                        navigator.clipboard.writeText(order.customer_phone)
+                        const el = e.currentTarget as HTMLElement
+                        const orig = el.textContent
+                        el.textContent = "✓ Đã copy!"
+                        el.classList.add("text-green-600")
+                        setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
                       }}
-                      title="Click để copy"
                     >
-                      {order.customer_phone}
+                      {order.customer_phone ?? "—"}
                     </div>
                   </td>
 
                   {/* Tỉnh */}
-                  <td className="px-3 py-2 text-xs text-ui-fg-subtle whitespace-nowrap">{order.province ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-ui-fg-subtle overflow-hidden">
+                    <span className="block truncate" title={order.province ?? ""}>{order.province ?? "—"}</span>
+                  </td>
 
                   {/* CSKH */}
-                  <td className="px-3 py-2 text-xs text-ui-fg-base whitespace-nowrap">{order.care_name ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-ui-fg-base overflow-hidden">
+                    <span className="block truncate">{order.care_name ?? "—"}</span>
+                  </td>
 
                   {/* Trạng thái */}
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-3 py-2 overflow-hidden">
                     <div className="flex flex-col gap-1">
                       <StatusBadge status={order.status} statusName={order.status_name} />
                       <MissingHoanTagBadge missing={order.missing_hoan_tag} />
@@ -396,33 +425,40 @@ export default function CskhPage() {
                   </td>
 
                   {/* Lần giao */}
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-3 py-2 text-center overflow-hidden">
                     <span className={`text-sm font-bold ${Number(order.count_of_delivery) >= 3 ? "text-red-600" : "text-ui-fg-base"}`}>
                       {order.count_of_delivery ?? "—"}
                     </span>
                   </td>
 
-                  {/* Bưu tá */}
-                  <td className="px-3 py-2">
+                  {/* Bưu tá — SĐT click để copy */}
+                  <td className="px-3 py-2 overflow-hidden">
                     {order.delivery_name ? (
                       <>
-                        <div className="text-xs font-medium text-ui-fg-base leading-tight">{order.delivery_name}</div>
+                        <div className="text-xs font-medium text-ui-fg-base leading-tight truncate" title={order.delivery_name}>{order.delivery_name}</div>
                         <div
-                          className="text-xs text-ui-fg-muted font-mono mt-0.5 cursor-pointer hover:text-blue-600"
+                          className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
+                          title="Bấm để copy SĐT bưu tá"
+                          style={{ cursor: "copy" }}
                           onClick={e => {
                             e.stopPropagation()
-                            navigator.clipboard.writeText(order.delivery_tel ?? "")
+                            if (!order.delivery_tel) return
+                            navigator.clipboard.writeText(order.delivery_tel)
+                            const el = e.currentTarget as HTMLElement
+                            const orig = el.textContent
+                            el.textContent = "✓ Đã copy!"
+                            el.classList.add("text-green-600")
+                            setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
                           }}
-                          title="Click để copy"
                         >
-                          {order.delivery_tel}
+                          {order.delivery_tel ?? "—"}
                         </div>
                       </>
                     ) : <span className="text-xs text-ui-fg-muted">—</span>}
                   </td>
 
                   {/* Cập nhật ship */}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 overflow-hidden">
                     {order.last_delivery_status ? (
                       <>
                         <div className="text-xs text-ui-fg-base leading-tight line-clamp-2">{order.last_delivery_status}</div>
@@ -432,12 +468,12 @@ export default function CskhPage() {
                   </td>
 
                   {/* COD */}
-                  <td className="px-3 py-2 text-right text-xs font-medium text-ui-fg-base whitespace-nowrap">
-                    {formatVND(order.cod_amount)}
+                  <td className="px-3 py-2 text-right text-xs font-medium text-ui-fg-base overflow-hidden">
+                    <span className="block truncate">{formatVND(order.cod_amount)}</span>
                   </td>
 
                   {/* AI: Đang ở bước */}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 overflow-hidden">
                     {order.current_step ? (
                       <div className="text-xs text-ui-fg-base leading-snug line-clamp-3">{order.current_step}</div>
                     ) : order.row_type === "plain" ? (
