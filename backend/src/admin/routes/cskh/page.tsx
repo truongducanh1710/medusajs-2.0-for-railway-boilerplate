@@ -219,8 +219,10 @@ export default function CskhPage() {
       const qs = new URLSearchParams({ limit: "200" })
       if (careFilter) qs.set("care", careFilter)
 
-      const data = await apiFetch(`/admin/cskh/orders?${qs}`)
+      const res = await apiFetch(`/admin/cskh/orders?${qs}`)
       if (cancelRef.current) return
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
 
       const list = data.orders ?? []
       setOrders(list)
@@ -241,6 +243,7 @@ export default function CskhPage() {
     try {
       await apiFetch("/admin/cskh/analyze", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ care: careFilter || undefined }),
       })
       // Đợi 15s rồi reload
