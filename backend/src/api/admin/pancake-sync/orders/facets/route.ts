@@ -24,19 +24,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       filters,
       {
         take,
-        select: ["sale_name", "marketer_name", "province", "status", "status_name"],
+        select: ["sale_name", "marketer_name", "care_name", "province", "status", "status_name"],
         order: { pancake_created_at: "DESC" },
       }
     )
 
     const sales = new Set<string>()
     const marketers = new Set<string>()
+    const cares = new Set<string>()
     const provinces = new Set<string>()
     const statusMap = new Map<number, { value: number; label: string; count: number }>()
 
     for (const o of orders) {
       if (o.sale_name)      sales.add(o.sale_name)
       if (o.marketer_name)  marketers.add(o.marketer_name)
+      if (o.care_name)      cares.add(o.care_name)
       if (o.province)       provinces.add(o.province)
       if (typeof o.status === "number") {
         const existing = statusMap.get(o.status)
@@ -52,6 +54,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       sales:     Array.from(sales).sort((a, b) => a.localeCompare(b, "vi")),
       marketers: Array.from(marketers).sort((a, b) => a.localeCompare(b, "vi")),
+      cares:     Array.from(cares).sort((a, b) => a.localeCompare(b, "vi")),
       provinces: Array.from(provinces).sort((a, b) => a.localeCompare(b, "vi")),
       statuses:  Array.from(statusMap.values()).sort((a, b) => a.value - b.value),
       total:     orders.length,

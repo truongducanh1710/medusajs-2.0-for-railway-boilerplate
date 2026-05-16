@@ -24,6 +24,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       status,
       sale,
       marketer,
+      care,
       province,
       min_total,
       max_total,
@@ -51,9 +52,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       else if (parts.length > 1) filters.status = { $in: parts }
     }
 
-    // Sale / Marketer — exact match (vì dropdown chọn từ DB)
+    // Sale / Marketer / CSKH — exact match (vì dropdown chọn từ DB)
     if (sale && sale !== "all")         filters.sale_name = sale
     if (marketer && marketer !== "all") filters.marketer_name = marketer
+    if (care && care !== "all")         filters.care_name = care
     if (province && province !== "all") filters.province = province
 
     // Khoảng tiền

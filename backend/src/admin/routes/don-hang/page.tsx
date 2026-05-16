@@ -123,6 +123,7 @@ type Filters = {
   source: string
   sale: string
   marketer: string
+  care: string
   province: string
   status: number[]   // [] = tất cả
   q: string
@@ -139,6 +140,7 @@ const DEFAULT_FILTERS: Filters = {
   source: "all",
   sale: "all",
   marketer: "all",
+  care: "all",
   province: "all",
   status: [],
   q: "",
@@ -158,6 +160,7 @@ function filtersToParams(f: Filters): URLSearchParams {
   if (f.source && f.source !== "all") p.set("source", f.source)
   if (f.sale && f.sale !== "all")     p.set("sale", f.sale)
   if (f.marketer && f.marketer !== "all") p.set("marketer", f.marketer)
+  if (f.care && f.care !== "all") p.set("care", f.care)
   if (f.province && f.province !== "all") p.set("province", f.province)
   if (f.status.length) p.set("status", f.status.join(","))
   if (f.q) p.set("q", f.q)
@@ -176,6 +179,7 @@ function paramsToFilters(p: URLSearchParams): Filters {
     source:    p.get("source") || "all",
     sale:      p.get("sale") || "all",
     marketer:  p.get("marketer") || "all",
+    care:      p.get("care") || "all",
     province:  p.get("province") || "all",
     status:    (p.get("status") || "").split(",").map((s) => Number(s)).filter((n) => !isNaN(n)),
     q:         p.get("q") || "",
@@ -202,10 +206,10 @@ const DonHangPage = () => {
   const [loading, setLoading] = useState(true)
   const [medusaStatuses, setMedusaStatuses] = useState<Record<string, any>>({})
   const [facets, setFacets] = useState<{
-    sales: string[]; marketers: string[]; provinces: string[];
+    sales: string[]; marketers: string[]; cares: string[]; provinces: string[];
     statuses: { value: number; label: string; count: number }[];
     total: number
-  }>({ sales: [], marketers: [], provinces: [], statuses: [], total: 0 })
+  }>({ sales: [], marketers: [], cares: [], provinces: [], statuses: [], total: 0 })
   const [statusOpen, setStatusOpen] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -250,6 +254,7 @@ const DonHangPage = () => {
     if (filters.source !== "all")   params.set("source", filters.source)
     if (filters.sale !== "all")     params.set("sale", filters.sale)
     if (filters.marketer !== "all") params.set("marketer", filters.marketer)
+    if (filters.care !== "all")     params.set("care", filters.care)
     if (filters.province !== "all") params.set("province", filters.province)
     if (filters.status.length)      params.set("status", filters.status.join(","))
     if (filters.q)                  params.set("q", filters.q)
@@ -357,6 +362,7 @@ const DonHangPage = () => {
     if (filters.source !== "all") list.push({ label: `Nguồn: ${filters.source}`, onRemove: () => update({ source: "all" }) })
     if (filters.sale !== "all")   list.push({ label: `Sale: ${filters.sale}`,    onRemove: () => update({ sale: "all" }) })
     if (filters.marketer !== "all") list.push({ label: `Marketer: ${filters.marketer}`, onRemove: () => update({ marketer: "all" }) })
+    if (filters.care !== "all")     list.push({ label: `CSKH: ${filters.care}`, onRemove: () => update({ care: "all" }) })
     if (filters.province !== "all") list.push({ label: `Tỉnh: ${filters.province}`, onRemove: () => update({ province: "all" }) })
     if (filters.status.length) {
       const names = filters.status.map((s) => getPancakeStatusLabel(s)).join(", ")
@@ -379,7 +385,7 @@ const DonHangPage = () => {
     `${filters.status.length} trạng thái`
 
   return (
-    <div className="p-6">
+    <div className="p-6 w-full">
       <div className="flex justify-between items-center mb-5">
         <div>
           <h1 className="text-2xl font-bold">Đơn hàng</h1>
@@ -432,6 +438,12 @@ const DonHangPage = () => {
                 className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
           <option value="all">Tất cả marketer</option>
           {facets.marketers.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <select value={filters.care} onChange={(e) => update({ care: e.target.value })}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+          <option value="all">Tất cả CSKH</option>
+          {facets.cares.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
 
         <select value={filters.province} onChange={(e) => update({ province: e.target.value })}
@@ -563,7 +575,7 @@ const DonHangPage = () => {
         <>
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-max text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">#POS</th>
@@ -580,6 +592,7 @@ const DonHangPage = () => {
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sản phẩm</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Marketer</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sale</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">CSKH</th>
                     <th
                       className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort("total")}
@@ -646,6 +659,7 @@ const DonHangPage = () => {
                         <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={itemTitle}>{itemTitle}</td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">{order.marketer_name || "—"}</td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">{order.sale_name || "—"}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">{order.care_name || "—"}</td>
                         <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatVND(order.total)}</td>
                         <td className="px-4 py-3 text-center">
                           <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${getPancakeStatusCls(order.status)}`}>
