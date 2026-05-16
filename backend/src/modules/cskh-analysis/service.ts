@@ -1,4 +1,14 @@
 import { MedusaService } from "@medusajs/framework/utils"
+import { Pool } from "pg"
+
+// Singleton pg pool dùng chung — tránh tạo connection mới mỗi lần gọi
+let _pool: Pool | null = null
+function getPool(): Pool {
+  if (!_pool) {
+    _pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  }
+  return _pool
+}
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions"
 const MODEL = "qwen/qwen2.5-vl-72b-instruct"
@@ -110,14 +120,15 @@ async function callQwen(contexts: object[]): Promise<any[]> {
 }
 
 export class CskhAnalysisService extends MedusaService({}) {
-  private get mgr(): any {
-    return (this as any).__container?.manager
-  }
-
-  // Thực thi SQL qua MikroORM manager (trả về rows[])
+  // Thực thi SQL qua pg pool (DATABASE_URL) — không dùng MikroORM manager vì service không có model
   private async sql(query: string, params?: any[]): Promise<any[]> {
-    const result = await this.mgr.execute(query, params ?? [])
-    return Array.isArray(result) ? result : []
+    const client = await getPool().connect()
+    try {
+      const result = await client.query(query, params ?? [])
+      return result.rows
+    } finally {
+      client.release()
+    }
   }
 
   // Upsert kết quả AI vào cskh_analysis
