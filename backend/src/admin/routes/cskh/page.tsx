@@ -102,7 +102,7 @@ function getRowCls(order: any): string {
 // ============ Summary bar ============
 
 function SummaryBar({
-  orders, activeTab, onTabChange, onRefresh, loading, analyzedAt, onAnalyze, analyzing,
+  orders, activeTab, onTabChange, onRefresh, loading, analyzedAt, onAnalyze, analyzing, analyzeProgress,
 }: {
   orders: any[]
   activeTab: string
@@ -112,6 +112,7 @@ function SummaryBar({
   analyzedAt: string | null
   onAnalyze: () => void
   analyzing: boolean
+  analyzeProgress: { total: number; done: number; failed: number } | null
 }) {
   const counts = useMemo(() => ({
     su_co: orders.filter(o => o.category === "su_co").length,
@@ -154,13 +155,26 @@ function SummaryBar({
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={onAnalyze}
-            disabled={analyzing}
-            className="px-3 py-1.5 text-sm bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-50"
-          >
-            {analyzing ? "⏳ Đang phân tích..." : "🤖 Phân tích AI"}
-          </button>
+          <div className="flex flex-col items-end gap-0.5">
+            <button
+              onClick={onAnalyze}
+              disabled={analyzing}
+              className="px-3 py-1.5 text-sm bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {analyzing ? "⏳ Đang phân tích..." : "🤖 Phân tích AI"}
+            </button>
+            {analyzing && analyzeProgress && analyzeProgress.total > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-ui-fg-subtle">
+                <div className="w-24 h-1.5 bg-ui-bg-subtle rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-violet-500 transition-all duration-500"
+                    style={{ width: `${Math.round((analyzeProgress.done / analyzeProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <span>{analyzeProgress.done}/{analyzeProgress.total} đơn</span>
+              </div>
+            )}
+          </div>
           <button
             onClick={onRefresh}
             disabled={loading}
@@ -185,6 +199,8 @@ export default function CskhPage() {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeProgress, setAnalyzeProgress] = useState<{ total: number; done: number; failed: number } | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [analyzedAt, setAnalyzedAt] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
@@ -238,20 +254,46 @@ export default function CskhPage() {
     }
   }
 
+  function startProgressPoll() {
+    if (pollRef.current) return
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await apiFetch("/admin/cskh/analyze")
+        if (!res.ok) return
+        const data = await res.json()
+        setAnalyzeProgress({ total: data.total, done: data.done, failed: data.failed })
+        if (!data.running) {
+          clearInterval(pollRef.current!)
+          pollRef.current = null
+          setAnalyzing(false)
+          setAnalyzeProgress(null)
+          fetchOrders()
+        }
+      } catch { /* ignore */ }
+    }, 3000)
+  }
+
   async function triggerAnalyze() {
+    if (analyzing) return
     setAnalyzing(true)
+    setAnalyzeProgress(null)
     try {
-      await apiFetch("/admin/cskh/analyze", {
+      const res = await apiFetch("/admin/cskh/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ care: careFilter || undefined }),
       })
-      // Đợi 15s rồi reload
-      setTimeout(fetchOrders, 15_000)
+      const data = await res.json()
+      if (data.running === false && data.queued === 0) {
+        // Không có gì để phân tích hoặc đang chạy từ nguồn khác
+        setAnalyzing(false)
+        return
+      }
+      setAnalyzeProgress({ total: data.total ?? data.queued ?? 0, done: data.done ?? 0, failed: data.failed ?? 0 })
+      startProgressPoll()
     } catch (e: any) {
       setError(e.message)
-    } finally {
-      setTimeout(() => setAnalyzing(false), 15_000)
+      setAnalyzing(false)
     }
   }
 
@@ -259,6 +301,10 @@ export default function CskhPage() {
     fetchOrders()
     return () => { cancelRef.current = true }
   }, [careFilter])
+
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [])
 
   function handleTabChange(tab: string) {
     setActiveTab(tab)
@@ -316,6 +362,7 @@ export default function CskhPage() {
         analyzedAt={analyzedAt}
         onAnalyze={triggerAnalyze}
         analyzing={analyzing}
+        analyzeProgress={analyzeProgress}
       />
 
       {error && (

@@ -124,7 +124,20 @@ async function callQwen(contexts: object[]): Promise<any[]> {
   return Array.isArray(parsed.results) ? parsed.results : []
 }
 
+// Global lock — tránh nhiều lần analyze chạy đồng thời trong cùng process
+let _analyzing = false
+let _progress = { total: 0, done: 0, failed: 0, startedAt: null as string | null }
+
+export function getAnalysisProgress() {
+  return { running: _analyzing, ..._progress }
+}
+
 export class CskhAnalysisService extends MedusaService({}) {
+  // Trả về tiến độ hiện tại
+  getProgress() {
+    return getAnalysisProgress()
+  }
+
   // Thực thi SQL qua pg pool (DATABASE_URL) — không dùng MikroORM manager vì service không có model
   private async sql(query: string, params?: any[]): Promise<any[]> {
     const client = await getPool().connect()
@@ -164,30 +177,47 @@ export class CskhAnalysisService extends MedusaService({}) {
   // analyzeOrders: nhận danh sách order IDs, query raw, gọi AI, lưu kết quả
   async analyzeOrders(orderIds: string[]): Promise<void> {
     if (!orderIds.length) return
+    if (_analyzing) {
+      console.log("[CskhAnalysis] Đang chạy, bỏ qua yêu cầu mới")
+      return
+    }
 
-    const placeholders = orderIds.map((_, i) => `$${i + 1}`).join(",")
-    const rows = await this.sql(
-      `SELECT id, raw, last_note_at FROM pancake_order WHERE id IN (${placeholders})`,
-      orderIds
-    )
+    _analyzing = true
+    _progress = { total: orderIds.length, done: 0, failed: 0, startedAt: new Date().toISOString() }
 
-    if (!rows.length) return
+    try {
+      const placeholders = orderIds.map((_, i) => `$${i + 1}`).join(",")
+      const rows = await this.sql(
+        `SELECT id, raw, last_note_at FROM pancake_order WHERE id IN (${placeholders})`,
+        orderIds
+      )
 
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batch = rows.slice(i, i + BATCH_SIZE)
-      const contexts = batch
-        .filter((r: any) => r.raw)
-        .map((r: any) => buildOrderContext(r.raw, r.id))
+      if (!rows.length) return
 
-      if (!contexts.length) continue
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE)
+        const contexts = batch
+          .filter((r: any) => r.raw)
+          .map((r: any) => buildOrderContext(r.raw, r.id))
 
-      try {
-        const results = await callQwen(contexts)
-        await this.upsertAnalysis(results)
-        console.log(`[CskhAnalysis] Batch ${Math.floor(i / BATCH_SIZE) + 1}: analyzed ${results.length} orders`)
-      } catch (err: any) {
-        console.error(`[CskhAnalysis] Batch error:`, err.message)
+        if (!contexts.length) {
+          _progress.done += batch.length
+          continue
+        }
+
+        try {
+          const results = await callQwen(contexts)
+          await this.upsertAnalysis(results)
+          _progress.done += batch.length
+          console.log(`[CskhAnalysis] Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${results.length} đơn (${_progress.done}/${_progress.total})`)
+        } catch (err: any) {
+          _progress.failed += batch.length
+          _progress.done += batch.length
+          console.error(`[CskhAnalysis] Batch error:`, err.message)
+        }
       }
+    } finally {
+      _analyzing = false
     }
   }
 
