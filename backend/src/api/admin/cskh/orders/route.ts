@@ -56,7 +56,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ orders: [], count: 0, ai_count: 0, plain_count: 0 })
     }
 
-    const mgr = (cskhService as any).__container?.manager
+    const mgr = (syncService as any).__container?.manager
 
     // Query raw + analysis cho toàn bộ đơn status=2,4 — không inline IDs (tránh query quá dài)
     let analysisMap: Record<string, any> = {}
