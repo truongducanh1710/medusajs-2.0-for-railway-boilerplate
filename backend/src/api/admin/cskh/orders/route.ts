@@ -5,6 +5,10 @@ const URGENCY_ORDER: Record<string, number> = {
   critical: 0, high: 1, medium: 2, low: 3,
 }
 
+const ALLOWED_SOURCES = ["manual", "facebook", "zalo", "unknown", "medusa"]
+const TAG_GIAO_KHONG_THANH = "Giao không thành"
+const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000
+
 /**
  * GET /admin/cskh/orders
  * Query: care, limit, offset
@@ -17,128 +21,123 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       offset = "0",
     } = req.query as Record<string, string | undefined>
 
+    const syncService = req.scope.resolve("pancakeSyncModule") as any
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
-    const mgr = (cskhService as any).__container?.manager
 
-    if (!mgr) {
-      return res.status(500).json({ error: "DB manager not available" })
-    }
-
-    const lim = Number(limit) || 200
+    const lim = Math.min(Number(limit) || 200, 500)
     const off = Number(offset) || 0
 
-    // Build queries with $N placeholders (PostgreSQL)
-    let aiParamIdx = 1
-    const aiParams: any[] = []
-    let aiCareClause = ""
-    if (care) {
-      aiParams.push(care)
-      aiCareClause = `AND po.care_name = $${aiParamIdx++}`
+    // Build filter — listPancakeOrders dùng MedusaService (không cần raw SQL params)
+    const filter: any = { status: { $in: [2, 4] } }
+    if (care) filter.care_name = care
+
+    const allOrders = await syncService.listPancakeOrders(filter, {
+      take: lim,
+      skip: off,
+      select: [
+        "id", "status", "status_name", "customer_name", "customer_phone",
+        "province", "sale_name", "care_name", "total", "cod_amount",
+        "tracking_code", "source", "pancake_created_at", "last_note_at", "tags",
+      ],
+      order: { pancake_created_at: "ASC" },
+    })
+
+    // Lọc source phía app
+    const orders = (allOrders as any[]).filter(o => ALLOWED_SOURCES.includes(o.source))
+
+    if (!orders.length) {
+      return res.json({ orders: [], count: 0, ai_count: 0, plain_count: 0 })
     }
-    aiParams.push(lim)
-    const aiLimitPh = `$${aiParamIdx++}`
-    aiParams.push(off)
-    const aiOffsetPh = `$${aiParamIdx++}`
 
-    const aiOrders = await mgr.execute(
-      `SELECT
-         po.id, po.status, po.status_name, po.customer_name, po.customer_phone,
-         po.province, po.sale_name, po.care_name, po.total, po.cod_amount,
-         po.tracking_code, po.source, po.pancake_created_at, po.last_note_at,
-         po.raw->'partner'->>'delivery_name'     AS delivery_name,
-         po.raw->'partner'->>'delivery_tel'      AS delivery_tel,
-         po.raw->'partner'->>'partner_status'    AS partner_status,
-         po.raw->'partner'->>'count_of_delivery' AS count_of_delivery,
-         po.raw->'partner'->>'picked_up_at'      AS picked_up_at,
-         (po.raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
-         (po.raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
-         po.raw->'tags' AS tags,
-         ca.current_step, ca.next_action, ca.call_time,
-         ca.urgency, ca.priority_score, ca.analyzed_at,
-         'ai' AS row_type
-       FROM pancake_order po
-       LEFT JOIN cskh_analysis ca ON ca.order_id = po.id
-       WHERE po.status IN (2, 4)
-         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
-         AND EXISTS (
-           SELECT 1 FROM jsonb_array_elements(COALESCE(po.raw->'tags','[]'::jsonb)) t
-           WHERE t->>'name' = 'Giao không thành'
-         )
-         ${aiCareClause}
-       ORDER BY po.pancake_created_at ASC
-       LIMIT ${aiLimitPh} OFFSET ${aiOffsetPh}`,
-      aiParams
-    )
+    const mgr = (cskhService as any).__container?.manager
 
-    let plainParamIdx = 1
-    const plainParams: any[] = []
-    let plainCareClause = ""
-    if (care) {
-      plainParams.push(care)
-      plainCareClause = `AND po.care_name = $${plainParamIdx++}`
+    // Lấy cskh_analysis — mgr.execute không params (inline IDs)
+    let analysisMap: Record<string, any> = {}
+    if (mgr) {
+      try {
+        const ids = orders.map(o => `'${String(o.id).replace(/'/g, "''")}'`).join(",")
+        const rows = await mgr.execute(
+          `SELECT order_id, current_step, next_action, call_time, urgency, priority_score, analyzed_at
+           FROM cskh_analysis WHERE order_id IN (${ids})`
+        )
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          analysisMap[r.order_id] = r
+        }
+      } catch (e: any) {
+        console.warn("[CSKH Orders] analysis query:", e.message)
+      }
     }
-    plainParams.push(lim)
-    const plainLimitPh = `$${plainParamIdx++}`
-    plainParams.push(off)
-    const plainOffsetPh = `$${plainParamIdx++}`
 
-    const plainOrders = await mgr.execute(
-      `SELECT
-         po.id, po.status, po.status_name, po.customer_name, po.customer_phone,
-         po.province, po.sale_name, po.care_name, po.total, po.cod_amount,
-         po.tracking_code, po.source, po.pancake_created_at, po.last_note_at,
-         po.raw->'partner'->>'delivery_name'     AS delivery_name,
-         po.raw->'partner'->>'delivery_tel'      AS delivery_tel,
-         po.raw->'partner'->>'partner_status'    AS partner_status,
-         po.raw->'partner'->>'count_of_delivery' AS count_of_delivery,
-         po.raw->'partner'->>'picked_up_at'      AS picked_up_at,
-         (po.raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
-         (po.raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
-         po.raw->'tags' AS tags,
-         NULL AS current_step, NULL AS next_action, NULL AS call_time,
-         NULL AS urgency, 0 AS priority_score, NULL AS analyzed_at,
-         'plain' AS row_type
-       FROM pancake_order po
-       WHERE po.status IN (2, 4)
-         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
-         AND NOT EXISTS (
-           SELECT 1 FROM jsonb_array_elements(COALESCE(po.raw->'tags','[]'::jsonb)) t
-           WHERE t->>'name' = 'Giao không thành'
-         )
-         ${plainCareClause}
-       ORDER BY po.pancake_created_at ASC
-       LIMIT ${plainLimitPh} OFFSET ${plainOffsetPh}`,
-      plainParams
-    )
+    // Lấy raw delivery fields
+    let rawMap: Record<string, any> = {}
+    if (mgr) {
+      try {
+        const ids = orders.map(o => `'${String(o.id).replace(/'/g, "''")}'`).join(",")
+        const rows = await mgr.execute(
+          `SELECT id,
+             raw->'partner'->>'delivery_name'     AS delivery_name,
+             raw->'partner'->>'delivery_tel'      AS delivery_tel,
+             raw->'partner'->>'partner_status'    AS partner_status,
+             raw->'partner'->>'count_of_delivery' AS count_of_delivery,
+             raw->'partner'->>'picked_up_at'      AS picked_up_at,
+             (raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
+             (raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at
+           FROM pancake_order WHERE id IN (${ids})`
+        )
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          rawMap[r.id] = r
+        }
+      } catch (e: any) {
+        console.warn("[CSKH Orders] raw query:", e.message)
+      }
+    }
 
     const now = Date.now()
-    const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000
+    let aiCount = 0
+    let plainCount = 0
 
-    function getCategory(order: any): string {
-      const tags: any[] = Array.isArray(order.tags) ? order.tags : (order.tags ? JSON.parse(order.tags) : [])
-      const tagNames = tags.map((t: any) => t.name ?? t)
-      if (tagNames.includes("Giao không thành")) return "su_co"
-      if (order.status === 4) return "dang_hoan"
-      const pickedMs = order.picked_up_at ? new Date(order.picked_up_at).getTime() : 0
-      if (pickedMs && now - pickedMs > FIVE_DAYS_MS) return "tre_giao"
-      return "binh_thuong"
-    }
+    const enriched = orders.map((o: any) => {
+      const tags: string[] = Array.isArray(o.tags)
+        ? o.tags.map((t: any) => t.name ?? t)
+        : []
+      const hasGKT = tags.includes(TAG_GIAO_KHONG_THANH)
+      const analysis = hasGKT ? (analysisMap[o.id] ?? null) : null
+      const raw = rawMap[o.id] ?? {}
 
-    function getMissingHoanTag(order: any): boolean {
-      if (order.status !== 4) return false
-      const tags: any[] = Array.isArray(order.tags) ? order.tags : (order.tags ? JSON.parse(order.tags) : [])
-      const tagNames = tags.map((t: any) => t.name ?? t)
-      return !HOAN_TAGS.some(h => tagNames.includes(h))
-    }
+      let category = "binh_thuong"
+      if (hasGKT) category = "su_co"
+      else if (o.status === 4) category = "dang_hoan"
+      else {
+        const pickedMs = raw.picked_up_at ? new Date(raw.picked_up_at).getTime() : 0
+        if (pickedMs && now - pickedMs > FIVE_DAYS_MS) category = "tre_giao"
+      }
 
-    const enriched = [...aiOrders, ...plainOrders].map((o: any) => ({
-      ...o,
-      tags: typeof o.tags === "string" ? JSON.parse(o.tags || "[]") : (o.tags ?? []),
-      category: getCategory(o),
-      missing_hoan_tag: getMissingHoanTag(o),
-    }))
+      const missing_hoan_tag = o.status === 4 && !HOAN_TAGS.some(h => tags.includes(h))
 
-    enriched.sort((a, b) => {
+      if (hasGKT) aiCount++; else plainCount++
+
+      return {
+        ...o,
+        delivery_name: raw.delivery_name ?? null,
+        delivery_tel: raw.delivery_tel ?? null,
+        partner_status: raw.partner_status ?? null,
+        count_of_delivery: raw.count_of_delivery ?? null,
+        picked_up_at: raw.picked_up_at ?? null,
+        last_delivery_status: raw.last_delivery_status ?? null,
+        last_delivery_at: raw.last_delivery_at ?? null,
+        current_step: analysis?.current_step ?? null,
+        next_action: analysis?.next_action ?? null,
+        call_time: analysis?.call_time ?? null,
+        urgency: analysis?.urgency ?? null,
+        priority_score: analysis?.priority_score ?? 0,
+        analyzed_at: analysis?.analyzed_at ?? null,
+        row_type: hasGKT ? "ai" : "plain",
+        category,
+        missing_hoan_tag,
+      }
+    })
+
+    enriched.sort((a: any, b: any) => {
       if (a.row_type === "ai" && b.row_type !== "ai") return -1
       if (a.row_type !== "ai" && b.row_type === "ai") return 1
       if (a.row_type === "ai" && b.row_type === "ai") {
@@ -155,8 +154,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       orders: enriched,
       count: enriched.length,
-      ai_count: aiOrders.length,
-      plain_count: plainOrders.length,
+      ai_count: aiCount,
+      plain_count: plainCount,
     })
   } catch (err: any) {
     console.error("[CSKH Orders]", err.message, err.stack)
