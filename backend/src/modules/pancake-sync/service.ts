@@ -329,11 +329,18 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                 const prev = existing[0]
 
                 // Skip terminal-in-DB orders that haven't changed status
-                // (BUT: nếu row đang `partial` từ webhook → vẫn cần fill data đầy đủ, không skip)
+                // Bypass skip nếu:
+                //   - data_quality=partial (chỉ có data từ webhook, thiếu items/customer)
+                //   - care_name rỗng và Pancake có (cần backfill field mới)
+                //   - status_name SAI so với mapping mới (cần heal label)
                 const isPartial = prev.data_quality === "partial"
+                const needsCareBackfill = !prev.care_name && !!mapped.care_name
+                const needsLabelHeal = prev.status_name !== mapped.status_name
                 if (
                   !opts?.force &&
                   !isPartial &&
+                  !needsCareBackfill &&
+                  !needsLabelHeal &&
                   TERMINAL_STATUSES.has(prev.status) &&
                   prev.status === mapped.status
                 ) {
@@ -397,6 +404,15 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
                           source: "sync",
                         },
                       ] as any,
+                      synced_at: new Date(),
+                    } as any)
+                    updated++
+                  } else if (needsCareBackfill || needsLabelHeal) {
+                    // Backfill care_name hoặc heal label sai — không đụng status_history
+                    await this.updatePancakeOrders({
+                      id: mapped.id,
+                      ...(needsCareBackfill ? { care_name: mapped.care_name } : {}),
+                      ...(needsLabelHeal ? { status_name: mapped.status_name } : {}),
                       synced_at: new Date(),
                     } as any)
                     updated++
@@ -608,15 +624,29 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
     // One-time heal: fix status_name sai từ code cũ (mapping đã update đúng theo Pancake)
     // Status 6 đặc biệt: trước mapped là "Đã gửi VC", giờ đúng là "Đã hủy"
+    // Paginate qua tất cả đơn cần heal (không cap 500) — quan trọng vì status=6 có >3000 đơn cũ
     try {
       const statusesToHeal = [1, 2, 3, 4, 5, 6, 7]
       for (const st of statusesToHeal) {
-        const wrongRows = await this.listPancakeOrders({ status: st }, { take: 500 })
         const expected = statusLabel(st)
-        for (const o of wrongRows) {
-          if (o.status_name !== expected) {
+        // Chỉ heal đơn có status_name SAI (filter trực tiếp trong DB query)
+        let healSkip = 0
+        const healPageSize = 200
+        while (true) {
+          const wrongRows = await this.listPancakeOrders(
+            {
+              status: st,
+              status_name: { $ne: expected } as any,
+            } as any,
+            { take: healPageSize, skip: healSkip, select: ["id", "status_name"] as any }
+          )
+          if (wrongRows.length === 0) break
+          for (const o of wrongRows) {
             await this.updatePancakeOrders({ id: o.id, status_name: expected } as any)
           }
+          console.log(`[syncActiveOrders] Healed ${wrongRows.length} rows status=${st} → "${expected}"`)
+          if (wrongRows.length < healPageSize) break
+          healSkip += healPageSize
         }
       }
     } catch (healErr: any) {
