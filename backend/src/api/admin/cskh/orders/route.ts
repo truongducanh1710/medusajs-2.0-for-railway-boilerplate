@@ -58,45 +58,46 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const mgr = (cskhService as any).__container?.manager
 
-    // Lấy cskh_analysis — mgr.execute không params (inline IDs)
+    // Query raw + analysis cho toàn bộ đơn status=2,4 — không inline IDs (tránh query quá dài)
     let analysisMap: Record<string, any> = {}
-    if (mgr) {
-      try {
-        const ids = orders.map(o => `'${String(o.id).replace(/'/g, "''")}'`).join(",")
-        const rows = await mgr.execute(
-          `SELECT order_id, current_step, next_action, call_time, urgency, priority_score, analyzed_at
-           FROM cskh_analysis WHERE order_id IN (${ids})`
-        )
-        for (const r of (Array.isArray(rows) ? rows : [])) {
-          analysisMap[r.order_id] = r
-        }
-      } catch (e: any) {
-        console.warn("[CSKH Orders] analysis query:", e.message)
-      }
-    }
-
-    // Lấy raw delivery fields
     let rawMap: Record<string, any> = {}
     if (mgr) {
       try {
-        const ids = orders.map(o => `'${String(o.id).replace(/'/g, "''")}'`).join(",")
+        const careWhere = care ? `AND po.care_name = '${care.replace(/'/g, "''")}'` : ""
         const rows = await mgr.execute(
-          `SELECT id,
-             raw->'partner'->>'delivery_name'     AS delivery_name,
-             raw->'partner'->>'delivery_tel'      AS delivery_tel,
-             raw->'partner'->>'partner_status'    AS partner_status,
-             raw->'partner'->>'count_of_delivery' AS count_of_delivery,
-             raw->'partner'->>'picked_up_at'      AS picked_up_at,
-             (raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
-             (raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
-             raw->'tags'                          AS raw_tags
-           FROM pancake_order WHERE id IN (${ids})`
+          `SELECT
+             po.id,
+             po.raw->'partner'->>'delivery_name'     AS delivery_name,
+             po.raw->'partner'->>'delivery_tel'      AS delivery_tel,
+             po.raw->'partner'->>'partner_status'    AS partner_status,
+             po.raw->'partner'->>'count_of_delivery' AS count_of_delivery,
+             po.raw->'partner'->>'picked_up_at'      AS picked_up_at,
+             (po.raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
+             (po.raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
+             po.raw->'tags'                          AS raw_tags,
+             ca.order_id, ca.current_step, ca.next_action, ca.call_time,
+             ca.urgency, ca.priority_score, ca.analyzed_at
+           FROM pancake_order po
+           LEFT JOIN cskh_analysis ca ON ca.order_id = po.id
+           WHERE po.status IN (2, 4)
+             AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
+             ${careWhere}`
         )
         for (const r of (Array.isArray(rows) ? rows : [])) {
           rawMap[r.id] = r
+          if (r.order_id) {
+            analysisMap[r.order_id] = {
+              current_step: r.current_step,
+              next_action: r.next_action,
+              call_time: r.call_time,
+              urgency: r.urgency,
+              priority_score: r.priority_score,
+              analyzed_at: r.analyzed_at,
+            }
+          }
         }
       } catch (e: any) {
-        console.warn("[CSKH Orders] raw query:", e.message)
+        console.warn("[CSKH Orders] raw+analysis query:", e.message)
       }
     }
 
