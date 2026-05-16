@@ -28,22 +28,27 @@ function todayVN(): string {
 }
 
 function buildSystemPrompt(): string {
+  const nowVN = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace("Z", "+07:00")
   return `Bạn hỗ trợ CSKH công ty bán hàng online Việt Nam theo dõi vận đơn.
-Hôm nay: ${todayVN()} (giờ Việt Nam UTC+7).
+Bây giờ: ${nowVN} (giờ Việt Nam UTC+7).
 
-Với mỗi đơn, đọc lịch sử bưu tá + note CSKH để xác định:
-1. Đơn đang ở bước nào (khách hẹn? CSKH đang đợi? sắp hoàn?)
-2. Việc tiếp theo CSKH cần làm là gì (gọi khách? gọi bưu cục? đợi?)
-3. Nên làm lúc mấy giờ hôm nay (hoặc ngày mai nếu chưa cần hôm nay)
+Với mỗi đơn, ưu tiên đọc cskh_notes TRƯỚC (note của nhân viên CSKH), rồi mới xem delivery_history (lịch sử bưu tá).
+Note CSKH quan trọng hơn trạng thái bưu tá vì phản ánh thỏa thuận thực tế với khách.
 
-Quy tắc call_time (ISO 8601 có timezone +07:00, hoặc null):
-- Khách hẹn giờ cụ thể → call_time = 30 phút TRƯỚC giờ hẹn (để nhắc khách)
-- Không liên lạc được → call_time = hôm nay 08:00+07:00
-- CSKH đã note lịch gọi → call_time = đúng giờ đó
-- Bưu cục báo sắp hoàn ("Thông báo chuyển hoàn") → urgency=critical, call_time = ngay bây giờ
-- Đã xử lý ổn, đang chờ bưu tá phát lại → call_time = null
+Viết current_step bằng tiếng Việt ngắn gọn, mô tả tình trạng thực tế:
+- Dựa vào note CSKH gần nhất + lịch sử bưu tá gần nhất
+- KHÔNG chép nguyên raw status bưu tá (vd: "undeliverable", "on_the_way")
+- Ví dụ tốt: "Khách hẹn giao lại chiều nay", "Bưu tá sắp hoàn - chưa liên lạc được khách", "Đang chờ bưu tá phát lại sau khi hẹn"
 
-Urgency: critical (sắp hoàn/khẩn cấp) | high (cần gọi hôm nay) | medium (có thể hôm nay/mai) | low (đang ổn)
+Quy tắc call_time (ISO 8601 timezone +07:00, hoặc null):
+- Khách hẹn giờ cụ thể trong note/delivery → call_time = 30 phút TRƯỚC giờ hẹn
+- Bưu cục báo "Thông báo chuyển hoàn" và chưa liên lạc được khách → urgency=critical, call_time = ngay bây giờ (${nowVN})
+- Chưa liên lạc được khách, không có hẹn → call_time = hôm nay 08:00+07:00
+- CSKH note lịch gọi cụ thể ("gl chiều", "gl 15h") → call_time = giờ đó hôm nay
+- Đã có thỏa thuận ổn (khách hẹn, bưu tá xác nhận giao lại) → call_time = null (đang chờ, không cần gọi)
+- Bưu tá xác nhận đang giao lại, chưa có vấn đề → call_time = null
+
+Urgency: critical (sắp hoàn ngay/khẩn cấp) | high (cần gọi hôm nay) | medium (có thể hôm nay/mai) | low (đang ổn, đang chờ)
 Priority_score 0-100: +3/ngày kể từ sự cố, +10/lần giao thất bại, +25 nếu sắp hoàn, +15 nếu CSKH không note >3 ngày, +10 nếu COD>500k.
 
 Trả về JSON với key "results" chứa array, KHÔNG giải thích thêm:
@@ -210,6 +215,28 @@ export class CskhAnalysisService extends MedusaService({}) {
          ${careWhere}`,
       params
     )
+  }
+
+  // Force re-analyze tất cả đơn GKT (xóa analyzed_at để bypass 2h cache)
+  async getOrderIdsForForceReanalyze(careFilter?: string): Promise<string[]> {
+    const careWhere = careFilter ? `AND po.care_name = $1` : ""
+    const params = careFilter ? [careFilter] : []
+    // Reset analyzed_at về null để getOrdersNeedingAnalysis pick up lại
+    await this.sql(
+      `UPDATE cskh_analysis ca
+       SET analyzed_at = '2000-01-01'
+       FROM pancake_order po
+       WHERE ca.order_id = po.id
+         AND po.status IN (2, 4)
+         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
+         AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(po.raw->'tags','[]'::jsonb)) t
+           WHERE t->>'name' = '${TAG_GIAO_KHONG_THANH}'
+         )
+         ${careWhere}`,
+      params
+    )
+    return this.getOrdersNeedingAnalysis(careFilter)
   }
 
   // getOrdersNeedingAnalysis: IDs đơn có thẻ "Giao không thành"
