@@ -196,7 +196,7 @@ export class CskhAnalysisService extends MedusaService({}) {
        FROM pancake_order po
        LEFT JOIN cskh_analysis ca ON ca.order_id = po.id
        WHERE po.status IN (2, 4)
-         AND po.source IN ('manual', 'facebook', 'zalo')
+         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
          AND EXISTS (
            SELECT 1 FROM jsonb_array_elements(
              COALESCE(po.raw->'tags', '[]'::jsonb)

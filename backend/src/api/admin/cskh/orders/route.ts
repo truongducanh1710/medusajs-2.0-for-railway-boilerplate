@@ -59,7 +59,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        FROM pancake_order po
        LEFT JOIN cskh_analysis ca ON ca.order_id = po.id
        WHERE po.status IN (2, 4)
-         AND po.source IN ('manual', 'facebook', 'zalo')
+         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
          AND EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(po.raw->'tags','[]'::jsonb)) t
            WHERE t->>'name' = 'Giao không thành'
@@ -100,7 +100,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          'plain' AS row_type
        FROM pancake_order po
        WHERE po.status IN (2, 4)
-         AND po.source IN ('manual', 'facebook', 'zalo')
+         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
          AND NOT EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(po.raw->'tags','[]'::jsonb)) t
            WHERE t->>'name' = 'Giao không thành'

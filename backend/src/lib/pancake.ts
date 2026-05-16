@@ -157,9 +157,6 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     payload.warehouse_id = PANCAKE_WAREHOUSE_ID
   }
 
-  // Gắn nguồn đơn để CSKH lọc được (Pancake lưu thành source="manual")
-  payload.source = "manual"
-
   // Tag để nhận diện đơn từ website khi sync ngược lại
   payload.tags = [{ name: "phanviet-web" }]
 
