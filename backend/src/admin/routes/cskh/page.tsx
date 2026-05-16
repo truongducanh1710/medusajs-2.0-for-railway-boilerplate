@@ -270,22 +270,22 @@ export default function CskhPage() {
   }, [orders, activeTab])
 
   // Columns
-  const columns: ResizableColDef[] = [
-    { key: "id",         label: "Mã đơn",         defaultWidth: 90  },
-    { key: "customer",   label: "Khách + SĐT",     defaultWidth: 180 },
-    { key: "province",   label: "Tỉnh/TP",         defaultWidth: 110 },
-    { key: "care",       label: "CSKH",            defaultWidth: 100 },
-    { key: "status",     label: "Trạng thái",      defaultWidth: 110 },
-    { key: "delivery",   label: "Lần giao",        defaultWidth: 70  },
-    { key: "shipper",    label: "Bưu tá + SĐT",    defaultWidth: 180 },
-    { key: "last_ship",  label: "Cập nhật ship",   defaultWidth: 200 },
-    { key: "cod",        label: "COD",             defaultWidth: 90  },
-    { key: "step",       label: "🤖 Đang ở bước",  defaultWidth: 240 },
-    { key: "action",     label: "🤖 Việc tiếp theo",defaultWidth: 220 },
-    { key: "call_time",  label: "Gọi lúc",         defaultWidth: 110 },
-  ]
+  const columns = [
+    { id: "id",         label: "Mã đơn",          default: 90,  min: 60  },
+    { id: "customer",   label: "Khách + SĐT",      default: 180, min: 120 },
+    { id: "province",   label: "Tỉnh/TP",          default: 110, min: 80  },
+    { id: "care",       label: "CSKH",             default: 100, min: 70  },
+    { id: "status",     label: "Trạng thái",       default: 110, min: 80  },
+    { id: "delivery",   label: "Lần giao",         default: 70,  min: 50  },
+    { id: "shipper",    label: "Bưu tá + SĐT",     default: 180, min: 120 },
+    { id: "last_ship",  label: "Cập nhật ship",    default: 200, min: 120 },
+    { id: "cod",        label: "COD",              default: 90,  min: 60  },
+    { id: "step",       label: "🤖 Đang ở bước",   default: 240, min: 140 },
+    { id: "action",     label: "🤖 Việc tiếp theo", default: 220, min: 130 },
+    { id: "call_time",  label: "Gọi lúc",          default: 110, min: 80  },
+  ] as const satisfies ResizableColDef[]
 
-  const { colWidths, onMouseDown } = useResizableColumns(columns, "cskh.col-widths.v1")
+  const { colWidths, onResizeMouseDown } = useResizableColumns("cskh.col-widths.v1", columns)
 
   if (permLoading) return <div className="p-6 text-ui-fg-muted">Đang kiểm tra quyền...</div>
   if (!has("page.cskh.view")) return <div className="p-6 text-red-500">Bạn không có quyền xem trang này.</div>
@@ -328,14 +328,14 @@ export default function CskhPage() {
               <tr>
                 {columns.map((col, i) => (
                   <th
-                    key={col.key}
+                    key={col.id}
                     className="text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base select-none relative whitespace-nowrap"
-                    style={{ width: colWidths[i] }}
+                    style={{ width: colWidths[col.id] }}
                   >
                     {col.label}
                     {i < columns.length - 1 && (
                       <div
-                        onMouseDown={onMouseDown(i)}
+                        onMouseDown={onResizeMouseDown(col.id)}
                         className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-ui-border-strong"
                       />
                     )}
