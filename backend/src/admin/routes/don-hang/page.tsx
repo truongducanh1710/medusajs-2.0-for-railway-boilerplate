@@ -677,7 +677,13 @@ const DonHangPage = () => {
           </div>
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
             <div className="overflow-x-auto rounded-xl">
-              <table className="text-sm" style={{ tableLayout: "fixed", width: "max-content" }}>
+              <table
+                className="text-sm"
+                style={{
+                  tableLayout: "fixed",
+                  width: `${COLUMN_DEFS.reduce((s, c) => s + colWidths[c.id], 0)}px`,
+                }}
+              >
                 <colgroup>
                   {COLUMN_DEFS.map((c) => (
                     <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />
