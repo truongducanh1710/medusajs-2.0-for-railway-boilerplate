@@ -2,6 +2,20 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import SalePeriodSummary from "../../components/sale-period-summary"
+import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
+
+// ============ Resizable columns ============
+
+type XnColId = "customer" | "product" | "total" | "sale" | "status" | "time"
+
+const XN_COLUMN_DEFS: ResizableColDef<XnColId>[] = [
+  { id: "customer", label: "Khách hàng", default: 220, min: 140 },
+  { id: "product",  label: "Sản phẩm",   default: 280, min: 150 },
+  { id: "total",    label: "Tổng tiền",  default: 120, min: 90 },
+  { id: "sale",     label: "Sale",       default: 100, min: 70 },
+  { id: "status",   label: "Tình trạng", default: 180, min: 130 },
+  { id: "time",     label: "Giờ tạo",    default: 140, min: 100 },
+]
 
 // ---- Helpers ----
 
@@ -159,6 +173,10 @@ const XacNhanDonPage = () => {
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null)
   const LIMIT = 50
+
+  // ===== Column widths (resizable, lưu localStorage) =====
+  const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } =
+    useResizableColumns<XnColId>("xac-nhan-don.col-widths.v1", XN_COLUMN_DEFS)
 
   const copyPhone = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -331,16 +349,53 @@ const XacNhanDonPage = () => {
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-gray-400">Không có đơn nào trong ngày này</div>
       ) : (
-        <div className="border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <>
+        <div className="flex items-center justify-end gap-2 mb-2">
+          <button
+            onClick={resetColWidths}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+            title="Reset độ rộng tất cả cột về mặc định"
+          >
+            ↻ Reset cột
+          </button>
+        </div>
+        <div className="border rounded-xl">
+          <div className="overflow-x-auto rounded-xl">
+          <table
+            className="text-sm"
+            style={{ tableLayout: "fixed", width: `${totalWidth}px` }}
+          >
+            <colgroup>
+              {XN_COLUMN_DEFS.map((c) => (
+                <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />
+              ))}
+            </colgroup>
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Khách hàng</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Sản phẩm</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tổng tiền</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Sale</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tình trạng</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Giờ tạo</th>
+                {(() => {
+                  const Th = ({ id, children }: { id: XnColId; children: React.ReactNode }) => (
+                    <th className="relative text-left px-4 py-3 font-medium text-gray-600 overflow-hidden">
+                      <span className="block truncate">{children}</span>
+                      <span
+                        onMouseDown={onResizeMouseDown(id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-violet-400 active:bg-violet-500"
+                        title="Kéo để đổi độ rộng cột"
+                        style={{ touchAction: "none" }}
+                      />
+                    </th>
+                  )
+                  return (
+                    <>
+                      <Th id="customer">Khách hàng</Th>
+                      <Th id="product">Sản phẩm</Th>
+                      <Th id="total">Tổng tiền</Th>
+                      <Th id="sale">Sale</Th>
+                      <Th id="status">Tình trạng</Th>
+                      <Th id="time">Giờ tạo</Th>
+                    </>
+                  )
+                })()}
               </tr>
             </thead>
             <tbody>
@@ -355,34 +410,38 @@ const XacNhanDonPage = () => {
                     }`}
                     onClick={() => setSelectedOrder(o)}
                   >
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{o.customer_name}</div>
+                    <td className="px-4 py-3 overflow-hidden align-top">
+                      <div className="font-medium truncate" title={o.customer_name || ""}>{o.customer_name}</div>
                       <button
                         onClick={(e) => copyPhone(o.customer_phone, e)}
-                        className={`text-xs mt-0.5 transition-colors ${copiedPhone === o.customer_phone ? "text-green-500" : "text-gray-400 hover:text-violet-600"}`}
+                        className={`text-xs mt-0.5 transition-colors truncate block max-w-full ${copiedPhone === o.customer_phone ? "text-green-500" : "text-gray-400 hover:text-violet-600"}`}
                         title="Click để copy số điện thoại"
                       >
                         {copiedPhone === o.customer_phone ? "✓ Đã copy!" : o.customer_phone}
                       </button>
                       {o.id && <div className="text-gray-300 text-xs">#{o.id}</div>}
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell text-gray-600 max-w-xs truncate">
-                      {o.product_summary || "—"}
+                    <td className="px-4 py-3 text-gray-600 overflow-hidden">
+                      <span className="block truncate" title={o.product_summary || ""}>{o.product_summary || "—"}</span>
                     </td>
-                    <td className="px-4 py-3 font-medium">{formatVND(o.total)}</td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-gray-600">{o.sale_name || "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${badge.cls}`}>
+                    <td className="px-4 py-3 font-medium overflow-hidden">
+                      <span className="block truncate">{formatVND(o.total)}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 overflow-hidden">
+                      <span className="block truncate" title={o.sale_name || ""}>{o.sale_name || "—"}</span>
+                    </td>
+                    <td className="px-4 py-3 overflow-hidden align-top">
+                      <span className={`inline-block max-w-full truncate px-2 py-0.5 rounded-full text-xs ${badge.cls}`} title={badge.label}>
                         {badge.label}
                       </span>
                       {lastNote && (
-                        <div className="text-xs text-gray-400 mt-1">
+                        <div className="text-xs text-gray-400 mt-1 truncate" title={`${lastNote.by} · ${formatDateTime(lastNote.at)}`}>
                           {lastNote.by} · {formatDateTime(lastNote.at)}
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell text-gray-400 text-xs">
-                      {formatDateTime(o.pancake_created_at)}
+                    <td className="px-4 py-3 text-gray-400 text-xs overflow-hidden align-top">
+                      <span className="block truncate">{formatDateTime(o.pancake_created_at)}</span>
                       {o.is_overdue && (
                         <div className="text-red-500 font-medium">⚠️ Quá hạn</div>
                       )}
@@ -392,7 +451,9 @@ const XacNhanDonPage = () => {
               })}
             </tbody>
           </table>
+          </div>
         </div>
+        </>
       )}
 
       {/* Pagination */}

@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
+import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
 
 // ============ Formatters ============
 
@@ -121,9 +122,7 @@ type ColId =
   | "pos" | "source" | "date" | "name" | "phone" | "province" | "product"
   | "marketer" | "sale" | "care" | "total" | "status_pos" | "payment" | "fulfillment" | "action"
 
-type ColumnDef = { id: ColId; label: string; default: number; min: number }
-
-const COLUMN_DEFS: ColumnDef[] = [
+const COLUMN_DEFS: ResizableColDef<ColId>[] = [
   { id: "pos",         label: "#POS",       default: 130, min: 80 },
   { id: "source",      label: "Nguồn",      default: 110, min: 90 },
   { id: "date",        label: "Ngày đặt",   default: 140, min: 110 },
@@ -140,31 +139,6 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: "fulfillment", label: "Giao hàng",  default: 110, min: 90 },
   { id: "action",      label: "",           default: 90,  min: 70 },
 ]
-
-const COL_WIDTHS_KEY = "don-hang.col-widths.v1"
-
-function loadColWidths(): Record<ColId, number> {
-  if (typeof window === "undefined") return Object.fromEntries(COLUMN_DEFS.map((c) => [c.id, c.default])) as any
-  try {
-    const raw = window.localStorage.getItem(COL_WIDTHS_KEY)
-    const stored: Partial<Record<ColId, number>> = raw ? JSON.parse(raw) : {}
-    const merged: Record<ColId, number> = {} as any
-    for (const c of COLUMN_DEFS) {
-      const v = stored[c.id]
-      merged[c.id] = typeof v === "number" && v >= c.min ? v : c.default
-    }
-    return merged
-  } catch {
-    return Object.fromEntries(COLUMN_DEFS.map((c) => [c.id, c.default])) as any
-  }
-}
-
-function saveColWidths(widths: Record<ColId, number>): void {
-  if (typeof window === "undefined") return
-  try {
-    window.localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths))
-  } catch {}
-}
 
 type SortDir = "asc" | "desc"
 
@@ -265,46 +239,8 @@ const DonHangPage = () => {
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
   // ===== Column widths (resizable, lưu localStorage) =====
-  const [colWidths, setColWidths] = useState<Record<ColId, number>>(() => loadColWidths())
-  const resizeStateRef = useRef<{ id: ColId; startX: number; startW: number } | null>(null)
-
-  const onResizeMouseDown = (id: ColId) => (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const def = COLUMN_DEFS.find((c) => c.id === id)
-    if (!def) return
-    resizeStateRef.current = { id, startX: e.clientX, startW: colWidths[id] }
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-
-    const onMove = (ev: MouseEvent) => {
-      const s = resizeStateRef.current
-      if (!s) return
-      const delta = ev.clientX - s.startX
-      const next = Math.max(def.min, Math.round(s.startW + delta))
-      setColWidths((prev) => ({ ...prev, [s.id]: next }))
-    }
-    const onUp = () => {
-      resizeStateRef.current = null
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-      document.removeEventListener("mousemove", onMove)
-      document.removeEventListener("mouseup", onUp)
-      // Save sau khi user thả chuột (tránh spam localStorage trong lúc drag)
-      setColWidths((curr) => {
-        saveColWidths(curr)
-        return curr
-      })
-    }
-    document.addEventListener("mousemove", onMove)
-    document.addEventListener("mouseup", onUp)
-  }
-
-  const resetColWidths = () => {
-    const defaults = Object.fromEntries(COLUMN_DEFS.map((c) => [c.id, c.default])) as Record<ColId, number>
-    setColWidths(defaults)
-    saveColWidths(defaults)
-  }
+  const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } =
+    useResizableColumns<ColId>("don-hang.col-widths.v1", COLUMN_DEFS)
 
   // Sync URL when filters change (dùng history API thay vì react-router để tránh import external)
   useEffect(() => {
@@ -681,7 +617,7 @@ const DonHangPage = () => {
                 className="text-sm"
                 style={{
                   tableLayout: "fixed",
-                  width: `${COLUMN_DEFS.reduce((s, c) => s + colWidths[c.id], 0)}px`,
+                  width: `${totalWidth}px`,
                 }}
               >
                 <colgroup>

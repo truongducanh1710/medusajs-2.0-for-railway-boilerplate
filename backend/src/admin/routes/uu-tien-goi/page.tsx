@@ -2,6 +2,21 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import SalePeriodSummary from "../../components/sale-period-summary"
+import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
+
+// ============ Resizable columns ============
+
+type UtColId = "rank" | "customer" | "product" | "sale" | "reason" | "hours" | "score"
+
+const UT_COLUMN_DEFS: ResizableColDef<UtColId>[] = [
+  { id: "rank",     label: "#",          default: 60,  min: 40 },
+  { id: "customer", label: "Khách hàng", default: 220, min: 140 },
+  { id: "product",  label: "Sản phẩm",   default: 280, min: 150 },
+  { id: "sale",     label: "Sale",       default: 100, min: 70 },
+  { id: "reason",   label: "Lý do gấp",  default: 240, min: 150 },
+  { id: "hours",    label: "Giờ",        default: 80,  min: 60 },
+  { id: "score",    label: "Điểm",       default: 80,  min: 60 },
+]
 
 // ---- Helpers ----
 
@@ -162,6 +177,10 @@ const UuTienGoiPage = () => {
   const [syncing, setSyncing] = useState(false)
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null)
 
+  // ===== Column widths (resizable, lưu localStorage) =====
+  const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } =
+    useResizableColumns<UtColId>("uu-tien-goi.col-widths.v1", UT_COLUMN_DEFS)
+
   const copyPhone = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation()
     navigator.clipboard.writeText(phone)
@@ -285,17 +304,54 @@ const UuTienGoiPage = () => {
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-gray-400">Không có đơn nào cần xử lý 🎉</div>
       ) : (
-        <div className="border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <>
+        <div className="flex items-center justify-end gap-2 mb-2">
+          <button
+            onClick={resetColWidths}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+            title="Reset độ rộng tất cả cột về mặc định"
+          >
+            ↻ Reset cột
+          </button>
+        </div>
+        <div className="border rounded-xl">
+          <div className="overflow-x-auto rounded-xl">
+          <table
+            className="text-sm"
+            style={{ tableLayout: "fixed", width: `${totalWidth}px` }}
+          >
+            <colgroup>
+              {UT_COLUMN_DEFS.map((c) => (
+                <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />
+              ))}
+            </colgroup>
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-center px-3 py-3 font-medium text-gray-600 w-10">#</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Khách hàng</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Sản phẩm</th>
-                <th className="text-left px-3 py-3 font-medium text-gray-600">Sale</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Lý do gấp</th>
-                <th className="text-center px-3 py-3 font-medium text-gray-600">Giờ</th>
-                <th className="text-center px-3 py-3 font-medium text-gray-600">Điểm</th>
+                {(() => {
+                  const Th = ({ id, children, align = "left" }: { id: UtColId; children: React.ReactNode; align?: "left" | "center" }) => (
+                    <th className={`relative ${align === "center" ? "text-center" : "text-left"} px-3 py-3 font-medium text-gray-600 overflow-hidden`}>
+                      <span className="block truncate">{children}</span>
+                      <span
+                        onMouseDown={onResizeMouseDown(id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-violet-400 active:bg-violet-500"
+                        title="Kéo để đổi độ rộng cột"
+                        style={{ touchAction: "none" }}
+                      />
+                    </th>
+                  )
+                  return (
+                    <>
+                      <Th id="rank" align="center">#</Th>
+                      <Th id="customer">Khách hàng</Th>
+                      <Th id="product">Sản phẩm</Th>
+                      <Th id="sale">Sale</Th>
+                      <Th id="reason">Lý do gấp</Th>
+                      <Th id="hours" align="center">Giờ</Th>
+                      <Th id="score" align="center">Điểm</Th>
+                    </>
+                  )
+                })()}
               </tr>
             </thead>
             <tbody>
@@ -307,34 +363,36 @@ const UuTienGoiPage = () => {
                     className={`border-b last:border-0 cursor-pointer hover:bg-violet-50 transition-colors ${cfg.row}`}
                     onClick={() => setSelectedOrder(o)}
                   >
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-3 py-3 text-center overflow-hidden align-top">
                       <span className="text-base">{cfg.dot}</span>
                       <div className="text-xs text-gray-400 mt-0.5">{idx + 1}</div>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{o.customer_name}</div>
+                    <td className="px-4 py-3 overflow-hidden align-top">
+                      <div className="font-medium truncate" title={o.customer_name || ""}>{o.customer_name}</div>
                       <button
                         onClick={(e) => copyPhone(o.customer_phone, e)}
-                        className={`text-xs mt-0.5 transition-colors ${copiedPhone === o.customer_phone ? "text-green-500" : "text-gray-400 hover:text-violet-600"}`}
+                        className={`text-xs mt-0.5 transition-colors truncate block max-w-full ${copiedPhone === o.customer_phone ? "text-green-500" : "text-gray-400 hover:text-violet-600"}`}
                         title="Click để copy"
                       >
                         {copiedPhone === o.customer_phone ? "✓ Đã copy!" : o.customer_phone}
                       </button>
-                      <div className="text-gray-300 text-xs">#{o.id}</div>
+                      <div className="text-gray-300 text-xs truncate">#{o.id}</div>
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell text-gray-600 max-w-xs truncate">
-                      {o.product_summary || "—"}
+                    <td className="px-4 py-3 text-gray-600 overflow-hidden">
+                      <span className="block truncate" title={o.product_summary || ""}>{o.product_summary || "—"}</span>
                     </td>
-                    <td className="px-3 py-3 text-gray-600 text-xs">{o.sale_name || "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${cfg.badge}`}>
+                    <td className="px-3 py-3 text-gray-600 text-xs overflow-hidden">
+                      <span className="block truncate" title={o.sale_name || ""}>{o.sale_name || "—"}</span>
+                    </td>
+                    <td className="px-4 py-3 overflow-hidden">
+                      <span className={`inline-block max-w-full truncate px-2 py-0.5 rounded-full text-xs ${cfg.badge}`} title={o.urgency_reason}>
                         {o.urgency_reason}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-center text-xs text-gray-500">
+                    <td className="px-3 py-3 text-center text-xs text-gray-500 overflow-hidden">
                       {o.hours_old >= 1 ? `${Math.round(o.hours_old)}h` : `${Math.round(o.hours_old * 60)}p`}
                     </td>
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-3 py-3 text-center overflow-hidden">
                       <span className={`text-sm font-bold ${o.priority_level === "critical" ? "text-red-600" : o.priority_level === "high" ? "text-orange-500" : "text-gray-500"}`}>
                         {o.priority_score}
                       </span>
@@ -344,7 +402,9 @@ const UuTienGoiPage = () => {
               })}
             </tbody>
           </table>
+          </div>
         </div>
+        </>
       )}
 
       {selectedOrder && (
