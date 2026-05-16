@@ -1,7 +1,7 @@
 import { MedusaService } from "@medusajs/framework/utils"
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions"
-const MODEL = "qwen/qwen-2.5-72b-instruct"
+const MODEL = "qwen/qwen2.5-vl-72b-instruct"
 const BATCH_SIZE = 8
 
 // Thẻ trigger AI — Pancake tự gắn khi ship báo thất bại
