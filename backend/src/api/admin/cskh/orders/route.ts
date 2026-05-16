@@ -88,7 +88,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
              raw->'partner'->>'count_of_delivery' AS count_of_delivery,
              raw->'partner'->>'picked_up_at'      AS picked_up_at,
              (raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
-             (raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at
+             (raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
+             raw->'tags'                          AS raw_tags
            FROM pancake_order WHERE id IN (${ids})`
         )
         for (const r of (Array.isArray(rows) ? rows : [])) {
@@ -104,12 +105,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     let plainCount = 0
 
     const enriched = orders.map((o: any) => {
-      const tags: string[] = Array.isArray(o.tags)
-        ? o.tags.map((t: any) => t.name ?? t)
-        : []
+      const raw = rawMap[o.id] ?? {}
+      // Ưu tiên raw_tags từ raw JSON (luôn mới nhất), fallback về field tags
+      const rawTagsArr = Array.isArray(raw.raw_tags) ? raw.raw_tags
+        : (typeof raw.raw_tags === "string" ? JSON.parse(raw.raw_tags || "[]") : null)
+      const tagsArr = rawTagsArr ?? (Array.isArray(o.tags) ? o.tags : [])
+      const tags: string[] = tagsArr.map((t: any) => t.name ?? t)
       const hasGKT = tags.includes(TAG_GIAO_KHONG_THANH)
       const analysis = hasGKT ? (analysisMap[o.id] ?? null) : null
-      const raw = rawMap[o.id] ?? {}
 
       let category = "binh_thuong"
       if (hasGKT) category = "su_co"
