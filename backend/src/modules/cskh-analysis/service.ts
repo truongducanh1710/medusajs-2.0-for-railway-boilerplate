@@ -175,6 +175,32 @@ export class CskhAnalysisService extends MedusaService({}) {
     }
   }
 
+  // Query JOIN pancake_order + cskh_analysis cho trang CSKH
+  async queryOrdersWithRaw(careFilter?: string): Promise<any[]> {
+    const careWhere = careFilter ? `AND po.care_name = $1` : ""
+    const params = careFilter ? [careFilter] : []
+    return this.sql(
+      `SELECT
+         po.id,
+         po.raw->'partner'->>'delivery_name'     AS delivery_name,
+         po.raw->'partner'->>'delivery_tel'      AS delivery_tel,
+         po.raw->'partner'->>'partner_status'    AS partner_status,
+         po.raw->'partner'->>'count_of_delivery' AS count_of_delivery,
+         po.raw->'partner'->>'picked_up_at'      AS picked_up_at,
+         (po.raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
+         (po.raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
+         po.raw->'tags'                          AS raw_tags,
+         ca.order_id, ca.current_step, ca.next_action, ca.call_time,
+         ca.urgency, ca.priority_score, ca.analyzed_at
+       FROM pancake_order po
+       LEFT JOIN cskh_analysis ca ON ca.order_id = po.id
+       WHERE po.status IN (2, 4)
+         AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
+         ${careWhere}`,
+      params
+    )
+  }
+
   // getOrdersNeedingAnalysis: IDs đơn có thẻ "Giao không thành"
   // chưa analyze hoặc có note mới kể từ lần analyze trước
   async getOrdersNeedingAnalysis(careFilter?: string): Promise<string[]> {

@@ -56,49 +56,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ orders: [], count: 0, ai_count: 0, plain_count: 0 })
     }
 
-    const mgr = (syncService as any).__container?.manager
-
-    // Query raw + analysis cho toàn bộ đơn status=2,4 — không inline IDs (tránh query quá dài)
+    // Query raw + analysis qua CskhAnalysisService (dùng this.sql() hoạt động đúng)
     let analysisMap: Record<string, any> = {}
     let rawMap: Record<string, any> = {}
-    if (mgr) {
-      try {
-        const careWhere = care ? `AND po.care_name = '${care.replace(/'/g, "''")}'` : ""
-        const rows = await mgr.execute(
-          `SELECT
-             po.id,
-             po.raw->'partner'->>'delivery_name'     AS delivery_name,
-             po.raw->'partner'->>'delivery_tel'      AS delivery_tel,
-             po.raw->'partner'->>'partner_status'    AS partner_status,
-             po.raw->'partner'->>'count_of_delivery' AS count_of_delivery,
-             po.raw->'partner'->>'picked_up_at'      AS picked_up_at,
-             (po.raw->'partner'->'extend_update'->0->>'status')     AS last_delivery_status,
-             (po.raw->'partner'->'extend_update'->0->>'updated_at') AS last_delivery_at,
-             po.raw->'tags'                          AS raw_tags,
-             ca.order_id, ca.current_step, ca.next_action, ca.call_time,
-             ca.urgency, ca.priority_score, ca.analyzed_at
-           FROM pancake_order po
-           LEFT JOIN cskh_analysis ca ON ca.order_id = po.id
-           WHERE po.status IN (2, 4)
-             AND po.source IN ('manual', 'facebook', 'zalo', 'unknown', 'medusa')
-             ${careWhere}`
-        )
-        for (const r of (Array.isArray(rows) ? rows : [])) {
-          rawMap[r.id] = r
-          if (r.order_id) {
-            analysisMap[r.order_id] = {
-              current_step: r.current_step,
-              next_action: r.next_action,
-              call_time: r.call_time,
-              urgency: r.urgency,
-              priority_score: r.priority_score,
-              analyzed_at: r.analyzed_at,
-            }
+    try {
+      const rows = await cskhService.queryOrdersWithRaw(care)
+      for (const r of rows) {
+        rawMap[r.id] = r
+        if (r.order_id) {
+          analysisMap[r.order_id] = {
+            current_step: r.current_step,
+            next_action: r.next_action,
+            call_time: r.call_time,
+            urgency: r.urgency,
+            priority_score: r.priority_score,
+            analyzed_at: r.analyzed_at,
           }
         }
-      } catch (e: any) {
-        console.warn("[CSKH Orders] raw+analysis query:", e.message)
       }
+    } catch (e: any) {
+      console.warn("[CSKH Orders] raw+analysis query:", e.message)
     }
 
     const now = Date.now()
