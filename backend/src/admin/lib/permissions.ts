@@ -15,6 +15,8 @@ export const PERMISSIONS = {
   "medusa.promotions.view": "Tab Promotions/Pricing native",
   "medusa.settings.view": "Tab Settings native",
   "users.manage": "Quản lý user + phân quyền",
+  "page.cskh.view": "Xem trang CSKH vận đơn",
+  "page.cskh.analyze": "Trigger phân tích AI vận đơn",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -23,4 +25,5 @@ export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
   marketing: ["page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view"],
+  cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view"],
 }

@@ -49,6 +49,8 @@ export default defineMiddlewares({
     { matcher: "/admin/pages*", method: ["POST", "PUT", "DELETE", "PATCH"], middlewares: [requirePerm("page.pages.edit")] },
     { matcher: "/admin/product-content*", method: ["POST"], middlewares: [requirePerm("page.san-pham.edit")] },
     { matcher: "/admin/pancake-status*", middlewares: [requirePerm("page.don-hang.view")] },
+    { matcher: "/admin/cskh/orders*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
+    { matcher: "/admin/cskh/analyze*", method: ["POST"], middlewares: [requirePerm("page.cskh.analyze")] },
     { matcher: "/admin/media", method: ["GET"], middlewares: [requirePerm("page.san-pham.edit")] },
     { matcher: "/admin/media", method: ["DELETE"], middlewares: [requirePerm("page.san-pham.edit")] },
 

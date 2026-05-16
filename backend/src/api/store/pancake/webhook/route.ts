@@ -121,6 +121,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         if (statusChanged) {
           console.log(`[Pancake Webhook] Updated pancake_order #${pancakeOrderId} → ${label}`)
         }
+
+        // Trigger AI analyze async khi bưu tá báo thất bại
+        const newPartnerStatus = body?.partner?.partner_status ?? ""
+        const isFailedDelivery = newPartnerStatus === "undeliverable" ||
+          (body?.partner?.extend_update?.[0]?.status ?? "").includes("chuyển hoàn")
+        if (isFailedDelivery) {
+          try {
+            const cskhService = req.scope.resolve("cskhAnalysisModule") as any
+            cskhService.analyzeOrders([pancakeOrderId]).catch((e: any) => {
+              console.warn("[Pancake Webhook] CSKH analyze error:", e.message)
+            })
+          } catch {
+            // module chưa sẵn sàng — bỏ qua, cron sẽ xử lý sau
+          }
+        }
       } else {
         // Order not yet synced — insert minimal row (no items/raw, data_quality=partial)
         await syncService.createPancakeOrders([{

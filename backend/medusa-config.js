@@ -130,6 +130,10 @@ const medusaConfig = {
       key: "pancakeSyncModule",
     },
     {
+      resolve: "./src/modules/cskh-analysis",
+      key: "cskhAnalysisModule",
+    },
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {
