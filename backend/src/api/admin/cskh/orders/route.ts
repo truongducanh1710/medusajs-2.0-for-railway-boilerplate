@@ -27,20 +27,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const lim = Math.min(Number(limit) || 200, 500)
     const off = Number(offset) || 0
 
-    // Build filter — listPancakeOrders dùng MedusaService (không cần raw SQL params)
-    const filter: any = { status: { $in: [2, 4] } }
-    if (care) filter.care_name = care
+    // $in không hoạt động với MedusaService number field — query riêng 2 status rồi merge
+    const selectFields = [
+      "id", "status", "status_name", "customer_name", "customer_phone",
+      "province", "sale_name", "care_name", "total", "cod_amount",
+      "tracking_code", "source", "pancake_created_at", "last_note_at", "tags",
+    ]
+    const baseFilter: any = {}
+    if (care) baseFilter.care_name = care
 
-    const allOrders = await syncService.listPancakeOrders(filter, {
-      take: lim,
-      skip: off,
-      select: [
-        "id", "status", "status_name", "customer_name", "customer_phone",
-        "province", "sale_name", "care_name", "total", "cod_amount",
-        "tracking_code", "source", "pancake_created_at", "last_note_at", "tags",
-      ],
-      order: { pancake_created_at: "ASC" },
-    })
+    const [status2, status4] = await Promise.all([
+      syncService.listPancakeOrders(
+        { ...baseFilter, status: 2 },
+        { take: lim, skip: off, select: selectFields, order: { pancake_created_at: "ASC" } }
+      ),
+      syncService.listPancakeOrders(
+        { ...baseFilter, status: 4 },
+        { take: lim, skip: off, select: selectFields, order: { pancake_created_at: "ASC" } }
+      ),
+    ])
+
+    const allOrders = [...status2, ...status4]
 
     // Lọc source phía app
     const orders = (allOrders as any[]).filter(o => ALLOWED_SOURCES.includes(o.source))
