@@ -115,6 +115,57 @@ const SOURCES = [
   { value: "unknown", label: "Khác" },
 ]
 
+// ============ Resizable columns ============
+
+type ColId =
+  | "pos" | "source" | "date" | "name" | "phone" | "province" | "product"
+  | "marketer" | "sale" | "care" | "total" | "status_pos" | "payment" | "fulfillment" | "action"
+
+type ColumnDef = { id: ColId; label: string; default: number; min: number }
+
+const COLUMN_DEFS: ColumnDef[] = [
+  { id: "pos",         label: "#POS",       default: 130, min: 80 },
+  { id: "source",      label: "Nguồn",      default: 110, min: 90 },
+  { id: "date",        label: "Ngày đặt",   default: 140, min: 110 },
+  { id: "name",        label: "Tên khách",  default: 180, min: 100 },
+  { id: "phone",       label: "SĐT",        default: 120, min: 100 },
+  { id: "province",    label: "Tỉnh/TP",    default: 110, min: 80 },
+  { id: "product",     label: "Sản phẩm",   default: 220, min: 120 },
+  { id: "marketer",    label: "Marketer",   default: 100, min: 80 },
+  { id: "sale",        label: "Sale",       default: 100, min: 80 },
+  { id: "care",        label: "CSKH",       default: 100, min: 80 },
+  { id: "total",       label: "Tổng tiền",  default: 120, min: 90 },
+  { id: "status_pos",  label: "TT POS",     default: 130, min: 100 },
+  { id: "payment",     label: "Thanh toán", default: 110, min: 90 },
+  { id: "fulfillment", label: "Giao hàng",  default: 110, min: 90 },
+  { id: "action",      label: "",           default: 90,  min: 70 },
+]
+
+const COL_WIDTHS_KEY = "don-hang.col-widths.v1"
+
+function loadColWidths(): Record<ColId, number> {
+  if (typeof window === "undefined") return Object.fromEntries(COLUMN_DEFS.map((c) => [c.id, c.default])) as any
+  try {
+    const raw = window.localStorage.getItem(COL_WIDTHS_KEY)
+    const stored: Partial<Record<ColId, number>> = raw ? JSON.parse(raw) : {}
+    const merged: Record<ColId, number> = {} as any
+    for (const c of COLUMN_DEFS) {
+      const v = stored[c.id]
+      merged[c.id] = typeof v === "number" && v >= c.min ? v : c.default
+    }
+    return merged
+  } catch {
+    return Object.fromEntries(COLUMN_DEFS.map((c) => [c.id, c.default])) as any
+  }
+}
+
+function saveColWidths(widths: Record<ColId, number>): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths))
+  } catch {}
+}
+
 type SortDir = "asc" | "desc"
 
 type Filters = {
@@ -212,6 +263,48 @@ const DonHangPage = () => {
   }>({ sales: [], marketers: [], cares: [], provinces: [], statuses: [], total: 0 })
   const [statusOpen, setStatusOpen] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
+
+  // ===== Column widths (resizable, lưu localStorage) =====
+  const [colWidths, setColWidths] = useState<Record<ColId, number>>(() => loadColWidths())
+  const resizeStateRef = useRef<{ id: ColId; startX: number; startW: number } | null>(null)
+
+  const onResizeMouseDown = (id: ColId) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const def = COLUMN_DEFS.find((c) => c.id === id)
+    if (!def) return
+    resizeStateRef.current = { id, startX: e.clientX, startW: colWidths[id] }
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+
+    const onMove = (ev: MouseEvent) => {
+      const s = resizeStateRef.current
+      if (!s) return
+      const delta = ev.clientX - s.startX
+      const next = Math.max(def.min, Math.round(s.startW + delta))
+      setColWidths((prev) => ({ ...prev, [s.id]: next }))
+    }
+    const onUp = () => {
+      resizeStateRef.current = null
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+      // Save sau khi user thả chuột (tránh spam localStorage trong lúc drag)
+      setColWidths((curr) => {
+        saveColWidths(curr)
+        return curr
+      })
+    }
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+  }
+
+  const resetColWidths = () => {
+    const defaults = Object.fromEntries(COLUMN_DEFS.map((c) => [c.id, c.default])) as Record<ColId, number>
+    setColWidths(defaults)
+    saveColWidths(defaults)
+  }
 
   // Sync URL when filters change (dùng history API thay vì react-router để tránh import external)
   useEffect(() => {
@@ -573,41 +666,61 @@ const DonHangPage = () => {
         <div className="text-center py-16 text-gray-400">Không có đơn hàng nào</div>
       ) : (
         <>
+          <div className="flex items-center justify-end gap-2 mb-2">
+            <button
+              onClick={resetColWidths}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+              title="Reset độ rộng tất cả cột về mặc định"
+            >
+              ↻ Reset cột
+            </button>
+          </div>
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
             <div className="overflow-x-auto rounded-xl">
-              <table className="min-w-full text-sm">
+              <table className="text-sm" style={{ tableLayout: "fixed", width: "max-content" }}>
+                <colgroup>
+                  {COLUMN_DEFS.map((c) => (
+                    <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">#POS</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Nguồn</th>
-                    <th
-                      className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => handleSort("pancake_created_at")}
-                    >
-                      Ngày đặt{sortIcon("pancake_created_at")}
-                    </th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tên khách</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">SĐT</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Tỉnh/TP</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sản phẩm</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Marketer</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Sale</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">CSKH</th>
-                    <th
-                      className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => handleSort("total")}
-                    >
-                      Tổng tiền{sortIcon("total")}
-                    </th>
-                    <th
-                      className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => handleSort("status")}
-                    >
-                      TT POS{sortIcon("status")}
-                    </th>
-                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Thanh toán</th>
-                    <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Giao hàng</th>
-                    <th className="px-4 py-3"></th>
+                    {(() => {
+                      const Th = ({ id, children, onClick, align = "left" }: { id: ColId; children: React.ReactNode; onClick?: () => void; align?: "left" | "right" | "center" }) => (
+                        <th
+                          className={`relative ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"} px-4 py-3 font-semibold text-gray-600 overflow-hidden ${onClick ? "cursor-pointer hover:bg-gray-100 select-none" : ""}`}
+                          onClick={onClick}
+                        >
+                          <span className="block truncate" title={typeof children === "string" ? children : undefined}>{children}</span>
+                          <span
+                            onMouseDown={onResizeMouseDown(id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500"
+                            title="Kéo để đổi độ rộng cột"
+                            style={{ touchAction: "none" }}
+                          />
+                        </th>
+                      )
+                      return (
+                        <>
+                          <Th id="pos">#POS</Th>
+                          <Th id="source">Nguồn</Th>
+                          <Th id="date" onClick={() => handleSort("pancake_created_at")}>{<>Ngày đặt{sortIcon("pancake_created_at")}</>}</Th>
+                          <Th id="name">Tên khách</Th>
+                          <Th id="phone">SĐT</Th>
+                          <Th id="province">Tỉnh/TP</Th>
+                          <Th id="product">Sản phẩm</Th>
+                          <Th id="marketer">Marketer</Th>
+                          <Th id="sale">Sale</Th>
+                          <Th id="care">CSKH</Th>
+                          <Th id="total" align="right" onClick={() => handleSort("total")}>{<>Tổng tiền{sortIcon("total")}</>}</Th>
+                          <Th id="status_pos" align="center" onClick={() => handleSort("status")}>{<>TT POS{sortIcon("status")}</>}</Th>
+                          <Th id="payment" align="center">Thanh toán</Th>
+                          <Th id="fulfillment" align="center">Giao hàng</Th>
+                          <Th id="action">{""}</Th>
+                        </>
+                      )
+                    })()}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -626,24 +739,29 @@ const DonHangPage = () => {
                       <tr key={order.id}
                           className="hover:bg-blue-50 cursor-pointer transition-colors"
                           onClick={() => window.location.href = detailUrl}>
-                        <td className="px-4 py-3 font-mono font-bold text-gray-900">
-                          #{order.id}
-                          {medusaInfo?.display_id && (
-                            <span className="text-gray-400 font-normal ml-1 text-xs">(MD#{medusaInfo.display_id})</span>
-                          )}
+                        <td className="px-4 py-3 font-mono font-bold text-gray-900 overflow-hidden">
+                          <span className="block truncate">
+                            #{order.id}
+                            {medusaInfo?.display_id && (
+                              <span className="text-gray-400 font-normal ml-1 text-xs">(MD#{medusaInfo.display_id})</span>
+                            )}
+                          </span>
                         </td>
-                        <td className="px-4 py-3"><SourceBadge source={order.source} /></td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {formatDate(order.pancake_created_at || order.synced_at || order.created_at)}
+                        <td className="px-4 py-3 overflow-hidden"><SourceBadge source={order.source} /></td>
+                        <td className="px-4 py-3 text-gray-500 overflow-hidden">
+                          <span className="block truncate">{formatDate(order.pancake_created_at || order.synced_at || order.created_at)}</span>
                         </td>
-                        <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{order.customer_name || "—"}</td>
+                        <td className="px-4 py-3 font-semibold text-gray-900 overflow-hidden">
+                          <span className="block truncate" title={order.customer_name || ""}>{order.customer_name || "—"}</span>
+                        </td>
                         <td
-                          className="px-4 py-3 text-gray-600 whitespace-nowrap"
+                          className="px-4 py-3 text-gray-600 overflow-hidden"
                           onClick={(e) => {
                             e.stopPropagation()
                             if (order.customer_phone) {
                               navigator.clipboard.writeText(order.customer_phone)
-                              const el = e.currentTarget
+                              const el = e.currentTarget.querySelector("span")
+                              if (!el) return
                               const orig = el.textContent
                               el.textContent = "✓ Đã copy!"
                               el.classList.add("text-green-600")
@@ -653,27 +771,39 @@ const DonHangPage = () => {
                           title="Bấm để copy SĐT"
                           style={{ cursor: "copy" }}
                         >
-                          {order.customer_phone || "—"}
+                          <span className="block truncate">{order.customer_phone || "—"}</span>
                         </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{order.province || "—"}</td>
-                        <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={itemTitle}>{itemTitle}</td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">{order.marketer_name || "—"}</td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">{order.sale_name || "—"}</td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">{order.care_name || "—"}</td>
-                        <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatVND(order.total)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${getPancakeStatusCls(order.status)}`}>
+                        <td className="px-4 py-3 text-gray-500 overflow-hidden">
+                          <span className="block truncate" title={order.province || ""}>{order.province || "—"}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 overflow-hidden" title={itemTitle}>
+                          <span className="block truncate">{itemTitle}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 text-xs overflow-hidden">
+                          <span className="block truncate" title={order.marketer_name || ""}>{order.marketer_name || "—"}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 text-xs overflow-hidden">
+                          <span className="block truncate" title={order.sale_name || ""}>{order.sale_name || "—"}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 text-xs overflow-hidden">
+                          <span className="block truncate" title={order.care_name || ""}>{order.care_name || "—"}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-gray-900 overflow-hidden">
+                          <span className="block truncate">{formatVND(order.total)}</span>
+                        </td>
+                        <td className="px-4 py-3 text-center overflow-hidden">
+                          <span className={`inline-block max-w-full truncate text-xs font-bold px-2 py-0.5 rounded-full ${getPancakeStatusCls(order.status)}`} title={order.status_name || getPancakeStatusLabel(order.status)}>
                             {order.status_name || getPancakeStatusLabel(order.status)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3 text-center overflow-hidden">
                           {medusaInfo ? <PaymentBadge status={medusaInfo.payment_status} /> : <span className="text-xs text-gray-400">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3 text-center overflow-hidden">
                           {medusaInfo ? <FulfillmentBadge status={medusaInfo.fulfillment_status} /> : <span className="text-xs text-gray-400">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <a href={detailUrl} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:underline whitespace-nowrap text-xs">
+                        <td className="px-4 py-3 text-right overflow-hidden">
+                          <a href={detailUrl} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:underline text-xs">
                             Chi tiết →
                           </a>
                         </td>
