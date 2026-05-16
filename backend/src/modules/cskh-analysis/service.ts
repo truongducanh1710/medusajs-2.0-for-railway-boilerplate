@@ -125,7 +125,7 @@ export class CskhAnalysisService extends MedusaService({}) {
     for (const r of results) {
       await this.sql(
         `INSERT INTO cskh_analysis (order_id, current_step, next_action, call_time, urgency, priority_score, analyzed_at)
-         VALUES (?, ?, ?, ?, ?, ?, now())
+         VALUES ($1, $2, $3, $4, $5, $6, now())
          ON CONFLICT (order_id) DO UPDATE SET
            current_step   = EXCLUDED.current_step,
            next_action    = EXCLUDED.next_action,
@@ -149,7 +149,7 @@ export class CskhAnalysisService extends MedusaService({}) {
   async analyzeOrders(orderIds: string[]): Promise<void> {
     if (!orderIds.length) return
 
-    const placeholders = orderIds.map(() => "?").join(",")
+    const placeholders = orderIds.map((_, i) => `$${i + 1}`).join(",")
     const rows = await this.sql(
       `SELECT id, raw, last_note_at FROM pancake_order WHERE id IN (${placeholders})`,
       orderIds
@@ -179,12 +179,16 @@ export class CskhAnalysisService extends MedusaService({}) {
   // chưa analyze hoặc có note mới kể từ lần analyze trước
   async getOrdersNeedingAnalysis(careFilter?: string): Promise<string[]> {
     const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
-    const params: any[] = [twoHoursAgo]
+    let paramIdx = 1
+    const params: any[] = []
+
+    params.push(twoHoursAgo)
+    const twoHoursPh = `$${paramIdx++}`
 
     let careClause = ""
     if (careFilter) {
       params.push(careFilter)
-      careClause = `AND po.care_name = ?`
+      careClause = `AND po.care_name = $${paramIdx++}`
     }
 
     const rows = await this.sql(
@@ -201,7 +205,7 @@ export class CskhAnalysisService extends MedusaService({}) {
          )
          AND (
            ca.analyzed_at IS NULL
-           OR ca.analyzed_at < ?
+           OR ca.analyzed_at < ${twoHoursPh}
            OR (po.last_note_at IS NOT NULL AND po.last_note_at > ca.analyzed_at)
          )
          ${careClause}

@@ -8,31 +8,38 @@ const URGENCY_ORDER: Record<string, number> = {
 /**
  * GET /admin/cskh/orders
  * Query: care, limit, offset
- * Trả về đơn status=2,4 source=manual/facebook/zalo kèm AI analysis.
- * Sort: urgency ASC, call_time ASC, priority_score DESC
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const {
       care,
-      limit = "100",
+      limit = "200",
       offset = "0",
     } = req.query as Record<string, string | undefined>
 
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
     const mgr = (cskhService as any).__container?.manager
 
-    const params: any[] = []
-    let careClause = ""
-    if (care) {
-      params.push(care)
-      careClause = `AND po.care_name = ?`
+    if (!mgr) {
+      return res.status(500).json({ error: "DB manager not available" })
     }
 
-    params.push(Number(limit) || 100)
-    params.push(Number(offset) || 0)
+    const lim = Number(limit) || 200
+    const off = Number(offset) || 0
 
-    // Đơn có thẻ "Giao không thành" — cần AI analysis
+    // Build queries with $N placeholders (PostgreSQL)
+    let aiParamIdx = 1
+    const aiParams: any[] = []
+    let aiCareClause = ""
+    if (care) {
+      aiParams.push(care)
+      aiCareClause = `AND po.care_name = $${aiParamIdx++}`
+    }
+    aiParams.push(lim)
+    const aiLimitPh = `$${aiParamIdx++}`
+    aiParams.push(off)
+    const aiOffsetPh = `$${aiParamIdx++}`
+
     const aiOrders = await mgr.execute(
       `SELECT
          po.id, po.status, po.status_name, po.customer_name, po.customer_phone,
@@ -57,21 +64,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
            SELECT 1 FROM jsonb_array_elements(COALESCE(po.raw->'tags','[]'::jsonb)) t
            WHERE t->>'name' = 'Giao không thành'
          )
-         ${careClause}
+         ${aiCareClause}
        ORDER BY po.pancake_created_at ASC
-       LIMIT ? OFFSET ?`,
-      params
+       LIMIT ${aiLimitPh} OFFSET ${aiOffsetPh}`,
+      aiParams
     )
 
-    // Đơn logic cứng: status=2 không có thẻ "Giao không thành"
+    let plainParamIdx = 1
     const plainParams: any[] = []
     let plainCareClause = ""
     if (care) {
       plainParams.push(care)
-      plainCareClause = `AND po.care_name = ?`
+      plainCareClause = `AND po.care_name = $${plainParamIdx++}`
     }
-    plainParams.push(Number(limit) || 100)
-    plainParams.push(Number(offset) || 0)
+    plainParams.push(lim)
+    const plainLimitPh = `$${plainParamIdx++}`
+    plainParams.push(off)
+    const plainOffsetPh = `$${plainParamIdx++}`
 
     const plainOrders = await mgr.execute(
       `SELECT
@@ -98,19 +107,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          )
          ${plainCareClause}
        ORDER BY po.pancake_created_at ASC
-       LIMIT ? OFFSET ?`,
+       LIMIT ${plainLimitPh} OFFSET ${plainOffsetPh}`,
       plainParams
     )
 
-    // Enrich: tính category cho mỗi đơn
     const now = Date.now()
-    const VN_OFFSET = 7 * 3600 * 1000
     const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000
 
     function getCategory(order: any): string {
       const tags: any[] = Array.isArray(order.tags) ? order.tags : (order.tags ? JSON.parse(order.tags) : [])
       const tagNames = tags.map((t: any) => t.name ?? t)
-
       if (tagNames.includes("Giao không thành")) return "su_co"
       if (order.status === 4) return "dang_hoan"
       const pickedMs = order.picked_up_at ? new Date(order.picked_up_at).getTime() : 0
@@ -132,7 +138,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       missing_hoan_tag: getMissingHoanTag(o),
     }))
 
-    // Sort: AI orders by urgency/call_time, plain orders sau
     enriched.sort((a, b) => {
       if (a.row_type === "ai" && b.row_type !== "ai") return -1
       if (a.row_type !== "ai" && b.row_type === "ai") return 1
@@ -154,7 +159,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       plain_count: plainOrders.length,
     })
   } catch (err: any) {
-    console.error("[CSKH Orders]", err.message)
+    console.error("[CSKH Orders]", err.message, err.stack)
     return res.status(500).json({ error: err.message })
   }
 }
