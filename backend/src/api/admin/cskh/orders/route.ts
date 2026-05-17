@@ -9,6 +9,24 @@ const ALLOWED_SOURCES = ["manual", "facebook", "zalo", "unknown", "medusa"]
 const TAG_GIAO_KHONG_THANH = "Giao không thành"
 const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000
 
+const NEGLECT_HOURS: Record<string, number | null> = { critical: 4, high: 24, medium: 48, low: null }
+
+function computeFlags(order: any, analysis: any | null, now: number) {
+  const noteTime = order.last_note_at ? new Date(order.last_note_at).getTime() : 0
+  const callTime = analysis?.call_time ? new Date(analysis.call_time).getTime() : null
+
+  // Quá giờ: call_time đã qua 2h, chưa có note mới sau call_time
+  const overdue = callTime !== null
+    && now > callTime + 2 * 3600_000
+    && noteTime < callTime
+
+  // Bỏ bê: không note trong X giờ tuỳ urgency
+  const limit = NEGLECT_HOURS[analysis?.urgency ?? "low"]
+  const neglected = limit !== null && (noteTime === 0 || now - noteTime > limit * 3600_000)
+
+  return { overdue, neglected }
+}
+
 /**
  * GET /admin/cskh/orders
  * Query: care, limit, offset
@@ -19,7 +37,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       care,
       limit = "200",
       offset = "0",
+      flag,
     } = req.query as Record<string, string | undefined>
+
+    // care=all → không filter theo care_name (manager xem toàn team)
+    const careFilter = care === "all" ? undefined : care
 
     const syncService = req.scope.resolve("pancakeSyncModule") as any
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
@@ -34,7 +56,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       "tracking_code", "source", "pancake_created_at", "last_note_at", "tags",
     ]
     const baseFilter: any = {}
-    if (care) baseFilter.care_name = care
+    if (careFilter) baseFilter.care_name = careFilter
 
     const [status2, status4] = await Promise.all([
       syncService.listPancakeOrders(
@@ -60,7 +82,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     let analysisMap: Record<string, any> = {}
     let rawMap: Record<string, any> = {}
     try {
-      const rows = await cskhService.queryOrdersWithRaw(care)
+      const rows = await cskhService.queryOrdersWithRaw(careFilter)
       for (const r of rows) {
         rawMap[r.id] = r
         if (r.order_id) {
@@ -104,6 +126,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
       if (hasGKT) aiCount++; else plainCount++
 
+      const { overdue, neglected } = computeFlags(o, analysis, now)
+
       return {
         ...o,
         delivery_name: raw.delivery_name ?? null,
@@ -122,6 +146,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         row_type: hasGKT ? "ai" : "plain",
         category,
         missing_hoan_tag,
+        overdue,
+        neglected,
       }
     })
 
@@ -139,9 +165,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return 0
     })
 
+    // Filter theo flag nếu có
+    let result = enriched as any[]
+    if (flag === "overdue") result = enriched.filter((o: any) => o.overdue)
+    else if (flag === "neglected") result = enriched.filter((o: any) => o.neglected && !o.overdue)
+
     return res.json({
-      orders: enriched,
-      count: enriched.length,
+      orders: result,
+      count: result.length,
       ai_count: aiCount,
       plain_count: plainCount,
     })

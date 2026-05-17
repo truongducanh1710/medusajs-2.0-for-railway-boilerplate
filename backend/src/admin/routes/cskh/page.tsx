@@ -86,6 +86,23 @@ function MissingHoanTagBadge({ missing }: { missing: boolean }) {
   return <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded">⚠️ Chưa gắn lý do hoàn</span>
 }
 
+function OverdueBadge({ overdue, neglected, callTime, lastNoteAt }: {
+  overdue: boolean; neglected: boolean; callTime: string | null; lastNoteAt: string | null
+}) {
+  if (overdue && callTime) {
+    const h = Math.floor((Date.now() - new Date(callTime).getTime()) / 3600_000)
+    return <span className="text-xs font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded whitespace-nowrap">⏰ Quá {h}h</span>
+  }
+  if (neglected && lastNoteAt) {
+    const h = Math.floor((Date.now() - new Date(lastNoteAt).getTime()) / 3600_000)
+    return <span className="text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded whitespace-nowrap">⚠ Bỏ bê {h}h</span>
+  }
+  if (neglected) {
+    return <span className="text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded whitespace-nowrap">⚠ Chưa note</span>
+  }
+  return null
+}
+
 // ============ Row background ============
 
 function getRowCls(order: any): string {
@@ -191,10 +208,221 @@ function SummaryBar({
   )
 }
 
+// ============ Team Stats Tab ============
+
+const HOAN_TAG_LABELS: Record<string, string> = {
+  Hoan_DoKhach: "Do khách", Hoan_DoKhongLienLacDuoc: "Không liên lạc",
+  Hoan_DoDVVC: "Do DVVC", Hoan_DoKho: "Do kho", Hoan_DoSanPham: "Do SP",
+  Hoan_GiaoHangLau: "Giao lâu", Hoan_KhachTuChoi: "Khách từ chối", missing: "Thiếu tag",
+}
+
+function HoanRateCell({ rate }: { rate: number }) {
+  const cls = rate > 12 ? "text-red-700 font-bold" : rate >= 8 ? "text-orange-600 font-semibold" : "text-green-700"
+  const icon = rate > 12 ? "🔴" : rate >= 8 ? "🟡" : "✅"
+  return <span className={cls}>{icon} {rate}%</span>
+}
+
+function SuspiciousModal({ care, period, onClose }: { care: string; period: string; onClose: () => void }) {
+  const [data, setData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiFetch(`/admin/cskh/suspicious?care=${encodeURIComponent(care)}&period=${period}`)
+      .then(r => r.json())
+      .then(d => setData(d.orders ?? []))
+      .finally(() => setLoading(false))
+  }, [care, period])
+
+  const reasonLabel: Record<string, string> = {
+    no_notes: "Không có note CSKH",
+    tag_note_mismatch: "Tag không khớp note",
+    agreed_but_returned: "Khách đồng ý nhưng vẫn hoàn",
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <h3 className="font-semibold text-ui-fg-base">Đơn nghi vấn — {care} ({period})</h3>
+          <button onClick={onClose} className="text-ui-fg-muted hover:text-ui-fg-base text-lg">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {loading && <div className="text-center py-8 text-ui-fg-muted">Đang tải...</div>}
+          {!loading && data.length === 0 && <div className="text-center py-8 text-ui-fg-muted">Không có đơn nghi vấn 🎉</div>}
+          {!loading && data.map(o => (
+            <div key={o.id} className="mb-3 p-3 border border-ui-border-base rounded bg-orange-50">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <span className="font-mono text-xs font-bold">#{o.id}</span>
+                  <span className="ml-2 text-xs text-ui-fg-muted">{o.customer_name} • {o.customer_phone}</span>
+                </div>
+                <span className="text-xs text-ui-fg-muted">{o.updated_at ? new Date(o.updated_at).toLocaleDateString("vi-VN") : "—"}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {(o.reasons as string[]).map(r => (
+                  <span key={r} className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">{reasonLabel[r] ?? r}</span>
+                ))}
+                {o.tags.map((t: string) => (
+                  <span key={t} className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">{t}</span>
+                ))}
+              </div>
+              {o.last_note && (
+                <div className="mt-1.5 text-xs text-ui-fg-subtle italic border-l-2 border-orange-300 pl-2">"{o.last_note}"</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TeamStatsTab() {
+  const [period, setPeriod] = useState<"today" | "7d" | "30d">("7d")
+  const [data, setData] = useState<{ agents: any[]; team: any } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [suspicious, setSuspicious] = useState<{ care: string } | null>(null)
+
+  async function fetchStats() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await apiFetch(`/admin/cskh/team-stats?period=${period}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setData(await res.json())
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchStats() }, [period])
+
+  const periods: Array<{ key: "today" | "7d" | "30d"; label: string }> = [
+    { key: "today", label: "Hôm nay" },
+    { key: "7d", label: "7 ngày" },
+    { key: "30d", label: "30 ngày" },
+  ]
+
+  const hoanTagKeys = ["Hoan_DoKhach", "Hoan_DoKhongLienLacDuoc", "Hoan_DoDVVC", "Hoan_DoKho", "Hoan_DoSanPham", "Hoan_GiaoHangLau", "Hoan_KhachTuChoi", "missing"]
+
+  return (
+    <div>
+      {suspicious && <SuspiciousModal care={suspicious.care} period={period} onClose={() => setSuspicious(null)} />}
+
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex border border-ui-border-base rounded overflow-hidden">
+          {periods.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`px-3 py-1.5 text-sm transition-colors ${period === p.key ? "bg-ui-bg-base-pressed text-ui-fg-base font-medium" : "bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-subtle"}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <button onClick={fetchStats} disabled={loading} className="px-3 py-1.5 text-sm border border-ui-border-base rounded hover:bg-ui-bg-subtle disabled:opacity-50">
+          {loading ? "⏳" : "↻"} Refresh
+        </button>
+        {data && <span className="text-xs text-ui-fg-muted">Cập nhật lúc {new Date(data.team?.generated_at ?? Date.now()).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span>}
+      </div>
+
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm mb-4">{error}</div>}
+
+      {data && (
+        <>
+          {/* KPI table */}
+          <div className="overflow-x-auto rounded border border-ui-border-base mb-6">
+            <table className="text-sm w-full border-collapse">
+              <thead className="bg-ui-bg-subtle">
+                <tr>
+                  <th className="text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">CSKH</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">Đơn giao</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">Đang xử lý</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">⏰ Quá giờ</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">⚠ Bỏ bê</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">Hoàn hôm nay</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">Tỉ lệ hoàn</th>
+                  <th className="text-center px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base">Nghi vấn</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.agents.map((ag: any) => (
+                  <tr key={ag.care_name} className="border-b border-ui-border-base hover:bg-ui-bg-subtle">
+                    <td className="px-3 py-2 font-medium text-ui-fg-base">{ag.care_name}</td>
+                    <td className="px-3 py-2 text-center text-ui-fg-base">{ag.total_assigned}</td>
+                    <td className="px-3 py-2 text-center text-ui-fg-base">{ag.active}</td>
+                    <td className={`px-3 py-2 text-center font-bold ${ag.overdue > 5 ? "text-red-600" : ag.overdue > 0 ? "text-orange-500" : "text-green-600"}`}>
+                      {ag.overdue > 0 ? ag.overdue : "✅"}
+                    </td>
+                    <td className={`px-3 py-2 text-center ${ag.neglected > 0 ? "text-orange-600 font-semibold" : "text-green-600"}`}>
+                      {ag.neglected > 0 ? ag.neglected : "✅"}
+                    </td>
+                    <td className="px-3 py-2 text-center text-ui-fg-base">{ag.hoan_today}</td>
+                    <td className="px-3 py-2 text-center"><HoanRateCell rate={ag.hoan_rate} /></td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        onClick={() => setSuspicious({ care: ag.care_name })}
+                        className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 font-medium"
+                      >
+                        Xem
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {/* Row tổng */}
+                {data.team && (
+                  <tr className="border-t-2 border-ui-border-strong bg-ui-bg-subtle font-semibold">
+                    <td className="px-3 py-2 text-ui-fg-base">Tổng đội</td>
+                    <td className="px-3 py-2 text-center">{data.team.total_assigned}</td>
+                    <td className="px-3 py-2 text-center">{data.team.active}</td>
+                    <td className={`px-3 py-2 text-center font-bold ${data.team.overdue > 5 ? "text-red-600" : "text-orange-500"}`}>{data.team.overdue || "✅"}</td>
+                    <td className={`px-3 py-2 text-center ${data.team.neglected > 0 ? "text-orange-600" : "text-green-600"}`}>{data.team.neglected || "✅"}</td>
+                    <td className="px-3 py-2 text-center">{data.team.hoan_today}</td>
+                    <td className="px-3 py-2 text-center"><HoanRateCell rate={data.team.hoan_rate} /></td>
+                    <td className="px-3 py-2 text-center text-ui-fg-muted text-xs">Ngưỡng: 12%</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Breakdown lý do hoàn (tổng đội) */}
+          {data.team && (
+            <div>
+              <h3 className="text-sm font-semibold text-ui-fg-base mb-2">Breakdown lý do hoàn — toàn đội ({period})</h3>
+              <div className="flex flex-wrap gap-2">
+                {hoanTagKeys.map(tag => {
+                  const count = data.team.hoan_by_reason?.[tag] ?? 0
+                  if (count === 0) return null
+                  return (
+                    <div key={tag} className={`px-3 py-1.5 rounded border text-xs ${tag === "missing" ? "border-red-300 bg-red-50 text-red-700" : "border-ui-border-base bg-ui-bg-subtle text-ui-fg-base"}`}>
+                      <span className="font-medium">{HOAN_TAG_LABELS[tag] ?? tag}:</span> {count}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ============ Main page ============
 
 export default function CskhPage() {
   const { has, loading: permLoading } = useCurrentPermissions()
+  const canManage = has("page.cskh.manage")
+
+  const [mainTab, setMainTab] = useState<"orders" | "team">(() => {
+    const p = new URLSearchParams(window.location.search)
+    return (p.get("main") as "orders" | "team") || "orders"
+  })
 
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -208,6 +436,7 @@ export default function CskhPage() {
   // Filter state
   const [careFilter, setCareFilter] = useState<string>("")
   const [careList, setCareList] = useState<string[]>([])
+  const [flagFilter, setFlagFilter] = useState<"" | "overdue" | "neglected">("")
   const [activeTab, setActiveTab] = useState(() => {
     const p = new URLSearchParams(window.location.search)
     return p.get("tab") || "su_co"
@@ -311,12 +540,17 @@ export default function CskhPage() {
     window.history.replaceState(null, "", `?tab=${tab}`)
   }
 
-  // Lọc theo tab
+  // Lọc theo tab + flag
   const filtered = useMemo(() => {
-    if (activeTab === "all") return orders
-    if (activeTab === "missing_hoan") return orders.filter(o => o.missing_hoan_tag)
-    return orders.filter(o => o.category === activeTab)
-  }, [orders, activeTab])
+    let base = orders
+    if (activeTab !== "all") {
+      if (activeTab === "missing_hoan") base = orders.filter(o => o.missing_hoan_tag)
+      else base = orders.filter(o => o.category === activeTab)
+    }
+    if (flagFilter === "overdue") return base.filter(o => o.overdue)
+    if (flagFilter === "neglected") return base.filter(o => o.neglected && !o.overdue)
+    return base
+  }, [orders, activeTab, flagFilter])
 
   // Columns
   const columns = [
@@ -341,221 +575,280 @@ export default function CskhPage() {
 
   return (
     <div className="p-4">
-      <div className="flex items-center gap-4 mb-4">
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
         <h1 className="text-xl font-bold text-ui-fg-base">CSKH — Theo dõi vận đơn</h1>
-        <select
-          value={careFilter}
-          onChange={e => setCareFilter(e.target.value)}
-          className="px-3 py-1.5 border border-ui-border-base rounded text-sm bg-ui-bg-base text-ui-fg-base"
-        >
-          <option value="">Tất cả CSKH</option>
-          {careList.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+
+        {/* Main tab switcher */}
+        <div className="flex border border-ui-border-base rounded overflow-hidden">
+          <button
+            onClick={() => { setMainTab("orders"); window.history.replaceState(null, "", "?main=orders") }}
+            className={`px-4 py-1.5 text-sm font-medium transition-colors ${mainTab === "orders" ? "bg-ui-bg-base-pressed text-ui-fg-base" : "bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-subtle"}`}
+          >
+            📋 Lịch gọi hôm nay
+          </button>
+          {canManage && (
+            <button
+              onClick={() => { setMainTab("team"); window.history.replaceState(null, "", "?main=team") }}
+              className={`px-4 py-1.5 text-sm font-medium transition-colors border-l border-ui-border-base ${mainTab === "team" ? "bg-ui-bg-base-pressed text-ui-fg-base" : "bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-subtle"}`}
+            >
+              📊 Hiệu suất đội
+            </button>
+          )}
+        </div>
+
+        {mainTab === "orders" && (
+          <>
+            <select
+              value={careFilter}
+              onChange={e => setCareFilter(e.target.value)}
+              className="px-3 py-1.5 border border-ui-border-base rounded text-sm bg-ui-bg-base text-ui-fg-base"
+            >
+              <option value="">Tất cả CSKH</option>
+              {careList.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            {/* Flag filter chips */}
+            <div className="flex gap-1.5">
+              {(["", "overdue", "neglected"] as const).map(f => {
+                const count = f === "overdue" ? orders.filter(o => o.overdue).length
+                  : f === "neglected" ? orders.filter(o => o.neglected && !o.overdue).length
+                  : orders.length
+                const label = f === "overdue" ? `⏰ Quá giờ (${count})`
+                  : f === "neglected" ? `⚠ Bỏ bê (${count})`
+                  : `Tất cả (${count})`
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setFlagFilter(f)}
+                    className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${flagFilter === f
+                      ? f === "overdue" ? "bg-red-100 border-red-400 text-red-700 font-bold"
+                        : f === "neglected" ? "bg-orange-100 border-orange-400 text-orange-700 font-bold"
+                        : "bg-ui-bg-base-pressed border-ui-border-strong text-ui-fg-base font-bold"
+                      : "bg-ui-bg-subtle border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
       </div>
 
-      <SummaryBar
-        orders={orders}
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        onRefresh={fetchOrders}
-        loading={loading}
-        analyzedAt={analyzedAt}
-        onAnalyze={triggerAnalyze}
-        analyzing={analyzing}
-        analyzeProgress={analyzeProgress}
-      />
+      {mainTab === "team" && canManage && <TeamStatsTab />}
 
-      {error && (
-        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
-      )}
+      {mainTab === "orders" && <>
+        <SummaryBar
+          orders={orders}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onRefresh={fetchOrders}
+          loading={loading}
+          analyzedAt={analyzedAt}
+          onAnalyze={triggerAnalyze}
+          analyzing={analyzing}
+          analyzeProgress={analyzeProgress}
+        />
 
-      {loading && !orders.length ? (
-        <div className="p-8 text-center text-ui-fg-muted">Đang tải...</div>
-      ) : (
-        <div className="overflow-x-auto rounded border border-ui-border-base">
-          <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: `${totalWidth}px` }}>
-            <colgroup>
-              {columns.map(c => <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />)}
-            </colgroup>
-            <thead className="bg-ui-bg-subtle sticky top-0 z-10">
-              <tr>
-                {columns.map((col, i) => (
-                  <th
-                    key={col.id}
-                    className="relative text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base select-none overflow-hidden whitespace-nowrap"
-                  >
-                    <span className="block truncate">{col.label}</span>
-                    <span
-                      onMouseDown={onResizeMouseDown(col.id)}
-                      onClick={e => e.stopPropagation()}
-                      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500"
-                      style={{ touchAction: "none" }}
-                    />
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
+        {error && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+        )}
+
+        {loading && !orders.length ? (
+          <div className="p-8 text-center text-ui-fg-muted">Đang tải...</div>
+        ) : (
+          <div className="overflow-x-auto rounded border border-ui-border-base">
+            <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: `${totalWidth}px` }}>
+              <colgroup>
+                {columns.map(c => <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />)}
+              </colgroup>
+              <thead className="bg-ui-bg-subtle sticky top-0 z-10">
                 <tr>
-                  <td colSpan={columns.length} className="text-center py-12 text-ui-fg-muted">
-                    {activeTab === "su_co" ? "Không có đơn giao không thành 🎉" : "Không có đơn nào"}
-                  </td>
+                  {columns.map((col, i) => (
+                    <th
+                      key={col.id}
+                      className="relative text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base select-none overflow-hidden whitespace-nowrap"
+                    >
+                      <span className="block truncate">{col.label}</span>
+                      <span
+                        onMouseDown={onResizeMouseDown(col.id)}
+                        onClick={e => e.stopPropagation()}
+                        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500"
+                        style={{ touchAction: "none" }}
+                      />
+                    </th>
+                  ))}
                 </tr>
-              )}
-              {filtered.map((order: any) => (
-                <tr
-                  key={order.id}
-                  className={`border-b border-ui-border-base cursor-pointer hover:brightness-95 transition-all ${getRowCls(order)}`}
-                  onClick={() => { window.location.href = `/app/pancake-orders/${order.id}` }}
-                >
-                  {/* Mã đơn — click để copy */}
-                  <td
-                    className="px-3 py-2 font-mono text-xs text-ui-fg-base overflow-hidden"
-                    title="Bấm để copy mã đơn"
-                    style={{ cursor: "copy" }}
-                    onClick={e => {
-                      e.stopPropagation()
-                      navigator.clipboard.writeText(order.id)
-                      const el = e.currentTarget.querySelector("span")
-                      if (!el) return
-                      const orig = el.textContent
-                      el.textContent = "✓ Đã copy!"
-                      el.classList.add("text-green-600")
-                      setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
-                    }}
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={columns.length} className="text-center py-12 text-ui-fg-muted">
+                      {activeTab === "su_co" ? "Không có đơn giao không thành 🎉" : "Không có đơn nào"}
+                    </td>
+                  </tr>
+                )}
+                {filtered.map((order: any) => (
+                  <tr
+                    key={order.id}
+                    className={`border-b border-ui-border-base cursor-pointer hover:brightness-95 transition-all ${getRowCls(order)}`}
+                    onClick={() => { window.location.href = `/app/pancake-orders/${order.id}` }}
                   >
-                    <span className="block truncate">
-                      #{order.id}
-                      {order.urgency === "critical" && <span className="ml-1 text-red-600 animate-pulse">🚨</span>}
-                    </span>
-                  </td>
-
-                  {/* Khách — SĐT click để copy */}
-                  <td className="px-3 py-2 overflow-hidden">
-                    <div className="font-medium text-ui-fg-base text-xs leading-tight truncate" title={order.customer_name}>{order.customer_name}</div>
-                    <div
-                      className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
-                      title="Bấm để copy SĐT"
+                    {/* Mã đơn — click để copy */}
+                    <td
+                      className="px-3 py-2 font-mono text-xs text-ui-fg-base overflow-hidden"
+                      title="Bấm để copy mã đơn"
                       style={{ cursor: "copy" }}
                       onClick={e => {
                         e.stopPropagation()
-                        if (!order.customer_phone) return
-                        navigator.clipboard.writeText(order.customer_phone)
-                        const el = e.currentTarget as HTMLElement
+                        navigator.clipboard.writeText(order.id)
+                        const el = e.currentTarget.querySelector("span")
+                        if (!el) return
                         const orig = el.textContent
                         el.textContent = "✓ Đã copy!"
                         el.classList.add("text-green-600")
                         setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
                       }}
                     >
-                      {order.customer_phone ?? "—"}
-                    </div>
-                  </td>
+                      <span className="block truncate">
+                        #{order.id}
+                        {order.urgency === "critical" && <span className="ml-1 text-red-600 animate-pulse">🚨</span>}
+                      </span>
+                    </td>
 
-                  {/* Tỉnh */}
-                  <td className="px-3 py-2 text-xs text-ui-fg-subtle overflow-hidden">
-                    <span className="block truncate" title={order.province ?? ""}>{order.province ?? "—"}</span>
-                  </td>
+                    {/* Khách — SĐT click để copy */}
+                    <td className="px-3 py-2 overflow-hidden">
+                      <div className="font-medium text-ui-fg-base text-xs leading-tight truncate" title={order.customer_name}>{order.customer_name}</div>
+                      <div
+                        className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
+                        title="Bấm để copy SĐT"
+                        style={{ cursor: "copy" }}
+                        onClick={e => {
+                          e.stopPropagation()
+                          if (!order.customer_phone) return
+                          navigator.clipboard.writeText(order.customer_phone)
+                          const el = e.currentTarget as HTMLElement
+                          const orig = el.textContent
+                          el.textContent = "✓ Đã copy!"
+                          el.classList.add("text-green-600")
+                          setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
+                        }}
+                      >
+                        {order.customer_phone ?? "—"}
+                      </div>
+                    </td>
 
-                  {/* CSKH */}
-                  <td className="px-3 py-2 text-xs text-ui-fg-base overflow-hidden">
-                    <span className="block truncate">{order.care_name ?? "—"}</span>
-                  </td>
+                    {/* Tỉnh */}
+                    <td className="px-3 py-2 text-xs text-ui-fg-subtle overflow-hidden">
+                      <span className="block truncate" title={order.province ?? ""}>{order.province ?? "—"}</span>
+                    </td>
 
-                  {/* Trạng thái */}
-                  <td className="px-3 py-2 overflow-hidden">
-                    <div className="flex flex-col gap-1">
-                      <StatusBadge status={order.status} statusName={order.status_name} />
-                      <MissingHoanTagBadge missing={order.missing_hoan_tag} />
-                    </div>
-                  </td>
+                    {/* CSKH */}
+                    <td className="px-3 py-2 text-xs text-ui-fg-base overflow-hidden">
+                      <span className="block truncate">{order.care_name ?? "—"}</span>
+                    </td>
 
-                  {/* Lần giao */}
-                  <td className="px-3 py-2 text-center overflow-hidden">
-                    <span className={`text-sm font-bold ${Number(order.count_of_delivery) >= 3 ? "text-red-600" : "text-ui-fg-base"}`}>
-                      {order.count_of_delivery ?? "—"}
-                    </span>
-                  </td>
+                    {/* Trạng thái */}
+                    <td className="px-3 py-2 overflow-hidden">
+                      <div className="flex flex-col gap-1">
+                        <StatusBadge status={order.status} statusName={order.status_name} />
+                        <MissingHoanTagBadge missing={order.missing_hoan_tag} />
+                      </div>
+                    </td>
 
-                  {/* Bưu tá — SĐT click để copy */}
-                  <td className="px-3 py-2 overflow-hidden">
-                    {order.delivery_name ? (
-                      <>
-                        <div className="text-xs font-medium text-ui-fg-base leading-tight truncate" title={order.delivery_name}>{order.delivery_name}</div>
-                        <div
-                          className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
-                          title="Bấm để copy SĐT bưu tá"
-                          style={{ cursor: "copy" }}
-                          onClick={e => {
-                            e.stopPropagation()
-                            if (!order.delivery_tel) return
-                            navigator.clipboard.writeText(order.delivery_tel)
-                            const el = e.currentTarget as HTMLElement
-                            const orig = el.textContent
-                            el.textContent = "✓ Đã copy!"
-                            el.classList.add("text-green-600")
-                            setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
-                          }}
-                        >
-                          {order.delivery_tel ?? "—"}
-                        </div>
-                      </>
-                    ) : <span className="text-xs text-ui-fg-muted">—</span>}
-                  </td>
+                    {/* Lần giao */}
+                    <td className="px-3 py-2 text-center overflow-hidden">
+                      <span className={`text-sm font-bold ${Number(order.count_of_delivery) >= 3 ? "text-red-600" : "text-ui-fg-base"}`}>
+                        {order.count_of_delivery ?? "—"}
+                      </span>
+                    </td>
 
-                  {/* Cập nhật ship */}
-                  <td className="px-3 py-2 overflow-hidden">
-                    {order.last_delivery_status ? (
-                      <>
-                        <div className="text-xs text-ui-fg-base leading-tight line-clamp-2">{order.last_delivery_status}</div>
-                        <div className="text-xs text-ui-fg-muted mt-0.5">{formatDateTime(order.last_delivery_at)}</div>
-                      </>
-                    ) : <span className="text-xs text-ui-fg-muted">—</span>}
-                  </td>
+                    {/* Bưu tá — SĐT click để copy */}
+                    <td className="px-3 py-2 overflow-hidden">
+                      {order.delivery_name ? (
+                        <>
+                          <div className="text-xs font-medium text-ui-fg-base leading-tight truncate" title={order.delivery_name}>{order.delivery_name}</div>
+                          <div
+                            className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
+                            title="Bấm để copy SĐT bưu tá"
+                            style={{ cursor: "copy" }}
+                            onClick={e => {
+                              e.stopPropagation()
+                              if (!order.delivery_tel) return
+                              navigator.clipboard.writeText(order.delivery_tel)
+                              const el = e.currentTarget as HTMLElement
+                              const orig = el.textContent
+                              el.textContent = "✓ Đã copy!"
+                              el.classList.add("text-green-600")
+                              setTimeout(() => { el.textContent = orig; el.classList.remove("text-green-600") }, 1200)
+                            }}
+                          >
+                            {order.delivery_tel ?? "—"}
+                          </div>
+                        </>
+                      ) : <span className="text-xs text-ui-fg-muted">—</span>}
+                    </td>
 
-                  {/* COD */}
-                  <td className="px-3 py-2 text-right text-xs font-medium text-ui-fg-base overflow-hidden">
-                    <span className="block truncate">{formatVND(order.cod_amount)}</span>
-                  </td>
+                    {/* Cập nhật ship */}
+                    <td className="px-3 py-2 overflow-hidden">
+                      {order.last_delivery_status ? (
+                        <>
+                          <div className="text-xs text-ui-fg-base leading-tight line-clamp-2">{order.last_delivery_status}</div>
+                          <div className="text-xs text-ui-fg-muted mt-0.5">{formatDateTime(order.last_delivery_at)}</div>
+                        </>
+                      ) : <span className="text-xs text-ui-fg-muted">—</span>}
+                    </td>
 
-                  {/* AI: Đang ở bước */}
-                  <td className="px-3 py-2 overflow-hidden">
-                    {order.current_step ? (
-                      <div className="text-xs text-ui-fg-base leading-snug line-clamp-3">{order.current_step}</div>
-                    ) : order.row_type === "plain" ? (
-                      <span className="text-xs text-ui-fg-muted italic">Logic cứng — không cần AI</span>
-                    ) : (
-                      <span className="text-xs text-ui-fg-muted italic">Chưa phân tích</span>
-                    )}
-                  </td>
+                    {/* COD */}
+                    <td className="px-3 py-2 text-right text-xs font-medium text-ui-fg-base overflow-hidden">
+                      <span className="block truncate">{formatVND(order.cod_amount)}</span>
+                    </td>
 
-                  {/* AI: Việc tiếp theo */}
-                  <td className="px-3 py-2">
-                    {order.next_action ? (
-                      <div className="text-xs text-orange-700 font-medium leading-snug line-clamp-2">{order.next_action}</div>
-                    ) : <span className="text-xs text-ui-fg-muted">—</span>}
-                  </td>
+                    {/* AI: Đang ở bước */}
+                    <td className="px-3 py-2 overflow-hidden">
+                      {order.current_step ? (
+                        <div className="text-xs text-ui-fg-base leading-snug line-clamp-3">{order.current_step}</div>
+                      ) : order.row_type === "plain" ? (
+                        <span className="text-xs text-ui-fg-muted italic">Logic cứng — không cần AI</span>
+                      ) : (
+                        <span className="text-xs text-ui-fg-muted italic">Chưa phân tích</span>
+                      )}
+                    </td>
 
-                  {/* Gọi lúc */}
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="flex flex-col gap-1">
-                      <CallTimeBadge callTime={order.call_time} />
-                      {order.urgency && <UrgencyBadge urgency={order.urgency} />}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {/* AI: Việc tiếp theo */}
+                    <td className="px-3 py-2">
+                      {order.next_action ? (
+                        <div className="text-xs text-orange-700 font-medium leading-snug line-clamp-2">{order.next_action}</div>
+                      ) : <span className="text-xs text-ui-fg-muted">—</span>}
+                    </td>
+
+                    {/* Gọi lúc */}
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        <CallTimeBadge callTime={order.call_time} />
+                        {order.urgency && <UrgencyBadge urgency={order.urgency} />}
+                        <OverdueBadge
+                          overdue={order.overdue}
+                          neglected={order.neglected}
+                          callTime={order.call_time}
+                          lastNoteAt={order.last_note_at}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="mt-3 text-xs text-ui-fg-muted">
+          Hiển thị {filtered.length} / {orders.length} đơn •
+          AI đã phân tích: {orders.filter(o => o.analyzed_at).length} đơn •
+          Chỉ đơn Manual/Facebook/Zalo
         </div>
-      )}
-
-      <div className="mt-3 text-xs text-ui-fg-muted">
-        Hiển thị {filtered.length} / {orders.length} đơn •
-        AI đã phân tích: {orders.filter(o => o.analyzed_at).length} đơn •
-        Chỉ đơn Manual/Facebook/Zalo
-      </div>
+      </>}
     </div>
   )
 }

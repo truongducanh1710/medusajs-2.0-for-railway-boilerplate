@@ -17,6 +17,7 @@ export const PERMISSIONS = {
   "users.manage": "Quản lý user + phân quyền",
   "page.cskh.view": "Xem trang CSKH vận đơn",
   "page.cskh.analyze": "Trigger phân tích AI vận đơn",
+  "page.cskh.manage": "Quản lý hiệu suất đội CSKH (xem KPI per nhân viên)",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS

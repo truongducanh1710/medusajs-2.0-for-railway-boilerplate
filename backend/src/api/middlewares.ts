@@ -52,6 +52,8 @@ export default defineMiddlewares({
     { matcher: "/admin/cskh/orders*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
     { matcher: "/admin/cskh/analyze*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
     { matcher: "/admin/cskh/analyze*", method: ["POST"], middlewares: [requirePerm("page.cskh.analyze")] },
+    { matcher: "/admin/cskh/team-stats*", method: ["GET"], middlewares: [requirePerm("page.cskh.manage")] },
+    { matcher: "/admin/cskh/suspicious*", method: ["GET"], middlewares: [requirePerm("page.cskh.manage")] },
     { matcher: "/admin/media", method: ["GET"], middlewares: [requirePerm("page.san-pham.edit")] },
     { matcher: "/admin/media", method: ["DELETE"], middlewares: [requirePerm("page.san-pham.edit")] },
 
