@@ -194,7 +194,8 @@ class MinioFileProviderService extends AbstractFileProviderService {
 
     try {
       const parsedFilename = path.parse(file.filename)
-      const fileKey = `${parsedFilename.name}-${ulid()}${parsedFilename.ext}`
+      const safeName = parsedFilename.name.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")
+      const fileKey = `${safeName}-${ulid()}${parsedFilename.ext}`
       
       // Handle different content types properly
       let content: Buffer
@@ -305,7 +306,8 @@ class MinioFileProviderService extends AbstractFileProviderService {
 
     try {
       const parsedFilename = path.parse(fileData.filename)
-      const fileKey = `${parsedFilename.name}-${ulid()}${parsedFilename.ext}`
+      const safeName = parsedFilename.name.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")
+      const fileKey = `${safeName}-${ulid()}${parsedFilename.ext}`
 
       // Generate presigned PUT URL that expires in 15 minutes
       const url = await this.client.presignedPutObject(
