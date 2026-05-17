@@ -8,6 +8,7 @@ import LocalizedClientLink from "@modules/common/components/localized-client-lin
 import CartButton from "@modules/layout/components/cart-button"
 import SideMenu from "@modules/layout/components/side-menu"
 import PromoBanner from "@modules/layout/components/promo-banner"
+import LogoImage from "@modules/layout/components/logo-image"
 
 export default async function Nav({
   countryCode,
@@ -37,7 +38,7 @@ export default async function Nav({
             className="flex items-center"
             data-testid="nav-store-link"
           >
-            <img src={logoSrc} alt="Vietmate" className="h-16 sm:h-20 object-contain" style={{ mixBlendMode: "multiply" }} />
+            <LogoImage src={logoSrc} />
           </LocalizedClientLink>
 
           {/* Desktop nav links */}
