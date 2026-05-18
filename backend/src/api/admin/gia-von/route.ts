@@ -58,58 +58,67 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  * Tạo lô nhập mới, tự tính final_price và upsert product_cost (bình quân gia quyền)
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const body: Record<string, any> = (req.body && typeof req.body === "object") ? req.body as any : {}
+
+  const product_id: string = body.product_id ?? ""
+  const product_title: string = body.product_title ?? ""
+  const lot_date: string = body.lot_date ?? ""
+  const received_date: string | null = body.received_date ?? null
+  const qty: number = Number(body.qty ?? 0)
+  const price_unit: number = Number(body.price_unit ?? 0)
+  const local_fee_tq: number = Number(body.local_fee_tq ?? 0)
+  const ship_fee_ovs: number = Number(body.ship_fee_ovs ?? 0)
+  const local_fee_vn: number = Number(body.local_fee_vn ?? 0)
+  const vat_fee: number = Number(body.vat_fee ?? 0)
+  const other_fee: number = Number(body.other_fee ?? 0)
+  const source: string = body.source ?? "TQ"
+  const status: string = body.status ?? "received"
+  const note: string = body.note ?? ""
+
+  if (!product_id || !product_title || !lot_date || !qty || !price_unit) {
+    return res.status(400).json({ error: "Thiếu trường bắt buộc", received: { product_id, product_title, lot_date, qty, price_unit } })
+  }
+
+  const amount = Math.round(qty * price_unit * 100) / 100
+  const final_price = calcFinalPrice({ qty, amount, local_fee_tq, ship_fee_ovs, local_fee_vn, vat_fee, other_fee })
+  const created_by: string | null = (req as any).auth_context?.actor_id ?? null
+
   try {
-    const body = req.body as any
-    const {
-      product_id, product_title, lot_date, received_date,
-      qty, price_unit, local_fee_tq = 0, ship_fee_ovs = 0,
-      local_fee_vn = 0, vat_fee = 0, other_fee = 0,
-      source = "TQ", status = "received", note = "",
-    } = body
-
-    if (!product_id || !product_title || !lot_date || !qty || !price_unit) {
-      return res.status(400).json({ error: "Thiếu trường bắt buộc: product_id, product_title, lot_date, qty, price_unit" })
-    }
-
-    const amount = Math.round(qty * price_unit * 100) / 100
-    const final_price = calcFinalPrice({ qty, amount, local_fee_tq, ship_fee_ovs, local_fee_vn, vat_fee, other_fee })
-
     const pool = getPool()
 
-    // Insert lô mới
-    const { rows: [lot] } = await pool.query(`
-      INSERT INTO import_lot
+    const { rows: [lot] } = await pool.query(
+      `INSERT INTO import_lot
         (id, product_id, product_title, lot_date, received_date, qty, price_unit, amount,
          local_fee_tq, ship_fee_ovs, local_fee_vn, vat_fee, other_fee, final_price,
          source, status, note, created_by, created_at, updated_at)
-      VALUES
+       VALUES
         (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now(), now())
-      RETURNING *
-    `, [product_id, product_title, lot_date, received_date ?? null,
-        qty, price_unit, amount, local_fee_tq, ship_fee_ovs,
-        local_fee_vn, vat_fee, other_fee, final_price,
-        source, status, note, (req as any).user?.email ?? null])
+       RETURNING *`,
+      [product_id, product_title, lot_date, received_date,
+       qty, price_unit, amount, local_fee_tq, ship_fee_ovs,
+       local_fee_vn, vat_fee, other_fee, final_price,
+       source, status, note, created_by]
+    )
 
-    // Upsert product_cost — bình quân gia quyền di động
-    await pool.query(`
-      INSERT INTO product_cost (id, product_id, product_title, avg_cost, stock_qty, total_lots, last_imported_at, updated_at)
-      VALUES (gen_random_uuid(), $1, $2, $3, $4, 1, $5, now())
-      ON CONFLICT (product_id) DO UPDATE SET
-        product_title    = EXCLUDED.product_title,
-        avg_cost         = ROUND(
-          (product_cost.stock_qty * product_cost.avg_cost + $4 * $3) /
-          NULLIF(product_cost.stock_qty + $4, 0)
-        , 2),
-        stock_qty        = product_cost.stock_qty + $4,
-        total_lots       = product_cost.total_lots + 1,
-        last_imported_at = GREATEST(product_cost.last_imported_at, $5),
-        updated_at       = now()
-    `, [product_id, product_title, final_price, qty, lot_date])
+    await pool.query(
+      `INSERT INTO product_cost (id, product_id, product_title, avg_cost, stock_qty, total_lots, last_imported_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 1, $5, now())
+       ON CONFLICT (product_id) DO UPDATE SET
+         product_title    = EXCLUDED.product_title,
+         avg_cost         = ROUND(
+           (product_cost.stock_qty * product_cost.avg_cost + $4 * $3) /
+           NULLIF(product_cost.stock_qty + $4, 0)
+         , 2),
+         stock_qty        = product_cost.stock_qty + $4,
+         total_lots       = product_cost.total_lots + 1,
+         last_imported_at = GREATEST(product_cost.last_imported_at, $5),
+         updated_at       = now()`,
+      [product_id, product_title, final_price, qty, lot_date]
+    )
 
     return res.json({ lot })
   } catch (err: any) {
-    console.error("[gia-von POST]", err)
-    res.status(500).json({ error: err?.message ?? String(err), stack: err?.stack?.split("\n").slice(0,3) })
-    return
+    console.error("[gia-von POST error]", err?.message, err?.stack)
+    return res.status(500).json({ error: err?.message ?? String(err) })
   }
 }
