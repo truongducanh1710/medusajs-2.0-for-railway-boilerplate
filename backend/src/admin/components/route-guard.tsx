@@ -14,6 +14,16 @@ export const RouteGuard = () => {
         hide.push(`nav a[href$="/${key}"]`, `nav a[href*="/${key}/"]`)
       }
     }
+    // Ẩn custom route sidebar links
+    for (const [prefix, p] of Object.entries(ROUTE_PERMS)) {
+      if (!(perms as string[]).includes(p)) {
+        hide.push(
+          `nav a[href$="/app${prefix}"]`,
+          `nav a[href*="/app${prefix}/"]`,
+        )
+      }
+    }
+
     if (!hide.length) return
     let el = document.getElementById("rbac-hide-css") as HTMLStyleElement | null
     if (!el) {
