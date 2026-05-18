@@ -73,8 +73,10 @@ function ProdCell({ value, productId, isAccessory, onChange }: {
   const [q, setQ] = useState(value)
   const [hits, setHits] = useState<any[]>([])
   const [open, setOpen] = useState(false)
+  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const timer = useRef<any>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Close on outside click
   useEffect(() => {
@@ -96,7 +98,11 @@ function ProdCell({ value, productId, isAccessory, onChange }: {
       try {
         const d = await apiJson(`/admin/products?q=${encodeURIComponent(text)}&limit=8`, "GET")
         setHits(d.products ?? [])
-        setOpen(true)
+        if (d.products?.length > 0 && inputRef.current) {
+          const rect = inputRef.current.getBoundingClientRect()
+          setDropPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 260) })
+          setOpen(true)
+        }
       } catch { setHits([]) }
     }, 250)
   }
@@ -111,6 +117,7 @@ function ProdCell({ value, productId, isAccessory, onChange }: {
   return (
     <div ref={wrapRef} style={{ position: "relative", minWidth: 200 }}>
       <input
+        ref={inputRef}
         value={q}
         onChange={e => search(e.target.value)}
         onFocus={() => { if (q.length >= 2) search(q) }}
@@ -127,11 +134,11 @@ function ProdCell({ value, productId, isAccessory, onChange }: {
           {isAccessory ? "🔩" : "✓"} {productId.slice(-8)}
         </div>
       )}
-      {open && hits.length > 0 && (
+      {open && hits.length > 0 && dropPos && (
         <div style={{
-          position: "absolute", top: "100%", left: 0, minWidth: 260, background: "#fff",
-          border: "1px solid #e5e7eb", borderRadius: 6, boxShadow: "0 6px 16px rgba(0,0,0,.14)",
-          zIndex: 999, maxHeight: 200, overflowY: "auto",
+          position: "fixed", top: dropPos.top, left: dropPos.left, minWidth: dropPos.width,
+          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6,
+          boxShadow: "0 6px 16px rgba(0,0,0,.14)", zIndex: 9999, maxHeight: 240, overflowY: "auto",
         }}>
           {hits.map((p: any) => (
             <div key={p.id}
