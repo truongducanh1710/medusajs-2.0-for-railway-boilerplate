@@ -50,20 +50,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const syncService = req.scope.resolve("pancakeSyncModule") as any
     const q = req.query as Record<string, string>
     const date = q.date ?? new Date().toISOString().slice(0, 10)
+    const days = Math.min(Math.max(Number(q.days ?? 1), 1), 30) // 1-30 ngày, default 1
     const sellerFilter = q.seller ?? ""
 
-    const dayStart = new Date(`${date}T00:00:00+07:00`)
+    // Khi days=1: chỉ lấy đúng ngày date. Khi days>1: lấy N ngày kết thúc vào cuối ngày date
     const dayEnd   = new Date(`${date}T23:59:59+07:00`)
+    const dayStart = days === 1
+      ? new Date(`${date}T00:00:00+07:00`)
+      : new Date(dayEnd.getTime() - (days - 1) * 24 * 3600_000 - (dayEnd.getTime() % 86400_000 === 0 ? 0 : 0))
 
-    // Lấy đơn status=0 trong ngày
+    // Với multi-day, lấy từ 00:00 ngày đầu đến 23:59 ngày cuối
+    const rangeStart = days === 1
+      ? new Date(`${date}T00:00:00+07:00`)
+      : new Date(dayEnd.getTime() - (days - 1) * 24 * 3600_000)
+
+    // Lấy đơn status=0 trong khoảng
     const all = await syncService.listPancakeOrders(
       {},
-      { take: 500, order: { pancake_created_at: "DESC" } }
+      { take: days > 1 ? 1500 : 500, order: { pancake_created_at: "DESC" } }
     )
 
     let orders = all.filter((o: any) => {
       const d = o.pancake_created_at ? new Date(o.pancake_created_at) : null
-      return d && d >= dayStart && d <= dayEnd && o.status === 0
+      return d && d >= rangeStart && d <= dayEnd && o.status === 0
     })
 
     if (sellerFilter) {
@@ -123,7 +132,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
     const sellers = Array.from(sellersMap.keys()).map((name) => ({ id: name, name }))
 
-    return res.json({ date, orders: prioritized, summary, sellers })
+    return res.json({ date, days, orders: prioritized, summary, sellers })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

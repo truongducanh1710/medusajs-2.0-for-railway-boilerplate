@@ -171,6 +171,7 @@ const UuTienGoiPage = () => {
   const [sellers, setSellers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(todayVN)
+  const [days, setDays] = useState(1)
   const [sellerFilter, setSellerFilter] = useState("")
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [lastRefresh, setLastRefresh] = useState(new Date())
@@ -191,7 +192,7 @@ const UuTienGoiPage = () => {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ date })
+      const params = new URLSearchParams({ date, days: String(days) })
       if (sellerFilter) params.set("seller", sellerFilter)
       const res = await apiFetch(`/admin/pancake-sync/call-board/priority?${params}`)
       if (!res.ok) return
@@ -231,7 +232,7 @@ const UuTienGoiPage = () => {
   }, [])
 
   // Refetch khi filter thay đổi
-  useEffect(() => { fetchData() }, [date, sellerFilter])
+  useEffect(() => { fetchData() }, [date, days, sellerFilter])
 
   // Auto-refresh đã tắt để tiết kiệm chi phí — user dùng nút "Đồng bộ" thủ công
 
@@ -285,6 +286,26 @@ const UuTienGoiPage = () => {
           onChange={(e) => setDate(e.target.value)}
           className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
         />
+        {/* Quick select khoảng ngày */}
+        <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
+          {[
+            { label: "1 ngày", val: 1 },
+            { label: "3 ngày", val: 3 },
+            { label: "5 ngày", val: 5 },
+            { label: "7 ngày", val: 7 },
+          ].map(({ label, val }) => (
+            <button
+              key={val}
+              onClick={() => setDays(val)}
+              className={`px-3 py-2 transition-colors ${days === val
+                ? "bg-violet-600 text-white font-medium"
+                : "bg-white text-gray-600 hover:bg-gray-50"
+              } ${val !== 1 ? "border-l border-gray-200" : ""}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <select
           value={sellerFilter}
           onChange={(e) => setSellerFilter(e.target.value)}
@@ -295,7 +316,10 @@ const UuTienGoiPage = () => {
             <option key={s.id} value={s.name}>{s.name}</option>
           ))}
         </select>
-        <span className="text-sm text-gray-400">{orders.length} đơn cần xử lý</span>
+        <span className="text-sm text-gray-400">
+          {orders.length} đơn cần xử lý
+          {days > 1 && <span className="ml-1 text-violet-500">({days} ngày)</span>}
+        </span>
       </div>
 
       {/* Table */}
