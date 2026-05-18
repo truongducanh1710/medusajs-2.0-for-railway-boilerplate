@@ -137,20 +137,43 @@ function ProdCell({ value, productId, isAccessory, onChange }: {
       {open && hits.length > 0 && dropPos && (
         <div style={{
           position: "fixed", top: dropPos.top, left: dropPos.left, minWidth: dropPos.width,
-          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6,
-          boxShadow: "0 6px 16px rgba(0,0,0,.14)", zIndex: 9999, maxHeight: 240, overflowY: "auto",
+          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,.15)", zIndex: 9999, maxHeight: 300, overflowY: "auto",
+          padding: "8px",
         }}>
-          {hits.map((p: any) => (
-            <div key={p.id}
-              onMouseDown={() => { onChange(p.id, p.title); setQ(p.title); setOpen(false) }}
-              style={{ padding: "7px 12px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid #f3f4f6" }}
-              onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
-              onMouseOut={e => (e.currentTarget.style.background = "#fff")}
-            >
-              <div style={{ fontWeight: 600 }}>{p.title}</div>
-              <div style={{ color: "#9ca3af", fontSize: 10 }}>{p.id}</div>
-            </div>
-          ))}
+          <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 6, paddingLeft: 2 }}>Chọn sản phẩm</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {hits.map((p: any, i: number) => {
+              const COLORS = [
+                { bg: "#fde68a", text: "#92400e" }, // vàng
+                { bg: "#bfdbfe", text: "#1e3a8a" }, // xanh dương
+                { bg: "#bbf7d0", text: "#14532d" }, // xanh lá
+                { bg: "#fecaca", text: "#7f1d1d" }, // đỏ
+                { bg: "#e9d5ff", text: "#4c1d95" }, // tím
+                { bg: "#fed7aa", text: "#7c2d12" }, // cam
+                { bg: "#cffafe", text: "#164e63" }, // cyan
+                { bg: "#fce7f3", text: "#831843" }, // hồng
+              ]
+              const c = COLORS[i % COLORS.length]
+              return (
+                <div key={p.id}
+                  onMouseDown={() => { onChange(p.id, p.title); setQ(p.title); setOpen(false) }}
+                  style={{
+                    background: c.bg, color: c.text,
+                    borderRadius: 20, padding: "5px 12px",
+                    fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    letterSpacing: "0.03em", textTransform: "uppercase",
+                    border: `1.5px solid ${c.bg}`,
+                    transition: "filter 0.1s",
+                  }}
+                  onMouseOver={e => (e.currentTarget.style.filter = "brightness(0.92)")}
+                  onMouseOut={e => (e.currentTarget.style.filter = "none")}
+                >
+                  {p.title}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
