@@ -98,16 +98,32 @@ function ProdCell({ value, productId, onChange }: {
     }, 250)
   }
 
+  // Reset về tên đã chọn nếu blur mà không pick từ dropdown
+  function handleBlur() {
+    setTimeout(() => {
+      if (!open) setQ(value)
+    }, 200)
+  }
+
   return (
-    <div ref={wrapRef} style={{ position: "relative", minWidth: 180 }}>
+    <div ref={wrapRef} style={{ position: "relative", minWidth: 200 }}>
       <input
         value={q}
         onChange={e => search(e.target.value)}
-        onFocus={() => hits.length > 0 && setOpen(true)}
-        placeholder="Tên sản phẩm..."
-        style={cellInput()}
+        onFocus={() => { if (q.length >= 2) search(q) }}
+        onBlur={handleBlur}
+        placeholder="🔍 Tìm & chọn sản phẩm POS..."
+        style={{
+          ...cellInput(),
+          borderColor: productId ? "#a78bfa" : "#e5e7eb",
+          background: productId ? "#faf5ff" : "#fff",
+        }}
       />
-      {productId && <div style={{ fontSize: 9, color: "#9ca3af", lineHeight: 1, marginTop: 1, paddingLeft: 2 }}>{productId.slice(0, 12)}…</div>}
+      {productId && (
+        <div style={{ fontSize: 9, color: "#7c3aed", lineHeight: 1, marginTop: 1, paddingLeft: 2 }}>
+          ✓ {productId.slice(-8)}
+        </div>
+      )}
       {open && hits.length > 0 && (
         <div style={{
           position: "absolute", top: "100%", left: 0, minWidth: 260, background: "#fff",
