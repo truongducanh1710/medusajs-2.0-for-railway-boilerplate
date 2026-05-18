@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   "page.cskh.view": "Xem trang CSKH vận đơn",
   "page.cskh.analyze": "Trigger phân tích AI vận đơn",
   "page.cskh.manage": "Quản lý hiệu suất đội CSKH (xem KPI per nhân viên)",
+  "page.gia-von.view": "Xem trang giá vốn",
+  "page.gia-von.manage": "Nhập/sửa lô hàng giá vốn",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -25,6 +27,7 @@ export type PermissionKey = keyof typeof PERMISSIONS
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
   marketing: ["page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
-  sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view"],
+  sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "page.gia-von.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view"],
+  ketoan: ["page.gia-von.view", "page.gia-von.manage"],
 }

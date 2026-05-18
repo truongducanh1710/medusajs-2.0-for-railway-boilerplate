@@ -7,6 +7,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/pancake-sync": "page.pancake-sync.view",
   "/pages": "page.pages.view",
   "/cskh": "page.cskh.view",
+  "/gia-von": "page.gia-von.view",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {

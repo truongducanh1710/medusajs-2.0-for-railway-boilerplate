@@ -134,6 +134,10 @@ const medusaConfig = {
       key: "cskhAnalysisModule",
     },
     {
+      resolve: "./src/modules/gia-von",
+      key: "giaVonModule",
+    },
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {
