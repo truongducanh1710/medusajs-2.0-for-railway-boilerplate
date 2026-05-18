@@ -1,6 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState, useRef, useCallback } from "react"
-import { apiFetch } from "../../lib/api-client"
+import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
 // ---- Helpers ----
@@ -94,7 +94,7 @@ function ProdCell({ value, productId, isAccessory, onChange }: {
     if (text.length < 2) { setHits([]); setOpen(false); return }
     timer.current = setTimeout(async () => {
       try {
-        const d = await apiFetch(`/admin/products?q=${encodeURIComponent(text)}&limit=8`, "GET")
+        const d = await apiJson(`/admin/products?q=${encodeURIComponent(text)}&limit=8`, "GET")
         setHits(d.products ?? [])
         setOpen(true)
       } catch { setHits([]) }
@@ -331,7 +331,7 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
 
     setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: true, _error: undefined } : r))
     try {
-      await apiFetch("/admin/gia-von", "POST", {
+      await apiJson("/admin/gia-von", "POST", {
         product_id: row.product_id, product_title: row.product_title,
         lot_date: row.lot_date, received_date: row.received_date || undefined,
         qty: num(row.qty), price_unit: num(row.price_unit),
@@ -429,7 +429,7 @@ function LotHistoryModal({ productId, productTitle, onClose }: { productId: stri
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch(`/admin/gia-von?product_id=${productId}&limit=50`, "GET")
+    apiJson(`/admin/gia-von?product_id=${productId}&limit=50`, "GET")
       .then(d => { setLots(d.lots ?? []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [productId])
@@ -493,7 +493,7 @@ function OverviewTab() {
 
   function load(s = search) {
     setLoading(true)
-    apiFetch(`/admin/gia-von/summary?search=${encodeURIComponent(s)}`, "GET")
+    apiJson(`/admin/gia-von/summary?search=${encodeURIComponent(s)}`, "GET")
       .then(d => { setProducts(d.products ?? []); setLoading(false) })
       .catch(() => setLoading(false))
   }
