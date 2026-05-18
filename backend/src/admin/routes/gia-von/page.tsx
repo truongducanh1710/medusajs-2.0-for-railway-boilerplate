@@ -31,6 +31,7 @@ interface RowDraft {
   _id: string            // client-only key
   product_id: string
   product_title: string
+  row_type: "main" | "accessory"   // chính | phụ kiện cho SP chính
   lot_date: string
   received_date: string
   qty: string
@@ -53,6 +54,7 @@ function newRow(): RowDraft {
   return {
     _id: String(++_uid),
     product_id: "", product_title: "",
+    row_type: "main",
     lot_date: "", received_date: "",
     qty: "", price_unit: "",
     local_fee_tq: "0", ship_fee_ovs: "0", local_fee_vn: "0",
@@ -62,9 +64,10 @@ function newRow(): RowDraft {
 }
 
 // ---- Product autocomplete cell ----
-function ProdCell({ value, productId, onChange }: {
+function ProdCell({ value, productId, isAccessory, onChange }: {
   value: string
   productId: string
+  isAccessory?: boolean
   onChange: (id: string, title: string) => void
 }) {
   const [q, setQ] = useState(value)
@@ -112,16 +115,16 @@ function ProdCell({ value, productId, onChange }: {
         onChange={e => search(e.target.value)}
         onFocus={() => { if (q.length >= 2) search(q) }}
         onBlur={handleBlur}
-        placeholder="🔍 Tìm & chọn sản phẩm POS..."
+        placeholder={isAccessory ? "🔩 Chọn SP chính để gắn phụ kiện..." : "🔍 Tìm & chọn sản phẩm POS..."}
         style={{
           ...cellInput(),
-          borderColor: productId ? "#a78bfa" : "#e5e7eb",
-          background: productId ? "#faf5ff" : "#fff",
+          borderColor: productId ? (isAccessory ? "#f59e0b" : "#a78bfa") : "#e5e7eb",
+          background: productId ? (isAccessory ? "#fffbeb" : "#faf5ff") : "#fff",
         }}
       />
       {productId && (
-        <div style={{ fontSize: 9, color: "#7c3aed", lineHeight: 1, marginTop: 1, paddingLeft: 2 }}>
-          ✓ {productId.slice(-8)}
+        <div style={{ fontSize: 9, color: isAccessory ? "#d97706" : "#7c3aed", lineHeight: 1, marginTop: 1, paddingLeft: 2 }}>
+          {isAccessory ? "🔩" : "✓"} {productId.slice(-8)}
         </div>
       )}
       {open && hits.length > 0 && (
@@ -187,6 +190,7 @@ const COLS = [
   { key: "vat_fee",       label: "PHÍ VAT", w: 90, align: "right" as const },
   { key: "other_fee",     label: "PHÍ KHÁC", w: 90, align: "right" as const },
   { key: "final_price",   label: "FINAL PRICE/unit", w: 130, align: "right" as const, computed: true, highlight: true },
+  { key: "row_type",      label: "LOẠI", w: 110, type: "select", opts: ["main","accessory"] },
   { key: "source",        label: "NGUỒN", w: 90, type: "select", opts: ["TQ","SHOPEE","Nội địa","Khác"] },
   { key: "status",        label: "TRẠNG THÁI", w: 120, type: "select", opts: ["received","pending","cancelled"] },
   { key: "note",          label: "GHI CHÚ", w: 180 },
@@ -214,18 +218,32 @@ function SheetRow({
           <ProdCell
             value={row.product_title}
             productId={row.product_id}
+            isAccessory={row.row_type === "accessory"}
             onChange={(id, title) => { onChange(row._id, "product_id", id); onChange(row._id, "product_title", title) }}
           />
         </td>
       )
     }
     if (col.type === "select") {
+      const isType = key === "row_type"
+      const val = (row as any)[key]
+      const selectBg = isType
+        ? (val === "accessory" ? "#fef3c7" : "#f0fdf4")
+        : rowBg
+      function labelOf(o: string) {
+        if (o === "received") return "Đã nhận"
+        if (o === "pending") return "Đang về"
+        if (o === "cancelled") return "Hủy"
+        if (o === "main") return "🏷 Sản phẩm chính"
+        if (o === "accessory") return "🔩 Phụ kiện SP chính"
+        return o
+      }
       return (
-        <td key={key} style={tdStyle(col.w, col.align, rowBg)}>
-          <select value={(row as any)[key]}
+        <td key={key} style={tdStyle(col.w, col.align, selectBg)}>
+          <select value={val}
             onChange={e => onChange(row._id, key, e.target.value)}
-            style={{ ...cellInput(), cursor: "pointer" }}>
-            {col.opts!.map(o => <option key={o} value={o}>{o === "received" ? "Đã nhận" : o === "pending" ? "Đang về" : o === "cancelled" ? "Hủy" : o}</option>)}
+            style={{ ...cellInput(), cursor: "pointer", background: selectBg, fontWeight: isType ? 600 : 400 }}>
+            {col.opts!.map(o => <option key={o} value={o}>{labelOf(o)}</option>)}
           </select>
         </td>
       )
@@ -320,7 +338,10 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
         local_fee_tq: num(row.local_fee_tq), ship_fee_ovs: num(row.ship_fee_ovs),
         local_fee_vn: num(row.local_fee_vn), vat_fee: num(row.vat_fee),
         other_fee: num(row.other_fee),
-        source: row.source, status: row.status, note: row.note,
+        source: row.source, status: row.status,
+        note: row.row_type === "accessory"
+          ? (row.note ? `[Phụ kiện] ${row.note}` : "[Phụ kiện]")
+          : row.note,
       })
       setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: false, _saved: true } : r))
       onSaved()
