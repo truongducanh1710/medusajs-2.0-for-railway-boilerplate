@@ -108,6 +108,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({ lot })
   } catch (err: any) {
-    return res.status(500).json({ error: err.message })
+    console.error("[gia-von POST]", err)
+    res.status(500).json({ error: err?.message ?? String(err), stack: err?.stack?.split("\n").slice(0,3) })
+    return
   }
 }
