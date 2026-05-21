@@ -42,6 +42,7 @@ export default defineMiddlewares({
     { matcher: "/admin/pancake-sync/active-orders", method: ["POST"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/status*", method: ["GET"], middlewares: [requirePerm("page.pancake-sync.view")] },
     { matcher: "/admin/pancake-sync/logs*", method: ["GET"], middlewares: [requirePerm("page.pancake-sync.view")] },
+    { matcher: "/admin/pancake-sync/pull-by-status", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/call-board*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
