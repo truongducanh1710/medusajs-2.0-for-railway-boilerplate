@@ -95,11 +95,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     // Fire-and-forget: fetch full order and upsert
     ;(async () => {
+      const receivedAt = new Date()
+      const asyncStart = Date.now()
+      let apiFetchSuccess: boolean | undefined
+      let upsertSuccess = false
+      let fallbackUsed = false
+      let errorMessage: string | undefined
+
       try {
         const syncService = req.scope.resolve("pancakeSyncModule") as any
 
         // Fetch full order from Pancake API
         const rawOrder = await syncService.fetchOrderById(pancakeOrderId)
+        apiFetchSuccess = rawOrder !== null
 
         const existing = await syncService.listPancakeOrders({ id: pancakeOrderId }, { take: 1 })
         const prev = existing[0] ?? null
@@ -141,9 +149,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               raw_version: "v1",
             }] as any)
           }
+          upsertSuccess = true
           console.log(`[Pancake Webhook] ✓ Synced order #${pancakeOrderId} → ${label} (full)`)
         } else {
           // Fallback: upsert minimal from webhook body
+          fallbackUsed = true
           if (prev) {
             await syncService.updatePancakeOrders({
               id: pancakeOrderId,
@@ -172,6 +182,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               synced_at: new Date(),
             }] as any)
           }
+          upsertSuccess = true
           console.warn(`[Pancake Webhook] ⚠ Synced order #${pancakeOrderId} fallback (API fetch failed)`)
         }
 
@@ -194,7 +205,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         await updateMedusaOrderMetadata(req.scope, pancakeOrderId, pancakeStatus, label, body)
 
       } catch (asyncErr: any) {
+        errorMessage = asyncErr.message
         console.error("[Pancake Webhook] Async sync error:", asyncErr.message)
+      } finally {
+        try {
+          const syncService = req.scope.resolve("pancakeSyncModule") as any
+          await syncService.logWebhookEvent({
+            pancake_order_id: pancakeOrderId,
+            pancake_status: pancakeStatus,
+            status_name: label,
+            event_type: "order",
+            api_fetch_success: apiFetchSuccess,
+            upsert_success: upsertSuccess,
+            fallback_used: fallbackUsed,
+            error_message: errorMessage,
+            duration_ms: Date.now() - asyncStart,
+            received_at: receivedAt,
+          })
+        } catch { /* log fail không ảnh hưởng */ }
       }
     })()
 
