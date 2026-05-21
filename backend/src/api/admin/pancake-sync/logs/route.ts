@@ -1,34 +1,24 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 /**
- * GET /admin/pancake-sync/logs
- * Query: type=cron|webhook, limit, offset
+ * GET /admin/pancake-sync/logs?type=cron|webhook&limit=50&offset=0
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { type = "cron", limit = "50", offset = "0" } = req.query as Record<string, string>
-    const syncService = req.scope.resolve("pancakeSyncModule") as any
+    const cskhService = req.scope.resolve("cskhAnalysisModule") as any
     const lim = Math.min(Number(limit) || 50, 200)
     const off = Number(offset) || 0
 
     if (type === "webhook") {
-      const logs = await syncService.listPancakeWebhookLogs(
-        {},
-        { take: lim, skip: off, order: { received_at: "DESC" } }
-      )
+      const logs = await cskhService.sql(
+        `SELECT * FROM pancake_webhook_log WHERE deleted_at IS NULL ORDER BY received_at DESC LIMIT ${lim} OFFSET ${off}`
+      ).catch(() => [])
       return res.json({ logs, type: "webhook" })
     }
 
-    // type === "cron" (default)
-    const logs = await syncService.listPancakeCronLogs(
-      {},
-      { take: lim, skip: off, order: { started_at: "DESC" } }
-    )
-
-    // Status distribution from DB (real-time)
-    const statusRows = await syncService.listPancakeOrders(
-      {},
-      { take: 0, select: ["status", "status_name"] as any }
+    const logs = await cskhService.sql(
+      `SELECT * FROM pancake_cron_log WHERE deleted_at IS NULL ORDER BY started_at DESC LIMIT ${lim} OFFSET ${off}`
     ).catch(() => [])
 
     return res.json({ logs, type: "cron" })

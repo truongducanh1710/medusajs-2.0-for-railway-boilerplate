@@ -1,8 +1,6 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import PancakeOrder from "./models/pancake-order"
 import PancakeSyncJob from "./models/pancake-sync-job"
-import PancakeCronLog from "./models/pancake-cron-log"
-import PancakeWebhookLog from "./models/pancake-webhook-log"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../lib/constants"
 import { extractNotesForOrder, extractTags } from "./extractors"
 
@@ -184,7 +182,7 @@ export function mapPancakeOrder(raw: any): Record<string, any> {
 
 // ---- Service ----
 
-class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob, PancakeCronLog, PancakeWebhookLog }) {
+class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob }) {
   /**
    * Pull orders from Pancake in a date range and upsert into DB.
    * Runs inside a Postgres advisory lock to prevent concurrent syncs.
@@ -754,7 +752,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob, P
   }
 
   /**
-   * Ghi log 1 lần cron chạy vào DB.
+   * Ghi log 1 lần cron chạy vào DB (raw SQL — không phụ thuộc MedusaService model).
    */
   async logCronRun(data: {
     run_type: string
@@ -769,26 +767,23 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob, P
       const totalUpdated = data.statuses.reduce((s, r) => s + r.updated, 0)
       const totalCreated = data.statuses.reduce((s, r) => s + r.created, 0)
       const totalErrors = data.statuses.reduce((s, r) => s + r.errors, 0)
-      await this.createPancakeCronLogs([{
-        run_type: data.run_type,
-        started_at: data.started_at,
-        finished_at: data.finished_at,
-        duration_ms: durationMs,
-        statuses: data.statuses as any,
-        total_orders: totalOrders,
-        total_updated: totalUpdated,
-        total_created: totalCreated,
-        total_errors: totalErrors,
-        error_details: (data.error_details ?? []) as any,
-        success: totalErrors === 0 || totalOrders > 0,
-      }] as any)
+      const id = `cron_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const em = (this as any).__container?.resolve?.("manager") ?? (this as any).manager_
+      if (!em) return
+      await em.execute(
+        `INSERT INTO pancake_cron_log (id, run_type, started_at, finished_at, duration_ms, statuses, total_orders, total_updated, total_created, total_errors, error_details, success, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+        [id, data.run_type, data.started_at, data.finished_at, durationMs,
+         JSON.stringify(data.statuses), totalOrders, totalUpdated, totalCreated, totalErrors,
+         JSON.stringify(data.error_details ?? []), totalErrors === 0 || totalOrders > 0]
+      )
     } catch (err: any) {
       console.error("[PancakeSync] logCronRun failed:", err.message)
     }
   }
 
   /**
-   * Ghi log 1 webhook event vào DB.
+   * Ghi log 1 webhook event vào DB (raw SQL).
    */
   async logWebhookEvent(data: {
     pancake_order_id: string
@@ -803,18 +798,17 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob, P
     received_at: Date
   }): Promise<void> {
     try {
-      await this.createPancakeWebhookLogs([{
-        received_at: data.received_at,
-        pancake_order_id: data.pancake_order_id,
-        pancake_status: data.pancake_status ?? null,
-        status_name: data.status_name ?? "",
-        event_type: data.event_type ?? "order",
-        api_fetch_success: data.api_fetch_success ?? null,
-        upsert_success: data.upsert_success ?? null,
-        fallback_used: data.fallback_used ?? false,
-        error_message: data.error_message ?? null,
-        duration_ms: data.duration_ms ?? null,
-      }] as any)
+      const id = `wh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const em = (this as any).__container?.resolve?.("manager") ?? (this as any).manager_
+      if (!em) return
+      await em.execute(
+        `INSERT INTO pancake_webhook_log (id, received_at, pancake_order_id, pancake_status, status_name, event_type, api_fetch_success, upsert_success, fallback_used, error_message, duration_ms, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+        [id, data.received_at, data.pancake_order_id, data.pancake_status ?? null,
+         data.status_name ?? "", data.event_type ?? "order",
+         data.api_fetch_success ?? null, data.upsert_success ?? null,
+         data.fallback_used ?? false, data.error_message ?? null, data.duration_ms ?? null]
+      )
     } catch (err: any) {
       console.error("[PancakeSync] logWebhookEvent failed:", err.message)
     }
