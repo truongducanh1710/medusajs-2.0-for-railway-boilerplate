@@ -28,7 +28,7 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+export async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
   let lastErr: Error | undefined
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController()
@@ -81,7 +81,7 @@ const STATUS_VI: Record<number, string> = {
   "-2": "Hoàn hàng",
 } as any
 
-function statusLabel(status: number): string {
+export function statusLabel(status: number): string {
   return STATUS_VI[status] ?? STATUS_VI[String(status)] ?? `Trạng thái ${status}`
 }
 
@@ -149,7 +149,7 @@ function detectSource(order: any): string {
 
 // ---- Mapping ----
 
-function mapPancakeOrder(raw: any): Record<string, any> {
+export function mapPancakeOrder(raw: any): Record<string, any> {
   const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
     name: item.variation_info?.name ?? item.name ?? "—",
     qty: item.quantity ?? 1,
@@ -545,6 +545,21 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   }
 
   /**
+   * Fetch 1 đơn từ Pancake API theo ID — dùng cho webhook trigger.
+   */
+  async fetchOrderById(orderId: string): Promise<any | null> {
+    const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders/${orderId}?api_key=${PANCAKE_API_KEY}`
+    try {
+      const res = await fetchWithRetry(url, 2)
+      const json: any = await res.json()
+      return json?.data?.data ?? json?.data ?? null
+    } catch (err: any) {
+      console.error(`[fetchOrderById] ${orderId} failed:`, err.message)
+      return null
+    }
+  }
+
+  /**
    * Sync toàn bộ đơn status=0 (đơn mới chưa xác nhận) từ Pancake.
    *
    * Pancake list endpoint trả về đầy đủ customer.notes + tags trong response — không cần
@@ -654,6 +669,85 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     }
 
     console.log(`[syncActiveOrders] Done — total=${total} updated=${updated} created=${created} errors=${errors}`)
+    return { updated, created, total, errors }
+  }
+
+  /**
+   * Pull tất cả đơn theo status từ Pancake — dùng cho cron 5 phút.
+   * opts.daysBack: lọc client-side theo inserted_at (cho final statuses, giới hạn 7 ngày).
+   */
+  async pullByStatus(
+    status: number,
+    opts?: { daysBack?: number }
+  ): Promise<{ updated: number; created: number; total: number; errors: number }> {
+    let page = 1
+    const pageSize = 100
+    let totalPages = 1
+    let updated = 0
+    let created = 0
+    let total = 0
+    let errors = 0
+    const cutoffMs = opts?.daysBack ? Date.now() - opts.daysBack * 86400_000 : null
+
+    while (page <= totalPages) {
+      try {
+        const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&status=${status}&page_size=${pageSize}&page_number=${page}`
+        const res = await fetchWithRetry(url)
+        const body: any = await res.json()
+        totalPages = body.total_pages ?? body.data?.total_pages ?? 1
+        const orders: any[] = body.data?.data ?? body.data ?? body.orders ?? []
+        total += orders.length
+
+        for (const raw of orders) {
+          try {
+            if (cutoffMs && raw.inserted_at && new Date(raw.inserted_at).getTime() < cutoffMs) continue
+            const mapped = mapPancakeOrder(raw)
+            if (!mapped.id) continue
+            const { notes, lastNoteAt, callCount } = extractNotesForOrder(raw)
+            const tags = extractTags(raw)
+            const existing = await this.listPancakeOrders({ id: mapped.id }, { take: 1 })
+            if (existing.length > 0) {
+              const prev = existing[0]
+              const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
+              const statusChanged = prev.status !== mapped.status
+              await this.updatePancakeOrders({
+                id: mapped.id,
+                ...mapped,
+                notes,
+                last_note_at: lastNoteAt,
+                call_count: callCount,
+                tags,
+                status_history: (statusChanged
+                  ? [...prevHistory, { status: mapped.status, status_name: mapped.status_name, changed_at: new Date().toISOString(), source: "cron-pullbystatus" }]
+                  : prevHistory) as any,
+                data_quality: "complete",
+                raw_version: "v1",
+              } as any)
+              updated++
+            } else {
+              await this.createPancakeOrders([{
+                ...mapped,
+                notes,
+                last_note_at: lastNoteAt,
+                call_count: callCount,
+                tags,
+                raw_version: "v1",
+              }] as any)
+              created++
+            }
+          } catch (orderErr: any) {
+            console.error(`[pullByStatus ${status}] Order ${raw.system_id ?? raw.id} failed:`, orderErr.message)
+            errors++
+          }
+        }
+        if (page < totalPages) await delay(200)
+        page++
+      } catch (pageErr: any) {
+        console.error(`[pullByStatus ${status}] Page ${page} failed:`, pageErr.message)
+        errors++
+        break
+      }
+    }
     return { updated, created, total, errors }
   }
 
