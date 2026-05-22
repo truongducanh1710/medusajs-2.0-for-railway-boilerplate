@@ -9,22 +9,32 @@ function fmt(iso: string | null | undefined): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-const STATUS_NAMES: Record<number, string> = {
-  0: "Chờ xử lý", 1: "Sale đã chốt", 2: "Đang giao", 3: "Giao thành công",
-  4: "Đang hoàn về", 5: "Đã hoàn về kho", 6: "Đã hủy", 7: "Đã xóa",
+const STATUS_COLORS: Record<string, string> = {
+  new: "#f59e0b",
+  contacted: "#60a5fa",
+  converted: "#34d399",
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  new: "Mới",
+  contacted: "Đã liên hệ",
+  converted: "Đã chốt",
 }
 
 export default function WebcakeIncomingPage() {
-  const [logs, setLogs] = useState<any[]>([])
+  const [leads, setLeads] = useState<any[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLeads = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await apiFetch("/admin/pancake-sync/logs?type=webhook&limit=100")
+      const res = await apiFetch("/admin/webcake-leads?limit=100")
       const data = await res.json()
-      setLogs(data.logs ?? [])
+      setLeads(data.leads ?? [])
+      setTotal(data.total ?? 0)
       setLastRefresh(new Date())
     } catch (e) {
       console.error(e)
@@ -33,27 +43,42 @@ export default function WebcakeIncomingPage() {
     }
   }, [])
 
-  useEffect(() => { fetchLogs() }, [fetchLogs])
+  useEffect(() => { fetchLeads() }, [fetchLeads])
   useEffect(() => {
-    const t = setInterval(fetchLogs, 15_000)
+    const t = setInterval(fetchLeads, 15_000)
     return () => clearInterval(t)
-  }, [fetchLogs])
+  }, [fetchLeads])
+
+  const updateStatus = async (id: string, status: string) => {
+    setUpdatingId(id)
+    try {
+      await apiFetch("/admin/webcake-leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      })
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l))
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setUpdatingId(null)
+    }
+  }
 
   const p = (n: number) => String(n).padStart(2, "0")
   const refreshStr = `${p(lastRefresh.getHours())}:${p(lastRefresh.getMinutes())}:${p(lastRefresh.getSeconds())}`
-  const total = logs.length
-  const success = logs.filter(l => l.upsert_success).length
-  const fallback = logs.filter(l => l.fallback_used).length
-  const failed = logs.filter(l => l.error_message).length
+  const countNew = leads.filter(l => l.status === "new").length
+  const countContacted = leads.filter(l => l.status === "contacted").length
+  const countConverted = leads.filter(l => l.status === "converted").length
 
   return (
     <div style={{ padding: "24px 32px", background: "#0f0f1a", minHeight: "100vh", color: "#f9fafb" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Đơn đổ về từ Webcake</h1>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>Webhook nhận được · cập nhật lúc {refreshStr} · tự động 15s</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>Landing page leads · cập nhật lúc {refreshStr} · tự động 15s</div>
         </div>
-        <button onClick={fetchLogs} disabled={loading} style={{
+        <button onClick={fetchLeads} disabled={loading} style={{
           background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
           padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13, opacity: loading ? 0.6 : 1
         }}>
@@ -64,10 +89,10 @@ export default function WebcakeIncomingPage() {
       {/* Summary */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {[
-          { label: "Tổng webhook", value: total, color: "#f9fafb" },
-          { label: "Thành công", value: success, color: "#34d399" },
-          { label: "Fallback (API chậm)", value: fallback, color: "#f59e0b" },
-          { label: "Lỗi", value: failed, color: failed > 0 ? "#f87171" : "#6b7280" },
+          { label: "Tổng leads", value: total, color: "#f9fafb" },
+          { label: "Mới", value: countNew, color: "#f59e0b" },
+          { label: "Đã liên hệ", value: countContacted, color: "#60a5fa" },
+          { label: "Đã chốt", value: countConverted, color: "#34d399" },
         ].map(c => (
           <div key={c.label} style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 120 }}>
             <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{c.label}</div>
@@ -77,63 +102,60 @@ export default function WebcakeIncomingPage() {
       </div>
 
       {/* Table */}
-      {logs.length === 0 && !loading ? (
+      {leads.length === 0 && !loading ? (
         <div style={{ textAlign: "center", padding: 60, color: "#6b7280" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-          <div style={{ fontSize: 16 }}>Chưa có webhook nào từ Webcake</div>
-          <div style={{ fontSize: 13, marginTop: 8 }}>Khi khách đặt đơn trên landing page, sẽ hiện ở đây trong vài giây</div>
+          <div style={{ fontSize: 16 }}>Chưa có lead nào từ Webcake</div>
+          <div style={{ fontSize: 13, marginTop: 8 }}>Khi khách điền form trên landing page, sẽ hiện ở đây trong vài giây</div>
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #374151", color: "#9ca3af" }}>
-                {["Thời gian", "Mã đơn", "Trạng thái", "API fetch", "Lưu DB", "Fallback", "Thời lượng", "Lỗi"].map(h => (
+                {["Thời gian", "Họ tên", "Số điện thoại", "Trạng thái", "Nguồn", "Raw data"].map(h => (
                   <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {logs.map((log: any) => (
-                <tr key={log.id} style={{ borderBottom: "1px solid #1f2937" }}
+              {leads.map((lead: any) => (
+                <tr key={lead.id} style={{ borderBottom: "1px solid #1f2937" }}
                   onMouseEnter={e => (e.currentTarget.style.background = "#111827")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
-                  <td style={{ padding: "10px 12px", color: "#d1d5db", whiteSpace: "nowrap" }}>{fmt(log.received_at)}</td>
+                  <td style={{ padding: "10px 12px", color: "#d1d5db", whiteSpace: "nowrap" }}>{fmt(lead.created_at)}</td>
+                  <td style={{ padding: "10px 12px", fontWeight: 600, color: "#f9fafb" }}>{lead.full_name || "—"}</td>
                   <td style={{ padding: "10px 12px" }}>
-                    <a href={`/app/pancake-orders/${log.pancake_order_id}`}
-                      style={{ color: "#60a5fa", fontWeight: 600, textDecoration: "none" }}>
-                      #{log.pancake_order_id}
+                    <a href={`tel:${lead.phone_number}`} style={{ color: "#60a5fa", textDecoration: "none" }}>
+                      {lead.phone_number || "—"}
                     </a>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    <span style={{
-                      background: "#1f2937", borderRadius: 4, padding: "2px 8px", fontSize: 12,
-                      color: log.pancake_status === 3 ? "#34d399" : log.pancake_status === 2 ? "#60a5fa" : "#d1d5db"
-                    }}>
-                      {log.status_name || STATUS_NAMES[log.pancake_status] || `Status ${log.pancake_status}`}
-                    </span>
+                    <select
+                      value={lead.status}
+                      disabled={updatingId === lead.id}
+                      onChange={e => updateStatus(lead.id, e.target.value)}
+                      style={{
+                        background: "#1f2937",
+                        border: `1px solid ${STATUS_COLORS[lead.status] ?? "#374151"}`,
+                        borderRadius: 4,
+                        padding: "2px 8px",
+                        fontSize: 12,
+                        color: STATUS_COLORS[lead.status] ?? "#d1d5db",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {Object.entries(STATUS_LABELS).map(([val, lbl]) => (
+                        <option key={val} value={val}>{lbl}</option>
+                      ))}
+                    </select>
                   </td>
-                  <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                    {log.api_fetch_success === null ? <span style={{ color: "#6b7280" }}>—</span>
-                      : log.api_fetch_success ? <span style={{ color: "#34d399", fontSize: 16 }}>✓</span>
-                      : <span style={{ color: "#f87171", fontSize: 16 }}>✗</span>}
+                  <td style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 11, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {lead.source_url || "—"}
                   </td>
-                  <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                    {log.upsert_success === null ? <span style={{ color: "#6b7280" }}>—</span>
-                      : log.upsert_success ? <span style={{ color: "#34d399", fontSize: 16 }}>✓</span>
-                      : <span style={{ color: "#f87171", fontSize: 16 }}>✗</span>}
-                  </td>
-                  <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                    {log.fallback_used
-                      ? <span style={{ color: "#f59e0b", fontSize: 12 }}>⚠ fallback</span>
-                      : <span style={{ color: "#374151" }}>—</span>}
-                  </td>
-                  <td style={{ padding: "10px 12px", color: "#9ca3af", whiteSpace: "nowrap" }}>
-                    {log.duration_ms ? `${log.duration_ms}ms` : "—"}
-                  </td>
-                  <td style={{ padding: "10px 12px", color: "#f87171", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {log.error_message || "—"}
+                  <td style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {JSON.stringify(lead.raw)}
                   </td>
                 </tr>
               ))}
