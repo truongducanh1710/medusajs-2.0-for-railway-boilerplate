@@ -17,10 +17,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // Trả 200 ngay — Webcake không retry nếu nhận được 200
   res.json({ success: true })
 
-  // Fire-and-forget: insert vào webcake_lead
+  // Fire-and-forget: insert vào webcake_lead (dedup: bỏ qua nếu cùng SĐT trong 60s)
   ;(async () => {
     try {
       const cskhService = req.scope.resolve("cskhAnalysisModule") as any
+
+      if (phoneNumber) {
+        const [existing] = await cskhService.sql(
+          `SELECT id FROM webcake_lead WHERE phone_number = $1 AND created_at > now() - interval '60 seconds' LIMIT 1`,
+          [phoneNumber]
+        )
+        if (existing) {
+          console.log(`[Webcake] Dedup — skip duplicate ${phoneNumber}`)
+          return
+        }
+      }
+
       const id = randomUUID()
       await cskhService.sql(
         `INSERT INTO webcake_lead (id, full_name, phone_number, raw, status, source_url, created_at, updated_at)
