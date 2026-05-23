@@ -303,6 +303,9 @@ export default function BaoCaoMktPage() {
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Clicks</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>CPM</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>CPC</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>COD</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Đơn</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>% Care</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -327,6 +330,19 @@ export default function BaoCaoMktPage() {
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{clk.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{cpm !== null ? fmtMoney(cpm) : "—"}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{cpc !== null ? fmtMoney(cpc) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <div style={{ color: t.green, fontWeight: 600 }}>{fmtMoney(Number(row.cod_total))}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{fmtMoney(Number(row.cod_delivered))} giao</div>
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12 }}>
+                          <span style={{ color: t.green }}>{row.delivered ?? 0}&#10003;</span>
+                          {" · "}
+                          <span style={{ color: t.red }}>{row.cancelled ?? 0}&#10007;</span>
+                          {Number(row.total_orders) > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{row.total_orders} tổng</div>}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(row.care_pct !== null ? Number(row.care_pct) : null) }}>
+                          {row.care_pct !== null ? Number(row.care_pct) + "%" : "—"}
+                        </td>
                       </tr>
                     )
                   })}
@@ -339,14 +355,29 @@ export default function BaoCaoMktPage() {
                     const totCpm = totImp > 0 ? Math.round(totSpend / totImp * 1000) : null
                     const totCpc = totClk > 0 ? Math.round(totSpend / totClk) : null
                     return (
-                      <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
-                        <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
-                      </tr>
+                      {(() => {
+                        const totCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
+                        const totCarePct = totCod > 0 ? Math.round(totSpend / totCod * 10000) / 100 : null
+                        return (
+                          <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
+                            <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>{fmtMoney(totCod)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
+                              {campRows.reduce((s: number, r: any) => s + Number(r.delivered ?? 0), 0)}&#10003;
+                              {" · "}
+                              {campRows.reduce((s: number, r: any) => s + Number(r.cancelled ?? 0), 0)}&#10007;
+                            </td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(totCarePct) }}>
+                              {totCarePct !== null ? totCarePct + "%" : "—"}
+                            </td>
+                          </tr>
+                        )
+                      })()}
                     )
                   })()}
                 </tfoot>

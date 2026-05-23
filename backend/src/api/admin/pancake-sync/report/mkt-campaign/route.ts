@@ -18,18 +18,35 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const rows = await cskhService.sql(`
       SELECT
-        campaign_id,
-        campaign_name,
-        mkt_name,
-        spend::bigint,
-        impressions::int,
-        clicks::int,
-        updated_at
-      FROM mkt_ads_cost
-      WHERE deleted_at IS NULL
-        AND date = $1::date
+        c.campaign_id,
+        c.campaign_name,
+        c.mkt_name,
+        c.spend::bigint,
+        c.impressions::int,
+        c.clicks::int,
+        COUNT(o.id)::int AS total_orders,
+        SUM(CASE WHEN o.status = 3 THEN 1 ELSE 0 END)::int AS delivered,
+        SUM(CASE WHEN o.status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
+        SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END)::bigint AS cod_total,
+        SUM(CASE WHEN o.status = 3 THEN o.cod_amount ELSE 0 END)::bigint AS cod_delivered,
+        CASE
+          WHEN SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END) > 0
+          THEN ROUND(c.spend::numeric / SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END) * 100, 2)
+          ELSE NULL
+        END AS care_pct
+      FROM mkt_ads_cost c
+      LEFT JOIN pancake_order o
+        ON o.deleted_at IS NULL
+        AND o.source IN ('manual','webcake')
+        AND NOT (o.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+        AND o.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND o.pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND o.raw->>'p_utm_campaign' = c.campaign_name
+      WHERE c.deleted_at IS NULL
+        AND c.date = $1::date
         ${mktFilter}
-      ORDER BY spend DESC
+      GROUP BY c.campaign_id, c.campaign_name, c.mkt_name, c.spend, c.impressions, c.clicks
+      ORDER BY c.spend DESC
     `, params)
 
     return res.json({ rows, date, mkt: mkt || null })
