@@ -87,7 +87,9 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
       }
 
       // Pull meta (status + budget) cho all camps của account này — chỉ update camps có row hôm nay
-      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,effective_status,daily_budget&limit=500&access_token=${FB_TOKEN}`
+      // Dùng `status` (config) thay vì `effective_status` để khớp UI Ads Manager
+      // Fallback: daily_budget → lifetime_budget (camps đặt ngân sách trọn đời)
+      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,status,daily_budget,lifetime_budget&limit=200&access_token=${FB_TOKEN}`
       try {
         let nextMeta: string | null = metaUrl
         while (nextMeta) {
@@ -97,12 +99,13 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
             break
           }
           for (const camp of (metaData.data ?? [])) {
-            const dailyBudget = camp.daily_budget ? Math.round(Number(camp.daily_budget)) : null
+            const budget = camp.daily_budget || camp.lifetime_budget
+            const budgetValue = budget ? Math.round(Number(budget)) : null
             await cskhService.sql(`
               UPDATE mkt_ads_cost
               SET effective_status = $1, daily_budget = $2, updated_at = now()
               WHERE date = $3::date AND campaign_id = $4
-            `, [camp.effective_status ?? null, dailyBudget, today, camp.id])
+            `, [camp.status ?? null, budgetValue, today, camp.id])
           }
           nextMeta = metaData.paging?.next ?? null
         }
