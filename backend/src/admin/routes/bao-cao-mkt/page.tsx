@@ -121,7 +121,7 @@ export default function BaoCaoMktPage() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Doanh số theo MKT</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>COD theo MKT</h1>
           <div style={{ fontSize: 12, color: "#6b7280" }}>Đơn Webcake · Chi phí Facebook Ads</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -174,7 +174,7 @@ export default function BaoCaoMktPage() {
       {/* Tổng quan */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Tổng doanh số giao</div>
+          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Tổng COD</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#34d399" }}>{fmtMoney(totalRevenue)}</div>
           {totalCost > 0 && (
             <>
