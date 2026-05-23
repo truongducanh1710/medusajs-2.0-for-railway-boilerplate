@@ -39,6 +39,10 @@ export default function BaoCaoMktPage() {
   const [mktNames, setMktNames] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
   const [dark, setDark] = useState(true)
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp">("mkt")
+  const [campRows, setCampRows] = useState<any[]>([])
+  const [campMktFilter, setCampMktFilter] = useState<string>("")
+  const [campLoading, setCampLoading] = useState(false)
 
   // Theme tokens
   const t = dark ? {
@@ -111,7 +115,22 @@ export default function BaoCaoMktPage() {
     } catch { /* ignore */ }
   }, [])
 
+  const fetchCampData = useCallback(async () => {
+    setCampLoading(true)
+    try {
+      const mktParam = campMktFilter ? `&mkt=${campMktFilter}` : ""
+      const res = await apiFetch(`/admin/pancake-sync/report/mkt-campaign?from=${from}&to=${to}${mktParam}`)
+      const data = await res.json()
+      setCampRows(data.rows ?? [])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCampLoading(false)
+    }
+  }, [from, to, campMktFilter])
+
   useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
   useEffect(() => {
     fetchCronStatus()
     const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
@@ -191,6 +210,21 @@ export default function BaoCaoMktPage() {
         )
       })()}
 
+      {/* Tab toggle */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}` }}>
+        {(["mkt", "camp"] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)} style={{
+            background: "none", border: "none", cursor: "pointer",
+            padding: "8px 20px", fontSize: 14, fontWeight: activeTab === tab ? 700 : 400,
+            color: activeTab === tab ? t.blue : t.textMuted,
+            borderBottom: activeTab === tab ? `2px solid ${t.blue}` : "2px solid transparent",
+            marginBottom: -1,
+          }}>
+            {tab === "mkt" ? "Theo MKT" : "Theo Camp"}
+          </button>
+        ))}
+      </div>
+
       {/* Summary cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
@@ -234,8 +268,112 @@ export default function BaoCaoMktPage() {
         })}
       </div>
 
-      {/* Table */}
-      {rows.length === 0 && !loading ? (
+      {/* Camp tab content */}
+      {activeTab === "camp" && (
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+            <select value={campMktFilter} onChange={e => setCampMktFilter(e.target.value)}
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+              <option value="">Tất cả MKT</option>
+              {[...MKT_ORDER, ...mktNames.filter(m => !MKT_ORDER.includes(m) && m !== "KHÁC")].map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <button onClick={fetchCampData} disabled={campLoading} style={{
+              background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
+              padding: "8px 16px", cursor: campLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: campLoading ? 0.6 : 1
+            }}>
+              {campLoading ? "Đang tải..." : "↻ Refresh"}
+            </button>
+          </div>
+          {campRows.length === 0 && !campLoading ? (
+            <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Không có dữ liệu</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600 }}>Campaign</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>MKT</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Spend</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Impressions</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Clicks</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Đơn</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>COD tổng</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>COD giao</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>% Care</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campRows.map((row: any) => (
+                    <tr key={row.campaign_id} style={{ borderBottom: `1px solid ${t.rowBorder}` }}
+                      onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <td style={{ padding: "10px 12px", color: t.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        title={row.campaign_name}>
+                        {row.campaign_name}
+                      </td>
+                      <td style={{ padding: "10px 12px", textAlign: "center", color: t.blue, fontWeight: 600 }}>{row.mkt_name || "KHÁC"}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 600 }}>{fmtMoney(Number(row.spend))}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{Number(row.impressions).toLocaleString("vi-VN")}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{Number(row.clicks).toLocaleString("vi-VN")}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                        <span style={{ color: t.green }}>{row.delivered}&#10003;</span>
+                        {" · "}
+                        <span style={{ color: t.red }}>{row.cancelled}&#10007;</span>
+                        {row.total_orders > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{row.total_orders} tổng</div>}
+                      </td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 600 }}>{fmtMoney(Number(row.cod_total))}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.green }}>{fmtMoney(Number(row.cod_delivered))}</td>
+                      <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(row.care_pct) }}>
+                        {row.care_pct !== null ? row.care_pct + "%" : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
+                    <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>
+                      {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.spend), 0))}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
+                      {campRows.reduce((s: number, r: any) => s + Number(r.impressions), 0).toLocaleString("vi-VN")}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
+                      {campRows.reduce((s: number, r: any) => s + Number(r.clicks), 0).toLocaleString("vi-VN")}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.green }}>
+                      {campRows.reduce((s: number, r: any) => s + Number(r.total_orders), 0)} đơn
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>
+                      {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0))}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.green }}>
+                      {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.cod_delivered), 0))}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor((() => {
+                      const totalSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
+                      const totalCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
+                      return totalCod > 0 ? Math.round(totalSpend / totalCod * 10000) / 100 : null
+                    })()) }}>
+                      {(() => {
+                        const totalSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
+                        const totalCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
+                        const pct = totalCod > 0 ? Math.round(totalSpend / totalCod * 10000) / 100 : null
+                        return pct !== null ? pct + "%" : "—"
+                      })()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "mkt" && (rows.length === 0 && !loading ? (
         <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
           <div>Không có dữ liệu trong khoảng thời gian này</div>
@@ -356,7 +494,7 @@ export default function BaoCaoMktPage() {
             </tfoot>
           </table>
         </div>
-      )}
+      ))}
     </div>
   )
 }
