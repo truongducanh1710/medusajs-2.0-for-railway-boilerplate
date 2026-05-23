@@ -12,7 +12,10 @@ export default async function orderPlacedHandler({
   const orderModuleService: IOrderModuleService = container.resolve(Modules.ORDER)
   const productService: IProductModuleService = container.resolve(Modules.PRODUCT)
 
-  const order = await orderModuleService.retrieveOrder(data.id, { relations: ['items', 'summary', 'shipping_address'] })
+  const order = await orderModuleService.retrieveOrder(data.id, {
+    select: ['id', 'email', 'currency_code', 'total', 'subtotal', 'shipping_total', 'discount_total', 'tax_total', 'metadata', 'created_at'] as any,
+    relations: ['items', 'summary', 'shipping_address'],
+  })
   const shippingAddress = await (orderModuleService as any).orderAddressService_.retrieve(order.shipping_address.id)
 
   // Enrich order items với variant SKU từ product module
