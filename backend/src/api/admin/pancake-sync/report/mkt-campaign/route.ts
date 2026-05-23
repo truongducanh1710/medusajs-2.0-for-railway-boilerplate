@@ -41,7 +41,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         AND NOT (o.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
         AND o.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
         AND o.pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND o.raw->>'p_utm_campaign' = c.campaign_name
+        AND (o.raw->>'p_utm_source' = c.campaign_name OR o.raw->>'p_utm_campaign' = c.campaign_name)
       WHERE c.deleted_at IS NULL
         AND c.date = $1::date
         ${mktFilter}
