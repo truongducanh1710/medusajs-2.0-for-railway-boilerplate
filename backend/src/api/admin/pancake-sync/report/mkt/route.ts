@@ -62,7 +62,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         END AS care_pct
       FROM (
         SELECT
-          date_trunc('${truncUnit}', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS date,
+          (date_trunc('${truncUnit}', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)::text AS date,
           ${mktWithFallback} AS mkt_name,
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
