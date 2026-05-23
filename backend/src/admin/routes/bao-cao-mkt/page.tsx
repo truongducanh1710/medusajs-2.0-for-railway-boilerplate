@@ -50,13 +50,13 @@ export default function BaoCaoMktPage() {
     green: "#34d399", blue: "#60a5fa", purple: "#818cf8",
     red: "#f87171", amber: "#f59e0b", cronBg: "#111827",
   } : {
-    bg: "#f3f4f6", card: "#ffffff", cardBorder: "#e5e7eb",
-    text: "#111827", textMuted: "#6b7280", textSub: "#4b5563",
-    rowHover: "#f9fafb", rowBorder: "#e5e7eb", thead: "#d1d5db",
-    inputBg: "#ffffff", inputBorder: "#d1d5db", inputText: "#111827",
-    tfoot: "#f9fafb", theadText: "#374151", empty: "#d1d5db",
-    green: "#16a34a", blue: "#2563eb", purple: "#7c3aed",
-    red: "#dc2626", amber: "#d97706", cronBg: "#e5e7eb",
+    bg: "#f1f5f9", card: "#ffffff", cardBorder: "#cbd5e1",
+    text: "#0f172a", textMuted: "#475569", textSub: "#334155",
+    rowHover: "#e2e8f0", rowBorder: "#cbd5e1", thead: "#94a3b8",
+    inputBg: "#ffffff", inputBorder: "#94a3b8", inputText: "#0f172a",
+    tfoot: "#e2e8f0", theadText: "#1e293b", empty: "#94a3b8",
+    green: "#15803d", blue: "#1d4ed8", purple: "#6d28d9",
+    red: "#b91c1c", amber: "#b45309", cronBg: "#e2e8f0",
   }
 
   const fetchData = useCallback(async () => {
