@@ -16,17 +16,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const truncUnit = group_by === "month" ? "month" : "day"
 
-    // Extract MKT name từ UTM: format "DD/MM_TÊNMKT_SẢN PHẨM_..." → lấy token thứ 2
+    // Ưu tiên field marketer->name từ Pancake POS, fallback UTM campaign
     const mktExpr = `
-      UPPER(TRIM(
+      UPPER(TRIM(COALESCE(
+        NULLIF(TRIM(raw->'marketer'->>'name'), ''),
         CASE
           WHEN raw->>'p_utm_campaign' LIKE '%\\_%\\_%'
             THEN split_part(raw->>'p_utm_campaign', '_', 2)
           WHEN raw->>'p_utm_source' LIKE '%\\_%\\_%'
             THEN split_part(raw->>'p_utm_source', '_', 2)
-          ELSE 'KHÁC'
-        END
-      ))
+          ELSE NULL
+        END,
+        'KHÁC'
+      )))
     `
 
     const rows = await cskhService.sql(`
