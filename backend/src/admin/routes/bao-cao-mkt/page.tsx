@@ -260,13 +260,13 @@ export default function BaoCaoMktPage() {
                                 {fmtMoney(Number(cell.revenue_total))}
                               </div>
                               <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-                                <span style={{ color: "#34d399" }}>{cell.delivered}✓</span>
+                                <span style={{ color: "#34d399" }}>{cell.delivered ?? 0}✓</span>
                                 {" · "}
-                                <span style={{ color: "#60a5fa" }}>{cell.new_orders}🕐</span>
+                                <span style={{ color: "#60a5fa" }}>{cell.new_orders ?? 0}⏳</span>
                                 {" · "}
-                                <span style={{ color: "#818cf8" }}>{cell.confirmed}📋</span>
+                                <span style={{ color: "#818cf8" }}>{cell.confirmed ?? 0}📋</span>
                                 {" · "}
-                                <span style={{ color: "#f87171" }}>{cell.cancelled}✗</span>
+                                <span style={{ color: "#f87171" }}>{cell.cancelled ?? 0}✗</span>
                               </div>
                               {Number(cell.ads_cost) > 0 && (
                                 <div style={{ fontSize: 11, marginTop: 2 }}>
