@@ -352,32 +352,28 @@ export default function BaoCaoMktPage() {
                     const totSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
                     const totImp = campRows.reduce((s: number, r: any) => s + Number(r.impressions), 0)
                     const totClk = campRows.reduce((s: number, r: any) => s + Number(r.clicks), 0)
+                    const totCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
                     const totCpm = totImp > 0 ? Math.round(totSpend / totImp * 1000) : null
                     const totCpc = totClk > 0 ? Math.round(totSpend / totClk) : null
+                    const totCarePct = totCod > 0 ? Math.round(totSpend / totCod * 10000) / 100 : null
                     return (
-                      {(() => {
-                        const totCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
-                        const totCarePct = totCod > 0 ? Math.round(totSpend / totCod * 10000) / 100 : null
-                        return (
-                          <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
-                            <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>{fmtMoney(totCod)}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
-                              {campRows.reduce((s: number, r: any) => s + Number(r.delivered ?? 0), 0)}&#10003;
-                              {" · "}
-                              {campRows.reduce((s: number, r: any) => s + Number(r.cancelled ?? 0), 0)}&#10007;
-                            </td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(totCarePct) }}>
-                              {totCarePct !== null ? totCarePct + "%" : "—"}
-                            </td>
-                          </tr>
-                        )
-                      })()}
+                      <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
+                        <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>{fmtMoney(totCod)}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
+                          {campRows.reduce((s: number, r: any) => s + Number(r.delivered ?? 0), 0)}&#10003;
+                          {" · "}
+                          {campRows.reduce((s: number, r: any) => s + Number(r.cancelled ?? 0), 0)}&#10007;
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(totCarePct) }}>
+                          {totCarePct !== null ? totCarePct + "%" : "—"}
+                        </td>
+                      </tr>
                     )
                   })()}
                 </tfoot>
