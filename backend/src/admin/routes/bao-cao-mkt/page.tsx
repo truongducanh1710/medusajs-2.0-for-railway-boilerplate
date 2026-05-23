@@ -193,7 +193,13 @@ export default function BaoCaoMktPage() {
               <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{mkt}</div>
               <div style={{ fontSize: 17, fontWeight: 700, color: "#60a5fa" }}>{fmtMoney(s.revenue_total || 0)}</div>
               <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                {s.delivered || 0} giao / {s.confirmed || 0} xác nhận / {s.total_orders || 0} đơn chính
+                <span style={{ color: "#34d399" }}>{s.delivered || 0} giao</span>
+                {" · "}
+                <span style={{ color: "#60a5fa" }}>{s.new_orders || 0} chờ</span>
+                {" · "}
+                <span style={{ color: "#818cf8" }}>{s.confirmed || 0} xác nhận</span>
+                {" · "}
+                <span style={{ color: "#f87171" }}>{s.cancelled || 0} hủy</span>
               </div>
               {(s.ads_cost || 0) > 0 && (
                 <>
@@ -254,7 +260,13 @@ export default function BaoCaoMktPage() {
                                 {fmtMoney(Number(cell.revenue_total))}
                               </div>
                               <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-                                {cell.delivered}✓ {cell.confirmed > 0 && <span style={{ color: "#818cf8" }}>{cell.confirmed}📋</span>} {cell.cancelled > 0 && <span style={{ color: "#f87171" }}>{cell.cancelled}✗</span>}
+                                <span style={{ color: "#34d399" }}>{cell.delivered}✓</span>
+                                {" · "}
+                                <span style={{ color: "#60a5fa" }}>{cell.new_orders}🕐</span>
+                                {" · "}
+                                <span style={{ color: "#818cf8" }}>{cell.confirmed}📋</span>
+                                {" · "}
+                                <span style={{ color: "#f87171" }}>{cell.cancelled}✗</span>
                               </div>
                               {Number(cell.ads_cost) > 0 && (
                                 <div style={{ fontSize: 11, marginTop: 2 }}>
