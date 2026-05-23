@@ -54,14 +54,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
           SUM(CASE WHEN status IN (6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS cancelled,
-          SUM(CASE WHEN status NOT IN (0, 3, 6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS pending,
-          SUM(CASE WHEN status NOT IN (0, 6, 7, -1, -2) THEN total ELSE 0 END)::bigint AS revenue_total,
+          SUM(CASE WHEN status NOT IN (3, 6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS pending,
+          SUM(CASE WHEN status NOT IN (6, 7, -1, -2) THEN total ELSE 0 END)::bigint AS revenue_total,
           SUM(CASE WHEN status = 3 THEN total ELSE 0 END)::bigint AS revenue_delivered,
-          SUM(CASE WHEN status NOT IN (0, 6, 7, -1, -2) THEN cod_amount ELSE 0 END)::bigint AS cod_total
+          SUM(CASE WHEN status NOT IN (6, 7, -1, -2) THEN cod_amount ELSE 0 END)::bigint AS cod_total
         FROM pancake_order
         WHERE deleted_at IS NULL
-          AND status != 0
           AND source IN ('manual', 'webcake')
+          AND NOT (tags @> '[{"name": "Đơn nháp"}]'::jsonb)
           AND pancake_created_at >= $1
           AND pancake_created_at < ($2::date + interval '1 day')
         GROUP BY date, mkt_name
