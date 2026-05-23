@@ -24,6 +24,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         c.spend::bigint,
         c.impressions::int,
         c.clicks::int,
+        c.effective_status,
+        c.daily_budget::bigint,
         COUNT(o.id)::int AS total_orders,
         SUM(CASE WHEN o.status = 3 THEN 1 ELSE 0 END)::int AS delivered,
         SUM(CASE WHEN o.status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
@@ -45,7 +47,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE c.deleted_at IS NULL
         AND c.date = $1::date
         ${mktFilter}
-      GROUP BY c.campaign_id, c.campaign_name, c.mkt_name, c.spend, c.impressions, c.clicks
+      GROUP BY c.campaign_id, c.campaign_name, c.mkt_name, c.spend, c.impressions, c.clicks, c.effective_status, c.daily_budget
       ORDER BY c.spend DESC
     `, params)
 

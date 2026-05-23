@@ -297,7 +297,9 @@ export default function BaoCaoMktPage() {
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
                     <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600 }}>Campaign</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>Status</th>
                     <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>MKT</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Budget</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Spend</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Impressions</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Clicks</th>
@@ -320,11 +322,25 @@ export default function BaoCaoMktPage() {
                         onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
-                        <td style={{ padding: "10px 12px", color: t.text, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        <td style={{ padding: "10px 12px", color: t.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                           title={row.campaign_name}>
                           {row.campaign_name}
                         </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          {(() => {
+                            const st = row.effective_status as string | null
+                            if (!st) return <span style={{ color: t.textMuted, fontSize: 11 }}>—</span>
+                            const isActive = st === "ACTIVE"
+                            const isPaused = st === "PAUSED"
+                            const color = isActive ? t.green : isPaused ? t.amber : t.red
+                            const label = isActive ? "ACTIVE" : isPaused ? "PAUSED" : st
+                            return <span style={{ background: color + "22", color, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{label}</span>
+                          })()}
+                        </td>
                         <td style={{ padding: "10px 12px", textAlign: "center", color: t.blue, fontWeight: 600 }}>{row.mkt_name || "KHÁC"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
+                          {row.daily_budget ? fmtMoney(Number(row.daily_budget)) : "—"}
+                        </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 600 }}>{fmtMoney(spd)}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{imp.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{clk.toLocaleString("vi-VN")}</td>
@@ -358,7 +374,10 @@ export default function BaoCaoMktPage() {
                     const totCarePct = totCod > 0 ? Math.round(totSpend / totCod * 10000) / 100 : null
                     return (
                       <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
-                        <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
+                        <td colSpan={3} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted, fontWeight: 600 }}>
+                          {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.daily_budget ?? 0), 0))}
+                        </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>

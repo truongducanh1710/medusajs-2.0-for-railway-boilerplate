@@ -85,6 +85,30 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
 
         nextUrl = data.paging?.next ?? null
       }
+
+      // Pull meta (status + budget) cho all camps của account này — chỉ update camps có row hôm nay
+      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,effective_status,daily_budget&limit=500&access_token=${FB_TOKEN}`
+      try {
+        let nextMeta: string | null = metaUrl
+        while (nextMeta) {
+          const metaData: any = await fetchJson(nextMeta)
+          if (metaData.error) {
+            logger?.warn?.(`[MktCostIntraday] Meta error ${actId}: ${metaData.error.message}`)
+            break
+          }
+          for (const camp of (metaData.data ?? [])) {
+            const dailyBudget = camp.daily_budget ? Math.round(Number(camp.daily_budget)) : null
+            await cskhService.sql(`
+              UPDATE mkt_ads_cost
+              SET effective_status = $1, daily_budget = $2, updated_at = now()
+              WHERE date = $3::date AND campaign_id = $4
+            `, [camp.effective_status ?? null, dailyBudget, today, camp.id])
+          }
+          nextMeta = metaData.paging?.next ?? null
+        }
+      } catch (metaErr: any) {
+        logger?.warn?.(`[MktCostIntraday] Meta fetch failed ${actId}: ${metaErr.message}`)
+      }
     } catch (err: any) {
       logger?.error?.(`[MktCostIntraday] Error account ${actId}: ${err.message}`)
       totalErrors++
