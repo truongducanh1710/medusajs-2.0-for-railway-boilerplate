@@ -16,18 +16,31 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const truncUnit = group_by === "month" ? "month" : "day"
 
+    // Normalize tên marketer Pancake → MKT code (khớp với campaign name FB Ads)
+    // raw->'marketer'->>'name' trả về tên hiển thị có space/dấu (VD: "Nam DV", "Phạm Du")
+    // cần map về code viết tắt để JOIN được với mkt_ads_cost
     const mktExpr = `
-      UPPER(TRIM(COALESCE(
-        NULLIF(TRIM(raw->'marketer'->>'name'), ''),
+      CASE UPPER(TRIM(COALESCE(NULLIF(TRIM(raw->'marketer'->>'name'), ''), '')))
+        WHEN 'NAM DV'     THEN 'NAMDV'
+        WHEN 'PHẠM DU'    THEN 'DUPD'
+        WHEN 'NGUYỄN MAI' THEN 'NGUYEN MAI'
+        WHEN ''           THEN NULL
+        ELSE UPPER(TRIM(NULLIF(TRIM(raw->'marketer'->>'name'), '')))
+      END
+    `
+
+    // Fallback UTM nếu marketer name null
+    const mktWithFallback = `
+      COALESCE(
+        ${mktExpr},
         CASE
           WHEN raw->>'p_utm_campaign' LIKE '%\\_%\\_%'
             THEN split_part(raw->>'p_utm_campaign', '_', 2)
           WHEN raw->>'p_utm_source' LIKE '%\\_%\\_%'
             THEN split_part(raw->>'p_utm_source', '_', 2)
-          ELSE NULL
-        END,
-        'KHÁC'
-      )))
+          ELSE 'KHÁC'
+        END
+      )
     `
 
     const rows = await cskhService.sql(`
@@ -50,7 +63,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM (
         SELECT
           date_trunc('${truncUnit}', pancake_created_at)::date AS date,
-          ${mktExpr} AS mkt_name,
+          ${mktWithFallback} AS mkt_name,
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
           SUM(CASE WHEN status IN (6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS cancelled,

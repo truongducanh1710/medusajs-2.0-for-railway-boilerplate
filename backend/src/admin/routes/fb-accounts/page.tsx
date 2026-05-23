@@ -2,7 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback } from "react"
 import { apiFetch } from "../../lib/api-client"
 
-const MKT_LIST = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT"]
+const MKT_LIST = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT", "NGUYEN MAI"]
 
 const inputStyle = {
   background: "#0f0f1a",

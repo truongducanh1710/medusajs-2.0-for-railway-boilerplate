@@ -19,7 +19,9 @@ function carePctColor(pct: number | null): string {
   return "#f87171"
 }
 
-const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT"]
+// Tên MKT phải khớp với giá trị sau normalize trong route/mkt:
+// "Nam DV" → "NAMDV", "Phạm Du" → "DUPD", "Nguyễn Mai" → "NGUYEN MAI"
+const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT", "NGUYEN MAI"]
 
 function getThisMonthRange() {
   const now = new Date()
