@@ -43,6 +43,7 @@ export default function BaoCaoMktPage() {
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
+  const [campDate, setCampDate] = useState(new Date().toISOString().slice(0, 10))
 
   // Theme tokens
   const t = dark ? {
@@ -119,7 +120,7 @@ export default function BaoCaoMktPage() {
     setCampLoading(true)
     try {
       const mktParam = campMktFilter ? `&mkt=${campMktFilter}` : ""
-      const res = await apiFetch(`/admin/pancake-sync/report/mkt-campaign?from=${from}&to=${to}${mktParam}`)
+      const res = await apiFetch(`/admin/pancake-sync/report/mkt-campaign?date=${campDate}${mktParam}`)
       const data = await res.json()
       setCampRows(data.rows ?? [])
     } catch (e) {
@@ -127,7 +128,7 @@ export default function BaoCaoMktPage() {
     } finally {
       setCampLoading(false)
     }
-  }, [from, to, campMktFilter])
+  }, [campDate, campMktFilter])
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
@@ -272,6 +273,8 @@ export default function BaoCaoMktPage() {
       {activeTab === "camp" && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+            <input type="date" value={campDate} onChange={e => setCampDate(e.target.value)}
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
             <select value={campMktFilter} onChange={e => setCampMktFilter(e.target.value)}
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
               <option value="">Tất cả MKT</option>
@@ -298,74 +301,54 @@ export default function BaoCaoMktPage() {
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Spend</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Impressions</th>
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Clicks</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Đơn</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>COD tổng</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>COD giao</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>% Care</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>CPM</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>CPC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {campRows.map((row: any) => (
-                    <tr key={row.campaign_id} style={{ borderBottom: `1px solid ${t.rowBorder}` }}
-                      onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <td style={{ padding: "10px 12px", color: t.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                        title={row.campaign_name}>
-                        {row.campaign_name}
-                      </td>
-                      <td style={{ padding: "10px 12px", textAlign: "center", color: t.blue, fontWeight: 600 }}>{row.mkt_name || "KHÁC"}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 600 }}>{fmtMoney(Number(row.spend))}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{Number(row.impressions).toLocaleString("vi-VN")}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{Number(row.clicks).toLocaleString("vi-VN")}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <span style={{ color: t.green }}>{row.delivered}&#10003;</span>
-                        {" · "}
-                        <span style={{ color: t.red }}>{row.cancelled}&#10007;</span>
-                        {row.total_orders > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{row.total_orders} tổng</div>}
-                      </td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 600 }}>{fmtMoney(Number(row.cod_total))}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", color: t.green }}>{fmtMoney(Number(row.cod_delivered))}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(row.care_pct) }}>
-                        {row.care_pct !== null ? row.care_pct + "%" : "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {campRows.map((row: any) => {
+                    const imp = Number(row.impressions)
+                    const clk = Number(row.clicks)
+                    const spd = Number(row.spend)
+                    const cpm = imp > 0 ? Math.round(spd / imp * 1000) : null
+                    const cpc = clk > 0 ? Math.round(spd / clk) : null
+                    return (
+                      <tr key={row.campaign_id} style={{ borderBottom: `1px solid ${t.rowBorder}` }}
+                        onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <td style={{ padding: "10px 12px", color: t.text, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          title={row.campaign_name}>
+                          {row.campaign_name}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center", color: t.blue, fontWeight: 600 }}>{row.mkt_name || "KHÁC"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 600 }}>{fmtMoney(spd)}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{imp.toLocaleString("vi-VN")}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{clk.toLocaleString("vi-VN")}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{cpm !== null ? fmtMoney(cpm) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{cpc !== null ? fmtMoney(cpc) : "—"}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot>
-                  <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
-                    <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>
-                      {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.spend), 0))}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
-                      {campRows.reduce((s: number, r: any) => s + Number(r.impressions), 0).toLocaleString("vi-VN")}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
-                      {campRows.reduce((s: number, r: any) => s + Number(r.clicks), 0).toLocaleString("vi-VN")}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.green }}>
-                      {campRows.reduce((s: number, r: any) => s + Number(r.total_orders), 0)} đơn
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>
-                      {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0))}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: t.green }}>
-                      {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.cod_delivered), 0))}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor((() => {
-                      const totalSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
-                      const totalCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
-                      return totalCod > 0 ? Math.round(totalSpend / totalCod * 10000) / 100 : null
-                    })()) }}>
-                      {(() => {
-                        const totalSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
-                        const totalCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
-                        const pct = totalCod > 0 ? Math.round(totalSpend / totalCod * 10000) / 100 : null
-                        return pct !== null ? pct + "%" : "—"
-                      })()}
-                    </td>
-                  </tr>
+                  {(() => {
+                    const totSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
+                    const totImp = campRows.reduce((s: number, r: any) => s + Number(r.impressions), 0)
+                    const totClk = campRows.reduce((s: number, r: any) => s + Number(r.clicks), 0)
+                    const totCpm = totImp > 0 ? Math.round(totSpend / totImp * 1000) : null
+                    const totCpc = totClk > 0 ? Math.round(totSpend / totClk) : null
+                    return (
+                      <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
+                        <td colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
+                      </tr>
+                    )
+                  })()}
                 </tfoot>
               </table>
             </div>
