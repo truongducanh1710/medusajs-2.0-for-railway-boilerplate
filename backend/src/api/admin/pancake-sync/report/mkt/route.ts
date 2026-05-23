@@ -68,6 +68,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
           SUM(CASE WHEN status IN (6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS cancelled,
           SUM(CASE WHEN status NOT IN (3, 6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS pending,
+          SUM(CASE WHEN status IN (1, 2, 3, 4, 5, 9, 11) THEN 1 ELSE 0 END)::int AS confirmed,
           SUM(CASE WHEN status NOT IN (-2, 7) THEN cod_amount ELSE 0 END)::bigint AS revenue_total,
           SUM(CASE WHEN status = 3 THEN cod_amount ELSE 0 END)::bigint AS revenue_delivered,
           SUM(CASE WHEN status NOT IN (-2, 7) THEN cod_amount ELSE 0 END)::bigint AS cod_total
@@ -98,12 +99,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const row of rows) {
       const m = row.mkt_name
       if (!summary[m]) {
-        summary[m] = { total_orders: 0, delivered: 0, cancelled: 0, pending: 0, revenue_total: 0, revenue_delivered: 0, ads_cost: 0 }
+        summary[m] = { total_orders: 0, delivered: 0, cancelled: 0, pending: 0, confirmed: 0, revenue_total: 0, revenue_delivered: 0, ads_cost: 0 }
       }
       summary[m].total_orders += row.total_orders
       summary[m].delivered += row.delivered
       summary[m].cancelled += row.cancelled
       summary[m].pending += row.pending
+      summary[m].confirmed += row.confirmed
       summary[m].revenue_total += Number(row.revenue_total)
       summary[m].revenue_delivered += Number(row.revenue_delivered)
       summary[m].ads_cost += Number(row.ads_cost)
