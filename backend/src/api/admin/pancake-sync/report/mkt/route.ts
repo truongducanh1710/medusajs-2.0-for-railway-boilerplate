@@ -49,6 +49,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         r.mkt_name,
         r.total_orders,
         r.delivered,
+        r.new_orders,
+        r.confirmed,
         r.cancelled,
         r.pending,
         r.revenue_total,
