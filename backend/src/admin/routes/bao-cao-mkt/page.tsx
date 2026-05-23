@@ -96,7 +96,7 @@ export default function BaoCaoMktPage() {
   }
   const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
 
-  const totalRevenue = Object.values(summary).reduce((s: number, m: any) => s + (m.revenue_delivered || 0), 0)
+  const totalRevenue = Object.values(summary).reduce((s: number, m: any) => s + (m.revenue_total || 0), 0)
   const totalCost = Object.values(summary).reduce((s: number, m: any) => s + (m.ads_cost || 0), 0)
   const totalCarePct = totalRevenue > 0 ? Math.round(totalCost / totalRevenue * 10000) / 100 : null
 
@@ -154,9 +154,9 @@ export default function BaoCaoMktPage() {
           return (
             <div key={mkt} style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
               <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{mkt}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: "#60a5fa" }}>{fmtMoney(s.revenue_delivered || 0)}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: "#60a5fa" }}>{fmtMoney(s.revenue_total || 0)}</div>
               <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                {s.delivered || 0} giao / {s.total_orders || 0} tổng
+                {s.delivered || 0} giao / {s.total_orders || 0} đơn chính
               </div>
               {(s.ads_cost || 0) > 0 && (
                 <>
@@ -193,7 +193,7 @@ export default function BaoCaoMktPage() {
             </thead>
             <tbody>
               {dates.map(date => {
-                const dayRevenue = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.revenue_delivered || 0), 0)
+                const dayRevenue = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.revenue_total || 0), 0)
                 const dayCost = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.ads_cost || 0), 0)
                 const dayCarePct = dayRevenue > 0 && dayCost > 0
                   ? Math.round(dayCost / dayRevenue * 10000) / 100
@@ -214,7 +214,7 @@ export default function BaoCaoMktPage() {
                           {cell ? (
                             <div>
                               <div style={{ color: "#34d399", fontWeight: 600 }}>
-                                {fmtMoney(Number(cell.revenue_delivered))}
+                                {fmtMoney(Number(cell.revenue_total))}
                               </div>
                               <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
                                 {cell.delivered}✓ {cell.pending > 0 && <span style={{ color: "#f59e0b" }}>{cell.pending}⏳</span>} {cell.cancelled > 0 && <span style={{ color: "#f87171" }}>{cell.cancelled}✗</span>}
@@ -259,7 +259,7 @@ export default function BaoCaoMktPage() {
                   const pct = s.care_pct ?? null
                   return (
                     <td key={mkt} style={{ padding: "10px 12px", textAlign: "right" }}>
-                      <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(s.revenue_delivered || 0)}</div>
+                      <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(s.revenue_total || 0)}</div>
                       <div style={{ fontSize: 11, color: "#6b7280" }}>{s.delivered || 0} đơn</div>
                       {(s.ads_cost || 0) > 0 && (
                         <div style={{ fontSize: 11, marginTop: 2 }}>

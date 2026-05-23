@@ -43,8 +43,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         r.cod_total,
         COALESCE(c.spend, 0)::bigint AS ads_cost,
         CASE
-          WHEN r.revenue_delivered > 0
-          THEN ROUND(COALESCE(c.spend, 0)::numeric / r.revenue_delivered * 100, 2)
+          WHEN r.revenue_total > 0
+          THEN ROUND(COALESCE(c.spend, 0)::numeric / r.revenue_total * 100, 2)
           ELSE NULL
         END AS care_pct
       FROM (
@@ -54,12 +54,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
           SUM(CASE WHEN status IN (6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS cancelled,
-          SUM(CASE WHEN status NOT IN (3, 6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS pending,
-          SUM(total)::bigint AS revenue_total,
+          SUM(CASE WHEN status NOT IN (0, 3, 6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS pending,
+          SUM(CASE WHEN status NOT IN (0, 6, 7, -1, -2) THEN total ELSE 0 END)::bigint AS revenue_total,
           SUM(CASE WHEN status = 3 THEN total ELSE 0 END)::bigint AS revenue_delivered,
-          SUM(cod_amount)::bigint AS cod_total
+          SUM(CASE WHEN status NOT IN (0, 6, 7, -1, -2) THEN cod_amount ELSE 0 END)::bigint AS cod_total
         FROM pancake_order
         WHERE deleted_at IS NULL
+          AND status != 0
           AND source IN ('manual', 'webcake')
           AND pancake_created_at >= $1
           AND pancake_created_at < ($2::date + interval '1 day')
@@ -95,11 +96,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       summary[m].ads_cost += Number(row.ads_cost)
     }
 
-    // Tính care_pct tổng per MKT
+    // Tính care_pct tổng per MKT (dựa trên revenue_total = tất cả trừ hủy)
     for (const m of Object.keys(summary)) {
       const s = summary[m]
-      s.care_pct = s.revenue_delivered > 0
-        ? Math.round(s.ads_cost / s.revenue_delivered * 10000) / 100
+      s.care_pct = s.revenue_total > 0
+        ? Math.round(s.ads_cost / s.revenue_total * 10000) / 100
         : null
     }
 
