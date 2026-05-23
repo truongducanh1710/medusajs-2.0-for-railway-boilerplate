@@ -1,24 +1,26 @@
-import { Migration } from "@mikro-orm/migrations"
+import { Migration } from "@medusajs/framework/mikro-orm/migrations"
 
 export class Migration20260523000001 extends Migration {
   async up(): Promise<void> {
-    await this.execute(`
-      CREATE TABLE IF NOT EXISTS fb_ad_account (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        account_id VARCHAR(32) NOT NULL UNIQUE,
-        account_name TEXT NOT NULL DEFAULT '',
-        mkt_name VARCHAR(32) NOT NULL DEFAULT '',
-        active BOOLEAN NOT NULL DEFAULT true,
-        note TEXT NOT NULL DEFAULT '',
-        created_at TIMESTAMPTZ DEFAULT now(),
-        updated_at TIMESTAMPTZ DEFAULT now(),
-        deleted_at TIMESTAMPTZ
+    this.addSql(`
+      create table if not exists "fb_ad_account" (
+        "id" uuid not null default gen_random_uuid(),
+        "account_id" varchar(32) not null,
+        "account_name" text not null default '',
+        "mkt_name" varchar(32) not null default '',
+        "active" boolean not null default true,
+        "note" text not null default '',
+        "created_at" timestamptz not null default now(),
+        "updated_at" timestamptz not null default now(),
+        "deleted_at" timestamptz null,
+        primary key ("id"),
+        unique ("account_id")
       );
-      CREATE INDEX IF NOT EXISTS idx_fb_ad_account_active ON fb_ad_account (active) WHERE deleted_at IS NULL;
     `)
+    this.addSql(`create index if not exists "idx_fb_ad_account_active" on "fb_ad_account" ("active") where deleted_at is null;`)
   }
 
   async down(): Promise<void> {
-    await this.execute(`DROP TABLE IF EXISTS fb_ad_account`)
+    this.addSql(`drop table if exists "fb_ad_account";`)
   }
 }
