@@ -66,7 +66,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (!dbAccounts.length) return res.status(400).json({ error: "Chưa có FB ad account nào active" })
 
-  const dates = dateRange(from, to)
+  // Kéo từ ngày mới nhất về cũ — nếu bị ngắt giữa chừng thì data gần nhất đã có
+  const dates = dateRange(from, to).reverse()
   const accountIds = dbAccounts.map(a => a.account_id.startsWith("act_") ? a.account_id : `act_${a.account_id}`)
 
   // Lấy danh sách (date, account_id) đã có đủ data — skip để không kéo lại
