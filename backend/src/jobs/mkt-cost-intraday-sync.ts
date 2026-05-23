@@ -3,11 +3,13 @@ import { MedusaContainer } from "@medusajs/framework"
 const FB_API_BASE = "https://graph.facebook.com/v18.0"
 
 function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST_|MESS_)+/gi, "")
-  const parts = cleaned.split("_")
-  for (let i = 1; i < parts.length; i++) {
-    const t = parts[i].trim()
-    if (/^[A-Z]{3,8}$/.test(t)) return t
+  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
+  for (const sep of ["_", "-"]) {
+    const parts = cleaned.split(sep)
+    for (let i = 1; i < parts.length; i++) {
+      const t = parts[i].trim()
+      if (/^[A-Z]{3,8}$/.test(t)) return t
+    }
   }
   return "KHÁC"
 }

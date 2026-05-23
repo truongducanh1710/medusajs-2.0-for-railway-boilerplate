@@ -5,14 +5,20 @@ const FB_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
 
 /**
  * Extract MKT code từ campaign name.
- * Format: DD/MM_MKTCODE_SẢN PHẨM_... hoặc TEST_DD/MM_MKTCODE_...
+ * Hỗ trợ 2 format delimiter: _ và -
+ * Format: DD/MM_MKTCODE_SẢN PHẨM_... hoặc DD/MM-MKTCODE-SẢN PHẨM-...
+ * Bỏ prefix: TEST_, MESS_, TEST_MESS_
  */
 function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST_|MESS_)+/gi, "")
-  const parts = cleaned.split("_")
-  for (let i = 1; i < parts.length; i++) {
-    const t = parts[i].trim()
-    if (/^[A-Z]{3,8}$/.test(t)) return t
+  // Bỏ prefix TEST_ / MESS_ lặp lại
+  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
+  // Thử split theo _ trước, nếu không ra thì thử -
+  for (const sep of ["_", "-"]) {
+    const parts = cleaned.split(sep)
+    for (let i = 1; i < parts.length; i++) {
+      const t = parts[i].trim()
+      if (/^[A-Z]{3,8}$/.test(t)) return t
+    }
   }
   return "KHÁC"
 }

@@ -43,11 +43,13 @@ function dateRange(from: string, to: string): string[] {
 }
 
 function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST_|MESS_)+/gi, "")
-  const parts = cleaned.split("_")
-  for (let i = 1; i < parts.length; i++) {
-    const t = parts[i].trim()
-    if (/^[A-Z]{3,8}$/.test(t)) return t
+  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
+  for (const sep of ["_", "-"]) {
+    const parts = cleaned.split(sep)
+    for (let i = 1; i < parts.length; i++) {
+      const t = parts[i].trim()
+      if (/^[A-Z]{3,8}$/.test(t)) return t
+    }
   }
   return "KHÁC"
 }
