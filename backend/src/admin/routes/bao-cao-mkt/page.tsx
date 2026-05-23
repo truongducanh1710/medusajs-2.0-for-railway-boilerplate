@@ -7,20 +7,17 @@ function fmtMoney(n: number): string {
 }
 
 function fmtDate(iso: string): string {
-  // iso có thể là "2026-05-23" hoặc "2026-05-23T..." — lấy phần date trực tiếp
   const parts = iso.slice(0, 10).split("-")
   return `${parts[2]}/${parts[1]}`
 }
 
 function carePctColor(pct: number | null): string {
   if (pct === null) return "#6b7280"
-  if (pct < 30) return "#34d399"
-  if (pct <= 35) return "#f59e0b"
-  return "#f87171"
+  if (pct < 30) return "#16a34a"
+  if (pct <= 35) return "#d97706"
+  return "#dc2626"
 }
 
-// Tên MKT phải khớp với giá trị sau normalize trong route/mkt:
-// "Nam DV" → "NAMDV", "Phạm Du" → "DUPD", "Nguyễn Mai" → "NGUYEN MAI"
 const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT", "NGUYEN MAI"]
 
 function getThisMonthRange() {
@@ -41,13 +38,31 @@ export default function BaoCaoMktPage() {
   const [syncing, setSyncing] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
+  const [dark, setDark] = useState(true)
+
+  // Theme tokens
+  const t = dark ? {
+    bg: "#0f0f1a", card: "#1a1a2e", cardBorder: "#2d2d44",
+    text: "#f9fafb", textMuted: "#6b7280", textSub: "#9ca3af",
+    rowHover: "#111827", rowBorder: "#1f2937", thead: "#374151",
+    inputBg: "#1a1a2e", inputBorder: "#374151", inputText: "#f9fafb",
+    tfoot: "#111827", theadText: "#9ca3af", empty: "#374151",
+    green: "#34d399", blue: "#60a5fa", purple: "#818cf8",
+    red: "#f87171", amber: "#f59e0b", cronBg: "#111827",
+  } : {
+    bg: "#f3f4f6", card: "#ffffff", cardBorder: "#e5e7eb",
+    text: "#111827", textMuted: "#6b7280", textSub: "#4b5563",
+    rowHover: "#f9fafb", rowBorder: "#e5e7eb", thead: "#d1d5db",
+    inputBg: "#ffffff", inputBorder: "#d1d5db", inputText: "#111827",
+    tfoot: "#f9fafb", theadText: "#374151", empty: "#d1d5db",
+    green: "#16a34a", blue: "#2563eb", purple: "#7c3aed",
+    red: "#dc2626", amber: "#d97706", cronBg: "#e5e7eb",
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await apiFetch(
-        `/admin/pancake-sync/report/mkt?from=${from}&to=${to}&group_by=${groupBy}`
-      )
+      const res = await apiFetch(`/admin/pancake-sync/report/mkt?from=${from}&to=${to}&group_by=${groupBy}`)
       const data = await res.json()
       setRows(data.rows ?? [])
       setSummary(data.summary ?? {})
@@ -103,7 +118,6 @@ export default function BaoCaoMktPage() {
     return () => clearInterval(interval)
   }, [fetchCronStatus])
 
-  // Group rows by date
   const byDate: Record<string, Record<string, any>> = {}
   for (const row of rows) {
     const d = row.date
@@ -117,24 +131,30 @@ export default function BaoCaoMktPage() {
   const totalCarePct = totalRevenue > 0 ? Math.round(totalCost / totalRevenue * 10000) / 100 : null
 
   return (
-    <div style={{ padding: "24px 32px", background: "#0f0f1a", minHeight: "100vh", color: "#f9fafb" }}>
+    <div style={{ padding: "24px 32px", background: t.bg, minHeight: "100vh", color: t.text, transition: "background 0.2s, color 0.2s" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>COD theo MKT</h1>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>Đơn Webcake · Chi phí Facebook Ads</div>
+          <div style={{ fontSize: 12, color: t.textMuted }}>Đơn Webcake · Chi phí Facebook Ads</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-            style={{ background: "#1a1a2e", border: "1px solid #374151", borderRadius: 6, padding: "6px 10px", color: "#f9fafb", fontSize: 13 }} />
-          <span style={{ color: "#6b7280" }}>→</span>
+            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+          <span style={{ color: t.textMuted }}>→</span>
           <input type="date" value={to} onChange={e => setTo(e.target.value)}
-            style={{ background: "#1a1a2e", border: "1px solid #374151", borderRadius: 6, padding: "6px 10px", color: "#f9fafb", fontSize: 13 }} />
+            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
           <select value={groupBy} onChange={e => setGroupBy(e.target.value as any)}
-            style={{ background: "#1a1a2e", border: "1px solid #374151", borderRadius: 6, padding: "6px 10px", color: "#f9fafb", fontSize: 13 }}>
+            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
             <option value="day">Theo ngày</option>
             <option value="month">Theo tháng</option>
           </select>
+          <button onClick={() => setDark(d => !d)} style={{
+            background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6,
+            padding: "8px 12px", cursor: "pointer", fontSize: 13, color: t.text
+          }}>
+            {dark ? "☀ Sáng" : "☾ Tối"}
+          </button>
           <button onClick={fetchData} disabled={loading} style={{
             background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
             padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13, opacity: loading ? 0.6 : 1
@@ -142,7 +162,7 @@ export default function BaoCaoMktPage() {
             {loading ? "Đang tải..." : "↻ Refresh"}
           </button>
           <button onClick={syncCost} disabled={syncing} style={{
-            background: "#065f46", color: "#34d399", border: "1px solid #34d39944", borderRadius: 6,
+            background: dark ? "#065f46" : "#d1fae5", color: t.green, border: `1px solid ${t.green}44`, borderRadius: 6,
             padding: "8px 16px", cursor: syncing ? "not-allowed" : "pointer", fontSize: 13, opacity: syncing ? 0.6 : 1
           }}>
             {syncing ? "Đang sync..." : "↓ Sync chi phí hôm nay"}
@@ -153,32 +173,32 @@ export default function BaoCaoMktPage() {
       {/* Cron Status Bar */}
       {cronStatus && (() => {
         const s = cronStatus
-        const color = s.status === "ok" ? "#34d399" : s.status === "warning" ? "#f59e0b" : s.status === "error" ? "#f87171" : "#6b7280"
+        const color = s.status === "ok" ? t.green : s.status === "warning" ? t.amber : s.status === "error" ? t.red : t.textMuted
         const icon = s.status === "ok" ? "●" : s.status === "warning" ? "⚠" : s.status === "error" ? "✕" : "○"
         const label = s.status === "ok" ? "Cron đang hoạt động" : s.status === "warning" ? "Cron chậm" : s.status === "error" ? "Cron có thể bị lỗi" : "Chưa có data"
         const lastTime = s.last_updated
           ? new Date(s.last_updated).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
           : "—"
         return (
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, background: "#111827", borderRadius: 8, padding: "8px 16px", fontSize: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, background: t.cronBg, borderRadius: 8, padding: "8px 16px", fontSize: 12, flexWrap: "wrap" }}>
             <span style={{ color, fontWeight: 700 }}>{icon} {label}</span>
-            <span style={{ color: "#6b7280" }}>Sync lần cuối: <span style={{ color: "#d1d5db" }}>{lastTime}</span> ({s.minutes_ago !== null ? `${s.minutes_ago} phút trước` : "—"})</span>
-            <span style={{ color: "#6b7280" }}>Hôm nay: <span style={{ color: "#60a5fa" }}>{s.campaigns_today} campaigns</span> · <span style={{ color: "#a78bfa" }}>{s.accounts_with_data}/{s.accounts_active} accounts</span></span>
+            <span style={{ color: t.textMuted }}>Sync lần cuối: <span style={{ color: t.text }}>{lastTime}</span> ({s.minutes_ago !== null ? `${s.minutes_ago} phút trước` : "—"})</span>
+            <span style={{ color: t.textMuted }}>Hôm nay: <span style={{ color: t.blue }}>{s.campaigns_today} campaigns</span> · <span style={{ color: t.purple }}>{s.accounts_with_data}/{s.accounts_active} accounts</span></span>
             {s.missing_accounts > 0 && (
-              <span style={{ color: "#f87171" }}>⚠ {s.missing_accounts} account chưa có data hôm nay</span>
+              <span style={{ color: t.red }}>⚠ {s.missing_accounts} account chưa có data hôm nay</span>
             )}
           </div>
         )
       })()}
 
-      {/* Tổng quan */}
+      {/* Summary cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        <div style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Tổng COD</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "#34d399" }}>{fmtMoney(totalRevenue)}</div>
+        <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
+          <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Tổng COD</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: t.green }}>{fmtMoney(totalRevenue)}</div>
           {totalCost > 0 && (
             <>
-              <div style={{ fontSize: 12, color: "#f59e0b", marginTop: 2 }}>Chi phí: {fmtMoney(totalCost)}</div>
+              <div style={{ fontSize: 12, color: t.amber, marginTop: 2 }}>Chi phí: {fmtMoney(totalCost)}</div>
               <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(totalCarePct), marginTop: 2 }}>
                 % Care: {totalCarePct !== null ? totalCarePct + "%" : "—"}
               </div>
@@ -189,21 +209,21 @@ export default function BaoCaoMktPage() {
           const s = summary[mkt] || {}
           const pct = s.care_pct ?? null
           return (
-            <div key={mkt} style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
-              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{mkt}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: "#60a5fa" }}>{fmtMoney(s.revenue_total || 0)}</div>
-              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                <span style={{ color: "#34d399" }}>{s.delivered || 0} giao</span>
+            <div key={mkt} style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
+              <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>{mkt}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: t.blue }}>{fmtMoney(s.revenue_total || 0)}</div>
+              <div style={{ fontSize: 11, marginTop: 2 }}>
+                <span style={{ color: t.green }}>{s.delivered || 0} giao</span>
                 {" · "}
-                <span style={{ color: "#60a5fa" }}>{s.new_orders || 0} chờ</span>
+                <span style={{ color: t.blue }}>{s.new_orders || 0} chờ</span>
                 {" · "}
-                <span style={{ color: "#818cf8" }}>{s.confirmed || 0} xác nhận</span>
+                <span style={{ color: t.purple }}>{s.confirmed || 0} xác nhận</span>
                 {" · "}
-                <span style={{ color: "#f87171" }}>{s.cancelled || 0} hủy</span>
+                <span style={{ color: t.red }}>{s.cancelled || 0} hủy</span>
               </div>
               {(s.ads_cost || 0) > 0 && (
                 <>
-                  <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 3 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
+                  <div style={{ fontSize: 11, color: t.amber, marginTop: 3 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(pct), marginTop: 1 }}>
                     {pct !== null ? pct + "%" : "—"}
                   </div>
@@ -216,7 +236,7 @@ export default function BaoCaoMktPage() {
 
       {/* Table */}
       {rows.length === 0 && !loading ? (
-        <div style={{ textAlign: "center", padding: 60, color: "#6b7280" }}>
+        <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
           <div>Không có dữ liệu trong khoảng thời gian này</div>
         </div>
@@ -224,29 +244,27 @@ export default function BaoCaoMktPage() {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
-              <tr style={{ borderBottom: "2px solid #374151", color: "#9ca3af" }}>
+              <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
                 <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, whiteSpace: "nowrap" }}>Ngày</th>
                 {mktNames.map(mkt => (
-                  <th key={mkt} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", color: mkt === "KHÁC" ? "#6b7280" : "#f9fafb" }}>
+                  <th key={mkt} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", color: mkt === "KHÁC" ? t.textMuted : t.text }}>
                     {mkt}
                   </th>
                 ))}
-                <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: "#34d399" }}>TỔNG</th>
+                <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: t.green }}>TỔNG</th>
               </tr>
             </thead>
             <tbody>
               {dates.map(date => {
                 const dayRevenue = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.revenue_total || 0), 0)
                 const dayCost = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.ads_cost || 0), 0)
-                const dayCarePct = dayRevenue > 0 && dayCost > 0
-                  ? Math.round(dayCost / dayRevenue * 10000) / 100
-                  : null
+                const dayCarePct = dayRevenue > 0 && dayCost > 0 ? Math.round(dayCost / dayRevenue * 10000) / 100 : null
                 return (
-                  <tr key={date} style={{ borderBottom: "1px solid #1f2937" }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#111827")}
+                  <tr key={date} style={{ borderBottom: `1px solid ${t.rowBorder}` }}
+                    onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   >
-                    <td style={{ padding: "10px 12px", color: "#d1d5db", fontWeight: 600 }}>
+                    <td style={{ padding: "10px 12px", color: t.text, fontWeight: 600 }}>
                       {groupBy === "month" ? date.slice(0, 7) : fmtDate(date)}
                     </td>
                     {mktNames.map(mkt => {
@@ -256,21 +274,21 @@ export default function BaoCaoMktPage() {
                         <td key={mkt} style={{ padding: "10px 12px", textAlign: "right" }}>
                           {cell ? (
                             <div>
-                              <div style={{ color: "#34d399", fontWeight: 600 }}>
+                              <div style={{ color: t.green, fontWeight: 600 }}>
                                 {fmtMoney(Number(cell.revenue_total))}
                               </div>
                               <div style={{ fontSize: 11, marginTop: 2 }}>
-                                <span style={{ color: "#34d399" }}>{cell.delivered ?? 0}&#10003;</span>
+                                <span style={{ color: t.green }}>{cell.delivered ?? 0}&#10003;</span>
                                 {" · "}
-                                <span style={{ color: "#60a5fa" }}>{cell.new_orders ?? 0}&#9675;</span>
+                                <span style={{ color: t.blue }}>{cell.new_orders ?? 0}&#9675;</span>
                                 {" · "}
-                                <span style={{ color: "#818cf8" }}>{cell.confirmed ?? 0}&#9654;</span>
+                                <span style={{ color: t.purple }}>{cell.confirmed ?? 0}&#9654;</span>
                                 {" · "}
-                                <span style={{ color: "#f87171" }}>{cell.cancelled ?? 0}&#10007;</span>
+                                <span style={{ color: t.red }}>{cell.cancelled ?? 0}&#10007;</span>
                               </div>
                               {Number(cell.ads_cost) > 0 && (
                                 <div style={{ fontSize: 11, marginTop: 2 }}>
-                                  <span style={{ color: "#f59e0b" }}>{fmtMoney(Number(cell.ads_cost))}</span>
+                                  <span style={{ color: t.amber }}>{fmtMoney(Number(cell.ads_cost))}</span>
                                   {" · "}
                                   <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
                                     {pct !== null ? pct + "%" : "—"}
@@ -279,16 +297,16 @@ export default function BaoCaoMktPage() {
                               )}
                             </div>
                           ) : (
-                            <span style={{ color: "#374151" }}>—</span>
+                            <span style={{ color: t.empty }}>—</span>
                           )}
                         </td>
                       )
                     })}
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                      <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(dayRevenue)}</div>
+                      <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(dayRevenue)}</div>
                       {dayCost > 0 && (
                         <div style={{ fontSize: 11, marginTop: 2 }}>
-                          <span style={{ color: "#f59e0b" }}>{fmtMoney(dayCost)}</span>
+                          <span style={{ color: t.amber }}>{fmtMoney(dayCost)}</span>
                           {" · "}
                           <span style={{ color: carePctColor(dayCarePct), fontWeight: 600 }}>
                             {dayCarePct !== null ? dayCarePct + "%" : "—"}
@@ -301,18 +319,18 @@ export default function BaoCaoMktPage() {
               })}
             </tbody>
             <tfoot>
-              <tr style={{ borderTop: "2px solid #374151", background: "#111827" }}>
-                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#f9fafb" }}>TỔNG</td>
+              <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG</td>
                 {mktNames.map(mkt => {
                   const s = summary[mkt] || {}
                   const pct = s.care_pct ?? null
                   return (
                     <td key={mkt} style={{ padding: "10px 12px", textAlign: "right" }}>
-                      <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(s.revenue_total || 0)}</div>
-                      <div style={{ fontSize: 11, color: "#6b7280" }}>{s.delivered || 0} đơn</div>
+                      <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(s.revenue_total || 0)}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted }}>{s.delivered || 0} đơn</div>
                       {(s.ads_cost || 0) > 0 && (
                         <div style={{ fontSize: 11, marginTop: 2 }}>
-                          <span style={{ color: "#f59e0b" }}>{fmtMoney(s.ads_cost || 0)}</span>
+                          <span style={{ color: t.amber }}>{fmtMoney(s.ads_cost || 0)}</span>
                           {" · "}
                           <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
                             {pct !== null ? pct + "%" : "—"}
@@ -323,10 +341,10 @@ export default function BaoCaoMktPage() {
                   )
                 })}
                 <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                  <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(totalRevenue)}</div>
+                  <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(totalRevenue)}</div>
                   {totalCost > 0 && (
                     <div style={{ fontSize: 11, marginTop: 2 }}>
-                      <span style={{ color: "#f59e0b" }}>{fmtMoney(totalCost)}</span>
+                      <span style={{ color: t.amber }}>{fmtMoney(totalCost)}</span>
                       {" · "}
                       <span style={{ color: carePctColor(totalCarePct), fontWeight: 600 }}>
                         {totalCarePct !== null ? totalCarePct + "%" : "—"}
