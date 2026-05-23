@@ -40,6 +40,7 @@ export default function BaoCaoMktPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
+  const [cronStatus, setCronStatus] = useState<any>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -87,7 +88,20 @@ export default function BaoCaoMktPage() {
     }
   }, [fetchData])
 
+  const fetchCronStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch("/admin/pancake-sync/report/mkt-cost-status")
+      const data = await res.json()
+      setCronStatus(data)
+    } catch { /* ignore */ }
+  }, [])
+
   useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    fetchCronStatus()
+    const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [fetchCronStatus])
 
   // Group rows by date
   const byDate: Record<string, Record<string, any>> = {}
@@ -135,6 +149,27 @@ export default function BaoCaoMktPage() {
           </button>
         </div>
       </div>
+
+      {/* Cron Status Bar */}
+      {cronStatus && (() => {
+        const s = cronStatus
+        const color = s.status === "ok" ? "#34d399" : s.status === "warning" ? "#f59e0b" : s.status === "error" ? "#f87171" : "#6b7280"
+        const icon = s.status === "ok" ? "●" : s.status === "warning" ? "⚠" : s.status === "error" ? "✕" : "○"
+        const label = s.status === "ok" ? "Cron đang hoạt động" : s.status === "warning" ? "Cron chậm" : s.status === "error" ? "Cron có thể bị lỗi" : "Chưa có data"
+        const lastTime = s.last_updated
+          ? new Date(s.last_updated).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+          : "—"
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, background: "#111827", borderRadius: 8, padding: "8px 16px", fontSize: 12, flexWrap: "wrap" }}>
+            <span style={{ color, fontWeight: 700 }}>{icon} {label}</span>
+            <span style={{ color: "#6b7280" }}>Sync lần cuối: <span style={{ color: "#d1d5db" }}>{lastTime}</span> ({s.minutes_ago !== null ? `${s.minutes_ago} phút trước` : "—"})</span>
+            <span style={{ color: "#6b7280" }}>Hôm nay: <span style={{ color: "#60a5fa" }}>{s.campaigns_today} campaigns</span> · <span style={{ color: "#a78bfa" }}>{s.accounts_with_data}/{s.accounts_active} accounts</span></span>
+            {s.missing_accounts > 0 && (
+              <span style={{ color: "#f87171" }}>⚠ {s.missing_accounts} account chưa có data hôm nay</span>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Tổng quan */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
