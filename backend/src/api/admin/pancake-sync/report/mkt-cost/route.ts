@@ -2,7 +2,6 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 const FB_API_BASE = "https://graph.facebook.com/v18.0"
 const FB_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
-const FB_ACCOUNTS = (process.env.FB_AD_ACCOUNTS ?? "").split(",").map(s => s.trim()).filter(Boolean)
 
 /**
  * Extract MKT code từ campaign name.
@@ -76,7 +75,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     if (!FB_TOKEN) return res.status(400).json({ error: "FB_ACCESS_TOKEN chưa được cấu hình trong Railway env" })
-    if (!FB_ACCOUNTS.length) return res.status(400).json({ error: "FB_AD_ACCOUNTS chưa được cấu hình trong Railway env" })
 
     const body = req.body as any
     const date = (body?.date as string) || new Date().toISOString().slice(0, 10)
@@ -84,13 +82,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
 
+    // Lấy danh sách accounts từ DB
+    const dbAccounts = await cskhService.sql(`
+      SELECT account_id FROM fb_ad_account
+      WHERE deleted_at IS NULL AND active = true
+      ORDER BY created_at ASC
+    `)
+    if (!dbAccounts.length) return res.status(400).json({ error: "Chưa có tài khoản FB Ads nào. Vào Settings để thêm." })
+
     let totalSynced = 0
     let totalErrors = 0
     const perMkt: Record<string, number> = {}
     const details: any[] = []
 
-    for (const rawAccount of FB_ACCOUNTS) {
-      const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`
+    for (const { account_id: rawAccount } of dbAccounts) {
+      const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount.replace(/^act_/, "")}`
       const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
 
       try {
