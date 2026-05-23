@@ -62,7 +62,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         END AS care_pct
       FROM (
         SELECT
-          date_trunc('${truncUnit}', pancake_created_at)::date AS date,
+          date_trunc('${truncUnit}', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS date,
           ${mktWithFallback} AS mkt_name,
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
@@ -75,8 +75,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         WHERE deleted_at IS NULL
           AND source IN ('manual', 'webcake')
           AND NOT (tags @> '[{"name": "Đơn nháp"}]'::jsonb)
-          AND pancake_created_at >= $1
-          AND pancake_created_at < ($2::date + interval '1 day')
+          AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
         GROUP BY date, mkt_name
       ) r
       LEFT JOIN (
