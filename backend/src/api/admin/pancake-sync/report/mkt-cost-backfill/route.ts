@@ -67,15 +67,35 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   if (!dbAccounts.length) return res.status(400).json({ error: "Chưa có FB ad account nào active" })
 
   const dates = dateRange(from, to)
+  const accountIds = dbAccounts.map(a => a.account_id.startsWith("act_") ? a.account_id : `act_${a.account_id}`)
 
-  console.log(`[Backfill] Bắt đầu ${dates.length} ngày: ${from} → ${to}, ${dbAccounts.length} accounts`)
+  // Lấy danh sách (date, account_id) đã có đủ data — skip để không kéo lại
+  const donePairs: Set<string> = new Set()
+  try {
+    const doneRows: Array<{ date: string; ad_account_id: string }> = await cskhService.sql(`
+      SELECT DISTINCT date::text AS date, ad_account_id
+      FROM mkt_ads_cost
+      WHERE deleted_at IS NULL
+        AND date >= $1::date AND date <= $2::date
+        AND ad_account_id = ANY($3)
+    `, [from, to, accountIds])
+    for (const r of doneRows) {
+      donePairs.add(`${r.date.slice(0, 10)}|${r.ad_account_id}`)
+    }
+  } catch { /* ignore */ }
+
+  const totalPairs = dates.length * accountIds.length
+  const skipCount = donePairs.size
+  console.log(`[Backfill] ${dates.length} ngày × ${accountIds.length} accounts = ${totalPairs} pairs, đã có: ${skipCount}, cần kéo: ${totalPairs - skipCount}`)
 
   // Chạy async, trả response ngay để không timeout
   res.json({
     ok: true,
-    message: `Đang chạy backfill ${dates.length} ngày (${from} → ${to}). Theo dõi trong Railway logs.`,
+    message: `Đang chạy backfill ${dates.length} ngày (${from} → ${to}). Đã có: ${skipCount}/${totalPairs} pairs, bỏ qua. Theo dõi Railway logs.`,
     days: dates.length,
-    accounts: dbAccounts.length,
+    accounts: accountIds.length,
+    total_pairs: totalPairs,
+    already_done: skipCount,
     from,
     to,
   })
@@ -84,14 +104,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   ;(async () => {
     let grandSynced = 0
     let grandErrors = 0
+    let grandSkipped = 0
 
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i]
       const timeRange = encodeURIComponent(JSON.stringify({ since: date, until: date }))
       let daySynced = 0
 
-      for (const { account_id: rawAccount } of dbAccounts) {
-        const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`
+      for (const actId of accountIds) {
+        // Skip nếu đã có data của account này cho ngày này
+        if (donePairs.has(`${date}|${actId}`)) {
+          grandSkipped++
+          continue
+        }
+
         const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=500&access_token=${FB_TOKEN}`
 
         try {
@@ -119,6 +145,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             }
             nextUrl = data.paging?.next ?? null
           }
+          // Đánh dấu đã kéo xong account này cho ngày này
+          donePairs.add(`${date}|${actId}`)
         } catch (err: any) {
           console.error(`[Backfill] Error ${actId} ${date}: ${err.message}`)
           grandErrors++
@@ -126,10 +154,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
 
       grandSynced += daySynced
-      console.log(`[Backfill] [${i + 1}/${dates.length}] ${date} → campaigns=${daySynced}`)
+      if (daySynced > 0) {
+        console.log(`[Backfill] [${i + 1}/${dates.length}] ${date} → campaigns=${daySynced}`)
+      }
       if (i < dates.length - 1) await delay(DELAY_MS)
     }
 
-    console.log(`[Backfill] ✓ Xong — tổng campaigns=${grandSynced} errors=${grandErrors}`)
+    console.log(`[Backfill] ✓ Xong — synced=${grandSynced} skipped=${grandSkipped} errors=${grandErrors}`)
   })()
 }
