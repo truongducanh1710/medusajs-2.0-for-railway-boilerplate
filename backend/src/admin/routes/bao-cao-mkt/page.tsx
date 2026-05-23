@@ -12,6 +12,13 @@ function fmtDate(iso: string): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}`
 }
 
+function carePctColor(pct: number | null): string {
+  if (pct === null) return "#6b7280"
+  if (pct < 30) return "#34d399"
+  if (pct <= 35) return "#f59e0b"
+  return "#f87171"
+}
+
 const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT"]
 
 function getThisMonthRange() {
@@ -29,6 +36,7 @@ export default function BaoCaoMktPage() {
   const [rows, setRows] = useState<any[]>([])
   const [summary, setSummary] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
 
   const fetchData = useCallback(async () => {
@@ -40,7 +48,6 @@ export default function BaoCaoMktPage() {
       const data = await res.json()
       setRows(data.rows ?? [])
       setSummary(data.summary ?? {})
-      // Sort MKT names: ưu tiên thứ tự chuẩn, còn lại append sau
       const names = Object.keys(data.summary ?? {})
       const sorted = [
         ...MKT_ORDER.filter(m => names.includes(m)),
@@ -55,6 +62,29 @@ export default function BaoCaoMktPage() {
     }
   }, [from, to, groupBy])
 
+  const syncCost = useCallback(async () => {
+    setSyncing(true)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const res = await apiFetch("/admin/pancake-sync/report/mkt-cost", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: today }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        alert(`✓ Đã sync ${data.synced} campaigns cho ngày ${data.date}`)
+        await fetchData()
+      } else {
+        alert("Lỗi sync: " + (data.error ?? "unknown"))
+      }
+    } catch (e: any) {
+      alert("Lỗi: " + e.message)
+    } finally {
+      setSyncing(false)
+    }
+  }, [fetchData])
+
   useEffect(() => { fetchData() }, [fetchData])
 
   // Group rows by date
@@ -67,6 +97,8 @@ export default function BaoCaoMktPage() {
   const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
 
   const totalRevenue = Object.values(summary).reduce((s: number, m: any) => s + (m.revenue_delivered || 0), 0)
+  const totalCost = Object.values(summary).reduce((s: number, m: any) => s + (m.ads_cost || 0), 0)
+  const totalCarePct = totalRevenue > 0 ? Math.round(totalCost / totalRevenue * 10000) / 100 : null
 
   return (
     <div style={{ padding: "24px 32px", background: "#0f0f1a", minHeight: "100vh", color: "#f9fafb" }}>
@@ -74,9 +106,9 @@ export default function BaoCaoMktPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Doanh số theo MKT</h1>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>Đơn Webcake · nhóm theo UTM campaign</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>Đơn Webcake · Chi phí Facebook Ads</div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)}
             style={{ background: "#1a1a2e", border: "1px solid #374151", borderRadius: 6, padding: "6px 10px", color: "#f9fafb", fontSize: 13 }} />
           <span style={{ color: "#6b7280" }}>→</span>
@@ -93,30 +125,53 @@ export default function BaoCaoMktPage() {
           }}>
             {loading ? "Đang tải..." : "↻ Refresh"}
           </button>
+          <button onClick={syncCost} disabled={syncing} style={{
+            background: "#065f46", color: "#34d399", border: "1px solid #34d39944", borderRadius: 6,
+            padding: "8px 16px", cursor: syncing ? "not-allowed" : "pointer", fontSize: 13, opacity: syncing ? 0.6 : 1
+          }}>
+            {syncing ? "Đang sync..." : "↓ Sync chi phí hôm nay"}
+          </button>
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
-        <div style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 140 }}>
+      {/* Tổng quan */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
           <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Tổng doanh số giao</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#34d399" }}>{fmtMoney(totalRevenue)}</div>
+          {totalCost > 0 && (
+            <>
+              <div style={{ fontSize: 12, color: "#f59e0b", marginTop: 2 }}>Chi phí: {fmtMoney(totalCost)}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(totalCarePct), marginTop: 2 }}>
+                % Care: {totalCarePct !== null ? totalCarePct + "%" : "—"}
+              </div>
+            </>
+          )}
         </div>
         {mktNames.filter(m => m !== "KHÁC").map(mkt => {
           const s = summary[mkt] || {}
+          const pct = s.care_pct ?? null
           return (
-            <div key={mkt} style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 140 }}>
+            <div key={mkt} style={{ background: "#1a1a2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
               <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{mkt}</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#60a5fa" }}>{fmtMoney(s.revenue_delivered || 0)}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: "#60a5fa" }}>{fmtMoney(s.revenue_delivered || 0)}</div>
               <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
                 {s.delivered || 0} giao / {s.total_orders || 0} tổng
               </div>
+              {(s.ads_cost || 0) > 0 && (
+                <>
+                  <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 3 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(pct), marginTop: 1 }}>
+                    {pct !== null ? pct + "%" : "—"}
+                  </div>
+                </>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* Table: rows = dates, cols = MKT */}
+      {/* Table */}
       {rows.length === 0 && !loading ? (
         <div style={{ textAlign: "center", padding: 60, color: "#6b7280" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
@@ -138,7 +193,11 @@ export default function BaoCaoMktPage() {
             </thead>
             <tbody>
               {dates.map(date => {
-                const dayTotal = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.revenue_delivered || 0), 0)
+                const dayRevenue = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.revenue_delivered || 0), 0)
+                const dayCost = mktNames.reduce((s, m) => s + Number(byDate[date][m]?.ads_cost || 0), 0)
+                const dayCarePct = dayRevenue > 0 && dayCost > 0
+                  ? Math.round(dayCost / dayRevenue * 10000) / 100
+                  : null
                 return (
                   <tr key={date} style={{ borderBottom: "1px solid #1f2937" }}
                     onMouseEnter={e => (e.currentTarget.style.background = "#111827")}
@@ -149,6 +208,7 @@ export default function BaoCaoMktPage() {
                     </td>
                     {mktNames.map(mkt => {
                       const cell = byDate[date][mkt]
+                      const pct = cell?.care_pct ?? null
                       return (
                         <td key={mkt} style={{ padding: "10px 12px", textAlign: "right" }}>
                           {cell ? (
@@ -159,6 +219,15 @@ export default function BaoCaoMktPage() {
                               <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
                                 {cell.delivered}✓ {cell.pending > 0 && <span style={{ color: "#f59e0b" }}>{cell.pending}⏳</span>} {cell.cancelled > 0 && <span style={{ color: "#f87171" }}>{cell.cancelled}✗</span>}
                               </div>
+                              {Number(cell.ads_cost) > 0 && (
+                                <div style={{ fontSize: 11, marginTop: 2 }}>
+                                  <span style={{ color: "#f59e0b" }}>{fmtMoney(Number(cell.ads_cost))}</span>
+                                  {" · "}
+                                  <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
+                                    {pct !== null ? pct + "%" : "—"}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span style={{ color: "#374151" }}>—</span>
@@ -166,28 +235,55 @@ export default function BaoCaoMktPage() {
                         </td>
                       )
                     })}
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#34d399", fontWeight: 700 }}>
-                      {fmtMoney(dayTotal)}
+                    <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                      <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(dayRevenue)}</div>
+                      {dayCost > 0 && (
+                        <div style={{ fontSize: 11, marginTop: 2 }}>
+                          <span style={{ color: "#f59e0b" }}>{fmtMoney(dayCost)}</span>
+                          {" · "}
+                          <span style={{ color: carePctColor(dayCarePct), fontWeight: 600 }}>
+                            {dayCarePct !== null ? dayCarePct + "%" : "—"}
+                          </span>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
               })}
             </tbody>
-            {/* Footer summary */}
             <tfoot>
               <tr style={{ borderTop: "2px solid #374151", background: "#111827" }}>
                 <td style={{ padding: "10px 12px", fontWeight: 700, color: "#f9fafb" }}>TỔNG</td>
                 {mktNames.map(mkt => {
                   const s = summary[mkt] || {}
+                  const pct = s.care_pct ?? null
                   return (
                     <td key={mkt} style={{ padding: "10px 12px", textAlign: "right" }}>
                       <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(s.revenue_delivered || 0)}</div>
                       <div style={{ fontSize: 11, color: "#6b7280" }}>{s.delivered || 0} đơn</div>
+                      {(s.ads_cost || 0) > 0 && (
+                        <div style={{ fontSize: 11, marginTop: 2 }}>
+                          <span style={{ color: "#f59e0b" }}>{fmtMoney(s.ads_cost || 0)}</span>
+                          {" · "}
+                          <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
+                            {pct !== null ? pct + "%" : "—"}
+                          </span>
+                        </div>
+                      )}
                     </td>
                   )
                 })}
-                <td style={{ padding: "10px 12px", textAlign: "right", color: "#34d399", fontWeight: 700 }}>
-                  {fmtMoney(totalRevenue)}
+                <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                  <div style={{ color: "#34d399", fontWeight: 700 }}>{fmtMoney(totalRevenue)}</div>
+                  {totalCost > 0 && (
+                    <div style={{ fontSize: 11, marginTop: 2 }}>
+                      <span style={{ color: "#f59e0b" }}>{fmtMoney(totalCost)}</span>
+                      {" · "}
+                      <span style={{ color: carePctColor(totalCarePct), fontWeight: 600 }}>
+                        {totalCarePct !== null ? totalCarePct + "%" : "—"}
+                      </span>
+                    </div>
+                  )}
                 </td>
               </tr>
             </tfoot>
