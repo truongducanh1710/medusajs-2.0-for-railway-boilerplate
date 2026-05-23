@@ -62,7 +62,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         END AS care_pct
       FROM (
         SELECT
-          (date_trunc('${truncUnit}', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)::text AS date,
+          to_char(date_trunc('${truncUnit}', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
           ${mktWithFallback} AS mkt_name,
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END)::int AS delivered,
@@ -83,14 +83,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ) r
       LEFT JOIN (
         SELECT
-          date_trunc('${truncUnit}', date)::date AS date,
+          to_char(date_trunc('${truncUnit}', date), 'YYYY-MM-DD') AS date,
           mkt_name,
           SUM(spend)::bigint AS spend
         FROM mkt_ads_cost
         WHERE deleted_at IS NULL
           AND date >= $1::date
           AND date <= $2::date
-        GROUP BY date_trunc('${truncUnit}', date)::date, mkt_name
+        GROUP BY date_trunc('${truncUnit}', date), mkt_name
       ) c ON c.date = r.date AND c.mkt_name = r.mkt_name
       ORDER BY r.date DESC, r.revenue_total DESC
     `, [`${from}T00:00:00Z`, to])

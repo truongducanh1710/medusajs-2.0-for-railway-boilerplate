@@ -7,9 +7,9 @@ function fmtMoney(n: number): string {
 }
 
 function fmtDate(iso: string): string {
-  const d = new Date(iso)
-  const p = (n: number) => String(n).padStart(2, "0")
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}`
+  // iso có thể là "2026-05-23" hoặc "2026-05-23T..." — lấy phần date trực tiếp
+  const parts = iso.slice(0, 10).split("-")
+  return `${parts[2]}/${parts[1]}`
 }
 
 function carePctColor(pct: number | null): string {
