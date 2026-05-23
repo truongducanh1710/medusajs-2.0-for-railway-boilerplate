@@ -64,7 +64,7 @@ function FulfillmentBadge({ status }: { status: string }) {
 const STATUS_VI: Record<number, string> = {
   0: "Chờ xử lý", 1: "Sale đã chốt", 2: "Đang giao", 3: "Giao thành công",
   4: "Đang hoàn về", 5: "Đã hoàn về kho", 6: "Đã hủy", 7: "Đã xóa",
-  11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
+  8: "Đang đóng hàng", 9: "Chờ chuyển hàng", 11: "Chờ hàng", [-1]: "Đã hủy", [-2]: "Hoàn hàng",
 }
 
 function getPancakeStatusLabel(status: number): string {
@@ -78,8 +78,8 @@ function getPancakeStatusCls(status: number): string {
   if (status === 7 || status === -1 || status === 5 || status === 6) return "bg-red-100 text-red-700"
   // Tím = hoàn hàng manual / đang hoàn về
   if (status === -2 || status === 4) return "bg-purple-100 text-purple-700"
-  // Xanh dương = đang vận chuyển
-  if (status === 2) return "bg-blue-100 text-blue-700"
+  // Xanh dương = đang vận chuyển / chờ chuyển hàng / đang đóng hàng
+  if (status === 2 || status === 8 || status === 9) return "bg-blue-100 text-blue-700"
   // Vàng = chờ xử lý
   if (status === 0 || status === 11) return "bg-yellow-100 text-yellow-700"
   // Cam = sale đã chốt, chưa lên kho

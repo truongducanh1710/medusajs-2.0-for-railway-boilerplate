@@ -76,6 +76,8 @@ const STATUS_VI: Record<number, string> = {
   5: "Đã hoàn về kho",
   6: "Đã hủy",
   7: "Đã xóa",
+  8: "Đang đóng hàng",
+  9: "Chờ chuyển hàng",
   11: "Chờ hàng",
   "-1": "Đã hủy",
   "-2": "Hoàn hàng",

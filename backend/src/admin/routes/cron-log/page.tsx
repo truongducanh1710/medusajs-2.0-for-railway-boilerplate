@@ -20,7 +20,7 @@ function dur(ms: number | null): string {
 const STATUS_NAMES: Record<number, string> = {
   0: "Chờ xử lý", 1: "Sale đã chốt", 2: "Đang giao", 3: "Giao thành công",
   4: "Đang hoàn về", 5: "Đã hoàn về kho", 6: "Đã hủy", 7: "Đã xóa",
-  9: "Chờ VC xác nhận", 11: "Chờ hàng",
+  8: "Đang đóng hàng", 9: "Chờ chuyển hàng", 11: "Chờ hàng",
 }
 
 // ---- Stats Panel ----
