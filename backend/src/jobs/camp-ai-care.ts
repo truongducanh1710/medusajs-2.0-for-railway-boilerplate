@@ -50,7 +50,17 @@ const SYSTEM_PROMPT = `Bạn là AI chuyên phân tích quảng cáo Facebook ch
 ## Format recommend — PHẢI actionable
 Reason phải có: KPI cụ thể + trend + so sánh với MKT + action rõ ràng.
 VD tốt: "care_pct 42% tăng 3 ngày (38→40→42%), CPM 580k vượt ngưỡng 500k, COD/Click 0.7%. Pause ngay."
-VD xấu: "Hiệu suất chưa tốt, cần theo dõi thêm." ← KHÔNG chấp nhận`
+VD xấu: "Hiệu suất chưa tốt, cần theo dõi thêm." ← KHÔNG chấp nhận
+
+## Format dữ liệu đầu vào (compressed)
+get_camp_metrics trả về dạng pipe-separated để tiết kiệm token:
+`id|name|mkt|status|days|budget|spend|care%↑↓|cod|cpm→avg3d|trend(date:cpm:spend)`
+- status: ON=ACTIVE, OFF=PAUSED
+- care%↑ = care_pct hôm nay, ↑/↓/→ = trend CPM 3 ngày
+- cpm→avg3d: CPM hôm nay → CPM trung bình 3 ngày trước
+- trend: 5 ngày gần nhất, mỗi entry = ngày:CPM:spend
+- Đơn vị tiền: k = nghìn VND (vd 269k = 269.000đ, budget 4400k = 4.400.000đ)
+get_mkt_benchmarks trả 1 dòng: BENCHMARK(MKT): CPM=Xk CPC=Yk CTR=Z% camps=N`
 
 const EVALUATOR_SYSTEM_PROMPT = `Bạn là evaluator độc lập kiểm tra chất lượng recommendation của AI agent phân tích quảng cáo.
 
@@ -326,22 +336,37 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
         ruleDecisions[c.campaign_id] = ruleDecision(enriched)
       }
 
-      return camps.map((c: any) => ({
-        campaign_id: c.campaign_id,
-        campaign_name: c.campaign_name,
-        mkt_name: c.mkt_name,
-        effective_status: c.effective_status,
-        daily_budget: c.daily_budget,
-        days_running: c.days_running,
-        today: {
-          spend: c.spend_today, impressions: c.impr_today, clicks: c.clicks_today,
-          cpm: c.cpm_today, cpc: c.cpc_today, ctr: c.ctr_today,
-          care_pct: c.care_pct_today, cod_orders: c.cod_today,
-        },
-        cpm_avg_3d: c.cpm_avg_3d,
-        trend_7d: trends.filter((t: any) => t.campaign_id === c.campaign_id)
-          .map((t: any) => ({ date: t.date, spend: t.spend, cpm: t.cpm, cpc: t.cpc, ctr: t.ctr })),
-      }))
+      // Compressed format: giảm ~15x token so với JSON object
+      // Format: ID|tên_rút_gọn|MKT|status|days|budget|spend|care%|cod|CPM→avg3d|trend_CPM_7d
+      const header = `CAMPS(${camps.length}): id|name|mkt|status|days|budget|spend|care%|cod|cpm→avg3d|trend_cpm7d(date:cpm:spend)`
+      const rows = camps.map((c: any) => {
+        const campTrends = trends.filter((t: any) => t.campaign_id === c.campaign_id)
+        // Rút gọn tên: bỏ prefix ngày, giữ MKT+sản phẩm+code
+        const nameParts = (c.campaign_name as string).split("_")
+        const shortName = nameParts.slice(0, 4).join("_").slice(0, 40)
+        const trendStr = campTrends.slice(0, 5)
+          .map((t: any) => `${String(t.date).slice(5, 10)}:${Math.round(Number(t.cpm ?? 0) / 1000)}k:${Math.round(Number(t.spend ?? 0) / 1000)}k`)
+          .join(",")
+        const careArrow = (() => {
+          const vals = campTrends.slice(0, 3).map((t: any) => Number(t.cpm ?? 0))
+          if (vals.length < 2) return ""
+          return vals[0] > vals[vals.length - 1] ? "↑" : vals[0] < vals[vals.length - 1] ? "↓" : "→"
+        })()
+        return [
+          c.campaign_id,
+          shortName,
+          c.mkt_name,
+          c.effective_status === "ACTIVE" ? "ON" : "OFF",
+          c.days_running ?? 0,
+          Math.round(Number(c.daily_budget ?? 0) / 1000) + "k",
+          Math.round(Number(c.spend_today ?? 0) / 1000) + "k",
+          (c.care_pct_today ?? 0) + "%" + careArrow,
+          c.cod_today ?? 0,
+          Math.round(Number(c.cpm_today ?? 0) / 1000) + "k→" + Math.round(Number(c.cpm_avg_3d ?? 0) / 1000) + "k",
+          trendStr,
+        ].join("|")
+      })
+      return header + "\n" + rows.join("\n")
     }
 
     if (name === "get_mkt_benchmarks") {
@@ -354,7 +379,9 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
         FROM mkt_ads_cost
         WHERE mkt_name = $1 AND date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 14 AND spend > 0 AND deleted_at IS NULL
       `, [args.mkt]).catch(() => [{}])
-      return rows[0]
+      const r = rows[0] ?? {}
+      // Compressed: 1 line thay vì JSON object
+      return `BENCHMARK(${args.mkt}): CPM=${Math.round(Number(r.avg_cpm ?? 0) / 1000)}k CPC=${Math.round(Number(r.avg_cpc ?? 0) / 1000)}k CTR=${r.avg_ctr ?? 0}% camps=${r.camp_count ?? 0}`
     }
 
     if (name === "get_recent_rejections") {
