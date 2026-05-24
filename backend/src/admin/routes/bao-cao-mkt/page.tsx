@@ -410,19 +410,35 @@ export default function BaoCaoMktPage() {
                             if (!st) return <span style={{ color: t.textMuted, fontSize: 11 }}>—</span>
                             const isActive = st === "ACTIVE"
                             const isPaused = st === "PAUSED"
-                            const color = isActive ? t.green : isPaused ? t.amber : t.red
-                            const label = isActive ? "ACTIVE" : isPaused ? "PAUSED" : st
                             const canToggle = ownerOf(row) && (isActive || isPaused)
                             const acting = actingCampId === row.campaign_id
-                            if (!canToggle) {
-                              return <span title={canControl ? `Camp của MKT ${row.mkt_name}` : ""} style={{ background: color + "22", color, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{label}</span>
-                            }
+                            const trackColor = isActive ? "#1877f2" : dark ? "#374151" : "#d1d5db"
+                            const knobColor = "#ffffff"
                             return (
-                              <button onClick={() => toggleStatus(row)} disabled={acting}
-                                title={isActive ? "Click để pause" : "Click để bật"}
-                                style={{ background: color + "22", color, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, border: `1px solid ${color}`, cursor: acting ? "wait" : "pointer", opacity: acting ? 0.5 : 1 }}>
-                                {acting ? "..." : (isActive ? "⏸ " : "▶ ") + label}
-                              </button>
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <div
+                                  onClick={() => canToggle && !acting && toggleStatus(row)}
+                                  title={!canToggle ? (canControl ? `Camp của MKT ${row.mkt_name}` : "") : isActive ? "Click để pause" : "Click để bật"}
+                                  style={{
+                                    width: 36, height: 20, borderRadius: 10,
+                                    background: acting ? (dark ? "#4b5563" : "#9ca3af") : trackColor,
+                                    position: "relative", cursor: canToggle && !acting ? "pointer" : "default",
+                                    opacity: acting ? 0.6 : canToggle ? 1 : 0.5,
+                                    transition: "background 0.2s",
+                                    flexShrink: 0,
+                                  }}>
+                                  <div style={{
+                                    width: 14, height: 14, borderRadius: "50%", background: knobColor,
+                                    position: "absolute", top: 3,
+                                    left: isActive ? 18 : 4,
+                                    transition: "left 0.2s",
+                                    boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+                                  }} />
+                                </div>
+                                <span style={{ fontSize: 10, color: isActive ? "#1877f2" : (dark ? "#6b7280" : "#9ca3af"), fontWeight: 600, minWidth: 40 }}>
+                                  {acting ? "..." : isActive ? "ACTIVE" : isPaused ? "PAUSED" : st}
+                                </span>
+                              </div>
                             )
                           })()}
                         </td>
