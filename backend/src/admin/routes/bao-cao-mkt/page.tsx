@@ -356,6 +356,7 @@ export default function BaoCaoMktPage() {
                   effective_status: x => x.effective_status ?? "",
                   mkt_name: x => x.mkt_name ?? "",
                 }
+                colMap["ctr"] = x => Number(x.impressions) > 0 ? Number(x.clicks) / Number(x.impressions) * 100 : 0
                 if (sortCol in strColMap) {
                   const sf = strColMap[sortCol]
                   return sortDir === "desc" ? sf(b).localeCompare(sf(a)) : sf(a).localeCompare(sf(b))
@@ -363,6 +364,39 @@ export default function BaoCaoMktPage() {
                 const fn = colMap[sortCol] ?? ((x: any) => Number(x.spend))
                 return sortDir === "desc" ? fn(b) - fn(a) : fn(a) - fn(b)
               })
+            const MKT_COLORS: Record<string, string> = {
+              KIENLB: "#60a5fa", ANHNT: "#f472b6", NAMDV: "#34d399",
+              XUANLT: "#fb923c", LINHMT: "#a78bfa", DUPD: "#facc15",
+            }
+            const mktColor = (name: string) => MKT_COLORS[name] ?? "#9ca3af"
+            // Spend: đỏ nếu tiêu > 80% budget, vàng 60-80%
+            const spendColor = (spd: number, budget: number) => {
+              if (!budget) return t.amber
+              const pct = spd / budget
+              if (pct >= 0.8) return t.red
+              if (pct >= 0.6) return t.amber
+              return t.green
+            }
+            // CPM: xanh <300k, vàng 300-500k, đỏ >500k (VND)
+            const cpmColor = (cpm: number | null) => {
+              if (cpm === null) return t.textMuted
+              if (cpm < 300000) return t.green
+              if (cpm < 500000) return t.amber
+              return t.red
+            }
+            // CPC: xanh <8k, vàng 8-15k, đỏ >15k (VND)
+            const cpcColor = (cpc: number | null) => {
+              if (cpc === null) return t.textMuted
+              if (cpc < 8000) return t.green
+              if (cpc < 15000) return t.amber
+              return t.red
+            }
+            // CTR: xanh >5%, vàng 3-5%, đỏ <3%
+            const ctrColor = (ctr: number) => {
+              if (ctr >= 5) return t.green
+              if (ctr >= 3) return t.amber
+              return t.red
+            }
             const mkSortTh = (col: string, label: string, align: "left" | "center" | "right" = "right") => (
               <th onClick={() => { if (sortCol === col) setSortDir(d => d === "desc" ? "asc" : "desc"); else { setSortCol(col); setSortDir("desc") } }}
                 style={{ padding: "10px 12px", textAlign: align, fontWeight: 600, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
@@ -390,6 +424,7 @@ export default function BaoCaoMktPage() {
                     {mkSortTh("clicks", "Clicks")}
                     {mkSortTh("cpm", "CPM")}
                     {mkSortTh("cpc", "CPC")}
+                    {mkSortTh("ctr", "CTR%")}
                     {mkSortTh("cod_total", "COD")}
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Đơn</th>
                     {mkSortTh("care_pct", "% Care")}
@@ -401,8 +436,10 @@ export default function BaoCaoMktPage() {
                     const imp = Number(row.impressions)
                     const clk = Number(row.clicks)
                     const spd = Number(row.spend)
+                    const bdg = Number(row.daily_budget ?? 0)
                     const cpm = imp > 0 ? Math.round(spd / imp * 1000) : null
                     const cpc = clk > 0 ? Math.round(spd / clk) : null
+                    const ctr = imp > 0 ? Math.round(clk / imp * 10000) / 100 : null
                     return (
                       <tr key={row.campaign_id} style={{ borderBottom: `1px solid ${t.rowBorder}` }}
                         onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
@@ -450,7 +487,7 @@ export default function BaoCaoMktPage() {
                             )
                           })()}
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "center", color: t.blue, fontWeight: 600 }}>{row.mkt_name || "KHÁC"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: mktColor(row.mkt_name) }}>{row.mkt_name || "KHÁC"}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           {editingBudget === row.campaign_id ? (
                             <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
@@ -473,11 +510,19 @@ export default function BaoCaoMktPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 600 }}>{fmtMoney(spd)}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>
+                          <span style={{ color: spendColor(spd, bdg) }} title={bdg ? `${Math.round(spd/bdg*100)}% budget` : ""}>
+                            {fmtMoney(spd)}
+                          </span>
+                          {bdg > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{Math.round(spd/bdg*100)}%</div>}
+                        </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{imp.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{clk.toLocaleString("vi-VN")}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{cpm !== null ? fmtMoney(cpm) : "—"}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{cpc !== null ? fmtMoney(cpc) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: cpmColor(cpm) }}>{cpm !== null ? fmtMoney(cpm) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: cpcColor(cpc) }}>{cpc !== null ? fmtMoney(cpc) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: ctr !== null ? ctrColor(ctr) : t.textMuted }}>
+                          {ctr !== null ? ctr + "%" : "—"}
+                        </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           <div style={{ color: t.green, fontWeight: 600 }}>{fmtMoney(Number(row.cod_total))}</div>
                           <div style={{ fontSize: 11, color: t.textMuted }}>{fmtMoney(Number(row.cod_delivered))} giao</div>
@@ -512,6 +557,7 @@ export default function BaoCaoMktPage() {
                     const totCod = sortedCamps.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
                     const totCpm = totImp > 0 ? Math.round(totSpend / totImp * 1000) : null
                     const totCpc = totClk > 0 ? Math.round(totSpend / totClk) : null
+                    const totCtr = totImp > 0 ? Math.round(totClk / totImp * 10000) / 100 : null
                     const totCarePct = totCod > 0 ? Math.round(totSpend / totCod * 10000) / 100 : null
                     return (
                       <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
@@ -522,8 +568,9 @@ export default function BaoCaoMktPage() {
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.purple }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: cpmColor(totCpm) }}>{totCpm !== null ? fmtMoney(totCpm) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: cpcColor(totCpc) }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: totCtr !== null ? ctrColor(totCtr) : t.textMuted }}>{totCtr !== null ? totCtr + "%" : "—"}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>{fmtMoney(totCod)}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
                           {sortedCamps.reduce((s: number, r: any) => s + Number(r.delivered ?? 0), 0)}&#10003;
