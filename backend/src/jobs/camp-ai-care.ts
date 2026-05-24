@@ -3,7 +3,8 @@ import OpenAI from "openai"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 
-const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek/deepseek-chat"
+const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-flash"
+const DEEPSEEK_DIRECT_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"])
 
 const SYSTEM_PROMPT = `Bạn là AI chuyên phân tích quảng cáo Facebook cho shop Phan Viet (đồ gia dụng: chổi, nồi, chảo, hộp nhựa...) tại Việt Nam.
 
@@ -161,14 +162,14 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
     return
   }
 
-  const client = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: process.env.OPENROUTER_API_KEY,
-    defaultHeaders: { "X-Title": "PhanViet Camp AI" },
-  })
-
   const runId = randomUUID()
   const activeModel = opts?.model ?? MODEL
+
+  const client = new OpenAI(
+    DEEPSEEK_DIRECT_MODELS.has(activeModel)
+      ? { baseURL: "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp AI" } }
+      : { baseURL: "https://openrouter.ai/api/v1", apiKey: process.env.OPENROUTER_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp AI" } }
+  )
   const today = new Date().toISOString().slice(0, 10)
   logger?.info?.(`[CampAI] Run ${runId} started model=${activeModel}`)
 

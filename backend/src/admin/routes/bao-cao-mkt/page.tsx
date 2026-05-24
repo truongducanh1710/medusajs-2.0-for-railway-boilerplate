@@ -116,7 +116,7 @@ export default function BaoCaoMktPage() {
   const [aiFilterRunId, setAiFilterRunId] = useState("")
   const [aiOffset, setAiOffset] = useState(0)
   const AI_LIMIT = 50
-  const [aiModel, setAiModel] = useState("deepseek/deepseek-chat")
+  const [aiModel, setAiModel] = useState("deepseek-v4-flash")
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -1478,10 +1478,9 @@ export default function BaoCaoMktPage() {
                 <>
                   <select value={aiModel} onChange={e => setAiModel(e.target.value)}
                     style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, maxWidth: 240 }}>
-                    <optgroup label="DeepSeek (rẻ, nhanh)">
-                      <option value="deepseek/deepseek-chat">DeepSeek Chat V3 (~$0.14/1M)</option>
-                      <option value="deepseek/deepseek-r1">DeepSeek R1 (reasoning)</option>
-                      <option value="deepseek/deepseek-r1-distill-qwen-32b">R1 Distill 32B (nhanh hơn)</option>
+                    <optgroup label="DeepSeek (direct API, rẻ hơn)">
+                      <option value="deepseek-v4-flash">DeepSeek V4 Flash (~$0.14/1M) — nhanh</option>
+                      <option value="deepseek-v4-pro">DeepSeek V4 Pro ($0.87/1M) — reasoning</option>
                     </optgroup>
                     <optgroup label="Google (mạnh)">
                       <option value="google/gemini-2.5-flash-preview">Gemini 2.5 Flash</option>
