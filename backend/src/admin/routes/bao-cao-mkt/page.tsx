@@ -40,7 +40,7 @@ export default function BaoCaoMktPage() {
   const [mktNames, setMktNames] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
   const [dark, setDark] = useState(true)
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "jobs" | "fbaccounts">("mkt")
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "jobs" | "fbaccounts" | "ai">("mkt")
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
@@ -89,6 +89,19 @@ export default function BaoCaoMktPage() {
   const [sortCol, setSortCol] = useState<string>("spend")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [filterStatus, setFilterStatus] = useState<string>("")
+
+  // AI Agent state
+  const [aiRecs, setAiRecs] = useState<any[]>([])
+  const [aiTotal, setAiTotal] = useState(0)
+  const [aiRunSummary, setAiRunSummary] = useState<any[]>([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiTriggering, setAiTriggering] = useState(false)
+  const [aiApproving, setAiApproving] = useState<string | null>(null)
+  const [aiFilterStatus, setAiFilterStatus] = useState("pending")
+  const [aiFilterMkt, setAiFilterMkt] = useState("")
+  const [aiFilterRunId, setAiFilterRunId] = useState("")
+  const [aiOffset, setAiOffset] = useState(0)
+  const AI_LIMIT = 50
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -247,6 +260,43 @@ export default function BaoCaoMktPage() {
     } finally { setCancelling(null) }
   }, [fetchSchedules])
 
+  const fetchAiRecs = useCallback(async () => {
+    setAiLoading(true)
+    try {
+      const p = new URLSearchParams({ limit: String(AI_LIMIT), offset: String(aiOffset) })
+      if (aiFilterStatus) p.set("status", aiFilterStatus)
+      if (aiFilterMkt) p.set("mkt", aiFilterMkt)
+      if (aiFilterRunId) p.set("run_id", aiFilterRunId)
+      const res = await apiFetch(`/admin/pancake-sync/report/camp-ai?${p}`)
+      const data = await res.json()
+      setAiRecs(data.recommendations ?? [])
+      setAiTotal(data.total ?? 0)
+      setAiRunSummary(data.run_summary ?? [])
+    } catch { /* ignore */ } finally { setAiLoading(false) }
+  }, [aiFilterStatus, aiFilterMkt, aiFilterRunId, aiOffset])
+
+  const triggerAiRun = useCallback(async () => {
+    setAiTriggering(true)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/report/camp-ai", { method: "POST" })
+      const data = await res.json()
+      alert(data.message ?? "Agent đã chạy, chờ ~30s rồi refresh")
+    } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiTriggering(false) }
+  }, [])
+
+  const approveRec = useCallback(async (id: string, decision: "approved" | "rejected") => {
+    setAiApproving(id)
+    try {
+      const res = await apiFetch(`/admin/pancake-sync/report/camp-ai/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert("Lỗi: " + (data.error ?? "unknown")); return }
+      await fetchAiRecs()
+    } finally { setAiApproving(null) }
+  }, [fetchAiRecs])
+
   const fetchFbAccounts = useCallback(async () => {
     setFbLoading(true)
     try {
@@ -306,6 +356,7 @@ export default function BaoCaoMktPage() {
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [activeTab, jobsSubTab, fetchSchedules])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
   useEffect(() => { if (activeTab === "fbaccounts" && canManageFb) fetchFbAccounts() }, [activeTab, canManageFb, fetchFbAccounts])
+  useEffect(() => { if (activeTab === "ai") fetchAiRecs() }, [activeTab, fetchAiRecs])
   useEffect(() => {
     fetchCronStatus()
     const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
@@ -392,6 +443,7 @@ export default function BaoCaoMktPage() {
           ["camp", "Theo Camp"],
           ["jobs", "⏰ Lịch hẹn Camp"],
           ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
+          ...(isSuper || canControl ? [["ai", "🤖 AI Agent"]] : []),
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key as any)} style={{
             background: "none", border: "none", cursor: "pointer",
@@ -1355,6 +1407,174 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Tab 5 — AI Agent */}
+      {activeTab === "ai" && (() => {
+        const actionLabel: Record<string, string> = {
+          pause: "Tắt camp",
+          activate: "Bật camp",
+          set_budget: "Đổi ngân sách",
+          no_action: "Không cần xử lý",
+        }
+        const actionColor: Record<string, string> = {
+          pause: t.red,
+          activate: t.green,
+          set_budget: t.amber,
+          no_action: t.textMuted,
+        }
+        const statusColor: Record<string, string> = {
+          pending: t.amber,
+          approved: t.green,
+          rejected: t.red,
+          auto_executed: t.blue,
+        }
+        return (
+          <div>
+            {/* Toolbar */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
+              <select value={aiFilterStatus} onChange={e => { setAiFilterStatus(e.target.value); setAiOffset(0) }}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+                <option value="">Tất cả trạng thái</option>
+                <option value="pending">Chờ duyệt</option>
+                <option value="approved">Đã duyệt</option>
+                <option value="rejected">Đã từ chối</option>
+                <option value="auto_executed">Tự động</option>
+              </select>
+              <select value={aiFilterMkt} onChange={e => { setAiFilterMkt(e.target.value); setAiOffset(0) }}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+                <option value="">Tất cả MKT</option>
+                {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <button onClick={fetchAiRecs} disabled={aiLoading}
+                style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: t.text, opacity: aiLoading ? 0.6 : 1 }}>
+                {aiLoading ? "Đang tải..." : "↻ Refresh"}
+              </button>
+              {(isSuper || canControl) && (
+                <button onClick={triggerAiRun} disabled={aiTriggering}
+                  style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", cursor: aiTriggering ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiTriggering ? 0.6 : 1 }}>
+                  {aiTriggering ? "Đang chạy..." : "▶ Chạy AI ngay"}
+                </button>
+              )}
+              <span style={{ color: t.textMuted, fontSize: 12 }}>{aiTotal} recommendations</span>
+            </div>
+
+            {/* Run summary cards */}
+            {aiRunSummary.length > 0 && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                {aiRunSummary.slice(0, 5).map((run: any) => {
+                  const ts = new Date(run.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                  return (
+                    <div key={run.run_id} onClick={() => { setAiFilterRunId(run.run_id === aiFilterRunId ? "" : run.run_id); setAiOffset(0) }}
+                      style={{ background: aiFilterRunId === run.run_id ? (dark ? "#1e3a5f" : "#dbeafe") : t.card, border: `1px solid ${aiFilterRunId === run.run_id ? t.blue : t.cardBorder}`, borderRadius: 8, padding: "10px 16px", cursor: "pointer", minWidth: 160 }}>
+                      <div style={{ fontSize: 11, color: t.textMuted }}>{ts}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginTop: 2 }}>{run.total} camps</div>
+                      <div style={{ fontSize: 11, marginTop: 2 }}>
+                        <span style={{ color: t.amber }}>{run.pending} chờ</span>
+                        {" · "}
+                        <span style={{ color: t.green }}>{run.approved} duyệt</span>
+                        {" · "}
+                        <span style={{ color: t.red }}>{run.rejected} từ chối</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Recommendations table */}
+            {aiLoading ? (
+              <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Đang tải...</div>
+            ) : aiRecs.length === 0 ? (
+              <div style={{ color: t.textMuted, textAlign: "center", padding: 60, fontSize: 14 }}>
+                Chưa có recommendations. Bấm "Chạy AI ngay" để bắt đầu.
+              </div>
+            ) : (
+              <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 10, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: t.thead }}>
+                      {["Thời gian", "Campaign", "MKT", "Action đề xuất", "Lý do", "KPI cũ", "Giá trị mới", "Trạng thái", ""].map(h => (
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: t.theadText, fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiRecs.map((rec: any) => {
+                      const ts = new Date(rec.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                      const isPending = rec.status === "pending"
+                      const isActing = aiApproving === rec.id
+                      const oldVal = rec.old_value ? Object.entries(rec.old_value).map(([k, v]) => `${k}: ${v}`).join(", ") : "—"
+                      const newVal = rec.suggested_value ? Object.entries(rec.suggested_value).map(([k, v]) => `${k}: ${v}`).join(", ") : "—"
+                      return (
+                        <tr key={rec.id}
+                          onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                          <td style={{ padding: "8px 12px", color: t.textMuted, whiteSpace: "nowrap" }}>{ts}</td>
+                          <td style={{ padding: "8px 12px", maxWidth: 220 }}>
+                            <div style={{ color: t.text, fontWeight: 500 }}>{rec.campaign_name}</div>
+                            <div style={{ color: t.textMuted, fontSize: 11, fontFamily: "monospace" }}>{rec.campaign_id?.slice(0, 16)}</div>
+                          </td>
+                          <td style={{ padding: "8px 12px", color: t.purple, fontWeight: 600 }}>{rec.mkt_name}</td>
+                          <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                            <span style={{ color: actionColor[rec.action] ?? t.text, fontWeight: 600 }}>
+                              {actionLabel[rec.action] ?? rec.action}
+                            </span>
+                            {rec.confidence && (
+                              <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 4 }}>({rec.confidence})</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "8px 12px", color: t.textSub, maxWidth: 280 }}>{rec.reason}</td>
+                          <td style={{ padding: "8px 12px", color: t.textMuted, fontSize: 11 }}>{oldVal}</td>
+                          <td style={{ padding: "8px 12px", color: rec.suggested_value ? t.amber : t.textMuted, fontSize: 11 }}>{newVal}</td>
+                          <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                            <span style={{ color: statusColor[rec.status] ?? t.textMuted, fontWeight: 600 }}>
+                              {rec.status === "pending" ? "Chờ duyệt" : rec.status === "approved" ? "Đã duyệt" : rec.status === "rejected" ? "Từ chối" : rec.status === "auto_executed" ? "Tự động" : rec.status}
+                            </span>
+                            {rec.approved_by && (
+                              <div style={{ fontSize: 11, color: t.textMuted }}>{rec.approved_by}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                            {isPending && (isSuper || canControl) ? (
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => approveRec(rec.id, "approved")} disabled={isActing}
+                                  style={{ background: dark ? "#065f46" : "#dcfce7", color: t.green, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, opacity: isActing ? 0.5 : 1 }}>
+                                  {isActing ? "..." : "✓ Duyệt"}
+                                </button>
+                                <button onClick={() => approveRec(rec.id, "rejected")} disabled={isActing}
+                                  style={{ background: dark ? "#3b0d0d" : "#fee2e2", color: t.red, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, opacity: isActing ? 0.5 : 1 }}>
+                                  {isActing ? "..." : "✕ Từ chối"}
+                                </button>
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {aiTotal > AI_LIMIT && (
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12 }}>
+                <button disabled={aiOffset === 0} onClick={() => setAiOffset(o => Math.max(0, o - AI_LIMIT))}
+                  style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "6px 14px", cursor: "pointer", color: t.text }}>
+                  ← Trước
+                </button>
+                <span style={{ color: t.textMuted, fontSize: 13, padding: "6px 0" }}>
+                  {aiOffset + 1}–{Math.min(aiOffset + AI_LIMIT, aiTotal)} / {aiTotal}
+                </span>
+                <button disabled={aiOffset + AI_LIMIT >= aiTotal} onClick={() => setAiOffset(o => o + AI_LIMIT)}
+                  style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "6px 14px", cursor: "pointer", color: t.text }}>
+                  Sau →
+                </button>
               </div>
             )}
           </div>
