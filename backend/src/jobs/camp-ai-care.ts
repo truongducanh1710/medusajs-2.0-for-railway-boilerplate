@@ -54,7 +54,7 @@ VD xấu: "Hiệu suất chưa tốt, cần theo dõi thêm." ← KHÔNG chấp 
 
 ## Format dữ liệu đầu vào (compressed)
 get_camp_metrics trả về dạng pipe-separated để tiết kiệm token:
-`id|name|mkt|status|days|budget|spend|care%↑↓|cod|cpm→avg3d|trend(date:cpm:spend)`
+  id|name|mkt|status|days|budget|spend|care%↑↓|cod|cpm→avg3d|trend(date:cpm:spend)
 - status: ON=ACTIVE, OFF=PAUSED
 - care%↑ = care_pct hôm nay, ↑/↓/→ = trend CPM 3 ngày
 - cpm→avg3d: CPM hôm nay → CPM trung bình 3 ngày trước
