@@ -4,6 +4,7 @@ import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 
 const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-flash"
+const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "deepseek-v4-pro"
 const DEEPSEEK_DIRECT_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"])
 
 const SYSTEM_PROMPT = `Bạn là AI chuyên phân tích quảng cáo Facebook cho shop Phan Viet (đồ gia dụng: chổi, nồi, chảo, hộp nhựa...) tại Việt Nam.
@@ -51,6 +52,16 @@ Reason phải có: KPI cụ thể + trend + so sánh với MKT + action rõ ràn
 VD tốt: "care_pct 42% tăng 3 ngày (38→40→42%), CPM 580k vượt ngưỡng 500k, COD/Click 0.7%. Pause ngay."
 VD xấu: "Hiệu suất chưa tốt, cần theo dõi thêm." ← KHÔNG chấp nhận`
 
+const EVALUATOR_SYSTEM_PROMPT = `Bạn là evaluator độc lập kiểm tra chất lượng recommendation của AI agent phân tích quảng cáo.
+
+Với mỗi recommendation, đánh giá theo tiêu chí:
+1. Reason có chứa KPI số liệu cụ thể không (ít nhất 1 con số)?
+2. Action có logic với KPI không (vd pause camp < 3 ngày = sai)?
+3. Confidence có phù hợp với mức độ chắc chắn của reason không?
+4. Reason có ≥ 40 ký tự không?
+
+Trả về JSON với format: { "evaluations": [{ "rec_id": "uuid", "pass": true/false, "notes": "ghi chú ngắn nếu fail" }] }`
+
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
@@ -84,6 +95,20 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_recent_rejections",
+      description: "Lấy các action đã bị marketer reject trong 14 ngày cho MKT này. PHẢI gọi trước khi recommend để tránh suggest lại pattern đã bị từ chối.",
+      parameters: {
+        type: "object",
+        properties: {
+          mkt: { type: "string", description: "MKT code để filter rejection history" },
+        },
+        required: ["mkt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "recommend_action",
       description: "Ghi recommendation vào DB. Gọi cho MỖI camp đã phân tích (kể cả no_action)",
       parameters: {
@@ -100,6 +125,39 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     },
   },
 ]
+
+const UPDATE_REC_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "update_recommendation",
+    description: "Cập nhật reason/confidence của 1 recommendation đã tạo (dùng trong phase self-reflection)",
+    parameters: {
+      type: "object",
+      properties: {
+        rec_id: { type: "string", description: "UUID của recommendation cần sửa" },
+        new_reason: { type: "string", description: "Reason mới với KPI cụ thể hơn" },
+        new_confidence: { type: "string", enum: ["high", "medium", "low"] },
+      },
+      required: ["rec_id", "new_reason"],
+    },
+  },
+}
+
+function validateRecommendation(args: any, camp: any): { ok: boolean; error?: string } {
+  if (!args.reason || args.reason.length < 40)
+    return { ok: false, error: "Reason quá ngắn (<40 chars). Cần KPI số liệu cụ thể + trend + action." }
+  if (!/\d/.test(args.reason))
+    return { ok: false, error: "Reason phải chứa ít nhất 1 con số (CPM, care_pct, spend...)." }
+  if (args.action === "set_budget") {
+    if (!args.suggested_daily_budget || args.suggested_daily_budget < 50000)
+      return { ok: false, error: "set_budget cần suggested_daily_budget >= 50000 VND." }
+    if (args.suggested_daily_budget >= Number(camp.daily_budget))
+      return { ok: false, error: "Agent chỉ được GIẢM budget, không tăng." }
+  }
+  if (args.action === "pause" && Number(camp.days_running ?? 0) < 3)
+    return { ok: false, error: `Camp mới ${camp.days_running} ngày, không được pause (rule: > 3 ngày).` }
+  return { ok: true }
+}
 
 // Rule-based ground truth để bootstrap reward signal
 function ruleDecision(camp: any): { action: string; reason: string } {
@@ -157,8 +215,8 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
   const logger = container.resolve("logger") as any
   const sql = container.resolve("cskhAnalysisModule") as any
 
-  if (!process.env.OPENROUTER_API_KEY) {
-    logger?.warn?.("[CampAI] OPENROUTER_API_KEY not set, skipping")
+  if (!process.env.OPENROUTER_API_KEY && !process.env.DEEPSEEK_API_KEY) {
+    logger?.warn?.("[CampAI] No API key set (OPENROUTER_API_KEY or DEEPSEEK_API_KEY), skipping")
     return
   }
 
@@ -177,6 +235,8 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
   const campMap = new Map<string, any>()
   const toolCallLog: any[] = []
   const ruleDecisions: Record<string, any> = {}
+  // Track validation retries per campaign
+  const validationRetries: Record<string, number> = {}
 
   async function handleTool(name: string, args: any): Promise<any> {
     toolCallLog.push({ name, args, ts: Date.now() })
@@ -297,9 +357,36 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
       return rows[0]
     }
 
+    if (name === "get_recent_rejections") {
+      const rows = await sql.sql(`
+        SELECT campaign_id, action, rejection_reason, rejected_count, last_rejected_at
+        FROM agent_memory
+        WHERE mkt_name = $1 AND last_rejected_at > now() - interval '14 days'
+        ORDER BY rejected_count DESC, last_rejected_at DESC
+        LIMIT 30
+      `, [args.mkt]).catch(() => [])
+      return rows.length > 0 ? rows : { message: "Không có rejection nào trong 14 ngày — tự do recommend." }
+    }
+
     if (name === "recommend_action") {
       const camp = campMap.get(args.campaign_id)
       if (!camp) return { error: "campaign_id không tồn tại trong data đã load" }
+
+      // Structured validation with retry
+      const retries = validationRetries[args.campaign_id] ?? 0
+      if (retries < 3) {
+        const validation = validateRecommendation(args, camp)
+        if (!validation.ok) {
+          validationRetries[args.campaign_id] = retries + 1
+          logger?.warn?.(`[CampAI] Validation failed for ${args.campaign_id} (retry ${retries + 1}/3): ${validation.error}`)
+          // Update validation_retries in DB if rec already exists
+          await sql.sql(
+            `UPDATE agent_camp_recommendation SET validation_retries = $1 WHERE run_id = $2 AND campaign_id = $3`,
+            [retries + 1, runId, args.campaign_id]
+          ).catch(() => {})
+          return { error: validation.error, retry: true, validation_failed: true }
+        }
+      }
 
       const oldValue = {
         status: camp.effective_status,
@@ -343,15 +430,24 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
 
       await sql.sql(
         `INSERT INTO agent_camp_recommendation
-           (run_id, campaign_id, campaign_name, mkt_name, action, reason, old_value, suggested_value, confidence, status, executed_at, fb_response, agent_model)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13)`,
+           (run_id, campaign_id, campaign_name, mkt_name, action, reason, old_value, suggested_value, confidence, status, executed_at, fb_response, agent_model, validation_retries)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13,$14)`,
         [runId, args.campaign_id, camp.campaign_name, camp.mkt_name,
          args.action, args.reason, JSON.stringify(oldValue),
          JSON.stringify(suggestedValue), args.confidence ?? "medium",
-         status, executedAt, JSON.stringify(fbResp), activeModel]
+         status, executedAt, JSON.stringify(fbResp), activeModel,
+         validationRetries[args.campaign_id] ?? 0]
       ).catch((e: any) => logger?.error?.("[CampAI] insert rec fail:", e.message))
 
       return { ok: true, status, campaign_name: camp.campaign_name }
+    }
+
+    if (name === "update_recommendation") {
+      await sql.sql(
+        `UPDATE agent_camp_recommendation SET reason = $1, confidence = COALESCE($2, confidence) WHERE id = $3 AND run_id = $4`,
+        [args.new_reason, args.new_confidence ?? null, args.rec_id, runId]
+      ).catch((e: any) => logger?.error?.("[CampAI] update rec fail:", e.message))
+      return { ok: true }
     }
 
     return { error: `Unknown tool: ${name}` }
@@ -361,7 +457,10 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
   const mktCtx = opts?.mkt ? `MKT ${opts.mkt}` : "tất cả MKT"
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: `Hôm nay ${today}. Phân tích ${mktCtx} — camp active trong 14 ngày gần nhất. Tập trung camp đang ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Gọi recommend_action cho mỗi camp đã phân tích.` },
+    {
+      role: "user",
+      content: `Hôm nay ${today}. Phân tích ${mktCtx} — camp active trong 14 ngày gần nhất. Tập trung camp đang ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Đầu tiên gọi get_recent_rejections cho MKT đang xử lý để biết những action đã bị từ chối — không suggest lại với cùng campaign + action. Gọi recommend_action cho mỗi camp đã phân tích.`,
+    },
   ]
 
   let totalPromptTokens = 0
@@ -395,6 +494,100 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
         tool_call_id: tc.id,
         content: JSON.stringify(result),
       } as OpenAI.Chat.ChatCompletionMessageParam)
+    }
+  }
+
+  // Phase D: Self-reflection loop
+  const myRecs = await sql.sql(
+    `SELECT id, campaign_id, campaign_name, action, reason, confidence FROM agent_camp_recommendation WHERE run_id = $1`,
+    [runId]
+  ).catch(() => [])
+
+  if (myRecs.length > 0) {
+    messages.push({
+      role: "user",
+      content: `Tự critique ${myRecs.length} recommendations vừa tạo:
+${myRecs.map((r: any, i: number) => `${i + 1}. [${r.id}] [${r.action}] ${r.campaign_name}: "${r.reason}" (confidence: ${r.confidence})`).join("\n")}
+
+Với mỗi rec, đánh giá:
+- Reason có KPI cụ thể (số liệu) không?
+- Action có khớp logic không (vd pause camp < 3 ngày là sai)?
+- Confidence có hợp lý không?
+
+Nếu rec nào cần sửa, gọi update_recommendation(rec_id, new_reason, new_confidence).
+Nếu tất cả OK, trả lời "APPROVED" và dừng.`,
+    })
+
+    const reflectionTools = [...TOOLS, UPDATE_REC_TOOL]
+    for (let i = 0; i < 3; i++) {
+      const refRes = await client.chat.completions.create({
+        model: activeModel,
+        messages,
+        tools: reflectionTools,
+        tool_choice: "auto",
+        max_tokens: 2000,
+        temperature: 0.1,
+      })
+      const refMsg = refRes.choices[0].message
+      messages.push(refMsg)
+      totalPromptTokens += refRes.usage?.prompt_tokens ?? 0
+      totalCompletionTokens += refRes.usage?.completion_tokens ?? 0
+
+      if (!refMsg.tool_calls?.length) break
+
+      for (const tc of refMsg.tool_calls) {
+        let args: any = {}
+        try { args = JSON.parse(tc.function.arguments) } catch { /* ignore */ }
+        const result = await handleTool(tc.function.name, args)
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        } as OpenAI.Chat.ChatCompletionMessageParam)
+      }
+    }
+    logger?.info?.(`[CampAI] Self-reflection done for run ${runId}`)
+  }
+
+  // Phase E: Evaluator agent (independent model)
+  const recsForEval = await sql.sql(
+    `SELECT id, campaign_id, campaign_name, action, reason, confidence FROM agent_camp_recommendation WHERE run_id = $1`,
+    [runId]
+  ).catch(() => [])
+
+  if (recsForEval.length > 0) {
+    try {
+      const evalClient = new OpenAI(
+        DEEPSEEK_DIRECT_MODELS.has(EVALUATOR_MODEL)
+          ? { baseURL: "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp Evaluator" } }
+          : { baseURL: "https://openrouter.ai/api/v1", apiKey: process.env.OPENROUTER_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp Evaluator" } }
+      )
+
+      const evalRes = await evalClient.chat.completions.create({
+        model: EVALUATOR_MODEL,
+        messages: [
+          { role: "system", content: EVALUATOR_SYSTEM_PROMPT },
+          { role: "user", content: `Đánh giá ${recsForEval.length} recommendations:\n${JSON.stringify(recsForEval, null, 2)}` },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 3000,
+        temperature: 0,
+      })
+
+      const evalContent = evalRes.choices[0].message.content ?? "{}"
+      const evaluation = JSON.parse(evalContent) as { evaluations?: Array<{ rec_id: string; pass: boolean; notes: string }> }
+
+      if (evaluation.evaluations?.length) {
+        for (const ev of evaluation.evaluations) {
+          await sql.sql(
+            `UPDATE agent_camp_recommendation SET reflection_passed = $1, reflection_notes = $2, evaluator_model = $3 WHERE id = $4 AND run_id = $5`,
+            [ev.pass, ev.notes ?? null, EVALUATOR_MODEL, ev.rec_id, runId]
+          ).catch(() => {})
+        }
+        logger?.info?.(`[CampAI] Evaluator done for run ${runId}, evaluated ${evaluation.evaluations.length} recs`)
+      }
+    } catch (evalErr: any) {
+      logger?.warn?.(`[CampAI] Evaluator failed (non-blocking): ${evalErr.message}`)
     }
   }
 

@@ -60,14 +60,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 /**
  * POST /admin/pancake-sync/report/camp-ai
- * Body: { mkt?: string } — manual trigger
+ * Body: { mkt?: string, model?: string, parallel?: boolean } — manual trigger
+ * parallel=true fires 1 agent per active MKT concurrently (no mkt filter needed)
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { mkt, model } = (req.body as any) || {}
+    const { mkt, model, parallel } = (req.body as any) || {}
     const container = (req as any).scope
-
     const modelLabel = model ? ` [${model}]` : ""
+
+    if (parallel && !mkt) {
+      const sql = req.scope.resolve("cskhAnalysisModule") as any
+      const mkts = await sql.sql(`
+        SELECT DISTINCT mkt_name FROM mkt_ads_cost
+        WHERE date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 14
+          AND deleted_at IS NULL AND spend > 0
+        ORDER BY mkt_name
+      `).catch(() => [])
+
+      for (const m of mkts) {
+        campAiCare(container, { mkt: m.mkt_name, model }).catch((e: any) =>
+          console.error(`[CampAI parallel] MKT=${m.mkt_name} error:`, e.message)
+        )
+      }
+      return res.json({ ok: true, message: `Đang chạy ${mkts.length} agents song song${modelLabel}`, mkts: mkts.map((m: any) => m.mkt_name) })
+    }
+
     campAiCare(container, { mkt, model }).catch((e: any) =>
       console.error("[CampAI manual] Error:", e.message)
     )

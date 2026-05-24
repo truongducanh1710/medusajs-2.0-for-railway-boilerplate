@@ -4,12 +4,12 @@ import { callFbApi } from "../../camp-control/_lib"
 
 /**
  * PATCH /admin/pancake-sync/report/camp-ai/:id
- * Body: { decision: "approved" | "rejected" }
+ * Body: { decision: "approved" | "rejected", rejection_reason?: string }
  */
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { id } = req.params
-    const { decision } = (req.body as any) || {}
+    const { decision, rejection_reason } = (req.body as any) || {}
     if (!["approved", "rejected"].includes(decision)) {
       return res.status(400).json({ error: "decision phải là approved hoặc rejected" })
     }
@@ -35,10 +35,22 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     }
 
     if (decision === "rejected") {
+      const rejectNote = typeof rejection_reason === "string" ? rejection_reason.slice(0, 500) : null
       await sql.sql(
-        `UPDATE agent_camp_recommendation SET status='rejected', approved_by=$1, approved_at=now() WHERE id=$2`,
-        [auth.email, id]
+        `UPDATE agent_camp_recommendation SET status='rejected', approved_by=$1, approved_at=now(), rejection_reason=$2 WHERE id=$3`,
+        [auth.email, rejectNote, id]
       )
+      // Episodic memory: upsert so agent learns from this rejection
+      if (rec.action && rec.action !== "no_action") {
+        await sql.sql(`
+          INSERT INTO agent_memory (campaign_id, mkt_name, action, rejection_reason)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (campaign_id, action) DO UPDATE
+            SET rejected_count = agent_memory.rejected_count + 1,
+                last_rejected_at = now(),
+                rejection_reason = EXCLUDED.rejection_reason
+        `, [rec.campaign_id, rec.mkt_name, rec.action, rejectNote ?? "Marketer rejected"]).catch(() => {})
+      }
       // Update reward signal
       await updateRolloutReward(rec.run_id, sql)
       return res.json({ ok: true, status: "rejected" })

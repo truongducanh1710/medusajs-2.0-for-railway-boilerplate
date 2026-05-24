@@ -117,6 +117,13 @@ export default function BaoCaoMktPage() {
   const [aiOffset, setAiOffset] = useState(0)
   const AI_LIMIT = 50
   const [aiModel, setAiModel] = useState("deepseek-v4-flash")
+  const [aiParallel, setAiParallel] = useState(false)
+  const [aiReasoningRec, setAiReasoningRec] = useState<any | null>(null)
+  const [aiReasoningTrace, setAiReasoningTrace] = useState<any[]>([])
+  const [aiReasoningRecs, setAiReasoningRecs] = useState<any[]>([])
+  const [aiReasoningLoading, setAiReasoningLoading] = useState(false)
+  const [aiRejectNoteId, setAiRejectNoteId] = useState<string | null>(null)
+  const [aiRejectNote, setAiRejectNote] = useState("")
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -323,25 +330,45 @@ export default function BaoCaoMktPage() {
     try {
       const res = await apiFetch("/admin/pancake-sync/report/camp-ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: aiModel }),
+        body: JSON.stringify({ model: aiModel, parallel: aiParallel || undefined }),
       })
       const data = await res.json()
       alert(data.message ?? "Agent đã chạy, chờ ~30s rồi refresh")
     } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiTriggering(false) }
-  }, [aiModel])
+  }, [aiModel, aiParallel])
 
-  const approveRec = useCallback(async (id: string, decision: "approved" | "rejected") => {
+  const openReasoning = useCallback(async (rec: any) => {
+    setAiReasoningRec(rec)
+    setAiReasoningLoading(true)
+    setAiReasoningTrace([])
+    setAiReasoningRecs([])
+    try {
+      const p = new URLSearchParams({ run_id: rec.run_id, campaign_id: rec.campaign_id })
+      const res = await apiFetch(`/admin/pancake-sync/report/camp-ai/reasoning?${p}`)
+      const data = await res.json()
+      setAiReasoningTrace(data.trace ?? [])
+      setAiReasoningRecs(data.recommendations ?? [])
+    } catch { /* ignore */ } finally { setAiReasoningLoading(false) }
+  }, [])
+
+  const approveRecWithNote = useCallback(async (id: string, decision: "approved" | "rejected", rejection_reason?: string) => {
     setAiApproving(id)
     try {
       const res = await apiFetch(`/admin/pancake-sync/report/camp-ai/${id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify({ decision, rejection_reason }),
       })
       const data = await res.json()
       if (!res.ok) { alert("Lỗi: " + (data.error ?? "unknown")); return }
+      setAiRejectNoteId(null)
+      setAiRejectNote("")
       await fetchAiRecs()
     } finally { setAiApproving(null) }
   }, [fetchAiRecs])
+
+  const approveRec = useCallback(async (id: string, decision: "approved" | "rejected") => {
+    await approveRecWithNote(id, decision)
+  }, [approveRecWithNote])
 
   const fetchFbAccounts = useCallback(async () => {
     setFbLoading(true)
@@ -1495,6 +1522,10 @@ export default function BaoCaoMktPage() {
                       <option value="openai/gpt-4o">GPT-4o</option>
                     </optgroup>
                   </select>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: t.textMuted, userSelect: "none" }}>
+                    <input type="checkbox" checked={aiParallel} onChange={e => setAiParallel(e.target.checked)} />
+                    Song song theo MKT
+                  </label>
                   <button onClick={triggerAiRun} disabled={aiTriggering}
                     style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", cursor: aiTriggering ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiTriggering ? 0.6 : 1 }}>
                     {aiTriggering ? "Đang chạy..." : "▶ Chạy AI ngay"}
@@ -1581,18 +1612,40 @@ export default function BaoCaoMktPage() {
                             )}
                           </td>
                           <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                            {isPending && (isSuper || canControl) ? (
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <button onClick={() => approveRec(rec.id, "approved")} disabled={isActing}
-                                  style={{ background: dark ? "#065f46" : "#dcfce7", color: t.green, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, opacity: isActing ? 0.5 : 1 }}>
-                                  {isActing ? "..." : "✓ Duyệt"}
+                            <div style={{ display: "flex", gap: 6, flexDirection: "column" }}>
+                              {isPending && (isSuper || canControl) ? (
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button onClick={() => approveRec(rec.id, "approved")} disabled={isActing}
+                                    style={{ background: dark ? "#065f46" : "#dcfce7", color: t.green, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, opacity: isActing ? 0.5 : 1 }}>
+                                    {isActing ? "..." : "✓ Duyệt"}
+                                  </button>
+                                  {aiRejectNoteId === rec.id ? (
+                                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                      <input value={aiRejectNote} onChange={e => setAiRejectNote(e.target.value)}
+                                        placeholder="Lý do từ chối..."
+                                        style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "3px 8px", color: t.inputText, fontSize: 12, width: 160 }} />
+                                      <button onClick={() => approveRecWithNote(rec.id, "rejected", aiRejectNote || undefined)} disabled={isActing}
+                                        style={{ background: dark ? "#3b0d0d" : "#fee2e2", color: t.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>
+                                        Xác nhận
+                                      </button>
+                                      <button onClick={() => { setAiRejectNoteId(null); setAiRejectNote("") }}
+                                        style={{ background: "transparent", border: "none", color: t.textMuted, cursor: "pointer", fontSize: 12 }}>✕</button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => { setAiRejectNoteId(rec.id); setAiRejectNote("") }} disabled={isActing}
+                                      style={{ background: dark ? "#3b0d0d" : "#fee2e2", color: t.red, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, opacity: isActing ? 0.5 : 1 }}>
+                                      {isActing ? "..." : "✕ Từ chối"}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : null}
+                              {rec.run_id && (
+                                <button onClick={() => openReasoning(rec)}
+                                  style={{ background: "transparent", border: `1px solid ${t.cardBorder}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: t.textMuted }}>
+                                  🧠 AI nghĩ gì
                                 </button>
-                                <button onClick={() => approveRec(rec.id, "rejected")} disabled={isActing}
-                                  style={{ background: dark ? "#3b0d0d" : "#fee2e2", color: t.red, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, opacity: isActing ? 0.5 : 1 }}>
-                                  {isActing ? "..." : "✕ Từ chối"}
-                                </button>
-                              </div>
-                            ) : null}
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -1621,6 +1674,83 @@ export default function BaoCaoMktPage() {
           </div>
         )
       })()}
+
+      {/* Reasoning Trace Modal */}
+      {aiReasoningRec && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 20px", overflowY: "auto" }}
+          onClick={e => { if (e.target === e.currentTarget) { setAiReasoningRec(null) } }}>
+          <div style={{ background: dark ? "#1a1a2e" : "#fff", border: `1px solid ${dark ? "#334155" : "#e2e8f0"}`, borderRadius: 12, padding: 24, width: "100%", maxWidth: 800, maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: dark ? "#f1f5f9" : "#1e293b" }}>
+                  🧠 AI Reasoning — {aiReasoningRec.campaign_name}
+                </div>
+                <div style={{ fontSize: 12, color: dark ? "#94a3b8" : "#64748b", marginTop: 4 }}>
+                  Run: {aiReasoningRec.run_id?.slice(0, 8)}...
+                </div>
+              </div>
+              <button onClick={() => setAiReasoningRec(null)}
+                style={{ background: "transparent", border: "none", color: dark ? "#94a3b8" : "#64748b", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+
+            {/* Reflection info */}
+            {aiReasoningRecs.length > 0 && (() => {
+              const recInfo = aiReasoningRecs.find((r: any) => r.campaign_id === aiReasoningRec.campaign_id)
+              if (!recInfo) return null
+              const passed = recInfo.reflection_passed
+              return (
+                <div style={{ background: dark ? (passed === true ? "#052e16" : passed === false ? "#3b0d0d" : "#1e293b") : (passed === true ? "#f0fdf4" : passed === false ? "#fef2f2" : "#f8fafc"), border: `1px solid ${passed === true ? "#16a34a" : passed === false ? "#dc2626" : dark ? "#334155" : "#e2e8f0"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12 }}>
+                  <span style={{ fontWeight: 600, color: passed === true ? "#16a34a" : passed === false ? "#dc2626" : dark ? "#94a3b8" : "#64748b" }}>
+                    {passed === true ? "✓ Evaluator: PASSED" : passed === false ? "✗ Evaluator: FAILED" : "⏳ Chưa evaluate"}
+                  </span>
+                  {recInfo.reflection_notes && <span style={{ color: dark ? "#cbd5e1" : "#475569", marginLeft: 8 }}>— {recInfo.reflection_notes}</span>}
+                  {recInfo.validation_retries > 0 && <span style={{ color: dark ? "#f59e0b" : "#d97706", marginLeft: 8 }}>({recInfo.validation_retries} lần retry validation)</span>}
+                </div>
+              )
+            })()}
+
+            {aiReasoningLoading ? (
+              <div style={{ color: dark ? "#94a3b8" : "#64748b", textAlign: "center", padding: 40 }}>Đang tải trace...</div>
+            ) : aiReasoningTrace.length === 0 ? (
+              <div style={{ color: dark ? "#94a3b8" : "#64748b", textAlign: "center", padding: 40 }}>Không có trace cho campaign này.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {aiReasoningTrace.map((msg: any, i: number) => {
+                  const role = msg.role
+                  const bgMap: Record<string, string> = {
+                    system: dark ? "#1e293b" : "#f1f5f9",
+                    user: dark ? "#1e3a5f" : "#dbeafe",
+                    assistant: dark ? "#052e16" : "#f0fdf4",
+                    tool: dark ? "#2d1f4e" : "#faf5ff",
+                  }
+                  const labelMap: Record<string, string> = { system: "SYSTEM", user: "USER", assistant: "ASSISTANT", tool: "TOOL RESULT" }
+                  const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content, null, 2)
+                  return (
+                    <div key={i} style={{ background: bgMap[role] ?? bgMap.assistant, borderRadius: 8, padding: "10px 14px" }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: dark ? "#94a3b8" : "#64748b", marginBottom: 6, letterSpacing: 1 }}>{labelMap[role] ?? role.toUpperCase()}</div>
+                      {msg.tool_calls?.map((tc: any, j: number) => (
+                        <details key={j} style={{ marginBottom: 6 }}>
+                          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, color: dark ? "#a78bfa" : "#7c3aed" }}>
+                            🔧 {tc.function?.name}()
+                          </summary>
+                          <pre style={{ fontSize: 11, color: dark ? "#cbd5e1" : "#475569", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: "6px 0 0", background: dark ? "#0f172a" : "#f8fafc", borderRadius: 6, padding: 8 }}>
+                            {JSON.stringify(JSON.parse(tc.function?.arguments ?? "{}"), null, 2)}
+                          </pre>
+                        </details>
+                      ))}
+                      {content && (
+                        <pre style={{ fontSize: 12, color: dark ? "#e2e8f0" : "#1e293b", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "inherit" }}>
+                          {content.length > 2000 ? content.slice(0, 2000) + "\n… [truncated]" : content}
+                        </pre>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
