@@ -194,25 +194,25 @@ async function canAutoExecute(campaignId: string, action: string, suggestedBudge
 
   // Chỉ giảm budget, không tăng
   if (action === "set_budget" && suggestedBudget != null) {
-    const rows = await sql(`SELECT daily_budget FROM mkt_ads_cost WHERE campaign_id = $1 ORDER BY date DESC LIMIT 1`, [campaignId]).catch(() => [])
+    const rows = await sql.sql(`SELECT daily_budget FROM mkt_ads_cost WHERE campaign_id = $1 ORDER BY date DESC LIMIT 1`, [campaignId]).catch(() => [])
     if (!rows.length || suggestedBudget >= Number(rows[0].daily_budget)) return false
   }
 
   // MKT phải được admin bật agent_auto
-  const autoUsers = await sql(
+  const autoUsers = await sql.sql(
     `SELECT metadata->>'mkt_code' as mkt_code FROM "user" WHERE metadata->>'agent_auto' = 'true' AND deleted_at IS NULL`
   ).catch(() => [])
   if (!autoUsers.some((u: any) => u.mkt_code === mktName)) return false
 
   // Không conflict với pending manual schedule
-  const pending = await sql(
+  const pending = await sql.sql(
     `SELECT id FROM camp_schedule WHERE campaign_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
     [campaignId]
   ).catch(() => [])
   if (pending.length > 0) return false
 
   // Rate limit: 1 auto action / camp / giờ
-  const recent = await sql(
+  const recent = await sql.sql(
     `SELECT id FROM camp_action_log WHERE campaign_id = $1 AND source = 'agent' AND created_at > now() - interval '1 hour'`,
     [campaignId]
   ).catch(() => [])
