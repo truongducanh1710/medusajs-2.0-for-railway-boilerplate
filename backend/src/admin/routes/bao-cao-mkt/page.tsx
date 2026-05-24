@@ -133,6 +133,8 @@ export default function BaoCaoMktPage() {
   const [aiReasoningLoading, setAiReasoningLoading] = useState(false)
   const [aiRejectNoteId, setAiRejectNoteId] = useState<string | null>(null)
   const [aiRejectNote, setAiRejectNote] = useState("")
+  // Realtime heartbeat polling
+  const [aiHeartbeats, setAiHeartbeats] = useState<any[]>([])
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -449,6 +451,22 @@ export default function BaoCaoMktPage() {
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "fb-history") fetchFbHistory() }, [activeTab, jobsSubTab, fetchFbHistory])
   useEffect(() => { if (activeTab === "fbaccounts" && canManageFb) fetchFbAccounts() }, [activeTab, canManageFb, fetchFbAccounts])
   useEffect(() => { if (activeTab === "ai") fetchAiRecs() }, [activeTab, fetchAiRecs])
+
+  // Realtime heartbeat polling — chỉ active khi đang ở tab AI
+  useEffect(() => {
+    if (activeTab !== "ai") return
+    let stopped = false
+    const fetchHeartbeats = async () => {
+      try {
+        const res = await apiFetch("/admin/pancake-sync/report/camp-ai/heartbeat")
+        const data = await res.json()
+        if (!stopped) setAiHeartbeats(data.heartbeats ?? [])
+      } catch { /* ignore */ }
+    }
+    fetchHeartbeats()
+    const interval = setInterval(fetchHeartbeats, 2000)
+    return () => { stopped = true; clearInterval(interval) }
+  }, [activeTab])
   useEffect(() => {
     fetchCronStatus()
     const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
@@ -1553,6 +1571,34 @@ export default function BaoCaoMktPage() {
               )}
               <span style={{ color: t.textMuted, fontSize: 12 }}>{aiTotal} recommendations</span>
             </div>
+
+            {/* Realtime heartbeat banner */}
+            {aiHeartbeats.length > 0 && (
+              <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                {aiHeartbeats.map((hb: any) => {
+                  const isActive = hb.phase !== "done" && hb.phase !== "error" && hb.stale_seconds < 120
+                  const isError = hb.phase === "error"
+                  const isDone = hb.phase === "done"
+                  const phaseIcon = isError ? "❌" : isDone ? "✅" : hb.phase === "evaluator" ? "📊" : hb.phase === "reflection" ? "🔁" : "🔵"
+                  const phaseColor = isError ? "#dc2626" : isDone ? "#16a34a" : "#3b82f6"
+                  const bg = isError ? (dark ? "#3b0d0d" : "#fef2f2") : isDone ? (dark ? "#052e16" : "#f0fdf4") : (dark ? "#0c1f3a" : "#dbeafe")
+                  return (
+                    <div key={hb.run_id} style={{ background: bg, border: `1px solid ${phaseColor}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: dark ? "#e2e8f0" : "#1e293b", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 16 }}>{phaseIcon}</span>
+                      <span style={{ fontWeight: 600 }}>{hb.model}{hb.mkt ? ` · ${hb.mkt}` : ""}</span>
+                      <span style={{ color: phaseColor, fontWeight: 600, textTransform: "uppercase", fontSize: 10 }}>{hb.phase}</span>
+                      {!isDone && !isError && <span style={{ background: phaseColor, color: "#fff", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>iter {hb.iteration}/30</span>}
+                      <span style={{ color: dark ? "#94a3b8" : "#64748b", flex: 1, minWidth: 200 }}>{hb.last_action}</span>
+                      <span style={{ color: dark ? "#94a3b8" : "#64748b", fontSize: 11 }}>
+                        {hb.recs_so_far ?? 0} recs · {hb.tokens_used ?? 0} tokens · {hb.runtime_seconds}s
+                        {isActive && hb.stale_seconds > 30 && <span style={{ color: "#d97706", marginLeft: 6 }}>⏳ {hb.stale_seconds}s stale</span>}
+                      </span>
+                      {hb.error && <div style={{ width: "100%", color: "#dc2626", fontSize: 11, marginTop: 4 }}>Error: {hb.error}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
             {/* Run summary cards — click to filter AND open log sidebar */}
             {aiRunSummary.length > 0 && (

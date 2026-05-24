@@ -233,6 +233,20 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
   const runId = randomUUID()
   const activeModel = opts?.model ?? MODEL
 
+  // Heartbeat helper — UPSERT vào agent_heartbeat để UI polling realtime
+  async function heartbeat(updates: Partial<{ phase: string; iteration: number; last_action: string; recs_so_far: number; tokens_used: number; error: string }>) {
+    const fields = Object.keys(updates)
+    if (!fields.length) return
+    const setClause = fields.map((k, i) => `${k} = $${i + 4}`).join(", ") + ", updated_at = now()"
+    const values = fields.map(k => (updates as any)[k])
+    await sql.sql(
+      `INSERT INTO agent_heartbeat (run_id, model, mkt, ${fields.join(", ")}, updated_at)
+       VALUES ($1, $2, $3, ${fields.map((_, i) => `$${i + 4}`).join(", ")}, now())
+       ON CONFLICT (run_id) DO UPDATE SET ${setClause}`,
+      [runId, activeModel, opts?.mkt ?? null, ...values]
+    ).catch(() => {})
+  }
+
   const client = new OpenAI(
     DEEPSEEK_DIRECT_MODELS.has(activeModel)
       ? { baseURL: "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp AI" } }
@@ -501,34 +515,58 @@ Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Gọi
   let totalCompletionTokens = 0
   const MAX_ITERATIONS = 30
 
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const res = await client.chat.completions.create({
-      model: activeModel,
-      messages,
-      tools: TOOLS,
-      tool_choice: "auto",
-      max_tokens: 4000,
-      temperature: 0.2,
-    })
+  await heartbeat({ phase: "starting", iteration: 0, last_action: "Khởi tạo agent..." })
 
-    const msg = res.choices[0].message
-    messages.push(msg)
-    totalPromptTokens += res.usage?.prompt_tokens ?? 0
-    totalCompletionTokens += res.usage?.completion_tokens ?? 0
+  try {
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      await heartbeat({ phase: "tool_loop", iteration: i + 1, last_action: `Iter ${i + 1}: đang suy nghĩ...`, tokens_used: totalPromptTokens + totalCompletionTokens })
 
-    if (!msg.tool_calls?.length) break
+      const res = await client.chat.completions.create({
+        model: activeModel,
+        messages,
+        tools: TOOLS,
+        tool_choice: "auto",
+        max_tokens: 4000,
+        temperature: 0.2,
+      })
 
-    // Process all tool calls
-    for (const tc of msg.tool_calls) {
-      let args: any = {}
-      try { args = JSON.parse(tc.function.arguments) } catch { /* ignore */ }
-      const result = await handleTool(tc.function.name, args)
-      messages.push({
-        role: "tool",
-        tool_call_id: tc.id,
-        content: JSON.stringify(result),
-      } as OpenAI.Chat.ChatCompletionMessageParam)
+      const msg = res.choices[0].message
+      messages.push(msg)
+      totalPromptTokens += res.usage?.prompt_tokens ?? 0
+      totalCompletionTokens += res.usage?.completion_tokens ?? 0
+
+      if (!msg.tool_calls?.length) {
+        await heartbeat({ last_action: `Iter ${i + 1}: agent kết thúc (text-only, không gọi tool)`, tokens_used: totalPromptTokens + totalCompletionTokens })
+        break
+      }
+
+      // Process all tool calls
+      const toolNames = msg.tool_calls.map(tc => {
+        try { const a = JSON.parse(tc.function.arguments); return `${tc.function.name}(${a.mkt ?? a.campaign_id ?? ""})` }
+        catch { return tc.function.name }
+      }).join(", ")
+      await heartbeat({ last_action: `Iter ${i + 1}: gọi ${msg.tool_calls.length} tool — ${toolNames}` })
+
+      for (const tc of msg.tool_calls) {
+        let args: any = {}
+        try { args = JSON.parse(tc.function.arguments) } catch { /* ignore */ }
+        const result = await handleTool(tc.function.name, args)
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        } as OpenAI.Chat.ChatCompletionMessageParam)
+
+        // Update recs_so_far nếu là recommend_action thành công
+        if (tc.function.name === "recommend_action" && (result as any)?.ok) {
+          const cnt = await sql.sql(`SELECT COUNT(*)::int as n FROM agent_camp_recommendation WHERE run_id = $1`, [runId]).catch(() => [{ n: 0 }])
+          await heartbeat({ recs_so_far: cnt[0]?.n ?? 0 })
+        }
+      }
     }
+  } catch (loopErr: any) {
+    await heartbeat({ phase: "error", error: loopErr.message?.slice(0, 500) })
+    throw loopErr
   }
 
   // Phase D: Self-reflection loop
@@ -538,6 +576,7 @@ Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Gọi
   ).catch(() => [])
 
   if (myRecs.length > 0) {
+    await heartbeat({ phase: "reflection", last_action: `Self-critique ${myRecs.length} recommendations...` })
     messages.push({
       role: "user",
       content: `Tự critique ${myRecs.length} recommendations vừa tạo:
@@ -590,6 +629,7 @@ Nếu tất cả OK, trả lời "APPROVED" và dừng.`,
   ).catch(() => [])
 
   if (recsForEval.length > 0) {
+    await heartbeat({ phase: "evaluator", last_action: `Evaluator ${EVALUATOR_MODEL} đang đánh giá ${recsForEval.length} recs...` })
     try {
       const evalClient = new OpenAI(
         DEEPSEEK_DIRECT_MODELS.has(EVALUATOR_MODEL)
@@ -642,6 +682,8 @@ Nếu tất cả OK, trả lời "APPROVED" và dừng.`,
     [runId, JSON.stringify(messages), JSON.stringify(toolCallLog),
      JSON.stringify(ruleDecisions), JSON.stringify(outcomes), activeModel]
   ).catch(() => {})
+
+  await heartbeat({ phase: "done", last_action: `Hoàn thành: ${outcomes.total} recs (${outcomes.pause} pause, ${outcomes.set_budget} budget, ${outcomes.no_action} no_action)`, recs_so_far: outcomes.total, tokens_used: totalPromptTokens + totalCompletionTokens })
 
   logger?.info?.(`[CampAI] Run ${runId} done — ${outcomes.total} recs, ${outcomes.auto_executed} auto_exec, tokens=${totalPromptTokens}+${totalCompletionTokens}`)
   return { run_id: runId, outcomes }
