@@ -263,7 +263,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
           COALESCE(h.cod_orders, 0) AS cod_today,
           MIN(first_seen.date) AS first_date,
           (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - MIN(first_seen.date) AS days_running,
-          (SELECT ROUND(AVG(h3.cpm)) FROM mkt_ads_cost h3
+          (SELECT ROUND(AVG(h3.spend::numeric / h3.impressions * 1000)) FROM mkt_ads_cost h3
             WHERE h3.campaign_id = c.campaign_id
               AND h3.date BETWEEN (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 4 AND (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 1
               AND h3.impressions > 0) AS cpm_avg_3d
@@ -310,7 +310,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
             CASE WHEN clicks > 0 THEN ROUND(spend::numeric / clicks) END AS cpc,
             CASE WHEN impressions > 0 THEN ROUND(clicks::numeric / impressions * 100, 2) END AS ctr
           FROM mkt_ads_cost
-          WHERE campaign_id = ANY($1::varchar[])
+          WHERE campaign_id = ANY($1::text[])
             AND date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 7
             AND date <= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
             AND deleted_at IS NULL
