@@ -79,7 +79,15 @@ Bạn KHÔNG có rules cứng. Tự dùng data để diagnose + đề xuất act
 - Camp PAUSED có care_7d < 25% và spend > 0 trong window → có thể resume
 - Camp ACTIVE care_today < 20% và budget < median MKT → có thể tăng budget
 - Reason PHẢI có số liệu cụ thể từ query (vd "care_3d=42%, care_7d=18% → trend xấu đi")
-- KHÔNG recommend nếu data không đủ (vd camp < 3 ngày)`
+- KHÔNG recommend nếu data không đủ (vd camp < 3 ngày)
+
+## QUY TẮC TRÁNH SPAM (CRITICAL)
+- TRƯỚC khi recommend_action, PHẢI query agent_camp_recommendation:
+    SELECT campaign_id, action, status, created_at FROM agent_camp_recommendation
+    WHERE created_at > now() - interval '24 hours' AND status IN ('pending','approved','auto_executed')
+- Nếu camp đã có rec pending/approved/auto_executed trong 24h → SKIP (không recommend nữa)
+- Chỉ recommend lại nếu marketer đã reject (cần thử action khác) hoặc rec đã expired
+- Tránh recommend trùng action cho cùng camp trong cùng ngày`
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
@@ -234,6 +242,25 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
     }
 
     if (name === "recommend_action") {
+      // Dedup check: skip nếu camp đã có rec pending/approved/auto_executed trong 24h CỦA RUN KHÁC
+      const recentRecs = await sql.sql(
+        `SELECT id, action, status, run_id, created_at
+         FROM agent_camp_recommendation
+         WHERE campaign_id = $1
+           AND status IN ('pending','approved','auto_executed')
+           AND created_at > now() - interval '24 hours'
+           AND run_id <> $2
+         LIMIT 1`,
+        [args.campaign_id, runId]
+      ).catch(() => [])
+      if (recentRecs.length > 0) {
+        const r = recentRecs[0]
+        return {
+          error: `Camp đã có rec '${r.action}' status='${r.status}' trong 24h (id=${r.id}, run=${r.run_id?.slice(0, 8)}). SKIP để tránh duplicate.`,
+          skipped: true,
+        }
+      }
+
       // Lookup camp current state từ DB (không cần campMap nữa)
       const campRows = await sql.sql(
         `SELECT campaign_id, campaign_name, mkt_name, effective_status, daily_budget

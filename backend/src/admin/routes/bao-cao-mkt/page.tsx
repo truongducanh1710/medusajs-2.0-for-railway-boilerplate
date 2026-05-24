@@ -1554,6 +1554,8 @@ export default function BaoCaoMktPage() {
                 <option value="approved">Đã duyệt</option>
                 <option value="rejected">Đã từ chối</option>
                 <option value="auto_executed">Tự động</option>
+                <option value="superseded">Đã thay thế</option>
+                <option value="expired">Hết hạn</option>
               </select>
               <select value={aiFilterMkt} onChange={e => { setAiFilterMkt(e.target.value); setAiOffset(0) }}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
