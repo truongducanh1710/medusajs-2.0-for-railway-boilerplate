@@ -921,140 +921,6 @@ export default function BaoCaoMktPage() {
           onChanged={fetchCampData}
         />
       )}
-    </div>
-  )
-}
-
-function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: () => void; t: any; onChanged: () => void }) {
-  const [action, setAction] = useState<"pause" | "activate" | "set_budget">("pause")
-  const [scheduledAt, setScheduledAt] = useState<string>(() => {
-    const d = new Date(Date.now() + 60 * 60 * 1000)
-    const pad = (n: number) => String(n).padStart(2, "0")
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  })
-  const [budget, setBudget] = useState<string>(String(camp.daily_budget || 500000))
-  const [schedules, setSchedules] = useState<any[]>([])
-  const [logs, setLogs] = useState<any[]>([])
-  const [submitting, setSubmitting] = useState(false)
-
-  const reload = useCallback(async () => {
-    const [sr, lr] = await Promise.all([
-      apiFetch(`/admin/pancake-sync/report/camp-control/schedule?campaign_id=${camp.campaign_id}`).then(r => r.json()).catch(() => ({ schedules: [] })),
-      apiFetch(`/admin/pancake-sync/report/camp-control/log?campaign_id=${camp.campaign_id}&limit=10`).then(r => r.json()).catch(() => ({ logs: [] })),
-    ])
-    setSchedules(sr.schedules || [])
-    setLogs(lr.logs || [])
-  }, [camp.campaign_id])
-
-  useEffect(() => { reload() }, [reload])
-
-  const submit = async () => {
-    setSubmitting(true)
-    try {
-      const payload: any = { campaign_id: camp.campaign_id, action, scheduled_at: new Date(scheduledAt).toISOString() }
-      if (action === "set_budget") payload.payload = { daily_budget: Number(budget) }
-      const res = await apiFetch("/admin/pancake-sync/report/camp-control/schedule", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      })
-      const data = await res.json()
-      if (!res.ok) { alert("Lỗi: " + (data.error || "unknown")); return }
-      await reload()
-      await onChanged()
-    } finally { setSubmitting(false) }
-  }
-
-  const cancel = async (id: string) => {
-    if (!confirm("Huỷ schedule này?")) return
-    const res = await apiFetch(`/admin/pancake-sync/report/camp-control/schedule/${id}`, { method: "DELETE" })
-    const data = await res.json()
-    if (!res.ok) { alert("Lỗi: " + (data.error || "unknown")); return }
-    await reload()
-  }
-
-  const fmtTime = (iso: string) => new Date(iso).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })
-
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: 20, maxWidth: 720, width: "92%", maxHeight: "90vh", overflow: "auto", color: t.text }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>⏰ Hẹn giờ thao tác</div>
-            <div style={{ fontSize: 12, color: t.textMuted, maxWidth: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.campaign_name}</div>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: t.text, fontSize: 20, cursor: "pointer" }}>✕</button>
-        </div>
-
-        <div style={{ background: t.cronBg, padding: 12, borderRadius: 6, marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: t.text }}>Tạo schedule mới</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <select value={action} onChange={e => setAction(e.target.value as any)}
-              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
-              <option value="pause">⏸ Tắt camp</option>
-              <option value="activate">▶ Bật camp</option>
-              <option value="set_budget">💰 Đổi ngân sách</option>
-            </select>
-            <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
-              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
-            {action === "set_budget" && (
-              <input type="number" min={50000} step={50000} value={budget} onChange={e => setBudget(e.target.value)}
-                placeholder="Ngân sách mới"
-                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "6px 10px", color: t.inputText, fontSize: 13, width: 130 }} />
-            )}
-            <button onClick={submit} disabled={submitting}
-              style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 4, padding: "6px 14px", fontSize: 13, cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1 }}>
-              {submitting ? "..." : "Tạo"}
-            </button>
-          </div>
-          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>Cron chạy mỗi phút — sai số tối đa 1 phút</div>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Schedules ({schedules.length})</div>
-          {schedules.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.textMuted, padding: 12, textAlign: "center" }}>Chưa có schedule nào</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {schedules.map((s: any) => {
-                const color = s.status === "done" ? t.green : s.status === "failed" ? t.red : s.status === "cancelled" ? t.textMuted : t.amber
-                return (
-                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: t.cronBg, borderRadius: 4, fontSize: 12 }}>
-                    <span style={{ background: color + "22", color, padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>{s.status}</span>
-                    <span style={{ color: t.text, minWidth: 80 }}>
-                      {s.action === "pause" ? "⏸ Tắt" : s.action === "activate" ? "▶ Bật" : `💰 ${(s.payload?.daily_budget ?? 0).toLocaleString("vi-VN")}đ`}
-                    </span>
-                    <span style={{ color: t.textMuted, flex: 1 }}>{fmtTime(s.scheduled_at)}</span>
-                    <span style={{ color: t.textMuted, fontSize: 10 }}>{s.created_by_email}</span>
-                    {s.status === "pending" && (
-                      <button onClick={() => cancel(s.id)} style={{ background: "transparent", border: "none", color: t.red, cursor: "pointer", fontSize: 14 }}>✕</button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Lịch sử thao tác ({logs.length})</div>
-          {logs.length === 0 ? (
-            <div style={{ fontSize: 12, color: t.textMuted, padding: 12, textAlign: "center" }}>Chưa có thao tác nào</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {logs.map((l: any) => (
-                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", fontSize: 11 }}>
-                  <span style={{ color: l.success ? t.green : t.red }}>{l.success ? "✓" : "✗"}</span>
-                  <span style={{ color: t.text, minWidth: 80 }}>
-                    {l.action === "pause" ? "⏸ Tắt" : l.action === "activate" ? "▶ Bật" : `💰 ${(l.new_value?.daily_budget ?? 0).toLocaleString("vi-VN")}đ`}
-                  </span>
-                  <span style={{ color: t.textMuted, fontSize: 10 }}>{l.source}</span>
-                  <span style={{ color: t.textMuted, flex: 1 }}>{fmtTime(l.created_at)}</span>
-                  <span style={{ color: t.textMuted, fontSize: 10 }}>{l.user_email}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* ===== TAB 3: LỊCH HẸN CAMP ===== */}
       {activeTab === "jobs" && (() => {
@@ -1583,6 +1449,138 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
     </div>
   )
 }
+
+function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: () => void; t: any; onChanged: () => void }) {
+  const [action, setAction] = useState<"pause" | "activate" | "set_budget">("pause")
+  const [scheduledAt, setScheduledAt] = useState<string>(() => {
+    const d = new Date(Date.now() + 60 * 60 * 1000)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  })
+  const [budget, setBudget] = useState<string>(String(camp.daily_budget || 500000))
+  const [schedules, setSchedules] = useState<any[]>([])
+  const [logs, setLogs] = useState<any[]>([])
+  const [submitting, setSubmitting] = useState(false)
+
+  const reload = useCallback(async () => {
+    const [sr, lr] = await Promise.all([
+      apiFetch(`/admin/pancake-sync/report/camp-control/schedule?campaign_id=${camp.campaign_id}`).then(r => r.json()).catch(() => ({ schedules: [] })),
+      apiFetch(`/admin/pancake-sync/report/camp-control/log?campaign_id=${camp.campaign_id}&limit=10`).then(r => r.json()).catch(() => ({ logs: [] })),
+    ])
+    setSchedules(sr.schedules || [])
+    setLogs(lr.logs || [])
+  }, [camp.campaign_id])
+
+  useEffect(() => { reload() }, [reload])
+
+  const submit = async () => {
+    setSubmitting(true)
+    try {
+      const payload: any = { campaign_id: camp.campaign_id, action, scheduled_at: new Date(scheduledAt).toISOString() }
+      if (action === "set_budget") payload.payload = { daily_budget: Number(budget) }
+      const res = await apiFetch("/admin/pancake-sync/report/camp-control/schedule", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert("Lỗi: " + (data.error || "unknown")); return }
+      await reload()
+      await onChanged()
+    } finally { setSubmitting(false) }
+  }
+
+  const cancel = async (id: string) => {
+    if (!confirm("Huỷ schedule này?")) return
+    const res = await apiFetch(`/admin/pancake-sync/report/camp-control/schedule/${id}`, { method: "DELETE" })
+    const data = await res.json()
+    if (!res.ok) { alert("Lỗi: " + (data.error || "unknown")); return }
+    await reload()
+  }
+
+  const fmtTime = (iso: string) => new Date(iso).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: 20, maxWidth: 720, width: "92%", maxHeight: "90vh", overflow: "auto", color: t.text }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>⏰ Hẹn giờ thao tác</div>
+            <div style={{ fontSize: 12, color: t.textMuted, maxWidth: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{camp.campaign_name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: t.text, fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ background: t.cronBg, padding: 12, borderRadius: 6, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: t.text }}>Tạo schedule mới</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <select value={action} onChange={e => setAction(e.target.value as any)}
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+              <option value="pause">⏸ Tắt camp</option>
+              <option value="activate">▶ Bật camp</option>
+              <option value="set_budget">💰 Đổi ngân sách</option>
+            </select>
+            <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+            {action === "set_budget" && (
+              <input type="number" min={50000} step={50000} value={budget} onChange={e => setBudget(e.target.value)}
+                placeholder="Ngân sách mới"
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 4, padding: "6px 10px", color: t.inputText, fontSize: 13, width: 130 }} />
+            )}
+            <button onClick={submit} disabled={submitting}
+              style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 4, padding: "6px 14px", fontSize: 13, cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1 }}>
+              {submitting ? "..." : "Tạo"}
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>Cron chạy mỗi phút — sai số tối đa 1 phút</div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Schedules ({schedules.length})</div>
+          {schedules.length === 0 ? (
+            <div style={{ fontSize: 12, color: t.textMuted, padding: 12, textAlign: "center" }}>Chưa có schedule nào</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {schedules.map((s: any) => {
+                const color = s.status === "done" ? t.green : s.status === "failed" ? t.red : s.status === "cancelled" ? t.textMuted : t.amber
+                return (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: t.cronBg, borderRadius: 4, fontSize: 12 }}>
+                    <span style={{ background: color + "22", color, padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>{s.status}</span>
+                    <span style={{ color: t.text, minWidth: 80 }}>
+                      {s.action === "pause" ? "⏸ Tắt" : s.action === "activate" ? "▶ Bật" : `💰 ${(s.payload?.daily_budget ?? 0).toLocaleString("vi-VN")}đ`}
+                    </span>
+                    <span style={{ color: t.textMuted, flex: 1 }}>{fmtTime(s.scheduled_at)}</span>
+                    <span style={{ color: t.textMuted, fontSize: 10 }}>{s.created_by_email}</span>
+                    {s.status === "pending" && (
+                      <button onClick={() => cancel(s.id)} style={{ background: "transparent", border: "none", color: t.red, cursor: "pointer", fontSize: 14 }}>✕</button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Lịch sử thao tác ({logs.length})</div>
+          {logs.length === 0 ? (
+            <div style={{ fontSize: 12, color: t.textMuted, padding: 12, textAlign: "center" }}>Chưa có thao tác nào</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {logs.map((l: any) => (
+                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", fontSize: 11 }}>
+                  <span style={{ color: l.success ? t.green : t.red }}>{l.success ? "✓" : "✗"}</span>
+                  <span style={{ color: t.text, minWidth: 80 }}>
+                    {l.action === "pause" ? "⏸ Tắt" : l.action === "activate" ? "▶ Bật" : `💰 ${(l.new_value?.daily_budget ?? 0).toLocaleString("vi-VN")}đ`}
+                  </span>
+                  <span style={{ color: t.textMuted, fontSize: 10 }}>{l.source}</span>
+                  <span style={{ color: t.textMuted, flex: 1 }}>{fmtTime(l.created_at)}</span>
+                  <span style={{ color: t.textMuted, fontSize: 10 }}>{l.user_email}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
 
 export const config = defineRouteConfig({
   label: "Doanh số MKT",
