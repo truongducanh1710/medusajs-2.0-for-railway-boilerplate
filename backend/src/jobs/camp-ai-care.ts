@@ -383,11 +383,6 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
 
     if (!msg.tool_calls?.length) break
 
-    const toolResults: OpenAI.Chat.ChatCompletionMessageParam = {
-      role: "tool" as const,
-      tool_call_id: msg.tool_calls[0].tool_call_id,
-      content: "",
-    }
     // Process all tool calls
     for (const tc of msg.tool_calls) {
       let args: any = {}
@@ -395,13 +390,10 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
       const result = await handleTool(tc.function.name, args)
       messages.push({
         role: "tool",
-        tool_call_id: tc.tool_call_id,
+        tool_call_id: tc.id,
         content: JSON.stringify(result),
       } as OpenAI.Chat.ChatCompletionMessageParam)
     }
-    // Remove the placeholder we added
-    messages.pop()
-    void toolResults
   }
 
   // Tính outcomes
