@@ -4,7 +4,7 @@ import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 
 const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-pro"
-const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "deepseek-v4-pro"
+const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "google/gemini-3.5-flash"
 const DEEPSEEK_DIRECT_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"])
 
 const SYSTEM_PROMPT = `Bạn là AI chuyên phân tích quảng cáo Facebook cho shop Phan Viet (đồ gia dụng: chổi, nồi, chảo, hộp nhựa...) tại Việt Nam.
