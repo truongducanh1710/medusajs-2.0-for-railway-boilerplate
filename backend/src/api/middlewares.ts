@@ -66,6 +66,8 @@ export default defineMiddlewares({
     { matcher: "/admin/pancake-sync/fb-accounts*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-backfill*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-status*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/pancake-sync/report/camp-control*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
+    { matcher: "/admin/pancake-sync/report/camp-control*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
 
     // Quản lý user — không chặn ở đây vì Medusa native auth đã guard /admin/users
     // requirePerm chạy trước auth_context được inject nên sẽ 401

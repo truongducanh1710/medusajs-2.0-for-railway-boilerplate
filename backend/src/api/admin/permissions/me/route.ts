@@ -12,5 +12,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
     ? (user.metadata as any).permissions
     : []
-  res.json({ email: user.email, permissions: isSuper ? "*" : perms, is_super: isSuper })
+  const mktCode = (user.metadata as any)?.mkt_code ?? null
+  res.json({ email: user.email, permissions: isSuper ? "*" : perms, is_super: isSuper, mkt_code: mktCode })
 }

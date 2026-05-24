@@ -26,6 +26,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
   const [perms, setPerms] = useState<string[]>(
     Array.isArray(data?.metadata?.permissions) ? data.metadata.permissions : []
   )
+  const [mktCode, setMktCode] = useState<string>((data?.metadata?.mkt_code as string) ?? "")
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
@@ -42,7 +43,11 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          metadata: { ...(data.metadata ?? {}), permissions: perms },
+          metadata: {
+            ...(data.metadata ?? {}),
+            permissions: perms,
+            mkt_code: mktCode.trim().toUpperCase() || null,
+          },
         }),
       })
       setMsg(res.ok ? { text: "Đã cập nhật quyền thành công", ok: true } : { text: "Lưu thất bại", ok: false })
@@ -64,6 +69,20 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
           <Btn onClick={() => applyPreset("sale")}>Sale</Btn>
           <Btn onClick={() => setPerms([])}>Xóa hết</Btn>
         </div>
+      </div>
+
+      <div className="flex items-center gap-3 pb-3 border-b">
+        <label className="text-sm font-medium">MKT Code:</label>
+        <input
+          type="text"
+          value={mktCode}
+          onChange={(e) => setMktCode(e.target.value)}
+          placeholder="VD: KIENLB, NAMDV (để trống nếu không phải marketer)"
+          className="px-2 py-1 text-sm border rounded font-mono uppercase flex-1 max-w-xs"
+        />
+        <span className="text-xs text-gray-500">
+          User chỉ bật/tắt được camp có MKT code này
+        </span>
       </div>
 
       {perms.length === 0 && (

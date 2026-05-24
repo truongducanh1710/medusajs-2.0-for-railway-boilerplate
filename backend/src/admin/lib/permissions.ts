@@ -20,6 +20,7 @@ export const PERMISSIONS = {
   "page.cskh.manage": "Quản lý hiệu suất đội CSKH (xem KPI per nhân viên)",
   "page.gia-von.view": "Xem trang giá vốn",
   "page.gia-von.manage": "Nhập/sửa lô hàng giá vốn",
+  "page.bao-cao.camp-control": "Bật/tắt camp + chỉnh ngân sách FB Ads",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
