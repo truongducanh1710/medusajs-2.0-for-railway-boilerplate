@@ -96,7 +96,23 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const cash = 0
   const cod = isSepay ? 0 : totalPrice
 
-  // Ghi chú: kết hợp ghi chú khách + gifts + payment method
+  // UTM từ order metadata (set bởi storefront qua cookie pvw_utm)
+  const utmSource = order.metadata?.utm_source as string | undefined
+  const utmMedium = order.metadata?.utm_medium as string | undefined
+  const utmCampaign = order.metadata?.utm_campaign as string | undefined
+  const utmContent = order.metadata?.utm_content as string | undefined
+  const utmTerm = order.metadata?.utm_term as string | undefined
+
+  // Extract MKT code từ utm_source: "7/3_KIENLB_HỘP NHỰA..." → "KIENLB"
+  let mktCode: string | undefined
+  if (utmSource) {
+    const parts = utmSource.replace(/^(TEST[_-]|MESS[_-])+/gi, "").split("_")
+    for (let i = 1; i < parts.length; i++) {
+      if (/^[A-Z]{3,8}$/.test(parts[i].trim())) { mktCode = parts[i].trim(); break }
+    }
+  }
+
+  // Ghi chú: kết hợp ghi chú khách + gifts + UTM (giống format Webcake để sale xem nhanh)
   const noteparts: string[] = ["[phanviet.vn]"]
   if (order.metadata?.note) noteparts.push(order.metadata.note as string)
   if (isSepay) noteparts.push('Đã thanh toán SePay')
@@ -113,14 +129,14 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   }
   if (giftLines.length > 0) noteparts.push('Quà tặng kèm:\n' + giftLines.join('\n'))
 
-  const note = noteparts.join('\n').trim()
+  // UTM info cho sale/CSKH thấy nhanh trong Tin nội bộ (giống Webcake)
+  if (mktCode) noteparts.push(`mkt: ${mktCode}`)
+  if (utmSource) noteparts.push(`camp: ${utmSource}`)
+  if (utmCampaign && utmCampaign !== utmSource) noteparts.push(`utm_campaign: ${utmCampaign}`)
+  if (utmMedium) noteparts.push(`utm_medium: ${utmMedium}`)
+  if (utmContent) noteparts.push(`utm_content: ${utmContent}`)
 
-  // UTM từ order metadata (sẽ được ghi vào khi implement Facebook Pixel)
-  const utmSource = order.metadata?.utm_source as string | undefined
-  const utmMedium = order.metadata?.utm_medium as string | undefined
-  const utmCampaign = order.metadata?.utm_campaign as string | undefined
-  const utmContent = order.metadata?.utm_content as string | undefined
-  const utmTerm = order.metadata?.utm_term as string | undefined
+  const note = noteparts.join('\n').trim()
 
   // Lookup province_id và commune_id từ tên tỉnh/phường
   const provinceName = order.metadata?.province as string || shippingAddress.city || ''
