@@ -405,8 +405,8 @@ export default function BaoCaoMktPage() {
         ))}
       </div>
 
-      {/* Summary cards */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+      {/* Summary cards — chỉ hiện ở tab MKT và Camp */}
+      {(activeTab === "mkt" || activeTab === "camp") && <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
           <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Tổng COD</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: t.green }}>{fmtMoney(totalRevenue)}</div>
@@ -446,7 +446,7 @@ export default function BaoCaoMktPage() {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       {/* Camp tab content */}
       {activeTab === "camp" && (
