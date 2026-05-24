@@ -116,7 +116,7 @@ export default function BaoCaoMktPage() {
   const [aiFilterRunId, setAiFilterRunId] = useState("")
   const [aiOffset, setAiOffset] = useState(0)
   const AI_LIMIT = 50
-  const [aiModel, setAiModel] = useState("deepseek-v4-flash")
+  const [aiModel, setAiModel] = useState("deepseek-v4-pro")
   const [aiParallel, setAiParallel] = useState(false)
   // Sidebar log state (replaces modal)
   const [aiLogRunId, setAiLogRunId] = useState<string | null>(null)
