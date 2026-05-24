@@ -352,6 +352,14 @@ export default function BaoCaoMktPage() {
                   care_pct: x => x.care_pct !== null ? Number(x.care_pct) : -1,
                   daily_budget: x => Number(x.daily_budget ?? 0),
                 }
+                const strColMap: Record<string, (x: any) => string> = {
+                  effective_status: x => x.effective_status ?? "",
+                  mkt_name: x => x.mkt_name ?? "",
+                }
+                if (sortCol in strColMap) {
+                  const sf = strColMap[sortCol]
+                  return sortDir === "desc" ? sf(b).localeCompare(sf(a)) : sf(a).localeCompare(sf(b))
+                }
                 const fn = colMap[sortCol] ?? ((x: any) => Number(x.spend))
                 return sortDir === "desc" ? fn(b) - fn(a) : fn(a) - fn(b)
               })
@@ -374,8 +382,8 @@ export default function BaoCaoMktPage() {
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
                     <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600 }}>Campaign</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>MKT</th>
+                    {mkSortTh("effective_status", "Status", "center")}
+                    {mkSortTh("mkt_name", "MKT", "center")}
                     {mkSortTh("daily_budget", "Budget")}
                     {mkSortTh("spend", "Spend")}
                     {mkSortTh("impressions", "Impr")}
