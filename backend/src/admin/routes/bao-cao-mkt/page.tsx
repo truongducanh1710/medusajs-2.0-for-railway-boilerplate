@@ -116,6 +116,7 @@ export default function BaoCaoMktPage() {
   const [aiFilterRunId, setAiFilterRunId] = useState("")
   const [aiOffset, setAiOffset] = useState(0)
   const AI_LIMIT = 50
+  const [aiModel, setAiModel] = useState("deepseek/deepseek-chat")
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -320,11 +321,14 @@ export default function BaoCaoMktPage() {
   const triggerAiRun = useCallback(async () => {
     setAiTriggering(true)
     try {
-      const res = await apiFetch("/admin/pancake-sync/report/camp-ai", { method: "POST" })
+      const res = await apiFetch("/admin/pancake-sync/report/camp-ai", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: aiModel }),
+      })
       const data = await res.json()
       alert(data.message ?? "Agent đã chạy, chờ ~30s rồi refresh")
     } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiTriggering(false) }
-  }, [])
+  }, [aiModel])
 
   const approveRec = useCallback(async (id: string, decision: "approved" | "rejected") => {
     setAiApproving(id)
@@ -486,7 +490,7 @@ export default function BaoCaoMktPage() {
           ["camp", "Theo Camp"],
           ["jobs", "⏰ Lịch hẹn Camp"],
           ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
-          ...(isSuper || canControl ? [["ai", "🤖 AI Agent"]] : []),
+          ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key as any)} style={{
             background: "none", border: "none", cursor: "pointer",
@@ -1470,11 +1474,33 @@ export default function BaoCaoMktPage() {
                 style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: t.text, opacity: aiLoading ? 0.6 : 1 }}>
                 {aiLoading ? "Đang tải..." : "↻ Refresh"}
               </button>
-              {(isSuper || canControl) && (
-                <button onClick={triggerAiRun} disabled={aiTriggering}
-                  style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", cursor: aiTriggering ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiTriggering ? 0.6 : 1 }}>
-                  {aiTriggering ? "Đang chạy..." : "▶ Chạy AI ngay"}
-                </button>
+              {isSuper && (
+                <>
+                  <select value={aiModel} onChange={e => setAiModel(e.target.value)}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, maxWidth: 240 }}>
+                    <optgroup label="DeepSeek (rẻ, nhanh)">
+                      <option value="deepseek/deepseek-chat">DeepSeek Chat V3 (~$0.14/1M)</option>
+                      <option value="deepseek/deepseek-r1">DeepSeek R1 (reasoning)</option>
+                      <option value="deepseek/deepseek-r1-distill-qwen-32b">R1 Distill 32B (nhanh hơn)</option>
+                    </optgroup>
+                    <optgroup label="Google (mạnh)">
+                      <option value="google/gemini-2.5-flash-preview">Gemini 2.5 Flash</option>
+                      <option value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro</option>
+                    </optgroup>
+                    <optgroup label="Anthropic">
+                      <option value="anthropic/claude-haiku-4-5">Claude Haiku 4.5 (nhanh)</option>
+                      <option value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                    </optgroup>
+                    <optgroup label="OpenAI">
+                      <option value="openai/gpt-4o-mini">GPT-4o Mini (rẻ)</option>
+                      <option value="openai/gpt-4o">GPT-4o</option>
+                    </optgroup>
+                  </select>
+                  <button onClick={triggerAiRun} disabled={aiTriggering}
+                    style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", cursor: aiTriggering ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiTriggering ? 0.6 : 1 }}>
+                    {aiTriggering ? "Đang chạy..." : "▶ Chạy AI ngay"}
+                  </button>
+                </>
               )}
               <span style={{ color: t.textMuted, fontSize: 12 }}>{aiTotal} recommendations</span>
             </div>

@@ -64,15 +64,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { mkt } = (req.body as any) || {}
+    const { mkt, model } = (req.body as any) || {}
     const container = (req as any).scope
 
-    // Fire-and-forget
-    campAiCare(container, { mkt }).catch((e: any) =>
+    const modelLabel = model ? ` [${model}]` : ""
+    campAiCare(container, { mkt, model }).catch((e: any) =>
       console.error("[CampAI manual] Error:", e.message)
     )
 
-    return res.json({ ok: true, message: "Agent đang chạy, kiểm tra lại sau 30-60 giây" })
+    return res.json({ ok: true, message: `Agent đang chạy${modelLabel}, kiểm tra lại sau 30-60 giây` })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

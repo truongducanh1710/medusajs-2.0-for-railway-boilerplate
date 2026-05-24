@@ -152,7 +152,7 @@ async function canAutoExecute(campaignId: string, action: string, suggestedBudge
   return true
 }
 
-export default async function campAiCare(container: MedusaContainer, opts?: { mkt?: string }) {
+export default async function campAiCare(container: MedusaContainer, opts?: { mkt?: string; model?: string }) {
   const logger = container.resolve("logger") as any
   const sql = container.resolve("cskhAnalysisModule") as any
 
@@ -168,8 +168,9 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
   })
 
   const runId = randomUUID()
+  const activeModel = opts?.model ?? MODEL
   const today = new Date().toISOString().slice(0, 10)
-  logger?.info?.(`[CampAI] Run ${runId} started model=${MODEL}`)
+  logger?.info?.(`[CampAI] Run ${runId} started model=${activeModel}`)
 
   // Camp map: campaign_id → full data (built during tool calls)
   const campMap = new Map<string, any>()
@@ -346,7 +347,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
         [runId, args.campaign_id, camp.campaign_name, camp.mkt_name,
          args.action, args.reason, JSON.stringify(oldValue),
          JSON.stringify(suggestedValue), args.confidence ?? "medium",
-         status, executedAt, JSON.stringify(fbResp), MODEL]
+         status, executedAt, JSON.stringify(fbResp), activeModel]
       ).catch((e: any) => logger?.error?.("[CampAI] insert rec fail:", e.message))
 
       return { ok: true, status, campaign_name: camp.campaign_name }
@@ -368,7 +369,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await client.chat.completions.create({
-      model: MODEL,
+      model: activeModel,
       messages,
       tools: TOOLS,
       tool_choice: "auto",
@@ -411,7 +412,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
     `INSERT INTO agent_art_rollout (run_id, messages, tool_calls, rule_decisions, outcomes, model)
      VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6)`,
     [runId, JSON.stringify(messages), JSON.stringify(toolCallLog),
-     JSON.stringify(ruleDecisions), JSON.stringify(outcomes), MODEL]
+     JSON.stringify(ruleDecisions), JSON.stringify(outcomes), activeModel]
   ).catch(() => {})
 
   logger?.info?.(`[CampAI] Run ${runId} done — ${outcomes.total} recs, ${outcomes.auto_executed} auto_exec, tokens=${totalPromptTokens}+${totalCompletionTokens}`)
