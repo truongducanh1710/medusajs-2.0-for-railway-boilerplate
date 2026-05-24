@@ -21,12 +21,14 @@ export const PERMISSIONS = {
   "page.gia-von.view": "Xem trang giá vốn",
   "page.gia-von.manage": "Nhập/sửa lô hàng giá vốn",
   "page.bao-cao.camp-control": "Bật/tắt camp + chỉnh ngân sách FB Ads",
+  "page.bao-cao.fb-accounts": "Xem và quản lý tài khoản FB Ads (manager only)",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
 
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
+  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage"],
   marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view"],

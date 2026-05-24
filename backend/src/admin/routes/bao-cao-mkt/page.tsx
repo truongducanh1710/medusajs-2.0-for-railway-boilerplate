@@ -40,13 +40,48 @@ export default function BaoCaoMktPage() {
   const [mktNames, setMktNames] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
   const [dark, setDark] = useState(true)
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp">("mkt")
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "jobs" | "fbaccounts">("mkt")
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
   const [campDate, setCampDate] = useState(new Date().toISOString().slice(0, 10))
   const { isSuper, mktCode, has } = useCurrentPermissions()
+
+  // Tab 3 — Lịch hẹn Camp (schedules + logs)
+  const [jobsSubTab, setJobsSubTab] = useState<"schedules" | "logs">("schedules")
+  const [schedules, setSchedules] = useState<any[]>([])
+  const [schedTotal, setSchedTotal] = useState(0)
+  const [schedLoading, setSchedLoading] = useState(false)
+  const [schedStatus, setSchedStatus] = useState("")
+  const [schedMkt, setSchedMkt] = useState("")
+  const [schedOffset, setSchedOffset] = useState(0)
+  const [cancelling, setCancelling] = useState<string | null>(null)
+  const SCHED_LIMIT = 50
+  const [actLogs, setActLogs] = useState<any[]>([])
+  const [actLogsTotal, setActLogsTotal] = useState(0)
+  const [actLogsLoading, setActLogsLoading] = useState(false)
+  const [actLogsMkt, setActLogsMkt] = useState("")
+  const [actLogsAction, setActLogsAction] = useState("")
+  const [actLogsFrom, setActLogsFrom] = useState("")
+  const [actLogsTo, setActLogsTo] = useState(new Date().toISOString().slice(0, 10))
+  const [actLogsOffset, setActLogsOffset] = useState(0)
+  const LOGS_LIMIT = 100
+
+  // Tab 4 — Tài khoản FB
+  const [fbAccounts, setFbAccounts] = useState<any[]>([])
+  const [fbLoading, setFbLoading] = useState(false)
+  const [fbSaving, setFbSaving] = useState(false)
+  const [fbNewId, setFbNewId] = useState("")
+  const [fbNewName, setFbNewName] = useState("")
+  const [fbNewMkt, setFbNewMkt] = useState("")
+  const [fbNewNote, setFbNewNote] = useState("")
+  const [fbAddError, setFbAddError] = useState("")
+  const [fbEditingId, setFbEditingId] = useState<string | null>(null)
+  const [fbEditName, setFbEditName] = useState("")
+  const [fbEditMkt, setFbEditMkt] = useState("")
+  const [fbEditNote, setFbEditNote] = useState("")
   const canControl = has("page.bao-cao.camp-control") || isSuper
+  const canManageFb = has("page.bao-cao.fb-accounts") || isSuper
   const [editingBudget, setEditingBudget] = useState<string | null>(null)
   const [budgetValue, setBudgetValue] = useState<string>("")
   const [scheduleModalCamp, setScheduleModalCamp] = useState<any>(null)
@@ -173,8 +208,104 @@ export default function BaoCaoMktPage() {
     } finally { setActingCampId(null) }
   }, [budgetValue, fetchCampData])
 
+  const fetchSchedules = useCallback(async () => {
+    setSchedLoading(true)
+    try {
+      const p = new URLSearchParams({ limit: String(SCHED_LIMIT), offset: String(schedOffset) })
+      if (schedStatus) p.set("status", schedStatus)
+      if (schedMkt) p.set("mkt", schedMkt)
+      else if (!isSuper && mktCode) p.set("mkt", mktCode)
+      const res = await apiFetch(`/admin/pancake-sync/report/camp-control/all-schedules?${p}`)
+      const data = await res.json()
+      setSchedules(data.schedules ?? [])
+      setSchedTotal(data.total ?? 0)
+    } catch { /* ignore */ } finally { setSchedLoading(false) }
+  }, [schedStatus, schedMkt, schedOffset, isSuper, mktCode])
+
+  const fetchActLogs = useCallback(async () => {
+    setActLogsLoading(true)
+    try {
+      const p = new URLSearchParams({ limit: String(LOGS_LIMIT), offset: String(actLogsOffset) })
+      if (actLogsMkt) p.set("mkt", actLogsMkt)
+      else if (!isSuper && mktCode) p.set("mkt", mktCode)
+      if (actLogsAction) p.set("action", actLogsAction)
+      if (actLogsFrom) p.set("from", actLogsFrom)
+      if (actLogsTo) p.set("to", actLogsTo)
+      const res = await apiFetch(`/admin/pancake-sync/report/camp-control/all-logs?${p}`)
+      const data = await res.json()
+      setActLogs(data.logs ?? [])
+      setActLogsTotal(data.total ?? 0)
+    } catch { /* ignore */ } finally { setActLogsLoading(false) }
+  }, [actLogsMkt, actLogsAction, actLogsFrom, actLogsTo, actLogsOffset, isSuper, mktCode])
+
+  const cancelSchedule = useCallback(async (id: string) => {
+    if (!confirm("Huỷ lịch hẹn này?")) return
+    setCancelling(id)
+    try {
+      await apiFetch(`/admin/pancake-sync/report/camp-control/schedule/${id}`, { method: "DELETE" })
+      await fetchSchedules()
+    } finally { setCancelling(null) }
+  }, [fetchSchedules])
+
+  const fetchFbAccounts = useCallback(async () => {
+    setFbLoading(true)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/fb-accounts")
+      const data = await res.json()
+      setFbAccounts(data.accounts ?? [])
+    } catch { /* ignore */ } finally { setFbLoading(false) }
+  }, [])
+
+  const fbToggle = useCallback(async (acc: any) => {
+    await apiFetch(`/admin/pancake-sync/fb-accounts/${acc.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: !acc.active }),
+    })
+    await fetchFbAccounts()
+  }, [fetchFbAccounts])
+
+  const fbDelete = useCallback(async (acc: any) => {
+    if (!confirm(`Xóa tài khoản ${acc.account_id}?`)) return
+    await apiFetch(`/admin/pancake-sync/fb-accounts/${acc.id}`, { method: "DELETE" })
+    await fetchFbAccounts()
+  }, [fetchFbAccounts])
+
+  const fbAdd = useCallback(async () => {
+    setFbAddError("")
+    if (!fbNewId.trim()) { setFbAddError("Nhập Account ID"); return }
+    setFbSaving(true)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/fb-accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: fbNewId.trim(), account_name: fbNewName.trim(), mkt_name: fbNewMkt.trim(), note: fbNewNote.trim() }),
+      })
+      const data = await res.json()
+      if (data.error) { setFbAddError(data.error); return }
+      setFbNewId(""); setFbNewName(""); setFbNewMkt(""); setFbNewNote("")
+      await fetchFbAccounts()
+    } catch (e: any) { setFbAddError(e.message) } finally { setFbSaving(false) }
+  }, [fbNewId, fbNewName, fbNewMkt, fbNewNote, fetchFbAccounts])
+
+  const fbSaveEdit = useCallback(async (acc: any) => {
+    const patch: Record<string, string> = {}
+    if (fbEditName !== acc.account_name) patch.account_name = fbEditName
+    if (fbEditMkt !== (acc.mkt_name ?? "")) patch.mkt_name = fbEditMkt
+    if (fbEditNote !== (acc.note ?? "")) patch.note = fbEditNote
+    if (Object.keys(patch).length > 0) {
+      await apiFetch(`/admin/pancake-sync/fb-accounts/${acc.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+    }
+    setFbEditingId(null)
+    await fetchFbAccounts()
+  }, [fbEditName, fbEditMkt, fbEditNote, fetchFbAccounts])
+
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
+  useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [activeTab, jobsSubTab, fetchSchedules])
+  useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
+  useEffect(() => { if (activeTab === "fbaccounts" && canManageFb) fetchFbAccounts() }, [activeTab, canManageFb, fetchFbAccounts])
   useEffect(() => {
     fetchCronStatus()
     const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
@@ -256,15 +387,20 @@ export default function BaoCaoMktPage() {
 
       {/* Tab toggle */}
       <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}` }}>
-        {(["mkt", "camp"] as const).map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{
+        {([
+          ["mkt", "Theo MKT"],
+          ["camp", "Theo Camp"],
+          ["jobs", "⏰ Lịch hẹn Camp"],
+          ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
+        ] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key as any)} style={{
             background: "none", border: "none", cursor: "pointer",
-            padding: "8px 20px", fontSize: 14, fontWeight: activeTab === tab ? 700 : 400,
-            color: activeTab === tab ? t.blue : t.textMuted,
-            borderBottom: activeTab === tab ? `2px solid ${t.blue}` : "2px solid transparent",
+            padding: "8px 20px", fontSize: 14, fontWeight: activeTab === key ? 700 : 400,
+            color: activeTab === key ? t.blue : t.textMuted,
+            borderBottom: activeTab === key ? `2px solid ${t.blue}` : "2px solid transparent",
             marginBottom: -1,
           }}>
-            {tab === "mkt" ? "Theo MKT" : "Theo Camp"}
+            {label}
           </button>
         ))}
       </div>
@@ -858,6 +994,363 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
           )}
         </div>
       </div>
+
+      {/* ===== TAB 3: LỊCH HẸN CAMP ===== */}
+      {activeTab === "jobs" && (() => {
+        const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, whiteSpace: "nowrap", background: t.card }
+        const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}` }
+        const MKT_COLORS_LOCAL: Record<string, string> = { KIENLB: "#60a5fa", ANHNT: "#f472b6", NAMDV: "#34d399", XUANLT: "#fb923c", LINHMT: "#a78bfa", DUPD: "#facc15" }
+        const mktColor = (name: string) => MKT_COLORS_LOCAL[name] ?? "#9ca3af"
+        const extractMktLocal = (campName: string) => {
+          if (!campName) return "?"
+          for (const p of campName.split("_").slice(1)) {
+            if (/^[A-Z]{3,8}$/.test(p.trim())) return p.trim()
+          }
+          return "?"
+        }
+        const fmtDtLocal = (iso: string) => {
+          if (!iso) return "—"
+          return new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+        }
+        const ActionBadge = ({ action }: { action: string }) => {
+          const cfg: Record<string, { label: string; bg: string; color: string }> = {
+            pause: { label: "Tắt", bg: "#fef3c7", color: "#d97706" },
+            activate: { label: "Bật", bg: "#dcfce7", color: "#16a34a" },
+            set_budget: { label: "Budget", bg: "#ede9fe", color: "#7c3aed" },
+          }
+          const c = cfg[action] ?? { label: action, bg: "#f3f4f6", color: "#374151" }
+          return <span style={{ background: c.bg, color: c.color, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{c.label}</span>
+        }
+        const StatusBadge = ({ status }: { status: string }) => {
+          const cfg: Record<string, { color: string; label: string }> = {
+            pending: { color: "#2563eb", label: "Chờ duyệt" }, done: { color: "#16a34a", label: "Done" },
+            failed: { color: "#dc2626", label: "Failed" }, cancelled: { color: "#6b7280", label: "Đã huỷ" },
+          }
+          const c = cfg[status] ?? { color: "#6b7280", label: status }
+          return <span style={{ color: c.color, fontWeight: 600, fontSize: 12 }}>{c.label}</span>
+        }
+        return (
+          <div>
+            {/* Sub-tab bar */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}` }}>
+              {([["schedules", "⏰ Lịch hẹn giờ"], ["logs", "📋 Lịch sử hành động"]] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setJobsSubTab(key)} style={{
+                  background: "none", border: "none", cursor: "pointer", padding: "8px 20px", fontSize: 13, fontWeight: jobsSubTab === key ? 700 : 400,
+                  color: jobsSubTab === key ? t.blue : t.textMuted,
+                  borderBottom: jobsSubTab === key ? `2px solid ${t.blue}` : "2px solid transparent", marginBottom: -1,
+                }}>{label}</button>
+              ))}
+            </div>
+
+            {/* SCHEDULES */}
+            {jobsSubTab === "schedules" && (
+              <div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  <select value={schedStatus} onChange={e => { setSchedStatus(e.target.value); setSchedOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, color: t.inputText }}>
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="pending">Pending</option>
+                    <option value="done">Done</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  {(isSuper || !mktCode) && (
+                    <select value={schedMkt} onChange={e => { setSchedMkt(e.target.value); setSchedOffset(0) }}
+                      style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, color: t.inputText }}>
+                      <option value="">Tất cả MKT</option>
+                      {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  )}
+                  <button onClick={fetchSchedules} disabled={schedLoading}
+                    style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer", opacity: schedLoading ? 0.6 : 1 }}>
+                    {schedLoading ? "..." : "↻ Refresh"}
+                  </button>
+                  <span style={{ fontSize: 12, color: t.textMuted }}>{schedTotal} lịch hẹn</span>
+                </div>
+                <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 10, overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thS}>Campaign</th>
+                        <th style={{ ...thS, textAlign: "center" }}>MKT</th>
+                        <th style={{ ...thS, textAlign: "center" }}>Hành động</th>
+                        <th style={thS}>Hẹn lúc</th>
+                        <th style={thS}>Thực hiện lúc</th>
+                        <th style={{ ...thS, textAlign: "center" }}>Trạng thái</th>
+                        <th style={thS}>Tạo bởi</th>
+                        <th style={thS}>Lỗi</th>
+                        {canControl && <th style={{ ...thS, textAlign: "center" }}>Huỷ</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedules.length === 0 ? (
+                        <tr><td colSpan={canControl ? 9 : 8} style={{ ...tdS, textAlign: "center", color: t.textMuted, padding: 40 }}>
+                          {schedLoading ? "Đang tải..." : "Không có dữ liệu"}
+                        </td></tr>
+                      ) : schedules.map(s => {
+                        const mkt = extractMktLocal(s.campaign_name)
+                        return (
+                          <tr key={s.id} onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)} onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                            <td style={{ ...tdS, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: t.text }} title={s.campaign_name}>{s.campaign_name}</td>
+                            <td style={{ ...tdS, textAlign: "center", fontWeight: 700, color: mktColor(mkt) }}>{mkt}</td>
+                            <td style={{ ...tdS, textAlign: "center" }}>
+                              <ActionBadge action={s.action} />
+                              {s.action === "set_budget" && s.payload?.daily_budget && (
+                                <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{Number(s.payload.daily_budget).toLocaleString("vi-VN")}đ</div>
+                              )}
+                            </td>
+                            <td style={{ ...tdS, fontWeight: 600, color: s.status === "pending" ? t.blue : t.text }}>{fmtDtLocal(s.scheduled_at)}</td>
+                            <td style={{ ...tdS, color: t.textMuted }}>{s.executed_at ? fmtDtLocal(s.executed_at) : "—"}</td>
+                            <td style={{ ...tdS, textAlign: "center" }}><StatusBadge status={s.status} /></td>
+                            <td style={{ ...tdS, color: t.textMuted, fontSize: 12 }}>{s.created_by_email?.split("@")[0]}</td>
+                            <td style={{ ...tdS, color: t.red, fontSize: 12, maxWidth: 180 }}>{s.error_message ?? ""}</td>
+                            {canControl && (
+                              <td style={{ ...tdS, textAlign: "center" }}>
+                                {s.status === "pending" && (
+                                  <button onClick={() => cancelSchedule(s.id)} disabled={cancelling === s.id}
+                                    style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 4, padding: "3px 10px", fontSize: 12, cursor: "pointer", opacity: cancelling === s.id ? 0.5 : 1 }}>
+                                    {cancelling === s.id ? "..." : "Huỷ"}
+                                  </button>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {schedTotal > SCHED_LIMIT && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "center" }}>
+                    <button disabled={schedOffset === 0} onClick={() => setSchedOffset(Math.max(0, schedOffset - SCHED_LIMIT))}
+                      style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: schedOffset === 0 ? "not-allowed" : "pointer", opacity: schedOffset === 0 ? 0.4 : 1, background: t.card, color: t.text }}>← Trước</button>
+                    <span style={{ fontSize: 13, color: t.textMuted, lineHeight: "34px" }}>{Math.floor(schedOffset / SCHED_LIMIT) + 1} / {Math.ceil(schedTotal / SCHED_LIMIT)}</span>
+                    <button disabled={schedOffset + SCHED_LIMIT >= schedTotal} onClick={() => setSchedOffset(schedOffset + SCHED_LIMIT)}
+                      style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: schedOffset + SCHED_LIMIT >= schedTotal ? "not-allowed" : "pointer", opacity: schedOffset + SCHED_LIMIT >= schedTotal ? 0.4 : 1, background: t.card, color: t.text }}>Sau →</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* LOGS */}
+            {jobsSubTab === "logs" && (
+              <div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  {(isSuper || !mktCode) && (
+                    <select value={actLogsMkt} onChange={e => { setActLogsMkt(e.target.value); setActLogsOffset(0) }}
+                      style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, color: t.inputText }}>
+                      <option value="">Tất cả MKT</option>
+                      {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  )}
+                  <select value={actLogsAction} onChange={e => { setActLogsAction(e.target.value); setActLogsOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, color: t.inputText }}>
+                    <option value="">Tất cả hành động</option>
+                    <option value="pause">Tắt camp</option>
+                    <option value="activate">Bật camp</option>
+                    <option value="set_budget">Chỉnh budget</option>
+                  </select>
+                  <input type="date" value={actLogsFrom} onChange={e => { setActLogsFrom(e.target.value); setActLogsOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 10px", fontSize: 13, color: t.inputText }} />
+                  <input type="date" value={actLogsTo} onChange={e => { setActLogsTo(e.target.value); setActLogsOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 10px", fontSize: 13, color: t.inputText }} />
+                  <button onClick={fetchActLogs} disabled={actLogsLoading}
+                    style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer", opacity: actLogsLoading ? 0.6 : 1 }}>
+                    {actLogsLoading ? "..." : "↻ Refresh"}
+                  </button>
+                  <span style={{ fontSize: 12, color: t.textMuted }}>{actLogsTotal} hành động</span>
+                </div>
+                <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 10, overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thS}>Thời gian</th>
+                        <th style={{ ...thS, textAlign: "center" }}>MKT</th>
+                        <th style={thS}>Campaign</th>
+                        <th style={{ ...thS, textAlign: "center" }}>Hành động</th>
+                        <th style={thS}>Trước</th>
+                        <th style={thS}>Sau</th>
+                        <th style={{ ...thS, textAlign: "center" }}>Nguồn</th>
+                        <th style={thS}>Người thực hiện</th>
+                        <th style={{ ...thS, textAlign: "center" }}>Kết quả</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actLogs.length === 0 ? (
+                        <tr><td colSpan={9} style={{ ...tdS, textAlign: "center", color: t.textMuted, padding: 40 }}>
+                          {actLogsLoading ? "Đang tải..." : "Chưa có lịch sử thao tác"}
+                        </td></tr>
+                      ) : actLogs.map(log => {
+                        const mkt = extractMktLocal(log.campaign_name)
+                        const oldV = log.old_value ?? {}
+                        const newV = log.new_value ?? {}
+                        return (
+                          <tr key={log.id} onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)} onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                            <td style={{ ...tdS, color: t.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>{fmtDtLocal(log.created_at)}</td>
+                            <td style={{ ...tdS, textAlign: "center", fontWeight: 700, color: mktColor(mkt) }}>{mkt}</td>
+                            <td style={{ ...tdS, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: t.text }} title={log.campaign_name}>{log.campaign_name}</td>
+                            <td style={{ ...tdS, textAlign: "center" }}><ActionBadge action={log.action} /></td>
+                            <td style={{ ...tdS, fontSize: 12, color: t.textMuted }}>
+                              {log.action === "set_budget" ? (oldV.daily_budget ? Number(oldV.daily_budget).toLocaleString("vi-VN") + "đ" : "—") : (oldV.status ?? "—")}
+                            </td>
+                            <td style={{ ...tdS, fontSize: 12, fontWeight: 600, color: t.text }}>
+                              {log.action === "set_budget" ? (newV.daily_budget ? Number(newV.daily_budget).toLocaleString("vi-VN") + "đ" : "—") : (newV.status ?? "—")}
+                            </td>
+                            <td style={{ ...tdS, textAlign: "center" }}>
+                              <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4,
+                                background: log.source === "manual" ? "#dbeafe" : log.source === "agent" ? "#ede9fe" : "#fef3c7",
+                                color: log.source === "manual" ? "#1d4ed8" : log.source === "agent" ? "#7c3aed" : "#92400e" }}>
+                                {log.source === "manual" ? "Manual" : log.source === "agent" ? "🤖 AI" : "Auto"}
+                              </span>
+                            </td>
+                            <td style={{ ...tdS, fontSize: 12, color: t.textMuted }}>{log.user_email?.split("@")[0]}</td>
+                            <td style={{ ...tdS, textAlign: "center" }}>
+                              {log.success
+                                ? <span style={{ color: "#16a34a", fontSize: 16 }}>✓</span>
+                                : <span style={{ color: "#dc2626", fontSize: 16 }} title={log.fb_response?.error?.message}>✗</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {actLogsTotal > LOGS_LIMIT && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "center" }}>
+                    <button disabled={actLogsOffset === 0} onClick={() => setActLogsOffset(Math.max(0, actLogsOffset - LOGS_LIMIT))}
+                      style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: actLogsOffset === 0 ? "not-allowed" : "pointer", opacity: actLogsOffset === 0 ? 0.4 : 1, background: t.card, color: t.text }}>← Trước</button>
+                    <span style={{ fontSize: 13, color: t.textMuted, lineHeight: "34px" }}>{Math.floor(actLogsOffset / LOGS_LIMIT) + 1} / {Math.ceil(actLogsTotal / LOGS_LIMIT)}</span>
+                    <button disabled={actLogsOffset + LOGS_LIMIT >= actLogsTotal} onClick={() => setActLogsOffset(actLogsOffset + LOGS_LIMIT)}
+                      style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: actLogsOffset + LOGS_LIMIT >= actLogsTotal ? "not-allowed" : "pointer", opacity: actLogsOffset + LOGS_LIMIT >= actLogsTotal ? 0.4 : 1, background: t.card, color: t.text }}>Sau →</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ===== TAB 4: TÀI KHOẢN FB (manager only) ===== */}
+      {activeTab === "fbaccounts" && canManageFb && (() => {
+        const inputS: React.CSSProperties = { background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, width: "100%" }
+        const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, whiteSpace: "nowrap", background: t.card }
+        const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, verticalAlign: "middle" }
+        return (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 4 }}>Tài khoản Facebook Ads</h2>
+              <div style={{ fontSize: 12, color: t.textMuted }}>Danh sách ad accounts dùng để pull chi phí MKT. Token FB: env <code style={{ background: t.cronBg, padding: "1px 5px", borderRadius: 3 }}>FB_ACCESS_TOKEN</code></div>
+            </div>
+
+            {/* Form thêm mới */}
+            <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: 20, marginBottom: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 12 }}>+ Thêm tài khoản mới</div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 2fr auto", gap: 10, alignItems: "end" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Account ID *</div>
+                  <input style={inputS} placeholder="act_853668... hoặc số" value={fbNewId} onChange={e => setFbNewId(e.target.value)} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Tên tài khoản</div>
+                  <input style={inputS} placeholder="PHV - Ads298..." value={fbNewName} onChange={e => setFbNewName(e.target.value)} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>MKT phụ trách</div>
+                  <select style={{ ...inputS, cursor: "pointer" }} value={fbNewMkt} onChange={e => setFbNewMkt(e.target.value)}>
+                    <option value="">-- Tự động --</option>
+                    {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Ghi chú</div>
+                  <input style={inputS} placeholder="FULLVIA_ANHTD..." value={fbNewNote} onChange={e => setFbNewNote(e.target.value)} />
+                </div>
+                <button onClick={fbAdd} disabled={fbSaving}
+                  style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer", opacity: fbSaving ? 0.6 : 1, whiteSpace: "nowrap" }}>
+                  {fbSaving ? "..." : "Thêm"}
+                </button>
+              </div>
+              {fbAddError && <div style={{ color: t.red, fontSize: 12, marginTop: 8 }}>{fbAddError}</div>}
+            </div>
+
+            {/* Danh sách accounts */}
+            {fbLoading ? (
+              <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Đang tải...</div>
+            ) : fbAccounts.length === 0 ? (
+              <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Chưa có tài khoản nào.</div>
+            ) : (
+              <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 10, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={thS}>Trạng thái</th>
+                      <th style={thS}>Account ID</th>
+                      <th style={thS}>Tên tài khoản</th>
+                      <th style={thS}>MKT phụ trách</th>
+                      <th style={thS}>Ghi chú</th>
+                      <th style={thS}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fbAccounts.map(acc => {
+                      const isEditing = fbEditingId === acc.id
+                      return (
+                        <tr key={acc.id} style={{ opacity: acc.active ? 1 : 0.5 }}
+                          onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                          <td style={tdS}>
+                            <button onClick={() => fbToggle(acc)} style={{
+                              background: acc.active ? (dark ? "#065f46" : "#dcfce7") : t.card,
+                              color: acc.active ? t.green : t.textMuted,
+                              border: `1px solid ${acc.active ? t.green + "44" : t.cardBorder}`,
+                              borderRadius: 12, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                            }}>
+                              {acc.active ? "● Bật" : "○ Tắt"}
+                            </button>
+                          </td>
+                          <td style={{ ...tdS, color: t.blue, fontFamily: "monospace" }}>{acc.account_id}</td>
+                          <td style={tdS}>
+                            {isEditing
+                              ? <input style={{ ...inputS, width: 200 }} value={fbEditName} onChange={e => setFbEditName(e.target.value)} />
+                              : <span style={{ color: t.text }}>{acc.account_name || <span style={{ color: t.textMuted }}>—</span>}</span>}
+                          </td>
+                          <td style={tdS}>
+                            {isEditing
+                              ? <select style={{ ...inputS, width: "auto", cursor: "pointer" }} value={fbEditMkt} onChange={e => setFbEditMkt(e.target.value)}>
+                                  <option value="">Tự động</option>
+                                  {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                              : <span style={{ color: acc.mkt_name ? t.purple : t.textMuted, fontWeight: acc.mkt_name ? 600 : 400 }}>{acc.mkt_name || "Tự động"}</span>}
+                          </td>
+                          <td style={tdS}>
+                            {isEditing
+                              ? <input style={{ ...inputS, width: 180 }} value={fbEditNote} onChange={e => setFbEditNote(e.target.value)} />
+                              : <span style={{ color: t.textMuted }}>{acc.note || "—"}</span>}
+                          </td>
+                          <td style={{ ...tdS, display: "flex", gap: 6 }}>
+                            {isEditing ? (
+                              <>
+                                <button onClick={() => fbSaveEdit(acc)} style={{ background: dark ? "#065f46" : "#dcfce7", color: t.green, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Lưu</button>
+                                <button onClick={() => setFbEditingId(null)} style={{ background: t.card, color: t.textMuted, border: `1px solid ${t.cardBorder}`, borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Hủy</button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => { setFbEditingId(acc.id); setFbEditName(acc.account_name ?? ""); setFbEditMkt(acc.mkt_name ?? ""); setFbEditNote(acc.note ?? "") }}
+                                  style={{ background: dark ? "#1e3a5f" : "#dbeafe", color: t.blue, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Sửa</button>
+                                <button onClick={() => fbDelete(acc)} style={{ background: dark ? "#3b0d0d" : "#fee2e2", color: t.red, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Xóa</button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
