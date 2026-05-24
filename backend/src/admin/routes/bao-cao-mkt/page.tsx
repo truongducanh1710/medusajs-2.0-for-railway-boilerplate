@@ -48,7 +48,7 @@ export default function BaoCaoMktPage() {
   const { isSuper, mktCode, has } = useCurrentPermissions()
 
   // Tab 3 — Lịch hẹn Camp (schedules + logs)
-  const [jobsSubTab, setJobsSubTab] = useState<"schedules" | "logs">("schedules")
+  const [jobsSubTab, setJobsSubTab] = useState<"schedules" | "logs" | "fb-history">("schedules")
   const [schedules, setSchedules] = useState<any[]>([])
   const [schedTotal, setSchedTotal] = useState(0)
   const [schedLoading, setSchedLoading] = useState(false)
@@ -66,6 +66,20 @@ export default function BaoCaoMktPage() {
   const [actLogsTo, setActLogsTo] = useState(new Date().toISOString().slice(0, 10))
   const [actLogsOffset, setActLogsOffset] = useState(0)
   const LOGS_LIMIT = 100
+
+  // Tab 3 sub-tab: Lịch sử FB
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const sevenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10) })()
+  const [fbHistFrom, setFbHistFrom] = useState(sevenDaysAgo)
+  const [fbHistTo, setFbHistTo] = useState(todayStr)
+  const [fbHistMkt, setFbHistMkt] = useState("")
+  const [fbHistActorType, setFbHistActorType] = useState("")
+  const [fbHistory, setFbHistory] = useState<any[]>([])
+  const [fbHistTotal, setFbHistTotal] = useState(0)
+  const [fbHistOffset, setFbHistOffset] = useState(0)
+  const [fbHistLoading, setFbHistLoading] = useState(false)
+  const [fbHistSyncing, setFbHistSyncing] = useState(false)
+  const FB_HIST_LIMIT = 100
 
   // Tab 4 — Tài khoản FB
   const [fbAccounts, setFbAccounts] = useState<any[]>([])
@@ -251,6 +265,34 @@ export default function BaoCaoMktPage() {
     } catch { /* ignore */ } finally { setActLogsLoading(false) }
   }, [actLogsMkt, actLogsAction, actLogsFrom, actLogsTo, actLogsOffset, isSuper, mktCode])
 
+  const fetchFbHistory = useCallback(async () => {
+    setFbHistLoading(true)
+    try {
+      const p = new URLSearchParams({ limit: String(FB_HIST_LIMIT), offset: String(fbHistOffset) })
+      if (fbHistFrom) p.set("from", fbHistFrom)
+      if (fbHistTo) p.set("to", fbHistTo)
+      if (fbHistMkt) p.set("mkt", fbHistMkt)
+      else if (!isSuper && mktCode) p.set("mkt", mktCode)
+      if (fbHistActorType) p.set("actor_type", fbHistActorType)
+      const res = await apiFetch(`/admin/pancake-sync/report/fb-activity?${p}`)
+      const data = await res.json()
+      setFbHistory(data.activities ?? [])
+      setFbHistTotal(data.total ?? 0)
+    } catch { /* ignore */ } finally { setFbHistLoading(false) }
+  }, [fbHistFrom, fbHistTo, fbHistMkt, fbHistActorType, fbHistOffset, isSuper, mktCode])
+
+  const triggerFbHistSync = useCallback(async (date?: string) => {
+    setFbHistSyncing(true)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/report/fb-activity", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      })
+      const data = await res.json()
+      alert(data.message ?? "Đang sync, chờ ~30s rồi refresh")
+    } catch (e: any) { alert("Lỗi: " + e.message) } finally { setFbHistSyncing(false) }
+  }, [])
+
   const cancelSchedule = useCallback(async (id: string) => {
     if (!confirm("Huỷ lịch hẹn này?")) return
     setCancelling(id)
@@ -355,6 +397,7 @@ export default function BaoCaoMktPage() {
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [activeTab, jobsSubTab, fetchSchedules])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
+  useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "fb-history") fetchFbHistory() }, [activeTab, jobsSubTab, fetchFbHistory])
   useEffect(() => { if (activeTab === "fbaccounts" && canManageFb) fetchFbAccounts() }, [activeTab, canManageFb, fetchFbAccounts])
   useEffect(() => { if (activeTab === "ai") fetchAiRecs() }, [activeTab, fetchAiRecs])
   useEffect(() => {
@@ -960,7 +1003,7 @@ export default function BaoCaoMktPage() {
           <div>
             {/* Sub-tab bar */}
             <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}` }}>
-              {([["schedules", "⏰ Lịch hẹn giờ"], ["logs", "📋 Lịch sử hành động"]] as const).map(([key, label]) => (
+              {([["schedules", "⏰ Lịch hẹn giờ"], ["logs", "📋 Lịch sử hành động"], ["fb-history", "📊 Lịch sử FB"]] as const).map(([key, label]) => (
                 <button key={key} onClick={() => setJobsSubTab(key)} style={{
                   background: "none", border: "none", cursor: "pointer", padding: "8px 20px", fontSize: 13, fontWeight: jobsSubTab === key ? 700 : 400,
                   color: jobsSubTab === key ? t.blue : t.textMuted,
@@ -1149,6 +1192,113 @@ export default function BaoCaoMktPage() {
                     <span style={{ fontSize: 13, color: t.textMuted, lineHeight: "34px" }}>{Math.floor(actLogsOffset / LOGS_LIMIT) + 1} / {Math.ceil(actLogsTotal / LOGS_LIMIT)}</span>
                     <button disabled={actLogsOffset + LOGS_LIMIT >= actLogsTotal} onClick={() => setActLogsOffset(actLogsOffset + LOGS_LIMIT)}
                       style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: actLogsOffset + LOGS_LIMIT >= actLogsTotal ? "not-allowed" : "pointer", opacity: actLogsOffset + LOGS_LIMIT >= actLogsTotal ? 0.4 : 1, background: t.card, color: t.text }}>Sau →</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* FB HISTORY */}
+            {jobsSubTab === "fb-history" && (
+              <div>
+                {/* Toolbar */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
+                  <input type="date" value={fbHistFrom} onChange={e => { setFbHistFrom(e.target.value); setFbHistOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+                  <span style={{ color: t.textMuted }}>→</span>
+                  <input type="date" value={fbHistTo} onChange={e => { setFbHistTo(e.target.value); setFbHistOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+                  {(isSuper || !mktCode) && (
+                    <select value={fbHistMkt} onChange={e => { setFbHistMkt(e.target.value); setFbHistOffset(0) }}
+                      style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+                      <option value="">Tất cả MKT</option>
+                      {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  )}
+                  <select value={fbHistActorType} onChange={e => { setFbHistActorType(e.target.value); setFbHistOffset(0) }}
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+                    <option value="">Tất cả người thao tác</option>
+                    <option value="human">Marketer (tay)</option>
+                    <option value="rule">Quy tắc FB</option>
+                    <option value="meta">Meta tự động</option>
+                  </select>
+                  <button onClick={fetchFbHistory} disabled={fbHistLoading}
+                    style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: t.text, opacity: fbHistLoading ? 0.6 : 1 }}>
+                    {fbHistLoading ? "..." : "↻ Refresh"}
+                  </button>
+                  {isSuper && (
+                    <button onClick={() => triggerFbHistSync()} disabled={fbHistSyncing}
+                      style={{ background: dark ? "#065f46" : "#dcfce7", color: t.green, border: `1px solid ${t.green}44`, borderRadius: 6, padding: "7px 14px", cursor: fbHistSyncing ? "not-allowed" : "pointer", fontSize: 13, opacity: fbHistSyncing ? 0.6 : 1 }}>
+                      {fbHistSyncing ? "Đang sync..." : "↓ Sync hôm qua"}
+                    </button>
+                  )}
+                  <span style={{ fontSize: 12, color: t.textMuted }}>{fbHistTotal} hoạt động</span>
+                </div>
+
+                {/* Table */}
+                {fbHistLoading ? (
+                  <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Đang tải...</div>
+                ) : fbHistory.length === 0 ? (
+                  <div style={{ color: t.textMuted, textAlign: "center", padding: 60, fontSize: 14 }}>
+                    Chưa có dữ liệu. Bấm "Sync hôm qua" để pull lần đầu.
+                  </div>
+                ) : (
+                  <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 10, overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: t.thead }}>
+                          {["Thời gian", "Campaign", "MKT", "Người thao tác", "Loại", "Thay đổi"].map(h => (
+                            <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: t.theadText, fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fbHistory.map((row: any) => {
+                          const ts = new Date(row.event_time).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                          const actorColor = row.actor_type === "human" ? t.green : row.actor_type === "rule" ? t.amber : t.textMuted
+                          const actorLabel = row.actor_type === "human" ? "👤" : row.actor_type === "rule" ? "🤖 Quy tắc" : "⚙ Meta"
+                          const isStatus = row.event_type === "update_campaign_run_status"
+                          const oldV = row.old_value?.value ?? "—"
+                          const newV = row.new_value?.value ?? "—"
+                          return (
+                            <tr key={row.id}
+                              onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                              onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                              <td style={{ padding: "8px 12px", color: t.textMuted, whiteSpace: "nowrap" }}>{ts}</td>
+                              <td style={{ padding: "8px 12px", maxWidth: 260 }}>
+                                <div style={{ color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.campaign_name}</div>
+                                <div style={{ color: t.textMuted, fontSize: 11, fontFamily: "monospace" }}>{row.campaign_id?.slice(0, 18)}</div>
+                              </td>
+                              <td style={{ padding: "8px 12px", color: t.purple, fontWeight: 600 }}>{row.mkt_name}</td>
+                              <td style={{ padding: "8px 12px" }}>
+                                <span style={{ color: actorColor, fontWeight: row.actor_type === "human" ? 600 : 400 }}>{actorLabel}</span>
+                                <div style={{ color: t.textMuted, fontSize: 11 }}>{row.actor_name}</div>
+                              </td>
+                              <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                                <span style={{ color: isStatus ? t.blue : t.amber, fontSize: 12 }}>
+                                  {isStatus ? "Trạng thái" : "Ngân sách"}
+                                </span>
+                              </td>
+                              <td style={{ padding: "8px 12px" }}>
+                                <span style={{ color: t.red, fontSize: 12 }}>{String(oldV)}</span>
+                                <span style={{ color: t.textMuted, margin: "0 6px" }}>→</span>
+                                <span style={{ color: t.green, fontSize: 12, fontWeight: 600 }}>{String(newV)}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Pagination */}
+                {fbHistTotal > FB_HIST_LIMIT && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "center" }}>
+                    <button disabled={fbHistOffset === 0} onClick={() => setFbHistOffset(Math.max(0, fbHistOffset - FB_HIST_LIMIT))}
+                      style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: "pointer", background: t.card, color: t.text }}>← Trước</button>
+                    <span style={{ fontSize: 13, color: t.textMuted, lineHeight: "34px" }}>{Math.floor(fbHistOffset / FB_HIST_LIMIT) + 1} / {Math.ceil(fbHistTotal / FB_HIST_LIMIT)}</span>
+                    <button disabled={fbHistOffset + FB_HIST_LIMIT >= fbHistTotal} onClick={() => setFbHistOffset(fbHistOffset + FB_HIST_LIMIT)}
+                      style={{ padding: "6px 16px", border: `1px solid ${t.cardBorder}`, borderRadius: 6, cursor: "pointer", background: t.card, color: t.text }}>Sau →</button>
                   </div>
                 )}
               </div>
