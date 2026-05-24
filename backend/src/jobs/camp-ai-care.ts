@@ -200,10 +200,10 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
           COALESCE(h.care_pct, 0) AS care_pct_today,
           COALESCE(h.cod_orders, 0) AS cod_today,
           MIN(first_seen.date) AS first_date,
-          CURRENT_DATE - MIN(first_seen.date) AS days_running,
+          (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - MIN(first_seen.date) AS days_running,
           (SELECT ROUND(AVG(h3.cpm)) FROM mkt_ads_cost h3
             WHERE h3.campaign_id = c.campaign_id
-              AND h3.date BETWEEN CURRENT_DATE - 4 AND CURRENT_DATE - 1
+              AND h3.date BETWEEN (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 4 AND (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 1
               AND h3.impressions > 0) AS cpm_avg_3d
         FROM mkt_ads_cost c
         LEFT JOIN (
@@ -217,18 +217,18 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
             AND NOT (po.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
             AND (po.raw->>'p_utm_source' = mac.campaign_name OR po.raw->>'p_utm_campaign' = mac.campaign_name)
             AND po.pancake_created_at::date = mac.date
-          WHERE mac.date = CURRENT_DATE
+          WHERE mac.date = (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
           GROUP BY mac.campaign_id
         ) h ON h.campaign_id = c.campaign_id
         LEFT JOIN (
           SELECT campaign_id, MIN(date) AS date FROM mkt_ads_cost
           WHERE deleted_at IS NULL GROUP BY campaign_id
         ) first_seen ON first_seen.campaign_id = c.campaign_id
-        WHERE c.date = CURRENT_DATE
+        WHERE c.date = (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
           AND c.deleted_at IS NULL
           AND c.campaign_id IN (
             SELECT DISTINCT campaign_id FROM mkt_ads_cost
-            WHERE date >= CURRENT_DATE - 14 AND spend > 0 AND deleted_at IS NULL
+            WHERE date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 14 AND spend > 0 AND deleted_at IS NULL
           )
           ${mktFilter ? `AND c.mkt_name = '${mktFilter.replace(/'/g, "''")}'` : ""}
           ${campFilter ? `AND c.campaign_id = '${campFilter.replace(/'/g, "''")}'` : ""}
@@ -249,8 +249,8 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
             CASE WHEN impressions > 0 THEN ROUND(clicks::numeric / impressions * 100, 2) END AS ctr
           FROM mkt_ads_cost
           WHERE campaign_id = ANY($1::varchar[])
-            AND date >= CURRENT_DATE - 7
-            AND date < CURRENT_DATE
+            AND date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 7
+            AND date <= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
             AND deleted_at IS NULL
           ORDER BY campaign_id, date DESC
         `, [campIds]).catch(() => [])
@@ -290,7 +290,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
           ROUND(AVG(CASE WHEN impressions > 0 THEN clicks::numeric / impressions * 100 END), 2) AS avg_ctr,
           COUNT(DISTINCT campaign_id) AS camp_count
         FROM mkt_ads_cost
-        WHERE mkt_name = $1 AND date >= CURRENT_DATE - 14 AND spend > 0 AND deleted_at IS NULL
+        WHERE mkt_name = $1 AND date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 14 AND spend > 0 AND deleted_at IS NULL
       `, [args.mkt]).catch(() => [{}])
       return rows[0]
     }
