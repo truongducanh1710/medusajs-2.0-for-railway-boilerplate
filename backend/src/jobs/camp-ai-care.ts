@@ -502,12 +502,21 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
       role: "user",
       content: `Hôm nay ${today}. Phân tích ${mktCtx} — camp active trong 14 ngày gần nhất.
 
-QUY TRÌNH BẮT BUỘC — xử lý tuần tự từng MKT (KHÔNG gọi nhiều MKT cùng lúc):
-1. get_camp_metrics(mkt="KIENLB") → get_mkt_benchmarks(mkt="KIENLB") → get_recent_rejections(mkt="KIENLB") → recommend_action cho từng camp của KIENLB
-2. Lặp lại với MKT tiếp theo: ANHNT, XUANLT, NAMDV, DUPD, LINHMT...
-3. Mỗi bước chỉ gọi 1 tool — KHÔNG parallel tool calls.
+QUY TRÌNH TỐI ƯU (giảm số iteration để nhanh + tiết kiệm token):
 
-Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Gọi recommend_action cho MỌI camp đã phân tích kể cả no_action.`,
+**Bước 1** (1 turn): Gọi SONG SONG 3 tool cho cùng 1 MKT để load context:
+  - get_camp_metrics(mkt="X")
+  - get_mkt_benchmarks(mkt="X")
+  - get_recent_rejections(mkt="X")
+
+**Bước 2** (1 turn): Sau khi có data MKT đó, gọi SONG SONG nhiều recommend_action trong CÙNG 1 turn — 1 call cho mỗi camp đã phân tích. VD nếu MKT X có 10 camps → 10 recommend_action song song.
+
+**Bước 3**: Lặp Bước 1+2 với MKT tiếp theo (ANHNT, XUANLT, NAMDV, KIENLB, DUPD, LINHMT...).
+
+Quy tắc:
+- LUÔN gọi recommend_action SONG SONG (parallel tool calls) cho nhiều camps cùng lúc — KHÔNG gọi từng cái một
+- Gọi cho MỌI camp kể cả no_action
+- Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường`,
     },
   ]
 
@@ -576,33 +585,40 @@ Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Gọi
   ).catch(() => [])
 
   if (myRecs.length > 0) {
-    await heartbeat({ phase: "reflection", last_action: `Self-critique ${myRecs.length} recommendations...` })
-    messages.push({
-      role: "user",
-      content: `Tự critique ${myRecs.length} recommendations vừa tạo:
-${myRecs.map((r: any, i: number) => `${i + 1}. [${r.id}] [${r.action}] ${r.campaign_name}: "${r.reason}" (confidence: ${r.confidence})`).join("\n")}
+    await heartbeat({ phase: "reflection", last_action: `Self-critique ${myRecs.length} recommendations (fresh context)...` })
 
-Với mỗi rec, đánh giá:
-- Reason có KPI cụ thể (số liệu) không?
-- Action có khớp logic không (vd pause camp < 3 ngày là sai)?
-- Confidence có hợp lý không?
+    // FRESH conversation — không tải lại full history (~200k tokens) → 1k tokens
+    const reflectionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: `Bạn là QA reviewer độc lập. Critique các recommendations của AI agent ads.
 
-Nếu rec nào cần sửa, gọi update_recommendation(rec_id, new_reason, new_confidence).
-Nếu tất cả OK, trả lời "APPROVED" và dừng.`,
-    })
+Tiêu chí review:
+- Reason PHẢI có KPI số liệu cụ thể (vd "care_pct 42%", "CPM 580k") — không chấp nhận chung chung
+- Action logic: pause camp < 3 ngày = SAI; tăng budget = SAI (chỉ giảm)
+- Confidence: high cần care > 50% rõ ràng; low khi data ít
 
-    const reflectionTools = [...TOOLS, UPDATE_REC_TOOL]
+Nếu rec cần sửa, gọi update_recommendation(rec_id, new_reason, new_confidence).
+Nếu tất cả OK → trả "APPROVED" và dừng.`,
+      },
+      {
+        role: "user",
+        content: `${myRecs.length} recommendations cần review:\n${myRecs.map((r: any, i: number) => `${i + 1}. id=${r.id} [${r.action}] ${r.campaign_name}: "${r.reason}" (conf=${r.confidence})`).join("\n")}`,
+      },
+    ]
+
     for (let i = 0; i < 3; i++) {
+      await heartbeat({ last_action: `Reflection iter ${i + 1}/3...` })
       const refRes = await client.chat.completions.create({
         model: activeModel,
-        messages,
-        tools: reflectionTools,
+        messages: reflectionMessages,
+        tools: [UPDATE_REC_TOOL],
         tool_choice: "auto",
         max_tokens: 2000,
         temperature: 0.1,
       })
       const refMsg = refRes.choices[0].message
-      messages.push(refMsg)
+      reflectionMessages.push(refMsg)
       totalPromptTokens += refRes.usage?.prompt_tokens ?? 0
       totalCompletionTokens += refRes.usage?.completion_tokens ?? 0
 
@@ -612,13 +628,15 @@ Nếu tất cả OK, trả lời "APPROVED" và dừng.`,
         let args: any = {}
         try { args = JSON.parse(tc.function.arguments) } catch { /* ignore */ }
         const result = await handleTool(tc.function.name, args)
-        messages.push({
+        reflectionMessages.push({
           role: "tool",
           tool_call_id: tc.id,
           content: JSON.stringify(result),
         } as OpenAI.Chat.ChatCompletionMessageParam)
       }
     }
+    // Lưu reflection messages vào messages chính để hiện trong UI log
+    messages.push(...reflectionMessages.slice(1)) // skip duplicate system
     logger?.info?.(`[CampAI] Self-reflection done for run ${runId}`)
   }
 
