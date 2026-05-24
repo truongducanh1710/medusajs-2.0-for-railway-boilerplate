@@ -118,6 +118,15 @@ export default function BaoCaoMktPage() {
   const AI_LIMIT = 50
   const [aiModel, setAiModel] = useState("deepseek-v4-flash")
   const [aiParallel, setAiParallel] = useState(false)
+  // Sidebar log state (replaces modal)
+  const [aiLogRunId, setAiLogRunId] = useState<string | null>(null)
+  const [aiLogTrace, setAiLogTrace] = useState<any[]>([])
+  const [aiLogRecs, setAiLogRecs] = useState<any[]>([])
+  const [aiLogToolCalls, setAiLogToolCalls] = useState<any[]>([])
+  const [aiLogLoading, setAiLogLoading] = useState(false)
+  const [aiLogHighlight, setAiLogHighlight] = useState<string | null>(null) // campaign_id
+  const [aiLogTab, setAiLogTab] = useState<"messages" | "tools" | "eval">("messages")
+  // Keep old modal state for compat (unused now)
   const [aiReasoningRec, setAiReasoningRec] = useState<any | null>(null)
   const [aiReasoningTrace, setAiReasoningTrace] = useState<any[]>([])
   const [aiReasoningRecs, setAiReasoningRecs] = useState<any[]>([])
@@ -337,19 +346,28 @@ export default function BaoCaoMktPage() {
     } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiTriggering(false) }
   }, [aiModel, aiParallel])
 
-  const openReasoning = useCallback(async (rec: any) => {
-    setAiReasoningRec(rec)
-    setAiReasoningLoading(true)
-    setAiReasoningTrace([])
-    setAiReasoningRecs([])
+  const openAiLog = useCallback(async (runId: string, highlightCampaignId?: string) => {
+    if (aiLogRunId === runId && !highlightCampaignId) { setAiLogRunId(null); return }
+    setAiLogRunId(runId)
+    setAiLogHighlight(highlightCampaignId ?? null)
+    setAiLogLoading(true)
+    setAiLogTrace([])
+    setAiLogRecs([])
+    setAiLogToolCalls([])
     try {
-      const p = new URLSearchParams({ run_id: rec.run_id, campaign_id: rec.campaign_id })
+      const p = new URLSearchParams({ run_id: runId })
       const res = await apiFetch(`/admin/pancake-sync/report/camp-ai/reasoning?${p}`)
       const data = await res.json()
-      setAiReasoningTrace(data.trace ?? [])
-      setAiReasoningRecs(data.recommendations ?? [])
-    } catch { /* ignore */ } finally { setAiReasoningLoading(false) }
-  }, [])
+      setAiLogTrace(data.trace ?? [])
+      setAiLogRecs(data.recommendations ?? [])
+      setAiLogToolCalls(data.tool_calls ?? [])
+    } catch { /* ignore */ } finally { setAiLogLoading(false) }
+  }, [aiLogRunId])
+
+  const openReasoning = useCallback(async (rec: any) => {
+    // Now opens sidebar instead of modal
+    await openAiLog(rec.run_id, rec.campaign_id)
+  }, [openAiLog])
 
   const approveRecWithNote = useCallback(async (id: string, decision: "approved" | "rejected", rejection_reason?: string) => {
     setAiApproving(id)
@@ -1535,16 +1553,27 @@ export default function BaoCaoMktPage() {
               <span style={{ color: t.textMuted, fontSize: 12 }}>{aiTotal} recommendations</span>
             </div>
 
-            {/* Run summary cards */}
+            {/* Run summary cards — click to filter AND open log sidebar */}
             {aiRunSummary.length > 0 && (
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                {aiRunSummary.slice(0, 5).map((run: any) => {
+                {aiRunSummary.slice(0, 8).map((run: any) => {
                   const ts = new Date(run.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                  const isActive = aiFilterRunId === run.run_id
                   return (
-                    <div key={run.run_id} onClick={() => { setAiFilterRunId(run.run_id === aiFilterRunId ? "" : run.run_id); setAiOffset(0) }}
-                      style={{ background: aiFilterRunId === run.run_id ? (dark ? "#1e3a5f" : "#dbeafe") : t.card, border: `1px solid ${aiFilterRunId === run.run_id ? t.blue : t.cardBorder}`, borderRadius: 8, padding: "10px 16px", cursor: "pointer", minWidth: 160 }}>
-                      <div style={{ fontSize: 11, color: t.textMuted }}>{ts}</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginTop: 2 }}>{run.total} camps</div>
+                    <div key={run.run_id}
+                      style={{ background: isActive ? (dark ? "#1e3a5f" : "#dbeafe") : t.card, border: `1px solid ${isActive ? t.blue : t.cardBorder}`, borderRadius: 8, padding: "10px 16px", cursor: "pointer", minWidth: 160 }}>
+                      <div style={{ fontSize: 11, color: t.textMuted }}>{ts} · <span style={{ color: dark ? "#a78bfa" : "#7c3aed" }}>{run.agent_model?.split("/").pop()?.slice(0, 16) ?? ""}</span></div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flex: 1 }}
+                          onClick={() => { setAiFilterRunId(isActive ? "" : run.run_id); setAiOffset(0) }}>
+                          {run.total} camps
+                        </span>
+                        <button onClick={() => openAiLog(run.run_id)}
+                          title="Xem AI log"
+                          style={{ background: aiLogRunId === run.run_id ? (dark ? "#4c1d95" : "#ede9fe") : "transparent", border: `1px solid ${aiLogRunId === run.run_id ? "#7c3aed" : t.cardBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 11, color: dark ? "#a78bfa" : "#7c3aed" }}>
+                          🧠
+                        </button>
+                      </div>
                       <div style={{ fontSize: 11, marginTop: 2 }}>
                         <span style={{ color: t.amber }}>{run.pending} chờ</span>
                         {" · "}
@@ -1558,7 +1587,10 @@ export default function BaoCaoMktPage() {
               </div>
             )}
 
-            {/* Recommendations table */}
+            {/* Split view: recommendations + AI log sidebar */}
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            {/* LEFT: Recommendations table */}
+            <div style={{ flex: aiLogRunId ? "0 0 55%" : "1 1 100%", minWidth: 0, transition: "flex 0.2s" }}>
             {aiLoading ? (
               <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Đang tải...</div>
             ) : aiRecs.length === 0 ? (
@@ -1671,86 +1703,144 @@ export default function BaoCaoMktPage() {
                 </button>
               </div>
             )}
+            </div>{/* end left column */}
+
+            {/* RIGHT: AI Log Sidebar */}
+            {aiLogRunId && (
+              <div style={{ flex: "0 0 44%", minWidth: 0, background: dark ? "#0d0d1a" : "#f8fafc", border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, borderRadius: 10, overflow: "hidden", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+                {/* Sidebar header */}
+                <div style={{ padding: "10px 14px", borderBottom: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: dark ? "#a78bfa" : "#7c3aed" }}>🧠 AI Log</span>
+                    <span style={{ fontSize: 11, color: dark ? "#64748b" : "#94a3b8", marginLeft: 8 }}>{aiLogRunId.slice(0, 8)}...</span>
+                  </div>
+                  <button onClick={() => setAiLogRunId(null)}
+                    style={{ background: "transparent", border: "none", color: dark ? "#64748b" : "#94a3b8", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>✕</button>
+                </div>
+
+                {/* Sub-tabs */}
+                <div style={{ display: "flex", borderBottom: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, flexShrink: 0 }}>
+                  {(["messages", "tools", "eval"] as const).map(tab => (
+                    <button key={tab} onClick={() => setAiLogTab(tab)}
+                      style={{ flex: 1, padding: "7px 4px", background: aiLogTab === tab ? (dark ? "#1a1a2e" : "#fff") : "transparent", border: "none", borderBottom: aiLogTab === tab ? `2px solid #7c3aed` : "2px solid transparent", cursor: "pointer", fontSize: 11, fontWeight: 600, color: aiLogTab === tab ? (dark ? "#a78bfa" : "#7c3aed") : dark ? "#64748b" : "#94a3b8" }}>
+                      {tab === "messages" ? "💬 Messages" : tab === "tools" ? "🔧 Tool Calls" : "📊 Eval"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sidebar body */}
+                <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+                  {aiLogLoading ? (
+                    <div style={{ color: dark ? "#64748b" : "#94a3b8", textAlign: "center", padding: 40, fontSize: 13 }}>Đang tải...</div>
+                  ) : aiLogTab === "messages" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {aiLogTrace.length === 0 && <div style={{ color: dark ? "#64748b" : "#94a3b8", textAlign: "center", padding: 40, fontSize: 13 }}>Không có trace. Hãy chạy agent trước.</div>}
+                      {aiLogTrace.map((msg: any, i: number) => {
+                        const role = msg.role
+                        const bgMap: Record<string, string> = {
+                          system: dark ? "#1e293b" : "#f1f5f9",
+                          user: dark ? "#1e3a5f" : "#dbeafe",
+                          assistant: dark ? "#052e16" : "#f0fdf4",
+                          tool: dark ? "#2d1f4e" : "#faf5ff",
+                        }
+                        const labelColor: Record<string, string> = { system: "#94a3b8", user: "#60a5fa", assistant: "#4ade80", tool: "#c084fc" }
+                        const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content, null, 2)
+                        const isHighlighted = aiLogHighlight && (
+                          (typeof msg.content === "string" && msg.content.includes(aiLogHighlight)) ||
+                          msg.tool_calls?.some((tc: any) => (tc.function?.arguments ?? "").includes(aiLogHighlight))
+                        )
+                        return (
+                          <div key={i} style={{ background: isHighlighted ? (dark ? "#1c2d1a" : "#f0fdf4") : (bgMap[role] ?? bgMap.assistant), borderRadius: 6, padding: "8px 10px", border: isHighlighted ? "1px solid #16a34a" : "1px solid transparent" }}>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: labelColor[role] ?? "#94a3b8", marginBottom: 4, letterSpacing: 1, textTransform: "uppercase" }}>{role}</div>
+                            {msg.tool_calls?.map((tc: any, j: number) => (
+                              <details key={j} style={{ marginBottom: 4 }}>
+                                <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 600, color: dark ? "#c084fc" : "#7c3aed" }}>
+                                  🔧 {tc.function?.name}()
+                                </summary>
+                                <pre style={{ fontSize: 10, color: dark ? "#cbd5e1" : "#475569", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: "4px 0 0", background: dark ? "#0f172a" : "#f8fafc", borderRadius: 4, padding: 6 }}>
+                                  {(() => { try { return JSON.stringify(JSON.parse(tc.function?.arguments ?? "{}"), null, 2) } catch { return tc.function?.arguments ?? "" } })()}
+                                </pre>
+                              </details>
+                            ))}
+                            {content && (
+                              <pre style={{ fontSize: 11, color: dark ? "#e2e8f0" : "#1e293b", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "inherit", lineHeight: 1.5 }}>
+                                {content.length > 1500 ? content.slice(0, 1500) + "\n… [truncated]" : content}
+                              </pre>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : aiLogTab === "tools" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {aiLogToolCalls.length === 0 && <div style={{ color: dark ? "#64748b" : "#94a3b8", textAlign: "center", padding: 40, fontSize: 13 }}>Không có tool calls.</div>}
+                      {aiLogToolCalls.map((tc: any, i: number) => {
+                        const ts = tc.ts ? new Date(tc.ts).toLocaleTimeString("vi-VN") : ""
+                        const isHighlighted = aiLogHighlight && JSON.stringify(tc.args ?? {}).includes(aiLogHighlight)
+                        return (
+                          <div key={i} style={{ background: isHighlighted ? (dark ? "#1c2d1a" : "#f0fdf4") : (dark ? "#1a1a2e" : "#fff"), border: `1px solid ${isHighlighted ? "#16a34a" : (dark ? "#2d2d44" : "#e2e8f0")}`, borderRadius: 6, padding: "8px 10px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: dark ? "#c084fc" : "#7c3aed" }}>🔧 {tc.name}</span>
+                              <span style={{ fontSize: 10, color: dark ? "#64748b" : "#94a3b8" }}>{ts}</span>
+                            </div>
+                            <details>
+                              <summary style={{ cursor: "pointer", fontSize: 10, color: dark ? "#94a3b8" : "#64748b" }}>args</summary>
+                              <pre style={{ fontSize: 10, color: dark ? "#cbd5e1" : "#475569", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: "4px 0 0", background: dark ? "#0f172a" : "#f8fafc", borderRadius: 4, padding: 6 }}>
+                                {JSON.stringify(tc.args, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    /* Eval tab */
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {/* Token usage from recs */}
+                      {aiLogRecs.length === 0 && <div style={{ color: dark ? "#64748b" : "#94a3b8", textAlign: "center", padding: 40, fontSize: 13 }}>Không có dữ liệu eval.</div>}
+
+                      {/* Summary badges */}
+                      {aiLogRecs.length > 0 && (() => {
+                        const passed = aiLogRecs.filter((r: any) => r.reflection_passed === true).length
+                        const failed = aiLogRecs.filter((r: any) => r.reflection_passed === false).length
+                        const noEval = aiLogRecs.filter((r: any) => r.reflection_passed === null || r.reflection_passed === undefined).length
+                        const retried = aiLogRecs.filter((r: any) => (r.validation_retries ?? 0) > 0).length
+                        return (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                            <span style={{ background: dark ? "#052e16" : "#f0fdf4", color: "#16a34a", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600 }}>✓ Pass: {passed}</span>
+                            <span style={{ background: dark ? "#3b0d0d" : "#fef2f2", color: "#dc2626", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600 }}>✗ Fail: {failed}</span>
+                            {noEval > 0 && <span style={{ background: dark ? "#1e293b" : "#f8fafc", color: dark ? "#94a3b8" : "#64748b", borderRadius: 6, padding: "4px 10px", fontSize: 12 }}>⏳ Chưa eval: {noEval}</span>}
+                            {retried > 0 && <span style={{ background: dark ? "#2d1f00" : "#fffbeb", color: "#d97706", borderRadius: 6, padding: "4px 10px", fontSize: 12 }}>↩ Retry: {retried}</span>}
+                          </div>
+                        )
+                      })()}
+
+                      {aiLogRecs.map((r: any) => {
+                        const passed = r.reflection_passed
+                        const isHighlighted = aiLogHighlight === r.campaign_id
+                        return (
+                          <div key={r.id} style={{ background: isHighlighted ? (dark ? "#1c2d1a" : "#f0fdf4") : (dark ? "#1a1a2e" : "#fff"), border: `1px solid ${isHighlighted ? "#16a34a" : passed === true ? "#16a34a" : passed === false ? "#dc2626" : (dark ? "#2d2d44" : "#e2e8f0")}`, borderRadius: 6, padding: "8px 10px" }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: dark ? "#e2e8f0" : "#1e293b", marginBottom: 4 }}>{r.campaign_name}</div>
+                            <div style={{ fontSize: 10, color: dark ? "#94a3b8" : "#64748b", marginBottom: 4 }}>
+                              [{r.action}] — confidence: {r.confidence}
+                              {(r.validation_retries ?? 0) > 0 && <span style={{ color: "#d97706", marginLeft: 6 }}>↩ {r.validation_retries}x retry</span>}
+                            </div>
+                            <div style={{ fontSize: 11, color: passed === true ? "#16a34a" : passed === false ? "#dc2626" : dark ? "#64748b" : "#94a3b8", marginBottom: r.reflection_notes ? 4 : 0 }}>
+                              {passed === true ? "✓ Evaluator PASSED" : passed === false ? "✗ Evaluator FAILED" : "⏳ Chưa evaluate"}
+                            </div>
+                            {r.reflection_notes && <div style={{ fontSize: 10, color: dark ? "#cbd5e1" : "#475569", fontStyle: "italic" }}>{r.reflection_notes}</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            </div>{/* end split-view flex */}
           </div>
         )
       })()}
-
-      {/* Reasoning Trace Modal */}
-      {aiReasoningRec && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 20px", overflowY: "auto" }}
-          onClick={e => { if (e.target === e.currentTarget) { setAiReasoningRec(null) } }}>
-          <div style={{ background: dark ? "#1a1a2e" : "#fff", border: `1px solid ${dark ? "#334155" : "#e2e8f0"}`, borderRadius: 12, padding: 24, width: "100%", maxWidth: 800, maxHeight: "85vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 16, color: dark ? "#f1f5f9" : "#1e293b" }}>
-                  🧠 AI Reasoning — {aiReasoningRec.campaign_name}
-                </div>
-                <div style={{ fontSize: 12, color: dark ? "#94a3b8" : "#64748b", marginTop: 4 }}>
-                  Run: {aiReasoningRec.run_id?.slice(0, 8)}...
-                </div>
-              </div>
-              <button onClick={() => setAiReasoningRec(null)}
-                style={{ background: "transparent", border: "none", color: dark ? "#94a3b8" : "#64748b", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
-            </div>
-
-            {/* Reflection info */}
-            {aiReasoningRecs.length > 0 && (() => {
-              const recInfo = aiReasoningRecs.find((r: any) => r.campaign_id === aiReasoningRec.campaign_id)
-              if (!recInfo) return null
-              const passed = recInfo.reflection_passed
-              return (
-                <div style={{ background: dark ? (passed === true ? "#052e16" : passed === false ? "#3b0d0d" : "#1e293b") : (passed === true ? "#f0fdf4" : passed === false ? "#fef2f2" : "#f8fafc"), border: `1px solid ${passed === true ? "#16a34a" : passed === false ? "#dc2626" : dark ? "#334155" : "#e2e8f0"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12 }}>
-                  <span style={{ fontWeight: 600, color: passed === true ? "#16a34a" : passed === false ? "#dc2626" : dark ? "#94a3b8" : "#64748b" }}>
-                    {passed === true ? "✓ Evaluator: PASSED" : passed === false ? "✗ Evaluator: FAILED" : "⏳ Chưa evaluate"}
-                  </span>
-                  {recInfo.reflection_notes && <span style={{ color: dark ? "#cbd5e1" : "#475569", marginLeft: 8 }}>— {recInfo.reflection_notes}</span>}
-                  {recInfo.validation_retries > 0 && <span style={{ color: dark ? "#f59e0b" : "#d97706", marginLeft: 8 }}>({recInfo.validation_retries} lần retry validation)</span>}
-                </div>
-              )
-            })()}
-
-            {aiReasoningLoading ? (
-              <div style={{ color: dark ? "#94a3b8" : "#64748b", textAlign: "center", padding: 40 }}>Đang tải trace...</div>
-            ) : aiReasoningTrace.length === 0 ? (
-              <div style={{ color: dark ? "#94a3b8" : "#64748b", textAlign: "center", padding: 40 }}>Không có trace cho campaign này.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {aiReasoningTrace.map((msg: any, i: number) => {
-                  const role = msg.role
-                  const bgMap: Record<string, string> = {
-                    system: dark ? "#1e293b" : "#f1f5f9",
-                    user: dark ? "#1e3a5f" : "#dbeafe",
-                    assistant: dark ? "#052e16" : "#f0fdf4",
-                    tool: dark ? "#2d1f4e" : "#faf5ff",
-                  }
-                  const labelMap: Record<string, string> = { system: "SYSTEM", user: "USER", assistant: "ASSISTANT", tool: "TOOL RESULT" }
-                  const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content, null, 2)
-                  return (
-                    <div key={i} style={{ background: bgMap[role] ?? bgMap.assistant, borderRadius: 8, padding: "10px 14px" }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: dark ? "#94a3b8" : "#64748b", marginBottom: 6, letterSpacing: 1 }}>{labelMap[role] ?? role.toUpperCase()}</div>
-                      {msg.tool_calls?.map((tc: any, j: number) => (
-                        <details key={j} style={{ marginBottom: 6 }}>
-                          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, color: dark ? "#a78bfa" : "#7c3aed" }}>
-                            🔧 {tc.function?.name}()
-                          </summary>
-                          <pre style={{ fontSize: 11, color: dark ? "#cbd5e1" : "#475569", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: "6px 0 0", background: dark ? "#0f172a" : "#f8fafc", borderRadius: 6, padding: 8 }}>
-                            {JSON.stringify(JSON.parse(tc.function?.arguments ?? "{}"), null, 2)}
-                          </pre>
-                        </details>
-                      ))}
-                      {content && (
-                        <pre style={{ fontSize: 12, color: dark ? "#e2e8f0" : "#1e293b", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "inherit" }}>
-                          {content.length > 2000 ? content.slice(0, 2000) + "\n… [truncated]" : content}
-                        </pre>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
