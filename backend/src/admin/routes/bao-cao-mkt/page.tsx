@@ -51,6 +51,9 @@ export default function BaoCaoMktPage() {
   const [budgetValue, setBudgetValue] = useState<string>("")
   const [scheduleModalCamp, setScheduleModalCamp] = useState<any>(null)
   const [actingCampId, setActingCampId] = useState<string | null>(null)
+  const [sortCol, setSortCol] = useState<string>("spend")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [filterStatus, setFilterStatus] = useState<string>("")
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -322,6 +325,12 @@ export default function BaoCaoMktPage() {
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+              <option value="">Tất cả trạng thái</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="PAUSED">PAUSED</option>
+            </select>
             <button onClick={fetchCampData} disabled={campLoading} style={{
               background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
               padding: "8px 16px", cursor: campLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: campLoading ? 0.6 : 1
@@ -329,30 +338,58 @@ export default function BaoCaoMktPage() {
               {campLoading ? "Đang tải..." : "↻ Refresh"}
             </button>
           </div>
-          {campRows.length === 0 && !campLoading ? (
-            <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Không có dữ liệu</div>
+          {(() => {
+            const sortedCamps = [...campRows]
+              .filter(r => !filterStatus || r.effective_status === filterStatus)
+              .sort((a, b) => {
+                const colMap: Record<string, (x: any) => number> = {
+                  spend: x => Number(x.spend),
+                  impressions: x => Number(x.impressions),
+                  clicks: x => Number(x.clicks),
+                  cpm: x => Number(x.impressions) > 0 ? Number(x.spend) / Number(x.impressions) * 1000 : 0,
+                  cpc: x => Number(x.clicks) > 0 ? Number(x.spend) / Number(x.clicks) : 0,
+                  cod_total: x => Number(x.cod_total),
+                  care_pct: x => x.care_pct !== null ? Number(x.care_pct) : -1,
+                  daily_budget: x => Number(x.daily_budget ?? 0),
+                }
+                const fn = colMap[sortCol] ?? ((x: any) => Number(x.spend))
+                return sortDir === "desc" ? fn(b) - fn(a) : fn(a) - fn(b)
+              })
+            const mkSortTh = (col: string, label: string, align: "left" | "center" | "right" = "right") => (
+              <th onClick={() => { if (sortCol === col) setSortDir(d => d === "desc" ? "asc" : "desc"); else { setSortCol(col); setSortDir("desc") } }}
+                style={{ padding: "10px 12px", textAlign: align, fontWeight: 600, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+                {label} <span style={{ fontSize: 10, opacity: sortCol === col ? 1 : 0.4 }}>{sortCol === col ? (sortDir === "desc" ? "▼" : "▲") : "↕"}</span>
+              </th>
+            )
+            return (
+          <>
+          {sortedCamps.length === 0 && !campLoading ? (
+            <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Không có dữ liệu{filterStatus ? ` trạng thái ${filterStatus}` : ""}</div>
           ) : (
             <div style={{ overflowX: "auto" }}>
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
+                {filterStatus ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
+              </div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
                     <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600 }}>Campaign</th>
                     <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>Status</th>
                     <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>MKT</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Budget</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Spend</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Impressions</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Clicks</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>CPM</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>CPC</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>COD</th>
+                    {mkSortTh("daily_budget", "Budget")}
+                    {mkSortTh("spend", "Spend")}
+                    {mkSortTh("impressions", "Impr")}
+                    {mkSortTh("clicks", "Clicks")}
+                    {mkSortTh("cpm", "CPM")}
+                    {mkSortTh("cpc", "CPC")}
+                    {mkSortTh("cod_total", "COD")}
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Đơn</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>% Care</th>
+                    {mkSortTh("care_pct", "% Care")}
                     {canControl && <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>⏰</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {campRows.map((row: any) => {
+                  {sortedCamps.map((row: any) => {
                     const imp = Number(row.impressions)
                     const clk = Number(row.clicks)
                     const spd = Number(row.spend)
@@ -445,20 +482,19 @@ export default function BaoCaoMktPage() {
                 </tbody>
                 <tfoot>
                   {(() => {
-                    const totSpend = campRows.reduce((s: number, r: any) => s + Number(r.spend), 0)
-                    const totImp = campRows.reduce((s: number, r: any) => s + Number(r.impressions), 0)
-                    const totClk = campRows.reduce((s: number, r: any) => s + Number(r.clicks), 0)
-                    const totCod = campRows.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
+                    const totSpend = sortedCamps.reduce((s: number, r: any) => s + Number(r.spend), 0)
+                    const totImp = sortedCamps.reduce((s: number, r: any) => s + Number(r.impressions), 0)
+                    const totClk = sortedCamps.reduce((s: number, r: any) => s + Number(r.clicks), 0)
+                    const totCod = sortedCamps.reduce((s: number, r: any) => s + Number(r.cod_total), 0)
                     const totCpm = totImp > 0 ? Math.round(totSpend / totImp * 1000) : null
                     const totCpc = totClk > 0 ? Math.round(totSpend / totClk) : null
                     const totCarePct = totCod > 0 ? Math.round(totSpend / totCod * 10000) / 100 : null
                     return (
                       <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
-                        <td colSpan={3} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({campRows.length} camps)</td>
+                        <td colSpan={3} style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG ({sortedCamps.length} camps)</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted, fontWeight: 600 }}>
-                          {fmtMoney(campRows.reduce((s: number, r: any) => s + Number(r.daily_budget ?? 0), 0))}
+                          {fmtMoney(sortedCamps.reduce((s: number, r: any) => s + Number(r.daily_budget ?? 0), 0))}
                         </td>
-                        {/* extra col for Schedule when canControl */}
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.amber, fontWeight: 700 }}>{fmtMoney(totSpend)}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totImp.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{totClk.toLocaleString("vi-VN")}</td>
@@ -466,9 +502,9 @@ export default function BaoCaoMktPage() {
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.blue }}>{totCpc !== null ? fmtMoney(totCpc) : "—"}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.green, fontWeight: 700 }}>{fmtMoney(totCod)}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>
-                          {campRows.reduce((s: number, r: any) => s + Number(r.delivered ?? 0), 0)}&#10003;
+                          {sortedCamps.reduce((s: number, r: any) => s + Number(r.delivered ?? 0), 0)}&#10003;
                           {" · "}
-                          {campRows.reduce((s: number, r: any) => s + Number(r.cancelled ?? 0), 0)}&#10007;
+                          {sortedCamps.reduce((s: number, r: any) => s + Number(r.cancelled ?? 0), 0)}&#10007;
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(totCarePct) }}>
                           {totCarePct !== null ? totCarePct + "%" : "—"}
@@ -481,6 +517,8 @@ export default function BaoCaoMktPage() {
               </table>
             </div>
           )}
+          </>
+          )})()}
         </div>
       )}
 

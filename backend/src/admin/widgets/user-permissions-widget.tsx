@@ -29,15 +29,27 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
   const [mktCode, setMktCode] = useState<string>((data?.metadata?.mkt_code as string) ?? "")
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [autoAdded, setAutoAdded] = useState<string[]>([])
 
   const toggle = (p: string) =>
     setPerms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
 
   const applyPreset = (r: keyof typeof ROLE_PRESETS) => setPerms(ROLE_PRESETS[r] as string[])
 
+  const DEFAULT_MKT_PERMS = ["page.bao-cao.view", "page.bao-cao.camp-control"]
+
   const save = async () => {
     setSaving(true)
     setMsg(null)
+    let finalPerms = [...perms]
+    const added: string[] = []
+    if (mktCode.trim()) {
+      for (const p of DEFAULT_MKT_PERMS) {
+        if (!finalPerms.includes(p)) { finalPerms.push(p); added.push(p) }
+      }
+      if (added.length) setPerms(finalPerms)
+    }
+    setAutoAdded(added)
     try {
       const res = await apiFetch(`/admin/users/${data.id}`, {
         method: "POST",
@@ -45,7 +57,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
         body: JSON.stringify({
           metadata: {
             ...(data.metadata ?? {}),
-            permissions: perms,
+            permissions: finalPerms,
             mkt_code: mktCode.trim().toUpperCase() || null,
           },
         }),
@@ -84,6 +96,12 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
           User chỉ bật/tắt được camp có MKT code này
         </span>
       </div>
+
+      {autoAdded.length > 0 && (
+        <p className="text-xs text-blue-600 bg-blue-50 rounded px-2 py-1">
+          ℹ️ Đã tự động thêm quyền: {autoAdded.join(", ")}
+        </p>
+      )}
 
       {perms.length === 0 && (
         <p className="text-sm text-gray-500 italic">
