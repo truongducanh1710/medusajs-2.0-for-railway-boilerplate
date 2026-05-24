@@ -1580,7 +1580,9 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
           )}
         </div>
       </div>
-
+    </div>
+  )
+}
 
 export const config = defineRouteConfig({
   label: "Doanh số MKT",
