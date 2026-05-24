@@ -486,13 +486,20 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
-      content: `Hôm nay ${today}. Phân tích ${mktCtx} — camp active trong 14 ngày gần nhất. Tập trung camp đang ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Đầu tiên gọi get_recent_rejections cho MKT đang xử lý để biết những action đã bị từ chối — không suggest lại với cùng campaign + action. Gọi recommend_action cho mỗi camp đã phân tích.`,
+      content: `Hôm nay ${today}. Phân tích ${mktCtx} — camp active trong 14 ngày gần nhất.
+
+QUY TRÌNH BẮT BUỘC — xử lý tuần tự từng MKT (KHÔNG gọi nhiều MKT cùng lúc):
+1. get_camp_metrics(mkt="KIENLB") → get_mkt_benchmarks(mkt="KIENLB") → get_recent_rejections(mkt="KIENLB") → recommend_action cho từng camp của KIENLB
+2. Lặp lại với MKT tiếp theo: ANHNT, XUANLT, NAMDV, DUPD, LINHMT...
+3. Mỗi bước chỉ gọi 1 tool — KHÔNG parallel tool calls.
+
+Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường. Gọi recommend_action cho MỌI camp đã phân tích kể cả no_action.`,
     },
   ]
 
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
-  const MAX_ITERATIONS = 10
+  const MAX_ITERATIONS = 30
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await client.chat.completions.create({
