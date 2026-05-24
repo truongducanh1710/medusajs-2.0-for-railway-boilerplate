@@ -7,123 +7,92 @@ const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-pro"
 const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "google/gemini-3.5-flash"
 const DEEPSEEK_DIRECT_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"])
 
-const SYSTEM_PROMPT = `Bạn là AI chuyên phân tích quảng cáo Facebook cho shop Phan Viet (đồ gia dụng: chổi, nồi, chảo, hộp nhựa...) tại Việt Nam.
+// Whitelist views + bảng agent có quyền query (read-only SELECT)
+const ALLOWED_TABLES = new Set([
+  "v_camp_today", "v_camp_history", "v_camp_orders",
+  "v_shop_care_daily", "v_camp_care_window",
+  "agent_insight", "agent_memory", "agent_camp_recommendation",
+  "camp_action_log",
+])
 
-## Cách đánh giá camp
-
-### 1. % Care (chi phí / COD) — tiêu chí quan trọng nhất
-- < 25%: Xuất sắc — duy trì, có thể tăng budget
-- 25-30%: Tốt — giữ nguyên
-- 30-35%: Cảnh báo — theo dõi thêm 1-2 ngày
-- 35-40%: Kém — cân nhắc giảm budget 20-30%
-- > 40%: Tệ — pause hoặc giảm budget mạnh
-
-### 2. Tỉ lệ COD/Clicks (conversion rate)
-- Tính: cod_orders / clicks × 100
-- > 3%: Tốt — offer và landing page hiệu quả
-- 1-3%: Trung bình
-- < 1%: Kém — KHÔNG tăng budget dù CPM thấp
-
-### 3. CPM (VND/1000 lượt hiển thị)
-- < 200k: Rất tốt
-- 200-350k: Bình thường cho ngành gia dụng VN
-- 350-500k: Cao — audience có thể bão hòa
-- > 500k: Rất cao — nên refresh audience
-
-### 4. Trend 3-5 ngày (ƯU TIÊN hơn ngưỡng tuyệt đối)
-- Camp mới (< 3 ngày): KHÔNG pause dù KPI xấu
-- Trend xuống 3 ngày liên tiếp: dấu hiệu bão hòa
-- CPM tăng > 2x so 3 ngày trước: audience bão hòa
-- 1 ngày xấu trong chuỗi tốt: KHÔNG panic — theo dõi
-
-## Điều kiện pause (thỏa MÃN ÍT NHẤT 1)
-1. care_pct > 35% VÀ spend hôm nay > 300.000đ VÀ camp đã chạy > 3 ngày
-2. Camp chạy > 3 ngày có spend nhưng total COD = 0
-3. CPM hôm nay > 2× CPM trung bình 3 ngày trước VÀ care_pct > 35%
-4. care_pct > 40% bất kể spend (ngưỡng cứng)
-
-## Điều kiện KHÔNG pause
-- Camp < 3 ngày tuổi
-- MKT mới (LINHMT, DUPD) spend < 200k/ngày
-- Đang có pending schedule manual từ marketer
-
-## Format recommend — PHẢI actionable
-Reason phải có: KPI cụ thể + trend + so sánh với MKT + action rõ ràng.
-VD tốt: "care_pct 42% tăng 3 ngày (38→40→42%), CPM 580k vượt ngưỡng 500k, COD/Click 0.7%. Pause ngay."
-VD xấu: "Hiệu suất chưa tốt, cần theo dõi thêm." ← KHÔNG chấp nhận
-
-## Format dữ liệu đầu vào (compressed)
-get_camp_metrics trả về dạng pipe-separated để tiết kiệm token:
-  id|name|mkt|status|days|budget|spend|care%↑↓|cod|cpm→avg3d|trend(date:cpm:spend)
-- status: ON=ACTIVE, OFF=PAUSED
-- care%↑ = care_pct hôm nay, ↑/↓/→ = trend CPM 3 ngày
-- cpm→avg3d: CPM hôm nay → CPM trung bình 3 ngày trước
-- trend: 5 ngày gần nhất, mỗi entry = ngày:CPM:spend
-- Đơn vị tiền: k = nghìn VND (vd 269k = 269.000đ, budget 4400k = 4.400.000đ)
-get_mkt_benchmarks trả 1 dòng: BENCHMARK(MKT): CPM=Xk CPC=Yk CTR=Z% camps=N`
-
-const EVALUATOR_SYSTEM_PROMPT = `Bạn là evaluator độc lập kiểm tra chất lượng recommendation của AI agent phân tích quảng cáo Facebook.
-
-Với mỗi recommendation, đánh giá theo tiêu chí:
-1. Reason có chứa KPI số liệu cụ thể không (ít nhất 1 con số như care%, CPM, spend)?
-2. Action có logic với KPI không (vd pause camp < 3 ngày = SAI; set_budget tăng = SAI)?
-3. Confidence có phù hợp với độ chắc chắn không (high cần care > 50% rõ ràng)?
-4. Reason có ≥ 40 ký tự + rõ ràng không?
-
-QUAN TRỌNG: BẮT BUỘC trả về JSON object với schema CHÍNH XÁC:
-{
-  "evaluations": [
-    { "rec_id": "<uuid gốc>", "pass": true, "notes": "" },
-    { "rec_id": "<uuid gốc>", "pass": false, "notes": "Lý do fail ngắn gọn" }
-  ]
+// Reject SQL nếu có DDL/DML hoặc reference table ngoài whitelist
+function validateSql(sql: string): { ok: boolean; error?: string } {
+  const normalized = sql.trim().toLowerCase()
+  if (!normalized.startsWith("select") && !normalized.startsWith("with")) {
+    return { ok: false, error: "Chỉ cho phép SELECT/WITH query" }
+  }
+  // Block dangerous keywords
+  const blocked = ["insert ", "update ", "delete ", "drop ", "alter ", "truncate ", "create ", "grant ", "--", "/*"]
+  for (const kw of blocked) {
+    if (normalized.includes(kw)) return { ok: false, error: `Từ khoá cấm: ${kw.trim()}` }
+  }
+  // Check table refs — match FROM/JOIN <name>
+  const tableMatches = [...sql.matchAll(/(?:from|join)\s+([a-z_][a-z0-9_]*)/gi)]
+  for (const m of tableMatches) {
+    const tbl = m[1].toLowerCase()
+    if (!ALLOWED_TABLES.has(tbl)) {
+      return { ok: false, error: `Table không trong whitelist: ${tbl}. Allowed: ${[...ALLOWED_TABLES].join(", ")}` }
+    }
+  }
+  return { ok: true }
 }
 
-- Field "evaluations" PHẢI là array (không phải "results", "items", "data"...)
-- Mỗi item PHẢI có "rec_id" (uuid từ input), "pass" (boolean), "notes" (string)
-- KHÔNG được wrap trong markdown code block, KHÔNG được thêm text giải thích bên ngoài JSON
-- Trả về 1 evaluation cho MỖI rec đầu vào`
+const SYSTEM_PROMPT = `Bạn là AI agent tối ưu quảng cáo Facebook cho shop Phan Viet (đồ gia dụng VN).
+
+## 🎯 MỤC TIÊU DUY NHẤT
+**care_pct toàn shop hôm nay < 30%** (chi phí ads ≤ 30% doanh thu COD)
+
+Bạn KHÔNG có rules cứng. Tự dùng data để diagnose + đề xuất action.
+
+## Công cụ
+1. **query_ads_db(sql)** — Viết SELECT bất kỳ trên các views/tables:
+   - **v_shop_care_daily** (45d): date, total_spend, total_cod, care_pct, active_camps
+   - **v_camp_today**: camp_id, name, mkt, status, daily_budget, spend, cpm, cpc, ctr
+   - **v_camp_history** (90d): camp_id, name, mkt, date, status, spend, cpm
+   - **v_camp_orders** (90d): id, date, cod_amount, utm_source, utm_campaign
+   - **v_camp_care_window**: camp_id, care_3d, care_7d, care_14d, spend_3d/7d/14d, cod_3d/7d/14d
+   - **agent_insight** — insights đã học (đọc trước khi recommend)
+   - **agent_memory** — rejections marketer đã từ chối
+   - **agent_camp_recommendation** — recs cũ
+   - **camp_action_log** — actions đã thực thi
+
+2. **recommend_action(campaign_id, action, reason, confidence, suggested_daily_budget?)**
+   - action: pause | set_budget | resume | no_action
+   - confidence: high | medium | low
+
+3. **save_insight(insight, category, scope?)** — Lưu pattern học được để tái sử dụng.
+   - category: diagnosis | opportunity | pattern | warning
+   - scope: JSON { mkt?, product?, time_range? }
+   - VD: save_insight("KIENLB Hộp Nhựa care thấp khi budget 400-600k, tăng > 800k làm care tăng tuyến tính", "pattern", {mkt:"KIENLB", product:"hộp nhựa"})
+
+## Workflow đề xuất
+1. **Đọc state**: query v_shop_care_daily 14d → biết shop đang ở đâu so với target
+2. **Đọc insights cũ**: SELECT * FROM agent_insight WHERE active=true ORDER BY created_at DESC LIMIT 20
+3. **Phân nhánh**:
+   - care hôm nay > 30% → DIAGNOSE: tìm camps gây care cao (high spend + low cod), recommend pause/giảm budget
+   - care hôm nay < 30% → OPPORTUNITY: tìm camps PAUSED có care_7d tốt → suggest resume; tìm camps care<20% budget thấp → suggest tăng
+4. **Mỗi recommendation**: phải có reason cụ thể, reference data từ query
+5. **Cuối cùng**: save_insight cho mỗi pattern lặp lại quan sát được
+
+## Quy tắc
+- ƯU TIÊN care_3d và care_7d hơn lifetime care (data hôm nay quan trọng hơn quá khứ)
+- Camp PAUSED có care_7d < 25% và spend > 0 trong window → có thể resume
+- Camp ACTIVE care_today < 20% và budget < median MKT → có thể tăng budget
+- Reason PHẢI có số liệu cụ thể từ query (vd "care_3d=42%, care_7d=18% → trend xấu đi")
+- KHÔNG recommend nếu data không đủ (vd camp < 3 ngày)`
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "get_camp_metrics",
-      description: "Lấy metrics 14 ngày của camp(s): spend, CPM, CPC, CTR, COD orders, care_pct, status, budget theo từng ngày",
+      name: "query_ads_db",
+      description: "Chạy SELECT SQL trên views/tables ads. Whitelist: v_camp_today, v_camp_history, v_camp_orders, v_shop_care_daily, v_camp_care_window, agent_insight, agent_memory, agent_camp_recommendation, camp_action_log. Trả về tối đa 100 rows.",
       parameters: {
         type: "object",
         properties: {
-          campaign_id: { type: "string", description: "Để trống = lấy tất cả camp active trong 14 ngày" },
-          mkt: { type: "string", description: "Filter theo MKT code" },
+          sql: { type: "string", description: "SELECT/WITH query" },
         },
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_mkt_benchmarks",
-      description: "Lấy trung bình CPM/CPC/care_pct/CTR của toàn MKT trong 14 ngày để so sánh",
-      parameters: {
-        type: "object",
-        properties: {
-          mkt: { type: "string" },
-        },
-        required: ["mkt"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_recent_rejections",
-      description: "Lấy các action đã bị marketer reject trong 14 ngày cho MKT này. PHẢI gọi trước khi recommend để tránh suggest lại pattern đã bị từ chối.",
-      parameters: {
-        type: "object",
-        properties: {
-          mkt: { type: "string", description: "MKT code để filter rejection history" },
-        },
-        required: ["mkt"],
+        required: ["sql"],
       },
     },
   },
@@ -131,98 +100,75 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "recommend_action",
-      description: "Ghi recommendation vào DB. Gọi cho MỖI camp đã phân tích (kể cả no_action)",
+      description: "Ghi recommendation vào DB. Gọi cho MỖI camp đã phân tích cần action.",
       parameters: {
         type: "object",
         properties: {
           campaign_id: { type: "string" },
-          action: { type: "string", enum: ["pause", "set_budget", "no_action"] },
-          reason: { type: "string", description: "KPI cụ thể + trend + action rõ ràng, < 300 chars" },
-          suggested_daily_budget: { type: "number", description: "VND, chỉ khi action=set_budget, phải THẤP HƠN budget hiện tại" },
+          action: { type: "string", enum: ["pause", "set_budget", "resume", "no_action"] },
+          reason: { type: "string", description: "KPI cụ thể từ query + trend + action rõ ràng, < 300 chars" },
+          suggested_daily_budget: { type: "number", description: "VND, chỉ khi action=set_budget hoặc resume" },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
         },
         required: ["campaign_id", "action", "reason", "confidence"],
       },
     },
   },
-]
-
-const UPDATE_REC_TOOL: OpenAI.Chat.ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "update_recommendation",
-    description: "Cập nhật reason/confidence của 1 recommendation đã tạo (dùng trong phase self-reflection)",
-    parameters: {
-      type: "object",
-      properties: {
-        rec_id: { type: "string", description: "UUID của recommendation cần sửa" },
-        new_reason: { type: "string", description: "Reason mới với KPI cụ thể hơn" },
-        new_confidence: { type: "string", enum: ["high", "medium", "low"] },
+  {
+    type: "function",
+    function: {
+      name: "save_insight",
+      description: "Lưu pattern/insight học được từ data để tái sử dụng. Chỉ lưu khi pattern rõ ràng + có data backing.",
+      parameters: {
+        type: "object",
+        properties: {
+          insight: { type: "string", description: "Mô tả pattern, < 500 chars" },
+          category: { type: "string", enum: ["diagnosis", "opportunity", "pattern", "warning"] },
+          scope: { type: "object", description: "{ mkt?, product?, time_range? }" },
+          evidence: { type: "object", description: "{ sample_size, data_points, confidence }" },
+        },
+        required: ["insight", "category"],
       },
-      required: ["rec_id", "new_reason"],
     },
   },
-}
+]
 
-function validateRecommendation(args: any, camp: any): { ok: boolean; error?: string } {
-  if (!args.reason || args.reason.length < 40)
-    return { ok: false, error: "Reason quá ngắn (<40 chars). Cần KPI số liệu cụ thể + trend + action." }
-  if (!/\d/.test(args.reason))
-    return { ok: false, error: "Reason phải chứa ít nhất 1 con số (CPM, care_pct, spend...)." }
-  if (args.action === "set_budget") {
-    if (!args.suggested_daily_budget || args.suggested_daily_budget < 50000)
-      return { ok: false, error: "set_budget cần suggested_daily_budget >= 50000 VND." }
-    if (args.suggested_daily_budget >= Number(camp.daily_budget))
-      return { ok: false, error: "Agent chỉ được GIẢM budget, không tăng." }
-  }
-  if (args.action === "pause" && Number(camp.days_running ?? 0) < 3)
-    return { ok: false, error: `Camp mới ${camp.days_running} ngày, không được pause (rule: > 3 ngày).` }
-  return { ok: true }
-}
+const EVALUATOR_SYSTEM_PROMPT = `Bạn là evaluator độc lập kiểm tra chất lượng recommendation của AI agent ads.
 
-// Rule-based ground truth để bootstrap reward signal
-function ruleDecision(camp: any): { action: string; reason: string } {
-  const care = Number(camp.care_pct_today ?? 0)
-  const spend = Number(camp.spend_today ?? 0)
-  const days = Number(camp.days_running ?? 0)
-  const cod = Number(camp.cod_today ?? 0)
-  const cpmToday = Number(camp.cpm_today ?? 0)
-  const cpmAvg3d = Number(camp.cpm_avg_3d ?? 0)
+Tiêu chí:
+1. Reason có chứa KPI số liệu cụ thể (care%, CPM, spend)?
+2. Action logic với KPI? (pause camp < 3 ngày = SAI; tăng budget khi care cao = SAI)
+3. Confidence phù hợp với độ chắc chắn?
+4. Reason ≥ 40 ký tự + rõ ràng?
 
-  if (care > 40)
-    return { action: "pause", reason: `care_pct ${care}% > ngưỡng cứng 40%` }
-  if (days > 3 && spend > 0 && cod === 0)
-    return { action: "pause", reason: `Chạy ${days} ngày không có đơn` }
-  if (care > 35 && spend > 300000 && days > 3)
-    return { action: "pause", reason: `care_pct ${care}%, spend ${Math.round(spend / 1000)}k, ${days} ngày` }
-  if (cpmAvg3d > 0 && cpmToday > cpmAvg3d * 2 && care > 35)
-    return { action: "set_budget", reason: `CPM ${Math.round(cpmToday / 1000)}k > 2× avg ${Math.round(cpmAvg3d / 1000)}k, care ${care}%` }
-  return { action: "no_action", reason: "KPI trong ngưỡng chấp nhận" }
+BẮT BUỘC trả JSON CHÍNH XÁC schema:
+{
+  "evaluations": [
+    { "rec_id": "<uuid gốc>", "pass": true, "notes": "" },
+    { "rec_id": "<uuid gốc>", "pass": false, "notes": "Lý do fail ngắn" }
+  ]
 }
+KHÔNG markdown wrap, KHÔNG text ngoài JSON. 1 evaluation cho mỗi rec.`
 
 async function canAutoExecute(campaignId: string, action: string, suggestedBudget: number | undefined, mktName: string, sql: any): Promise<boolean> {
-  if (!["pause", "set_budget"].includes(action)) return false
+  if (!["pause", "set_budget", "resume"].includes(action)) return false
 
-  // Chỉ giảm budget, không tăng
   if (action === "set_budget" && suggestedBudget != null) {
     const rows = await sql.sql(`SELECT daily_budget FROM mkt_ads_cost WHERE campaign_id = $1 ORDER BY date DESC LIMIT 1`, [campaignId]).catch(() => [])
     if (!rows.length || suggestedBudget >= Number(rows[0].daily_budget)) return false
   }
 
-  // MKT phải được admin bật agent_auto
   const autoUsers = await sql.sql(
     `SELECT metadata->>'mkt_code' as mkt_code FROM "user" WHERE metadata->>'agent_auto' = 'true' AND deleted_at IS NULL`
   ).catch(() => [])
   if (!autoUsers.some((u: any) => u.mkt_code === mktName)) return false
 
-  // Không conflict với pending manual schedule
   const pending = await sql.sql(
     `SELECT id FROM camp_schedule WHERE campaign_id = $1 AND status = 'pending' AND deleted_at IS NULL`,
     [campaignId]
   ).catch(() => [])
   if (pending.length > 0) return false
 
-  // Rate limit: 1 auto action / camp / giờ
   const recent = await sql.sql(
     `SELECT id FROM camp_action_log WHERE campaign_id = $1 AND source = 'agent' AND created_at > now() - interval '1 hour'`,
     [campaignId]
@@ -237,14 +183,13 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
   const sql = container.resolve("cskhAnalysisModule") as any
 
   if (!process.env.OPENROUTER_API_KEY && !process.env.DEEPSEEK_API_KEY) {
-    logger?.warn?.("[CampAI] No API key set (OPENROUTER_API_KEY or DEEPSEEK_API_KEY), skipping")
+    logger?.warn?.("[CampAI] No API key set, skipping")
     return
   }
 
   const runId = randomUUID()
   const activeModel = opts?.model ?? MODEL
 
-  // Heartbeat helper — UPSERT vào agent_heartbeat để UI polling realtime
   async function heartbeat(updates: Partial<{ phase: string; iteration: number; last_action: string; recs_so_far: number; tokens_used: number; error: string }>) {
     const fields = Object.keys(updates)
     if (!fields.length) return
@@ -264,193 +209,67 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
       : { baseURL: "https://openrouter.ai/api/v1", apiKey: process.env.OPENROUTER_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp AI" } }
   )
   const today = new Date().toISOString().slice(0, 10)
-  logger?.info?.(`[CampAI] Run ${runId} started model=${activeModel}`)
+  logger?.info?.(`[CampAI v2] Run ${runId} started model=${activeModel}`)
 
-  // Camp map: campaign_id → full data (built during tool calls)
-  const campMap = new Map<string, any>()
   const toolCallLog: any[] = []
-  const ruleDecisions: Record<string, any> = {}
-  // Track validation retries per campaign
-  const validationRetries: Record<string, number> = {}
 
   async function handleTool(name: string, args: any): Promise<any> {
     toolCallLog.push({ name, args, ts: Date.now() })
 
-    if (name === "get_camp_metrics") {
-      const mktFilter = args.mkt ?? opts?.mkt ?? ""
-      const campFilter = args.campaign_id ?? ""
-
-      // Camp active trong 14 ngày
-      const camps = await sql.sql(`
-        SELECT
-          c.campaign_id,
-          c.campaign_name,
-          c.mkt_name,
-          c.effective_status,
-          c.daily_budget,
-          c.spend AS spend_today,
-          c.impressions AS impr_today,
-          c.clicks AS clicks_today,
-          CASE WHEN c.impressions > 0 THEN ROUND(c.spend::numeric / c.impressions * 1000) END AS cpm_today,
-          CASE WHEN c.clicks > 0 THEN ROUND(c.spend::numeric / c.clicks) END AS cpc_today,
-          CASE WHEN c.impressions > 0 THEN ROUND(c.clicks::numeric / c.impressions * 100, 2) END AS ctr_today,
-          COALESCE(h.care_pct, 0) AS care_pct_today,
-          COALESCE(h.cod_orders, 0) AS cod_today,
-          MIN(first_seen.date) AS first_date,
-          (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - MIN(first_seen.date) AS days_running,
-          (SELECT ROUND(AVG(h3.spend::numeric / h3.impressions * 1000)) FROM mkt_ads_cost h3
-            WHERE h3.campaign_id = c.campaign_id
-              AND h3.date BETWEEN (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 4 AND (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 1
-              AND h3.impressions > 0) AS cpm_avg_3d
-        FROM mkt_ads_cost c
-        LEFT JOIN (
-          SELECT mac.campaign_id,
-            ROUND(SUM(mac.spend)::numeric / NULLIF(SUM(po.cod_amount), 0) * 100, 1) AS care_pct,
-            COUNT(po.id) AS cod_orders
-          FROM mkt_ads_cost mac
-          LEFT JOIN pancake_order po
-            ON po.deleted_at IS NULL AND po.source IN ('manual','webcake')
-            AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
-            AND NOT (po.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-            AND (po.raw->>'p_utm_source' = mac.campaign_name OR po.raw->>'p_utm_campaign' = mac.campaign_name)
-            AND po.pancake_created_at::date = mac.date
-          WHERE mac.date = (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
-          GROUP BY mac.campaign_id
-        ) h ON h.campaign_id = c.campaign_id
-        LEFT JOIN (
-          SELECT campaign_id, MIN(date) AS date FROM mkt_ads_cost
-          WHERE deleted_at IS NULL GROUP BY campaign_id
-        ) first_seen ON first_seen.campaign_id = c.campaign_id
-        WHERE c.date = (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
-          AND c.deleted_at IS NULL
-          AND c.campaign_id IN (
-            SELECT DISTINCT campaign_id FROM mkt_ads_cost
-            WHERE date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 14 AND spend > 0 AND deleted_at IS NULL
-          )
-          ${mktFilter ? `AND c.mkt_name = '${mktFilter.replace(/'/g, "''")}'` : ""}
-          ${campFilter ? `AND c.campaign_id = '${campFilter.replace(/'/g, "''")}'` : ""}
-        GROUP BY c.campaign_id, c.campaign_name, c.mkt_name, c.effective_status,
-                 c.daily_budget, c.spend, c.impressions, c.clicks, h.care_pct, h.cod_orders
-        ORDER BY c.spend DESC
-        LIMIT 60
-      `).catch(() => [])
-
-      // Lấy trend 7 ngày per camp
-      const campIds = camps.map((c: any) => c.campaign_id)
-      let trends: any[] = []
-      if (campIds.length > 0) {
-        trends = await sql.sql(`
-          SELECT campaign_id, date, spend, impressions, clicks,
-            CASE WHEN impressions > 0 THEN ROUND(spend::numeric / impressions * 1000) END AS cpm,
-            CASE WHEN clicks > 0 THEN ROUND(spend::numeric / clicks) END AS cpc,
-            CASE WHEN impressions > 0 THEN ROUND(clicks::numeric / impressions * 100, 2) END AS ctr
-          FROM mkt_ads_cost
-          WHERE campaign_id = ANY($1::text[])
-            AND date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 7
-            AND date <= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL)
-            AND deleted_at IS NULL
-          ORDER BY campaign_id, date DESC
-        `, [campIds]).catch(() => [])
+    if (name === "query_ads_db") {
+      const validation = validateSql(args.sql ?? "")
+      if (!validation.ok) return { error: validation.error }
+      try {
+        // Inject LIMIT 100 nếu chưa có
+        let finalSql = args.sql.trim()
+        if (!/limit\s+\d+/i.test(finalSql)) {
+          finalSql = finalSql.replace(/;?\s*$/, "") + " LIMIT 100"
+        }
+        const rows = await sql.sql(finalSql)
+        // Compress: trả về rows + row_count
+        return { rows: rows.slice(0, 100), row_count: rows.length, truncated: rows.length > 100 }
+      } catch (e: any) {
+        return { error: `SQL error: ${e.message?.slice(0, 300)}` }
       }
-
-      // Build map và compute rule decisions
-      for (const c of camps) {
-        const campTrends = trends.filter((t: any) => t.campaign_id === c.campaign_id)
-        const enriched = { ...c, trend_7d: campTrends }
-        campMap.set(c.campaign_id, enriched)
-        ruleDecisions[c.campaign_id] = ruleDecision(enriched)
-      }
-
-      // Compressed format: giảm ~15x token so với JSON object
-      // Format: ID|tên_rút_gọn|MKT|status|days|budget|spend|care%|cod|CPM→avg3d|trend_CPM_7d
-      const header = `CAMPS(${camps.length}): id|name|mkt|status|days|budget|spend|care%|cod|cpm→avg3d|trend_cpm7d(date:cpm:spend)`
-      const rows = camps.map((c: any) => {
-        const campTrends = trends.filter((t: any) => t.campaign_id === c.campaign_id)
-        // Rút gọn tên: bỏ prefix ngày, giữ MKT+sản phẩm+code
-        const nameParts = (c.campaign_name as string).split("_")
-        const shortName = nameParts.slice(0, 4).join("_").slice(0, 40)
-        const trendStr = campTrends.slice(0, 5)
-          .map((t: any) => `${String(t.date).slice(5, 10)}:${Math.round(Number(t.cpm ?? 0) / 1000)}k:${Math.round(Number(t.spend ?? 0) / 1000)}k`)
-          .join(",")
-        const careArrow = (() => {
-          const vals = campTrends.slice(0, 3).map((t: any) => Number(t.cpm ?? 0))
-          if (vals.length < 2) return ""
-          return vals[0] > vals[vals.length - 1] ? "↑" : vals[0] < vals[vals.length - 1] ? "↓" : "→"
-        })()
-        return [
-          c.campaign_id,
-          shortName,
-          c.mkt_name,
-          c.effective_status === "ACTIVE" ? "ON" : "OFF",
-          c.days_running ?? 0,
-          Math.round(Number(c.daily_budget ?? 0) / 1000) + "k",
-          Math.round(Number(c.spend_today ?? 0) / 1000) + "k",
-          (c.care_pct_today ?? 0) + "%" + careArrow,
-          c.cod_today ?? 0,
-          Math.round(Number(c.cpm_today ?? 0) / 1000) + "k→" + Math.round(Number(c.cpm_avg_3d ?? 0) / 1000) + "k",
-          trendStr,
-        ].join("|")
-      })
-      return header + "\n" + rows.join("\n")
-    }
-
-    if (name === "get_mkt_benchmarks") {
-      const rows = await sql.sql(`
-        SELECT
-          ROUND(AVG(CASE WHEN impressions > 0 THEN spend::numeric / impressions * 1000 END)) AS avg_cpm,
-          ROUND(AVG(CASE WHEN clicks > 0 THEN spend::numeric / clicks END)) AS avg_cpc,
-          ROUND(AVG(CASE WHEN impressions > 0 THEN clicks::numeric / impressions * 100 END), 2) AS avg_ctr,
-          COUNT(DISTINCT campaign_id) AS camp_count
-        FROM mkt_ads_cost
-        WHERE mkt_name = $1 AND date >= (SELECT MAX(date) FROM mkt_ads_cost WHERE deleted_at IS NULL) - 14 AND spend > 0 AND deleted_at IS NULL
-      `, [args.mkt]).catch(() => [{}])
-      const r = rows[0] ?? {}
-      // Compressed: 1 line thay vì JSON object
-      return `BENCHMARK(${args.mkt}): CPM=${Math.round(Number(r.avg_cpm ?? 0) / 1000)}k CPC=${Math.round(Number(r.avg_cpc ?? 0) / 1000)}k CTR=${r.avg_ctr ?? 0}% camps=${r.camp_count ?? 0}`
-    }
-
-    if (name === "get_recent_rejections") {
-      const rows = await sql.sql(`
-        SELECT campaign_id, action, rejection_reason, rejected_count, last_rejected_at
-        FROM agent_memory
-        WHERE mkt_name = $1 AND last_rejected_at > now() - interval '14 days'
-        ORDER BY rejected_count DESC, last_rejected_at DESC
-        LIMIT 30
-      `, [args.mkt]).catch(() => [])
-      return rows.length > 0 ? rows : { message: "Không có rejection nào trong 14 ngày — tự do recommend." }
     }
 
     if (name === "recommend_action") {
-      const camp = campMap.get(args.campaign_id)
-      if (!camp) return { error: "campaign_id không tồn tại trong data đã load" }
+      // Lookup camp current state từ DB (không cần campMap nữa)
+      const campRows = await sql.sql(
+        `SELECT campaign_id, campaign_name, mkt_name, effective_status, daily_budget
+         FROM mkt_ads_cost WHERE campaign_id = $1 AND deleted_at IS NULL
+         ORDER BY date DESC LIMIT 1`,
+        [args.campaign_id]
+      ).catch(() => [])
+      if (!campRows.length) return { error: `campaign_id ${args.campaign_id} không tồn tại` }
+      const camp = campRows[0]
 
-      // Structured validation with retry
-      const retries = validationRetries[args.campaign_id] ?? 0
-      if (retries < 3) {
-        const validation = validateRecommendation(args, camp)
-        if (!validation.ok) {
-          validationRetries[args.campaign_id] = retries + 1
-          logger?.warn?.(`[CampAI] Validation failed for ${args.campaign_id} (retry ${retries + 1}/3): ${validation.error}`)
-          // Update validation_retries in DB if rec already exists
-          await sql.sql(
-            `UPDATE agent_camp_recommendation SET validation_retries = $1 WHERE run_id = $2 AND campaign_id = $3`,
-            [retries + 1, runId, args.campaign_id]
-          ).catch(() => {})
-          return { error: validation.error, retry: true, validation_failed: true }
+      // Validation
+      if (!args.reason || args.reason.length < 40) {
+        return { error: "Reason quá ngắn (<40 chars). Cần KPI số liệu cụ thể.", retry: true }
+      }
+      if (!/\d/.test(args.reason)) {
+        return { error: "Reason phải chứa ít nhất 1 con số.", retry: true }
+      }
+      if (args.action === "set_budget") {
+        if (!args.suggested_daily_budget || args.suggested_daily_budget < 50000) {
+          return { error: "set_budget cần suggested_daily_budget >= 50000 VND.", retry: true }
+        }
+        if (args.suggested_daily_budget >= Number(camp.daily_budget)) {
+          return { error: `Chỉ được giảm budget (hiện tại ${camp.daily_budget}).`, retry: true }
         }
       }
-
-      const oldValue = {
-        status: camp.effective_status,
-        daily_budget: camp.daily_budget,
-        spend_today: camp.spend_today,
-        care_pct_today: camp.care_pct_today,
+      if (args.action === "resume" && camp.effective_status !== "PAUSED") {
+        return { error: `Camp đang ${camp.effective_status}, không thể resume.`, retry: true }
       }
-      const suggestedValue = args.action === "set_budget"
-        ? { daily_budget: args.suggested_daily_budget }
-        : args.action === "pause" ? { status: "PAUSED" } : null
 
-      // Auto execute check
+      const oldValue = { status: camp.effective_status, daily_budget: camp.daily_budget }
+      const suggestedValue =
+        args.action === "set_budget" ? { daily_budget: args.suggested_daily_budget } :
+        args.action === "pause" ? { status: "PAUSED" } :
+        args.action === "resume" ? { status: "ACTIVE", daily_budget: args.suggested_daily_budget } :
+        null
+
       let status = "pending"
       let fbResp: any = null
       let executedAt: string | null = null
@@ -460,6 +279,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
         if (doAuto) {
           let fbPath = ""
           if (args.action === "pause") fbPath = `/${args.campaign_id}?status=PAUSED`
+          else if (args.action === "resume") fbPath = `/${args.campaign_id}?status=ACTIVE${args.suggested_daily_budget ? `&daily_budget=${Math.round(args.suggested_daily_budget)}` : ""}`
           else if (args.action === "set_budget") fbPath = `/${args.campaign_id}?daily_budget=${Math.round(args.suggested_daily_budget)}`
 
           fbResp = await callFbApi("POST", fbPath)
@@ -482,60 +302,53 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
 
       await sql.sql(
         `INSERT INTO agent_camp_recommendation
-           (run_id, campaign_id, campaign_name, mkt_name, action, reason, old_value, suggested_value, confidence, status, executed_at, fb_response, agent_model, validation_retries)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13,$14)`,
+           (run_id, campaign_id, campaign_name, mkt_name, action, reason, old_value, suggested_value, confidence, status, executed_at, fb_response, agent_model)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13)`,
         [runId, args.campaign_id, camp.campaign_name, camp.mkt_name,
          args.action, args.reason, JSON.stringify(oldValue),
          JSON.stringify(suggestedValue), args.confidence ?? "medium",
-         status, executedAt, JSON.stringify(fbResp), activeModel,
-         validationRetries[args.campaign_id] ?? 0]
+         status, executedAt, JSON.stringify(fbResp), activeModel]
       ).catch((e: any) => logger?.error?.("[CampAI] insert rec fail:", e.message))
 
       return { ok: true, status, campaign_name: camp.campaign_name }
     }
 
-    if (name === "update_recommendation") {
+    if (name === "save_insight") {
+      if (!args.insight || args.insight.length < 30) {
+        return { error: "Insight quá ngắn (<30 chars)." }
+      }
       await sql.sql(
-        `UPDATE agent_camp_recommendation SET reason = $1, confidence = COALESCE($2, confidence) WHERE id = $3 AND run_id = $4`,
-        [args.new_reason, args.new_confidence ?? null, args.rec_id, runId]
-      ).catch((e: any) => logger?.error?.("[CampAI] update rec fail:", e.message))
+        `INSERT INTO agent_insight (insight, category, scope, evidence, agent_model)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)`,
+        [args.insight, args.category ?? "pattern",
+         JSON.stringify(args.scope ?? {}),
+         JSON.stringify(args.evidence ?? {}),
+         activeModel]
+      ).catch((e: any) => logger?.error?.("[CampAI] save insight fail:", e.message))
       return { ok: true }
     }
 
     return { error: `Unknown tool: ${name}` }
   }
 
-  // Agentic loop
-  const mktCtx = opts?.mkt ? `MKT ${opts.mkt}` : "tất cả MKT"
+  const mktCtx = opts?.mkt ? `MKT ${opts.mkt}` : "toàn shop"
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
-      content: `Hôm nay ${today}. Phân tích ${mktCtx} — camp active trong 14 ngày gần nhất.
+      content: `Hôm nay ${today}. Tối ưu ${mktCtx} để đạt mục tiêu care_pct < 30%.
 
-QUY TRÌNH TỐI ƯU (giảm số iteration để nhanh + tiết kiệm token):
-
-**Bước 1** (1 turn): Gọi SONG SONG 3 tool cho cùng 1 MKT để load context:
-  - get_camp_metrics(mkt="X")
-  - get_mkt_benchmarks(mkt="X")
-  - get_recent_rejections(mkt="X")
-
-**Bước 2** (1 turn): Sau khi có data MKT đó, gọi SONG SONG nhiều recommend_action trong CÙNG 1 turn — 1 call cho mỗi camp đã phân tích. VD nếu MKT X có 10 camps → 10 recommend_action song song.
-
-**Bước 3**: Lặp Bước 1+2 với MKT tiếp theo (ANHNT, XUANLT, NAMDV, KIENLB, DUPD, LINHMT...).
-
-Quy tắc:
-- LUÔN gọi recommend_action SONG SONG (parallel tool calls) cho nhiều camps cùng lúc — KHÔNG gọi từng cái một
-- Gọi cho MỌI camp kể cả no_action
-- Tập trung camp ACTIVE có care_pct > 30% hoặc CPM cao bất thường`,
+Bắt đầu bằng query v_shop_care_daily 14 ngày để biết shop đang ở đâu.
+Sau đó đọc agent_insight để dùng skills cũ.
+Diagnose/Opportunity tùy state, recommend actions có reason backed by data, save_insight nếu phát hiện pattern.`,
     },
   ]
 
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
-  const MAX_ITERATIONS = 30
+  const MAX_ITERATIONS = 25
 
-  await heartbeat({ phase: "starting", iteration: 0, last_action: "Khởi tạo agent..." })
+  await heartbeat({ phase: "starting", iteration: 0, last_action: "Khởi tạo agent goal-driven v2..." })
 
   try {
     for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -556,16 +369,20 @@ Quy tắc:
       totalCompletionTokens += res.usage?.completion_tokens ?? 0
 
       if (!msg.tool_calls?.length) {
-        await heartbeat({ last_action: `Iter ${i + 1}: agent kết thúc (text-only, không gọi tool)`, tokens_used: totalPromptTokens + totalCompletionTokens })
+        await heartbeat({ last_action: `Iter ${i + 1}: agent kết thúc`, tokens_used: totalPromptTokens + totalCompletionTokens })
         break
       }
 
-      // Process all tool calls
       const toolNames = msg.tool_calls.map(tc => {
-        try { const a = JSON.parse(tc.function.arguments); return `${tc.function.name}(${a.mkt ?? a.campaign_id ?? ""})` }
-        catch { return tc.function.name }
-      }).join(", ")
-      await heartbeat({ last_action: `Iter ${i + 1}: gọi ${msg.tool_calls.length} tool — ${toolNames}` })
+        try {
+          const a = JSON.parse(tc.function.arguments)
+          if (tc.function.name === "query_ads_db") return `query(${a.sql?.slice(0, 60)}...)`
+          if (tc.function.name === "recommend_action") return `recommend(${a.campaign_id?.slice(-6)} → ${a.action})`
+          if (tc.function.name === "save_insight") return `insight(${a.category})`
+          return tc.function.name
+        } catch { return tc.function.name }
+      }).join(" | ")
+      await heartbeat({ last_action: `Iter ${i + 1}: ${msg.tool_calls.length} tools — ${toolNames.slice(0, 200)}` })
 
       for (const tc of msg.tool_calls) {
         let args: any = {}
@@ -574,10 +391,9 @@ Quy tắc:
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
-          content: JSON.stringify(result),
+          content: JSON.stringify(result).slice(0, 8000), // truncate quá to
         } as OpenAI.Chat.ChatCompletionMessageParam)
 
-        // Update recs_so_far nếu là recommend_action thành công
         if (tc.function.name === "recommend_action" && (result as any)?.ok) {
           const cnt = await sql.sql(`SELECT COUNT(*)::int as n FROM agent_camp_recommendation WHERE run_id = $1`, [runId]).catch(() => [{ n: 0 }])
           await heartbeat({ recs_so_far: cnt[0]?.n ?? 0 })
@@ -589,69 +405,7 @@ Quy tắc:
     throw loopErr
   }
 
-  // Phase D: Self-reflection loop
-  const myRecs = await sql.sql(
-    `SELECT id, campaign_id, campaign_name, action, reason, confidence FROM agent_camp_recommendation WHERE run_id = $1`,
-    [runId]
-  ).catch(() => [])
-
-  if (myRecs.length > 0) {
-    await heartbeat({ phase: "reflection", last_action: `Self-critique ${myRecs.length} recommendations (fresh context)...` })
-
-    // FRESH conversation — không tải lại full history (~200k tokens) → 1k tokens
-    const reflectionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      {
-        role: "system",
-        content: `Bạn là QA reviewer độc lập. Critique các recommendations của AI agent ads.
-
-Tiêu chí review:
-- Reason PHẢI có KPI số liệu cụ thể (vd "care_pct 42%", "CPM 580k") — không chấp nhận chung chung
-- Action logic: pause camp < 3 ngày = SAI; tăng budget = SAI (chỉ giảm)
-- Confidence: high cần care > 50% rõ ràng; low khi data ít
-
-Nếu rec cần sửa, gọi update_recommendation(rec_id, new_reason, new_confidence).
-Nếu tất cả OK → trả "APPROVED" và dừng.`,
-      },
-      {
-        role: "user",
-        content: `${myRecs.length} recommendations cần review:\n${myRecs.map((r: any, i: number) => `${i + 1}. id=${r.id} [${r.action}] ${r.campaign_name}: "${r.reason}" (conf=${r.confidence})`).join("\n")}`,
-      },
-    ]
-
-    for (let i = 0; i < 3; i++) {
-      await heartbeat({ last_action: `Reflection iter ${i + 1}/3...` })
-      const refRes = await client.chat.completions.create({
-        model: activeModel,
-        messages: reflectionMessages,
-        tools: [UPDATE_REC_TOOL],
-        tool_choice: "auto",
-        max_tokens: 2000,
-        temperature: 0.1,
-      })
-      const refMsg = refRes.choices[0].message
-      reflectionMessages.push(refMsg)
-      totalPromptTokens += refRes.usage?.prompt_tokens ?? 0
-      totalCompletionTokens += refRes.usage?.completion_tokens ?? 0
-
-      if (!refMsg.tool_calls?.length) break
-
-      for (const tc of refMsg.tool_calls) {
-        let args: any = {}
-        try { args = JSON.parse(tc.function.arguments) } catch { /* ignore */ }
-        const result = await handleTool(tc.function.name, args)
-        reflectionMessages.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          content: JSON.stringify(result),
-        } as OpenAI.Chat.ChatCompletionMessageParam)
-      }
-    }
-    // Lưu reflection messages vào messages chính để hiện trong UI log
-    messages.push(...reflectionMessages.slice(1)) // skip duplicate system
-    logger?.info?.(`[CampAI] Self-reflection done for run ${runId}`)
-  }
-
-  // Phase E: Evaluator agent (independent model)
+  // Evaluator (giữ nguyên Gemini 3.5 cross-provider)
   const recsForEval = await sql.sql(
     `SELECT id, campaign_id, campaign_name, action, reason, confidence FROM agent_camp_recommendation WHERE run_id = $1`,
     [runId]
@@ -678,16 +432,10 @@ Nếu tất cả OK → trả "APPROVED" và dừng.`,
       })
 
       const evalContent = evalRes.choices[0].message.content ?? "{}"
-      logger?.info?.(`[CampAI Evaluator] Raw response (${evalContent.length} chars): ${evalContent.slice(0, 500)}`)
-      await heartbeat({ last_action: `Evaluator response received (${evalContent.length} chars), parsing...` })
+      logger?.info?.(`[CampAI Evaluator] Raw (${evalContent.length} chars): ${evalContent.slice(0, 500)}`)
 
       let parsed: any = {}
-      try {
-        parsed = JSON.parse(evalContent)
-      } catch (parseErr: any) {
-        logger?.error?.(`[CampAI Evaluator] JSON parse fail: ${parseErr.message}. Raw: ${evalContent.slice(0, 1000)}`)
-        await heartbeat({ last_action: `Evaluator JSON parse fail — saved raw to reflection_notes` })
-        // Save raw response to first rec for debug
+      try { parsed = JSON.parse(evalContent) } catch (parseErr: any) {
         await sql.sql(
           `UPDATE agent_camp_recommendation SET reflection_notes = $1, evaluator_model = $2 WHERE run_id = $3`,
           [`[PARSE_FAIL] ${evalContent.slice(0, 500)}`, EVALUATOR_MODEL, runId]
@@ -695,61 +443,54 @@ Nếu tất cả OK → trả "APPROVED" và dừng.`,
         throw parseErr
       }
 
-      // Try multiple schemas: { evaluations: [...] } | { results: [...] } | array trần
-      const evaluations: Array<{ rec_id: string; pass: boolean; notes: string }> =
-        parsed.evaluations ?? parsed.results ?? parsed.recommendations ?? (Array.isArray(parsed) ? parsed : [])
-
-      logger?.info?.(`[CampAI Evaluator] Parsed ${evaluations.length} evaluations from schema keys: ${Object.keys(parsed).join(",")}`)
-      await heartbeat({ last_action: `Evaluator parsed ${evaluations.length} evaluations, updating DB...` })
-
+      const evaluations: any[] = parsed.evaluations ?? parsed.results ?? parsed.recommendations ?? (Array.isArray(parsed) ? parsed : [])
       if (evaluations.length > 0) {
         let updateCount = 0
         for (const ev of evaluations) {
-          const recId = ev.rec_id ?? (ev as any).id ?? (ev as any).recommendation_id
+          const recId = ev.rec_id ?? ev.id ?? ev.recommendation_id
           if (!recId) continue
-          const result = await sql.sql(
+          await sql.sql(
             `UPDATE agent_camp_recommendation SET reflection_passed = $1, reflection_notes = $2, evaluator_model = $3 WHERE id = $4 AND run_id = $5`,
-            [ev.pass ?? (ev as any).passed ?? null, ev.notes ?? (ev as any).note ?? null, EVALUATOR_MODEL, recId, runId]
-          ).catch((e: any) => { logger?.warn?.(`[CampAI Evaluator] update fail rec=${recId}: ${e.message}`); return null })
-          if (result !== null) updateCount++
+            [ev.pass ?? ev.passed ?? null, ev.notes ?? ev.note ?? null, EVALUATOR_MODEL, recId, runId]
+          ).catch(() => {})
+          updateCount++
         }
-        logger?.info?.(`[CampAI Evaluator] Done — ${updateCount}/${evaluations.length} recs updated`)
-        await heartbeat({ last_action: `Evaluator done: ${updateCount}/${evaluations.length} recs evaluated` })
+        await heartbeat({ last_action: `Evaluator: ${updateCount}/${evaluations.length} recs evaluated` })
       } else {
-        logger?.warn?.(`[CampAI Evaluator] Empty evaluations array. Schema keys: ${Object.keys(parsed).join(",")}`)
-        await heartbeat({ last_action: `Evaluator returned empty — keys: ${Object.keys(parsed).join(",")}` })
+        await heartbeat({ last_action: `Evaluator empty result, schema: ${Object.keys(parsed).join(",")}` })
       }
     } catch (evalErr: any) {
-      logger?.warn?.(`[CampAI] Evaluator failed (non-blocking): ${evalErr.message}`)
+      logger?.warn?.(`[CampAI] Evaluator failed: ${evalErr.message}`)
       await heartbeat({ last_action: `Evaluator error: ${evalErr.message?.slice(0, 200)}` })
     }
   }
 
-  // Tính outcomes
   const recs = await sql.sql(`SELECT action, status FROM agent_camp_recommendation WHERE run_id = $1`, [runId]).catch(() => [])
+  const insights = await sql.sql(`SELECT COUNT(*)::int as n FROM agent_insight WHERE agent_model = $1 AND created_at > now() - interval '5 minutes'`, [activeModel]).catch(() => [{ n: 0 }])
+
   const outcomes = {
     total: recs.length,
     pause: recs.filter((r: any) => r.action === "pause").length,
     set_budget: recs.filter((r: any) => r.action === "set_budget").length,
+    resume: recs.filter((r: any) => r.action === "resume").length,
     no_action: recs.filter((r: any) => r.action === "no_action").length,
     auto_executed: recs.filter((r: any) => r.status === "auto_executed").length,
+    insights_saved: insights[0]?.n ?? 0,
   }
 
-  // Log rollout cho ART training
   await sql.sql(
-    `INSERT INTO agent_art_rollout (run_id, messages, tool_calls, rule_decisions, outcomes, model)
-     VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6)`,
-    [runId, JSON.stringify(messages), JSON.stringify(toolCallLog),
-     JSON.stringify(ruleDecisions), JSON.stringify(outcomes), activeModel]
+    `INSERT INTO agent_art_rollout (run_id, messages, tool_calls, outcomes, model)
+     VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5)`,
+    [runId, JSON.stringify(messages), JSON.stringify(toolCallLog), JSON.stringify(outcomes), activeModel]
   ).catch(() => {})
 
-  await heartbeat({ phase: "done", last_action: `Hoàn thành: ${outcomes.total} recs (${outcomes.pause} pause, ${outcomes.set_budget} budget, ${outcomes.no_action} no_action)`, recs_so_far: outcomes.total, tokens_used: totalPromptTokens + totalCompletionTokens })
+  await heartbeat({ phase: "done", last_action: `Hoàn thành: ${outcomes.total} recs (${outcomes.pause}p/${outcomes.set_budget}b/${outcomes.resume}r/${outcomes.no_action}n) + ${outcomes.insights_saved} insights`, recs_so_far: outcomes.total, tokens_used: totalPromptTokens + totalCompletionTokens })
 
-  logger?.info?.(`[CampAI] Run ${runId} done — ${outcomes.total} recs, ${outcomes.auto_executed} auto_exec, tokens=${totalPromptTokens}+${totalCompletionTokens}`)
+  logger?.info?.(`[CampAI v2] Run ${runId} done — ${outcomes.total} recs, ${outcomes.insights_saved} insights, tokens=${totalPromptTokens}+${totalCompletionTokens}`)
   return { run_id: runId, outcomes }
 }
 
 export const config = {
   name: "camp-ai-care",
-  schedule: "0 */2 * * *", // Mỗi 2 giờ
+  schedule: "0 */4 * * *", // Mỗi 4 giờ (giảm từ 2h)
 }

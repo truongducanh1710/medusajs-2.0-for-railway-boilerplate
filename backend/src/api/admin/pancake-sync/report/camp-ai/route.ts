@@ -60,13 +60,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 /**
  * POST /admin/pancake-sync/report/camp-ai
- * Body: { mkt?: string, model?: string, parallel?: boolean } — manual trigger
- * parallel=true fires 1 agent per active MKT concurrently (no mkt filter needed)
+ * Body: { mkt?: string, model?: string, models?: string[], parallel?: boolean }
+ * - models: array → chạy cùng lúc nhiều model cho comparison
+ * - parallel + no mkt: chạy 1 agent per MKT
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { mkt, model, parallel } = (req.body as any) || {}
+    const { mkt, model, models, parallel } = (req.body as any) || {}
     const container = (req as any).scope
+
+    // Multi-model comparison
+    if (Array.isArray(models) && models.length > 0) {
+      for (const m of models) {
+        campAiCare(container, { mkt, model: m }).catch((e: any) =>
+          console.error(`[CampAI compare] model=${m} error:`, e.message)
+        )
+      }
+      return res.json({ ok: true, message: `Đang chạy comparison ${models.length} models song song`, models })
+    }
+
     const modelLabel = model ? ` [${model}]` : ""
 
     if (parallel && !mkt) {

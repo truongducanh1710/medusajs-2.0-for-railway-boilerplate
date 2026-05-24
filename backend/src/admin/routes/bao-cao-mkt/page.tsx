@@ -135,6 +135,13 @@ export default function BaoCaoMktPage() {
   const [aiRejectNote, setAiRejectNote] = useState("")
   // Realtime heartbeat polling
   const [aiHeartbeats, setAiHeartbeats] = useState<any[]>([])
+  // Insights panel
+  const [aiInsights, setAiInsights] = useState<any[]>([])
+  const [aiInsightStats, setAiInsightStats] = useState<any[]>([])
+  const [aiShowInsights, setAiShowInsights] = useState(false)
+  // Multi-model compare
+  const [aiCompareMode, setAiCompareMode] = useState(false)
+  const [aiCompareModels, setAiCompareModels] = useState<string[]>(["deepseek-v4-pro", "google/gemini-3.5-flash", "anthropic/claude-sonnet-4-5"])
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -339,14 +346,34 @@ export default function BaoCaoMktPage() {
   const triggerAiRun = useCallback(async () => {
     setAiTriggering(true)
     try {
+      const body: any = aiCompareMode
+        ? { models: aiCompareModels }
+        : { model: aiModel, parallel: aiParallel || undefined }
       const res = await apiFetch("/admin/pancake-sync/report/camp-ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: aiModel, parallel: aiParallel || undefined }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
-      alert(data.message ?? "Agent đã chạy, chờ ~30s rồi refresh")
+      alert(data.message ?? "Agent đã chạy")
     } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiTriggering(false) }
-  }, [aiModel, aiParallel])
+  }, [aiModel, aiParallel, aiCompareMode, aiCompareModels])
+
+  const fetchInsights = useCallback(async () => {
+    try {
+      const res = await apiFetch("/admin/pancake-sync/report/camp-ai/insights?limit=50")
+      const data = await res.json()
+      setAiInsights(data.insights ?? [])
+      setAiInsightStats(data.stats ?? [])
+    } catch { /* ignore */ }
+  }, [])
+
+  const deleteInsight = useCallback(async (id: string) => {
+    if (!confirm("Xóa insight này?")) return
+    try {
+      await apiFetch(`/admin/pancake-sync/report/camp-ai/insights?id=${id}`, { method: "DELETE" })
+      await fetchInsights()
+    } catch { /* ignore */ }
+  }, [fetchInsights])
 
   const openAiLog = useCallback(async (runId: string, highlightCampaignId?: string) => {
     if (aiLogRunId === runId && !highlightCampaignId) { setAiLogRunId(null); return }
@@ -450,7 +477,7 @@ export default function BaoCaoMktPage() {
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "fb-history") fetchFbHistory() }, [activeTab, jobsSubTab, fetchFbHistory])
   useEffect(() => { if (activeTab === "fbaccounts" && canManageFb) fetchFbAccounts() }, [activeTab, canManageFb, fetchFbAccounts])
-  useEffect(() => { if (activeTab === "ai") fetchAiRecs() }, [activeTab, fetchAiRecs])
+  useEffect(() => { if (activeTab === "ai") { fetchAiRecs(); fetchInsights() } }, [activeTab, fetchAiRecs, fetchInsights])
 
   // Realtime heartbeat polling — chỉ active khi đang ở tab AI
   useEffect(() => {
@@ -1560,12 +1587,20 @@ export default function BaoCaoMktPage() {
                     </optgroup>
                   </select>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: t.textMuted, userSelect: "none" }}>
-                    <input type="checkbox" checked={aiParallel} onChange={e => setAiParallel(e.target.checked)} />
+                    <input type="checkbox" checked={aiParallel} onChange={e => setAiParallel(e.target.checked)} disabled={aiCompareMode} />
                     Song song theo MKT
                   </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: dark ? "#c084fc" : "#7c3aed", userSelect: "none", fontWeight: 600 }}>
+                    <input type="checkbox" checked={aiCompareMode} onChange={e => setAiCompareMode(e.target.checked)} />
+                    🏁 Compare 3 models
+                  </label>
                   <button onClick={triggerAiRun} disabled={aiTriggering}
-                    style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", cursor: aiTriggering ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiTriggering ? 0.6 : 1 }}>
-                    {aiTriggering ? "Đang chạy..." : "▶ Chạy AI ngay"}
+                    style={{ background: aiCompareMode ? "#7c3aed" : "#1d4ed8", color: "#fff", border: "none", borderRadius: 6, padding: "7px 16px", cursor: aiTriggering ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiTriggering ? 0.6 : 1 }}>
+                    {aiTriggering ? "Đang chạy..." : aiCompareMode ? "🏁 Chạy Compare" : "▶ Chạy AI ngay"}
+                  </button>
+                  <button onClick={() => setAiShowInsights(s => !s)}
+                    style={{ background: aiShowInsights ? (dark ? "#4c1d95" : "#ede9fe") : "transparent", color: dark ? "#c084fc" : "#7c3aed", border: `1px solid ${dark ? "#7c3aed" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                    💡 Insights ({aiInsights.length})
                   </button>
                 </>
               )}
@@ -1597,6 +1632,49 @@ export default function BaoCaoMktPage() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {/* Insights panel — skills agent học được */}
+            {aiShowInsights && (
+              <div style={{ marginBottom: 14, background: dark ? "#1a0a2e" : "#faf5ff", border: `1px solid ${dark ? "#7c3aed" : "#c4b5fd"}`, borderRadius: 10, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: dark ? "#c084fc" : "#7c3aed" }}>💡 AI Insights — skills học từ data ({aiInsights.length})</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {aiInsightStats.slice(0, 5).map((s: any, i: number) => (
+                      <span key={i} style={{ fontSize: 11, color: dark ? "#94a3b8" : "#64748b" }}>
+                        {s.category}: <b style={{ color: dark ? "#c084fc" : "#7c3aed" }}>{s.count}</b> ({s.agent_model?.split("/").pop()?.slice(0, 10)})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {aiInsights.length === 0 ? (
+                  <div style={{ color: dark ? "#94a3b8" : "#64748b", fontSize: 12, textAlign: "center", padding: 20 }}>
+                    Chưa có insights. Chạy agent → agent sẽ tự save_insight các pattern học được.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 8 }}>
+                    {aiInsights.map((ins: any) => {
+                      const catColor: Record<string, string> = { diagnosis: "#dc2626", opportunity: "#16a34a", pattern: "#3b82f6", warning: "#d97706" }
+                      const c = catColor[ins.category] ?? "#94a3b8"
+                      return (
+                        <div key={ins.id} style={{ background: dark ? "#0f172a" : "#fff", border: `1px solid ${dark ? "#334155" : "#e2e8f0"}`, borderRadius: 8, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                            <span style={{ background: c, color: "#fff", borderRadius: 4, padding: "1px 6px", fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{ins.category}</span>
+                            {ins.scope?.mkt && <span style={{ fontSize: 10, color: dark ? "#94a3b8" : "#64748b" }}>{ins.scope.mkt}{ins.scope.product ? ` · ${ins.scope.product}` : ""}</span>}
+                            <button onClick={() => deleteInsight(ins.id)}
+                              style={{ background: "transparent", border: "none", color: dark ? "#64748b" : "#94a3b8", cursor: "pointer", fontSize: 11, marginLeft: "auto" }}>✕</button>
+                          </div>
+                          <div style={{ fontSize: 12, color: dark ? "#e2e8f0" : "#1e293b", lineHeight: 1.5 }}>{ins.insight}</div>
+                          <div style={{ fontSize: 10, color: dark ? "#64748b" : "#94a3b8" }}>
+                            {ins.agent_model?.split("/").pop()} · {new Date(ins.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            {ins.applied_count > 0 && <span> · applied {ins.applied_count}x</span>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
