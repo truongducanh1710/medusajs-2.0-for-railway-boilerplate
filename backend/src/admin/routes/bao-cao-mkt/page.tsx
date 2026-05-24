@@ -1528,8 +1528,9 @@ export default function BaoCaoMktPage() {
                       <option value="deepseek-v4-pro">DeepSeek V4 Pro ($0.87/1M) — reasoning</option>
                     </optgroup>
                     <optgroup label="Google (mạnh)">
-                      <option value="google/gemini-2.5-flash-preview">Gemini 2.5 Flash</option>
+                      <option value="google/gemini-3.5-flash">Gemini 3.5 Flash ($1.5/$9) — mới nhất</option>
                       <option value="google/gemini-2.5-pro-preview">Gemini 2.5 Pro</option>
+                      <option value="google/gemini-2.5-flash-preview">Gemini 2.5 Flash</option>
                     </optgroup>
                     <optgroup label="Anthropic">
                       <option value="anthropic/claude-haiku-4-5">Claude Haiku 4.5 (nhanh)</option>
