@@ -36,8 +36,9 @@
     "@rokmohar/medusa-plugin-meilisearch": "1.3.5",
     "medusajs-launch-utils": "0.0.18",
     "minio": "^8.0.6",
-    "resend": "4.0.1",
+    "openai": "^4.104.0",
     "pg": "^8.16.0",
+    "resend": "4.0.1",
     "ulid": "^2.4.0"
   },
   "devDependencies": {

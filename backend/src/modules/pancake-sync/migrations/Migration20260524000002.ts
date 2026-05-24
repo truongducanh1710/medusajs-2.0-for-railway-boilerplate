@@ -1,8 +1,8 @@
-import { Migration } from "@mikro-orm/migrations"
+import { Migration } from "@medusajs/framework/mikro-orm/migrations"
 
 export class Migration20260524000002 extends Migration {
   async up(): Promise<void> {
-    await this.execute(`
+    this.addSql(`
       CREATE TABLE IF NOT EXISTS agent_camp_recommendation (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         run_id UUID NOT NULL,
@@ -44,7 +44,7 @@ export class Migration20260524000002 extends Migration {
   }
 
   async down(): Promise<void> {
-    await this.execute(`
+    this.addSql(`
       DROP TABLE IF EXISTS agent_camp_recommendation;
       DROP TABLE IF EXISTS agent_art_rollout;
     `)
