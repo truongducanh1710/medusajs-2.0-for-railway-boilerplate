@@ -62,15 +62,26 @@ get_camp_metrics trả về dạng pipe-separated để tiết kiệm token:
 - Đơn vị tiền: k = nghìn VND (vd 269k = 269.000đ, budget 4400k = 4.400.000đ)
 get_mkt_benchmarks trả 1 dòng: BENCHMARK(MKT): CPM=Xk CPC=Yk CTR=Z% camps=N`
 
-const EVALUATOR_SYSTEM_PROMPT = `Bạn là evaluator độc lập kiểm tra chất lượng recommendation của AI agent phân tích quảng cáo.
+const EVALUATOR_SYSTEM_PROMPT = `Bạn là evaluator độc lập kiểm tra chất lượng recommendation của AI agent phân tích quảng cáo Facebook.
 
 Với mỗi recommendation, đánh giá theo tiêu chí:
-1. Reason có chứa KPI số liệu cụ thể không (ít nhất 1 con số)?
-2. Action có logic với KPI không (vd pause camp < 3 ngày = sai)?
-3. Confidence có phù hợp với mức độ chắc chắn của reason không?
-4. Reason có ≥ 40 ký tự không?
+1. Reason có chứa KPI số liệu cụ thể không (ít nhất 1 con số như care%, CPM, spend)?
+2. Action có logic với KPI không (vd pause camp < 3 ngày = SAI; set_budget tăng = SAI)?
+3. Confidence có phù hợp với độ chắc chắn không (high cần care > 50% rõ ràng)?
+4. Reason có ≥ 40 ký tự + rõ ràng không?
 
-Trả về JSON với format: { "evaluations": [{ "rec_id": "uuid", "pass": true/false, "notes": "ghi chú ngắn nếu fail" }] }`
+QUAN TRỌNG: BẮT BUỘC trả về JSON object với schema CHÍNH XÁC:
+{
+  "evaluations": [
+    { "rec_id": "<uuid gốc>", "pass": true, "notes": "" },
+    { "rec_id": "<uuid gốc>", "pass": false, "notes": "Lý do fail ngắn gọn" }
+  ]
+}
+
+- Field "evaluations" PHẢI là array (không phải "results", "items", "data"...)
+- Mỗi item PHẢI có "rec_id" (uuid từ input), "pass" (boolean), "notes" (string)
+- KHÔNG được wrap trong markdown code block, KHÔNG được thêm text giải thích bên ngoài JSON
+- Trả về 1 evaluation cho MỖI rec đầu vào`
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
@@ -667,19 +678,50 @@ Nếu tất cả OK → trả "APPROVED" và dừng.`,
       })
 
       const evalContent = evalRes.choices[0].message.content ?? "{}"
-      const evaluation = JSON.parse(evalContent) as { evaluations?: Array<{ rec_id: string; pass: boolean; notes: string }> }
+      logger?.info?.(`[CampAI Evaluator] Raw response (${evalContent.length} chars): ${evalContent.slice(0, 500)}`)
+      await heartbeat({ last_action: `Evaluator response received (${evalContent.length} chars), parsing...` })
 
-      if (evaluation.evaluations?.length) {
-        for (const ev of evaluation.evaluations) {
-          await sql.sql(
+      let parsed: any = {}
+      try {
+        parsed = JSON.parse(evalContent)
+      } catch (parseErr: any) {
+        logger?.error?.(`[CampAI Evaluator] JSON parse fail: ${parseErr.message}. Raw: ${evalContent.slice(0, 1000)}`)
+        await heartbeat({ last_action: `Evaluator JSON parse fail — saved raw to reflection_notes` })
+        // Save raw response to first rec for debug
+        await sql.sql(
+          `UPDATE agent_camp_recommendation SET reflection_notes = $1, evaluator_model = $2 WHERE run_id = $3`,
+          [`[PARSE_FAIL] ${evalContent.slice(0, 500)}`, EVALUATOR_MODEL, runId]
+        ).catch(() => {})
+        throw parseErr
+      }
+
+      // Try multiple schemas: { evaluations: [...] } | { results: [...] } | array trần
+      const evaluations: Array<{ rec_id: string; pass: boolean; notes: string }> =
+        parsed.evaluations ?? parsed.results ?? parsed.recommendations ?? (Array.isArray(parsed) ? parsed : [])
+
+      logger?.info?.(`[CampAI Evaluator] Parsed ${evaluations.length} evaluations from schema keys: ${Object.keys(parsed).join(",")}`)
+      await heartbeat({ last_action: `Evaluator parsed ${evaluations.length} evaluations, updating DB...` })
+
+      if (evaluations.length > 0) {
+        let updateCount = 0
+        for (const ev of evaluations) {
+          const recId = ev.rec_id ?? (ev as any).id ?? (ev as any).recommendation_id
+          if (!recId) continue
+          const result = await sql.sql(
             `UPDATE agent_camp_recommendation SET reflection_passed = $1, reflection_notes = $2, evaluator_model = $3 WHERE id = $4 AND run_id = $5`,
-            [ev.pass, ev.notes ?? null, EVALUATOR_MODEL, ev.rec_id, runId]
-          ).catch(() => {})
+            [ev.pass ?? (ev as any).passed ?? null, ev.notes ?? (ev as any).note ?? null, EVALUATOR_MODEL, recId, runId]
+          ).catch((e: any) => { logger?.warn?.(`[CampAI Evaluator] update fail rec=${recId}: ${e.message}`); return null })
+          if (result !== null) updateCount++
         }
-        logger?.info?.(`[CampAI] Evaluator done for run ${runId}, evaluated ${evaluation.evaluations.length} recs`)
+        logger?.info?.(`[CampAI Evaluator] Done — ${updateCount}/${evaluations.length} recs updated`)
+        await heartbeat({ last_action: `Evaluator done: ${updateCount}/${evaluations.length} recs evaluated` })
+      } else {
+        logger?.warn?.(`[CampAI Evaluator] Empty evaluations array. Schema keys: ${Object.keys(parsed).join(",")}`)
+        await heartbeat({ last_action: `Evaluator returned empty — keys: ${Object.keys(parsed).join(",")}` })
       }
     } catch (evalErr: any) {
       logger?.warn?.(`[CampAI] Evaluator failed (non-blocking): ${evalErr.message}`)
+      await heartbeat({ last_action: `Evaluator error: ${evalErr.message?.slice(0, 200)}` })
     }
   }
 
