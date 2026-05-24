@@ -581,8 +581,17 @@ export default function BaoCaoMktPage() {
                         onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
-                        <td style={{ padding: "10px 12px", color: t.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                          title={row.campaign_name}>
+                        <td style={{ padding: "10px 12px", color: t.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                          title={`Click để copy: ${row.campaign_name}`}
+                          onClick={() => {
+                            navigator.clipboard.writeText(row.campaign_name).then(() => {
+                              const el = document.createElement("div")
+                              el.textContent = "✓ Đã copy"
+                              Object.assign(el.style, { position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", zIndex: "9999", pointerEvents: "none" })
+                              document.body.appendChild(el)
+                              setTimeout(() => el.remove(), 1800)
+                            })
+                          }}>
                           {row.campaign_name}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "center" }}>
