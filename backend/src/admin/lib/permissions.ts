@@ -27,8 +27,8 @@ export type PermissionKey = keyof typeof PERMISSIONS
 
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
-  marketing: ["page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
-  sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "page.gia-von.view"],
-  cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view"],
+  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
+  sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view"],
+  cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage"],
 }
