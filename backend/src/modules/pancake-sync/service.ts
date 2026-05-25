@@ -151,6 +151,12 @@ function detectSource(order: any): string {
 
 // ---- Mapping ----
 
+function extractMktFromUtmCampaign(campaign: string | null | undefined): string {
+  if (!campaign) return ""
+  if (!/^\d{1,2}\/\d{1,2}_/.test(campaign)) return ""
+  return campaign.split("_")[1] ?? ""
+}
+
 export function mapPancakeOrder(raw: any): Record<string, any> {
   const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
     name: item.variation_info?.name ?? item.name ?? "—",
@@ -172,7 +178,7 @@ export function mapPancakeOrder(raw: any): Record<string, any> {
     items,
     items_count: items.length,
     tracking_code: raw.partner?.extend_code ?? raw.tracking_code ?? "",
-    marketer_name: raw.marketer?.name ?? "",
+    marketer_name: raw.marketer?.name || extractMktFromUtmCampaign(raw.p_utm_campaign) || "",
     sale_name: raw.assigning_seller?.name ?? "",
     care_name: raw.assigning_care?.name ?? "",
     raw: raw,
