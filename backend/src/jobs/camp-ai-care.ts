@@ -24,10 +24,11 @@ function compressRows(rows: any[]): string {
 
 // Whitelist views + bảng agent có quyền query (read-only SELECT)
 const ALLOWED_TABLES = new Set([
-  "v_camp_dashboard", "v_camp_daily_trend",
+  "v_camp_dashboard", "v_camp_daily_trend", "v_camp_intraday",
   "v_mkt_daily", "v_mkt_summary", "v_shop_weekly",
   "v_camp_today", "v_camp_history", "v_camp_orders",
   "v_shop_care_daily", "v_camp_care_window",
+  "camp_hourly_snapshot", "agent_prediction",
   "agent_insight", "agent_memory", "agent_camp_recommendation",
   "camp_action_log",
 ])
@@ -54,125 +55,98 @@ function validateSql(sql: string): { ok: boolean; error?: string } {
   return { ok: true }
 }
 
-const SYSTEM_PROMPT = `Bạn là AI agent tối ưu quảng cáo Facebook cho shop Phan Viet (đồ gia dụng VN).
-Hãy phân tích như một marketer dày dặn kinh nghiệm — nhìn data và ra quyết định.
+const SYSTEM_PROMPT = `Bạn là AI agent tối ưu Facebook Ads cho shop Phan Viet (đồ gia dụng VN).
+Tư duy như marketer lead có kinh nghiệm — KHÔNG follow rule cứng, mà dùng skills học được + data hiện tại.
 
-## 🎯 MỤC TIÊU DUY NHẤT
-**care_pct toàn shop hôm nay < 30%** (chi phí ads ≤ 30% doanh thu COD)
+## 🎯 MỤC TIÊU KÉP (cố định)
+1. care_pct toàn shop < 30%
+2. cod_today toàn shop >= 50.000.000đ/ngày
 
-## Views — ưu tiên theo thứ tự này
+Hai mục tiêu TENSION nhau. Điều chỉnh aggressiveness theo cod hôm nay.
 
-### TẦNG 1: Nhìn team trước (như team lead)
-**v_mkt_summary** — hiệu suất từng MKT tổng hợp, 1 query thấy cả team:
-  mkt_name, care_3d, care_7d, care_30d, care_mtd, care_wtd,
-  spend_7d, cod_7d, orders_7d, spend_30d, cod_30d, orders_30d,
-  spend_mtd, cod_mtd, spend_wtd, cod_wtd,
-  active_camps_today, trend_3v7 (great/ok/improving/worsening/stable),
-  care_rank_7d (1=tốt nhất team), spend_share_pct, cod_share_pct
+## 📚 KIẾN THỨC (knowledge base = agent_insight)
+KHÔNG có rule cứng / threshold / benchmark nào trong prompt này.
+Toàn bộ rule + threshold + pattern nằm trong agent_insight.skill_type='skill'.
+PHẢI đọc skills TRƯỚC khi quyết định gì.
 
-**v_shop_weekly** — care toàn shop theo tuần (12 tuần):
-  week_start, week_end, total_spend, total_cod, order_count,
-  care_pct, care_pct_prev_week, active_mkts
+## 🛠️ TOOLS
+- **query_ads_db(sql)**: SELECT trên các views/tables (xem ALLOWED_TABLES)
+- **recommend_action(campaign_id, action, reason, confidence, suggested_daily_budget?)**
+- **save_prediction(scope, scope_id, predicted_eod_spend, predicted_eod_cod, predicted_eod_care, basis, skills_used)**
+- **save_insight(insight, category, skill_type, condition_when?, action_then?, confidence_pct?, scope?, evidence?)**
+- **invalidate_skill(skill_id, reason)**
 
-**v_mkt_daily** — per MKT × per day (90 ngày), dùng khi cần trend ngày:
-  mkt_name, date, spend, active_camps, order_count, cod_amount,
-  care_pct, care_pct_prev_day
+## 📊 Views chính
+- v_shop_care_daily, v_shop_weekly — shop level
+- v_mkt_summary, v_mkt_daily — team/MKT level
+- v_camp_dashboard — camp hôm nay full context (CPM, CTR, care_today, care_3d/7d, days_running)
+- v_camp_intraday — snapshot mới nhất hôm nay (spend_so_far, projected_eod_spend, current_hour)
+- v_camp_daily_trend — 14d drill-down per camp
+- agent_insight (skills + insights), agent_memory (rejections), agent_prediction (lần trước), agent_camp_recommendation, camp_action_log
 
-### TẦNG 2: Nhìn từng người (drill-down MKT)
-**v_shop_care_daily** — care shop theo ngày (45 ngày):
-  date, total_spend, total_cod, care_pct, active_camps, order_count
+## 🧠 WORKFLOW (framework — không phải rule)
 
-### TẦNG 3: Nhìn từng camp (như marketer check camp)
-**v_camp_dashboard** — "màn hình camp" hôm nay, đầy đủ context:
-  campaign_id, campaign_name, mkt_name, effective_status,
-  daily_budget, spend_today, spend_budget_pct (% budget tiêu, vd 46),
-  impressions, clicks, cpm, cpc, ctr_pct,
-  cod_orders_today, cod_today, care_today,
-  care_3d, care_7d, care_14d, spend_3d, cod_3d, spend_7d, cod_7d,
-  days_running, trend (great/ok/improving/worsening/high_care/new_camp),
-  has_orders_today, budget_nearly_exhausted
+**Bước 1: Context tổng quan**
+  SELECT * FROM v_shop_care_daily ORDER BY date DESC LIMIT 1  -- cod_today + care
+  SELECT * FROM v_shop_weekly LIMIT 3                          -- trend tuần
+  → Biết cod_today (bao nhiêu/50tr target), care hiện tại. Đây là context xuyên suốt.
 
-**v_camp_daily_trend** — lịch sử 14 ngày per camp per day (drill-down):
-  campaign_id, campaign_name, date, spend, cpm, cod_orders, cod_amount, care_pct
+**Bước 2: Đọc skills + phản biện validity**
+  SELECT id, insight, condition_when, action_then, confidence_pct,
+         times_correct, times_wrong, scope
+  FROM agent_insight
+  WHERE skill_type='skill' AND active=true
+  ORDER BY confidence_pct DESC LIMIT 25
+  → Với mỗi skill: data hiện tại có phủ nhận skill không?
+    Nếu có evidence mâu thuẫn rõ → invalidate_skill(id, reason)
 
-### Context lịch sử
-agent_insight, agent_memory, agent_camp_recommendation, camp_action_log
+**Bước 3: Check predictions lần trước (nếu có)**
+  SELECT * FROM agent_prediction
+  WHERE date = CURRENT_DATE AND prediction_hour < EXTRACT(HOUR FROM (now() AT TIME ZONE 'Asia/Ho_Chi_Minh'))
+    AND evaluated_at IS NULL
+  → So với actual hiện tại: prediction lần trước đang đúng/sai → ghi nhận.
 
-## Công cụ
-1. **query_ads_db(sql)** — SELECT trên các views trên
-2. **recommend_action(campaign_id, action, reason, confidence, suggested_daily_budget?)**
-   - action: pause | set_budget | resume | no_action
-3. **save_insight(insight, category, scope?)** — Lưu pattern, category: diagnosis|opportunity|pattern|warning
+**Bước 4: Scan team + camp**
+  SELECT * FROM v_mkt_summary ORDER BY care_rank_7d
+  → MKT nào care cao → drill xuống camp:
+  SELECT * FROM v_camp_dashboard WHERE mkt_name='X' ORDER BY spend_today DESC
+  + JOIN v_camp_intraday để biết spend_so_far, projected_eod_spend hôm nay
 
-## Workflow — từ team xuống camp, như marketer lead
+**Bước 5: Diagnose root cause (DÙNG SKILLS, không đoán bừa)**
+  Với camp nghi vấn:
+  - Match condition_when của skills → áp dụng action_then đề xuất
+  - Nếu nhiều skills cùng match → ưu tiên skill confidence cao
+  - Nếu không skill nào match → kết luận "unknown — chưa đủ pattern", thường no_action
 
-**Bước 1: Big picture — shop và tuần này**
-  SELECT week_start, care_pct, care_pct_prev_week, total_spend, total_cod, order_count
-  FROM v_shop_weekly LIMIT 4
-  → Biết shop đang trend tốt hay xấu, context để quyết định aggressive hay conservative
+**Bước 6: DỰ ĐOÁN cuối ngày (BẮT BUỘC trước action)**
+  - Linear projection từ v_camp_intraday.projected_eod_spend
+  - Điều chỉnh theo skills DOW/age/product (vd CN care cao hơn → adjust up)
+  - save_prediction(scope, scope_id, predicted_eod_spend, predicted_eod_cod, predicted_eod_care, basis, [skill_ids])
+  - Predict cho shop, các MKT, và camp quan trọng
 
-**Bước 2: Nhìn hiệu suất team — ai đang kéo care lên**
-  SELECT mkt_name, care_3d, care_7d, care_mtd, care_rank_7d,
-         spend_7d, cod_7d, orders_7d, trend_3v7,
-         spend_share_pct, cod_share_pct, active_camps_today
-  FROM v_mkt_summary ORDER BY care_rank_7d
-  → Identify: MKT nào care cao (cần can thiệp), MKT nào tốt (có thể scale)
+**Bước 7: Phản biện rồi action**
+  Trước recommend_action, tự hỏi:
+  - "Root cause là gì? Action giải quyết root cause hay symptom?"
+  - "Prediction nếu KHÔNG action vs NẾU action chênh bao nhiêu?"
+  - "Skill nào đang phản bác action này không?"
+  → recommend_action với reason format BẮT BUỘC:
+    "shop cod=Xtr/50tr | [root_cause] | predicted EOD care=Y% | skill: <id1>, <id2> | action vì <lý do>"
 
-**Bước 3: Focus vào MKT có vấn đề — xem camp của họ**
-  SELECT campaign_id, campaign_name, effective_status,
-         daily_budget, spend_today, spend_budget_pct,
-         cpm, ctr_pct, cod_orders_today, cod_today, care_today,
-         care_3d, care_7d, days_running, trend
-  FROM v_camp_dashboard
-  WHERE mkt_name = 'LINHMT'   -- hoặc MKT có care cao nhất
-  ORDER BY spend_today DESC
+**Bước 8: Cơ hội + skill mới**
+  - SELECT * FROM v_camp_dashboard WHERE effective_status='PAUSED' AND care_7d<25 AND cod_7d>0
+  - Nếu thấy pattern mới lặp ≥ 2 lần → save_insight(skill_type='skill', condition_when, action_then, confidence_pct=55)
 
-**Bước 4: Drill-down camp nghi vấn**
-  SELECT date, spend, cpm, cod_orders, cod_amount, care_pct
-  FROM v_camp_daily_trend
-  WHERE campaign_id = '...' ORDER BY date DESC LIMIT 7
-  → Xem 7 ngày gần nhất để confirm trend trước khi recommend
+## ⚠️ INVARIANTS (chỉ những điều TUYỆT ĐỐI)
+- Không action camp days_running < 3
+- set_budget chỉ được giảm (không tăng)
+- resume bắt buộc suggested_daily_budget
+- Reason phải chứa: cod_today + skill_ids đã áp dụng (nếu có)
+- TRƯỚC recommend_action: query agent_camp_recommendation WHERE created_at > now()-interval '24 hours' AND status IN ('pending','approved','auto_executed') → SKIP nếu đã có
 
-**Bước 5: Xét cơ hội — MKT tốt, camp PAUSED có thể resume**
-  SELECT campaign_id, campaign_name, mkt_name,
-         care_7d, spend_7d, cod_7d, days_running
-  FROM v_camp_dashboard
-  WHERE effective_status = 'PAUSED'
-    AND care_7d < 25 AND cod_7d > 0
-  ORDER BY care_7d ASC
-
-**Bước 6: Đọc context lịch sử**
-  SELECT insight, category, scope FROM agent_insight WHERE active=true LIMIT 15
-  SELECT mkt_name, action, rejection_reason FROM agent_memory
-  WHERE last_rejected_at > now() - interval '14 days'
-
-**Bước 7: Recommend + save_insight**
-
-## Phân loại hành động
-
-🔴 MKT care_3d > 35% hoặc care_7d > 32% (vd LINHMT 40.55%):
-  → Xem camp nào của MKT đó đang spend nhiều + care cao
-  → Recommend pause hoặc giảm budget 30-50%
-
-🟡 MKT care_7d 30-35%, đang worsening:
-  → Monitor, recommend giảm nhẹ budget camp spend cao nhất
-
-🟢 MKT care_7d < 25%, có camp PAUSED tốt:
-  → Recommend resume với budget = spend_7d/7
-
-⚪ Camp < 3 ngày, care_today null và care_3d null → bỏ qua
-
-## Quy tắc bất biến
-- Reason PHẢI có số + context MKT (vd "LINHMT care_7d=40.5%, rank 6/7 team; camp X spend 193k 0 đơn 3d")
-- Không recommend camp days_running < 3
-- set_budget chỉ giảm, không tăng
-- resume: suggested_daily_budget bắt buộc (spend_7d/7 làm base)
-- save_insight khi thấy pattern MKT (vd "LINHMT Chảo Vàng care cao vào cuối tháng")
-
-## QUY TẮC TRÁNH SPAM
-TRƯỚC recommend_action: query agent_camp_recommendation
-  WHERE created_at > now() - interval '24 hours' AND status IN ('pending','approved','auto_executed')
-→ Camp đã có rec trong 24h → SKIP`
+## 💡 Triết lý
+Skills là kinh nghiệm tích lũy — chúng có thể sai. Khi data mâu thuẫn skill, ĐỪNG mù quáng follow.
+Bạn được phép phản biện chính skill đã lưu (invalidate_skill).
+Cuối cùng outcome quyết định: skill nào dự đoán đúng → confidence tăng; sai → giảm; sai liên tục → auto-invalidate.`
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
@@ -211,16 +185,55 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "save_insight",
-      description: "Lưu pattern/insight học được từ data để tái sử dụng. Chỉ lưu khi pattern rõ ràng + có data backing.",
+      description: "Lưu insight/skill học được. skill_type='skill' (có condition+action, tái sử dụng) hoặc 'insight' (observation thuần).",
       parameters: {
         type: "object",
         properties: {
-          insight: { type: "string", description: "Mô tả pattern, < 500 chars" },
+          insight: { type: "string", description: "Mô tả ngắn pattern, < 500 chars" },
           category: { type: "string", enum: ["diagnosis", "opportunity", "pattern", "warning"] },
+          skill_type: { type: "string", enum: ["insight", "skill"], description: "skill = rule có thể tái sử dụng (cần condition_when+action_then); insight = observation" },
+          condition_when: { type: "string", description: "Khi nào áp dụng (chỉ khi skill_type=skill). Vd 'mkt_name=X AND cpm > 500000'" },
+          action_then: { type: "string", description: "Nên làm gì (chỉ khi skill_type=skill)" },
+          confidence_pct: { type: "number", description: "% tin cậy ban đầu 0-100, default 55" },
           scope: { type: "object", description: "{ mkt?, product?, time_range? }" },
-          evidence: { type: "object", description: "{ sample_size, data_points, confidence }" },
+          evidence: { type: "object", description: "{ sample_size, data_points }" },
         },
         required: ["insight", "category"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_prediction",
+      description: "Lưu dự đoán cuối ngày. BẮT BUỘC gọi sau khi diagnose, TRƯỚC khi recommend_action. Dùng để evaluate cuối ngày + update skill confidence.",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: { type: "string", enum: ["shop", "mkt", "camp"], description: "shop = toàn shop, mkt = 1 MKT, camp = 1 campaign" },
+          scope_id: { type: "string", description: "mkt_name hoặc campaign_id (bỏ trống nếu scope=shop)" },
+          predicted_eod_spend: { type: "number", description: "VND, spend cuối ngày dự đoán" },
+          predicted_eod_cod: { type: "number", description: "VND, COD cuối ngày dự đoán" },
+          predicted_eod_care: { type: "number", description: "% care cuối ngày dự đoán" },
+          basis: { type: "string", description: "Cơ sở dự đoán (vd 'linear pace 8h×3, adjust +10% theo DOW=CN')" },
+          skills_used: { type: "array", items: { type: "string" }, description: "Array of skill IDs đã dùng trong prediction" },
+        },
+        required: ["scope", "predicted_eod_spend", "predicted_eod_cod", "predicted_eod_care", "basis"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "invalidate_skill",
+      description: "Đánh dấu skill cũ không còn valid khi data hiện tại phủ nhận. Dùng khi evidence rõ ràng mâu thuẫn với condition_when/action_then của skill.",
+      parameters: {
+        type: "object",
+        properties: {
+          skill_id: { type: "string", description: "UUID skill trong agent_insight" },
+          reason: { type: "string", description: "Lý do invalidate, có evidence cụ thể" },
+        },
+        required: ["skill_id", "reason"],
       },
     },
   },
@@ -429,15 +442,60 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
       if (!args.insight || args.insight.length < 30) {
         return { error: "Insight quá ngắn (<30 chars)." }
       }
-      await sql.sql(
-        `INSERT INTO agent_insight (insight, category, scope, evidence, agent_model)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)`,
+      const skillType = args.skill_type === "skill" ? "skill" : "insight"
+      if (skillType === "skill" && (!args.condition_when || !args.action_then)) {
+        return { error: "skill_type='skill' bắt buộc có condition_when + action_then" }
+      }
+      const ins = await sql.sql(
+        `INSERT INTO agent_insight
+           (insight, category, scope, evidence, agent_model,
+            skill_type, condition_when, action_then, confidence_pct, source)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, 'agent')
+         RETURNING id`,
         [args.insight, args.category ?? "pattern",
          JSON.stringify(args.scope ?? {}),
          JSON.stringify(args.evidence ?? {}),
-         activeModel]
-      ).catch((e: any) => logger?.error?.("[CampAI] save insight fail:", e.message))
+         activeModel,
+         skillType, args.condition_when ?? null, args.action_then ?? null,
+         Math.max(10, Math.min(95, Number(args.confidence_pct ?? 55)))]
+      ).catch((e: any) => { logger?.error?.("[CampAI] save insight fail:", e.message); return [] })
+      return { ok: true, id: ins[0]?.id }
+    }
+
+    if (name === "save_prediction") {
+      const vnNow = new Date(Date.now() + 7 * 3600 * 1000)
+      const vnHour = vnNow.getUTCHours()
+      const skillIds = Array.isArray(args.skills_used) ? args.skills_used : []
+      await sql.sql(
+        `INSERT INTO agent_prediction
+           (run_id, date, prediction_hour, scope, scope_id,
+            predicted_eod_spend, predicted_eod_cod, predicted_eod_care,
+            prediction_basis, skills_used)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+        [runId, today, vnHour,
+         args.scope, args.scope_id ?? null,
+         Math.round(Number(args.predicted_eod_spend ?? 0)),
+         Math.round(Number(args.predicted_eod_cod ?? 0)),
+         Number(args.predicted_eod_care ?? 0),
+         args.basis ?? "",
+         JSON.stringify(skillIds)]
+      ).catch((e: any) => logger?.error?.("[CampAI] save_prediction fail:", e.message))
       return { ok: true }
+    }
+
+    if (name === "invalidate_skill") {
+      if (!args.skill_id || !args.reason) {
+        return { error: "Cần skill_id + reason" }
+      }
+      const r = await sql.sql(
+        `UPDATE agent_insight
+         SET active = false, invalidated_at = now(), invalidation_reason = $2
+         WHERE id = $1 AND active = true
+         RETURNING id`,
+        [args.skill_id, args.reason]
+      ).catch(() => [])
+      if (!r.length) return { error: "Skill không tồn tại hoặc đã invalidated" }
+      return { ok: true, message: `Skill ${args.skill_id} invalidated` }
     }
 
     return { error: `Unknown tool: ${name}` }
@@ -448,17 +506,25 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
-      content: `Hôm nay ${today}. Tối ưu ${mktCtx} để đạt mục tiêu care_pct < 30%.
+      content: `Hôm nay ${today}. Tối ưu ${mktCtx} cho dual goal: care < 30% VÀ cod >= 50tr.
 
-Bắt đầu bằng query v_shop_care_daily 14 ngày để biết shop đang ở đâu.
-Sau đó đọc agent_insight để dùng skills cũ.
-Diagnose/Opportunity tùy state, recommend actions có reason backed by data, save_insight nếu phát hiện pattern.`,
+Theo workflow 8 bước trong system prompt:
+1. Lấy cod_today + care hôm nay (v_shop_care_daily) + trend tuần (v_shop_weekly)
+2. Đọc skills (agent_insight WHERE skill_type='skill' AND active=true) — phản biện skill nào không còn đúng
+3. Check predictions lần trước (agent_prediction hôm nay) — đúng/sai?
+4. Scan team (v_mkt_summary) + drill camp MKT có vấn đề (v_camp_dashboard + v_camp_intraday)
+5. Diagnose root cause dùng SKILLS (không đoán bừa)
+6. DỰ ĐOÁN cuối ngày bằng save_prediction (BẮT BUỘC trước khi action)
+7. Phản biện rồi recommend_action — reason phải có cod_today + skill_ids
+8. Cơ hội resume + tạo skill mới nếu thấy pattern
+
+Bắt đầu ngay.`,
     },
   ]
 
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
-  const MAX_ITERATIONS = 25
+  const MAX_ITERATIONS = 35  // 8-step workflow + predictions + diagnose nhiều camps cần budget cao hơn
 
   await heartbeat({ phase: "starting", iteration: 0, last_action: "Khởi tạo agent goal-driven v2..." })
 
@@ -490,7 +556,9 @@ Diagnose/Opportunity tùy state, recommend actions có reason backed by data, sa
           const a = JSON.parse(tc.function.arguments)
           if (tc.function.name === "query_ads_db") return `query(${a.sql?.slice(0, 60)}...)`
           if (tc.function.name === "recommend_action") return `recommend(${a.campaign_id?.slice(-6)} → ${a.action})`
-          if (tc.function.name === "save_insight") return `insight(${a.category})`
+          if (tc.function.name === "save_insight") return `insight(${a.skill_type ?? "insight"}/${a.category})`
+          if (tc.function.name === "save_prediction") return `predict(${a.scope}${a.scope_id ? ":" + a.scope_id.slice(-6) : ""} → care=${a.predicted_eod_care}%)`
+          if (tc.function.name === "invalidate_skill") return `invalidate(${a.skill_id?.slice(-6)})`
           return tc.function.name
         } catch { return tc.function.name }
       }).join(" | ")
