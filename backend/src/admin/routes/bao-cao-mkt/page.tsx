@@ -39,7 +39,9 @@ export default function BaoCaoMktPage() {
   const [syncing, setSyncing] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(() => {
+    try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
+  })
   const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "jobs" | "fbaccounts" | "ai">("mkt")
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
@@ -531,7 +533,7 @@ export default function BaoCaoMktPage() {
             <option value="day">Theo ngày</option>
             <option value="month">Theo tháng</option>
           </select>
-          <button onClick={() => setDark(d => !d)} style={{
+          <button onClick={() => setDark(d => { const next = !d; try { localStorage.setItem("bao-cao-mkt-theme", next ? "dark" : "light") } catch {} return next })} style={{
             background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6,
             padding: "8px 12px", cursor: "pointer", fontSize: 13, color: t.text
           }}>
@@ -1680,39 +1682,112 @@ export default function BaoCaoMktPage() {
               </div>
             )}
 
-            {/* Run summary cards — click to filter AND open log sidebar */}
-            {aiRunSummary.length > 0 && (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                {aiRunSummary.slice(0, 8).map((run: any) => {
-                  const ts = new Date(run.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
-                  const isActive = aiFilterRunId === run.run_id
-                  return (
-                    <div key={run.run_id}
-                      style={{ background: isActive ? (dark ? "#1e3a5f" : "#dbeafe") : t.card, border: `1px solid ${isActive ? t.blue : t.cardBorder}`, borderRadius: 8, padding: "10px 16px", cursor: "pointer", minWidth: 160 }}>
-                      <div style={{ fontSize: 11, color: t.textMuted }}>{ts} · <span style={{ color: dark ? "#a78bfa" : "#7c3aed" }}>{run.agent_model?.split("/").pop()?.slice(0, 16) ?? ""}</span></div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flex: 1 }}
-                          onClick={() => { setAiFilterRunId(isActive ? "" : run.run_id); setAiOffset(0) }}>
-                          {run.total} camps
-                        </span>
-                        <button onClick={() => openAiLog(run.run_id)}
-                          title="Xem AI log"
-                          style={{ background: aiLogRunId === run.run_id ? (dark ? "#4c1d95" : "#ede9fe") : "transparent", border: `1px solid ${aiLogRunId === run.run_id ? "#7c3aed" : t.cardBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 11, color: dark ? "#a78bfa" : "#7c3aed" }}>
-                          🧠
+            {/* Run summary cards + Compare Report */}
+            {aiRunSummary.length > 0 && (() => {
+              // Detect compare groups: runs within 2h of each other with different models
+              const sorted = [...aiRunSummary].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              const TWO_HOURS = 2 * 60 * 60 * 1000
+              const latestTime = sorted[0] ? new Date(sorted[0].created_at).getTime() : 0
+              const compareGroup = sorted.filter(r => latestTime - new Date(r.created_at).getTime() < TWO_HOURS && r.agent_model)
+              const isCompareRun = compareGroup.length > 1 && new Set(compareGroup.map(r => r.agent_model)).size > 1
+              const MODEL_COLORS = ["#3b82f6", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#06b6d4"]
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  {/* Compare Report Table */}
+                  {isCompareRun && (
+                    <div style={{ background: dark ? "#0d0d1a" : "#f5f3ff", border: `1px solid ${dark ? "#4c1d95" : "#c4b5fd"}`, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: dark ? "#c084fc" : "#7c3aed", marginBottom: 10 }}>🏁 So sánh {compareGroup.length} models — cùng lần chạy</div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ borderBottom: `1px solid ${dark ? "#4c1d95" : "#c4b5fd"}` }}>
+                              <th style={{ padding: "6px 10px", textAlign: "left", color: dark ? "#94a3b8" : "#64748b", fontWeight: 600 }}>Chỉ số</th>
+                              {compareGroup.map((run: any, idx: number) => (
+                                <th key={run.run_id} style={{ padding: "6px 10px", textAlign: "center", color: MODEL_COLORS[idx % MODEL_COLORS.length], fontWeight: 700 }}>
+                                  {run.agent_model?.split("/").pop()?.replace("deepseek-", "DS-")?.replace("gemini-", "Gem-")?.replace("claude-", "Cl-")?.slice(0, 18) ?? run.agent_model ?? "?"}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { label: "Tổng camps phân tích", key: "total" },
+                              { label: "Actionable (không phải no_action)", key: "actionable" },
+                              { label: "Chờ duyệt (pending)", key: "pending" },
+                              { label: "Đã duyệt", key: "approved" },
+                              { label: "Đã từ chối", key: "rejected" },
+                              { label: "Tự động thực thi", key: "auto_executed" },
+                            ].map(({ label, key }) => {
+                              const vals = compareGroup.map((r: any) => Number(r[key] ?? 0))
+                              const maxVal = Math.max(...vals)
+                              return (
+                                <tr key={key} style={{ borderBottom: `1px solid ${dark ? "#1e1b4b" : "#ede9fe"}` }}>
+                                  <td style={{ padding: "6px 10px", color: dark ? "#94a3b8" : "#64748b" }}>{label}</td>
+                                  {compareGroup.map((run: any, idx: number) => {
+                                    const val = Number(run[key] ?? 0)
+                                    const isBest = val === maxVal && maxVal > 0
+                                    return (
+                                      <td key={run.run_id} style={{ padding: "6px 10px", textAlign: "center", fontWeight: isBest ? 700 : 400, color: isBest ? MODEL_COLORS[idx % MODEL_COLORS.length] : (dark ? "#e2e8f0" : "#1e293b") }}>
+                                        {val}{isBest && key !== "pending" && key !== "rejected" ? " ★" : ""}
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {compareGroup.map((run: any, idx: number) => (
+                          <button key={run.run_id} onClick={() => { setAiFilterRunId(aiFilterRunId === run.run_id ? "" : run.run_id); setAiOffset(0) }}
+                            style={{ background: aiFilterRunId === run.run_id ? MODEL_COLORS[idx % MODEL_COLORS.length] : "transparent", color: aiFilterRunId === run.run_id ? "#fff" : MODEL_COLORS[idx % MODEL_COLORS.length], border: `1px solid ${MODEL_COLORS[idx % MODEL_COLORS.length]}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                            {aiFilterRunId === run.run_id ? "✓ " : ""}Xem recs {run.agent_model?.split("/").pop()?.slice(0, 14)}
+                          </button>
+                        ))}
+                        <button onClick={() => { setAiFilterRunId(""); setAiOffset(0) }}
+                          style={{ background: "transparent", color: dark ? "#64748b" : "#94a3b8", border: `1px solid ${dark ? "#334155" : "#e2e8f0"}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 11 }}>
+                          Xem tất cả
                         </button>
                       </div>
-                      <div style={{ fontSize: 11, marginTop: 2 }}>
-                        <span style={{ color: t.amber }}>{run.pending} chờ</span>
-                        {" · "}
-                        <span style={{ color: t.green }}>{run.approved} duyệt</span>
-                        {" · "}
-                        <span style={{ color: t.red }}>{run.rejected} từ chối</span>
-                      </div>
                     </div>
-                  )
-                })}
-              </div>
-            )}
+                  )}
+                  {/* Run cards */}
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {sorted.slice(0, 8).map((run: any, idx: number) => {
+                      const ts = new Date(run.created_at).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                      const isActive = aiFilterRunId === run.run_id
+                      const inCompare = isCompareRun && compareGroup.some((r: any) => r.run_id === run.run_id)
+                      const modelColor = inCompare ? MODEL_COLORS[compareGroup.findIndex((r: any) => r.run_id === run.run_id) % MODEL_COLORS.length] : (dark ? "#a78bfa" : "#7c3aed")
+                      return (
+                        <div key={run.run_id}
+                          style={{ background: isActive ? (dark ? "#1e3a5f" : "#dbeafe") : t.card, border: `2px solid ${inCompare ? modelColor + "66" : (isActive ? t.blue : t.cardBorder)}`, borderRadius: 8, padding: "10px 16px", cursor: "pointer", minWidth: 160 }}>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{ts} · <span style={{ color: modelColor, fontWeight: 600 }}>{run.agent_model?.split("/").pop()?.slice(0, 16) ?? ""}</span></div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flex: 1 }}
+                              onClick={() => { setAiFilterRunId(isActive ? "" : run.run_id); setAiOffset(0) }}>
+                              {run.total} camps
+                            </span>
+                            <button onClick={() => openAiLog(run.run_id)}
+                              title="Xem AI log"
+                              style={{ background: aiLogRunId === run.run_id ? (dark ? "#4c1d95" : "#ede9fe") : "transparent", border: `1px solid ${aiLogRunId === run.run_id ? "#7c3aed" : t.cardBorder}`, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 11, color: dark ? "#a78bfa" : "#7c3aed" }}>
+                              🧠
+                            </button>
+                          </div>
+                          <div style={{ fontSize: 11, marginTop: 2 }}>
+                            <span style={{ color: t.amber }}>{run.pending} chờ</span>
+                            {" · "}
+                            <span style={{ color: t.green }}>{run.approved} duyệt</span>
+                            {" · "}
+                            <span style={{ color: t.red }}>{run.rejected} từ chối</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Split view: recommendations + AI log sidebar */}
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
