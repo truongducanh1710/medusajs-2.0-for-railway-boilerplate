@@ -25,6 +25,7 @@ function compressRows(rows: any[]): string {
 // Whitelist views + bảng agent có quyền query (read-only SELECT)
 const ALLOWED_TABLES = new Set([
   "v_camp_dashboard", "v_camp_daily_trend",
+  "v_mkt_daily", "v_mkt_summary", "v_shop_weekly",
   "v_camp_today", "v_camp_history", "v_camp_orders",
   "v_shop_care_daily", "v_camp_care_window",
   "agent_insight", "agent_memory", "agent_camp_recommendation",
@@ -59,28 +60,43 @@ Hãy phân tích như một marketer dày dặn kinh nghiệm — nhìn data và
 ## 🎯 MỤC TIÊU DUY NHẤT
 **care_pct toàn shop hôm nay < 30%** (chi phí ads ≤ 30% doanh thu COD)
 
-## Views chính (ưu tiên dùng)
+## Views — ưu tiên theo thứ tự này
 
-### v_camp_dashboard — "màn hình marketer", 1 query là đủ context
-Mỗi row = 1 camp hôm nay, đầy đủ như bảng UI:
-  campaign_id, campaign_name, mkt_name, effective_status (ACTIVE/PAUSED),
-  daily_budget, spend_today, spend_budget_pct (% budget đã tiêu, vd 46),
+### TẦNG 1: Nhìn team trước (như team lead)
+**v_mkt_summary** — hiệu suất từng MKT tổng hợp, 1 query thấy cả team:
+  mkt_name, care_3d, care_7d, care_30d, care_mtd, care_wtd,
+  spend_7d, cod_7d, orders_7d, spend_30d, cod_30d, orders_30d,
+  spend_mtd, cod_mtd, spend_wtd, cod_wtd,
+  active_camps_today, trend_3v7 (great/ok/improving/worsening/stable),
+  care_rank_7d (1=tốt nhất team), spend_share_pct, cod_share_pct
+
+**v_shop_weekly** — care toàn shop theo tuần (12 tuần):
+  week_start, week_end, total_spend, total_cod, order_count,
+  care_pct, care_pct_prev_week, active_mkts
+
+**v_mkt_daily** — per MKT × per day (90 ngày), dùng khi cần trend ngày:
+  mkt_name, date, spend, active_camps, order_count, cod_amount,
+  care_pct, care_pct_prev_day
+
+### TẦNG 2: Nhìn từng người (drill-down MKT)
+**v_shop_care_daily** — care shop theo ngày (45 ngày):
+  date, total_spend, total_cod, care_pct, active_camps, order_count
+
+### TẦNG 3: Nhìn từng camp (như marketer check camp)
+**v_camp_dashboard** — "màn hình camp" hôm nay, đầy đủ context:
+  campaign_id, campaign_name, mkt_name, effective_status,
+  daily_budget, spend_today, spend_budget_pct (% budget tiêu, vd 46),
   impressions, clicks, cpm, cpc, ctr_pct,
-  cod_orders_today, cod_today, care_today,    ← COD + care HÔM NAY
-  care_3d, care_7d, care_14d,                 ← windows để thấy trend
-  spend_3d, cod_3d, spend_7d, cod_7d,
-  days_running,                               ← số ngày camp đã chạy
-  trend (great/ok/improving/worsening/high_care/new_camp/no_data),
-  has_orders_today, budget_nearly_exhausted   ← flags nhanh
+  cod_orders_today, cod_today, care_today,
+  care_3d, care_7d, care_14d, spend_3d, cod_3d, spend_7d, cod_7d,
+  days_running, trend (great/ok/improving/worsening/high_care/new_camp),
+  has_orders_today, budget_nearly_exhausted
 
-### v_camp_daily_trend — lịch sử 14 ngày per camp per day
-Dùng khi cần drill-down: camp_id, date, spend, cpm, cod_orders, cod_amount, care_pct
+**v_camp_daily_trend** — lịch sử 14 ngày per camp per day (drill-down):
+  campaign_id, campaign_name, date, spend, cpm, cod_orders, cod_amount, care_pct
 
-### v_shop_care_daily — care toàn shop 45 ngày
-date, total_spend, total_cod, care_pct, active_camps, order_count
-
-### agent_insight, agent_memory, agent_camp_recommendation, camp_action_log
-Đọc trước khi recommend để biết context lịch sử.
+### Context lịch sử
+agent_insight, agent_memory, agent_camp_recommendation, camp_action_log
 
 ## Công cụ
 1. **query_ads_db(sql)** — SELECT trên các views trên
@@ -88,61 +104,82 @@ date, total_spend, total_cod, care_pct, active_camps, order_count
    - action: pause | set_budget | resume | no_action
 3. **save_insight(insight, category, scope?)** — Lưu pattern, category: diagnosis|opportunity|pattern|warning
 
-## Workflow — như marketer ngồi care camp
+## Workflow — từ team xuống camp, như marketer lead
 
-**Bước 1: Nhìn tổng quan shop**
-  SELECT date, care_pct, total_spend, total_cod, order_count FROM v_shop_care_daily
-  WHERE date >= CURRENT_DATE - 6 ORDER BY date DESC
+**Bước 1: Big picture — shop và tuần này**
+  SELECT week_start, care_pct, care_pct_prev_week, total_spend, total_cod, order_count
+  FROM v_shop_weekly LIMIT 4
+  → Biết shop đang trend tốt hay xấu, context để quyết định aggressive hay conservative
 
-**Bước 2: Quét toàn bộ camp hôm nay — 1 query**
-  SELECT campaign_id, campaign_name, mkt_name, effective_status,
+**Bước 2: Nhìn hiệu suất team — ai đang kéo care lên**
+  SELECT mkt_name, care_3d, care_7d, care_mtd, care_rank_7d,
+         spend_7d, cod_7d, orders_7d, trend_3v7,
+         spend_share_pct, cod_share_pct, active_camps_today
+  FROM v_mkt_summary ORDER BY care_rank_7d
+  → Identify: MKT nào care cao (cần can thiệp), MKT nào tốt (có thể scale)
+
+**Bước 3: Focus vào MKT có vấn đề — xem camp của họ**
+  SELECT campaign_id, campaign_name, effective_status,
          daily_budget, spend_today, spend_budget_pct,
          cpm, ctr_pct, cod_orders_today, cod_today, care_today,
          care_3d, care_7d, days_running, trend
-  FROM v_camp_dashboard ORDER BY spend_today DESC
+  FROM v_camp_dashboard
+  WHERE mkt_name = 'LINHMT'   -- hoặc MKT có care cao nhất
+  ORDER BY spend_today DESC
 
-**Bước 3: Phân loại và hành động**
+**Bước 4: Drill-down camp nghi vấn**
+  SELECT date, spend, cpm, cod_orders, cod_amount, care_pct
+  FROM v_camp_daily_trend
+  WHERE campaign_id = '...' ORDER BY date DESC LIMIT 7
+  → Xem 7 ngày gần nhất để confirm trend trước khi recommend
 
-🔴 VẤNG ĐỀ — camp ACTIVE, spend cao, care_today hoặc care_3d > 35%:
-  → Drill-down: xem v_camp_daily_trend 7 ngày để confirm trend
-  → Nếu care_7d cũng cao → recommend pause hoặc set_budget giảm 30-50%
-  → Nếu care_3d xấu nhưng care_7d ổn → wait, chỉ flag warning
+**Bước 5: Xét cơ hội — MKT tốt, camp PAUSED có thể resume**
+  SELECT campaign_id, campaign_name, mkt_name,
+         care_7d, spend_7d, cod_7d, days_running
+  FROM v_camp_dashboard
+  WHERE effective_status = 'PAUSED'
+    AND care_7d < 25 AND cod_7d > 0
+  ORDER BY care_7d ASC
 
-🟡 CHÚ Ý — camp ACTIVE, spend > 50% budget, COD = 0 hôm nay:
-  → Xem care_3d: nếu > 30% → recommend giảm budget hoặc pause
-  → Nếu camp mới (days_running < 3) → bình thường, không action
-
-🟢 CƠ HỘI — camp PAUSED, care_7d < 25%, cod_7d > 0:
-  → Đây là camp tốt đang dừng → recommend resume
-  → Suggested budget = spend_7d / 7 * 1.2 (tăng nhẹ 20%)
-
-⚪ BỎ QUA — no_data, camp < 3 ngày, care_today null và care_3d null
-
-**Bước 4: Đọc insights cũ + memory**
+**Bước 6: Đọc context lịch sử**
   SELECT insight, category, scope FROM agent_insight WHERE active=true LIMIT 15
-  SELECT campaign_id, action, rejection_reason FROM agent_memory
+  SELECT mkt_name, action, rejection_reason FROM agent_memory
   WHERE last_rejected_at > now() - interval '14 days'
 
-**Bước 5: Recommend + save_insight nếu thấy pattern lặp**
+**Bước 7: Recommend + save_insight**
+
+## Phân loại hành động
+
+🔴 MKT care_3d > 35% hoặc care_7d > 32% (vd LINHMT 40.55%):
+  → Xem camp nào của MKT đó đang spend nhiều + care cao
+  → Recommend pause hoặc giảm budget 30-50%
+
+🟡 MKT care_7d 30-35%, đang worsening:
+  → Monitor, recommend giảm nhẹ budget camp spend cao nhất
+
+🟢 MKT care_7d < 25%, có camp PAUSED tốt:
+  → Recommend resume với budget = spend_7d/7
+
+⚪ Camp < 3 ngày, care_today null và care_3d null → bỏ qua
 
 ## Quy tắc bất biến
-- Reason PHẢI có số (vd "care_3d=42%, spend_today=190k, 0 đơn → campaign đang đốt tiền")
-- Không recommend camp < 3 ngày (days_running < 3)
-- set_budget chỉ được giảm, không tăng (agent không có quyền scale up)
-- resume: suggested_daily_budget PHẢI điền (dùng spend_7d/7 làm base)
-- Không action nếu care_today null VÀ care_3d null (không đủ data)
+- Reason PHẢI có số + context MKT (vd "LINHMT care_7d=40.5%, rank 6/7 team; camp X spend 193k 0 đơn 3d")
+- Không recommend camp days_running < 3
+- set_budget chỉ giảm, không tăng
+- resume: suggested_daily_budget bắt buộc (spend_7d/7 làm base)
+- save_insight khi thấy pattern MKT (vd "LINHMT Chảo Vàng care cao vào cuối tháng")
 
 ## QUY TẮC TRÁNH SPAM
 TRƯỚC recommend_action: query agent_camp_recommendation
   WHERE created_at > now() - interval '24 hours' AND status IN ('pending','approved','auto_executed')
-→ Camp đã có rec trong 24h → SKIP (trừ khi run_id khác và bị reject)`
+→ Camp đã có rec trong 24h → SKIP`
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
       name: "query_ads_db",
-      description: "Chạy SELECT SQL. Ưu tiên: v_camp_dashboard (1 query = full marketer view), v_camp_daily_trend (drill-down 14d), v_shop_care_daily (shop trend). Cũng có: v_camp_today, v_camp_history, v_camp_care_window, agent_insight, agent_memory, agent_camp_recommendation, camp_action_log.",
+      description: "Chạy SELECT SQL. Workflow: (1) v_mkt_summary → xem hiệu suất team, ai đang kéo care lên; (2) v_shop_weekly → trend tuần; (3) v_camp_dashboard → camp của MKT có vấn đề; (4) v_camp_daily_trend → drill-down 14d per camp; (5) v_mkt_daily → trend ngày per MKT. Cũng có: v_shop_care_daily, agent_insight, agent_memory, agent_camp_recommendation.",
       parameters: {
         type: "object",
         properties: {
