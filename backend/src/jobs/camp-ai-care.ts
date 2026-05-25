@@ -638,7 +638,19 @@ Bắt đầu ngay.`,
       logger?.info?.(`[CampAI Evaluator] Raw (${evalContent.length} chars): ${evalContent.slice(0, 500)}`)
 
       let parsed: any = {}
-      try { parsed = JSON.parse(evalContent) } catch (parseErr: any) {
+      try {
+        // Try direct parse first, then extract from markdown code block
+        let jsonStr = evalContent.trim()
+        if (!jsonStr.startsWith("{") && !jsonStr.startsWith("[")) {
+          const m = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+          if (m) jsonStr = m[1].trim()
+          else {
+            const start = jsonStr.indexOf("{")
+            if (start !== -1) jsonStr = jsonStr.slice(start)
+          }
+        }
+        parsed = JSON.parse(jsonStr)
+      } catch (parseErr: any) {
         await sql.sql(
           `UPDATE agent_camp_recommendation SET reflection_notes = $1, evaluator_model = $2 WHERE run_id = $3`,
           [`[PARSE_FAIL] ${evalContent.slice(0, 500)}`, EVALUATOR_MODEL, runId]
