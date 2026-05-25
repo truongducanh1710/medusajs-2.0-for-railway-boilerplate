@@ -7,6 +7,21 @@ const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-pro"
 const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "google/gemini-3.5-flash"
 const DEEPSEEK_DIRECT_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"])
 
+// Nén rows thành pipe-separated text để tiết kiệm token (~10-15x so với JSON)
+function compressRows(rows: any[]): string {
+  if (!rows.length) return "(0 rows)"
+  const keys = Object.keys(rows[0])
+  const header = keys.join("|")
+  const lines = rows.map(r => keys.map(k => {
+    const v = r[k]
+    if (v === null || v === undefined) return ""
+    if (typeof v === "number") return String(Math.round(Number(v) * 100) / 100)
+    const s = String(v)
+    return s.length > 80 ? s.slice(0, 77) + "…" : s
+  }).join("|"))
+  return `${header}\n${lines.join("\n")}\n(${rows.length} rows)`
+}
+
 // Whitelist views + bảng agent có quyền query (read-only SELECT)
 const ALLOWED_TABLES = new Set([
   "v_camp_today", "v_camp_history", "v_camp_orders",
@@ -234,8 +249,8 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
           finalSql = finalSql.replace(/;?\s*$/, "") + " LIMIT 100"
         }
         const rows = await sql.sql(finalSql)
-        // Compress: trả về rows + row_count
-        return { rows: rows.slice(0, 100), row_count: rows.length, truncated: rows.length > 100 }
+        const capped = rows.slice(0, 100)
+        return compressRows(capped) + (rows.length > 100 ? "\n[truncated, total=" + rows.length + "]" : "")
       } catch (e: any) {
         return { error: `SQL error: ${e.message?.slice(0, 300)}` }
       }
@@ -415,10 +430,11 @@ Diagnose/Opportunity tùy state, recommend actions có reason backed by data, sa
         let args: any = {}
         try { args = JSON.parse(tc.function.arguments) } catch { /* ignore */ }
         const result = await handleTool(tc.function.name, args)
+        const resultStr = typeof result === "string" ? result : JSON.stringify(result)
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
-          content: JSON.stringify(result).slice(0, 8000), // truncate quá to
+          content: resultStr.slice(0, 12000),
         } as OpenAI.Chat.ChatCompletionMessageParam)
 
         if (tc.function.name === "recommend_action" && (result as any)?.ok) {
