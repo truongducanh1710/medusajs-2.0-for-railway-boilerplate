@@ -626,14 +626,12 @@ export default function BaoCaoMktPage() {
                 {" · "}
                 <span style={{ color: t.red }}>{s.cancelled || 0} hủy</span>
               </div>
-              {(s.ads_cost || 0) > 0 && (
-                <>
-                  <div style={{ fontSize: 11, color: t.amber, marginTop: 3 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(pct), marginTop: 1 }}>
-                    {pct !== null ? pct + "%" : "—"}
-                  </div>
-                </>
-              )}
+              <>
+                <div style={{ fontSize: 11, color: t.amber, marginTop: 3 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(pct), marginTop: 1 }}>
+                  {pct !== null ? pct + "%" : "—"}
+                </div>
+              </>
             </div>
           )
         })}
@@ -980,15 +978,13 @@ export default function BaoCaoMktPage() {
                                 {" · "}
                                 <span style={{ color: t.red }}>{cell.cancelled ?? 0}&#10007;</span>
                               </div>
-                              {Number(cell.ads_cost) > 0 && (
-                                <div style={{ fontSize: 11, marginTop: 2 }}>
-                                  <span style={{ color: t.amber }}>{fmtMoney(Number(cell.ads_cost))}</span>
-                                  {" · "}
-                                  <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
-                                    {pct !== null ? pct + "%" : "—"}
-                                  </span>
-                                </div>
-                              )}
+                              <div style={{ fontSize: 11, marginTop: 2 }}>
+                                <span style={{ color: t.amber }}>{fmtMoney(Number(cell.ads_cost))}</span>
+                                {" · "}
+                                <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
+                                  {pct !== null ? pct + "%" : "—"}
+                                </span>
+                              </div>
                             </div>
                           ) : (
                             <span style={{ color: t.empty }}>—</span>
@@ -998,15 +994,13 @@ export default function BaoCaoMktPage() {
                     })}
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
                       <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(dayRevenue)}</div>
-                      {dayCost > 0 && (
-                        <div style={{ fontSize: 11, marginTop: 2 }}>
-                          <span style={{ color: t.amber }}>{fmtMoney(dayCost)}</span>
-                          {" · "}
-                          <span style={{ color: carePctColor(dayCarePct), fontWeight: 600 }}>
-                            {dayCarePct !== null ? dayCarePct + "%" : "—"}
-                          </span>
-                        </div>
-                      )}
+                      <div style={{ fontSize: 11, marginTop: 2 }}>
+                        <span style={{ color: t.amber }}>{fmtMoney(dayCost)}</span>
+                        {" · "}
+                        <span style={{ color: carePctColor(dayCarePct), fontWeight: 600 }}>
+                          {dayCarePct !== null ? dayCarePct + "%" : "—"}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -1022,29 +1016,25 @@ export default function BaoCaoMktPage() {
                     <td key={mkt} style={{ padding: "10px 12px", textAlign: "right" }}>
                       <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(s.revenue_total || 0)}</div>
                       <div style={{ fontSize: 11, color: t.textMuted }}>{s.delivered || 0} đơn</div>
-                      {(s.ads_cost || 0) > 0 && (
-                        <div style={{ fontSize: 11, marginTop: 2 }}>
-                          <span style={{ color: t.amber }}>{fmtMoney(s.ads_cost || 0)}</span>
-                          {" · "}
-                          <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
-                            {pct !== null ? pct + "%" : "—"}
-                          </span>
-                        </div>
-                      )}
+                      <div style={{ fontSize: 11, marginTop: 2 }}>
+                        <span style={{ color: t.amber }}>{fmtMoney(s.ads_cost || 0)}</span>
+                        {" · "}
+                        <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
+                          {pct !== null ? pct + "%" : "—"}
+                        </span>
+                      </div>
                     </td>
                   )
                 })}
                 <td style={{ padding: "10px 12px", textAlign: "right" }}>
                   <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(totalRevenue)}</div>
-                  {totalCost > 0 && (
-                    <div style={{ fontSize: 11, marginTop: 2 }}>
-                      <span style={{ color: t.amber }}>{fmtMoney(totalCost)}</span>
-                      {" · "}
-                      <span style={{ color: carePctColor(totalCarePct), fontWeight: 600 }}>
-                        {totalCarePct !== null ? totalCarePct + "%" : "—"}
-                      </span>
-                    </div>
-                  )}
+                  <div style={{ fontSize: 11, marginTop: 2 }}>
+                    <span style={{ color: t.amber }}>{fmtMoney(totalCost)}</span>
+                    {" · "}
+                    <span style={{ color: carePctColor(totalCarePct), fontWeight: 600 }}>
+                      {totalCarePct !== null ? totalCarePct + "%" : "—"}
+                    </span>
+                  </div>
                 </td>
               </tr>
             </tfoot>
