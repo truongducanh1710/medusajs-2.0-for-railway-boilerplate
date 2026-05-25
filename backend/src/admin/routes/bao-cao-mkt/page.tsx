@@ -136,6 +136,14 @@ export default function BaoCaoMktPage() {
   const [aiReasoningLoading, setAiReasoningLoading] = useState(false)
   const [aiRejectNoteId, setAiRejectNoteId] = useState<string | null>(null)
   const [aiRejectNote, setAiRejectNote] = useState("")
+  // Evaluation state
+  const [evalRunSummary, setEvalRunSummary] = useState<any | null>(null)
+  const [evalLoading, setEvalLoading] = useState(false)
+  const [tagModalRec, setTagModalRec] = useState<{ id: string; campaign_name: string } | null>(null)
+  const [tagLayer, setTagLayer] = useState<string>("model")
+  const [tagCategory, setTagCategory] = useState<string>("")
+  const [tagSeverity, setTagSeverity] = useState<string>("medium")
+  const [tagNote, setTagNote] = useState<string>("")
   // Realtime heartbeat polling
   const [aiHeartbeats, setAiHeartbeats] = useState<any[]>([])
   // Insights panel
@@ -405,7 +413,40 @@ export default function BaoCaoMktPage() {
       setAiLogRecs(data.recommendations ?? [])
       setAiLogToolCalls(data.tool_calls ?? [])
     } catch { /* ignore */ } finally { setAiLogLoading(false) }
+    // Fetch evaluation in parallel
+    setEvalLoading(true)
+    setEvalRunSummary(null)
+    try {
+      const r = await apiFetch(`/admin/pancake-sync/report/camp-ai/evaluation?view=run_summary&run_id=${runId}`)
+      setEvalRunSummary(await r.json())
+    } catch { /* ignore */ } finally { setEvalLoading(false) }
   }, [aiLogRunId])
+
+  const refreshEval = useCallback(async () => {
+    if (!aiLogRunId) return
+    try {
+      const r = await apiFetch(`/admin/pancake-sync/report/camp-ai/evaluation?view=run_summary&run_id=${aiLogRunId}`)
+      setEvalRunSummary(await r.json())
+    } catch { /* ignore */ }
+  }, [aiLogRunId])
+
+  const submitErrorTag = useCallback(async () => {
+    if (!tagModalRec || !tagCategory) { alert("Cần chọn category"); return }
+    try {
+      const res = await apiFetch("/admin/pancake-sync/report/camp-ai/evaluation", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_type: "rec", target_id: tagModalRec.id,
+          layer: tagLayer, category: tagCategory, severity: tagSeverity, note: tagNote || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setTagModalRec(null); setTagCategory(""); setTagNote("")
+        await refreshEval()
+      } else alert("Lỗi: " + (data.error ?? "unknown"))
+    } catch (e: any) { alert("Lỗi: " + e.message) }
+  }, [tagModalRec, tagLayer, tagCategory, tagSeverity, tagNote, refreshEval])
 
   const openReasoning = useCallback(async (rec: any) => {
     // Now opens sidebar instead of modal
@@ -2006,8 +2047,92 @@ export default function BaoCaoMktPage() {
                   ) : (
                     /* Eval tab */
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      {/* Token usage from recs */}
-                      {aiLogRecs.length === 0 && <div style={{ color: dark ? "#64748b" : "#94a3b8", textAlign: "center", padding: 40, fontSize: 13 }}>Không có dữ liệu eval.</div>}
+                      {/* Reasoning steps summary */}
+                      {evalRunSummary?.steps?.length > 0 && (
+                        <div style={{ background: dark ? "#1a1a2e" : "#fff", border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, borderRadius: 6, padding: "8px 10px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: dark ? "#94a3b8" : "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>📊 Reasoning</div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {evalRunSummary.steps.map((s: any) => (
+                              <span key={s.step_type} style={{ fontSize: 11, color: dark ? "#cbd5e1" : "#475569" }}>
+                                <b>{s.step_type}</b>: {s.n} ({(s.tokens || 0).toLocaleString()} tok)
+                              </span>
+                            ))}
+                          </div>
+                          {evalRunSummary.tool_stats?.length > 0 && (
+                            <div style={{ marginTop: 6, fontSize: 10, color: dark ? "#94a3b8" : "#64748b" }}>
+                              Top tools: {evalRunSummary.tool_stats.slice(0, 5).map((t: any) => `${t.tool_name}(${t.n})`).join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Agreement summary */}
+                      {evalRunSummary?.recs?.length > 0 && (() => {
+                        const agree = evalRunSummary.recs.filter((r: any) => r.agreement === "agree").length
+                        const disagree = evalRunSummary.recs.filter((r: any) => r.agreement === "disagree").length
+                        const missed = evalRunSummary.recs.filter((r: any) => r.agreement === "agent_missed").length
+                        const extra = evalRunSummary.recs.filter((r: any) => r.agreement === "agent_extra").length
+                        const noData = evalRunSummary.recs.filter((r: any) => r.agreement === "no_marketer_action" || !r.agreement).length
+                        return (
+                          <div style={{ background: dark ? "#1a1a2e" : "#fff", border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, borderRadius: 6, padding: "8px 10px" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: dark ? "#94a3b8" : "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>🎯 Agent vs Marketer (6h sau rec)</div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <span style={{ background: dark ? "#052e16" : "#f0fdf4", color: "#16a34a", borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 600 }}>✓ Agree: {agree}</span>
+                              <span style={{ background: dark ? "#3b0d0d" : "#fef2f2", color: "#dc2626", borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 600 }}>✗ Disagree: {disagree}</span>
+                              <span style={{ background: dark ? "#2d1f00" : "#fffbeb", color: "#d97706", borderRadius: 4, padding: "3px 8px", fontSize: 11 }}>⚠ Missed: {missed}</span>
+                              <span style={{ background: dark ? "#1e3a5f" : "#eff6ff", color: "#2563eb", borderRadius: 4, padding: "3px 8px", fontSize: 11 }}>+ Extra: {extra}</span>
+                              <span style={{ background: dark ? "#1e293b" : "#f8fafc", color: dark ? "#94a3b8" : "#64748b", borderRadius: 4, padding: "3px 8px", fontSize: 11 }}>– No data: {noData}</span>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Run-level tags */}
+                      {evalRunSummary?.run_tags?.length > 0 && (
+                        <div style={{ background: dark ? "#3b0d0d" : "#fef2f2", border: `1px solid #dc2626`, borderRadius: 6, padding: "8px 10px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", marginBottom: 4 }}>🏷 Run errors</div>
+                          {evalRunSummary.run_tags.map((t: any) => (
+                            <div key={t.id} style={{ fontSize: 11, color: dark ? "#fca5a5" : "#7f1d1d" }}>
+                              [{t.layer}/{t.category}] {t.note}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Per-rec list with agreement + tag button */}
+                      {evalRunSummary?.recs?.map((r: any) => {
+                        const agreeColor = r.agreement === "agree" ? "#16a34a" :
+                                           r.agreement === "disagree" ? "#dc2626" :
+                                           r.agreement === "agent_missed" ? "#d97706" :
+                                           r.agreement === "agent_extra" ? "#2563eb" : "#94a3b8"
+                        const agreeLabel = r.agreement === "agree" ? "✓ Agree" :
+                                          r.agreement === "disagree" ? `✗ Disagree (marketer: ${r.marketer_action})` :
+                                          r.agreement === "agent_missed" ? `⚠ Agent missed (marketer: ${r.marketer_action})` :
+                                          r.agreement === "agent_extra" ? "+ Agent extra" : "– No marketer action"
+                        return (
+                          <div key={r.id} style={{ background: dark ? "#1a1a2e" : "#fff", border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, borderRadius: 6, padding: "8px 10px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: dark ? "#e2e8f0" : "#1e293b", marginBottom: 2 }}>{r.campaign_name}</div>
+                                <div style={{ fontSize: 10, color: dark ? "#94a3b8" : "#64748b" }}>
+                                  [{r.action}] · {r.confidence} · {r.status}
+                                </div>
+                                <div style={{ fontSize: 11, color: agreeColor, marginTop: 4, fontWeight: 600 }}>{agreeLabel}</div>
+                                {r.error_tag_count > 0 && (
+                                  <div style={{ fontSize: 10, color: "#dc2626", marginTop: 2 }}>🏷 {r.error_tag_count} error tag(s)</div>
+                                )}
+                              </div>
+                              <button onClick={() => setTagModalRec({ id: r.id, campaign_name: r.campaign_name })}
+                                style={{ background: "transparent", border: `1px solid ${dark ? "#dc2626" : "#fca5a5"}`, color: "#dc2626", borderRadius: 4, padding: "3px 8px", fontSize: 10, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                🏷 Tag error
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {/* Fallback: legacy reflection display when no eval data */}
+                      {aiLogRecs.length === 0 && !evalRunSummary && <div style={{ color: dark ? "#64748b" : "#94a3b8", textAlign: "center", padding: 40, fontSize: 13 }}>Không có dữ liệu eval.</div>}
 
                       {/* Summary badges */}
                       {aiLogRecs.length > 0 && (() => {
@@ -2051,6 +2176,82 @@ export default function BaoCaoMktPage() {
           </div>
         )
       })()}
+
+      {/* Error Tag Modal */}
+      {tagModalRec && (
+        <div onClick={() => setTagModalRec(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: dark ? "#0f172a" : "#fff", borderRadius: 10, padding: 20, width: 460, maxWidth: "90vw", border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}` }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: dark ? "#e2e8f0" : "#1e293b", marginBottom: 4 }}>🏷 Tag lỗi recommendation</div>
+            <div style={{ fontSize: 11, color: dark ? "#94a3b8" : "#64748b", marginBottom: 12 }}>{tagModalRec.campaign_name}</div>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: dark ? "#cbd5e1" : "#475569", marginBottom: 4 }}>Tầng lỗi</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[
+                  { v: "model", label: "🤖 Model" },
+                  { v: "architecture", label: "🏗 Kiến trúc" },
+                  { v: "code", label: "💻 Code" },
+                  { v: "data", label: "📊 Data" },
+                  { v: "skill", label: "🧠 Skill" },
+                ].map(o => (
+                  <button key={o.v} onClick={() => setTagLayer(o.v)}
+                    style={{ background: tagLayer === o.v ? "#7c3aed" : "transparent", color: tagLayer === o.v ? "#fff" : (dark ? "#cbd5e1" : "#475569"), border: `1px solid ${tagLayer === o.v ? "#7c3aed" : (dark ? "#2d2d44" : "#e2e8f0")}`, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: dark ? "#cbd5e1" : "#475569", marginBottom: 4 }}>Category</div>
+              <input type="text" value={tagCategory} onChange={e => setTagCategory(e.target.value)}
+                list="error-category-list"
+                placeholder="hallucination, missing_context, wrong_tool, bad_logic..."
+                style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, background: dark ? "#1a1a2e" : "#fff", color: dark ? "#e2e8f0" : "#1e293b", fontSize: 12 }} />
+              <datalist id="error-category-list">
+                <option value="hallucination" />
+                <option value="missing_context" />
+                <option value="wrong_tool" />
+                <option value="bad_logic" />
+                <option value="ignored_skill" />
+                <option value="wrong_threshold" />
+                <option value="data_outdated" />
+                <option value="bug" />
+              </datalist>
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: dark ? "#cbd5e1" : "#475569", marginBottom: 4 }}>Mức độ</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["low", "medium", "high", "critical"].map(s => (
+                  <button key={s} onClick={() => setTagSeverity(s)}
+                    style={{ background: tagSeverity === s ? "#dc2626" : "transparent", color: tagSeverity === s ? "#fff" : (dark ? "#cbd5e1" : "#475569"), border: `1px solid ${tagSeverity === s ? "#dc2626" : (dark ? "#2d2d44" : "#e2e8f0")}`, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: dark ? "#cbd5e1" : "#475569", marginBottom: 4 }}>Ghi chú</div>
+              <textarea value={tagNote} onChange={e => setTagNote(e.target.value)} rows={3}
+                placeholder="Mô tả cụ thể agent sai gì..."
+                style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, background: dark ? "#1a1a2e" : "#fff", color: dark ? "#e2e8f0" : "#1e293b", fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setTagModalRec(null)}
+                style={{ background: "transparent", border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, color: dark ? "#cbd5e1" : "#475569", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>
+                Hủy
+              </button>
+              <button onClick={submitErrorTag}
+                style={{ background: "#dc2626", border: "none", color: "#fff", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                🏷 Lưu tag
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

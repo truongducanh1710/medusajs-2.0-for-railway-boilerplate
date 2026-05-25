@@ -425,15 +425,37 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
         status = "no_action"
       }
 
-      await sql.sql(
+      const recIns = await sql.sql(
         `INSERT INTO agent_camp_recommendation
            (run_id, campaign_id, campaign_name, mkt_name, action, reason, old_value, suggested_value, confidence, status, executed_at, fb_response, agent_model)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13)
+         RETURNING id`,
         [runId, args.campaign_id, camp.campaign_name, camp.mkt_name,
          args.action, args.reason, JSON.stringify(oldValue),
          JSON.stringify(suggestedValue), args.confidence ?? "medium",
          status, executedAt, JSON.stringify(fbResp), activeModel]
-      ).catch((e: any) => logger?.error?.("[CampAI] insert rec fail:", e.message))
+      ).catch((e: any) => { logger?.error?.("[CampAI] insert rec fail:", e.message); return [] })
+
+      // Snapshot BEFORE — chụp metrics tại thời điểm decide
+      const recId = recIns?.[0]?.id
+      if (recId) {
+        await sql.sql(
+          `INSERT INTO agent_decision_snapshot
+             (rec_id, run_id, campaign_id, snapshot_type,
+              spend, impressions, clicks, cod_orders, cod_amount,
+              care_pct, cpm, ctr_pct, effective_status, daily_budget,
+              shop_care_pct, shop_cod)
+           SELECT $1, $2, $3, 'before',
+             c.spend_today, c.impressions, c.clicks, c.cod_orders_today, c.cod_today,
+             c.care_today, c.cpm, c.ctr_pct, c.effective_status, c.daily_budget,
+             s.care_pct, s.total_cod
+           FROM v_camp_dashboard c
+           CROSS JOIN (SELECT care_pct, total_cod FROM v_shop_care_daily ORDER BY date DESC LIMIT 1) s
+           WHERE c.campaign_id = $3
+           ON CONFLICT (rec_id, snapshot_type) DO NOTHING`,
+          [recId, runId, args.campaign_id]
+        ).catch(() => {})
+      }
 
       return { ok: true, status, campaign_name: camp.campaign_name }
     }
@@ -664,6 +686,47 @@ Bắt đầu ngay.`,
      VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5)`,
     [runId, JSON.stringify(messages), JSON.stringify(toolCallLog), JSON.stringify(outcomes), activeModel]
   ).catch(() => {})
+
+  // Auto-parse reasoning steps (inline, không block flow chính)
+  try {
+    let stepIdx = 0
+    for (const m of messages as any[]) {
+      if (m.role === "system") continue
+      if (m.role === "assistant") {
+        if (typeof m.content === "string" && m.content.trim().length > 0) {
+          await sql.sql(
+            `INSERT INTO agent_reasoning_step (run_id, step_idx, step_type, message_text, token_estimate)
+             VALUES ($1, $2, 'thinking', $3, $4) ON CONFLICT (run_id, step_idx) DO NOTHING`,
+            [runId, stepIdx++, m.content, Math.ceil(m.content.length / 4)]
+          ).catch(() => {})
+        }
+        if (Array.isArray(m.tool_calls)) {
+          for (const tc of m.tool_calls) {
+            const fn = tc.function ?? {}
+            let parsedArgs: any = {}
+            try { parsedArgs = typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : (fn.arguments ?? {}) } catch {}
+            const argStr = typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(parsedArgs)
+            await sql.sql(
+              `INSERT INTO agent_reasoning_step (run_id, step_idx, step_type, tool_name, tool_args, token_estimate)
+               VALUES ($1, $2, 'tool_call', $3, $4::jsonb, $5) ON CONFLICT (run_id, step_idx) DO NOTHING`,
+              [runId, stepIdx++, fn.name ?? "unknown", JSON.stringify(parsedArgs), Math.ceil(argStr.length / 4)]
+            ).catch(() => {})
+          }
+        }
+      }
+      if (m.role === "tool") {
+        const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")
+        const summary = text.length > 300 ? text.slice(0, 300) + "..." : text
+        await sql.sql(
+          `INSERT INTO agent_reasoning_step (run_id, step_idx, step_type, tool_name, tool_result_summary, tool_result_size, token_estimate)
+           VALUES ($1, $2, 'tool_result', $3, $4, $5, $6) ON CONFLICT (run_id, step_idx) DO NOTHING`,
+          [runId, stepIdx++, m.name ?? null, summary, text.length, Math.ceil(text.length / 4)]
+        ).catch(() => {})
+      }
+    }
+  } catch (e: any) {
+    logger?.warn?.("[CampAI] reasoning parse failed:", e.message)
+  }
 
   await heartbeat({ phase: "done", last_action: `Hoàn thành: ${outcomes.total} recs (${outcomes.pause}p/${outcomes.set_budget}b/${outcomes.resume}r/${outcomes.no_action}n) + ${outcomes.insights_saved} insights`, recs_so_far: outcomes.total, tokens_used: totalPromptTokens + totalCompletionTokens })
 
