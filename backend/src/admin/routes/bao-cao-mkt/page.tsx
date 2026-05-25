@@ -112,6 +112,7 @@ export default function BaoCaoMktPage() {
   const [aiRunSummary, setAiRunSummary] = useState<any[]>([])
   const [aiLoading, setAiLoading] = useState(false)
   const [aiTriggering, setAiTriggering] = useState(false)
+  const [aiSeeding, setAiSeeding] = useState(false)
   const [aiApproving, setAiApproving] = useState<string | null>(null)
   const [aiFilterStatus, setAiFilterStatus] = useState("pending")
   const [aiFilterMkt, setAiFilterMkt] = useState("")
@@ -359,6 +360,17 @@ export default function BaoCaoMktPage() {
       alert(data.message ?? "Agent đã chạy")
     } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiTriggering(false) }
   }, [aiModel, aiParallel, aiCompareMode, aiCompareModels])
+
+  const triggerSeedSkills = useCallback(async () => {
+    if (!confirm("Seed 23 skills ban đầu vào agent_insight? Skills đã có sẽ được bỏ qua.")) return
+    setAiSeeding(true)
+    try {
+      const res = await apiFetch("/admin/pancake-sync/report/camp-ai/seed-skills", { method: "POST" })
+      const data = await res.json()
+      if (data.ok) alert(`✅ Seed xong: ${data.inserted} inserted, ${data.skipped} skipped (tổng ${data.total} skills)`)
+      else alert("Lỗi: " + data.error)
+    } catch (e: any) { alert("Lỗi: " + e.message) } finally { setAiSeeding(false) }
+  }, [])
 
   const fetchInsights = useCallback(async () => {
     try {
@@ -1596,6 +1608,12 @@ export default function BaoCaoMktPage() {
                     style={{ background: aiShowInsights ? (dark ? "#4c1d95" : "#ede9fe") : "transparent", color: dark ? "#c084fc" : "#7c3aed", border: `1px solid ${dark ? "#7c3aed" : "#c4b5fd"}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
                     💡 Insights ({aiInsights.length})
                   </button>
+                  {isSuper && (
+                    <button onClick={triggerSeedSkills} disabled={aiSeeding}
+                      style={{ background: "transparent", color: dark ? "#34d399" : "#059669", border: `1px solid ${dark ? "#059669" : "#6ee7b7"}`, borderRadius: 6, padding: "6px 12px", cursor: aiSeeding ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: aiSeeding ? 0.6 : 1 }}>
+                      {aiSeeding ? "Đang seed..." : "🌱 Seed Skills"}
+                    </button>
+                  )}
                 </>
               )}
               <span style={{ color: t.textMuted, fontSize: 12 }}>{aiTotal} recommendations</span>
