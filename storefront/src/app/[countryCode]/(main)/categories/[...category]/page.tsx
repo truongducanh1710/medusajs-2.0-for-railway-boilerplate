@@ -18,6 +18,7 @@ type Props = {
 }
 
 export async function generateStaticParams() {
+  try {
   const product_categories = await listCategories()
 
   if (!product_categories) {
@@ -41,7 +42,10 @@ export async function generateStaticParams() {
     )
     .flat()
 
-  return staticParams
+  return staticParams ?? []
+  } catch {
+    return []
+  }
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
