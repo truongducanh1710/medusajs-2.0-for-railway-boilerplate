@@ -254,12 +254,16 @@ const DonHangPage = () => {
     }
   }, [filters])
 
-  // Fetch facets theo date range (debounce 300ms để tránh spam)
+  // Fetch facets theo filter (debounce 300ms để tránh spam)
   useEffect(() => {
     const id = setTimeout(() => {
       const params = new URLSearchParams()
       if (filters.date_from) params.set("from", `${filters.date_from}T00:00:00+07:00`)
       if (filters.date_to)   params.set("to",   `${filters.date_to}T23:59:59+07:00`)
+      if (filters.source && filters.source !== "all")       params.set("source",   filters.source)
+      if (filters.marketer && filters.marketer !== "all")   params.set("marketer", filters.marketer)
+      if (filters.sale && filters.sale !== "all")           params.set("sale",     filters.sale)
+      if (filters.care && filters.care !== "all")           params.set("care",     filters.care)
       const url = params.toString()
         ? `/admin/pancake-sync/orders/facets?${params}`
         : "/admin/pancake-sync/orders/facets"
@@ -269,7 +273,7 @@ const DonHangPage = () => {
         .catch(() => {})
     }, 300)
     return () => clearTimeout(id)
-  }, [filters.date_from, filters.date_to])
+  }, [filters.date_from, filters.date_to, filters.source, filters.marketer, filters.sale, filters.care])
 
   // Fetch orders when filters change
   useEffect(() => {

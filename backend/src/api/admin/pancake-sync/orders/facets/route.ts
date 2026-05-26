@@ -12,11 +12,15 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const syncService = req.scope.resolve("pancakeSyncModule") as any
-    const { from, to } = req.query as Record<string, string | undefined>
+    const { from, to, source, marketer, sale, care } = req.query as Record<string, string | undefined>
 
     const filters: any = {}
     if (from) filters.pancake_created_at = { ...filters.pancake_created_at, $gte: new Date(from) }
     if (to)   filters.pancake_created_at = { ...filters.pancake_created_at, $lte: new Date(to) }
+    if (source && source !== "all")     filters.source = source
+    if (marketer && marketer !== "all") filters.marketer_name = marketer
+    if (sale && sale !== "all")         filters.sale_name = sale
+    if (care && care !== "all")         filters.care_name = care
 
     const take = (from || to) ? 10000 : 5000
 
