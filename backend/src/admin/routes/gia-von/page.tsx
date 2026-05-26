@@ -367,9 +367,142 @@ function BackfillBanner({ onDone }: { onDone: () => void }) {
   )
 }
 
-// ---- Lot History List (read-only, load from DB) ----
-function LotHistoryList({ refreshKey }: { refreshKey: number }) {
-  const [lots, setLots] = useState<any[]>([])
+// ---- Editable Lot Row ----
+type LotEdit = {
+  id: string
+  product_id: string
+  product_title: string
+  lot_date: string
+  received_date: string
+  qty: string
+  price_unit: string
+  local_fee_tq: string
+  ship_fee_ovs: string
+  local_fee_vn: string
+  vat_fee: string
+  other_fee: string
+  source: string
+  status: string
+  note: string
+  _dirty?: boolean
+  _saving?: boolean
+  _saved?: boolean
+  _error?: string
+}
+
+function lotToEdit(l: any): LotEdit {
+  return {
+    id: l.id,
+    product_id: l.product_id,
+    product_title: l.product_title ?? "",
+    lot_date: fmtDate(l.lot_date),
+    received_date: fmtDate(l.received_date),
+    qty: String(l.qty ?? ""),
+    price_unit: String(l.price_unit ?? ""),
+    local_fee_tq: String(l.local_fee_tq ?? "0"),
+    ship_fee_ovs: String(l.ship_fee_ovs ?? "0"),
+    local_fee_vn: String(l.local_fee_vn ?? "0"),
+    vat_fee: String(l.vat_fee ?? "0"),
+    other_fee: String(l.other_fee ?? "0"),
+    source: l.source ?? "CSV",
+    status: l.status ?? "received",
+    note: l.note ?? "",
+  }
+}
+
+const LOT_COLS = [
+  { key: "product_title", label: "SẢN PHẨM", w: 200 },
+  { key: "lot_date",      label: "G.P DATE",  w: 110, type: "date" },
+  { key: "received_date", label: "VỀ KHO",    w: 110, type: "date" },
+  { key: "qty",           label: "QLY",        w: 65,  align: "right" as const },
+  { key: "price_unit",    label: "PRICE/UNIT", w: 100, align: "right" as const },
+  { key: "_amount",       label: "AMOUNT",     w: 110, align: "right" as const, computed: true },
+  { key: "local_fee_tq",  label: "LOCAL FEE TQ", w: 105, align: "right" as const },
+  { key: "ship_fee_ovs",  label: "SHIP OVS",   w: 95,  align: "right" as const },
+  { key: "local_fee_vn",  label: "LOCAL VN",   w: 95,  align: "right" as const },
+  { key: "vat_fee",       label: "VAT",        w: 80,  align: "right" as const },
+  { key: "other_fee",     label: "PHÍ KHÁC",   w: 85,  align: "right" as const },
+  { key: "_final",        label: "FINAL PRICE/unit", w: 130, align: "right" as const, computed: true, highlight: true },
+  { key: "source",        label: "NGUỒN",      w: 80,  type: "select", opts: ["TQ","SHOPEE","Nội địa","CSV","Khác"] },
+  { key: "note",          label: "GHI CHÚ",    w: 180 },
+]
+
+function EditableLotRow({ row, onChange, onSave, onDelete }: {
+  row: LotEdit
+  onChange: (id: string, f: string, v: string) => void
+  onSave: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  const qty        = num(row.qty)
+  const price_unit = num(row.price_unit)
+  const amount     = qty * price_unit
+  const total      = amount + num(row.local_fee_tq) + num(row.ship_fee_ovs) + num(row.local_fee_vn) + num(row.vat_fee) + num(row.other_fee)
+  const final_p    = qty > 0 ? total / qty : 0
+  const bg = row._saved ? "#f0fdf4" : row._error ? "#fef2f2" : row._dirty ? "#fffbeb" : "#fff"
+
+  const inp = (key: string, align?: "right") => (
+    <td key={key} style={{ ...tdStyle(LOT_COLS.find(c=>c.key===key)?.w, align, bg), border: "1px solid #e5e7eb" }}>
+      <input value={(row as any)[key]} onChange={e => onChange(row.id, key, e.target.value)}
+        onKeyDown={e => e.key === "Enter" && onSave(row.id)}
+        style={{ ...cellInput(), textAlign: align ?? "left" }} />
+    </td>
+  )
+  const datInp = (key: string) => (
+    <td key={key} style={{ ...tdStyle(110, undefined, bg), border: "1px solid #e5e7eb" }}>
+      <input type="date" value={(row as any)[key]} onChange={e => onChange(row.id, key, e.target.value)}
+        onKeyDown={e => e.key === "Enter" && onSave(row.id)}
+        style={{ ...cellInput() }} />
+    </td>
+  )
+
+  return (
+    <tr>
+      <td style={{ ...tdStyle(200, undefined, bg), border: "1px solid #e5e7eb", fontWeight: 600, fontSize: 11, padding: "4px 6px" }}>
+        <input value={row.product_title} onChange={e => onChange(row.id, "product_title", e.target.value)}
+          onKeyDown={e => e.key === "Enter" && onSave(row.id)}
+          style={{ ...cellInput(), fontWeight: 600 }} />
+      </td>
+      {datInp("lot_date")}
+      {datInp("received_date")}
+      {inp("qty", "right")}
+      {inp("price_unit", "right")}
+      <td style={{ ...tdStyle(110, "right", "#f9fafb"), border: "1px solid #e5e7eb", fontSize: 11, color: "#6b7280" }}>
+        {new Intl.NumberFormat("vi-VN").format(Math.round(amount))}đ
+      </td>
+      {inp("local_fee_tq", "right")}
+      {inp("ship_fee_ovs", "right")}
+      {inp("local_fee_vn", "right")}
+      {inp("vat_fee", "right")}
+      {inp("other_fee", "right")}
+      <td style={{ ...tdStyle(130, "right", "#faf5ff"), border: "1px solid #e5e7eb", fontWeight: 800, color: "#7c3aed", fontSize: 12 }}>
+        {new Intl.NumberFormat("vi-VN").format(Math.round(final_p))}đ
+      </td>
+      <td style={{ ...tdStyle(80, undefined, bg), border: "1px solid #e5e7eb" }}>
+        <select value={row.source} onChange={e => onChange(row.id, "source", e.target.value)}
+          style={{ ...cellInput(), cursor: "pointer" }}>
+          {["TQ","SHOPEE","Nội địa","CSV","Khác"].map(o => <option key={o}>{o}</option>)}
+        </select>
+      </td>
+      {inp("note")}
+      <td style={{ ...tdStyle(80, "left", bg), border: "1px solid #e5e7eb", textAlign: "center" }}>
+        <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>
+          <button onClick={() => onSave(row.id)} disabled={row._saving || !row._dirty}
+            style={{ background: row._dirty ? "#7c3aed" : "#e5e7eb", color: row._dirty ? "#fff" : "#9ca3af", border: "none", borderRadius: 4, padding: "3px 7px", cursor: row._dirty ? "pointer" : "default", fontSize: 11, fontWeight: 600 }}>
+            {row._saving ? "…" : "Lưu"}
+          </button>
+          <button onClick={() => onDelete(row.id)}
+            style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 4, padding: "3px 5px", cursor: "pointer", fontSize: 11 }}>✕</button>
+        </div>
+        {row._error && <div style={{ fontSize: 9, color: "#dc2626", marginTop: 1 }}>{row._error}</div>}
+        {row._saved && <div style={{ fontSize: 9, color: "#16a34a" }}>✓ Đã lưu</div>}
+      </td>
+    </tr>
+  )
+}
+
+// ---- Lot History List (editable sheet) ----
+function LotHistoryList({ refreshKey, onSaved }: { refreshKey: number; onSaved: () => void }) {
+  const [lots, setLots] = useState<LotEdit[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
@@ -380,11 +513,48 @@ function LotHistoryList({ refreshKey }: { refreshKey: number }) {
     setLoading(true)
     const q = s ? `&search=${encodeURIComponent(s)}` : ""
     apiJson(`/admin/gia-von?limit=${LIMIT}&page=${p}${q}`, "GET")
-      .then(d => { setLots(d.lots ?? []); setTotal(Number(d.total ?? 0)); setLoading(false) })
+      .then(d => { setLots((d.lots ?? []).map(lotToEdit)); setTotal(Number(d.total ?? 0)); setLoading(false) })
       .catch(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [refreshKey])
+
+  function change(id: string, f: string, v: string) {
+    setLots(ls => ls.map(l => l.id === id ? { ...l, [f]: v, _dirty: true, _saved: false, _error: undefined } : l))
+  }
+
+  async function save(id: string) {
+    const l = lots.find(x => x.id === id)
+    if (!l) return
+    setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: true, _error: undefined } : x))
+    try {
+      await apiJson(`/admin/gia-von/${id}`, "PUT", {
+        product_title: l.product_title,
+        lot_date: l.lot_date,
+        received_date: l.received_date || null,
+        qty: num(l.qty), price_unit: num(l.price_unit),
+        local_fee_tq: num(l.local_fee_tq), ship_fee_ovs: num(l.ship_fee_ovs),
+        local_fee_vn: num(l.local_fee_vn), vat_fee: num(l.vat_fee), other_fee: num(l.other_fee),
+        source: l.source, note: l.note,
+      })
+      setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: false, _saved: true, _dirty: false } : x))
+      onSaved()
+    } catch (err: any) {
+      setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: false, _error: err?.message ?? "Lỗi" } : x))
+    }
+  }
+
+  async function del(id: string) {
+    if (!confirm("Xóa lô này?")) return
+    try {
+      await apiJson(`/admin/gia-von/${id}`, "DELETE")
+      setLots(ls => ls.filter(x => x.id !== id))
+      setTotal(t => t - 1)
+      onSaved()
+    } catch (err: any) {
+      alert(err.message)
+    }
+  }
 
   function search_(s: string) { setSearch(s); setPage(1); load(s, 1) }
 
@@ -392,7 +562,9 @@ function LotHistoryList({ refreshKey }: { refreshKey: number }) {
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "#374151" }}>📦 Lô đã nhập ({total})</div>
-        <input placeholder="Tìm theo tên sản phẩm…" value={search} onChange={e => search_(e.target.value)}
+        <input placeholder="Tìm theo tên sản phẩm…" value={search}
+          onChange={e => search_(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && load(search, 1)}
           style={{ flex: 1, maxWidth: 280, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12 }} />
         <button onClick={() => load(search, page)} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>↻</button>
       </div>
@@ -401,44 +573,31 @@ function LotHistoryList({ refreshKey }: { refreshKey: number }) {
       ) : lots.length === 0 ? (
         <div style={{ color: "#9ca3af", fontSize: 13, padding: "12px 0" }}>Chưa có lô nào</div>
       ) : (
-        <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8, maxHeight: 280 }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 360, border: "1px solid #e5e7eb", borderRadius: 8 }}>
+          <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1500, fontSize: 12 }}>
             <thead>
-              <tr style={{ background: "#f9fafb" }}>
-                {["SẢN PHẨM","G.P DATE","VỀ KHO","QLY","PRICE/UNIT","AMOUNT","LOCAL FEE TQ","SHIP OVS","LOCAL VN","VAT","FINAL PRICE/unit","NGUỒN","GHI CHÚ"].map(h => (
-                  <th key={h} style={{ padding: "6px 8px", borderBottom: "2px solid #e5e7eb", borderRight: "1px solid #e5e7eb", whiteSpace: "nowrap", fontWeight: 700, color: "#374151", textAlign: "right", position: "sticky", top: 0, background: "#f9fafb" }}>{h}</th>
+              <tr>
+                {LOT_COLS.map(c => (
+                  <th key={c.key} style={thStyle(c.w, c.align)}>{c.label}</th>
                 ))}
+                <th style={thStyle(80)}>TÁC VỤ</th>
               </tr>
             </thead>
             <tbody>
-              {lots.map((l, i) => (
-                <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", fontWeight: 600, whiteSpace: "nowrap" }}>{l.product_title}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right", whiteSpace: "nowrap" }}>{fmtDate(l.lot_date)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right", whiteSpace: "nowrap" }}>{fmtDate(l.received_date)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{l.qty}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.price_unit)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.amount)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.local_fee_tq)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.ship_fee_ovs)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.local_fee_vn)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.vat_fee)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmtVND(l.final_price)}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6" }}>{l.source}</td>
-                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", color: "#6b7280" }}>{l.note || "—"}</td>
-                </tr>
+              {lots.map(l => (
+                <EditableLotRow key={l.id} row={l} onChange={change} onSave={save} onDelete={del} />
               ))}
             </tbody>
           </table>
         </div>
       )}
       {total > LIMIT && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-          <button disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); load(search, p) }}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page <= 1 ? "not-allowed" : "pointer", background: "#fff" }}>‹ Trước</button>
-          <span style={{ lineHeight: "26px" }}>Trang {page} / {Math.ceil(total / LIMIT)}</span>
-          <button disabled={page >= Math.ceil(total / LIMIT)} onClick={() => { const p = page + 1; setPage(p); load(search, p) }}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page >= Math.ceil(total / LIMIT) ? "not-allowed" : "pointer", background: "#fff" }}>Sau ›</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 8, fontSize: 12, color: "#6b7280", alignItems: "center" }}>
+          <button disabled={page <= 1} onClick={() => { const p = page-1; setPage(p); load(search,p) }}
+            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page<=1?"not-allowed":"pointer", background:"#fff" }}>‹ Trước</button>
+          <span>Trang {page} / {Math.ceil(total/LIMIT)}</span>
+          <button disabled={page >= Math.ceil(total/LIMIT)} onClick={() => { const p = page+1; setPage(p); load(search,p) }}
+            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page>=Math.ceil(total/LIMIT)?"not-allowed":"pointer", background:"#fff" }}>Sau ›</button>
         </div>
       )}
     </div>
@@ -593,7 +752,7 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
   return (
     <div>
       {/* Lô đã nhập từ DB */}
-      <LotHistoryList refreshKey={historyKey} />
+      <LotHistoryList refreshKey={historyKey} onSaved={() => { setHistoryKey(k => k+1); onSaved() }} />
 
       <div style={{ borderTop: "2px dashed #e5e7eb", paddingTop: 16, marginBottom: 12 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "#374151", marginBottom: 10 }}>➕ Nhập lô mới</div>
