@@ -87,6 +87,42 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       [auth.email, JSON.stringify(fbResp?.data ?? null), id]
     )
 
+    // Snapshot AFTER — chụp metrics ngay sau khi execute để tính delta
+    await sql.sql(
+      `INSERT INTO agent_decision_snapshot
+         (rec_id, run_id, campaign_id, snapshot_type,
+          spend, impressions, clicks, cod_orders, cod_amount,
+          care_pct, cpm, ctr_pct, effective_status, daily_budget,
+          shop_care_pct, shop_cod)
+       SELECT $1, $2, $3, 'after',
+         c.spend_today, c.impressions, c.clicks, c.cod_orders_today, c.cod_today,
+         c.care_today, c.cpm, c.ctr_pct, c.effective_status, c.daily_budget,
+         s.care_pct, s.total_cod
+       FROM v_camp_dashboard c
+       CROSS JOIN (SELECT care_pct, total_cod FROM v_shop_care_daily ORDER BY date DESC LIMIT 1) s
+       WHERE c.campaign_id = $3
+       ON CONFLICT (rec_id, snapshot_type) DO NOTHING`,
+      [id, rec.run_id, rec.campaign_id]
+    ).catch(() => {})
+
+    // Update outcome_score cho skills được dùng trong rec này
+    // Approval = tín hiệu đúng → tăng confidence ngay, không chờ EOD
+    const reasonSkillIds = (rec.reason ?? "").match(/skill[:\s]+([0-9a-f-]{36})/gi)?.map((m: string) => m.replace(/^skill[:\s]+/i, "")) ?? []
+    for (const sid of reasonSkillIds) {
+      await sql.sql(
+        `UPDATE agent_insight
+         SET times_correct  = COALESCE(times_correct,0) + 1,
+             applied_count  = COALESCE(applied_count,0) + 1,
+             last_used_at   = now(),
+             outcome_score  = ROUND(
+               (COALESCE(times_correct,0)+1)::numeric /
+               NULLIF(COALESCE(times_correct,0)+COALESCE(times_wrong,0)+1, 0) * 100, 1),
+             confidence_pct = LEAST(90, COALESCE(confidence_pct,55) + 2)
+         WHERE id = $1`,
+        [sid]
+      ).catch(() => {})
+    }
+
     await updateRolloutReward(rec.run_id, sql)
     return res.json({ ok: true, status: "approved", fb_ok: fbResp?.ok })
   } catch (err: any) {

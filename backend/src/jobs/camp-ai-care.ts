@@ -680,6 +680,118 @@ Bắt đầu ngay.`,
     }
   }
 
+  // ── LEARNING LOOP ──────────────────────────────────────────────────────────
+  // 1. Evaluate predictions từ run này vs actual hiện tại
+  try {
+    const preds = await sql.sql(
+      `SELECT id, scope, scope_id, predicted_eod_care, predicted_eod_cod, skills_used
+       FROM agent_prediction WHERE run_id = $1`,
+      [runId]
+    ).catch(() => [])
+
+    if (preds.length > 0) {
+      const shopActual = await sql.sql(
+        `SELECT care_pct, total_cod FROM v_shop_care_daily ORDER BY date DESC LIMIT 1`
+      ).catch(() => [])
+      const actualCare = Number(shopActual[0]?.care_pct ?? 0)
+      const actualCod  = Number(shopActual[0]?.total_cod ?? 0)
+
+      for (const pred of preds) {
+        const pCare = Number(pred.predicted_eod_care ?? 0)
+        const pCod  = Number(pred.predicted_eod_cod ?? 0)
+        // Prediction "đúng" nếu sai lệch care < 8pp VÀ cod < 30%
+        const careOk = Math.abs(pCare - actualCare) < 8
+        const codOk  = pCod > 0 ? Math.abs(pCod - actualCod) / Math.max(pCod, actualCod) < 0.3 : true
+        const correct = careOk && codOk
+
+        // Ghi actual vào prediction
+        await sql.sql(
+          `UPDATE agent_prediction SET actual_eod_care=$1, actual_eod_cod=$2, evaluated_at=now() WHERE id=$3`,
+          [actualCare, actualCod, pred.id]
+        ).catch(() => {})
+
+        // Update times_correct / times_wrong + outcome_score cho từng skill đã dùng
+        const skillIds: string[] = Array.isArray(pred.skills_used) ? pred.skills_used : []
+        for (const sid of skillIds) {
+          if (!sid) continue
+          if (correct) {
+            await sql.sql(
+              `UPDATE agent_insight
+               SET times_correct = COALESCE(times_correct,0) + 1,
+                   applied_count  = COALESCE(applied_count,0) + 1,
+                   last_used_at   = now(),
+                   outcome_score  = ROUND(
+                     (COALESCE(times_correct,0) + 1)::numeric /
+                     NULLIF(COALESCE(times_correct,0) + COALESCE(times_wrong,0) + 1, 0) * 100
+                   , 1),
+                   confidence_pct = LEAST(90, GREATEST(30,
+                     COALESCE(confidence_pct,55) + CASE WHEN COALESCE(times_correct,0) < 5 THEN 3 ELSE 1 END
+                   ))
+               WHERE id = $1`,
+              [sid]
+            ).catch(() => {})
+          } else {
+            await sql.sql(
+              `UPDATE agent_insight
+               SET times_wrong   = COALESCE(times_wrong,0) + 1,
+                   applied_count  = COALESCE(applied_count,0) + 1,
+                   last_used_at   = now(),
+                   outcome_score  = ROUND(
+                     COALESCE(times_correct,0)::numeric /
+                     NULLIF(COALESCE(times_correct,0) + COALESCE(times_wrong,0) + 1, 0) * 100
+                   , 1),
+                   confidence_pct = GREATEST(20,
+                     COALESCE(confidence_pct,55) - CASE WHEN COALESCE(times_wrong,0) < 3 THEN 4 ELSE 2 END
+                   ),
+                   -- Auto-invalidate nếu wrong >= 5 liên tiếp và outcome_score < 30
+                   active = CASE
+                     WHEN COALESCE(times_wrong,0) + 1 >= 5
+                       AND COALESCE(times_correct,0) = 0
+                     THEN false ELSE active
+                   END,
+                   invalidated_at = CASE
+                     WHEN COALESCE(times_wrong,0) + 1 >= 5
+                       AND COALESCE(times_correct,0) = 0
+                     THEN now() ELSE invalidated_at
+                   END,
+                   invalidation_reason = CASE
+                     WHEN COALESCE(times_wrong,0) + 1 >= 5
+                       AND COALESCE(times_correct,0) = 0
+                     THEN 'Auto-invalidated: 5+ wrong, 0 correct' ELSE invalidation_reason
+                   END
+               WHERE id = $1`,
+              [sid]
+            ).catch(() => {})
+          }
+        }
+      }
+      await heartbeat({ last_action: `Learning loop: ${preds.length} predictions evaluated, skills updated` })
+    }
+  } catch (learnErr: any) {
+    logger?.warn?.("[CampAI] Learning loop error:", learnErr.message)
+  }
+
+  // 2. Populate rejection feedback vào agent_memory khi rec bị reject
+  try {
+    const rejected = await sql.sql(
+      `SELECT id, campaign_id, campaign_name, mkt_name, action, reason, rejection_reason
+       FROM agent_camp_recommendation
+       WHERE run_id = $1 AND status = 'rejected' AND rejection_reason IS NOT NULL`,
+      [runId]
+    ).catch(() => [])
+
+    for (const r of rejected) {
+      await sql.sql(
+        `INSERT INTO agent_memory (campaign_id, mkt_name, memory_type, content, source, created_at)
+         VALUES ($1, $2, 'rejection', $3::jsonb, 'manager', now())
+         ON CONFLICT DO NOTHING`,
+        [r.campaign_id, r.mkt_name,
+         JSON.stringify({ rec_id: r.id, action: r.action, agent_reason: r.reason, rejection_reason: r.rejection_reason })]
+      ).catch(() => {})
+    }
+  } catch { /* non-critical */ }
+  // ── END LEARNING LOOP ──────────────────────────────────────────────────────
+
   const recs = await sql.sql(`SELECT action, status FROM agent_camp_recommendation WHERE run_id = $1`, [runId]).catch(() => [])
   const insights = await sql.sql(`SELECT COUNT(*)::int as n FROM agent_insight WHERE agent_model = $1 AND created_at > now() - interval '5 minutes'`, [activeModel]).catch(() => [{ n: 0 }])
 
