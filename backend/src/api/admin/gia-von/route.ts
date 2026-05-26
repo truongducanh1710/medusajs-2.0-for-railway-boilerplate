@@ -44,7 +44,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const { rows } = await pool.query(
-      `SELECT * FROM import_lot ${where} ORDER BY lot_date DESC, created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT il.*, pc.pancake_display_id, pc.product_title as pc_product_title
+       FROM import_lot il
+       LEFT JOIN product_cost pc ON pc.product_id = il.product_id
+       ${where} ORDER BY il.lot_date DESC, il.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
     )
     const { rows: countRows } = await pool.query(

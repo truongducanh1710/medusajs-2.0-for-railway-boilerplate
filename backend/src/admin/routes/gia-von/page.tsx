@@ -372,8 +372,9 @@ type LotEdit = {
   id: string
   product_id: string
   product_title: string
-  parent_product_id: string   // "" = SP chính, có giá trị = phụ kiện
+  parent_product_id: string
   parent_product_title: string
+  pancake_display_id: string  // gán Pancake ID cho SP này
   lot_date: string
   received_date: string
   qty: string
@@ -399,6 +400,7 @@ function lotToEdit(l: any): LotEdit {
     product_title: l.product_title ?? "",
     parent_product_id: l.parent_product_id ?? "",
     parent_product_title: l.parent_product_title ?? "",
+    pancake_display_id: l.pancake_display_id ?? "",
     lot_date: fmtDate(l.lot_date),
     received_date: fmtDate(l.received_date),
     qty: String(l.qty ?? ""),
@@ -415,8 +417,9 @@ function lotToEdit(l: any): LotEdit {
 }
 
 const LOT_COLS = [
-  { key: "product_title",      label: "SẢN PHẨM",  w: 200 },
-  { key: "parent_product_id",  label: "SP CHÍNH",   w: 190 },
+  { key: "product_title",      label: "SẢN PHẨM",        w: 200 },
+  { key: "pancake_display_id", label: "PANCAKE ID",       w: 160 },
+  { key: "parent_product_id",  label: "SP CHÍNH (phụ kiện)", w: 190 },
   { key: "lot_date",      label: "G.P DATE",  w: 110, type: "date" },
   { key: "received_date", label: "VỀ KHO",    w: 110, type: "date" },
   { key: "qty",           label: "QLY",        w: 65,  align: "right" as const },
@@ -527,6 +530,15 @@ function EditableLotRow({ row, onChange, onSave, onDelete }: {
           onKeyDown={e => e.key === "Enter" && onSave(row.id)}
           style={{ ...cellInput(), fontWeight: 600 }} />
       </td>
+      <td style={{ ...tdStyle(160, undefined, row.pancake_display_id ? "#f0fdf4" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
+        <input
+          value={row.pancake_display_id}
+          onChange={e => onChange(row.id, "pancake_display_id", e.target.value.toUpperCase())}
+          onKeyDown={e => e.key === "Enter" && onSave(row.id)}
+          placeholder="PHVVN0XX_ABC"
+          style={{ ...cellInput(), fontFamily: "monospace", fontSize: 11, color: row.pancake_display_id ? "#15803d" : "#9ca3af" }}
+        />
+      </td>
       <td style={{ ...tdStyle(190, undefined, row.parent_product_id ? "#faf5ff" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
         <ParentProdCell
           value={row.parent_product_id}
@@ -613,6 +625,13 @@ function LotHistoryList({ refreshKey, onSaved }: { refreshKey: number; onSaved: 
         source: l.source, note: l.note,
         parent_product_id: l.parent_product_id || null,
       })
+      // Đồng thời cập nhật pancake_display_id cho SP này
+      if (l.product_id) {
+        await apiJson("/admin/gia-von/summary", "PATCH", {
+          product_id: l.product_id,
+          pancake_display_id: l.pancake_display_id || null,
+        }).catch(() => {}) // không fail nếu lỗi unique (đã gán cho SP khác)
+      }
       setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: false, _saved: true, _dirty: false } : x))
       onSaved()
     } catch (err: any) {
