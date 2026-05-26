@@ -20,5 +20,10 @@ export async function apiJson(url: string, method = "GET", body?: unknown): Prom
     window.location.href = "/app"
     return null
   }
-  return res.json()
+  const data = await res.json()
+  if (!res.ok) {
+    const msg = data?.error || data?.message || `HTTP ${res.status}`
+    throw new Error(msg)
+  }
+  return data
 }
