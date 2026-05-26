@@ -1107,7 +1107,6 @@ function OverviewTab() {
                 <tr key={p.product_id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa", borderBottom: "1px solid #f3f4f6" }}>
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ fontWeight: 600 }}>{p.product_title}</div>
-                    <div style={{ color: "#9ca3af", fontSize: 10 }}>{p.product_id}</div>
                   </td>
                   <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#7c3aed", fontSize: 15 }}>{fmtVND(p.avg_cost)}</td>
                   <td style={{ padding: "10px 12px", textAlign: "right" }}>{p.stock_qty}</td>
