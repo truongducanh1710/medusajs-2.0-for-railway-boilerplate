@@ -103,14 +103,25 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const utmContent = order.metadata?.utm_content as string | undefined
   const utmTerm = order.metadata?.utm_term as string | undefined
 
-  // Extract MKT code từ utm_source: "7/3_KIENLB_HỘP NHỰA..." → "KIENLB"
-  let mktCode: string | undefined
-  if (utmSource) {
-    const parts = utmSource.replace(/^(TEST[_-]|MESS[_-])+/gi, "").split("_")
-    for (let i = 1; i < parts.length; i++) {
-      if (/^[A-Z]{3,8}$/.test(parts[i].trim())) { mktCode = parts[i].trim(); break }
-    }
+  // Map MKT code → Pancake marketer UUID (từ raw data đã verify trong DB)
+  const MKT_PANCAKE_UUID: Record<string, string> = {
+    ANHNT:   "79c371d0-b20f-41ab-a7d7-f9b43d7d3073",
+    KIENLB:  "5587fee3-74e1-4a16-aee9-27097685e2f4",
+    LINHMT:  "727ca757-a2b8-42a3-a9d8-b9b70c2a8149",
+    NAMDV:   "e1ca9829-695e-40c6-947c-a986fd40b464",
+    XUANLT:  "9a01ac6e-7a93-4f19-8740-92b7be47902e",
+    DUPD:    "ef25c657-e2f4-4e5c-854e-5b29268da253", // BICHNTN alias — update nếu có UUID riêng
   }
+
+  // Extract MKT code từ utm_campaign: "22/5_XUANLT_THÙNG GẠO_..." → "XUANLT"
+  // utm_source thường là "fb" nên không dùng được
+  function extractMktCode(campaign: string | undefined): string | undefined {
+    if (!campaign) return undefined
+    if (!/^\d{1,2}\/\d{1,2}_/.test(campaign)) return undefined
+    return campaign.split("_")[1]?.trim() || undefined
+  }
+
+  let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)
 
   // Ghi chú: kết hợp ghi chú khách + gifts + UTM (giống format Webcake để sale xem nhanh)
   const noteparts: string[] = ["[phanviet.vn]"]
@@ -182,6 +193,15 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   if (utmCampaign) payload.p_utm_campaign = utmCampaign
   if (utmContent) payload.p_utm_content = utmContent
   if (utmTerm) payload.p_utm_term = utmTerm
+
+  // Gán marketer theo Pancake UUID — field "pke_mkter" (verify từ histories của đơn thật)
+  const mktUuid = mktCode ? MKT_PANCAKE_UUID[mktCode] : undefined
+  if (mktUuid) {
+    payload.pke_mkter = mktUuid
+    console.info(`[Pancake] Marketer assigned: ${mktCode} → ${mktUuid}`)
+  } else if (mktCode) {
+    console.warn(`[Pancake] MKT code "${mktCode}" not found in UUID map — marketer not assigned`)
+  }
 
   const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}`
 
