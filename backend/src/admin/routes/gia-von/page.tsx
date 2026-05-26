@@ -419,17 +419,18 @@ function lotToEdit(l: any): LotEdit {
 const LOT_COLS = [
   { key: "product_title",      label: "SẢN PHẨM",        w: 200 },
   { key: "pancake_display_id", label: "PANCAKE ID",       w: 160 },
-  { key: "parent_product_id",  label: "SP CHÍNH (phụ kiện)", w: 190 },
+  { key: "parent_product_id",  label: "GẮN VÀO SP",      w: 180 },
   { key: "lot_date",      label: "G.P DATE",  w: 110, type: "date" },
   { key: "received_date", label: "VỀ KHO",    w: 110, type: "date" },
   { key: "qty",           label: "QLY",        w: 65,  align: "right" as const },
   { key: "price_unit",    label: "PRICE/UNIT", w: 100, align: "right" as const },
   { key: "_amount",       label: "AMOUNT",     w: 110, align: "right" as const, computed: true },
-  { key: "local_fee_tq",  label: "LOCAL FEE TQ", w: 105, align: "right" as const },
-  { key: "ship_fee_ovs",  label: "SHIP OVS",   w: 95,  align: "right" as const },
-  { key: "local_fee_vn",  label: "LOCAL VN",   w: 95,  align: "right" as const },
-  { key: "vat_fee",       label: "VAT",        w: 80,  align: "right" as const },
-  { key: "other_fee",     label: "PHÍ KHÁC",   w: 85,  align: "right" as const },
+  // Fee group — hiển thị/ẩn theo feeOpen
+  { key: "local_fee_tq",  label: "LOCAL FEE TQ", w: 105, align: "right" as const, feeCol: true },
+  { key: "ship_fee_ovs",  label: "SHIP OVS",   w: 95,  align: "right" as const, feeCol: true },
+  { key: "local_fee_vn",  label: "LOCAL VN",   w: 95,  align: "right" as const, feeCol: true },
+  { key: "vat_fee",       label: "VAT",        w: 80,  align: "right" as const, feeCol: true },
+  { key: "other_fee",     label: "PHÍ KHÁC",   w: 85,  align: "right" as const, feeCol: true },
   { key: "_final",        label: "FINAL PRICE/unit", w: 130, align: "right" as const, computed: true, highlight: true },
   { key: "source",        label: "NGUỒN",      w: 80,  type: "select", opts: ["TQ","SHOPEE","Nội địa","CSV","Khác"] },
   { key: "note",          label: "GHI CHÚ",    w: 180 },
@@ -474,7 +475,7 @@ function ParentProdCell({ value, title, onSelect }: {
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <input value={q} onChange={e => search(e.target.value)}
-        placeholder="(để trống = SP chính)"
+        placeholder="Chỉ điền nếu là phụ kiện"
         style={{ ...cellInput(), color: value ? "#7c3aed" : "#9ca3af", fontStyle: value ? "normal" : "italic" }} />
       {value && <div style={{ fontSize: 9, color: "#7c3aed", lineHeight: 1 }}>🔩 {value.slice(-12)}</div>}
       {open && hits.length > 0 && (
@@ -495,11 +496,79 @@ function ParentProdCell({ value, title, onSelect }: {
   )
 }
 
-function EditableLotRow({ row, onChange, onSave, onDelete }: {
+// Inline dropdown chọn Pancake ID dùng trong sheet (không cần save riêng — gọi onChange)
+function InlinePancakeSelect({ value, allIds, onChange }: {
+  value: string
+  allIds: { display_id: string; name: string }[]
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState("")
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [])
+
+  const filtered = q.length >= 1
+    ? allIds.filter(x => x.display_id.toLowerCase().includes(q.toLowerCase()) || x.name?.toLowerCase().includes(q.toLowerCase()))
+    : allIds.slice(0, 30)
+
+  if (!open) {
+    return (
+      <div ref={wrapRef} onClick={() => { setOpen(true); setQ("") }}
+        style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, minWidth: 130 }}>
+        {value
+          ? <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "#15803d" }}>{value}</span>
+          : <span style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic" }}>— chọn ID</span>
+        }
+        <span style={{ fontSize: 10, color: "#9ca3af" }}>▾</span>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", minWidth: 150 }}>
+      <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+        placeholder="Tìm Pancake ID…"
+        style={{ width: "100%", border: "1px solid #a78bfa", borderRadius: 4, padding: "3px 6px", fontSize: 11, outline: "none", boxSizing: "border-box" }} />
+      <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 220, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, boxShadow: "0 6px 20px rgba(0,0,0,.12)", zIndex: 9999, maxHeight: 220, overflowY: "auto", marginTop: 2 }}>
+        {value && (
+          <div onMouseDown={() => { onChange(""); setOpen(false) }}
+            style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, color: "#dc2626", borderBottom: "1px solid #f3f4f6" }}
+            onMouseOver={e => (e.currentTarget.style.background = "#fef2f2")}
+            onMouseOut={e => (e.currentTarget.style.background = "")}>
+            ✕ Bỏ gán
+          </div>
+        )}
+        {filtered.length === 0
+          ? <div style={{ padding: "8px 10px", color: "#9ca3af", fontSize: 11 }}>Không tìm thấy</div>
+          : filtered.map(x => (
+            <div key={x.display_id} onMouseDown={() => { onChange(x.display_id); setOpen(false) }}
+              style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, borderBottom: "1px solid #f9fafb" }}
+              onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
+              onMouseOut={e => (e.currentTarget.style.background = "")}>
+              <span style={{ fontWeight: 700, color: "#7c3aed" }}>{x.display_id}</span>
+              {x.name && <span style={{ color: "#6b7280", marginLeft: 6, fontSize: 10 }}>{x.name.slice(0, 35)}</span>}
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+}
+
+function EditableLotRow({ row, onChange, onSave, onDelete, feeOpen, allPancakeIds }: {
   row: LotEdit
   onChange: (id: string, f: string, v: string) => void
   onSave: (id: string) => void
   onDelete: (id: string) => void
+  feeOpen: boolean
+  allPancakeIds: { display_id: string; name: string }[]
 }) {
   const qty        = num(row.qty)
   const price_unit = num(row.price_unit)
@@ -523,6 +592,8 @@ function EditableLotRow({ row, onChange, onSave, onDelete }: {
     </td>
   )
 
+  const totalFees = num(row.local_fee_tq) + num(row.ship_fee_ovs) + num(row.local_fee_vn) + num(row.vat_fee) + num(row.other_fee)
+
   return (
     <tr>
       <td style={{ ...tdStyle(200, undefined, bg), border: "1px solid #e5e7eb", fontWeight: 600, fontSize: 11, padding: "4px 6px" }}>
@@ -530,16 +601,15 @@ function EditableLotRow({ row, onChange, onSave, onDelete }: {
           onKeyDown={e => e.key === "Enter" && onSave(row.id)}
           style={{ ...cellInput(), fontWeight: 600 }} />
       </td>
+      {/* PANCAKE ID — dùng inline dropdown giống PancakeIdCell */}
       <td style={{ ...tdStyle(160, undefined, row.pancake_display_id ? "#f0fdf4" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
-        <input
+        <InlinePancakeSelect
           value={row.pancake_display_id}
-          onChange={e => onChange(row.id, "pancake_display_id", e.target.value.toUpperCase())}
-          onKeyDown={e => e.key === "Enter" && onSave(row.id)}
-          placeholder="PHVVN0XX_ABC"
-          style={{ ...cellInput(), fontFamily: "monospace", fontSize: 11, color: row.pancake_display_id ? "#15803d" : "#9ca3af" }}
+          allIds={allPancakeIds}
+          onChange={v => onChange(row.id, "pancake_display_id", v)}
         />
       </td>
-      <td style={{ ...tdStyle(190, undefined, row.parent_product_id ? "#faf5ff" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
+      <td style={{ ...tdStyle(180, undefined, row.parent_product_id ? "#faf5ff" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
         <ParentProdCell
           value={row.parent_product_id}
           title={row.parent_product_title}
@@ -556,11 +626,20 @@ function EditableLotRow({ row, onChange, onSave, onDelete }: {
       <td style={{ ...tdStyle(110, "right", "#f9fafb"), border: "1px solid #e5e7eb", fontSize: 11, color: "#6b7280" }}>
         {new Intl.NumberFormat("vi-VN").format(Math.round(amount))}đ
       </td>
-      {inp("local_fee_tq", "right")}
-      {inp("ship_fee_ovs", "right")}
-      {inp("local_fee_vn", "right")}
-      {inp("vat_fee", "right")}
-      {inp("other_fee", "right")}
+      {/* Fee columns — collapsed/expanded */}
+      {feeOpen ? (
+        <>
+          {inp("local_fee_tq", "right")}
+          {inp("ship_fee_ovs", "right")}
+          {inp("local_fee_vn", "right")}
+          {inp("vat_fee", "right")}
+          {inp("other_fee", "right")}
+        </>
+      ) : (
+        <td style={{ ...tdStyle(90, "right", "#f9fafb"), border: "1px solid #e5e7eb", fontSize: 11, color: totalFees > 0 ? "#d97706" : "#d1d5db" }}>
+          {totalFees > 0 ? new Intl.NumberFormat("vi-VN").format(Math.round(totalFees)) + "đ" : "—"}
+        </td>
+      )}
       <td style={{ ...tdStyle(130, "right", "#faf5ff"), border: "1px solid #e5e7eb", fontWeight: 800, color: "#7c3aed", fontSize: 12 }}>
         {new Intl.NumberFormat("vi-VN").format(Math.round(final_p))}đ
       </td>
@@ -588,7 +667,11 @@ function EditableLotRow({ row, onChange, onSave, onDelete }: {
 }
 
 // ---- Lot History List (editable sheet) ----
-function LotHistoryList({ refreshKey, onSaved }: { refreshKey: number; onSaved: () => void }) {
+function LotHistoryList({ refreshKey, onSaved, onTotalLoaded, feeOpen, onToggleFee, allPancakeIds }: {
+  refreshKey: number; onSaved: () => void; onTotalLoaded?: (t: number) => void
+  feeOpen: boolean; onToggleFee: () => void
+  allPancakeIds: { display_id: string; name: string }[]
+}) {
   const [lots, setLots] = useState<LotEdit[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -600,7 +683,11 @@ function LotHistoryList({ refreshKey, onSaved }: { refreshKey: number; onSaved: 
     setLoading(true)
     const q = s ? `&search=${encodeURIComponent(s)}` : ""
     apiJson(`/admin/gia-von?limit=${LIMIT}&page=${p}${q}`, "GET")
-      .then(d => { setLots((d.lots ?? []).map(lotToEdit)); setTotal(Number(d.total ?? 0)); setLoading(false) })
+      .then(d => {
+        const t = Number(d.total ?? 0)
+        setLots((d.lots ?? []).map(lotToEdit)); setTotal(t); setLoading(false)
+        onTotalLoaded?.(t)
+      })
       .catch(() => setLoading(false))
   }
 
@@ -668,19 +755,37 @@ function LotHistoryList({ refreshKey, onSaved }: { refreshKey: number; onSaved: 
       ) : lots.length === 0 ? (
         <div style={{ color: "#9ca3af", fontSize: 13, padding: "12px 0" }}>Chưa có lô nào</div>
       ) : (
-        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 360, border: "1px solid #e5e7eb", borderRadius: 8 }}>
-          <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1500, fontSize: 12 }}>
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "60vh", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+          <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: feeOpen ? 1500 : 1150, fontSize: 12 }}>
             <thead>
               <tr>
-                {LOT_COLS.map(c => (
+                {LOT_COLS.filter(c => feeOpen || !(c as any).feeCol).map(c => (
                   <th key={c.key} style={thStyle(c.w, c.align)}>{c.label}</th>
                 ))}
+                {/* Fee toggle header cell */}
+                {!feeOpen && (
+                  <th style={thStyle(90, "right")}>
+                    <button onClick={onToggleFee}
+                      title="Mở chi tiết phí"
+                      style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "#92400e", whiteSpace: "nowrap" }}>
+                      + Phí ▾
+                    </button>
+                  </th>
+                )}
+                {feeOpen && (
+                  <th colSpan={5} style={{ ...thStyle(undefined, "right"), background: "#fffbeb", color: "#92400e" }}>
+                    <button onClick={onToggleFee}
+                      style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "#92400e" }}>
+                      ▴ Ẩn phí
+                    </button>
+                  </th>
+                )}
                 <th style={thStyle(80)}>TÁC VỤ</th>
               </tr>
             </thead>
             <tbody>
               {lots.map(l => (
-                <EditableLotRow key={l.id} row={l} onChange={change} onSave={save} onDelete={del} />
+                <EditableLotRow key={l.id} row={l} onChange={change} onSave={save} onDelete={del} feeOpen={feeOpen} allPancakeIds={allPancakeIds} />
               ))}
             </tbody>
           </table>
@@ -704,8 +809,17 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
   const [rows, setRows] = useState<RowDraft[]>([newRow(), newRow(), newRow()])
   const [savingAll, setSavingAll] = useState(false)
   const [historyKey, setHistoryKey] = useState(0)
+  const [historyTotal, setHistoryTotal] = useState<number | null>(null)  // null = chưa load
+  const [feeOpen, setFeeOpen] = useState(false)
+  const [allPancakeIds, setAllPancakeIds] = useState<{ display_id: string; name: string }[]>([])
   const tableRef = useRef<HTMLDivElement>(null)
   const csvFileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    apiJson("/admin/gia-von/summary?mode=pancake-ids", "GET")
+      .then(d => setAllPancakeIds(d.display_ids ?? []))
+      .catch(() => {})
+  }, [])
 
   function handleCsvImport(file: File) {
     const reader = new FileReader()
@@ -847,12 +961,19 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
   return (
     <div>
       {/* Lô đã nhập từ DB */}
-      <LotHistoryList refreshKey={historyKey} onSaved={() => { setHistoryKey(k => k+1); onSaved() }} />
+      <LotHistoryList
+        refreshKey={historyKey}
+        onSaved={() => { setHistoryKey(k => k+1); onSaved() }}
+        onTotalLoaded={t => setHistoryTotal(t)}
+        feeOpen={feeOpen}
+        onToggleFee={() => setFeeOpen(o => !o)}
+        allPancakeIds={allPancakeIds}
+      />
 
       <div style={{ borderTop: "2px dashed #e5e7eb", paddingTop: 16, marginBottom: 12 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "#374151", marginBottom: 10 }}>➕ Nhập lô mới</div>
       </div>
-      {historyKey === 0 && (
+      {historyTotal === 0 && (
         <BackfillBanner onDone={() => setHistoryKey(k => k + 1)} />
       )}
 
@@ -1128,7 +1249,19 @@ function OverviewTab() {
                     <div style={{ fontWeight: 600 }}>{p.product_title}</div>
                   </td>
                   <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#7c3aed", fontSize: 15 }}>{fmtVND(p.avg_cost)}</td>
-                  <td style={{ padding: "10px 12px", textAlign: "right" }}>{p.stock_qty}</td>
+                  <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                    {p.stock_qty == null
+                      ? <span style={{ color: "#d1d5db" }}>—</span>
+                      : <span style={{
+                          fontWeight: p.stock_qty < 50 ? 700 : 400,
+                          color: p.stock_qty < 10 ? "#dc2626" : p.stock_qty < 50 ? "#d97706" : "#374151",
+                          background: p.stock_qty < 10 ? "#fef2f2" : p.stock_qty < 50 ? "#fffbeb" : "transparent",
+                          borderRadius: 4, padding: p.stock_qty < 50 ? "1px 6px" : undefined,
+                        }}>
+                          {p.stock_qty} {p.stock_qty < 50 ? "⚠" : ""}
+                        </span>
+                    }
+                  </td>
                   <td style={{ padding: "10px 12px", textAlign: "right" }}>{p.total_lots}</td>
                   <td style={{ padding: "10px 12px", minWidth: 200 }}>
                     <PancakeIdCell
