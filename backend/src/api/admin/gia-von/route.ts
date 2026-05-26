@@ -85,7 +85,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   try {
     const pool = getPool()
-
     const { rows: [lot] } = await pool.query(
       `INSERT INTO import_lot
         (id, product_id, product_title, lot_date, received_date, qty, price_unit, amount,

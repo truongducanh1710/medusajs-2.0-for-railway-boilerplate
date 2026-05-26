@@ -585,11 +585,289 @@ function OverviewTab() {
   )
 }
 
+// ---- CSV Import Tab ----
+function parseCsvText(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = [], cell = "", inQ = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], nx = text[i + 1]
+    if (ch === '"') { if (inQ && nx === '"') { cell += '"'; i++ } else inQ = !inQ }
+    else if (ch === ',' && !inQ) { row.push(cell.trim()); cell = '' }
+    else if (ch === '\n' && !inQ) { row.push(cell.trim()); rows.push(row); row = []; cell = '' }
+    else if (ch === '\r') { /* skip */ }
+    else cell += ch
+  }
+  if (cell || row.length) { row.push(cell.trim()); rows.push(row) }
+  return rows
+}
+
+function parseViNum(s: string): number {
+  if (!s) return 0
+  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'))
+  return isNaN(n) ? 0 : n
+}
+
+// Cột CSV mong muốn → index trong file upload
+const CSV_COL_OPTIONS = ["(bỏ qua)", "SẢN PHẨM", "QLY", "PRICE/UNIT", "LOCAL FEE TQ", "AMOUNT", "SHIP FEE OVS", "LOCAL FEE VN", "PHÍ VAT", "PHÍ KHÁC", "FINAL PRICE", "G.P DATE", "VỀ KHO", "TÌNH TRẠNG", "GHI CHÚ"]
+
+// Auto-detect cột dựa trên tên header trong CSV
+function autoDetectMapping(headers: string[]): Record<string, number> {
+  const MAP: Record<string, string[]> = {
+    "SẢN PHẨM":     ["sản phẩm", "product", "tên sp", "tên hàng", "sp"],
+    "QLY":           ["qly", "qty", "sl", "số lượng", "quantity"],
+    "PRICE/UNIT":    ["price/unit", "price unit", "đơn giá", "giá/unit"],
+    "LOCAL FEE TQ":  ["local fee tq", "phí nội địa tq", "local_fee_tq"],
+    "AMOUNT":        ["amount", "thành tiền", "amount (vnd)"],
+    "SHIP FEE OVS":  ["ship fee ovs", "oversea", "ship ovs", "total ship fee ovs"],
+    "LOCAL FEE VN":  ["local fee vn", "phí nội địa vn", "local_fee_vn", "local fee\nvn"],
+    "PHÍ VAT":       ["phí vat", "vat", "phí xuất vat", "vat fee"],
+    "PHÍ KHÁC":      ["phí khác", "other", "other fee"],
+    "FINAL PRICE":   ["final price", "final price (vnd)", "giá vốn", "final_price"],
+    "G.P DATE":      ["g.p date", "gp date", "ngày gp", "đề xuất", "lot_date"],
+    "VỀ KHO":        ["wareh in vn", "ngày về", "về kho vn", "received_date"],
+    "TÌNH TRẠNG":    ["trang thai", "tình trạng", "trạng thái", "trang thái"],
+    "GHI CHÚ":       ["ghi chú", "note", "trouble", "ghi chu"],
+  }
+  const result: Record<string, number> = {}
+  headers.forEach((h, i) => {
+    const norm = h.toLowerCase().replace(/\s+/g, ' ').replace(/[\n\r]/g, ' ').trim()
+    for (const [key, aliases] of Object.entries(MAP)) {
+      if (aliases.some(a => norm.includes(a)) && result[key] === undefined) {
+        result[key] = i
+      }
+    }
+  })
+  return result
+}
+
+function CsvImportTab({ onSaved }: { onSaved: () => void }) {
+  const [csvRows, setCsvRows] = useState<string[][]>([])
+  const [headers, setHeaders] = useState<string[]>([])
+  const [mapping, setMapping] = useState<Record<string, number>>({})  // fieldKey → colIndex
+  const [preview, setPreview] = useState<any[]>([])
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<{ ok?: number; error?: string } | null>(null)
+  const [step, setStep] = useState<"upload" | "map" | "preview">("upload")
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  function handleFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text = e.target?.result as string
+      const rows = parseCsvText(text)
+      if (!rows.length) return
+      const hdrs = rows[0]
+      const dataRows = rows.slice(1).filter(r => r.some(c => c))
+      setHeaders(hdrs)
+      setCsvRows(dataRows)
+      const auto = autoDetectMapping(hdrs)
+      setMapping(auto)
+      setStep("map")
+      setResult(null)
+    }
+    reader.readAsText(file, "utf-8")
+  }
+
+  function buildPreview() {
+    const colOf = (key: string) => mapping[key] ?? -1
+    const rows = csvRows
+      .map(r => {
+        const name = r[colOf("SẢN PHẨM")]?.trim()
+        if (!name) return null
+        const qty        = parseViNum(r[colOf("QLY")] ?? "")
+        const finalPrice = parseViNum(r[colOf("FINAL PRICE")] ?? "")
+        const priceUnit  = parseViNum(r[colOf("PRICE/UNIT")] ?? "")
+        const localFtq   = parseViNum(r[colOf("LOCAL FEE TQ")] ?? "")
+        const shipOvs    = parseViNum(r[colOf("SHIP FEE OVS")] ?? "")
+        const localFvn   = parseViNum(r[colOf("LOCAL FEE VN")] ?? "")
+        const vatFee     = parseViNum(r[colOf("PHÍ VAT")] ?? "")
+        const otherFee   = parseViNum(r[colOf("PHÍ KHÁC")] ?? "")
+        const lotDate    = r[colOf("G.P DATE")]?.trim() || ""
+        const recDate    = r[colOf("VỀ KHO")]?.trim() || ""
+        const note       = r[colOf("GHI CHÚ")]?.trim() || ""
+        if (!qty || (!finalPrice && !priceUnit)) return null
+        // Tính final price nếu không có sẵn
+        const cost = finalPrice > 0 ? finalPrice
+          : qty > 0 ? (qty * priceUnit + localFtq + shipOvs + localFvn + vatFee + otherFee) / qty
+          : priceUnit
+        return { product_title: name, qty, cost: Math.round(cost), lot_date: lotDate, received_date: recDate, note }
+      })
+      .filter(Boolean) as any[]
+
+    // Merge by product name (weighted avg)
+    const merged = new Map<string, { totalCost: number; qty: number; lots: number; lot_date: string; note: string }>()
+    for (const r of rows) {
+      if (!merged.has(r.product_title)) merged.set(r.product_title, { totalCost: 0, qty: 0, lots: 0, lot_date: r.lot_date, note: r.note })
+      const m = merged.get(r.product_title)!
+      m.totalCost += r.qty * r.cost
+      m.qty += r.qty
+      m.lots++
+      if (r.lot_date) m.lot_date = r.lot_date
+    }
+    setPreview([...merged.entries()].map(([name, m]) => ({
+      product_title: name,
+      avg_cost: Math.round(m.totalCost / m.qty),
+      stock_qty: m.qty,
+      total_lots: m.lots,
+      lot_date: m.lot_date,
+    })))
+    setStep("preview")
+  }
+
+  async function doImport() {
+    if (!preview.length) return
+    setImporting(true)
+    setResult(null)
+    try {
+      const data = await apiJson("/admin/gia-von/bulk-cost", "POST", { rows: preview.map(r => ({
+        product_id: "cost_" + r.product_title.toLowerCase()
+          .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g,"a").replace(/[èéẹẻẽêềếệểễ]/g,"e")
+          .replace(/[ìíịỉĩ]/g,"i").replace(/[òóọỏõôồốộổỗơờớợởỡ]/g,"o")
+          .replace(/[ùúụủũưừứựửữ]/g,"u").replace(/[ỳýỵỷỹ]/g,"y").replace(/đ/g,"d")
+          .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,""),
+        product_title: r.product_title,
+        avg_cost: r.avg_cost,
+        stock_qty: r.stock_qty,
+        total_lots: r.total_lots,
+      })) })
+      setResult({ ok: data.upserted })
+      onSaved()
+    } catch (err: any) {
+      setResult({ error: err?.message ?? "Lỗi" })
+    }
+    setImporting(false)
+  }
+
+  const thS: React.CSSProperties = { padding: "7px 10px", background: "#f3f4f6", fontWeight: 700, fontSize: 11, color: "#374151", borderBottom: "2px solid #e5e7eb", whiteSpace: "nowrap", textAlign: "left" }
+  const tdS: React.CSSProperties = { padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f3f4f6" }
+
+  return (
+    <div>
+      {/* Step indicator */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
+        {(["upload","map","preview"] as const).map((s, i) => (
+          <span key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, background: step === s ? "#7c3aed" : (["upload","map","preview"].indexOf(step) > i ? "#d1fae5" : "#e5e7eb"), color: step === s ? "#fff" : (["upload","map","preview"].indexOf(step) > i ? "#16a34a" : "#6b7280") }}>{i+1}</span>
+            <span style={{ fontSize: 12, color: step === s ? "#7c3aed" : "#9ca3af", fontWeight: step === s ? 700 : 400 }}>{s === "upload" ? "Tải CSV" : s === "map" ? "Khớp cột" : "Xem trước & Import"}</span>
+            {i < 2 && <span style={{ color: "#d1d5db" }}>›</span>}
+          </span>
+        ))}
+      </div>
+
+      {/* Step 1: Upload */}
+      {step === "upload" && (
+        <div
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+          onClick={() => fileRef.current?.click()}
+          style={{ border: "2px dashed #c4b5fd", borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer", background: "#faf5ff", transition: "background 0.2s" }}
+          onMouseOver={e => (e.currentTarget.style.background = "#ede9fe")}
+          onMouseOut={e => (e.currentTarget.style.background = "#faf5ff")}
+        >
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📂</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#7c3aed", marginBottom: 6 }}>Kéo thả hoặc click để chọn file CSV</div>
+          <div style={{ fontSize: 12, color: "#9ca3af" }}>File CSV từ Google Sheets / Excel — UTF-8. Dòng đầu là header.</div>
+          <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+        </div>
+      )}
+
+      {/* Step 2: Map columns */}
+      {step === "map" && (
+        <div>
+          <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Khớp cột — {csvRows.length} dòng dữ liệu</div>
+            <button onClick={() => setStep("upload")} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>← Đổi file</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 20 }}>
+            {CSV_COL_OPTIONS.filter(f => f !== "(bỏ qua)").map(field => (
+              <label key={field} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, background: mapping[field] !== undefined ? "#faf5ff" : "#fff" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", minWidth: 120 }}>{field}</span>
+                <select
+                  value={mapping[field] ?? ""}
+                  onChange={e => {
+                    const v = e.target.value
+                    setMapping(m => ({ ...m, [field]: v === "" ? undefined as any : Number(v) }))
+                  }}
+                  style={{ flex: 1, border: "1px solid #d1d5db", borderRadius: 5, padding: "4px 6px", fontSize: 11 }}
+                >
+                  <option value="">(bỏ qua)</option>
+                  {headers.map((h, i) => (
+                    <option key={i} value={i}>[{i+1}] {h.replace(/\n/g," ").slice(0,40)}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          {/* Preview raw CSV (first 5 rows) */}
+          <details style={{ marginBottom: 16 }}>
+            <summary style={{ cursor: "pointer", fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Xem 5 dòng đầu CSV gốc</summary>
+            <div style={{ overflowX: "auto", fontSize: 11 }}>
+              <table style={{ borderCollapse: "collapse" }}>
+                <thead><tr>{headers.map((h,i) => <th key={i} style={{ ...thS, minWidth: 80 }}>[{i+1}] {h.replace(/\n/g," ").slice(0,20)}</th>)}</tr></thead>
+                <tbody>{csvRows.slice(0,5).map((r,ri) => <tr key={ri}>{r.map((c,ci) => <td key={ci} style={{ ...tdS, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          </details>
+          <button onClick={buildPreview}
+            style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
+            Xem trước →
+          </button>
+        </div>
+      )}
+
+      {/* Step 3: Preview & import */}
+      {step === "preview" && (
+        <div>
+          <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Xem trước — {preview.length} sản phẩm (đã gộp bình quân gia quyền)</div>
+            <button onClick={() => setStep("map")} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>← Sửa mapping</button>
+            <button onClick={doImport} disabled={importing}
+              style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "8px 22px", cursor: importing ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, marginLeft: "auto" }}>
+              {importing ? "Đang import…" : `✓ Import ${preview.length} sản phẩm`}
+            </button>
+          </div>
+          {result && (
+            <div style={{ marginBottom: 12, padding: "10px 16px", borderRadius: 8, background: result.ok ? "#dcfce7" : "#fee2e2", color: result.ok ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
+              {result.ok ? `✓ Đã import ${result.ok} sản phẩm vào product_cost` : `✗ Lỗi: ${result.error}`}
+            </div>
+          )}
+          <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr>
+                  {["#","Sản phẩm","Giá vốn TB","Tổng qty","Số lô","G.P DATE"].map((h, i) => (
+                    <th key={i} style={{ ...thS, textAlign: i > 1 ? "right" : "left" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((r, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                    <td style={{ ...tdS, color: "#9ca3af", width: 32 }}>{i+1}</td>
+                    <td style={{ ...tdS, fontWeight: 600 }}>{r.product_title}</td>
+                    <td style={{ ...tdS, textAlign: "right", fontWeight: 800, color: "#7c3aed" }}>{new Intl.NumberFormat("vi-VN").format(r.avg_cost)}đ</td>
+                    <td style={{ ...tdS, textAlign: "right" }}>{r.stock_qty}</td>
+                    <td style={{ ...tdS, textAlign: "right" }}>{r.total_lots}</td>
+                    <td style={{ ...tdS }}>{r.lot_date || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: "#9ca3af" }}>
+            Sản phẩm chưa có trong Medusa sẽ dùng tên làm ID tạm. Có thể khớp tay sau trong tab Tổng quan.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Main Page ----
 export default function GiaVonPage() {
   const { has } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
-  const [tab, setTab] = useState<"overview" | "import">("overview")
+  const [tab, setTab] = useState<"overview" | "import" | "csv">("overview")
   const [refreshKey, setRefreshKey] = useState(0)
 
   const tabBtn = (active: boolean) => ({
@@ -607,11 +885,15 @@ export default function GiaVonPage() {
       <div style={{ display: "flex", gap: 4, background: "#f3f4f6", borderRadius: 10, padding: 4, width: "fit-content", marginBottom: 24 }}>
         <button style={tabBtn(tab === "overview")} onClick={() => setTab("overview")}>📊 Tổng quan</button>
         {canManage && <button style={tabBtn(tab === "import")} onClick={() => setTab("import")}>📋 Nhập lô hàng</button>}
+        {canManage && <button style={tabBtn(tab === "csv")} onClick={() => setTab("csv")}>📂 Import CSV</button>}
       </div>
 
       {tab === "overview" && <OverviewTab key={refreshKey} />}
       {tab === "import" && canManage && (
         <ImportTab onSaved={() => setRefreshKey(k => k + 1)} />
+      )}
+      {tab === "csv" && canManage && (
+        <CsvImportTab onSaved={() => { setRefreshKey(k => k + 1) }} />
       )}
     </div>
   )
