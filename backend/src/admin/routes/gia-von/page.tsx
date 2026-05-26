@@ -963,12 +963,94 @@ function LotHistoryModal({ productId, productTitle, onClose }: { productId: stri
   )
 }
 
+// ---- Pancake ID Cell (inline editable with dropdown) ----
+function PancakeIdCell({ productId, value, allIds, onSaved }: {
+  productId: string
+  value: string | null
+  allIds: { display_id: string; name: string }[]
+  onSaved: (newVal: string | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(value ?? "")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [q, setQ] = useState("")
+
+  useEffect(() => { setVal(value ?? "") }, [value])
+
+  const filtered = q.length >= 1
+    ? allIds.filter(x => x.display_id.toLowerCase().includes(q.toLowerCase()) || x.name?.toLowerCase().includes(q.toLowerCase()))
+    : allIds.slice(0, 30)
+
+  async function save(newVal: string | null) {
+    setSaving(true); setError(null)
+    try {
+      await apiJson("/admin/gia-von/summary", "PATCH", { product_id: productId, pancake_display_id: newVal || null })
+      setVal(newVal ?? "")
+      onSaved(newVal)
+      setEditing(false)
+    } catch (err: any) {
+      setError(err.message)
+    }
+    setSaving(false)
+  }
+
+  if (!editing) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={() => { setEditing(true); setQ("") }}>
+        {val
+          ? <span style={{ background: "#ede9fe", color: "#7c3aed", borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 700 }}>{val}</span>
+          : <span style={{ color: "#d1d5db", fontSize: 11 }}>— gán ID</span>
+        }
+        <span style={{ fontSize: 10, color: "#9ca3af" }}>✎</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ position: "relative", minWidth: 200 }}>
+      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+          placeholder="Tìm display_id…"
+          style={{ flex: 1, border: "1px solid #a78bfa", borderRadius: 5, padding: "4px 8px", fontSize: 12, outline: "none" }} />
+        <button onClick={() => setEditing(false)}
+          style={{ background: "#f3f4f6", border: "none", borderRadius: 4, padding: "4px 7px", cursor: "pointer", fontSize: 12 }}>✕</button>
+      </div>
+      {error && <div style={{ color: "#dc2626", fontSize: 10, marginTop: 2 }}>{error}</div>}
+      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, boxShadow: "0 8px 24px rgba(0,0,0,.12)", zIndex: 9999, maxHeight: 260, overflowY: "auto", marginTop: 2 }}>
+        {val && (
+          <div onMouseDown={() => save(null)}
+            style={{ padding: "6px 10px", cursor: "pointer", fontSize: 11, color: "#dc2626", borderBottom: "1px solid #f3f4f6" }}
+            onMouseOver={e => (e.currentTarget.style.background = "#fef2f2")}
+            onMouseOut={e => (e.currentTarget.style.background = "")}>
+            ✕ Bỏ gán (xóa ID)
+          </div>
+        )}
+        {filtered.length === 0 && (
+          <div style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>Không tìm thấy</div>
+        )}
+        {filtered.map(x => (
+          <div key={x.display_id} onMouseDown={() => save(x.display_id)}
+            style={{ padding: "6px 10px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid #f9fafb" }}
+            onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
+            onMouseOut={e => (e.currentTarget.style.background = "")}>
+            <span style={{ fontWeight: 700, color: "#7c3aed" }}>{x.display_id}</span>
+            {x.name && <span style={{ color: "#6b7280", marginLeft: 6, fontSize: 11 }}>{x.name.slice(0, 40)}</span>}
+          </div>
+        ))}
+      </div>
+      {saving && <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 2 }}>Đang lưu…</div>}
+    </div>
+  )
+}
+
 // ---- Overview Tab ----
 function OverviewTab() {
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [modal, setModal] = useState<{ id: string; title: string } | null>(null)
+  const [allPancakeIds, setAllPancakeIds] = useState<{ display_id: string; name: string }[]>([])
 
   function load(s = search) {
     setLoading(true)
@@ -977,11 +1059,18 @@ function OverviewTab() {
       .catch(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    apiJson("/admin/gia-von/summary?mode=pancake-ids", "GET")
+      .then(d => setAllPancakeIds(d.display_ids ?? []))
+      .catch(() => {})
+  }, [])
+
+  const mappedCount = products.filter(p => p.pancake_display_id).length
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
         <input type="text" placeholder="Tìm sản phẩm…" value={search}
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === "Enter" && load(search)}
@@ -990,6 +1079,13 @@ function OverviewTab() {
           style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 7, padding: "8px 18px", cursor: "pointer", fontSize: 13 }}>Tìm</button>
         <button onClick={() => load(search)}
           style={{ background: "#f3f4f6", border: "none", borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>↻</button>
+        {products.length > 0 && (
+          <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>
+            <span style={{ color: mappedCount === products.length ? "#16a34a" : "#d97706", fontWeight: 700 }}>
+              {mappedCount}/{products.length}
+            </span> đã gán Pancake ID
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -1001,8 +1097,8 @@ function OverviewTab() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {["Sản phẩm","Giá vốn TB","Tồn kho (lô)","Số lô","Nhập gần nhất",""].map((h, i) => (
-                  <th key={i} style={{ padding: "10px 12px", textAlign: i > 0 && i < 4 ? "right" : "left", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "2px solid #e5e7eb" }}>{h}</th>
+                {["Sản phẩm","Giá vốn TB","Tồn kho","Số lô","Pancake ID",""].map((h, i) => (
+                  <th key={i} style={{ padding: "10px 12px", textAlign: i === 1 || i === 2 || i === 3 ? "right" : "left", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "2px solid #e5e7eb" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1016,11 +1112,18 @@ function OverviewTab() {
                   <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#7c3aed", fontSize: 15 }}>{fmtVND(p.avg_cost)}</td>
                   <td style={{ padding: "10px 12px", textAlign: "right" }}>{p.stock_qty}</td>
                   <td style={{ padding: "10px 12px", textAlign: "right" }}>{p.total_lots}</td>
-                  <td style={{ padding: "10px 12px" }}>{fmtDate(p.last_imported_at)}</td>
+                  <td style={{ padding: "10px 12px", minWidth: 200 }}>
+                    <PancakeIdCell
+                      productId={p.product_id}
+                      value={p.pancake_display_id}
+                      allIds={allPancakeIds}
+                      onSaved={newVal => setProducts(ps => ps.map(x => x.product_id === p.product_id ? { ...x, pancake_display_id: newVal } : x))}
+                    />
+                  </td>
                   <td style={{ padding: "10px 12px" }}>
                     <button onClick={() => setModal({ id: p.product_id, title: p.product_title })}
                       style={{ background: "#ede9fe", color: "#7c3aed", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                      Xem lịch sử
+                      Lịch sử
                     </button>
                   </td>
                 </tr>

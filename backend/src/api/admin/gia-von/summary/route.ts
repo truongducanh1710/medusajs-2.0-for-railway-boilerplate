@@ -14,6 +14,22 @@ function getPool(): Pool {
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const q = req.query as Record<string, string>
+
+    // ?mode=pancake-ids → trả danh sách display_id từ Pancake orders
+    if (q.mode === "pancake-ids") {
+      const pool = getPool()
+      const { rows } = await pool.query(`
+        SELECT DISTINCT
+          item->'variation_info'->>'display_id' as display_id,
+          item->'variation_info'->>'name' as name
+        FROM pancake_order, jsonb_array_elements(raw->'items') as item
+        WHERE raw->'items' IS NOT NULL
+          AND item->'variation_info'->>'display_id' IS NOT NULL
+        ORDER BY display_id
+      `)
+      return res.json({ display_ids: rows })
+    }
+
     const search = q.search ?? ""
 
     const pool = getPool()
@@ -67,7 +83,10 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 }
 
 /**
- * GET /admin/gia-von/summary/pancake-ids
+ * GET /admin/gia-von/summary?mode=pancake-ids
+ * handled inline in GET above when q.mode === "pancake-ids"
+ *
+ * POST /admin/gia-von/summary/pancake-ids (legacy OPTIONS workaround)
  * Trả danh sách tất cả display_id có trong đơn Pancake (để làm dropdown)
  */
 export async function OPTIONS(req: MedusaRequest, res: MedusaResponse) {
