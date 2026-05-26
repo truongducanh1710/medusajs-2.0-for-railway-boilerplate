@@ -372,6 +372,8 @@ type LotEdit = {
   id: string
   product_id: string
   product_title: string
+  parent_product_id: string   // "" = SP chính, có giá trị = phụ kiện
+  parent_product_title: string
   lot_date: string
   received_date: string
   qty: string
@@ -395,6 +397,8 @@ function lotToEdit(l: any): LotEdit {
     id: l.id,
     product_id: l.product_id,
     product_title: l.product_title ?? "",
+    parent_product_id: l.parent_product_id ?? "",
+    parent_product_title: l.parent_product_title ?? "",
     lot_date: fmtDate(l.lot_date),
     received_date: fmtDate(l.received_date),
     qty: String(l.qty ?? ""),
@@ -411,7 +415,8 @@ function lotToEdit(l: any): LotEdit {
 }
 
 const LOT_COLS = [
-  { key: "product_title", label: "SẢN PHẨM", w: 200 },
+  { key: "product_title",      label: "SẢN PHẨM",  w: 200 },
+  { key: "parent_product_id",  label: "SP CHÍNH",   w: 190 },
   { key: "lot_date",      label: "G.P DATE",  w: 110, type: "date" },
   { key: "received_date", label: "VỀ KHO",    w: 110, type: "date" },
   { key: "qty",           label: "QLY",        w: 65,  align: "right" as const },
@@ -426,6 +431,66 @@ const LOT_COLS = [
   { key: "source",        label: "NGUỒN",      w: 80,  type: "select", opts: ["TQ","SHOPEE","Nội địa","CSV","Khác"] },
   { key: "note",          label: "GHI CHÚ",    w: 180 },
 ]
+
+// Autocomplete tìm SP chính từ product_cost
+function ParentProdCell({ value, title, onSelect }: {
+  value: string
+  title: string
+  onSelect: (id: string, name: string) => void
+}) {
+  const [q, setQ] = useState(title)
+  const [hits, setHits] = useState<any[]>([])
+  const [open, setOpen] = useState(false)
+  const timer = useRef<any>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [])
+
+  useEffect(() => { setQ(title) }, [title])
+
+  function search(text: string) {
+    setQ(text)
+    clearTimeout(timer.current)
+    if (!text) { onSelect("", ""); setHits([]); setOpen(false); return }
+    if (text.length < 2) { setHits([]); setOpen(false); return }
+    timer.current = setTimeout(async () => {
+      try {
+        const d = await apiJson(`/admin/gia-von/summary?search=${encodeURIComponent(text)}`, "GET")
+        setHits(d.products ?? [])
+        if (d.products?.length > 0) setOpen(true)
+      } catch { setHits([]) }
+    }, 250)
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <input value={q} onChange={e => search(e.target.value)}
+        placeholder="(để trống = SP chính)"
+        style={{ ...cellInput(), color: value ? "#7c3aed" : "#9ca3af", fontStyle: value ? "normal" : "italic" }} />
+      {value && <div style={{ fontSize: 9, color: "#7c3aed", lineHeight: 1 }}>🔩 {value.slice(-12)}</div>}
+      {open && hits.length > 0 && (
+        <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 260, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.15)", zIndex: 9999, maxHeight: 240, overflowY: "auto", padding: 8 }}>
+          <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 4 }}>Chọn SP chính</div>
+          {hits.map((p: any) => (
+            <div key={p.product_id} onMouseDown={() => { onSelect(p.product_id, p.product_title); setQ(p.product_title); setOpen(false) }}
+              style={{ padding: "5px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, fontWeight: 600 }}
+              onMouseOver={e => (e.currentTarget.style.background = "#f3f4f6")}
+              onMouseOut={e => (e.currentTarget.style.background = "")}>
+              {p.product_title}
+              <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 6 }}>{fmtVND(p.avg_cost)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function EditableLotRow({ row, onChange, onSave, onDelete }: {
   row: LotEdit
@@ -461,6 +526,16 @@ function EditableLotRow({ row, onChange, onSave, onDelete }: {
         <input value={row.product_title} onChange={e => onChange(row.id, "product_title", e.target.value)}
           onKeyDown={e => e.key === "Enter" && onSave(row.id)}
           style={{ ...cellInput(), fontWeight: 600 }} />
+      </td>
+      <td style={{ ...tdStyle(190, undefined, row.parent_product_id ? "#faf5ff" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
+        <ParentProdCell
+          value={row.parent_product_id}
+          title={row.parent_product_title}
+          onSelect={(pid, ptitle) => {
+            onChange(row.id, "parent_product_id", pid)
+            onChange(row.id, "parent_product_title", ptitle)
+          }}
+        />
       </td>
       {datInp("lot_date")}
       {datInp("received_date")}
@@ -536,6 +611,7 @@ function LotHistoryList({ refreshKey, onSaved }: { refreshKey: number; onSaved: 
         local_fee_tq: num(l.local_fee_tq), ship_fee_ovs: num(l.ship_fee_ovs),
         local_fee_vn: num(l.local_fee_vn), vat_fee: num(l.vat_fee), other_fee: num(l.other_fee),
         source: l.source, note: l.note,
+        parent_product_id: l.parent_product_id || null,
       })
       setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: false, _saved: true, _dirty: false } : x))
       onSaved()

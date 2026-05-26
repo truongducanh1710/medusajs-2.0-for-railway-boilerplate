@@ -27,9 +27,10 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     const lot_date      = body.lot_date ?? ""
     const received_date = body.received_date || null
     const product_title = body.product_title ?? ""
-    const source        = body.source ?? "TQ"
-    const status        = body.status ?? "received"
-    const note          = body.note ?? ""
+    const source             = body.source ?? "TQ"
+    const status             = body.status ?? "received"
+    const note               = body.note ?? ""
+    const parent_product_id  = body.parent_product_id || null
 
     if (!qty || !price_unit || !lot_date) {
       return res.status(400).json({ error: "Thiếu qty / price_unit / lot_date" })
@@ -45,18 +46,23 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
          qty = $4, price_unit = $5, amount = $6,
          local_fee_tq = $7, ship_fee_ovs = $8, local_fee_vn = $9,
          vat_fee = $10, other_fee = $11, final_price = $12,
-         source = $13, status = $14, note = $15, updated_at = now()
-       WHERE id = $16
+         source = $13, status = $14, note = $15,
+         parent_product_id = $16, updated_at = now()
+       WHERE id = $17
        RETURNING *`,
       [product_title, lot_date, received_date,
        qty, price_unit, amount,
        local_fee_tq, ship_fee_ovs, local_fee_vn,
        vat_fee, other_fee, final_price,
-       source, status, note, id]
+       source, status, note,
+       parent_product_id, id]
     )
     if (!rows.length) return res.status(404).json({ error: "Không tìm thấy lô" })
 
-    // Recalculate avg_cost từ tất cả lô của SP này
+    const affected_product_id = rows[0].product_id
+    const parent_id = rows[0].parent_product_id
+
+    // Recalculate avg_cost cho SP này (chỉ lô của chính nó, không tính phụ kiện)
     await pool.query(`
       UPDATE product_cost SET
         avg_cost  = sub.avg,
@@ -68,11 +74,35 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
                ROUND(SUM(final_price * qty) / NULLIF(SUM(qty),0), 2) as avg,
                SUM(qty) as total_qty,
                COUNT(*) as cnt
-        FROM import_lot WHERE product_id = $1
+        FROM import_lot WHERE product_id = $1 AND (parent_product_id IS NULL OR parent_product_id = '')
         GROUP BY product_id
       ) sub
       WHERE product_cost.product_id = sub.product_id
-    `, [rows[0].product_id])
+    `, [affected_product_id])
+
+    // Nếu lô này là phụ kiện (có parent_product_id) → recalc SP chính gộp thêm phụ kiện
+    // Công thức: avg_cost_SP_chinh = (SUM(final*qty của SP chính) + SUM(final*qty phụ kiện trỏ về SP chính)) / SUM(qty SP chính)
+    if (parent_id) {
+      await pool.query(`
+        UPDATE product_cost SET
+          avg_cost   = sub.blended_avg,
+          updated_at = now()
+        FROM (
+          SELECT
+            main.product_id,
+            ROUND(
+              (COALESCE(SUM(CASE WHEN il.product_id = main.product_id AND (il.parent_product_id IS NULL OR il.parent_product_id = '') THEN il.final_price * il.qty ELSE 0 END), 0)
+               + COALESCE(SUM(CASE WHEN il.parent_product_id = main.product_id THEN il.final_price * il.qty ELSE 0 END), 0))
+              / NULLIF(SUM(CASE WHEN il.product_id = main.product_id AND (il.parent_product_id IS NULL OR il.parent_product_id = '') THEN il.qty ELSE 0 END), 0)
+            , 2) as blended_avg
+          FROM product_cost main
+          JOIN import_lot il ON (il.product_id = main.product_id OR il.parent_product_id = main.product_id)
+          WHERE main.product_id = $1
+          GROUP BY main.product_id
+        ) sub
+        WHERE product_cost.product_id = sub.product_id
+      `, [parent_id])
+    }
 
     return res.json({ lot: rows[0] })
   } catch (err: any) {
