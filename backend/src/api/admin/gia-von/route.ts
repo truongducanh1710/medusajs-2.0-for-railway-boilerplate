@@ -31,11 +31,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const offset = (page - 1) * limit
 
     const pool = getPool()
+    const search = q.search ?? ""
     const params: any[] = []
     let where = "WHERE 1=1"
     if (product_id) {
       params.push(product_id)
       where += ` AND product_id = $${params.length}`
+    }
+    if (search) {
+      params.push(`%${search}%`)
+      where += ` AND product_title ILIKE $${params.length}`
     }
 
     const { rows } = await pool.query(

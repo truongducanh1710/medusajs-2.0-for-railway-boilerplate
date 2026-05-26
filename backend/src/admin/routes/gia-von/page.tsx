@@ -333,6 +333,40 @@ function SheetRow({
   )
 }
 
+// ---- Backfill Banner ----
+function BackfillBanner({ onDone }: { onDone: () => void }) {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  async function run() {
+    setLoading(true)
+    try {
+      const d = await apiJson("/admin/gia-von/backfill", "POST")
+      setResult(`✓ Đã tạo ${d.created} lô từ data CSV cũ`)
+      onDone()
+    } catch (err: any) {
+      setResult(`Lỗi: ${err.message}`)
+    }
+    setLoading(false)
+  }
+
+  if (result) return (
+    <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#15803d", fontWeight: 600 }}>
+      {result}
+    </div>
+  )
+
+  return (
+    <div style={{ background: "#fefce8", border: "1px solid #fde047", borderRadius: 8, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+      <span style={{ fontSize: 13, color: "#713f12" }}>⚠️ Chưa có lô nhập nào. Bạn đã import giá vốn từ CSV — bấm để tạo lô lịch sử từ data đó.</span>
+      <button onClick={run} disabled={loading}
+        style={{ background: "#ca8a04", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+        {loading ? "Đang tạo…" : "🔄 Backfill lô từ CSV cũ"}
+      </button>
+    </div>
+  )
+}
+
 // ---- Lot History List (read-only, load from DB) ----
 function LotHistoryList({ refreshKey }: { refreshKey: number }) {
   const [lots, setLots] = useState<any[]>([])
@@ -344,7 +378,7 @@ function LotHistoryList({ refreshKey }: { refreshKey: number }) {
 
   function load(s = search, p = page) {
     setLoading(true)
-    const q = s ? `&product_id=${encodeURIComponent(s)}` : ""
+    const q = s ? `&search=${encodeURIComponent(s)}` : ""
     apiJson(`/admin/gia-von?limit=${LIMIT}&page=${p}${q}`, "GET")
       .then(d => { setLots(d.lots ?? []); setTotal(Number(d.total ?? 0)); setLoading(false) })
       .catch(() => setLoading(false))
@@ -358,7 +392,7 @@ function LotHistoryList({ refreshKey }: { refreshKey: number }) {
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "#374151" }}>📦 Lô đã nhập ({total})</div>
-        <input placeholder="Lọc theo product_id…" value={search} onChange={e => search_(e.target.value)}
+        <input placeholder="Tìm theo tên sản phẩm…" value={search} onChange={e => search_(e.target.value)}
           style={{ flex: 1, maxWidth: 280, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12 }} />
         <button onClick={() => load(search, page)} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>↻</button>
       </div>
@@ -564,6 +598,9 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
       <div style={{ borderTop: "2px dashed #e5e7eb", paddingTop: 16, marginBottom: 12 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "#374151", marginBottom: 10 }}>➕ Nhập lô mới</div>
       </div>
+      {historyKey === 0 && (
+        <BackfillBanner onDone={() => setHistoryKey(k => k + 1)} />
+      )}
 
       {/* Hidden CSV file input */}
       <input ref={csvFileRef} type="file" accept=".csv" style={{ display: "none" }}
