@@ -338,6 +338,61 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
   const [rows, setRows] = useState<RowDraft[]>([newRow(), newRow(), newRow()])
   const [savingAll, setSavingAll] = useState(false)
   const tableRef = useRef<HTMLDivElement>(null)
+  const csvFileRef = useRef<HTMLInputElement>(null)
+
+  function handleCsvImport(file: File) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text = e.target?.result as string
+      const allRows = parseCsvText(text)
+      if (!allRows.length) return
+      const hdrs = allRows[0]
+      const dataRows = allRows.slice(1).filter(r => r.some(c => c))
+      const m = autoDetectMapping(hdrs)
+      const colOf = (key: string) => m[key] ?? -1
+
+      const newRows: RowDraft[] = dataRows.map(r => {
+        const name        = r[colOf("SẢN PHẨM")]?.trim() ?? ""
+        const qty         = r[colOf("QLY")]?.trim() ?? ""
+        const priceUnit   = r[colOf("PRICE/UNIT")]?.trim() ?? ""
+        const finalPrice  = r[colOf("FINAL PRICE")]?.trim() ?? ""
+        const localFtq    = r[colOf("LOCAL FEE TQ")]?.trim() ?? "0"
+        const shipOvs     = r[colOf("SHIP FEE OVS")]?.trim() ?? "0"
+        const localFvn    = r[colOf("LOCAL FEE VN")]?.trim() ?? "0"
+        const vatFee      = r[colOf("PHÍ VAT")]?.trim() ?? "0"
+        const otherFee    = r[colOf("PHÍ KHÁC")]?.trim() ?? "0"
+        const lotDate     = r[colOf("G.P DATE")]?.trim() ?? ""
+        const recDate     = r[colOf("VỀ KHO")]?.trim() ?? ""
+        const note        = r[colOf("GHI CHÚ")]?.trim() ?? ""
+        // Dùng FINAL PRICE làm price_unit nếu không có PRICE/UNIT
+        const effectivePrice = finalPrice || priceUnit
+        return {
+          ...newRow(),
+          product_title: name,
+          qty,
+          price_unit: effectivePrice,
+          local_fee_tq: localFtq || "0",
+          ship_fee_ovs: shipOvs || "0",
+          local_fee_vn: localFvn || "0",
+          vat_fee: vatFee || "0",
+          other_fee: otherFee || "0",
+          lot_date: lotDate,
+          received_date: recDate,
+          note,
+        }
+      }).filter(r => r.product_title && r.qty)
+
+      if (!newRows.length) return
+      // Replace blank rows, append non-blank ones
+      setRows(rs => {
+        const blanks = rs.filter(r => !r.product_title && !r.qty)
+        const filled = rs.filter(r => r.product_title || r.qty)
+        return [...filled, ...newRows, ...(blanks.length > 0 && filled.length + newRows.length === rs.length ? [] : [])]
+      })
+      setTimeout(() => tableRef.current?.scrollTo(0, 0), 50)
+    }
+    reader.readAsText(file, "utf-8")
+  }
 
   function updateRow(id: string, field: string, val: string) {
     setRows(rs => rs.map(r => r._id === id ? { ...r, [field]: val, _saved: false, _error: undefined } : r))
@@ -396,11 +451,19 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
 
   return (
     <div>
+      {/* Hidden CSV file input */}
+      <input ref={csvFileRef} type="file" accept=".csv" style={{ display: "none" }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvImport(f); e.target.value = "" }} />
+
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
         <button onClick={addRow}
           style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
           + Thêm dòng
+        </button>
+        <button onClick={() => csvFileRef.current?.click()}
+          style={{ background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#92400e" }}>
+          📂 Import từ CSV
         </button>
         <button onClick={saveAll} disabled={savingAll}
           style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 7, padding: "7px 18px", cursor: savingAll ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700 }}>
