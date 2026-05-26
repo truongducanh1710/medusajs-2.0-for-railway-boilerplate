@@ -351,43 +351,70 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
       const m = autoDetectMapping(hdrs)
       const colOf = (key: string) => m[key] ?? -1
 
+      // Inline mapping aliases (không dùng autoDetectMapping để tránh hoisting issue)
+      const ALIASES: Record<string, string[]> = {
+        "SẢN PHẨM":    ["sản phẩm", "product", "tên sp", "tên hàng", "sp"],
+        "QLY":          ["qly", "qty", "sl", "số lượng", "quantity"],
+        "PRICE/UNIT":   ["price/unit", "price unit", "đơn giá", "giá/unit"],
+        "LOCAL FEE TQ": ["local fee tq", "phí nội địa tq", "local_fee_tq"],
+        "SHIP FEE OVS": ["ship fee ovs", "oversea", "ship ovs", "total ship fee ovs"],
+        "LOCAL FEE VN": ["local fee vn", "phí nội địa vn", "local_fee_vn", "local fee\nvn"],
+        "PHÍ VAT":      ["phí vat", "vat", "phí xuất vat", "vat fee"],
+        "PHÍ KHÁC":     ["phí khác", "other", "other fee"],
+        "FINAL PRICE":  ["final price", "final price (vnd)", "giá vốn", "final_price"],
+        "G.P DATE":     ["g.p date", "gp date", "ngày gp", "lot_date"],
+        "VỀ KHO":       ["wareh in vn", "ngày về", "về kho vn", "received_date", "về kho"],
+        "GHI CHÚ":      ["ghi chú", "note", "trouble", "ghi chu"],
+      }
+      const idxMap: Record<string, number> = {}
+      hdrs.forEach((h, i) => {
+        const norm = h.toLowerCase().replace(/\s+/g, " ").replace(/[\n\r]/g, " ").trim()
+        for (const [key, aliases] of Object.entries(ALIASES)) {
+          if (idxMap[key] === undefined && aliases.some(a => norm.includes(a))) idxMap[key] = i
+        }
+      })
+      const get = (key: string, row: string[]) => {
+        const i = idxMap[key]
+        return (i !== undefined && i >= 0) ? (row[i]?.trim() ?? "") : ""
+      }
+
       const newRows: RowDraft[] = dataRows.map(r => {
-        const name        = r[colOf("SẢN PHẨM")]?.trim() ?? ""
-        const qty         = r[colOf("QLY")]?.trim() ?? ""
-        const priceUnit   = r[colOf("PRICE/UNIT")]?.trim() ?? ""
-        const finalPrice  = r[colOf("FINAL PRICE")]?.trim() ?? ""
-        const localFtq    = r[colOf("LOCAL FEE TQ")]?.trim() ?? "0"
-        const shipOvs     = r[colOf("SHIP FEE OVS")]?.trim() ?? "0"
-        const localFvn    = r[colOf("LOCAL FEE VN")]?.trim() ?? "0"
-        const vatFee      = r[colOf("PHÍ VAT")]?.trim() ?? "0"
-        const otherFee    = r[colOf("PHÍ KHÁC")]?.trim() ?? "0"
-        const lotDate     = r[colOf("G.P DATE")]?.trim() ?? ""
-        const recDate     = r[colOf("VỀ KHO")]?.trim() ?? ""
-        const note        = r[colOf("GHI CHÚ")]?.trim() ?? ""
-        // Dùng FINAL PRICE làm price_unit nếu không có PRICE/UNIT
+        const name       = get("SẢN PHẨM", r)
+        const qty        = get("QLY", r)
+        const priceUnit  = get("PRICE/UNIT", r)
+        const finalPrice = get("FINAL PRICE", r)
+        const localFtq   = get("LOCAL FEE TQ", r) || "0"
+        const shipOvs    = get("SHIP FEE OVS", r) || "0"
+        const localFvn   = get("LOCAL FEE VN", r) || "0"
+        const vatFee     = get("PHÍ VAT", r) || "0"
+        const otherFee   = get("PHÍ KHÁC", r) || "0"
+        const lotDate    = get("G.P DATE", r)
+        const recDate    = get("VỀ KHO", r)
+        const note       = get("GHI CHÚ", r)
         const effectivePrice = finalPrice || priceUnit
         return {
           ...newRow(),
           product_title: name,
           qty,
           price_unit: effectivePrice,
-          local_fee_tq: localFtq || "0",
-          ship_fee_ovs: shipOvs || "0",
-          local_fee_vn: localFvn || "0",
-          vat_fee: vatFee || "0",
-          other_fee: otherFee || "0",
+          local_fee_tq: localFtq,
+          ship_fee_ovs: shipOvs,
+          local_fee_vn: localFvn,
+          vat_fee: vatFee,
+          other_fee: otherFee,
           lot_date: lotDate,
           received_date: recDate,
           note,
         }
       }).filter(r => r.product_title && r.qty)
 
-      if (!newRows.length) return
-      // Replace blank rows, append non-blank ones
+      if (!newRows.length) {
+        alert(`Không parse được dòng nào. Headers tìm thấy:\n${hdrs.slice(0, 10).join(" | ")}\n\nMapping: ${JSON.stringify(idxMap)}`)
+        return
+      }
       setRows(rs => {
-        const blanks = rs.filter(r => !r.product_title && !r.qty)
         const filled = rs.filter(r => r.product_title || r.qty)
-        return [...filled, ...newRows, ...(blanks.length > 0 && filled.length + newRows.length === rs.length ? [] : [])]
+        return [...filled, ...newRows]
       })
       setTimeout(() => tableRef.current?.scrollTo(0, 0), 50)
     }
