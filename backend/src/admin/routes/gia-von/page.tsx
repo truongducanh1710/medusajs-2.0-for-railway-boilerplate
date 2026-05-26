@@ -333,10 +333,89 @@ function SheetRow({
   )
 }
 
+// ---- Lot History List (read-only, load from DB) ----
+function LotHistoryList({ refreshKey }: { refreshKey: number }) {
+  const [lots, setLots] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const LIMIT = 30
+
+  function load(s = search, p = page) {
+    setLoading(true)
+    const q = s ? `&product_id=${encodeURIComponent(s)}` : ""
+    apiJson(`/admin/gia-von?limit=${LIMIT}&page=${p}${q}`, "GET")
+      .then(d => { setLots(d.lots ?? []); setTotal(Number(d.total ?? 0)); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [refreshKey])
+
+  function search_(s: string) { setSearch(s); setPage(1); load(s, 1) }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: "#374151" }}>📦 Lô đã nhập ({total})</div>
+        <input placeholder="Lọc theo product_id…" value={search} onChange={e => search_(e.target.value)}
+          style={{ flex: 1, maxWidth: 280, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12 }} />
+        <button onClick={() => load(search, page)} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>↻</button>
+      </div>
+      {loading ? (
+        <div style={{ color: "#9ca3af", fontSize: 13, padding: "12px 0" }}>Đang tải…</div>
+      ) : lots.length === 0 ? (
+        <div style={{ color: "#9ca3af", fontSize: 13, padding: "12px 0" }}>Chưa có lô nào</div>
+      ) : (
+        <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8, maxHeight: 280 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                {["SẢN PHẨM","G.P DATE","VỀ KHO","QLY","PRICE/UNIT","AMOUNT","LOCAL FEE TQ","SHIP OVS","LOCAL VN","VAT","FINAL PRICE/unit","NGUỒN","GHI CHÚ"].map(h => (
+                  <th key={h} style={{ padding: "6px 8px", borderBottom: "2px solid #e5e7eb", borderRight: "1px solid #e5e7eb", whiteSpace: "nowrap", fontWeight: 700, color: "#374151", textAlign: "right", position: "sticky", top: 0, background: "#f9fafb" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lots.map((l, i) => (
+                <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", fontWeight: 600, whiteSpace: "nowrap" }}>{l.product_title}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right", whiteSpace: "nowrap" }}>{fmtDate(l.lot_date)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right", whiteSpace: "nowrap" }}>{fmtDate(l.received_date)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{l.qty}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.price_unit)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.amount)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.local_fee_tq)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.ship_fee_ovs)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.local_fee_vn)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right" }}>{fmtVND(l.vat_fee)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmtVND(l.final_price)}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", borderRight: "1px solid #f3f4f6" }}>{l.source}</td>
+                  <td style={{ padding: "5px 8px", borderBottom: "1px solid #f3f4f6", color: "#6b7280" }}>{l.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {total > LIMIT && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+          <button disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); load(search, p) }}
+            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page <= 1 ? "not-allowed" : "pointer", background: "#fff" }}>‹ Trước</button>
+          <span style={{ lineHeight: "26px" }}>Trang {page} / {Math.ceil(total / LIMIT)}</span>
+          <button disabled={page >= Math.ceil(total / LIMIT)} onClick={() => { const p = page + 1; setPage(p); load(search, p) }}
+            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page >= Math.ceil(total / LIMIT) ? "not-allowed" : "pointer", background: "#fff" }}>Sau ›</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Import Tab (spreadsheet style) ----
 function ImportTab({ onSaved }: { onSaved: () => void }) {
   const [rows, setRows] = useState<RowDraft[]>([newRow(), newRow(), newRow()])
   const [savingAll, setSavingAll] = useState(false)
+  const [historyKey, setHistoryKey] = useState(0)
   const tableRef = useRef<HTMLDivElement>(null)
   const csvFileRef = useRef<HTMLInputElement>(null)
 
@@ -456,6 +535,7 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
           : row.note,
       })
       setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: false, _saved: true } : r))
+      setHistoryKey(k => k + 1)
       onSaved()
     } catch (err: any) {
       setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: false, _error: err?.message ?? "Lỗi" } : r))
@@ -478,6 +558,13 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
 
   return (
     <div>
+      {/* Lô đã nhập từ DB */}
+      <LotHistoryList refreshKey={historyKey} />
+
+      <div style={{ borderTop: "2px dashed #e5e7eb", paddingTop: 16, marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: "#374151", marginBottom: 10 }}>➕ Nhập lô mới</div>
+      </div>
+
       {/* Hidden CSV file input */}
       <input ref={csvFileRef} type="file" accept=".csv" style={{ display: "none" }}
         onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvImport(f); e.target.value = "" }} />
