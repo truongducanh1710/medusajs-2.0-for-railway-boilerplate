@@ -184,6 +184,7 @@ export function mapPancakeOrder(raw: any): Record<string, any> {
     raw: raw,
     pancake_created_at: raw.inserted_at ? new Date(raw.inserted_at) : (raw.created_at ? new Date(raw.created_at) : null),
     synced_at: new Date(),
+    tags: extractTags(raw),
     data_quality: Array.isArray(raw.items) ? "complete" : "partial",
   }
 }
