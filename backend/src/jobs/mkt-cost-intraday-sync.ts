@@ -112,6 +112,16 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
       } catch (metaErr: any) {
         logger?.warn?.(`[MktCostIntraday] Meta fetch failed ${actId}: ${metaErr.message}`)
       }
+      // Update account_name nếu chưa có
+      try {
+        const [dbAcc] = await cskhService.sql(`SELECT account_name FROM fb_ad_account WHERE account_id = $1`, [actId])
+        if (dbAcc && !dbAcc.account_name) {
+          const accInfo: any = await fetchJson(`${FB_API_BASE}/${actId}?fields=name&access_token=${FB_TOKEN}`)
+          if (accInfo.name) {
+            await cskhService.sql(`UPDATE fb_ad_account SET account_name = $1, updated_at = now() WHERE account_id = $2`, [accInfo.name, actId])
+          }
+        }
+      } catch { /* ignore — tên account không critical */ }
     } catch (err: any) {
       logger?.error?.(`[MktCostIntraday] Error account ${actId}: ${err.message}`)
       totalErrors++

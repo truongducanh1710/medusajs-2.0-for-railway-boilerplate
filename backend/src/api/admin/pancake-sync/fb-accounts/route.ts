@@ -8,6 +8,8 @@ function getService(req: MedusaRequest) {
  * GET /admin/pancake-sync/fb-accounts
  * Lấy danh sách tài khoản FB Ads đã cấu hình
  */
+const FB_API_BASE = "https://graph.facebook.com/v18.0"
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const svc = getService(req)
@@ -17,6 +19,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE deleted_at IS NULL
       ORDER BY active DESC, created_at ASC
     `)
+
+    // Backfill tên cho các account chưa có — gọi FB API rồi trả về ngay
+    const missing = accounts.filter((a: any) => !a.account_name)
+    if (missing.length > 0) {
+      const token = process.env.FB_ACCESS_TOKEN ?? ""
+      if (token) {
+        await Promise.allSettled(missing.map(async (a: any) => {
+          try {
+            const r = await fetch(`${FB_API_BASE}/${a.account_id}?fields=name&access_token=${token}`)
+            const j: any = await r.json()
+            if (j.name) {
+              a.account_name = j.name
+              await svc.sql(`UPDATE fb_ad_account SET account_name = $1, updated_at = now() WHERE account_id = $2`, [j.name, a.account_id])
+            }
+          } catch { /* ignore */ }
+        }))
+      }
+    }
+
     return res.json({ accounts })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
