@@ -864,7 +864,7 @@ export default function BaoCaoMktPage() {
           {sortedCamps.length === 0 && !campLoading ? (
             <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Không có dữ liệu{filterStatus ? ` trạng thái ${filterStatus}` : ""}</div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any }}>
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
                 {filterStatus ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
                 {campRangeMode && <span style={{ marginLeft: 8, color: t.amber }}>📅 Tổng {campFrom} → {campTo}</span>}
@@ -872,8 +872,8 @@ export default function BaoCaoMktPage() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 920 }}>
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 160, maxWidth: 220 }}>Campaign</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "sticky", left: 160, zIndex: 2, background: dark ? t.card : "#fff", whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => { if (sortCol === "effective_status") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol("effective_status"); setSortDir("asc") } }}>Status {sortCol === "effective_status" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 160, width: 160 }}>Campaign</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "sticky", left: 160, zIndex: 2, background: dark ? t.card : "#fff", whiteSpace: "nowrap", cursor: "pointer", minWidth: 90, width: 90 }} onClick={() => { if (sortCol === "effective_status") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol("effective_status"); setSortDir("asc") } }}>Status {sortCol === "effective_status" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
                     {mkSortTh("mkt_name", "MKT", "center")}
                     {mkSortTh("daily_budget", "Budget")}
                     {mkSortTh("spend", "Spend")}
@@ -902,7 +902,7 @@ export default function BaoCaoMktPage() {
                         onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
-                        <td style={{ padding: "10px 12px", color: t.text, minWidth: 160, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}
+                        <td style={{ padding: "10px 12px", color: t.text, minWidth: 160, width: 160, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}
                           title={`Click để copy: ${row.campaign_name}`}
                           onClick={() => {
                             navigator.clipboard.writeText(row.campaign_name).then(() => {
@@ -915,7 +915,7 @@ export default function BaoCaoMktPage() {
                           }}>
                           {row.campaign_name}
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "center", position: "sticky", left: 160, zIndex: 1, background: dark ? t.card : "#fff" }}>
+                        <td style={{ padding: "10px 12px", textAlign: "center", position: "sticky", left: 160, zIndex: 1, background: dark ? t.card : "#fff", minWidth: 90, width: 90 }}>
                           {(() => {
                             const st = row.effective_status as string | null
                             if (!st) return <span style={{ color: t.textMuted, fontSize: 11 }}>—</span>
