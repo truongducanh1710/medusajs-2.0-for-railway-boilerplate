@@ -561,6 +561,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           payment_method: payment,
           province: form.province || "",
           ward: form.ward || "",
+          ...(payment === "sepay" ? { sepay_discount: SEPAY_DISCOUNT } : {}),
           ...getUtmFromCookie(),
         }
       })

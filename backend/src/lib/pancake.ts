@@ -61,11 +61,10 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
     console.info(`[Pancake] Item "${item.title}" sku=${sku} → variation_id=${pancakeVariationId ?? 'none (one_time_product)'}`)
 
-    // bundle_qty = số thật khách chọn, bundle_price = tổng giá bundle
-    // unit_price trong Medusa là giá 1 SP từ DB — không dùng để tính tổng
     const bundleQty: number = (item.metadata?.bundle_qty as number) || item.quantity
-    const bundlePrice: number = (item.metadata?.bundle_price as number) || (item.unit_price * item.quantity)
-    const unitPriceForPancake = bundleQty > 0 ? Math.round(bundlePrice / bundleQty) : item.unit_price
+    // Ưu tiên bundle_price MKT set trên landing page, fallback unit_price Medusa
+    const bundlePrice: number = (item.metadata?.bundle_price as number) || (item.unit_price * bundleQty)
+    const unitPriceForPancake: number = bundleQty > 0 ? Math.round(bundlePrice / bundleQty) : (item.unit_price || 0)
 
     return {
       variation_id: pancakeVariationId,
@@ -86,9 +85,18 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const paymentMethod = order.metadata?.payment_method as string | undefined
   const isSepay = paymentMethod === 'sepay'
 
-  // Tổng tiền
-  const totalPrice = order.summary?.current_order_total ?? order.total ?? 0
+  // Tổng tiền: ưu tiên tổng bundle_price từ items (giá MKT thật) trừ discount promotion
+  // order.total là giá Medusa tính từ unit_price (sai với bundle) → không dùng trực tiếp
+  const bundleTotal = (order.items || []).reduce((sum: number, item: any) => {
+    const bp = (item.metadata?.bundle_price as number) || 0
+    const bq = (item.metadata?.bundle_qty as number) || item.quantity || 1
+    return sum + (bp > 0 ? bp : (item.unit_price || 0) * bq)
+  }, 0)
   const totalDiscount = order.summary?.discount_total ?? 0
+  const sepayDiscount = isSepay ? ((order.metadata?.sepay_discount as number) ?? 0) : 0
+  const totalPrice = bundleTotal > 0
+    ? bundleTotal - totalDiscount - sepayDiscount
+    : (order.summary?.current_order_total ?? order.total ?? 0)
 
   // Nếu thanh toán SePay → đã trả trước, COD = 0
   // Nếu COD → chưa trả, COD = tổng đơn
@@ -126,7 +134,14 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   // Ghi chú: kết hợp ghi chú khách + gifts + UTM (giống format Webcake để sale xem nhanh)
   const noteparts: string[] = ["[phanviet.vn]"]
   if (order.metadata?.note) noteparts.push(order.metadata.note as string)
-  if (isSepay) noteparts.push('Đã thanh toán SePay')
+  if (isSepay) {
+    const fmt = (n: number) => n.toLocaleString('vi-VN') + 'đ'
+    const parts = [`Giá SP: ${fmt(bundleTotal)}`]
+    if (totalDiscount > 0) parts.push(`Mã giảm: -${fmt(totalDiscount)}`)
+    if (sepayDiscount > 0) parts.push(`Giảm QR: -${fmt(sepayDiscount)}`)
+    parts.push(`→ Đã CK: ${fmt(totalPrice)}`)
+    noteparts.push('✅ Đã thanh toán SePay\n' + parts.join(' | '))
+  }
 
   // Gifts từ line item metadata — thêm vào ghi chú để sale biết
   const giftLines: string[] = []
