@@ -19,7 +19,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
 
     const params: any[] = [fromDate, toDate]
-    const mktFilter = mkt ? `AND c.mkt_name = $3` : ""
+    const mktFilter = mkt ? `AND mkt_name = $3` : ""
     if (mkt) params.push(mkt)
 
     const rows = await cskhService.sql(`
