@@ -868,7 +868,7 @@ export default function BaoCaoMktPage() {
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
                     <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 160, maxWidth: 220 }}>Campaign</th>
-                    {mkSortTh("effective_status", "Status", "center")}
+                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "sticky", left: 160, zIndex: 2, background: dark ? t.card : "#fff", whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => { if (sortCol === "effective_status") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol("effective_status"); setSortDir("asc") } }}>Status {sortCol === "effective_status" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
                     {mkSortTh("mkt_name", "MKT", "center")}
                     {mkSortTh("daily_budget", "Budget")}
                     {mkSortTh("spend", "Spend")}
@@ -910,7 +910,7 @@ export default function BaoCaoMktPage() {
                           }}>
                           {row.campaign_name}
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                        <td style={{ padding: "10px 12px", textAlign: "center", position: "sticky", left: 160, zIndex: 1, background: dark ? t.card : "#fff" }}>
                           {(() => {
                             const st = row.effective_status as string | null
                             if (!st) return <span style={{ color: t.textMuted, fontSize: 11 }}>—</span>
