@@ -994,10 +994,11 @@ export default function BaoCaoMktPage() {
                           <div style={{ fontSize: 11, color: t.textMuted }}>{fmtMoney(Number(row.cod_confirmed))} xác nhận</div>
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12 }}>
-                          <span style={{ color: t.green }}>{row.confirmed ?? 0} xác nhận</span>
-                          {" · "}
-                          <span style={{ color: t.red }}>{row.cancelled ?? 0}&#10007;</span>
-                          {Number(row.total_orders) > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{row.total_orders} tổng</div>}
+                          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+                            <span title="Xác nhận" style={{ color: t.green, fontWeight: 600 }}>✓{row.confirmed ?? 0}</span>
+                            <span title="Hủy" style={{ color: t.red }}>✕{row.cancelled ?? 0}</span>
+                          </div>
+                          {Number(row.total_orders) > 0 && <div style={{ fontSize: 10, color: t.textMuted, textAlign: "right" }}>{row.total_orders} tổng</div>}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: carePctColor(row.care_pct !== null ? Number(row.care_pct) : null) }}>
                           {row.care_pct !== null ? Number(row.care_pct) + "%" : "—"}
