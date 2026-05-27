@@ -38,6 +38,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // Gắn thêm: số camp ACTIVE hôm nay + ngày có spend gần nhất
+    const today = new Date().toISOString().slice(0, 10)
+    const stats = await svc.sql(`
+      SELECT
+        ad_account_id,
+        MAX(date)::text                                            AS last_spend_date,
+        SUM(CASE WHEN date = $1::date AND effective_status = 'ACTIVE' THEN 1 ELSE 0 END)::int AS active_camps_today
+      FROM mkt_ads_cost
+      WHERE deleted_at IS NULL
+        AND ad_account_id = ANY($2::text[])
+      GROUP BY ad_account_id
+    `, [today, accounts.map((a: any) => a.account_id)])
+
+    const statsMap: Record<string, any> = {}
+    for (const s of stats) statsMap[s.ad_account_id] = s
+
+    for (const a of accounts) {
+      const s = statsMap[a.account_id]
+      a.active_camps_today = s?.active_camps_today ?? 0
+      a.last_spend_date = s?.last_spend_date ?? null
+    }
+
     return res.json({ accounts })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })

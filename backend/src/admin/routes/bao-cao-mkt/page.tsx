@@ -1554,6 +1554,7 @@ export default function BaoCaoMktPage() {
                       <th style={thS}>Account ID</th>
                       <th style={thS}>Tên tài khoản</th>
                       <th style={thS}>MKT phụ trách</th>
+                      <th style={thS}>Camp hôm nay</th>
                       <th style={thS}>Ghi chú</th>
                       <th style={thS}></th>
                     </tr>
@@ -1588,6 +1589,29 @@ export default function BaoCaoMktPage() {
                                   {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                               : <span style={{ color: acc.mkt_name ? t.purple : t.textMuted, fontWeight: acc.mkt_name ? 600 : 400 }}>{acc.mkt_name || "Tự động"}</span>}
+                          </td>
+                          <td style={{ ...tdS, textAlign: "center" }}>
+                            {(() => {
+                              const daysSince = acc.last_spend_date
+                                ? Math.floor((Date.now() - new Date(acc.last_spend_date).getTime()) / 86400000)
+                                : null
+                              const warn = acc.active && (daysSince === null || daysSince >= 3)
+                              return (
+                                <div>
+                                  <span style={{ fontWeight: 600, color: acc.active_camps_today > 0 ? t.green : t.textMuted }}>
+                                    {acc.active_camps_today > 0 ? `${acc.active_camps_today} camp` : "—"}
+                                  </span>
+                                  {warn && (
+                                    <div style={{ fontSize: 10, color: t.amber, marginTop: 2 }}>
+                                      {daysSince === null ? "⚠ Chưa có data" : `⚠ Không có data ${daysSince}d`}
+                                    </div>
+                                  )}
+                                  {!warn && acc.last_spend_date && (
+                                    <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{fmtDate(acc.last_spend_date)}</div>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </td>
                           <td style={tdS}>
                             {isEditing
