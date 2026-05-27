@@ -437,15 +437,14 @@ const LOT_COLS = [
 ]
 
 // Autocomplete tìm SP chính từ product_cost
-function ParentProdCell({ value, title, onSelect }: {
+function InlineProductSelect({ value, title, allProducts, onSelect }: {
   value: string
   title: string
+  allProducts: { product_id: string; product_title: string }[]
   onSelect: (id: string, name: string) => void
 }) {
-  const [q, setQ] = useState(title)
-  const [hits, setHits] = useState<any[]>([])
   const [open, setOpen] = useState(false)
-  const timer = useRef<any>(null)
+  const [q, setQ] = useState("")
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -456,42 +455,49 @@ function ParentProdCell({ value, title, onSelect }: {
     return () => document.removeEventListener("mousedown", onDown)
   }, [])
 
-  useEffect(() => { setQ(title) }, [title])
+  const filtered = q.length >= 1
+    ? allProducts.filter(p => p.product_title.toLowerCase().includes(q.toLowerCase()))
+    : allProducts.slice(0, 40)
 
-  function search(text: string) {
-    setQ(text)
-    clearTimeout(timer.current)
-    if (!text) { onSelect("", ""); setHits([]); setOpen(false); return }
-    if (text.length < 2) { setHits([]); setOpen(false); return }
-    timer.current = setTimeout(async () => {
-      try {
-        const d = await apiJson(`/admin/gia-von/summary?search=${encodeURIComponent(text)}`, "GET")
-        setHits(d.products ?? [])
-        if (d.products?.length > 0) setOpen(true)
-      } catch { setHits([]) }
-    }, 250)
+  if (!open) {
+    return (
+      <div ref={wrapRef} onClick={() => { setOpen(true); setQ("") }}
+        style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, minWidth: 150 }}>
+        {value
+          ? <span style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title || value.slice(-12)}</span>
+          : <span style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic", flex: 1 }}>— chọn SP chính</span>
+        }
+        <span style={{ fontSize: 10, color: "#9ca3af", flexShrink: 0 }}>▾</span>
+      </div>
+    )
   }
 
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
-      <input value={q} onChange={e => search(e.target.value)}
-        placeholder="Chỉ điền nếu là phụ kiện"
-        style={{ ...cellInput(), color: value ? "#7c3aed" : "#9ca3af", fontStyle: value ? "normal" : "italic" }} />
-      {value && <div style={{ fontSize: 9, color: "#7c3aed", lineHeight: 1 }}>🔩 {value.slice(-12)}</div>}
-      {open && hits.length > 0 && (
-        <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 260, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.15)", zIndex: 9999, maxHeight: 240, overflowY: "auto", padding: 8 }}>
-          <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 4 }}>Chọn SP chính</div>
-          {hits.map((p: any) => (
-            <div key={p.product_id} onMouseDown={() => { onSelect(p.product_id, p.product_title); setQ(p.product_title); setOpen(false) }}
-              style={{ padding: "5px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, fontWeight: 600 }}
-              onMouseOver={e => (e.currentTarget.style.background = "#f3f4f6")}
+    <div ref={wrapRef} style={{ position: "relative", minWidth: 160 }}>
+      <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+        placeholder="Tìm tên SP…"
+        style={{ width: "100%", border: "1px solid #a78bfa", borderRadius: 4, padding: "3px 6px", fontSize: 11, outline: "none", boxSizing: "border-box" }} />
+      <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 240, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, boxShadow: "0 6px 20px rgba(0,0,0,.12)", zIndex: 9999, maxHeight: 240, overflowY: "auto", marginTop: 2 }}>
+        {value && (
+          <div onMouseDown={() => { onSelect("", ""); setOpen(false) }}
+            style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, color: "#dc2626", borderBottom: "1px solid #f3f4f6" }}
+            onMouseOver={e => (e.currentTarget.style.background = "#fef2f2")}
+            onMouseOut={e => (e.currentTarget.style.background = "")}>
+            ✕ Bỏ gán
+          </div>
+        )}
+        {filtered.length === 0
+          ? <div style={{ padding: "8px 10px", color: "#9ca3af", fontSize: 11 }}>Không tìm thấy</div>
+          : filtered.map(p => (
+            <div key={p.product_id} onMouseDown={() => { onSelect(p.product_id, p.product_title); setOpen(false) }}
+              style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, borderBottom: "1px solid #f9fafb" }}
+              onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
               onMouseOut={e => (e.currentTarget.style.background = "")}>
-              {p.product_title}
-              <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 6 }}>{fmtVND(p.avg_cost)}</span>
+              <span style={{ fontWeight: 600, color: "#7c3aed" }}>{p.product_title}</span>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        }
+      </div>
     </div>
   )
 }
@@ -562,13 +568,14 @@ function InlinePancakeSelect({ value, allIds, onChange }: {
   )
 }
 
-function EditableLotRow({ row, onChange, onSave, onDelete, feeOpen, allPancakeIds }: {
+function EditableLotRow({ row, onChange, onSave, onDelete, feeOpen, allPancakeIds, allProducts }: {
   row: LotEdit
   onChange: (id: string, f: string, v: string) => void
   onSave: (id: string) => void
   onDelete: (id: string) => void
   feeOpen: boolean
   allPancakeIds: { display_id: string; name: string }[]
+  allProducts: { product_id: string; product_title: string }[]
 }) {
   const qty        = num(row.qty)
   const price_unit = num(row.price_unit)
@@ -610,9 +617,10 @@ function EditableLotRow({ row, onChange, onSave, onDelete, feeOpen, allPancakeId
         />
       </td>
       <td style={{ ...tdStyle(180, undefined, row.parent_product_id ? "#faf5ff" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
-        <ParentProdCell
+        <InlineProductSelect
           value={row.parent_product_id}
           title={row.parent_product_title}
+          allProducts={allProducts}
           onSelect={(pid, ptitle) => {
             onChange(row.id, "parent_product_id", pid)
             onChange(row.id, "parent_product_title", ptitle)
@@ -667,10 +675,11 @@ function EditableLotRow({ row, onChange, onSave, onDelete, feeOpen, allPancakeId
 }
 
 // ---- Lot History List (editable sheet) ----
-function LotHistoryList({ refreshKey, onSaved, onTotalLoaded, feeOpen, onToggleFee, allPancakeIds }: {
+function LotHistoryList({ refreshKey, onSaved, onTotalLoaded, feeOpen, onToggleFee, allPancakeIds, allProducts }: {
   refreshKey: number; onSaved: () => void; onTotalLoaded?: (t: number) => void
   feeOpen: boolean; onToggleFee: () => void
   allPancakeIds: { display_id: string; name: string }[]
+  allProducts: { product_id: string; product_title: string }[]
 }) {
   const [lots, setLots] = useState<LotEdit[]>([])
   const [loading, setLoading] = useState(true)
@@ -785,7 +794,7 @@ function LotHistoryList({ refreshKey, onSaved, onTotalLoaded, feeOpen, onToggleF
             </thead>
             <tbody>
               {lots.map(l => (
-                <EditableLotRow key={l.id} row={l} onChange={change} onSave={save} onDelete={del} feeOpen={feeOpen} allPancakeIds={allPancakeIds} />
+                <EditableLotRow key={l.id} row={l} onChange={change} onSave={save} onDelete={del} feeOpen={feeOpen} allPancakeIds={allPancakeIds} allProducts={allProducts} />
               ))}
             </tbody>
           </table>
@@ -812,12 +821,16 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
   const [historyTotal, setHistoryTotal] = useState<number | null>(null)  // null = chưa load
   const [feeOpen, setFeeOpen] = useState(false)
   const [allPancakeIds, setAllPancakeIds] = useState<{ display_id: string; name: string }[]>([])
+  const [allProducts, setAllProducts] = useState<{ product_id: string; product_title: string }[]>([])
   const tableRef = useRef<HTMLDivElement>(null)
   const csvFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     apiJson("/admin/gia-von/summary?mode=pancake-ids", "GET")
       .then(d => setAllPancakeIds(d.display_ids ?? []))
+      .catch(() => {})
+    apiJson("/admin/gia-von/summary", "GET")
+      .then(d => setAllProducts(d.products ?? []))
       .catch(() => {})
   }, [])
 
@@ -968,6 +981,7 @@ function ImportTab({ onSaved }: { onSaved: () => void }) {
         feeOpen={feeOpen}
         onToggleFee={() => setFeeOpen(o => !o)}
         allPancakeIds={allPancakeIds}
+        allProducts={allProducts}
       />
 
       <div style={{ borderTop: "2px dashed #e5e7eb", paddingTop: 16, marginBottom: 12 }}>
