@@ -580,12 +580,12 @@ export default function BaoCaoMktPage() {
   return (
     <div style={{ padding: "24px 32px", background: t.bg, minHeight: "100vh", color: t.text, transition: "background 0.2s, color 0.2s" }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>COD theo MKT</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, whiteSpace: "nowrap" }}>COD theo MKT</h1>
           <div style={{ fontSize: 12, color: t.textMuted }}>Đơn Webcake · Chi phí Facebook Ads</div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", flex: "1 1 auto", justifyContent: "flex-end" }}>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)}
             style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
           <span style={{ color: t.textMuted }}>→</span>
@@ -639,7 +639,7 @@ export default function BaoCaoMktPage() {
       })()}
 
       {/* Tab toggle */}
-      <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}` }}>
+      <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}`, overflowX: "auto", WebkitOverflowScrolling: "touch" as any, scrollbarWidth: "none" as any, msOverflowStyle: "none" as any }}>
         {([
           ["mkt", "Theo MKT"],
           ["camp", "Theo Camp"],
@@ -652,7 +652,7 @@ export default function BaoCaoMktPage() {
             padding: "8px 20px", fontSize: 14, fontWeight: activeTab === key ? 700 : 400,
             color: activeTab === key ? t.blue : t.textMuted,
             borderBottom: activeTab === key ? `2px solid ${t.blue}` : "2px solid transparent",
-            marginBottom: -1,
+            marginBottom: -1, whiteSpace: "nowrap", flexShrink: 0,
           }}>
             {label}
           </button>
@@ -840,10 +840,10 @@ export default function BaoCaoMktPage() {
                 {filterStatus ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
                 {campRangeMode && <span style={{ marginLeft: 8, color: t.amber }}>📅 Tổng {campFrom} → {campTo}</span>}
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 920 }}>
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600 }}>Campaign</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 160, maxWidth: 220 }}>Campaign</th>
                     {mkSortTh("effective_status", "Status", "center")}
                     {mkSortTh("mkt_name", "MKT", "center")}
                     {mkSortTh("daily_budget", "Budget")}
@@ -873,7 +873,7 @@ export default function BaoCaoMktPage() {
                         onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
-                        <td style={{ padding: "10px 12px", color: t.text, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                        <td style={{ padding: "10px 12px", color: t.text, minWidth: 160, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}
                           title={`Click để copy: ${row.campaign_name}`}
                           onClick={() => {
                             navigator.clipboard.writeText(row.campaign_name).then(() => {
