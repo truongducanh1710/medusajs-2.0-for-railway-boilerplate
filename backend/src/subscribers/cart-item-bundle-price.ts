@@ -17,13 +17,13 @@ export default async function cartItemBundlePriceHandler({
       select: ["id", "unit_price", "quantity", "metadata"],
     })
 
-    const bundlePrice = item.metadata?.bundle_price as number | undefined
-    const bundleQty = (item.metadata?.bundle_qty as number) || item.quantity
+    const bundlePrice = Number(item.metadata?.bundle_price ?? 0)
+    const bundleQty = Number(item.metadata?.bundle_qty ?? 0) || Number(item.quantity) || 1
 
     if (!bundlePrice || bundleQty <= 0) return
 
     const newUnitPrice = Math.round(bundlePrice / bundleQty)
-    if (newUnitPrice === item.unit_price) return
+    if (newUnitPrice === Number(item.unit_price)) return
 
     await (cartService as any).updateLineItems([
       { id: item.id, unit_price: newUnitPrice },

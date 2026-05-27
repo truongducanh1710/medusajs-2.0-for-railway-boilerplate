@@ -57,7 +57,6 @@ export default function BaoCaoMktPage() {
   const [spMktFilter, setSpMktFilter] = useState("")
   const [spSortCol, setSpSortCol] = useState<string>("spend")
   const [spSortDir, setSpSortDir] = useState<"asc" | "desc">("desc")
-  const todayStr = new Date().toISOString().slice(0, 10)
   const [spFrom, setSpFrom] = useState(from)
   const [spTo, setSpTo] = useState(to)
 
