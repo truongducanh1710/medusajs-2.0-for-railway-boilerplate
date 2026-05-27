@@ -115,6 +115,7 @@ export default function BaoCaoMktPage() {
   const [budgetValue, setBudgetValue] = useState<string>("")
   const [scheduleModalCamp, setScheduleModalCamp] = useState<any>(null)
   const [actingCampId, setActingCampId] = useState<string | null>(null)
+  const [mobileActionCamp, setMobileActionCamp] = useState<any>(null)
   const [sortCol, setSortCol] = useState<string>("spend")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [filterStatus, setFilterStatus] = useState<string>("")
@@ -903,16 +904,24 @@ export default function BaoCaoMktPage() {
                       >
                         <td style={{ padding: "10px 12px", color: t.text, minWidth: 160, width: 160, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}
                           title={`Click để copy: ${row.campaign_name}`}
-                          onClick={() => {
-                            navigator.clipboard.writeText(row.campaign_name).then(() => {
-                              const el = document.createElement("div")
-                              el.textContent = "✓ Đã copy"
-                              Object.assign(el.style, { position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", zIndex: "9999", pointerEvents: "none" })
-                              document.body.appendChild(el)
-                              setTimeout(() => el.remove(), 1800)
-                            })
+                          onClick={(e) => {
+                            if (window.matchMedia("(pointer: coarse)").matches && canControl) {
+                              // Mobile: mở action sheet
+                              setMobileActionCamp(row)
+                            } else {
+                              navigator.clipboard.writeText(row.campaign_name).then(() => {
+                                const el = document.createElement("div")
+                                el.textContent = "✓ Đã copy"
+                                Object.assign(el.style, { position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", zIndex: "9999", pointerEvents: "none" })
+                                document.body.appendChild(el)
+                                setTimeout(() => el.remove(), 1800)
+                              })
+                            }
                           }}>
                           {row.campaign_name}
+                          {window.matchMedia?.("(pointer: coarse)").matches && canControl && (
+                            <span style={{ marginLeft: 4, fontSize: 10, color: t.textMuted }}>⋯</span>
+                          )}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "center", position: "sticky", left: 160, zIndex: 1, background: dark ? t.card : "#fff", minWidth: 90, width: 90 }}>
                           {(() => {
@@ -1183,6 +1192,53 @@ export default function BaoCaoMktPage() {
           onChanged={fetchCampData}
         />
       )}
+
+      {/* Mobile action sheet */}
+      {mobileActionCamp && (() => {
+        const camp = mobileActionCamp
+        const isActive = camp.effective_status === "ACTIVE"
+        const isPaused = camp.effective_status === "PAUSED"
+        const canToggle = ownerOf(camp) && (isActive || isPaused)
+        const acting = actingCampId === camp.campaign_id
+        return (
+          <div onClick={() => setMobileActionCamp(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9000, display: "flex", alignItems: "flex-end" }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ width: "100%", background: t.card, borderRadius: "16px 16px 0 0", padding: "20px 16px 32px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {camp.campaign_name}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {/* Tắt/Bật */}
+                <button disabled={!canToggle || !!acting}
+                  onClick={async () => { await toggleStatus(camp); setMobileActionCamp(null) }}
+                  style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", fontSize: 15, fontWeight: 700, cursor: canToggle ? "pointer" : "not-allowed", opacity: canToggle ? 1 : 0.4,
+                    background: isActive ? "#fee2e2" : "#dcfce7", color: isActive ? "#dc2626" : "#16a34a" }}>
+                  {acting ? "⏳" : isActive ? "⏸ Tắt camp" : "▶ Bật camp"}
+                </button>
+                {/* Ngân sách */}
+                <button disabled={!ownerOf(camp)}
+                  onClick={() => { setMobileActionCamp(null); setEditingBudget(camp.campaign_id); setBudgetValue(String(camp.daily_budget || 0)) }}
+                  style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", fontSize: 15, fontWeight: 700, cursor: ownerOf(camp) ? "pointer" : "not-allowed", opacity: ownerOf(camp) ? 1 : 0.4,
+                    background: dark ? "#1e3a5f" : "#dbeafe", color: dark ? "#93c5fd" : "#1d4ed8" }}>
+                  💰 Ngân sách
+                </button>
+                {/* Hẹn giờ */}
+                <button disabled={!ownerOf(camp)}
+                  onClick={() => { setMobileActionCamp(null); setScheduleModalCamp(camp) }}
+                  style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "none", fontSize: 15, fontWeight: 700, cursor: ownerOf(camp) ? "pointer" : "not-allowed", opacity: ownerOf(camp) ? 1 : 0.4,
+                    background: dark ? "#2d2a00" : "#fef9c3", color: dark ? "#fde047" : "#a16207" }}>
+                  ⏰ Hẹn giờ
+                </button>
+              </div>
+              <button onClick={() => setMobileActionCamp(null)}
+                style={{ padding: "12px 0", borderRadius: 10, border: `1px solid ${t.cardBorder}`, background: "transparent", color: t.textMuted, fontSize: 14, cursor: "pointer" }}>
+                Huỷ
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ===== TAB CHI PHÍ SP ===== */}
       {activeTab === "spProduct" && (() => {
