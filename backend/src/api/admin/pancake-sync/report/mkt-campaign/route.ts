@@ -44,25 +44,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           ${mktFilter}
         GROUP BY campaign_id, campaign_name, mkt_name
       ),
-      orders AS (
-        -- Aggregate đơn hàng riêng theo campaign_name
-        SELECT
-          COALESCE(o.raw->>'p_utm_source', o.raw->>'p_utm_campaign') AS camp_name,
-          COUNT(o.id)::int                                            AS total_orders,
-          SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
-          SUM(CASE WHEN o.status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
-          SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END)::bigint AS cod_total,
-          SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN o.cod_amount ELSE 0 END)::bigint AS cod_confirmed
-        FROM pancake_order o
-        WHERE o.deleted_at IS NULL
-          AND o.source IN ('manual','webcake')
-          AND NOT (o.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
-          AND NOT (o.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-          AND o.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          AND o.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          AND (o.raw->>'p_utm_source' IS NOT NULL OR o.raw->>'p_utm_campaign' IS NOT NULL)
-        GROUP BY COALESCE(o.raw->>'p_utm_source', o.raw->>'p_utm_campaign')
-      )
       SELECT
         a.campaign_id,
         a.campaign_name,
@@ -88,7 +69,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           ELSE NULL
         END AS care_pct
       FROM ads a
-      LEFT JOIN orders o ON o.camp_name = a.campaign_name
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int                                            AS total_orders,
+          SUM(CASE WHEN status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
+          SUM(CASE WHEN status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
+          SUM(CASE WHEN status NOT IN (-2,7) THEN cod_amount ELSE 0 END)::bigint AS cod_total,
+          SUM(CASE WHEN status IN (1,2,3,4,5) THEN cod_amount ELSE 0 END)::bigint AS cod_confirmed
+        FROM pancake_order
+        WHERE deleted_at IS NULL
+          AND source IN ('manual','webcake')
+          AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+          AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
+          AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND (raw->>'p_utm_campaign' = a.campaign_name OR raw->>'p_utm_source' = a.campaign_name)
+      ) o ON true
       ORDER BY a.spend DESC
     `, params)
 
