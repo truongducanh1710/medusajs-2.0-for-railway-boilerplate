@@ -47,6 +47,9 @@ export default function BaoCaoMktPage() {
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
   const [campDate, setCampDate] = useState(new Date().toISOString().slice(0, 10))
+  const [campFrom, setCampFrom] = useState(new Date().toISOString().slice(0, 10))
+  const [campTo, setCampTo] = useState(new Date().toISOString().slice(0, 10))
+  const [campRangeMode, setCampRangeMode] = useState(false)
   const { isSuper, mktCode, has } = useCurrentPermissions()
 
   // Tab 3 — Lịch hẹn Camp (schedules + logs)
@@ -231,7 +234,10 @@ export default function BaoCaoMktPage() {
     setCampLoading(true)
     try {
       const mktParam = campMktFilter ? `&mkt=${campMktFilter}` : ""
-      const res = await apiFetch(`/admin/pancake-sync/report/mkt-campaign?date=${campDate}${mktParam}`)
+      const url = campRangeMode
+        ? `/admin/pancake-sync/report/mkt-campaign?from=${campFrom}&to=${campTo}${mktParam}`
+        : `/admin/pancake-sync/report/mkt-campaign?date=${campDate}${mktParam}`
+      const res = await apiFetch(url)
       const data = await res.json()
       setCampRows(data.rows ?? [])
     } catch (e) {
@@ -239,7 +245,7 @@ export default function BaoCaoMktPage() {
     } finally {
       setCampLoading(false)
     }
-  }, [campDate, campMktFilter])
+  }, [campDate, campFrom, campTo, campRangeMode, campMktFilter])
 
   const toggleStatus = useCallback(async (camp: any) => {
     const action = camp.effective_status === "ACTIVE" ? "pause" : "activate"
@@ -693,9 +699,44 @@ export default function BaoCaoMktPage() {
       {/* Camp tab content */}
       {activeTab === "camp" && (
         <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-            <input type="date" value={campDate} onChange={e => setCampDate(e.target.value)}
-              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {/* Quick range buttons */}
+            {[
+              { label: "Hôm nay", days: 0 },
+              { label: "3 ngày", days: 3 },
+              { label: "7 ngày", days: 7 },
+            ].map(({ label, days }) => {
+              const today = new Date().toISOString().slice(0, 10)
+              const fromD = days === 0 ? today : (() => { const d = new Date(); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10) })()
+              const active = campRangeMode ? (campFrom === fromD && campTo === today) : (!campRangeMode && days === 0 && campDate === today)
+              return (
+                <button key={label} onClick={() => {
+                  if (days === 0) { setCampRangeMode(false); setCampDate(today) }
+                  else { setCampRangeMode(true); setCampFrom(fromD); setCampTo(today) }
+                  setTimeout(() => fetchCampData(), 0)
+                }} style={{
+                  background: active ? "#1d4ed8" : (dark ? "#374151" : "#f3f4f6"),
+                  color: active ? "#fff" : t.text,
+                  border: `1px solid ${active ? "#1d4ed8" : t.inputBorder}`,
+                  borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: active ? 700 : 400,
+                }}>
+                  {label}
+                </button>
+              )
+            })}
+            <span style={{ color: t.textMuted, fontSize: 12 }}>|</span>
+            {campRangeMode ? (
+              <>
+                <input type="date" value={campFrom} onChange={e => setCampFrom(e.target.value)}
+                  style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+                <span style={{ color: t.textMuted }}>→</span>
+                <input type="date" value={campTo} onChange={e => setCampTo(e.target.value)}
+                  style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+              </>
+            ) : (
+              <input type="date" value={campDate} onChange={e => setCampDate(e.target.value)}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }} />
+            )}
             <select value={campMktFilter} onChange={e => setCampMktFilter(e.target.value)}
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
               <option value="">Tất cả MKT</option>
@@ -789,6 +830,7 @@ export default function BaoCaoMktPage() {
             <div style={{ overflowX: "auto" }}>
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
                 {filterStatus ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
+                {campRangeMode && <span style={{ marginLeft: 8, color: t.amber }}>📅 Tổng {campFrom} → {campTo}</span>}
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
@@ -898,10 +940,11 @@ export default function BaoCaoMktPage() {
                           )}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>
-                          <span style={{ color: spendColor(spd, bdg) }} title={bdg ? `${Math.round(spd/bdg*100)}% budget` : ""}>
+                          <span style={{ color: campRangeMode ? t.amber : spendColor(spd, bdg) }} title={!campRangeMode && bdg ? `${Math.round(spd/bdg*100)}% budget` : ""}>
                             {fmtMoney(spd)}
                           </span>
-                          {bdg > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{Math.round(spd/bdg*100)}%</div>}
+                          {!campRangeMode && bdg > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{Math.round(spd/bdg*100)}%</div>}
+                          {campRangeMode && row.day_count > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{row.day_count}d</div>}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{imp.toLocaleString("vi-VN")}</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", color: t.textMuted }}>{clk.toLocaleString("vi-VN")}</td>
