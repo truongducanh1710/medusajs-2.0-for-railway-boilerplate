@@ -43,7 +43,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND date <= $2::date
           ${mktFilter}
         GROUP BY campaign_id, campaign_name, mkt_name
-      ),
+      )
       SELECT
         a.campaign_id,
         a.campaign_name,
