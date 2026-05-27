@@ -230,13 +230,17 @@ export default function BaoCaoMktPage() {
     } catch { /* ignore */ }
   }, [])
 
-  const fetchCampData = useCallback(async () => {
+  const fetchCampData = useCallback(async (overrides?: { rangeMode?: boolean; from?: string; to?: string; date?: string }) => {
     setCampLoading(true)
     try {
       const mktParam = campMktFilter ? `&mkt=${campMktFilter}` : ""
-      const url = campRangeMode
-        ? `/admin/pancake-sync/report/mkt-campaign?from=${campFrom}&to=${campTo}${mktParam}`
-        : `/admin/pancake-sync/report/mkt-campaign?date=${campDate}${mktParam}`
+      const useRangeMode = overrides?.rangeMode ?? campRangeMode
+      const useFrom = overrides?.from ?? campFrom
+      const useTo = overrides?.to ?? campTo
+      const useDate = overrides?.date ?? campDate
+      const url = useRangeMode
+        ? `/admin/pancake-sync/report/mkt-campaign?from=${useFrom}&to=${useTo}${mktParam}`
+        : `/admin/pancake-sync/report/mkt-campaign?date=${useDate}${mktParam}`
       const res = await apiFetch(url)
       const data = await res.json()
       setCampRows(data.rows ?? [])
@@ -245,7 +249,7 @@ export default function BaoCaoMktPage() {
     } finally {
       setCampLoading(false)
     }
-  }, [campDate, campFrom, campTo, campRangeMode, campMktFilter])
+  }, [campDate, campFrom, campTo, campRangeMode, campMktFilter]) // overrides param bypasses stale closure for quick buttons
 
   const toggleStatus = useCallback(async (camp: any) => {
     const action = camp.effective_status === "ACTIVE" ? "pause" : "activate"
@@ -711,9 +715,13 @@ export default function BaoCaoMktPage() {
               const active = campRangeMode ? (campFrom === fromD && campTo === today) : (!campRangeMode && days === 0 && campDate === today)
               return (
                 <button key={label} onClick={() => {
-                  if (days === 0) { setCampRangeMode(false); setCampDate(today) }
-                  else { setCampRangeMode(true); setCampFrom(fromD); setCampTo(today) }
-                  setTimeout(() => fetchCampData(), 0)
+                  if (days === 0) {
+                    setCampRangeMode(false); setCampDate(today)
+                    fetchCampData({ rangeMode: false, date: today })
+                  } else {
+                    setCampRangeMode(true); setCampFrom(fromD); setCampTo(today)
+                    fetchCampData({ rangeMode: true, from: fromD, to: today })
+                  }
                 }} style={{
                   background: active ? "#1d4ed8" : (dark ? "#374151" : "#f3f4f6"),
                   color: active ? "#fff" : t.text,
