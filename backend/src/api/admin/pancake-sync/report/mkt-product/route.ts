@@ -59,9 +59,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         GROUP BY mkt_name, item_name
       ),
       camp_item_map AS (
+        -- Chỉ lấy pair (camp, item) khi camp_name chứa keyword của item_name
+        -- Loại đơn cross-sell: khách vào camp SP A nhưng mua SP B
         SELECT DISTINCT mkt_name, item_name, campaign_name
         FROM order_item_camp
         WHERE campaign_name IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM unnest(string_to_array(item_name, ' ')) AS kw
+            WHERE length(kw) >= 3
+              AND upper(campaign_name) LIKE '%' || upper(kw) || '%'
+          )
       ),
       spend_agg AS (
         SELECT cim.mkt_name, cim.item_name, SUM(cs.spend)::bigint AS spend
