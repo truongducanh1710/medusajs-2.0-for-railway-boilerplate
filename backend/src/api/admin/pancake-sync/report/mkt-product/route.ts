@@ -30,7 +30,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ),
       order_item_camp AS (
         SELECT
-          po.marketer_name AS mkt_name,
+          upper(replace(trim(po.marketer_name), ' ', '')) AS mkt_name,
           item->>'name'    AS item_name,
           CASE WHEN po.raw->>'p_utm_source' = 'fb'
             THEN po.raw->>'p_utm_campaign'
