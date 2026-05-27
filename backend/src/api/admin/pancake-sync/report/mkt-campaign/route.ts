@@ -50,10 +50,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           ELSE NULL END                               AS cpc,
         -- Đơn hàng trong cùng kỳ
         COUNT(o.id)::int                              AS total_orders,
-        SUM(CASE WHEN o.status = 3 THEN 1 ELSE 0 END)::int         AS delivered,
+        SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
         SUM(CASE WHEN o.status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
         SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END)::bigint AS cod_total,
-        SUM(CASE WHEN o.status = 3 THEN o.cod_amount ELSE 0 END)::bigint          AS cod_delivered,
+        SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN o.cod_amount ELSE 0 END)::bigint AS cod_confirmed,
         CASE
           WHEN SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END) > 0
           THEN ROUND(SUM(c.spend)::numeric / SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END) * 100, 2)

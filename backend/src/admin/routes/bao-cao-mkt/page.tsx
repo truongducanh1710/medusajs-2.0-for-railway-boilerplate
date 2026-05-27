@@ -955,10 +955,10 @@ export default function BaoCaoMktPage() {
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           <div style={{ color: t.green, fontWeight: 600 }}>{fmtMoney(Number(row.cod_total))}</div>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>{fmtMoney(Number(row.cod_delivered))} giao</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{fmtMoney(Number(row.cod_confirmed))} xác nhận</div>
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12 }}>
-                          <span style={{ color: t.green }}>{row.delivered ?? 0}&#10003;</span>
+                          <span style={{ color: t.green }}>{row.confirmed ?? 0} xác nhận</span>
                           {" · "}
                           <span style={{ color: t.red }}>{row.cancelled ?? 0}&#10007;</span>
                           {Number(row.total_orders) > 0 && <div style={{ fontSize: 10, color: t.textMuted }}>{row.total_orders} tổng</div>}
