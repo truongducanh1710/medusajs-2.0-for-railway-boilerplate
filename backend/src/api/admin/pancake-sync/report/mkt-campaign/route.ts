@@ -23,57 +23,73 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (mkt) params.push(mkt)
 
     const rows = await cskhService.sql(`
+      WITH ads AS (
+        -- Aggregate FB ads riêng, không JOIN đơn → tránh fan-out SUM
+        SELECT
+          campaign_id,
+          campaign_name,
+          mkt_name,
+          SUM(spend)::bigint                                        AS spend,
+          SUM(impressions)::int                                     AS impressions,
+          SUM(clicks)::int                                          AS clicks,
+          MIN(date)::date                                           AS date_from,
+          MAX(date)::date                                           AS date_to,
+          COUNT(DISTINCT date)::int                                 AS day_count,
+          (ARRAY_AGG(effective_status ORDER BY date DESC))[1]       AS effective_status,
+          (ARRAY_AGG(daily_budget     ORDER BY date DESC))[1]::bigint AS daily_budget
+        FROM mkt_ads_cost
+        WHERE deleted_at IS NULL
+          AND date >= $1::date
+          AND date <= $2::date
+          ${mktFilter}
+        GROUP BY campaign_id, campaign_name, mkt_name
+      ),
+      orders AS (
+        -- Aggregate đơn hàng riêng theo campaign_name
+        SELECT
+          COALESCE(o.raw->>'p_utm_source', o.raw->>'p_utm_campaign') AS camp_name,
+          COUNT(o.id)::int                                            AS total_orders,
+          SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
+          SUM(CASE WHEN o.status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
+          SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END)::bigint AS cod_total,
+          SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN o.cod_amount ELSE 0 END)::bigint AS cod_confirmed
+        FROM pancake_order o
+        WHERE o.deleted_at IS NULL
+          AND o.source IN ('manual','webcake')
+          AND NOT (o.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+          AND NOT (o.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
+          AND o.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND o.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND (o.raw->>'p_utm_source' IS NOT NULL OR o.raw->>'p_utm_campaign' IS NOT NULL)
+        GROUP BY COALESCE(o.raw->>'p_utm_source', o.raw->>'p_utm_campaign')
+      )
       SELECT
-        c.campaign_id,
-        c.campaign_name,
-        c.mkt_name,
-        -- Tổng cộng cả kỳ
-        SUM(c.spend)::bigint                          AS spend,
-        SUM(c.impressions)::int                       AS impressions,
-        SUM(c.clicks)::int                            AS clicks,
-        -- Ngày đầu + cuối trong kỳ để hiển thị
-        MIN(c.date)::date                             AS date_from,
-        MAX(c.date)::date                             AS date_to,
-        COUNT(DISTINCT c.date)::int                   AS day_count,
-        -- Lấy status + budget của ngày gần nhất
-        (ARRAY_AGG(c.effective_status ORDER BY c.date DESC))[1] AS effective_status,
-        (ARRAY_AGG(c.daily_budget     ORDER BY c.date DESC))[1]::bigint AS daily_budget,
-        -- CPM / CTR tính từ tổng
-        CASE WHEN SUM(c.impressions) > 0
-          THEN ROUND(SUM(c.spend)::numeric / SUM(c.impressions) * 1000, 0)
-          ELSE NULL END                               AS cpm,
-        CASE WHEN SUM(c.clicks) > 0 AND SUM(c.impressions) > 0
-          THEN ROUND(SUM(c.clicks)::numeric / SUM(c.impressions) * 100, 2)
-          ELSE NULL END                               AS ctr_pct,
-        CASE WHEN SUM(c.clicks) > 0
-          THEN ROUND(SUM(c.spend)::numeric / SUM(c.clicks), 0)
-          ELSE NULL END                               AS cpc,
-        -- Đơn hàng trong cùng kỳ
-        COUNT(o.id)::int                              AS total_orders,
-        SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
-        SUM(CASE WHEN o.status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
-        SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END)::bigint AS cod_total,
-        SUM(CASE WHEN o.status IN (1,2,3,4,5) THEN o.cod_amount ELSE 0 END)::bigint AS cod_confirmed,
-        CASE
-          WHEN SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END) > 0
-          THEN ROUND(SUM(c.spend)::numeric / SUM(CASE WHEN o.status NOT IN (-2,7) THEN o.cod_amount ELSE 0 END) * 100, 2)
+        a.campaign_id,
+        a.campaign_name,
+        a.mkt_name,
+        a.spend,
+        a.impressions,
+        a.clicks,
+        a.date_from,
+        a.date_to,
+        a.day_count,
+        a.effective_status,
+        a.daily_budget,
+        CASE WHEN a.impressions > 0 THEN ROUND(a.spend::numeric / a.impressions * 1000, 0) ELSE NULL END AS cpm,
+        CASE WHEN a.impressions > 0 THEN ROUND(a.clicks::numeric / a.impressions * 100, 2) ELSE NULL END AS ctr_pct,
+        CASE WHEN a.clicks > 0 THEN ROUND(a.spend::numeric / a.clicks, 0) ELSE NULL END AS cpc,
+        COALESCE(o.total_orders, 0)   AS total_orders,
+        COALESCE(o.confirmed, 0)      AS confirmed,
+        COALESCE(o.cancelled, 0)      AS cancelled,
+        COALESCE(o.cod_total, 0)      AS cod_total,
+        COALESCE(o.cod_confirmed, 0)  AS cod_confirmed,
+        CASE WHEN COALESCE(o.cod_total, 0) > 0
+          THEN ROUND(a.spend::numeric / o.cod_total * 100, 2)
           ELSE NULL
-        END                                           AS care_pct
-      FROM mkt_ads_cost c
-      LEFT JOIN pancake_order o
-        ON o.deleted_at IS NULL
-        AND o.source IN ('manual','webcake')
-        AND NOT (o.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
-        AND NOT (o.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-        AND o.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND o.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND (o.raw->>'p_utm_source' = c.campaign_name OR o.raw->>'p_utm_campaign' = c.campaign_name)
-      WHERE c.deleted_at IS NULL
-        AND c.date >= $1::date
-        AND c.date <= $2::date
-        ${mktFilter}
-      GROUP BY c.campaign_id, c.campaign_name, c.mkt_name
-      ORDER BY SUM(c.spend) DESC
+        END AS care_pct
+      FROM ads a
+      LEFT JOIN orders o ON o.camp_name = a.campaign_name
+      ORDER BY a.spend DESC
     `, params)
 
     return res.json({ rows, from: fromDate, to: toDate, is_range: isRange, mkt: mkt || null })
