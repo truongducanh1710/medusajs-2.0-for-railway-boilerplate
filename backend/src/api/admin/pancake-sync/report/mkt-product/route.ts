@@ -30,16 +30,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       order_item_camp AS (
         SELECT
           upper(replace(trim(po.marketer_name), ' ', '')) AS mkt_name,
-          item->>'name' AS item_name,
+          po.items->0->>'name' AS item_name,
           CASE WHEN po.raw->>'p_utm_source' = 'fb'
             THEN po.raw->>'p_utm_campaign'
             ELSE po.raw->>'p_utm_source'
           END AS campaign_name,
           po.status,
-          -- chia cod_amount đều cho số item trong đơn tránh double-count
-          ROUND(po.cod_amount::numeric / NULLIF(jsonb_array_length(po.items), 0)) AS cod_amount
-        FROM pancake_order po,
-             jsonb_array_elements(COALESCE(po.items, '[]'::jsonb)) AS item
+          po.cod_amount
+        FROM pancake_order po
         WHERE po.deleted_at IS NULL
           AND po.source IN ('manual', 'webcake')
           AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
