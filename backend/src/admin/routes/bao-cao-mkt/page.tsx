@@ -42,7 +42,7 @@ export default function BaoCaoMktPage() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
   })
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "jobs" | "fbaccounts" | "ai">("mkt")
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "fbaccounts" | "ai">("mkt")
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
@@ -50,6 +50,14 @@ export default function BaoCaoMktPage() {
   const [campFrom, setCampFrom] = useState(new Date().toISOString().slice(0, 10))
   const [campTo, setCampTo] = useState(new Date().toISOString().slice(0, 10))
   const [campRangeMode, setCampRangeMode] = useState(false)
+
+  // Tab Chi phí SP
+  const [spRows, setSpRows] = useState<any[]>([])
+  const [spLoading, setSpLoading] = useState(false)
+  const [spMktFilter, setSpMktFilter] = useState("")
+  const [spSortCol, setSpSortCol] = useState<string>("spend")
+  const [spSortDir, setSpSortDir] = useState<"asc" | "desc">("desc")
+
   const { isSuper, mktCode, has } = useCurrentPermissions()
 
   // Tab 3 — Lịch hẹn Camp (schedules + logs)
@@ -250,6 +258,20 @@ export default function BaoCaoMktPage() {
       setCampLoading(false)
     }
   }, [campDate, campFrom, campTo, campRangeMode, campMktFilter]) // overrides param bypasses stale closure for quick buttons
+
+  const fetchSpData = useCallback(async () => {
+    setSpLoading(true)
+    try {
+      const mktParam = spMktFilter ? `&mkt=${encodeURIComponent(spMktFilter)}` : ""
+      const res = await apiFetch(`/admin/pancake-sync/report/mkt-product?from=${from}&to=${to}${mktParam}`)
+      const data = await res.json()
+      setSpRows(data.rows ?? [])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSpLoading(false)
+    }
+  }, [from, to, spMktFilter])
 
   const toggleStatus = useCallback(async (camp: any) => {
     const action = camp.effective_status === "ACTIVE" ? "pause" : "activate"
@@ -538,6 +560,7 @@ export default function BaoCaoMktPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
+  useEffect(() => { if (activeTab === "spProduct") fetchSpData() }, [activeTab, fetchSpData])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [activeTab, jobsSubTab, fetchSchedules])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "fb-history") fetchFbHistory() }, [activeTab, jobsSubTab, fetchFbHistory])
@@ -643,6 +666,7 @@ export default function BaoCaoMktPage() {
         {([
           ["mkt", "Theo MKT"],
           ["camp", "Theo Camp"],
+          ["spProduct", "Chi phí SP"],
           ["jobs", "⏰ Lịch hẹn Camp"],
           ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
           ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
@@ -1154,6 +1178,104 @@ export default function BaoCaoMktPage() {
           onChanged={fetchCampData}
         />
       )}
+
+      {/* ===== TAB CHI PHÍ SP ===== */}
+      {activeTab === "spProduct" && (() => {
+        const MKT_COLORS_SP: Record<string, string> = { KIENLB: "#60a5fa", ANHNT: "#f472b6", NAMDV: "#34d399", XUANLT: "#fb923c", LINHMT: "#a78bfa", DUPD: "#facc15", "NGUYEN MAI": "#e879f9" }
+        const mktColor = (name: string) => MKT_COLORS_SP[(name ?? "").trim()] ?? "#9ca3af"
+        const pctColor = (pct: number | null) => {
+          if (pct === null) return t.textMuted
+          if (pct < 30) return t.green
+          if (pct <= 40) return t.amber
+          return t.red
+        }
+        const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, whiteSpace: "nowrap", background: t.card, cursor: "pointer", userSelect: "none" }
+        const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, textAlign: "right" }
+
+        const sorted = [...spRows].sort((a, b) => {
+          const va = Number(a[spSortCol] ?? 0)
+          const vb = Number(b[spSortCol] ?? 0)
+          return spSortDir === "desc" ? vb - va : va - vb
+        })
+        const mkTh = (col: string, label: string) => (
+          <th style={{ ...thS, color: spSortCol === col ? t.blue : t.theadText }}
+            onClick={() => { if (spSortCol === col) setSpSortDir(d => d === "desc" ? "asc" : "desc"); else { setSpSortCol(col); setSpSortDir("desc") } }}>
+            {label}{spSortCol === col ? (spSortDir === "desc" ? " ↓" : " ↑") : ""}
+          </th>
+        )
+
+        return (
+          <div>
+            {/* Controls */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <select value={spMktFilter} onChange={e => setSpMktFilter(e.target.value)}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, cursor: "pointer" }}>
+                <option value="">Tất cả MKT</option>
+                {mktNames.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <button onClick={fetchSpData} disabled={spLoading} style={{
+                background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
+                padding: "8px 16px", cursor: spLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: spLoading ? 0.6 : 1
+              }}>
+                {spLoading ? "⏳ Đang tải..." : "↻ Refresh"}
+              </button>
+              <span style={{ fontSize: 12, color: t.textMuted }}>
+                {from} → {to} · {sorted.length} dòng
+              </span>
+            </div>
+
+            {spLoading ? (
+              <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Đang tải...</div>
+            ) : sorted.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Không có dữ liệu</div>
+            ) : (
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 700 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...thS, textAlign: "left", position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 200 }}>MKT_Sản phẩm</th>
+                      {mkTh("spend", "Chi phí")}
+                      {mkTh("don", "Đơn")}
+                      {mkTh("chi_phi_don", "CP/đơn")}
+                      {mkTh("doanh_so", "Doanh số")}
+                      {mkTh("pct_ads", "% ADS")}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted.map((row, i) => {
+                      const mkt = (row.mkt_name ?? "").trim()
+                      const pct = row.pct_ads !== null ? Number(row.pct_ads) : null
+                      return (
+                        <tr key={i}
+                          onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                          <td style={{ padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}>
+                            <span style={{ fontWeight: 700, color: mktColor(mkt), marginRight: 4 }}>{mkt}</span>
+                            <span style={{ color: t.text }}>{row.item_name}</span>
+                          </td>
+                          <td style={tdS}>{Number(row.spend).toLocaleString("vi-VN")}đ</td>
+                          <td style={{ ...tdS, color: t.blue }}>{row.don}</td>
+                          <td style={tdS}>{row.don > 0 ? Number(row.chi_phi_don).toLocaleString("vi-VN") + "đ" : "—"}</td>
+                          <td style={tdS}>{Number(row.doanh_so).toLocaleString("vi-VN")}đ</td>
+                          <td style={{ ...tdS, fontWeight: 700 }}>
+                            {pct !== null ? (
+                              <span style={{
+                                background: pct < 30 ? (dark ? "#065f46" : "#dcfce7") : pct <= 40 ? (dark ? "#78350f" : "#fef3c7") : (dark ? "#7f1d1d" : "#fee2e2"),
+                                color: pctColor(pct),
+                                padding: "2px 8px", borderRadius: 4, fontSize: 12
+                              }}>{pct}%</span>
+                            ) : "—"}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ===== TAB 3: LỊCH HẸN CAMP ===== */}
       {activeTab === "jobs" && (() => {
