@@ -57,6 +57,9 @@ export default function BaoCaoMktPage() {
   const [spMktFilter, setSpMktFilter] = useState("")
   const [spSortCol, setSpSortCol] = useState<string>("spend")
   const [spSortDir, setSpSortDir] = useState<"asc" | "desc">("desc")
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const [spFrom, setSpFrom] = useState(from)
+  const [spTo, setSpTo] = useState(to)
 
   const { isSuper, mktCode, has } = useCurrentPermissions()
 
@@ -259,11 +262,13 @@ export default function BaoCaoMktPage() {
     }
   }, [campDate, campFrom, campTo, campRangeMode, campMktFilter]) // overrides param bypasses stale closure for quick buttons
 
-  const fetchSpData = useCallback(async () => {
+  const fetchSpData = useCallback(async (overrides?: { from?: string; to?: string }) => {
+    const f = overrides?.from ?? spFrom
+    const t2 = overrides?.to ?? spTo
     setSpLoading(true)
     try {
       const mktParam = spMktFilter ? `&mkt=${encodeURIComponent(spMktFilter)}` : ""
-      const res = await apiFetch(`/admin/pancake-sync/report/mkt-product?from=${from}&to=${to}${mktParam}`)
+      const res = await apiFetch(`/admin/pancake-sync/report/mkt-product?from=${f}&to=${t2}${mktParam}`)
       const data = await res.json()
       setSpRows(data.rows ?? [])
     } catch (e) {
@@ -271,7 +276,7 @@ export default function BaoCaoMktPage() {
     } finally {
       setSpLoading(false)
     }
-  }, [from, to, spMktFilter])
+  }, [spFrom, spTo, spMktFilter])
 
   const toggleStatus = useCallback(async (camp: any) => {
     const action = camp.effective_status === "ACTIVE" ? "pause" : "activate"
@@ -1204,23 +1209,41 @@ export default function BaoCaoMktPage() {
           </th>
         )
 
+        const qBtnSp = (label: string, f: string, t2: string) => {
+          const active = spFrom === f && spTo === t2
+          return (
+            <button onClick={() => { setSpFrom(f); setSpTo(t2); fetchSpData({ from: f, to: t2 }) }}
+              style={{ background: active ? "#1d4ed8" : (dark ? "#374151" : "#e5e7eb"), color: active ? "#fff" : t.text, border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 13, fontWeight: active ? 700 : 400 }}>
+              {label}
+            </button>
+          )
+        }
+
         return (
           <div>
             {/* Controls */}
             <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+              {qBtnSp("Hôm nay", todayStr, todayStr)}
+              {qBtnSp("3 ngày", (() => { const d = new Date(); d.setDate(d.getDate() - 2); return d.toISOString().slice(0,10) })(), todayStr)}
+              {qBtnSp("7 ngày", (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().slice(0,10) })(), todayStr)}
+              <input type="date" value={spFrom} onChange={e => setSpFrom(e.target.value)}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 8px", color: t.inputText, fontSize: 13 }} />
+              <span style={{ color: t.textMuted }}>→</span>
+              <input type="date" value={spTo} onChange={e => setSpTo(e.target.value)}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 8px", color: t.inputText, fontSize: 13 }} />
               <select value={spMktFilter} onChange={e => setSpMktFilter(e.target.value)}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, cursor: "pointer" }}>
                 <option value="">Tất cả MKT</option>
                 {mktNames.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
-              <button onClick={fetchSpData} disabled={spLoading} style={{
+              <button onClick={() => fetchSpData()} disabled={spLoading} style={{
                 background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
                 padding: "8px 16px", cursor: spLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: spLoading ? 0.6 : 1
               }}>
                 {spLoading ? "⏳ Đang tải..." : "↻ Refresh"}
               </button>
               <span style={{ fontSize: 12, color: t.textMuted }}>
-                {from} → {to} · {sorted.length} dòng
+                {spFrom} → {spTo} · {sorted.length} dòng
               </span>
             </div>
 
