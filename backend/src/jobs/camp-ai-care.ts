@@ -293,8 +293,18 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
     return
   }
 
+  // Kiểm tra feature flag từ DB — admin có thể tắt qua /app/ai-settings
+  const agentCfg = await sql.sql(
+    `SELECT enabled, model FROM ai_feature_config WHERE key = 'camp_ai_agent' LIMIT 1`
+  ).catch(() => [])
+  if (agentCfg.length > 0 && agentCfg[0].enabled === false) {
+    logger?.info?.("[CampAI] Tắt bởi ai_feature_config.camp_ai_agent — skipping")
+    return
+  }
+  // Model override từ DB nếu không truyền tay
+  const dbModel = agentCfg[0]?.model
   const runId = randomUUID()
-  const activeModel = opts?.model ?? MODEL
+  const activeModel = opts?.model ?? dbModel ?? MODEL
 
   async function heartbeat(updates: Partial<{ phase: string; iteration: number; last_action: string; recs_so_far: number; tokens_used: number; error: string }>) {
     const fields = Object.keys(updates)
@@ -614,17 +624,23 @@ Bắt đầu ngay.`,
     [runId]
   ).catch(() => [])
 
-  if (recsForEval.length > 0) {
-    await heartbeat({ phase: "evaluator", last_action: `Evaluator ${EVALUATOR_MODEL} đang đánh giá ${recsForEval.length} recs...` })
+  const evalCfg = await sql.sql(
+    `SELECT enabled, model FROM ai_feature_config WHERE key = 'camp_ai_evaluator' LIMIT 1`
+  ).catch(() => [])
+  const evaluatorEnabled = evalCfg.length === 0 || evalCfg[0].enabled !== false
+  const activeEvaluatorModel = evalCfg[0]?.model ?? EVALUATOR_MODEL
+
+  if (recsForEval.length > 0 && evaluatorEnabled) {
+    await heartbeat({ phase: "evaluator", last_action: `Evaluator ${activeEvaluatorModel} đang đánh giá ${recsForEval.length} recs...` })
     try {
       const evalClient = new OpenAI(
-        DEEPSEEK_DIRECT_MODELS.has(EVALUATOR_MODEL)
+        DEEPSEEK_DIRECT_MODELS.has(activeEvaluatorModel)
           ? { baseURL: "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp Evaluator" } }
           : { baseURL: "https://openrouter.ai/api/v1", apiKey: process.env.OPENROUTER_API_KEY ?? "", defaultHeaders: { "X-Title": "PhanViet Camp Evaluator" } }
       )
 
       const evalRes = await evalClient.chat.completions.create({
-        model: EVALUATOR_MODEL,
+        model: activeEvaluatorModel,
         messages: [
           { role: "system", content: EVALUATOR_SYSTEM_PROMPT },
           { role: "user", content: `Đánh giá ${recsForEval.length} recommendations:\n${JSON.stringify(recsForEval, null, 2)}` },

@@ -177,6 +177,14 @@ export class CskhAnalysisService extends MedusaService({}) {
   // analyzeOrders: nhận danh sách order IDs, query raw, gọi AI, lưu kết quả
   async analyzeOrders(orderIds: string[]): Promise<void> {
     if (!orderIds.length) return
+
+    // Check feature flag
+    const flagRows = await this.sql(`SELECT enabled FROM ai_feature_config WHERE key = 'cskh_analysis'`).catch(() => [])
+    if (flagRows.length > 0 && flagRows[0].enabled === false) {
+      console.log("[CskhAnalysis] Feature disabled via ai_feature_config, skipping")
+      return
+    }
+
     if (_analyzing) {
       console.log("[CskhAnalysis] Đang chạy, bỏ qua yêu cầu mới")
       return

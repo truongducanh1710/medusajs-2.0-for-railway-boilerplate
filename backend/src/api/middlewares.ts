@@ -70,6 +70,9 @@ export default defineMiddlewares({
     { matcher: "/admin/pancake-sync/report/camp-ai*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-ai*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
 
+    { matcher: "/admin/ai-config*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/ai-config*", method: ["PATCH"], middlewares: [requirePerm("page.ai-settings.manage")] },
+
     // Quản lý user — không chặn ở đây vì Medusa native auth đã guard /admin/users
     // requirePerm chạy trước auth_context được inject nên sẽ 401
   ],

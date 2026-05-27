@@ -8,6 +8,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/pages": "page.pages.view",
   "/cskh": "page.cskh.view",
   "/gia-von": "page.gia-von.view",
+  "/ai-settings": "page.bao-cao.view",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {
