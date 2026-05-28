@@ -27,16 +27,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND date >= $1::date AND date <= $2::date
         GROUP BY campaign_name, mkt_name
       ),
-      order_item_camp AS (
+      order_base AS (
         SELECT
+          po.id AS order_id,
           upper(replace(trim(po.marketer_name), ' ', '')) AS mkt_name,
-          po.items->0->>'name' AS item_name,
           CASE WHEN po.raw->>'p_utm_source' = 'fb'
             THEN po.raw->>'p_utm_campaign'
             ELSE po.raw->>'p_utm_source'
           END AS campaign_name,
           po.status,
-          po.cod_amount
+          po.items
         FROM pancake_order po
         WHERE po.deleted_at IS NULL
           AND po.source IN ('manual', 'webcake')
@@ -46,34 +46,53 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND po.pancake_created_at <  (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND ($3 = '' OR upper(replace(trim(po.marketer_name), ' ', '')) = $3)
       ),
-      order_agg AS (
+      order_item AS (
+        SELECT
+          ob.mkt_name, ob.campaign_name, ob.status,
+          item->>'name' AS item_name,
+          COALESCE((item->>'price')::numeric, 0) * COALESCE((item->>'quantity')::numeric, 1) AS item_cod
+        FROM order_base ob,
+             jsonb_array_elements(COALESCE(ob.items, '[]'::jsonb)) AS item
+      ),
+      item_agg AS (
         SELECT mkt_name, item_name,
           COUNT(*)::int AS total_orders,
           SUM(CASE WHEN status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
-          SUM(CASE WHEN status IN (1,2,3,4,5) THEN cod_amount ELSE 0 END)::bigint AS cod_confirmed
-        FROM order_item_camp
+          SUM(CASE WHEN status IN (1,2,3,4,5) THEN item_cod ELSE 0 END)::bigint AS cod_confirmed
+        FROM order_item
         GROUP BY mkt_name, item_name
       ),
-      spend_agg AS (
-        SELECT oic.mkt_name, oic.item_name, SUM(cs.spend)::bigint AS spend
-        FROM (SELECT DISTINCT mkt_name, item_name, campaign_name FROM order_item_camp WHERE campaign_name IS NOT NULL) oic
-        JOIN camp_spend cs ON cs.campaign_name = oic.campaign_name AND cs.mkt_name = oic.mkt_name
-        GROUP BY oic.mkt_name, oic.item_name
+      camp_item_count AS (
+        SELECT mkt_name, campaign_name, item_name, COUNT(*) AS cnt
+        FROM order_item
+        WHERE campaign_name IS NOT NULL AND status IN (1,2,3,4,5)
+        GROUP BY mkt_name, campaign_name, item_name
+      ),
+      camp_main_item AS (
+        SELECT DISTINCT ON (mkt_name, campaign_name)
+          mkt_name, campaign_name, item_name
+        FROM camp_item_count
+        ORDER BY mkt_name, campaign_name, cnt DESC, item_name
+      ),
+      spend_per_item AS (
+        SELECT cmi.mkt_name, cmi.item_name, SUM(cs.spend)::bigint AS spend
+        FROM camp_main_item cmi
+        JOIN camp_spend cs USING (mkt_name, campaign_name)
+        GROUP BY cmi.mkt_name, cmi.item_name
       )
       SELECT
-        o.mkt_name,
-        o.item_name,
-        COALESCE(s.spend, 0) AS spend,
-        o.total_orders,
-        o.confirmed AS don,
-        CASE WHEN o.confirmed > 0 THEN COALESCE(s.spend,0) / o.confirmed ELSE 0 END AS chi_phi_don,
-        o.cod_confirmed AS doanh_so,
-        CASE WHEN o.cod_confirmed > 0
-          THEN ROUND(COALESCE(s.spend,0)::numeric / o.cod_confirmed * 100, 1)
+        ia.mkt_name, ia.item_name,
+        COALESCE(sp.spend, 0) AS spend,
+        ia.total_orders,
+        ia.confirmed AS don,
+        CASE WHEN ia.confirmed > 0 THEN COALESCE(sp.spend,0) / ia.confirmed ELSE 0 END AS chi_phi_don,
+        ia.cod_confirmed AS doanh_so,
+        CASE WHEN ia.cod_confirmed > 0
+          THEN ROUND(COALESCE(sp.spend,0)::numeric / ia.cod_confirmed * 100, 1)
           ELSE NULL END AS pct_ads
-      FROM order_agg o
-      LEFT JOIN spend_agg s USING (mkt_name, item_name)
-      ORDER BY o.mkt_name, COALESCE(s.spend,0) DESC
+      FROM item_agg ia
+      LEFT JOIN spend_per_item sp USING (mkt_name, item_name)
+      ORDER BY ia.mkt_name, COALESCE(sp.spend,0) DESC
     `, [fromDate, toDate, mkt])
 
     return res.json({ rows, from: fromDate, to: toDate, mkt: mkt || null })
