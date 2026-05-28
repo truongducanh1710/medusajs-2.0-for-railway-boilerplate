@@ -2,6 +2,14 @@ import { MedusaContainer } from "@medusajs/framework"
 
 const FB_API_BASE = "https://graph.facebook.com/v18.0"
 
+// Trả về "YYYY-MM-DD" theo giờ Việt Nam (UTC+7)
+function dateVN(offsetDays = 0): string {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + 420) // +420 = +7h
+  now.setDate(now.getDate() + offsetDays)
+  return now.toISOString().slice(0, 10)
+}
+
 function extractMkt(campaignName: string): string {
   const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
   for (const sep of ["_", "-"]) {
@@ -103,9 +111,7 @@ export default async function mktCostDailySync(container: MedusaContainer) {
   // FB thường finalize số liệu sau 1-2 ngày nên cần re-sync lại
   const dates: string[] = []
   for (let i = 1; i <= 3; i++) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dates.push(d.toISOString().slice(0, 10))
+    dates.push(dateVN(-i))
   }
 
   logger?.info?.(`[MktCostDaily] Bắt đầu sync ${dates.length} ngày: ${dates.join(", ")}`)

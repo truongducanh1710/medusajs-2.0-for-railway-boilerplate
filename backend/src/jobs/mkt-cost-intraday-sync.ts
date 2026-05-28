@@ -2,6 +2,13 @@ import { MedusaContainer } from "@medusajs/framework"
 
 const FB_API_BASE = "https://graph.facebook.com/v18.0"
 
+// Trả về "YYYY-MM-DD" theo giờ Việt Nam (UTC+7)
+function todayVN(): string {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + 420) // +420 = +7h
+  return now.toISOString().slice(0, 10)
+}
+
 function extractMkt(campaignName: string): string {
   const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
   for (const sep of ["_", "-"]) {
@@ -29,7 +36,7 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
     return
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayVN()
   const timeRange = encodeURIComponent(JSON.stringify({ since: today, until: today }))
 
   const dbAccounts = await cskhService.sql(`
