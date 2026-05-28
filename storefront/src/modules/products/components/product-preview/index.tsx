@@ -42,23 +42,27 @@ export default async function ProductPreview({
   product,
   isFeatured,
   region,
+  priority,
 }: {
   product: HttpTypes.StoreProduct
   isFeatured?: boolean
   region: HttpTypes.StoreRegion
+  priority?: boolean
 }) {
-  let pricedProduct: HttpTypes.StoreProduct | undefined
-  try {
-    ;[pricedProduct] = await getProductsById({
-      ids: [product.id!],
-      regionId: region.id,
-    })
-  } catch {
-    return null
-  }
-
-  if (!pricedProduct) {
-    return null
+  // product đã được fetch với price từ tầng trên (ProductRail batch fetch)
+  // Fallback: nếu chưa có calculated_price thì fetch riêng
+  let pricedProduct = product
+  if (!product.variants?.[0]?.calculated_price) {
+    try {
+      const [fetched] = await getProductsById({
+        ids: [product.id!],
+        regionId: region.id,
+      })
+      if (!fetched) return null
+      pricedProduct = fetched
+    } catch {
+      return null
+    }
   }
 
   let cheapestPrice: ReturnType<typeof getProductPrice>["cheapestPrice"]
@@ -68,7 +72,6 @@ export default async function ProductPreview({
     cheapestPrice = null
   }
 
-  // Override with bundle price when available — bundle prices are what customers actually pay
   const bundleStartPrice = getBundleStartPrice(pricedProduct)
   if (bundleStartPrice && cheapestPrice) {
     const currencyCode = cheapestPrice.currency_code || "VND"
@@ -91,6 +94,7 @@ export default async function ProductPreview({
           images={product.images}
           size="square"
           isFeatured={isFeatured}
+          priority={priority}
         />
         <div className="flex txt-compact-medium mt-4 justify-between">
           <Text className="text-ui-fg-subtle" data-testid="product-title">

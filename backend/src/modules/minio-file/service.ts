@@ -11,6 +11,11 @@ import { Client } from 'minio';
 import path from 'path';
 import { ulid } from 'ulid';
 import { Readable } from 'stream';
+import sharp from 'sharp';
+
+const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
+const MAX_DIMENSION = 1200; // px — resize nếu lớn hơn
+const WEBP_QUALITY = 82;   // chất lượng WebP
 
 type InjectedDependencies = {
   logger: Logger
@@ -175,6 +180,24 @@ class MinioFileProviderService extends AbstractFileProviderService {
     }
   }
 
+  private async compressImage(content: Buffer, mimeType: string): Promise<{ buffer: Buffer; mimeType: string; ext: string }> {
+    // GIF không xử lý — giữ nguyên
+    if (mimeType === 'image/gif') {
+      return { buffer: content, mimeType, ext: '.gif' }
+    }
+
+    const compressed = await sharp(content)
+      .resize(MAX_DIMENSION, MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: WEBP_QUALITY })
+      .toBuffer()
+
+    // Chỉ dùng WebP nếu nhỏ hơn ảnh gốc
+    if (compressed.length < content.length) {
+      return { buffer: compressed, mimeType: 'image/webp', ext: '.webp' }
+    }
+    return { buffer: content, mimeType, ext: path.extname('file.' + mimeType.split('/')[1]) || '.jpg' }
+  }
+
   async upload(
     file: ProviderUploadFileDTO
   ): Promise<ProviderFileResultDTO> {
@@ -195,38 +218,53 @@ class MinioFileProviderService extends AbstractFileProviderService {
     try {
       const parsedFilename = path.parse(file.filename)
       const safeName = parsedFilename.name.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "")
-      const fileKey = `${safeName}-${ulid()}${parsedFilename.ext}`
-      
-      // Handle different content types properly
+
+      // Đọc content thành Buffer
       let content: Buffer
       if (Buffer.isBuffer(file.content)) {
         content = file.content
       } else if (typeof file.content === 'string') {
-        // If it's a base64 string, decode it
         if (file.content.match(/^[A-Za-z0-9+/]+=*$/)) {
           content = Buffer.from(file.content, 'base64')
         } else {
           content = Buffer.from(file.content, 'binary')
         }
       } else {
-        // Handle ArrayBuffer, Uint8Array, or any other buffer-like type
         content = Buffer.from(file.content as any)
       }
 
-      // Upload file with public-read access
+      // Compress ảnh nếu là image
+      let finalContent = content
+      let finalMimeType = file.mimeType
+      let finalExt = parsedFilename.ext
+
+      if (IMAGE_MIME_TYPES.has(file.mimeType)) {
+        try {
+          const result = await this.compressImage(content, file.mimeType)
+          finalContent = result.buffer
+          finalMimeType = result.mimeType
+          finalExt = result.ext
+          const ratio = Math.round((1 - result.buffer.length / content.length) * 100)
+          this.logger_.info(`Compressed image: ${content.length}b → ${result.buffer.length}b (${ratio}% smaller)`)
+        } catch (compressError) {
+          this.logger_.warn(`Image compression failed, using original: ${compressError.message}`)
+        }
+      }
+
+      const fileKey = `${safeName}-${ulid()}${finalExt}`
+
       await this.client.putObject(
         this.bucket,
         fileKey,
-        content,
-        content.length,
+        finalContent,
+        finalContent.length,
         {
-          'Content-Type': file.mimeType,
+          'Content-Type': finalMimeType,
           'x-amz-meta-original-filename': file.filename,
           'x-amz-acl': 'public-read'
         }
       )
 
-      // Generate URL using the endpoint and bucket with correct protocol
       const protocol = this.useSSL ? 'https' : 'http'
       const url = `${protocol}://${this.config_.endPoint}/${this.bucket}/${fileKey}`
 

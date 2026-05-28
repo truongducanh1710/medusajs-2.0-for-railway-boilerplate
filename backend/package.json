@@ -39,6 +39,7 @@
     "openai": "^4.104.0",
     "pg": "^8.16.0",
     "resend": "4.0.1",
+    "sharp": "^0.34.5",
     "ulid": "^2.4.0"
   },
   "devDependencies": {
