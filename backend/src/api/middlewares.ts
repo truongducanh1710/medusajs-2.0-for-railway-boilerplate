@@ -73,6 +73,8 @@ export default defineMiddlewares({
     { matcher: "/admin/ai-config*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/ai-config*", method: ["PATCH"], middlewares: [requirePerm("page.ai-settings.manage")] },
 
+    { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
+
     // Quản lý user — không chặn ở đây vì Medusa native auth đã guard /admin/users
     // requirePerm chạy trước auth_context được inject nên sẽ 401
   ],

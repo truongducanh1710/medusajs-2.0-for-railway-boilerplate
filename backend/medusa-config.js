@@ -138,6 +138,10 @@ const medusaConfig = {
       key: "giaVonModule",
     },
     {
+      resolve: "./src/modules/web-tracking",
+      key: "webTrackingModule",
+    },
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {

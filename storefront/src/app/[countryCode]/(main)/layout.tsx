@@ -8,6 +8,7 @@ import Nav from "@modules/layout/templates/nav"
 import { getBaseURL } from "@lib/util/env"
 import FacebookPixel from "@components/FacebookPixel"
 import UtmCapture from "@components/UtmCapture"
+import TrackingBeacon from "@components/TrackingBeacon"
 import FloatingContact from "@components/FloatingContact"
 import ChatBot from "@components/ChatBot"
 import SocialProofPopup from "@components/SocialProofPopup"
@@ -34,6 +35,9 @@ export default async function PageLayout({
       <FacebookPixel storePixelId={storePixelId} />
       <Suspense fallback={null}>
         <UtmCapture />
+      </Suspense>
+      <Suspense fallback={null}>
+        <TrackingBeacon />
       </Suspense>
       <Nav countryCode={countryCode} />
       <main className="pt-24 sm:pt-28">
