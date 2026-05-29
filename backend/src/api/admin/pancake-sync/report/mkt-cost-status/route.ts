@@ -21,7 +21,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const today = todayVN()
 
     const [todayStats, lastSync, accountsWithData, permErrorAccounts] = await Promise.all([
-      // Tổng campaigns + spend hôm nay
+      // Tổng campaigns + spend hôm nay (theo giờ VN)
       cskhService.sql(`
         SELECT
           COUNT(DISTINCT campaign_id)::int AS campaigns,
@@ -29,7 +29,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           SUM(spend)::bigint AS total_spend,
           MAX(updated_at) AS last_updated
         FROM mkt_ads_cost
-        WHERE deleted_at IS NULL AND date = $1::date
+        WHERE deleted_at IS NULL
+          AND (date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1::date
       `, [today]),
 
       // Lần sync gần nhất (bất kỳ ngày nào)
@@ -37,13 +38,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SELECT MAX(updated_at) AS last_sync FROM mkt_ads_cost WHERE deleted_at IS NULL
       `),
 
-      // Accounts đã có data hôm nay
+      // Accounts đã có data hôm nay (theo giờ VN)
       cskhService.sql(`
         SELECT DISTINCT ad_account_id FROM mkt_ads_cost
-        WHERE deleted_at IS NULL AND date = $1::date
+        WHERE deleted_at IS NULL
+          AND (date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1::date
       `, [today]),
 
-      // Accounts có data 7 ngày qua nhưng không có hôm nay = thực sự missing
+      // Accounts có spend 7 ngày qua nhưng không có hôm nay = thực sự missing
       cskhService.sql(`
         SELECT DISTINCT a.account_id
         FROM fb_ad_account a
@@ -51,13 +53,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND EXISTS (
             SELECT 1 FROM mkt_ads_cost m
             WHERE m.ad_account_id = a.account_id
-              AND m.date >= CURRENT_DATE - INTERVAL '7 days'
+              AND (m.date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= $1::date - 7
               AND m.spend > 0
           )
           AND NOT EXISTS (
             SELECT 1 FROM mkt_ads_cost m
             WHERE m.ad_account_id = a.account_id
-              AND m.date = $1::date
+              AND (m.date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1::date
           )
       `, [today]),
     ])
