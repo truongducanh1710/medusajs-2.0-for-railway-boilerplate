@@ -8,12 +8,19 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
  * - Số accounts có data
  * - Có lỗi không (account nào missing so với fb_ad_account)
  */
+// Giờ VN UTC+7
+function todayVN(): string {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + 420)
+  return now.toISOString().slice(0, 10)
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayVN()
 
-    const [todayStats, lastSync, activeAccounts, accountsWithData] = await Promise.all([
+    const [todayStats, lastSync, accountsWithData, permErrorAccounts] = await Promise.all([
       // Tổng campaigns + spend hôm nay
       cskhService.sql(`
         SELECT
@@ -30,22 +37,35 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SELECT MAX(updated_at) AS last_sync FROM mkt_ads_cost WHERE deleted_at IS NULL
       `),
 
-      // Số accounts active trong DB
-      cskhService.sql(`
-        SELECT COUNT(*)::int AS total FROM fb_ad_account WHERE deleted_at IS NULL AND active = true
-      `),
-
       // Accounts đã có data hôm nay
       cskhService.sql(`
         SELECT DISTINCT ad_account_id FROM mkt_ads_cost
         WHERE deleted_at IS NULL AND date = $1::date
       `, [today]),
+
+      // Accounts có data 7 ngày qua nhưng không có hôm nay = thực sự missing
+      cskhService.sql(`
+        SELECT DISTINCT a.account_id
+        FROM fb_ad_account a
+        WHERE a.deleted_at IS NULL AND a.active = true
+          AND EXISTS (
+            SELECT 1 FROM mkt_ads_cost m
+            WHERE m.ad_account_id = a.account_id
+              AND m.date >= CURRENT_DATE - INTERVAL '7 days'
+              AND m.spend > 0
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM mkt_ads_cost m
+            WHERE m.ad_account_id = a.account_id
+              AND m.date = $1::date
+          )
+      `, [today]),
     ])
 
     const stats = todayStats[0] ?? {}
-    const totalActive = activeAccounts[0]?.total ?? 0
     const accountsWithDataToday = accountsWithData.length
-    const missingAccounts = totalActive - accountsWithDataToday
+    // Chỉ cảnh báo account có spend 7 ngày qua nhưng hôm nay mất — không đếm account PAUSED hoàn toàn
+    const missingAccounts = permErrorAccounts.length
 
     const lastUpdated = stats.last_updated ?? lastSync[0]?.last_sync ?? null
     const minutesAgo = lastUpdated
@@ -63,7 +83,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       campaigns_today: stats.campaigns ?? 0,
       total_spend_today: stats.total_spend ?? 0,
       accounts_with_data: accountsWithDataToday,
-      accounts_active: totalActive,
+      accounts_active: accountsWithDataToday + missingAccounts,
       missing_accounts: missingAccounts,
       last_updated: lastUpdated,
       minutes_ago: minutesAgo,
