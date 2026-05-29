@@ -61,6 +61,7 @@ const ImageOrPlaceholder = ({
       draggable={false}
       quality={75}
       sizes="(max-width: 576px) 280px, (max-width: 768px) 360px, (max-width: 992px) 480px, 800px"
+      loading="eager"
       priority={priority}
       fill
     />
