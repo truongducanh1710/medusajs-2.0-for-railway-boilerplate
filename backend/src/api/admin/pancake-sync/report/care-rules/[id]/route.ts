@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getAuthInfo } from "../../../camp-control/_lib"
+import { getAuthInfo } from "../../camp-control/_lib"
 
 async function checkOwner(sql: any, ruleId: string, auth: any) {
   const [rule] = await sql(`SELECT * FROM mkt_care_rule WHERE id = $1 AND deleted_at IS NULL`, [ruleId]).catch(() => [])

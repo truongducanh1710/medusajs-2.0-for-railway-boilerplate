@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getAuthInfo } from "../../../camp-control/_lib"
+import { getAuthInfo } from "../../camp-control/_lib"
 
 function windowStart(window: string): string {
   const days = window === "2d" ? 2 : window === "3d" ? 3 : window === "7d" ? 7 : 1

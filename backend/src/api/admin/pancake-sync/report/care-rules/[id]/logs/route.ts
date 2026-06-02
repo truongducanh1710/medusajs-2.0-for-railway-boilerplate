@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getAuthInfo } from "../../../../camp-control/_lib"
+import { getAuthInfo } from "../../../camp-control/_lib"
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)

@@ -585,8 +585,8 @@ export default function BaoCaoMktPage() {
     if (activeTab !== "rules") return
     setRulesLoading(true)
     Promise.all([
-      apiFetch("/admin/pancake-sync/report/care-rules").then(r => setRules(r.rules ?? [])).catch(() => {}),
-      apiFetch("/admin/pancake-sync/report/product-thresholds").then(r => setThresholds(r.thresholds ?? [])).catch(() => {}),
+      apiFetch("/admin/pancake-sync/report/care-rules").then(r => r.json()).then(r => setRules(r.rules ?? [])).catch(() => {}),
+      apiFetch("/admin/pancake-sync/report/product-thresholds").then(r => r.json()).then(r => setThresholds(r.thresholds ?? [])).catch(() => {}),
     ]).finally(() => setRulesLoading(false))
   }, [activeTab])
 
@@ -2714,7 +2714,7 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
             const url = isEdit ? `/admin/pancake-sync/report/care-rules/${ruleForm.id}` : "/admin/pancake-sync/report/care-rules"
             const method = isEdit ? "PATCH" : "POST"
             await apiFetch(url, { method, body: JSON.stringify(ruleForm) })
-            const r = await apiFetch("/admin/pancake-sync/report/care-rules")
+            const r = await apiFetch("/admin/pancake-sync/report/care-rules").then(res => res.json())
             setRules(r.rules ?? [])
             setRuleForm(null)
             setRulePreview(null)
@@ -2726,13 +2726,13 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
           await apiFetch(`/admin/pancake-sync/report/care-rules/${rule.id}`, {
             method: "PATCH", body: JSON.stringify({ enabled: !rule.enabled })
           }).catch(() => {})
-          setRules(prev => prev.map(r => r.id === rule.id ? { ...r, enabled: !r.enabled } : r))
+          setRules((prev: any[]) => prev.map((r: any) => r.id === rule.id ? { ...r, enabled: !r.enabled } : r))
         }
 
         const deleteRule = async (id: string) => {
           if (!confirm("Xóa rule này?")) return
           await apiFetch(`/admin/pancake-sync/report/care-rules/${id}`, { method: "DELETE" }).catch(() => {})
-          setRules(prev => prev.filter(r => r.id !== id))
+          setRules((prev: any[]) => prev.filter((r: any) => r.id !== id))
         }
 
         const previewRule = async () => {
@@ -2741,7 +2741,7 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
           try {
             const r = await apiFetch("/admin/pancake-sync/report/care-rules/preview", {
               method: "POST", body: JSON.stringify(ruleForm)
-            })
+            }).then(res => res.json())
             setRulePreview(r.affected_camps ?? [])
           } catch { setRulePreview([]) }
           finally { setRulePreviewLoading(false) }
@@ -2749,8 +2749,9 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
 
         const loadRuleLogs = async (ruleId: string) => {
           if (ruleLogsOpen === ruleId) { setRuleLogsOpen(null); return }
-          const r = await apiFetch(`/admin/pancake-sync/report/care-rules/${ruleId}/logs?limit=20`).catch(() => ({ logs: [] }))
-          setRuleLogs(prev => ({ ...prev, [ruleId]: r.logs ?? [] }))
+          const r = await apiFetch(`/admin/pancake-sync/report/care-rules/${ruleId}/logs?limit=20`)
+            .then(res => res.json()).catch(() => ({ logs: [] }))
+          setRuleLogs((prev: any) => ({ ...prev, [ruleId]: r.logs ?? [] }))
           setRuleLogsOpen(ruleId)
         }
 

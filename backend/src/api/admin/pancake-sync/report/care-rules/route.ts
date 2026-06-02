@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getAuthInfo } from "../../camp-control/_lib"
+import { getAuthInfo } from "../camp-control/_lib"
 
 // GET /admin/pancake-sync/report/care-rules
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
