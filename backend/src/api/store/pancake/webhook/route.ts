@@ -4,6 +4,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { PANCAKE_WEBHOOK_SECRET } from "../../../../lib/constants"
 import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/service"
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
+import { sendCAPIEvent, getPixelForMarketer } from "../../../../lib/fb-capi"
 
 /**
  * Verify HMAC signature from Pancake webhook.
@@ -198,6 +199,42 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             })
           } catch {
             // module chưa sẵn sàng
+          }
+        }
+
+        // Bắn FB CAPI Purchase khi đơn giao thành công (status=3)
+        if (pancakeStatus === 3) {
+          try {
+            const order = rawOrder ?? body
+            const marketerName = order?.assigning_page?.name ?? order?.assigning_care?.name ?? ""
+            const pixelId = getPixelForMarketer(marketerName)
+            const phone = order?.bill_phone_number ?? order?.customer?.phone ?? ""
+            const total = Number(order?.total_price ?? order?.total ?? 0)
+
+            // Lấy fbclid/fbp từ metadata Medusa order nếu có
+            const orderService = req.scope.resolve(Modules.ORDER) as any
+            const medusaOrders = await orderService.listOrders({}, { take: 200, order: { created_at: "DESC" } })
+            const medusaOrder = medusaOrders.find(
+              (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
+            )
+            const meta = medusaOrder?.metadata ?? {}
+
+            await sendCAPIEvent({
+              pixel_id: pixelId,
+              event_name: "Purchase",
+              event_time: Math.floor(Date.now() / 1000),
+              event_id: `purchase_${pancakeOrderId}`,
+              event_source_url: meta.utm_source ? `https://phanviet.vn` : "https://phanviet.vn",
+              phone,
+              fbclid: meta.fbclid,
+              fbp: meta.fbp,
+              fbc: meta.fbc,
+              value: total,
+              currency: "VND",
+              order_id: pancakeOrderId,
+            })
+          } catch (capiErr: any) {
+            console.warn("[Pancake Webhook] CAPI error:", capiErr.message)
           }
         }
 
