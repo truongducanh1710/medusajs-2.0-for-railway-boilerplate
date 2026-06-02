@@ -2634,7 +2634,7 @@ export default function BaoCaoMktPage() {
         const selSt = { ...inputSt }
 
         const scopeLabel = (rule: any) => {
-          if (rule.scope_type === "all") return "🌐 Tất cả camp"
+          if (rule.scope_type === "all") return `🌐 Tất cả camp của tôi (${mktCode ?? "MKT"})`
           if (rule.scope_type === "product") return `📦 SP: ${rule.scope_value}`
           return `🔤 Camp chứa "${rule.scope_value}"`
         }
@@ -2980,7 +2980,7 @@ export default function BaoCaoMktPage() {
                       <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Phạm vi áp dụng</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {[
-                          { id: "all",                label: "🌐 Tất cả camp",       sub: "Áp dụng cho mọi camp đang chạy" },
+                          { id: "all",                label: "🌐 Tất cả camp của tôi", sub: `Chỉ camp của tài khoản ${mktCode ?? "của bạn"} — không ảnh hưởng MKT khác` },
                           { id: "product",            label: "📦 Camp chứa tên SP",  sub: "Lọc theo từ khoá tên sản phẩm trong tên camp" },
                           { id: "campaign_name_like", label: "🔤 Camp chứa chữ",     sub: "Lọc camp theo từ khoá bất kỳ" },
                         ].map(s => {
