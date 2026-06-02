@@ -59,6 +59,10 @@ export default function BaoCaoMktPage() {
   const [ruleLogsOpen, setRuleLogsOpen] = useState<string | null>(null)
   const [ruleGuardOpen, setRuleGuardOpen] = useState(false)
   const [ruleHowOpen, setRuleHowOpen] = useState(false)
+  const [thresholdSectionOpen, setThresholdSectionOpen] = useState(false)
+  const [thresholdSaving, setThresholdSaving] = useState(false)
+  const [thresholdEditId, setThresholdEditId] = useState<string | null>(null)
+  const [thresholdEditForm, setThresholdEditForm] = useState<any>(null)
   const [ruleTemplateOpen, setRuleTemplateOpen] = useState(false)
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
@@ -2924,6 +2928,156 @@ export default function BaoCaoMktPage() {
                   </div>
                 )
               })}
+            </div>
+
+            {/* ── Ngưỡng sản phẩm (Dạng B) ── */}
+            <div style={{ marginTop: 24 }}>
+              <button onClick={() => setThresholdSectionOpen(o => !o)}
+                style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: dark ? "#1e293b" : "#f8fafc", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: thresholdSectionOpen ? "12px 12px 0 0" : 12, padding: "12px 16px", cursor: "pointer" }}>
+                <span style={{ fontSize: 15 }}>📦</span>
+                <span style={{ fontWeight: 700, fontSize: 13.5, color: t.text }}>Ngưỡng CPR sản phẩm</span>
+                <span style={{ fontSize: 11.5, color: t.textMuted, marginLeft: 4 }}>Dùng cho Dạng B · Smart rule</span>
+                {isSuper && <span style={{ marginLeft: "auto", fontSize: 11, color: t.blue, fontWeight: 600 }}>Super Admin có thể sửa</span>}
+                <span style={{ color: t.textMuted, fontSize: 12, marginLeft: isSuper ? 8 : "auto" }}>{thresholdSectionOpen ? "▲" : "▼"}</span>
+              </button>
+              {thresholdSectionOpen && (
+                <div style={{ border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderTop: "none", borderRadius: "0 0 12px 12px", overflow: "hidden" }}>
+                  {thresholds.length === 0 ? (
+                    <div style={{ padding: 24, textAlign: "center", color: t.textMuted, fontSize: 13 }}>
+                      Chưa có ngưỡng sản phẩm nào. Chờ deploy để migration tạo bảng và seed data mặc định.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: dark ? "#111827" : "#f1f5f9", borderBottom: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}` }}>
+                            {["Sản phẩm", "CPR mục tiêu", "Camp mới (×)", "Cảnh báo (×)", "Tắt hẳn (×)", ""].map(h => (
+                              <th key={h} style={{ padding: "9px 14px", textAlign: h === "" ? "center" : "left", fontWeight: 600, fontSize: 11.5, color: t.textMuted, whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {thresholds.map((th: any) => {
+                            const isEditing = thresholdEditId === th.id
+                            const ef = thresholdEditForm
+                            return (
+                              <tr key={th.id} style={{ borderBottom: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}` }}>
+                                <td style={{ padding: "10px 14px", fontWeight: 600, color: t.text }}>
+                                  {isEditing ? (
+                                    <input value={ef.product_label} onChange={e => setThresholdEditForm((f: any) => ({ ...f, product_label: e.target.value }))}
+                                      style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${dark ? "#374151" : "#cbd5e1"}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 12, width: 140 }} />
+                                  ) : (
+                                    <div>
+                                      <div>{th.product_label}</div>
+                                      <div style={{ fontSize: 10.5, color: t.textMuted, fontFamily: "ui-monospace,monospace" }}>{th.product_key}</div>
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ padding: "10px 14px" }}>
+                                  {isEditing ? (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                      <input type="number" value={Math.round(ef.target_cpr / 1000)} onChange={e => setThresholdEditForm((f: any) => ({ ...f, target_cpr: Number(e.target.value) * 1000 }))}
+                                        style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${dark ? "#374151" : "#cbd5e1"}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 12, width: 70 }} />
+                                      <span style={{ fontSize: 11, color: t.textMuted }}>k đ</span>
+                                    </div>
+                                  ) : (
+                                    <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 700, color: t.green }}>{Math.round(th.target_cpr / 1000)}k</span>
+                                  )}
+                                </td>
+                                {(["new_camp_multiplier", "old_camp_warn_multiplier", "old_camp_kill_multiplier"] as const).map(field => (
+                                  <td key={field} style={{ padding: "10px 14px" }}>
+                                    {isEditing ? (
+                                      <input type="number" step="0.1" value={ef[field]} onChange={e => setThresholdEditForm((f: any) => ({ ...f, [field]: Number(e.target.value) }))}
+                                        style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${dark ? "#374151" : "#cbd5e1"}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 12, width: 60 }} />
+                                    ) : (
+                                      <span style={{ fontFamily: "ui-monospace,monospace", color: t.textSub }}>×{Number(th[field]).toFixed(1)}</span>
+                                    )}
+                                  </td>
+                                ))}
+                                <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                                  {isSuper && (
+                                    isEditing ? (
+                                      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                                        <button disabled={thresholdSaving} onClick={async () => {
+                                          setThresholdSaving(true)
+                                          try {
+                                            await apiFetch("/admin/pancake-sync/report/product-thresholds", {
+                                              method: "POST",
+                                              headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify(ef),
+                                            })
+                                            const r = await apiFetch("/admin/pancake-sync/report/product-thresholds").then(res => res.json())
+                                            setThresholds(r.thresholds ?? [])
+                                            setThresholdEditId(null); setThresholdEditForm(null)
+                                          } catch (e: any) { alert(e.message) }
+                                          finally { setThresholdSaving(false) }
+                                        }} style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                                          {thresholdSaving ? "..." : "Lưu"}
+                                        </button>
+                                        <button onClick={() => { setThresholdEditId(null); setThresholdEditForm(null) }}
+                                          style={{ background: "none", border: `1px solid ${dark ? "#374151" : "#e2e8f0"}`, color: t.textMuted, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>
+                                          Hủy
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button onClick={() => { setThresholdEditId(th.id); setThresholdEditForm({ ...th }) }}
+                                        style={{ background: "none", border: `1px solid ${dark ? "#374151" : "#e2e8f0"}`, color: t.textMuted, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>
+                                        ✏️ Sửa
+                                      </button>
+                                    )
+                                  )}
+                                  {!isSuper && <span style={{ fontSize: 11, color: t.textMuted }}>Chỉ Super Admin</span>}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {isSuper && (
+                    <div style={{ padding: "12px 16px", borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}`, background: dark ? "#0b1220" : "#f8fafc" }}>
+                      <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 8, fontWeight: 600 }}>➕ Thêm sản phẩm mới</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                        {[
+                          { key: "product_key", placeholder: "KEY_SP (VD: CHAO_VANG)", width: 160 },
+                          { key: "product_label", placeholder: "Tên hiển thị", width: 160 },
+                          { key: "target_cpr_k", placeholder: "CPR mục tiêu (k đ)", width: 140, type: "number" },
+                        ].map(f => (
+                          <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <span style={{ fontSize: 10.5, color: t.textMuted }}>{f.placeholder}</span>
+                            <input id={`new-th-${f.key}`} type={f.type ?? "text"} placeholder={f.placeholder}
+                              style={{ padding: "7px 10px", borderRadius: 7, border: `1px solid ${dark ? "#374151" : "#cbd5e1"}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 12, width: f.width }} />
+                          </div>
+                        ))}
+                        <button style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontSize: 12, fontWeight: 600, alignSelf: "flex-end" }}
+                          onClick={async () => {
+                            const key = (document.getElementById("new-th-product_key") as HTMLInputElement)?.value?.trim()
+                            const label = (document.getElementById("new-th-product_label") as HTMLInputElement)?.value?.trim()
+                            const cprK = Number((document.getElementById("new-th-target_cpr_k") as HTMLInputElement)?.value)
+                            if (!key || !label || !cprK) return alert("Điền đủ key, tên, và CPR mục tiêu")
+                            setThresholdSaving(true)
+                            try {
+                              await apiFetch("/admin/pancake-sync/report/product-thresholds", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ product_key: key.toUpperCase(), product_label: label, target_cpr: cprK * 1000 }),
+                              });
+                              (document.getElementById("new-th-product_key") as HTMLInputElement).value = "";
+                              (document.getElementById("new-th-product_label") as HTMLInputElement).value = "";
+                              (document.getElementById("new-th-target_cpr_k") as HTMLInputElement).value = ""
+                              const r = await apiFetch("/admin/pancake-sync/report/product-thresholds").then(res => res.json())
+                              setThresholds(r.thresholds ?? [])
+                            } catch (e: any) { alert(e.message) }
+                            finally { setThresholdSaving(false) }
+                          }}>
+                          {thresholdSaving ? "..." : "Thêm"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ── Drawer overlay ── */}
