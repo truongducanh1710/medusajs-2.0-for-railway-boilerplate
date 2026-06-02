@@ -207,6 +207,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           try {
             const order = rawOrder ?? body
             const phone = order?.bill_phone_number ?? order?.customer?.phone ?? ""
+            const customerName = order?.bill_full_name ?? order?.customer?.name ?? ""
+            const city = order?.bill_province ?? order?.shipping_address?.province ?? ""
             const total = Number(order?.total_price ?? order?.total ?? 0)
 
             // Lấy fbclid/fbp + pixel riêng sản phẩm từ Medusa order metadata
@@ -228,6 +230,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             await sendPurchaseEvent({
               orderId: pancakeOrderId,
               phone,
+              customerName,
+              city,
               fbclid: meta.fbclid,
               fbp: meta.fbp,
               fbc: meta.fbc,

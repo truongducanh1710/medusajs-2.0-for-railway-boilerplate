@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
+import { sendCAPIViaRoute } from "@lib/pixel"
 import { getUtmFromCookie } from "@lib/utm"
 
 export default function PurchaseTracker({
@@ -24,7 +24,6 @@ export default function PurchaseTracker({
   useEffect(() => {
     if (typeof window === "undefined") return
 
-    const eventId = generateEventId()
     const utm = getUtmFromCookie()
 
     const customData = {
@@ -39,6 +38,10 @@ export default function PurchaseTracker({
     // Sepay (chuyển khoản) → đã thanh toán thật → bắn Purchase ngay
     // COD → chưa chắc giao được → bắn CompleteRegistration, Purchase bắn sau khi Pancake status=3
     const eventName = paymentMethod === "sepay" ? "Purchase" : "CompleteRegistration"
+
+    // event_id cố định theo orderId để dedup với CAPI backend
+    // Backend dùng "purchase_{orderId}" → cùng key → FB chỉ tính 1 lần
+    const eventId = `${eventName.toLowerCase()}_${orderId}`
 
     if (window.fbq) {
       window.fbq("track", eventName, customData, { eventID: eventId })
