@@ -58,6 +58,8 @@ export default function BaoCaoMktPage() {
   const [ruleLogs, setRuleLogs] = useState<Record<string, any[]>>({})
   const [ruleLogsOpen, setRuleLogsOpen] = useState<string | null>(null)
   const [ruleGuardOpen, setRuleGuardOpen] = useState(false)
+  const [ruleHowOpen, setRuleHowOpen] = useState(false)
+  const [ruleTemplateOpen, setRuleTemplateOpen] = useState(false)
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
@@ -2639,19 +2641,135 @@ export default function BaoCaoMktPage() {
         const actionInfo = (v: string) => R_ACTIONS.find(a => a.value === v) ?? { icon: "⚡", label: v, tone: t.blue }
         const metricLabel = (v: string) => R_METRICS.find(m => m.value === v)?.label ?? v
 
+        const RULE_TEMPLATES = [
+          {
+            group: "🛑 Cắt lỗ", id: "T1", icon: "🛑",
+            name: "Tắt camp đốt tiền không ra đơn",
+            desc: "Spend > 400k trong 2 ngày nhưng 0 đơn thực → Tắt camp",
+            form: { name: "T1 — Tắt camp đốt tiền 0 đơn", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "spend", op: ">", value: 400000 }, { metric: "orders_real", op: "<=", value: 0 }], condition_logic: "AND", product_key: "", time_window: "2d", action: "pause", action_payload: {}, check_schedule: "every_4h", min_spend: 400000, cooldown_hours: 24 },
+          },
+          {
+            group: "🛑 Cắt lỗ", id: "T2", icon: "🛑",
+            name: "Tắt camp CPR quá cao",
+            desc: "CPR thực > 300k AND spend > 500k (hôm nay) → Tắt camp",
+            form: { name: "T2 — Tắt camp CPR cao", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "cpr_real", op: ">", value: 300000 }, { metric: "spend", op: ">", value: 500000 }], condition_logic: "AND", product_key: "", time_window: "today", action: "pause", action_payload: {}, check_schedule: "every_4h", min_spend: 300000, cooldown_hours: 12 },
+          },
+          {
+            group: "🛑 Cắt lỗ", id: "T3", icon: "📉",
+            name: "Giảm budget camp chậm",
+            desc: "CPR thực > 250k AND đơn thực < 3 (hôm nay) → Giảm budget -30%",
+            form: { name: "T3 — Giảm budget camp CPR cao", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "cpr_real", op: ">", value: 250000 }, { metric: "orders_real", op: "<", value: 3 }], condition_logic: "AND", product_key: "", time_window: "today", action: "set_budget_pct", action_payload: { pct: -30 }, check_schedule: "every_4h", min_spend: 200000, cooldown_hours: 12 },
+          },
+          {
+            group: "📈 Scale", id: "T4", icon: "📈",
+            name: "Tăng budget camp ngon",
+            desc: "CPR thực < 150k AND đơn thực > 5 (2 ngày) → Tăng budget +20%",
+            form: { name: "T4 — Tăng budget camp ngon", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "cpr_real", op: "<", value: 150000 }, { metric: "orders_real", op: ">", value: 5 }], condition_logic: "AND", product_key: "", time_window: "2d", action: "set_budget_pct", action_payload: { pct: 20 }, check_schedule: "every_4h", min_spend: 200000, cooldown_hours: 24 },
+          },
+          {
+            group: "📈 Scale", id: "T5", icon: "🔔",
+            name: "Báo camp ngon để scale tay",
+            desc: "CPR thực < 120k AND đơn thực > 5 (hôm nay) → Thông báo Telegram",
+            form: { name: "T5 — Báo camp ngon (scale tay)", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "cpr_real", op: "<", value: 120000 }, { metric: "orders_real", op: ">", value: 5 }], condition_logic: "AND", product_key: "", time_window: "today", action: "notify", action_payload: {}, check_schedule: "every_4h", min_spend: 100000, cooldown_hours: 8 },
+          },
+          {
+            group: "🎬 Creative", id: "T7", icon: "🎬",
+            name: "Tắt video CTR thấp",
+            desc: "CTR < 1% AND spend > 200k (hôm nay) → Tắt camp (video không hút)",
+            form: { name: "T7 — Tắt video CTR thấp", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "ctr", op: "<", value: 1 }, { metric: "spend", op: ">", value: 200000 }], condition_logic: "AND", product_key: "", time_window: "today", action: "pause", action_payload: {}, check_schedule: "every_4h", min_spend: 200000, cooldown_hours: 12 },
+          },
+          {
+            group: "🎬 Creative", id: "T8", icon: "🔔",
+            name: "Báo CPM tăng bất thường",
+            desc: "CPM > 500k (hôm nay) → Thông báo Telegram (audience bão hòa)",
+            form: { name: "T8 — Báo CPM tăng bất thường", rule_mode: "manual", scope_type: "all", scope_value: "", conditions: [{ metric: "cpm", op: ">", value: 500000 }], condition_logic: "AND", product_key: "", time_window: "today", action: "notify", action_payload: {}, check_schedule: "hourly", min_spend: 100000, cooldown_hours: 6 },
+          },
+        ]
+
         return (
           <div style={{ paddingBottom: 60 }}>
 
             {/* ── Header row ── */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 18, color: t.text }}>⚙️ Rule chăm sóc camp tự động</div>
                 <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Tự động hóa quản lý camp dựa trên đơn thực Pancake POS</div>
               </div>
-              <button onClick={() => { setRuleForm({ ...emptyForm }); setRulePreview(null) }}
-                style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 9, padding: "10px 20px", cursor: "pointer", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 14px rgba(59,130,246,0.35)" }}>
-                + Tạo rule mới
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {/* Template dropdown */}
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setRuleTemplateOpen(o => !o)}
+                    style={{ background: dark ? "#1e293b" : "#f1f5f9", color: t.text, border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 9, padding: "10px 16px", cursor: "pointer", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+                    📋 Dùng template {ruleTemplateOpen ? "▲" : "▼"}
+                  </button>
+                  {ruleTemplateOpen && (
+                    <>
+                    <div onClick={() => setRuleTemplateOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 55 }} />
+                    <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", width: 340, background: dark ? "#1a1a2e" : "#fff", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 12, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 60, overflow: "hidden" }}>
+                      <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted }}>Chọn template để tự điền form</div>
+                      {(["🛑 Cắt lỗ", "📈 Scale", "🎬 Creative"] as const).map(group => (
+                        <div key={group}>
+                          <div style={{ padding: "6px 14px 4px", fontSize: 10.5, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}` }}>{group}</div>
+                          {RULE_TEMPLATES.filter(tp => tp.group === group).map(tp => (
+                            <button key={tp.id} onClick={() => { setRuleForm({ ...tp.form }); setRulePreview(null); setRuleTemplateOpen(false) }}
+                              style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%", padding: "9px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left", transition: "background .12s" }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = dark ? "#111827" : "#f8fafc" }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "none" }}>
+                              <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{tp.icon}</span>
+                              <div>
+                                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>{tp.id} — {tp.name}</div>
+                                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>{tp.desc}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                      <div style={{ padding: "10px 14px", borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}`, fontSize: 11, color: t.textMuted }}>
+                        💡 Sau khi chọn, điều chỉnh phạm vi (tất cả camp / camp cụ thể) rồi bấm <b style={{ color: t.text }}>Lưu &amp; Bật</b>
+                      </div>
+                    </div>
+                    </>
+                  )}
+                </div>
+                <button onClick={() => { setRuleForm({ ...emptyForm }); setRulePreview(null) }}
+                  style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 9, padding: "10px 20px", cursor: "pointer", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 14px rgba(59,130,246,0.35)" }}>
+                  + Tạo mới
+                </button>
+              </div>
+            </div>
+
+            {/* ── Hướng dẫn collapsible ── */}
+            <div style={{ marginBottom: 16 }}>
+              <button onClick={() => setRuleHowOpen(o => !o)}
+                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: dark ? "rgba(59,130,246,0.08)" : "#eff6ff", border: `1px solid ${dark ? "rgba(59,130,246,0.25)" : "#bfdbfe"}`, borderRadius: ruleHowOpen ? "12px 12px 0 0" : 12, padding: "11px 16px", cursor: "pointer" }}>
+                <span style={{ fontSize: 15 }}>💡</span>
+                <span style={{ fontWeight: 600, fontSize: 13, color: dark ? "#93c5fd" : "#1d4ed8" }}>Rule chăm sóc hoạt động như thế nào?</span>
+                <span style={{ marginLeft: "auto", color: dark ? "#60a5fa" : "#3b82f6", fontSize: 12 }}>{ruleHowOpen ? "Thu gọn ▲" : "Xem hướng dẫn ▼"}</span>
               </button>
+              {ruleHowOpen && (
+                <div style={{ background: dark ? "rgba(59,130,246,0.05)" : "#f0f7ff", border: `1px solid ${dark ? "rgba(59,130,246,0.2)" : "#bfdbfe"}`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "16px 20px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16, marginBottom: 16 }}>
+                    {[
+                      { step: "1", icon: "🎯", title: "Chọn phạm vi", body: "Rule áp dụng cho tất cả camp của bạn, hoặc chỉ camp chứa tên SP cụ thể (VD: \"CHẢO VÀNG HẤP\"), hoặc camp chứa từ khoá bất kỳ." },
+                      { step: "2", icon: "📊", title: "Đặt điều kiện", body: "Dạng A: Bạn tự chọn ngưỡng (CPR thực, Spend, Đơn thực, CPM, CTR). Dạng B: Hệ thống tự tính theo CPR mục tiêu sản phẩm trong Pancake." },
+                      { step: "3", icon: "⚡", title: "Chọn hành động", body: "Tắt camp / Bật camp / Giảm-tăng budget % / Đặt budget cố định / Chỉ gửi Telegram để bạn quyết định tay." },
+                      { step: "4", icon: "⏱️", title: "Tần suất & Guard", body: "Chọn kiểm tra hằng giờ, mỗi 4h, hoặc sáng 7h. Guard: bỏ qua camp chưa đủ spend, cooldown tránh trigger liên tục." },
+                    ].map(s => (
+                      <div key={s.step} style={{ display: "flex", gap: 12 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.blue, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0, marginTop: 1 }}>{s.step}</div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: t.text, marginBottom: 4 }}>{s.icon} {s.title}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>{s.body}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: dark ? "rgba(245,158,11,0.1)" : "#fffbeb", border: `1px solid ${dark ? "rgba(245,158,11,0.25)" : "#fde68a"}`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: dark ? "#fcd34d" : "#92400e", display: "flex", gap: 8 }}>
+                    <span>⚠️</span>
+                    <span><b>Lưu ý quan trọng:</b> Dùng nút <b>🔍 Xem thử</b> trước khi bật rule thật — hệ thống sẽ hiện danh sách camp nào sẽ bị ảnh hưởng ngay lúc đó. Rule chỉ áp dụng cho camp của chính bạn (theo MKT code đăng nhập).</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ── Stat cards ── */}
@@ -2669,13 +2787,33 @@ export default function BaoCaoMktPage() {
               ))}
             </div>
 
-            {/* ── Rule cards ── */}
-            {rulesLoading && <div style={{ color: t.textMuted, padding: 20 }}>Đang tải...</div>}
+            {/* ── Template showcase (hiện khi chưa có rule) ── */}
             {!rulesLoading && rules.length === 0 && !ruleForm && (
-              <div style={{ ...card, padding: 60, textAlign: "center", color: t.textMuted }}>
-                Chưa có rule nào. Bấm &ldquo;+ Tạo rule mới&rdquo; để bắt đầu.
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>📋 Gợi ý — bắt đầu từ template phổ biến</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 8 }}>
+                  {RULE_TEMPLATES.map(tp => (
+                    <button key={tp.id} onClick={() => { setRuleForm({ ...tp.form }); setRulePreview(null) }}
+                      style={{ ...card, padding: "13px 15px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 12, transition: "border-color .15s, background .15s" }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = t.blue; (e.currentTarget as HTMLElement).style.background = dark ? "#1a2744" : "#eff6ff" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = dark ? "#2d2d44" : "#e2e8f0"; (e.currentTarget as HTMLElement).style.background = t.card }}>
+                      <span style={{ fontSize: 20, flexShrink: 0, marginTop: 1 }}>{tp.icon}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: dark ? "#2a3a52" : "#f1f5f9", color: t.textMuted }}>{tp.id}</span>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: t.text }}>{tp.name}</span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: t.textMuted, lineHeight: 1.45 }}>{tp.desc}</div>
+                        <div style={{ marginTop: 7, fontSize: 11, color: t.blue, fontWeight: 600 }}>Dùng template này →</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* ── Rule cards ── */}
+            {rulesLoading && <div style={{ color: t.textMuted, padding: 20 }}>Đang tải...</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {rules.map((rule: any) => {
                 const ai = actionInfo(rule.action)
