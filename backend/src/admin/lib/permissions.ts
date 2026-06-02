@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   "page.gia-von.manage": "Nhập/sửa lô hàng giá vốn",
   "page.bao-cao.camp-control": "Bật/tắt camp + chỉnh ngân sách FB Ads",
   "page.bao-cao.fb-accounts": "Xem và quản lý tài khoản FB Ads (manager only)",
+  "page.bao-cao.care-rules": "Cài rule chăm sóc camp tự động (tắt/budget/notify)",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -29,7 +30,7 @@ export type PermissionKey = keyof typeof PERMISSIONS
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
   manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage"],
-  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
+  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage"],

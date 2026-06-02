@@ -157,6 +157,26 @@ function extractMktFromUtmCampaign(campaign: string | null | undefined): string 
   return campaign.split("_")[1] ?? ""
 }
 
+// Extract FB campaign ID từ utm_id trong order_link hoặc p_utm_id
+// utm_id trong URL của đơn Pancake = campaign_id trong FB Ads Manager (đã verify 100%)
+function extractFbCampaignId(raw: any): string | null {
+  // Thử p_utm_id trực tiếp trước
+  const directId = raw?.p_utm_id ?? raw?.marketing?.utm_id
+  if (directId && /^\d{10,}$/.test(String(directId))) return String(directId)
+
+  // Fallback: parse từ order_link hoặc note chứa URL có utm_id=
+  const sources = [
+    raw?.order_link,
+    ...(Array.isArray(raw?.customer?.notes) ? raw.customer.notes.map((n: any) => n.message) : []),
+  ]
+  for (const src of sources) {
+    if (!src) continue
+    const match = String(src).match(/[?&]utm_id=(\d{10,})/)
+    if (match) return match[1]
+  }
+  return null
+}
+
 export function mapPancakeOrder(raw: any): Record<string, any> {
   const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
     name: item.variation_info?.name ?? item.name ?? "—",
@@ -181,6 +201,7 @@ export function mapPancakeOrder(raw: any): Record<string, any> {
     marketer_name: raw.marketer?.name || extractMktFromUtmCampaign(raw.p_utm_campaign) || "",
     sale_name: raw.assigning_seller?.name ?? "",
     care_name: raw.assigning_care?.name ?? "",
+    fb_campaign_id: extractFbCampaignId(raw),
     raw: raw,
     pancake_created_at: raw.inserted_at ? new Date(raw.inserted_at) : (raw.created_at ? new Date(raw.created_at) : null),
     synced_at: new Date(),
