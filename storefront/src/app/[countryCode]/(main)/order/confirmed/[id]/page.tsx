@@ -45,6 +45,7 @@ export default async function OrderConfirmedPage({ params }: Props) {
   const firstItem = order.items?.[0] as any
   const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
   const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
+  const paymentMethod = (order as any).metadata?.payment_method ?? "cod"
 
   return (
     <>
@@ -55,6 +56,7 @@ export default async function OrderConfirmedPage({ params }: Props) {
         contentIds={contentIds}
         productPixelId={productPixelId}
         productCapiToken={productCapiToken}
+        paymentMethod={paymentMethod}
       />
       <OrderCompletedTemplate order={order} countryCode={params.countryCode} />
     </>

@@ -11,6 +11,7 @@ export default function PurchaseTracker({
   contentIds,
   productPixelId,
   productCapiToken,
+  paymentMethod = "cod",
 }: {
   orderId: string
   value: number
@@ -18,6 +19,7 @@ export default function PurchaseTracker({
   contentIds: string[]
   productPixelId?: string
   productCapiToken?: string
+  paymentMethod?: string
 }) {
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -34,24 +36,26 @@ export default function PurchaseTracker({
       ...utm,
     }
 
-    // Dùng CompleteRegistration thay vì Purchase — đơn COD chưa chắc giao được
-    // Purchase thật sẽ được bắn từ backend khi Pancake báo status=3 (giao thành công)
+    // Sepay (chuyển khoản) → đã thanh toán thật → bắn Purchase ngay
+    // COD → chưa chắc giao được → bắn CompleteRegistration, Purchase bắn sau khi Pancake status=3
+    const eventName = paymentMethod === "sepay" ? "Purchase" : "CompleteRegistration"
+
     if (window.fbq) {
-      window.fbq("track", "CompleteRegistration", customData, { eventID: eventId })
+      window.fbq("track", eventName, customData, { eventID: eventId })
     }
 
-    // CAPI → pixel chung (global)
+    // CAPI → pixel chung
     sendCAPIViaRoute({
-      eventName: "CompleteRegistration",
+      eventName,
       eventId,
       eventSourceUrl: window.location.href,
       customData,
     })
 
-    // CAPI → pixel riêng sản phẩm (nếu có và khác pixel chung)
+    // CAPI → pixel riêng sản phẩm (nếu có)
     if (productPixelId && productCapiToken) {
       sendCAPIViaRoute({
-        eventName: "CompleteRegistration",
+        eventName,
         eventId,
         eventSourceUrl: window.location.href,
         pixelId: productPixelId,
