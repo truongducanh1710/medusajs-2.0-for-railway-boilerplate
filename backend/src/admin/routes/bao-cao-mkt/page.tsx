@@ -21,8 +21,12 @@ function carePctColor(pct: number | null): string {
 
 const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT", "NGUYEN MAI"]
 
+function todayVN(): string {
+  return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
+}
+
 function getThisMonthRange() {
-  const now = new Date()
+  const now = new Date(Date.now() + 7 * 3600000)
   const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
   const to = now.toISOString().slice(0, 10)
   return { from, to }
@@ -57,9 +61,9 @@ export default function BaoCaoMktPage() {
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
-  const [campDate, setCampDate] = useState(new Date().toISOString().slice(0, 10))
-  const [campFrom, setCampFrom] = useState(new Date().toISOString().slice(0, 10))
-  const [campTo, setCampTo] = useState(new Date().toISOString().slice(0, 10))
+  const [campDate, setCampDate] = useState(todayVN())
+  const [campFrom, setCampFrom] = useState(todayVN())
+  const [campTo, setCampTo] = useState(todayVN())
   const [campRangeMode, setCampRangeMode] = useState(false)
 
   // Tab Chi phí SP
@@ -89,13 +93,13 @@ export default function BaoCaoMktPage() {
   const [actLogsMkt, setActLogsMkt] = useState("")
   const [actLogsAction, setActLogsAction] = useState("")
   const [actLogsFrom, setActLogsFrom] = useState("")
-  const [actLogsTo, setActLogsTo] = useState(new Date().toISOString().slice(0, 10))
+  const [actLogsTo, setActLogsTo] = useState(todayVN())
   const [actLogsOffset, setActLogsOffset] = useState(0)
   const LOGS_LIMIT = 100
 
   // Tab 3 sub-tab: Lịch sử FB
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const sevenDaysAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10) })()
+  const todayStr = todayVN()
+  const sevenDaysAgo = (() => { const d = new Date(Date.now() + 7 * 3600000); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10) })()
   const [fbHistFrom, setFbHistFrom] = useState(sevenDaysAgo)
   const [fbHistTo, setFbHistTo] = useState(todayStr)
   const [fbHistMkt, setFbHistMkt] = useState("")
@@ -224,7 +228,7 @@ export default function BaoCaoMktPage() {
   const syncCost = useCallback(async () => {
     setSyncing(true)
     try {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = todayVN()
       const res = await apiFetch("/admin/pancake-sync/report/mkt-cost", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -759,8 +763,8 @@ export default function BaoCaoMktPage() {
               { label: "3 ngày", days: 3 },
               { label: "7 ngày", days: 7 },
             ].map(({ label, days }) => {
-              const today = new Date().toISOString().slice(0, 10)
-              const fromD = days === 0 ? today : (() => { const d = new Date(); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10) })()
+              const today = todayVN()
+              const fromD = days === 0 ? today : (() => { const d = new Date(Date.now() + 7 * 3600000); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10) })()
               const active = campRangeMode ? (campFrom === fromD && campTo === today) : (!campRangeMode && days === 0 && campDate === today)
               return (
                 <button key={label} onClick={() => {
@@ -1300,8 +1304,8 @@ export default function BaoCaoMktPage() {
             {/* Controls */}
             <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
               {qBtnSp("Hôm nay", todayStr, todayStr)}
-              {qBtnSp("3 ngày", (() => { const d = new Date(); d.setDate(d.getDate() - 2); return d.toISOString().slice(0,10) })(), todayStr)}
-              {qBtnSp("7 ngày", (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().slice(0,10) })(), todayStr)}
+              {qBtnSp("3 ngày", (() => { const d = new Date(Date.now() + 7 * 3600000); d.setDate(d.getDate() - 2); return d.toISOString().slice(0,10) })(), todayStr)}
+              {qBtnSp("7 ngày", (() => { const d = new Date(Date.now() + 7 * 3600000); d.setDate(d.getDate() - 6); return d.toISOString().slice(0,10) })(), todayStr)}
               <input type="date" value={spFrom} onChange={e => setSpFrom(e.target.value)}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 8px", color: t.inputText, fontSize: 13 }} />
               <span style={{ color: t.textMuted }}>→</span>
