@@ -41,6 +41,11 @@ export default async function OrderConfirmedPage({ params }: Props) {
   const value = (order.total ?? 0) / 100
   const currency = order.currency_code?.toUpperCase() ?? "VND"
 
+  // Lấy pixel riêng từ sản phẩm đầu tiên trong đơn
+  const firstItem = order.items?.[0] as any
+  const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
+  const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
+
   return (
     <>
       <PurchaseTracker
@@ -48,6 +53,8 @@ export default async function OrderConfirmedPage({ params }: Props) {
         value={value}
         currency={currency}
         contentIds={contentIds}
+        productPixelId={productPixelId}
+        productCapiToken={productCapiToken}
       />
       <OrderCompletedTemplate order={order} countryCode={params.countryCode} />
     </>
