@@ -53,6 +53,7 @@ export default function BaoCaoMktPage() {
   const [ruleSaving, setRuleSaving] = useState(false)
   const [ruleLogs, setRuleLogs] = useState<Record<string, any[]>>({})
   const [ruleLogsOpen, setRuleLogsOpen] = useState<string | null>(null)
+  const [ruleGuardOpen, setRuleGuardOpen] = useState(false)
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
@@ -2550,20 +2551,20 @@ export default function BaoCaoMktPage() {
 
       {/* ===== TAB RULES ===== */}
       {activeTab === "rules" && (() => {
-        const METRICS = [
-          { value: "spend", label: "Spend (đ)" },
-          { value: "cpr_real", label: "CPR thực (đ/đơn)" },
-          { value: "orders_real", label: "Số đơn thực" },
-          { value: "orders_delivered", label: "Đơn giao thành công" },
-          { value: "cpm", label: "CPM (đ)" },
-          { value: "ctr", label: "CTR (%)" },
+        const R_METRICS = [
+          { value: "spend",            label: "Spend",         unit: "đ"   },
+          { value: "cpr_real",         label: "CPR thực",      unit: "đ"   },
+          { value: "orders_real",      label: "Số đơn thực",   unit: "đơn" },
+          { value: "orders_delivered", label: "Đơn giao thành công", unit: "đơn" },
+          { value: "cpm",              label: "CPM",           unit: "đ"   },
+          { value: "ctr",              label: "CTR",           unit: "%"   },
         ]
-        const ACTIONS = [
-          { value: "pause", label: "⏸ Tắt camp" },
-          { value: "activate", label: "▶️ Bật camp" },
-          { value: "set_budget_pct", label: "📉 Thay đổi budget ±%" },
-          { value: "set_budget_abs", label: "💰 Đặt budget cố định" },
-          { value: "notify", label: "🔔 Gửi Telegram (không tự làm)" },
+        const R_ACTIONS = [
+          { value: "pause",          icon: "⏸", label: "Tắt camp",          tone: "#ef4444" },
+          { value: "activate",       icon: "▶️", label: "Bật camp",          tone: "#22c55e" },
+          { value: "set_budget_pct", icon: "📉", label: "Budget ±%",         tone: "#3b82f6" },
+          { value: "set_budget_abs", icon: "💰", label: "Budget cố định",    tone: "#3b82f6" },
+          { value: "notify",         icon: "🔔", label: "Chỉ thông báo",     tone: "#f59e0b" },
         ]
         const emptyForm = {
           name: "", rule_mode: "manual", scope_type: "all", scope_value: "",
@@ -2572,6 +2573,7 @@ export default function BaoCaoMktPage() {
           action: "pause", action_payload: {}, check_schedule: "hourly",
           min_spend: 200000, cooldown_hours: 12,
         }
+
         const saveRule = async () => {
           if (!ruleForm?.name?.trim()) return alert("Cần nhập tên rule")
           setRuleSaving(true)
@@ -2610,162 +2612,469 @@ export default function BaoCaoMktPage() {
           setRuleLogs((prev: any) => ({ ...prev, [ruleId]: r.logs ?? [] }))
           setRuleLogsOpen(ruleId)
         }
-        const logLabel: Record<string, string> = { pause: "⏸ Tắt", activate: "▶ Bật", set_budget: "💰 Budget", notify: "🔔 Notify", not_matched: "— Không khớp", below_min_spend: "⏭ Min spend", skipped_cooldown: "⏭ Cooldown", blocked_permission: "🚫 Blocked" }
+        const logLabel: Record<string, string> = {
+          pause: "⏸ Tắt", activate: "▶ Bật", set_budget: "💰 Budget", notify: "🔔 Notify",
+          not_matched: "— Không khớp", below_min_spend: "⏭ Min spend",
+          skipped_cooldown: "⏭ Cooldown", blocked_permission: "🚫 Blocked",
+        }
+
+        const activeCount = rules.filter((r: any) => r.enabled).length
+        const todayTriggers = rules.reduce((s: number, r: any) => s + (r.trigger_count_today ?? 0), 0)
+        const pausedCamps = rules.reduce((s: number, r: any) => s + (r.paused_camps_today ?? 0), 0)
+
+        // shared style helpers
+        const card = { background: t.card, border: `1px solid ${dark ? "#2d2d44" : "#e2e8f0"}`, borderRadius: 12 }
+        const inputSt = { width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${dark ? "#374151" : "#cbd5e1"}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 13, outline: "none" }
+        const selSt = { ...inputSt }
+
+        const scopeLabel = (rule: any) => {
+          if (rule.scope_type === "all") return "🌐 Tất cả camp"
+          if (rule.scope_type === "product") return `📦 SP: ${rule.scope_value}`
+          return `🔤 Camp chứa "${rule.scope_value}"`
+        }
+        const actionInfo = (v: string) => R_ACTIONS.find(a => a.value === v) ?? { icon: "⚡", label: v, tone: t.blue }
+        const metricLabel = (v: string) => R_METRICS.find(m => m.value === v)?.label ?? v
+
         return (
-          <div style={{ padding: "0 0 40px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 16, color: t.text }}>⚙️ Rule chăm sóc camp tự động</div>
-              <button onClick={() => { setRuleForm({ ...emptyForm }); setRulePreview(null) }} style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 6, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>+ Tạo rule mới</button>
+          <div style={{ paddingBottom: 60 }}>
+
+            {/* ── Header row ── */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: t.text }}>⚙️ Rule chăm sóc camp tự động</div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Tự động hóa quản lý camp dựa trên đơn thực Pancake POS</div>
+              </div>
+              <button onClick={() => { setRuleForm({ ...emptyForm }); setRulePreview(null) }}
+                style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 9, padding: "10px 20px", cursor: "pointer", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 14px rgba(59,130,246,0.35)" }}>
+                + Tạo rule mới
+              </button>
             </div>
-            {rulesLoading && <div style={{ color: t.textMuted }}>Đang tải...</div>}
+
+            {/* ── Stat cards ── */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+              {[
+                { v: rules.length,  k: "Tổng số rule",          color: t.text },
+                { v: activeCount,   k: "Đang chạy",             color: t.green },
+                { v: todayTriggers, k: "Lượt kích hoạt hôm nay", color: t.text },
+                { v: pausedCamps,   k: "Camp đã tắt tự động",   color: "#f87171" },
+              ].map(({ v, k, color }) => (
+                <div key={k} style={{ ...card, padding: "13px 18px", flex: "1 1 120px", minWidth: 120 }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "ui-monospace,monospace", color, letterSpacing: "-0.02em" }}>{v}</div>
+                  <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 2 }}>{k}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Rule cards ── */}
+            {rulesLoading && <div style={{ color: t.textMuted, padding: 20 }}>Đang tải...</div>}
             {!rulesLoading && rules.length === 0 && !ruleForm && (
-              <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Chưa có rule nào. Tạo rule đầu tiên để hệ thống tự chăm sóc camp cho bạn.</div>
-            )}
-            {rules.map((rule: any) => (
-              <div key={rule.id} style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <span style={{ fontWeight: 700, color: t.text }}>{rule.name}</span>
-                    <span style={{ marginLeft: 8, fontSize: 11, background: rule.rule_mode === "smart_product" ? t.blue : t.border, color: rule.rule_mode === "smart_product" ? "#fff" : t.text, borderRadius: 4, padding: "2px 6px" }}>{rule.rule_mode === "smart_product" ? "Dạng B" : "Dạng A"}</span>
-                    {!rule.enabled && <span style={{ marginLeft: 6, fontSize: 11, color: "#ef4444" }}>PAUSED</span>}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => toggleRule(rule)} style={{ background: rule.enabled ? "#ef4444" : "#16a34a", color: "#fff", border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>{rule.enabled ? "Tắt" : "Bật"}</button>
-                    <button onClick={() => { setRuleForm({ ...rule }); setRulePreview(null) }} style={{ background: t.border, color: t.text, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Sửa</button>
-                    <button onClick={() => loadRuleLogs(rule.id)} style={{ background: t.border, color: t.text, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>{ruleLogsOpen === rule.id ? "▲ Logs" : "▼ Logs"}</button>
-                    <button onClick={() => deleteRule(rule.id)} style={{ background: "transparent", color: "#ef4444", border: `1px solid #ef4444`, borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Xóa</button>
-                  </div>
-                </div>
-                <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted, display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <span>👤 {rule.mkt_name}</span>
-                  <span>🎯 {rule.scope_type === "all" ? "Tất cả camp" : `${rule.scope_type}: ${rule.scope_value}`}</span>
-                  <span>⚡ {ACTIONS.find((a: any) => a.value === rule.action)?.label ?? rule.action}</span>
-                  <span>⏱ {rule.time_window} · {rule.check_schedule}</span>
-                  {rule.last_triggered_at && <span>🕐 {new Date(rule.last_triggered_at).toLocaleString("vi-VN")}</span>}
-                </div>
-                {ruleLogsOpen === rule.id && (
-                  <div style={{ marginTop: 10, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
-                    {!(ruleLogs[rule.id]?.length) && <div style={{ color: t.textMuted, fontSize: 12 }}>Chưa có log nào</div>}
-                    {(ruleLogs[rule.id] ?? []).map((l: any) => (
-                      <div key={l.id} style={{ display: "flex", gap: 12, fontSize: 12, padding: "3px 0", borderBottom: `1px solid ${t.border}`, color: t.text }}>
-                        <span style={{ minWidth: 110, color: t.textMuted }}>{new Date(l.created_at).toLocaleString("vi-VN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                        <span style={{ minWidth: 80 }}>{l.campaign_name?.slice(0, 25)}...</span>
-                        <span style={{ color: l.matched ? t.green : t.textMuted }}>{logLabel[l.action_taken] ?? l.action_taken}</span>
-                        {l.metrics_snapshot?.cpr_real && <span>CPR: {Math.round(l.metrics_snapshot.cpr_real/1000)}k</span>}
-                        {l.metrics_snapshot?.spend && <span>Spend: {Math.round(l.metrics_snapshot.spend/1000)}k</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div style={{ ...card, padding: 60, textAlign: "center", color: t.textMuted }}>
+                Chưa có rule nào. Bấm &ldquo;+ Tạo rule mới&rdquo; để bắt đầu.
               </div>
-            ))}
-            {ruleForm !== null && (
-              <div style={{ background: t.card, border: `2px solid ${t.blue}`, borderRadius: 10, padding: 20, marginTop: 20 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: t.text, marginBottom: 16 }}>{ruleForm.id ? "✏️ Sửa rule" : "➕ Tạo rule mới"}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div style={{ gridColumn: "1/-1" }}>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Tên rule *</label>
-                    <input value={ruleForm.name ?? ""} onChange={e => setRuleForm((f: any) => ({ ...f, name: e.target.value }))} placeholder="VD: Tắt chảo vàng CPR cao" style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }} />
-                  </div>
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Dạng rule</label>
-                    <select value={ruleForm.rule_mode ?? "manual"} onChange={e => setRuleForm((f: any) => ({ ...f, rule_mode: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }}>
-                      <option value="manual">Dạng A — Tự đặt ngưỡng</option>
-                      <option value="smart_product">Dạng B — Theo Learning + ngưỡng SP</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Áp dụng cho</label>
-                    <select value={ruleForm.scope_type ?? "all"} onChange={e => setRuleForm((f: any) => ({ ...f, scope_type: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }}>
-                      <option value="all">Tất cả camp của tôi</option>
-                      <option value="product">Camp chứa tên SP</option>
-                      <option value="campaign_name_like">Camp chứa chữ (nâng cao)</option>
-                    </select>
-                  </div>
-                  {ruleForm.scope_type !== "all" && (
-                    <div style={{ gridColumn: "1/-1" }}>
-                      <label style={{ color: t.textMuted, fontSize: 12 }}>Giá trị scope</label>
-                      <input value={ruleForm.scope_value ?? ""} onChange={e => setRuleForm((f: any) => ({ ...f, scope_value: e.target.value }))} placeholder={ruleForm.scope_type === "product" ? "VD: CHẢO VÀNG HẤP" : "VD: NỒI CHIÊN"} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }} />
-                    </div>
-                  )}
-                  {ruleForm.rule_mode === "smart_product" && (
-                    <div style={{ gridColumn: "1/-1" }}>
-                      <label style={{ color: t.textMuted, fontSize: 12 }}>Sản phẩm (lấy ngưỡng CPR)</label>
-                      <select value={ruleForm.product_key ?? ""} onChange={e => setRuleForm((f: any) => ({ ...f, product_key: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }}>
-                        <option value="">-- Chọn sản phẩm --</option>
-                        {thresholds.map((th: any) => <option key={th.product_key} value={th.product_key}>{th.product_label} (CPR mục tiêu: {Math.round(th.target_cpr/1000)}k)</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {ruleForm.rule_mode === "manual" && (
-                    <div style={{ gridColumn: "1/-1" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <label style={{ color: t.textMuted, fontSize: 12 }}>Điều kiện</label>
-                        <select value={ruleForm.condition_logic ?? "AND"} onChange={e => setRuleForm((f: any) => ({ ...f, condition_logic: e.target.value }))} style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontSize: 12 }}>
-                          <option value="AND">TẤT CẢ đúng (AND)</option>
-                          <option value="OR">MỘT điều đúng (OR)</option>
-                        </select>
-                      </div>
-                      {(ruleForm.conditions ?? []).map((cond: any, i: number) => (
-                        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-                          <select value={cond.metric} onChange={e => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.map((c: any, j: number) => j===i?{...c,metric:e.target.value}:c) }))} style={{ flex: 2, padding: "6px 10px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text }}>{METRICS.map((m: any) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-                          <select value={cond.op} onChange={e => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.map((c: any, j: number) => j===i?{...c,op:e.target.value}:c) }))} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text }}>{[">",">=","<","<=","=="].map(op => <option key={op} value={op}>{op}</option>)}</select>
-                          <input type="number" value={cond.value} onChange={e => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.map((c: any, j: number) => j===i?{...c,value:Number(e.target.value)}:c) }))} style={{ flex: 2, padding: "6px 10px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text }} />
-                          <button onClick={() => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.filter((_: any, j: number) => j!==i) }))} style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18 }}>×</button>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {rules.map((rule: any) => {
+                const ai = actionInfo(rule.action)
+                const isB = rule.rule_mode === "smart_product"
+                return (
+                  <div key={rule.id} style={{
+                    ...card, padding: "16px 18px",
+                    opacity: rule.enabled ? 1 : 0.72,
+                    transition: "border-color .15s",
+                  }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "12px 18px", alignItems: "center" }}>
+                      {/* left */}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{rule.name}</span>
+                          {/* mode badge */}
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6, border: "1px solid",
+                            ...(isB
+                              ? { background: "rgba(168,85,247,0.15)", color: "#d8b4fe", borderColor: "rgba(168,85,247,0.3)" }
+                              : { background: dark ? "#2a3a52" : "#f1f5f9", color: dark ? "#cdd9ec" : "#475569", borderColor: dark ? "#3a4a63" : "#cbd5e1" })
+                          }}>
+                            {isB ? "🧠 Dạng B · Smart" : "⚡ Dạng A · Thủ công"}
+                          </span>
                         </div>
-                      ))}
-                      <button onClick={() => setRuleForm((f: any) => ({ ...f, conditions: [...(f.conditions??[]), { metric: "spend", op: ">", value: 200000 }] }))} style={{ background: "transparent", border: `1px dashed ${t.border}`, color: t.blue, borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>+ Thêm điều kiện</button>
-                    </div>
-                  )}
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Hành động</label>
-                    <select value={ruleForm.action ?? "pause"} onChange={e => setRuleForm((f: any) => ({ ...f, action: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }}>{ACTIONS.map((a: any) => <option key={a.value} value={a.value}>{a.label}</option>)}</select>
-                  </div>
-                  {(ruleForm.action === "set_budget_pct" || ruleForm.action === "set_budget_abs") && (
-                    <div>
-                      <label style={{ color: t.textMuted, fontSize: 12 }}>{ruleForm.action === "set_budget_pct" ? "Thay đổi % (âm=giảm, ví dụ -30)" : "Budget mới (đ)"}</label>
-                      <input type="number" value={ruleForm.action === "set_budget_pct" ? (ruleForm.action_payload?.pct ?? -30) : (ruleForm.action_payload?.daily_budget ?? 300000)} onChange={e => setRuleForm((f: any) => ({ ...f, action_payload: f.action === "set_budget_pct" ? { pct: Number(e.target.value) } : { daily_budget: Number(e.target.value) } }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }} />
-                    </div>
-                  )}
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Tính trong</label>
-                    <select value={ruleForm.time_window ?? "today"} onChange={e => setRuleForm((f: any) => ({ ...f, time_window: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }}>
-                      <option value="today">Hôm nay</option><option value="2d">2 ngày</option><option value="3d">3 ngày</option><option value="7d">7 ngày</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Kiểm tra mỗi</label>
-                    <select value={ruleForm.check_schedule ?? "hourly"} onChange={e => setRuleForm((f: any) => ({ ...f, check_schedule: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }}>
-                      <option value="hourly">Hằng giờ</option><option value="every_4h">Mỗi 4 giờ</option><option value="daily_7h">Mỗi sáng 7h</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Chỉ áp khi đã tiêu ≥ (đ)</label>
-                    <input type="number" value={ruleForm.min_spend ?? 200000} onChange={e => setRuleForm((f: any) => ({ ...f, min_spend: Number(e.target.value) }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }} />
-                  </div>
-                  <div>
-                    <label style={{ color: t.textMuted, fontSize: 12 }}>Không lặp lại trong (giờ)</label>
-                    <input type="number" value={ruleForm.cooldown_hours ?? 12} onChange={e => setRuleForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, marginTop: 4 }} />
-                  </div>
-                </div>
-                {rulePreview !== null && (
-                  <div style={{ marginTop: 16, padding: 12, background: t.bg, borderRadius: 6, border: `1px solid ${t.border}` }}>
-                    <div style={{ fontWeight: 600, color: t.text, marginBottom: 8 }}>🔍 Xem thử — {rulePreview.length === 0 ? "Không có camp nào khớp" : `${rulePreview.length} camp sẽ bị ảnh hưởng:`}</div>
-                    {rulePreview.map((c: any) => (
-                      <div key={c.campaign_id} style={{ fontSize: 12, color: t.text, padding: "4px 0", borderBottom: `1px solid ${t.border}` }}>
-                        <span style={{ fontWeight: 600 }}>{c.campaign_name}</span>
-                        <span style={{ marginLeft: 12, color: t.textMuted }}>CPR: {c.metrics.cpr_real ? Math.round(c.metrics.cpr_real/1000)+"k" : "—"} | Spend: {Math.round((c.metrics.spend??0)/1000)}k | Đơn: {c.metrics.orders_real??0}</span>
+                        {/* meta chips */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginTop: 10 }}>
+                          {/* scope chip */}
+                          <span style={{ fontSize: 12, padding: "4px 9px", borderRadius: 7, background: dark ? "#233044" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, color: t.textSub }}>
+                            {scopeLabel(rule)}
+                          </span>
+                          <span style={{ color: t.textMuted, fontSize: 12 }}>→</span>
+                          {/* action chip */}
+                          <span style={{ fontSize: 12, padding: "4px 9px", borderRadius: 7, background: ai.tone + "20", border: `1px solid ${ai.tone}38`, color: ai.tone }}>
+                            {ai.icon} {ai.label}
+                          </span>
+                          {/* conditions inline */}
+                          {!isB && (rule.conditions ?? []).length > 0 && (
+                            <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, color: t.textMuted }}>
+                              {(rule.conditions as any[]).map((c: any, i: number) => (
+                                <span key={i}>
+                                  {i > 0 && <span style={{ color: t.blue, fontWeight: 700, margin: "0 4px" }}>{rule.condition_logic}</span>}
+                                  <b style={{ color: t.textSub }}>{metricLabel(c.metric)}</b>{" "}{c.op}{" "}
+                                  <b style={{ color: t.textSub }}>{["spend","cpr_real","cpm"].includes(c.metric) ? `${Math.round(Number(c.value)/1000)}k` : c.value}{c.metric === "ctr" ? "%" : ""}</b>
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                          {isB && <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, color: t.textMuted }}>Theo <b>Learning</b> + ngưỡng CPR mục tiêu SP</span>}
+                        </div>
                       </div>
-                    ))}
+
+                      {/* right */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                        {/* last triggered */}
+                        <div style={{ textAlign: "right", minWidth: 80 }}>
+                          <div style={{ fontSize: 12, color: t.text, fontWeight: 600, fontFamily: "ui-monospace,monospace" }}>
+                            {rule.last_triggered_at ? new Date(rule.last_triggered_at).toLocaleString("vi-VN", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "—"}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 1 }}>
+                            {(rule.trigger_count ?? 0) > 0 ? `Đã chạy ${rule.trigger_count} lần` : "Chưa kích hoạt"}
+                          </div>
+                        </div>
+                        {/* divider */}
+                        <div style={{ width: 1, height: 26, background: dark ? "#2d3748" : "#e2e8f0" }} />
+                        {/* toggle */}
+                        <div onClick={() => toggleRule(rule)} style={{ width: 40, height: 23, borderRadius: 999, background: rule.enabled ? "#22c55e" : (dark ? "#36465f" : "#cbd5e1"), position: "relative", cursor: "pointer", transition: "background .18s", flexShrink: 0 }}>
+                          <div style={{ position: "absolute", top: 2.5, left: rule.enabled ? "auto" : 2.5, right: rule.enabled ? 2.5 : "auto", width: 18, height: 18, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.4)", transition: "all .18s" }} />
+                        </div>
+                        {/* divider */}
+                        <div style={{ width: 1, height: 26, background: dark ? "#2d3748" : "#e2e8f0" }} />
+                        {/* icon buttons */}
+                        <div style={{ display: "flex", gap: 3 }}>
+                          {[
+                            { title: "Xem logs", ico: "📊", action: () => loadRuleLogs(rule.id) },
+                            { title: "Sửa rule", ico: "✏️", action: () => { setRuleForm({ ...rule }); setRulePreview(null) } },
+                            { title: "Xóa rule", ico: "🗑️", action: () => deleteRule(rule.id), danger: true },
+                          ].map(btn => (
+                            <button key={btn.ico} onClick={btn.action} title={btn.title} style={{
+                              width: 32, height: 32, borderRadius: 8, display: "grid", placeItems: "center",
+                              background: "transparent", border: `1px solid ${btn.danger ? "transparent" : "transparent"}`,
+                              cursor: "pointer", fontSize: 14, color: btn.danger ? "#f87171" : t.textMuted,
+                              transition: "background .14s",
+                            }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = dark ? "#1f2937" : "#f1f5f9" }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                            >{btn.ico}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* logs panel */}
+                    {ruleLogsOpen === rule.id && (
+                      <div style={{ marginTop: 12, borderTop: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, paddingTop: 12 }}>
+                        {!(ruleLogs[rule.id]?.length) && <div style={{ color: t.textMuted, fontSize: 12 }}>Chưa có log nào</div>}
+                        {(ruleLogs[rule.id] ?? []).map((l: any) => (
+                          <div key={l.id} style={{ display: "flex", gap: 10, fontSize: 12, padding: "5px 0", borderBottom: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}`, alignItems: "center" }}>
+                            <span style={{ minWidth: 110, color: t.textMuted, fontFamily: "ui-monospace,monospace", fontSize: 11 }}>{new Date(l.created_at).toLocaleString("vi-VN", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" })}</span>
+                            <span style={{ minWidth: 90, color: t.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.campaign_name?.slice(0, 22)}</span>
+                            <span style={{ color: l.matched ? t.green : t.textMuted, fontWeight: 600 }}>{logLabel[l.action_taken] ?? l.action_taken}</span>
+                            {l.metrics_snapshot?.cpr_real && <span style={{ color: t.textMuted }}>CPR: <b style={{ color: "#fcd34d" }}>{Math.round(l.metrics_snapshot.cpr_real/1000)}k</b></span>}
+                            {l.metrics_snapshot?.spend && <span style={{ color: t.textMuted }}>Spend: {Math.round(l.metrics_snapshot.spend/1000)}k</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-                <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-                  <button onClick={previewRule} disabled={rulePreviewLoading} style={{ background: t.border, color: t.text, border: "none", borderRadius: 6, padding: "8px 18px", cursor: "pointer" }}>{rulePreviewLoading ? "⏳ Đang xem..." : "🔍 Xem thử"}</button>
-                  <button onClick={saveRule} disabled={ruleSaving} style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 6, padding: "8px 18px", cursor: "pointer", fontWeight: 600 }}>{ruleSaving ? "Đang lưu..." : ruleForm.id ? "Lưu thay đổi" : "Lưu & Bật"}</button>
-                  <button onClick={() => { setRuleForm(null); setRulePreview(null) }} style={{ background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 6, padding: "8px 18px", cursor: "pointer" }}>Hủy</button>
+                )
+              })}
+            </div>
+
+            {/* ── Drawer overlay ── */}
+            {ruleForm !== null && (
+              <>
+                <div onClick={() => { setRuleForm(null); setRulePreview(null) }}
+                  style={{ position: "fixed", inset: 0, background: "rgba(7,12,22,0.55)", backdropFilter: "blur(2px)", zIndex: 40 }} />
+                <div style={{
+                  position: "fixed", top: 0, right: 0, bottom: 0, width: 560, maxWidth: "94vw",
+                  background: dark ? "#0f172a" : "#fff", borderLeft: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`,
+                  boxShadow: "-24px 0 60px rgba(0,0,0,0.45)", zIndex: 50,
+                  display: "flex", flexDirection: "column",
+                }}>
+                  {/* drawer head */}
+                  <div style={{ padding: "18px 22px", borderBottom: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, display: "flex", alignItems: "center", gap: 12, background: dark ? "linear-gradient(180deg,#16213a,#0f172a)" : "#fafafa", flexShrink: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 17, color: t.text }}>{ruleForm.id ? "✏️ Sửa rule" : "➕ Tạo rule mới"}</div>
+                    <button onClick={() => { setRuleForm(null); setRulePreview(null) }}
+                      style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 20, lineHeight: 1, borderRadius: 6, padding: "2px 6px" }}>✕</button>
+                  </div>
+
+                  {/* drawer body */}
+                  <div style={{ flex: 1, overflowY: "auto", padding: "4px 22px 24px" }}>
+
+                    {/* Rule name */}
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Tên rule <span style={{ color: t.blue }}>*</span></div>
+                      <input value={ruleForm.name ?? ""} onChange={e => setRuleForm((f: any) => ({ ...f, name: e.target.value }))}
+                        placeholder="VD: Tắt chảo vàng CPR cao" style={inputSt} />
+                    </div>
+
+                    {/* Mode cards */}
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Chế độ rule</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        {[
+                          { id: "manual",        icon: "⚡", tag: "Dạng A · Tự đặt ngưỡng",      sub: "Bạn tự thiết lập điều kiện kích hoạt. Kiểm soát hoàn toàn." },
+                          { id: "smart_product", icon: "🧠", tag: "Dạng B · Smart (Learning)",    sub: "Hệ thống tự tính theo learning curve + CPR mục tiêu SP." },
+                        ].map(m => {
+                          const sel = (ruleForm.rule_mode ?? "manual") === m.id
+                          return (
+                            <button key={m.id} onClick={() => setRuleForm((f: any) => ({ ...f, rule_mode: m.id }))}
+                              style={{ textAlign: "left", background: sel ? (dark ? "rgba(59,130,246,0.14)" : "#eff6ff") : (dark ? "#1e293b" : "#f8fafc"), border: `1.5px solid ${sel ? t.blue : (dark ? "#2d3748" : "#e2e8f0")}`, borderRadius: 12, padding: 14, cursor: "pointer", position: "relative", transition: "border-color .15s" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 16 }}>{m.icon}</span>{m.tag}</div>
+                              <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 6, lineHeight: 1.4 }}>{m.sub}</div>
+                              <div style={{ position: "absolute", top: 12, right: 12, width: 18, height: 18, borderRadius: "50%", background: sel ? t.blue : "transparent", border: `1.5px solid ${sel ? t.blue : (dark ? "#3a4a63" : "#cbd5e1")}`, display: "grid", placeItems: "center", fontSize: 11, color: "#fff" }}>{sel ? "✓" : ""}</div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Scope */}
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Phạm vi áp dụng</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {[
+                          { id: "all",                label: "🌐 Tất cả camp",       sub: "Áp dụng cho mọi camp đang chạy" },
+                          { id: "product",            label: "📦 Camp chứa tên SP",  sub: "Lọc theo từ khoá tên sản phẩm trong tên camp" },
+                          { id: "campaign_name_like", label: "🔤 Camp chứa chữ",     sub: "Lọc camp theo từ khoá bất kỳ" },
+                        ].map(s => {
+                          const sel = (ruleForm.scope_type ?? "all") === s.id
+                          return (
+                            <button key={s.id} onClick={() => setRuleForm((f: any) => ({ ...f, scope_type: s.id }))}
+                              style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", background: sel ? (dark ? "rgba(59,130,246,0.14)" : "#eff6ff") : (dark ? "#1e293b" : "#f8fafc"), border: `1px solid ${sel ? t.blue : (dark ? "#2d3748" : "#e2e8f0")}`, borderRadius: 9, cursor: "pointer", textAlign: "left", transition: "border-color .14s" }}>
+                              <div style={{ width: 17, height: 17, borderRadius: "50%", border: `1.5px solid ${sel ? t.blue : (dark ? "#3a4a63" : "#cbd5e1")}`, flexShrink: 0, display: "grid", placeItems: "center" }}>
+                                {sel && <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.blue }} />}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: t.text }}>{s.label}</div>
+                                <div style={{ fontSize: 11.5, color: t.textMuted }}>{s.sub}</div>
+                              </div>
+                              {sel && s.id !== "all" && (
+                                <input value={ruleForm.scope_value ?? ""} onClick={e => e.stopPropagation()}
+                                  onChange={e => setRuleForm((f: any) => ({ ...f, scope_value: e.target.value }))}
+                                  placeholder={s.id === "product" ? "VD: CHẢO VÀNG HẤP" : "VD: NỒI CHIÊN"}
+                                  style={{ ...inputSt, width: 190, fontSize: 12 }} />
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Conditions — Dạng A */}
+                    {(ruleForm.rule_mode ?? "manual") === "manual" && (
+                      <div style={{ marginTop: 20 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Điều kiện kích hoạt</div>
+                        <div style={{ background: dark ? "#1e293b" : "#f8fafc", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 12, padding: 13 }}>
+                          {(ruleForm.conditions ?? []).map((cond: any, i: number) => (
+                            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 1fr 32px", gap: 7, alignItems: "center", marginBottom: 8 }}>
+                              <select value={cond.metric} onChange={e => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.map((c: any, j: number) => j===i?{...c,metric:e.target.value}:c) }))} style={{ ...selSt, padding: "8px 10px", fontSize: 12.5 }}>
+                                {R_METRICS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                              </select>
+                              <select value={cond.op} onChange={e => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.map((c: any, j: number) => j===i?{...c,op:e.target.value}:c) }))} style={{ ...selSt, padding: "8px 6px", fontSize: 12.5, textAlign: "center" }}>
+                                {[">",">=","<","<=","=="].map(op => <option key={op} value={op}>{op}</option>)}
+                              </select>
+                              <div style={{ position: "relative" }}>
+                                <input type="number" value={cond.value} onChange={e => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.map((c: any, j: number) => j===i?{...c,value:Number(e.target.value)}:c) }))} style={{ ...inputSt, padding: "8px 10px", fontSize: 12.5 }} />
+                                {["spend","cpr_real","cpm"].includes(cond.metric) && (
+                                  <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: t.textMuted, pointerEvents: "none" }}>đ</span>
+                                )}
+                              </div>
+                              <button onClick={() => setRuleForm((f: any) => ({ ...f, conditions: f.conditions.filter((_: any, j: number) => j!==i) }))}
+                                disabled={(ruleForm.conditions?.length ?? 0) <= 1}
+                                style={{ width: 30, height: 30, borderRadius: 7, border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, background: dark ? "#233044" : "#f1f5f9", color: "#f87171", cursor: "pointer", display: "grid", placeItems: "center", opacity: (ruleForm.conditions?.length ?? 0) <= 1 ? 0.3 : 1 }}>×</button>
+                            </div>
+                          ))}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                            <button onClick={() => setRuleForm((f: any) => ({ ...f, conditions: [...(f.conditions??[]), { metric: "spend", op: ">", value: 200000 }] }))}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: `1px dashed ${dark ? "#3a4a63" : "#94a3b8"}`, color: t.blue, borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                              + Thêm điều kiện
+                            </button>
+                            {(ruleForm.conditions?.length ?? 0) > 1 && (
+                              <div style={{ display: "inline-flex", background: dark ? "#233044" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 7, padding: 2 }}>
+                                {["AND","OR"].map(logic => (
+                                  <button key={logic} onClick={() => setRuleForm((f: any) => ({ ...f, condition_logic: logic }))}
+                                    style={{ border: "none", background: ruleForm.condition_logic === logic ? t.blue : "transparent", color: ruleForm.condition_logic === logic ? "#fff" : t.textMuted, padding: "4px 11px", borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                    {logic}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Product selector — Dạng B */}
+                    {(ruleForm.rule_mode ?? "manual") === "smart_product" && (
+                      <div style={{ marginTop: 20 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Sản phẩm theo dõi</div>
+                        <select value={ruleForm.product_key ?? ""} onChange={e => setRuleForm((f: any) => ({ ...f, product_key: e.target.value }))} style={selSt}>
+                          <option value="">-- Chọn sản phẩm --</option>
+                          {thresholds.map((th: any) => <option key={th.product_key} value={th.product_key}>{th.product_label} — CPR mục tiêu: {Math.round(th.target_cpr/1000)}k</option>)}
+                        </select>
+                        {ruleForm.product_key && (() => {
+                          const th = thresholds.find((x: any) => x.product_key === ruleForm.product_key)
+                          return th ? (
+                            <div style={{ marginTop: 10, background: dark ? "#1e293b" : "#f8fafc", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 9, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                              <span style={{ fontSize: 24 }}>📦</span>
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: 13.5, color: t.text }}>{th.product_label}</div>
+                                <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 2 }}>CPR mục tiêu: <b style={{ color: "#86efac", fontFamily: "ui-monospace,monospace" }}>{Math.round(th.target_cpr/1000)}k</b> · Nguồn: Pancake POS</div>
+                              </div>
+                            </div>
+                          ) : null
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Action grid */}
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Hành động khi điều kiện thỏa</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        {R_ACTIONS.map(a => {
+                          const sel = (ruleForm.action ?? "pause") === a.value
+                          return (
+                            <button key={a.value} onClick={() => setRuleForm((f: any) => ({ ...f, action: a.value }))}
+                              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, background: sel ? (dark ? "rgba(59,130,246,0.14)" : "#eff6ff") : (dark ? "#1e293b" : "#f8fafc"), border: `1.5px solid ${sel ? t.blue : (dark ? "#2d3748" : "#e2e8f0")}`, borderRadius: 10, padding: "11px 12px", cursor: "pointer", transition: "border-color .14s, background .14s" }}>
+                              <span style={{ fontSize: 17 }}>{a.icon}</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{a.label}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {(ruleForm.action === "set_budget_pct" || ruleForm.action === "set_budget_abs") && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>{ruleForm.action === "set_budget_pct" ? "Thay đổi % (âm = giảm, VD: -30)" : "Budget mới (đ)"}</div>
+                          <input type="number" value={ruleForm.action === "set_budget_pct" ? (ruleForm.action_payload?.pct ?? -30) : (ruleForm.action_payload?.daily_budget ?? 300000)}
+                            onChange={e => setRuleForm((f: any) => ({ ...f, action_payload: f.action === "set_budget_pct" ? { pct: Number(e.target.value) } : { daily_budget: Number(e.target.value) } }))}
+                            style={inputSt} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Time window */}
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Cửa sổ dữ liệu</div>
+                      <div style={{ display: "flex", background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 9, padding: 3, gap: 3 }}>
+                        {[{ id:"today",label:"Hôm nay"},{id:"2d",label:"2 ngày"},{id:"3d",label:"3 ngày"},{id:"7d",label:"7 ngày"}].map(w => (
+                          <button key={w.id} onClick={() => setRuleForm((f: any) => ({ ...f, time_window: w.id }))}
+                            style={{ flex: 1, border: "none", background: ruleForm.time_window === w.id ? (dark ? "#2a3a52" : "#fff") : "transparent", color: ruleForm.time_window === w.id ? t.text : t.textMuted, padding: "7px 0", borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer", boxShadow: ruleForm.time_window === w.id ? "0 1px 2px rgba(0,0,0,.2)" : "none" }}>
+                            {w.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Check frequency */}
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 8 }}>Tần suất kiểm tra</div>
+                      <div style={{ display: "flex", background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 9, padding: 3, gap: 3 }}>
+                        {[{ id:"hourly",label:"Hằng giờ"},{id:"every_4h",label:"Mỗi 4h"},{id:"daily_7h",label:"Sáng 7h"}].map(f => (
+                          <button key={f.id} onClick={() => setRuleForm((fr: any) => ({ ...fr, check_schedule: f.id }))}
+                            style={{ flex: 1, border: "none", background: ruleForm.check_schedule === f.id ? (dark ? "#2a3a52" : "#fff") : "transparent", color: ruleForm.check_schedule === f.id ? t.text : t.textMuted, padding: "7px 0", borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer", boxShadow: ruleForm.check_schedule === f.id ? "0 1px 2px rgba(0,0,0,.2)" : "none" }}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Guard settings — collapsible */}
+                    <div style={{ marginTop: 20 }}>
+                      <button onClick={() => setRuleGuardOpen(o => !o)}
+                        style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: dark ? "#1e293b" : "#f8fafc", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 9, padding: "12px 14px", cursor: "pointer", transition: "border-color .14s" }}>
+                        <span style={{ fontSize: 13 }}>⚙️</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Guard settings</span>
+                        <span style={{ fontSize: 11.5, color: t.textMuted, marginLeft: 6 }}>Min spend · Cooldown</span>
+                        <span style={{ marginLeft: "auto", color: t.textMuted, transform: ruleGuardOpen ? "rotate(90deg)" : "none", transition: "transform .18s", display: "inline-block" }}>▶</span>
+                      </button>
+                      {ruleGuardOpen && (
+                        <div style={{ padding: "14px 4px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Min spend (đ)</div>
+                            <input type="number" value={ruleForm.min_spend ?? 200000} onChange={e => setRuleForm((f: any) => ({ ...f, min_spend: Number(e.target.value) }))} style={inputSt} />
+                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>Bỏ qua camp chưa đủ spend</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Cooldown (giờ)</div>
+                            <input type="number" value={ruleForm.cooldown_hours ?? 12} onChange={e => setRuleForm((f: any) => ({ ...f, cooldown_hours: Number(e.target.value) }))} style={inputSt} />
+                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>Không kích hoạt lại trong N giờ</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dry-run result */}
+                    {rulePreview !== null && (
+                      <div style={{ marginTop: 20, border: "1px solid rgba(245,158,11,0.3)", borderRadius: 12, background: "linear-gradient(180deg,rgba(245,158,11,0.07),rgba(245,158,11,0.02))", overflow: "hidden" }}>
+                        <div style={{ padding: "13px 15px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(245,158,11,0.18)" }}>
+                          <span style={{ fontSize: 17 }}>🔍</span>
+                          <span style={{ fontSize: 13.5, fontWeight: 700, color: "#fcd34d" }}>Kết quả xem thử</span>
+                          <span style={{ fontSize: 12, color: t.textMuted, marginLeft: "auto" }}>
+                            {rulePreview.length === 0 ? "Không có camp nào khớp" : `${rulePreview.length} camp sẽ bị ảnh hưởng`}
+                          </span>
+                        </div>
+                        {rulePreview.length > 0 && (
+                          <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 7 }}>
+                            {rulePreview.map((c: any) => (
+                              <div key={c.campaign_id} style={{ background: dark ? "#1e293b" : "#fff", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 9, padding: "11px 13px", display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+                                <div>
+                                  <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>{c.campaign_name}</div>
+                                  <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 3 }}>
+                                    Hành động: <span style={{ color: "#fcd34d", fontWeight: 600 }}>{actionInfo(ruleForm.action).icon} {actionInfo(ruleForm.action).label}</span>
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", gap: 16 }}>
+                                  <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 12.5, fontWeight: 600, color: "#fcd34d" }}>{c.metrics.cpr_real ? Math.round(c.metrics.cpr_real/1000)+"k" : "—"}</div>
+                                    <div style={{ fontSize: 10, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>CPR thực</div>
+                                  </div>
+                                  <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 12.5, fontWeight: 600, color: t.text }}>{Math.round((c.metrics.spend??0)/1000)}k</div>
+                                    <div style={{ fontSize: 10, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>Spend</div>
+                                  </div>
+                                  <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 12.5, fontWeight: 600, color: t.text }}>{c.metrics.orders_real??0}</div>
+                                    <div style={{ fontSize: 10, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>Đơn thực</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ padding: "10px 15px 13px", fontSize: 11.5, color: t.textMuted, display: "flex", alignItems: "center", gap: 7 }}>
+                          <span>⚠️</span><span>Đây chỉ là mô phỏng dựa trên dữ liệu hiện tại. Rule chưa được lưu.</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ height: 8 }} />
+                  </div>
+
+                  {/* drawer footer */}
+                  <div style={{ padding: "14px 22px", borderTop: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, display: "flex", alignItems: "center", gap: 10, background: dark ? "#0b1220" : "#f8fafc", flexShrink: 0 }}>
+                    <button onClick={previewRule} disabled={rulePreviewLoading}
+                      style={{ display: "flex", alignItems: "center", gap: 7, border: "1px solid rgba(245,158,11,.3)", background: "rgba(245,158,11,.1)", color: "#fcd34d", borderRadius: 9, padding: "9px 15px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                      {rulePreviewLoading ? "⏳ Đang xem..." : "🔍 Xem thử"}
+                    </button>
+                    <div style={{ flex: 1 }} />
+                    <button onClick={() => { setRuleForm(null); setRulePreview(null) }}
+                      style={{ background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, color: t.text, borderRadius: 9, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                      Hủy
+                    </button>
+                    <button onClick={saveRule} disabled={ruleSaving}
+                      style={{ background: t.blue, color: "#fff", border: "none", borderRadius: 9, padding: "9px 18px", cursor: ruleSaving ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, opacity: ruleSaving ? 0.7 : 1, boxShadow: "0 4px 14px rgba(37,99,235,0.35)" }}>
+                      {ruleSaving ? "Đang lưu..." : ruleForm.id ? "✅ Lưu thay đổi" : "✅ Lưu & Bật"}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
+
           </div>
         )
       })()}
