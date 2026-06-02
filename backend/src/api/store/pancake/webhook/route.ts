@@ -4,7 +4,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { PANCAKE_WEBHOOK_SECRET } from "../../../../lib/constants"
 import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/service"
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
-import { sendCAPIEvent, getPixelForMarketer } from "../../../../lib/fb-capi"
+import { sendPurchaseEvent } from "../../../../lib/fb-capi"
 
 /**
  * Verify HMAC signature from Pancake webhook.
@@ -206,12 +206,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         if (pancakeStatus === 3) {
           try {
             const order = rawOrder ?? body
-            const marketerName = order?.assigning_page?.name ?? order?.assigning_care?.name ?? ""
-            const pixelId = getPixelForMarketer(marketerName)
             const phone = order?.bill_phone_number ?? order?.customer?.phone ?? ""
             const total = Number(order?.total_price ?? order?.total ?? 0)
 
-            // Lấy fbclid/fbp từ metadata Medusa order nếu có
+            // Lấy fbclid/fbp + pixel riêng sản phẩm từ Medusa order metadata
             const orderService = req.scope.resolve(Modules.ORDER) as any
             const medusaOrders = await orderService.listOrders({}, { take: 200, order: { created_at: "DESC" } })
             const medusaOrder = medusaOrders.find(
@@ -219,19 +217,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             )
             const meta = medusaOrder?.metadata ?? {}
 
-            await sendCAPIEvent({
-              pixel_id: pixelId,
-              event_name: "Purchase",
-              event_time: Math.floor(Date.now() / 1000),
-              event_id: `purchase_${pancakeOrderId}`,
-              event_source_url: meta.utm_source ? `https://phanviet.vn` : "https://phanviet.vn",
+            // Lấy pixel + token riêng từ sản phẩm đầu tiên trong đơn
+            const firstItem = medusaOrder?.items?.[0]
+            const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
+            const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
+
+            // content_ids cho catalog matching
+            const contentIds = medusaOrder?.items?.map((i: any) => i.variant_id || i.id).filter(Boolean)
+
+            await sendPurchaseEvent({
+              orderId: pancakeOrderId,
               phone,
               fbclid: meta.fbclid,
               fbp: meta.fbp,
               fbc: meta.fbc,
               value: total,
-              currency: "VND",
-              order_id: pancakeOrderId,
+              productPixelId,
+              productCapiToken,
+              contentIds,
             })
           } catch (capiErr: any) {
             console.warn("[Pancake Webhook] CAPI error:", capiErr.message)

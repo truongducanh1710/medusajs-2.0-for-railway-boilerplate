@@ -21,10 +21,12 @@ export default function PurchaseTracker({
     const eventId = generateEventId()
     const utm = getUtmFromCookie()
 
+    // Dùng CompleteRegistration thay vì Purchase — đơn COD chưa chắc giao được
+    // Purchase thật sẽ được bắn từ backend khi Pancake báo status=3 (giao thành công)
     if (window.fbq) {
       window.fbq(
         "track",
-        "Purchase",
+        "CompleteRegistration",
         {
           content_ids: contentIds,
           content_type: "product",
@@ -36,9 +38,8 @@ export default function PurchaseTracker({
       )
     }
 
-    // CAPI via server route (token stays server-side)
     sendCAPIViaRoute({
-      eventName: "Purchase",
+      eventName: "CompleteRegistration",
       eventId,
       eventSourceUrl: window.location.href,
       customData: {
