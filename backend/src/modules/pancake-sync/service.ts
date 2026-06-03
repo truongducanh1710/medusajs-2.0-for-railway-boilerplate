@@ -157,22 +157,36 @@ function extractMktFromUtmCampaign(campaign: string | null | undefined): string 
   return campaign.split("_")[1] ?? ""
 }
 
+// UTM mới: utm_source = tên camp (thay vì utm_campaign)
+function extractMktFromUtmSource(source: string | null | undefined): string {
+  if (!source) return ""
+  if (!/^\d{1,2}\/\d{1,2}_/.test(source)) return ""
+  return source.split("_")[1] ?? ""
+}
+
 // Extract FB campaign ID từ utm_id trong order_link hoặc p_utm_id
 // utm_id trong URL của đơn Pancake = campaign_id trong FB Ads Manager (đã verify 100%)
 function extractFbCampaignId(raw: any): string | null {
-  // Thử p_utm_id trực tiếp trước
+  // 1. p_utm_id (UTM cũ — utm_id param)
   const directId = raw?.p_utm_id ?? raw?.marketing?.utm_id
   if (directId && /^\d{10,}$/.test(String(directId))) return String(directId)
 
-  // Fallback: parse từ order_link hoặc note chứa URL có utm_id=
+  // 2. UTM mới: utm_campaign = {{campaign.id}} → p_utm_campaign là số ID
+  const utmCamp = raw?.p_utm_campaign
+  if (utmCamp && /^\d{10,}$/.test(String(utmCamp))) return String(utmCamp)
+
+  // 3. Fallback: parse từ order_link hoặc note chứa URL có utm_id= hoặc utm_campaign=<số>
   const sources = [
     raw?.order_link,
     ...(Array.isArray(raw?.customer?.notes) ? raw.customer.notes.map((n: any) => n.message) : []),
   ]
   for (const src of sources) {
     if (!src) continue
-    const match = String(src).match(/[?&]utm_id=(\d{10,})/)
-    if (match) return match[1]
+    const s = String(src)
+    const m1 = s.match(/[?&]utm_id=(\d{10,})/)
+    if (m1) return m1[1]
+    const m2 = s.match(/[?&]utm_campaign=(\d{10,})/)
+    if (m2) return m2[1]
   }
   return null
 }
@@ -198,7 +212,7 @@ export function mapPancakeOrder(raw: any): Record<string, any> {
     items,
     items_count: items.length,
     tracking_code: raw.partner?.extend_code ?? raw.tracking_code ?? "",
-    marketer_name: raw.marketer?.name || extractMktFromUtmCampaign(raw.p_utm_campaign) || "",
+    marketer_name: raw.marketer?.name || extractMktFromUtmCampaign(raw.p_utm_campaign) || extractMktFromUtmSource(raw.p_utm_source) || "",
     sale_name: raw.assigning_seller?.name ?? "",
     care_name: raw.assigning_care?.name ?? "",
     fb_campaign_id: extractFbCampaignId(raw),
