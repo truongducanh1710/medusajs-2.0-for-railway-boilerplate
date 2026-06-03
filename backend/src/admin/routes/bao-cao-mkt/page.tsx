@@ -46,7 +46,7 @@ export default function BaoCaoMktPage() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
   })
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai">("mkt")
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming">("mkt")
   // Tab Rules
   const [rules, setRules] = useState<any[]>([])
   const [rulesLoading, setRulesLoading] = useState(false)
@@ -60,6 +60,8 @@ export default function BaoCaoMktPage() {
   const [ruleGuardOpen, setRuleGuardOpen] = useState(false)
   const [ruleHowOpen, setRuleHowOpen] = useState(false)
   const [thresholdSectionOpen, setThresholdSectionOpen] = useState(false)
+  const [namingCampInput, setNamingCampInput] = useState("")
+  const [namingUtmMode, setNamingUtmMode] = useState<"fb" | "web">("fb")
   const [thresholdSaving, setThresholdSaving] = useState(false)
   const [thresholdEditId, setThresholdEditId] = useState<string | null>(null)
   const [thresholdEditForm, setThresholdEditForm] = useState<any>(null)
@@ -703,6 +705,7 @@ export default function BaoCaoMktPage() {
           ["spProduct", "Chi phí SP"],
           ["jobs", "⏰ Lịch hẹn Camp"],
           ...(has("page.bao-cao.care-rules") ? [["rules", "⚙️ Rule chăm sóc"]] : []),
+          ["naming", "📋 Quy tắc đặt tên"],
           ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
           ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
         ] as const).map(([key, label]) => (
@@ -2558,6 +2561,295 @@ export default function BaoCaoMktPage() {
           </div>
         </div>
       )}
+
+      {/* ===== TAB NAMING ===== */}
+      {activeTab === "naming" && (() => {
+        const campInput = namingCampInput
+        const setCampInput = setNamingCampInput
+        const utmMode = namingUtmMode
+        const setUtmMode = setNamingUtmMode
+
+        // Regex parse tên camp: DD/MM_MKT_SANPHAM_ADSXXX_AUDIENCE_VIDEO[_SUFFIX]
+        const CAMP_REGEX = /^(\d{1,2}\/\d{1,2})_([A-Z]+)_(.+?)_(ADS\d+)_(.+?)_(VD[\w\d\-\.]+)(_.+)?$/i
+        const parsed = campInput.trim() ? CAMP_REGEX.exec(campInput.trim()) : null
+        const issues: string[] = []
+        if (campInput.trim()) {
+          if (!parsed) {
+            issues.push("Tên camp không đúng format. Xem quy tắc bên dưới.")
+          } else {
+            const [, date, mkt, sp, ads, audience, video, suffix] = parsed
+            if (!/^\d{1,2}\/\d{1,2}$/.test(date)) issues.push(`Ngày "${date}" — dùng D/M hoặc DD/MM`)
+            if (!["KIENLB","XUANLT","NAMDV","LINHMT","ANHNT","DUPD"].includes(mkt.toUpperCase())) issues.push(`MKT code "${mkt}" không trong danh sách (KIENLB/XUANLT/NAMDV/LINHMT/ANHNT/DUPD)`)
+            if (sp.includes("  ") || sp !== sp.trim()) issues.push("Tên SP có khoảng trắng thừa")
+            if (!/^VD[\w\d\-\.]+$/i.test(video)) issues.push(`Video ID "${video}" phải bắt đầu bằng VD`)
+          }
+          // Kiểm tra khoảng trắng thừa
+          if (/ {2,}/.test(campInput)) issues.push("Có khoảng trắng đôi trong tên camp")
+          if (campInput.includes(" _") || campInput.includes("_ ")) issues.push("Có khoảng trắng thừa trước/sau dấu _")
+        }
+
+        // UTM builder
+        const utmFields = parsed ? (() => {
+          const [, date, mkt, sp, ads, audience, video] = parsed
+          return {
+            fb: {
+              "utm_source": campInput.trim(),
+              "utm_medium": "{{adset.id}}",
+              "utm_campaign": "{{campaign.id}}",
+              "utm_content": "{{ad.id}}",
+            },
+            web: {
+              "utm_source": "facebook",
+              "utm_medium": "paid_social",
+              "utm_campaign": campInput.trim(),
+              "utm_content": video,
+            }
+          }
+        })() : null
+
+        const sBox = { background: dark ? "#111827" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 10, padding: "14px 16px" }
+        const mono = { fontFamily: "ui-monospace,monospace", fontSize: 12 }
+        const chip = (label: string, color: string, bg: string) => (
+          <span style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: bg, color, border: `1px solid ${color}40`, display: "inline-block" }}>{label}</span>
+        )
+
+        return (
+          <div style={{ maxWidth: 860, paddingBottom: 60 }}>
+
+            {/* ─── Header ─── */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 18, color: t.text, marginBottom: 4 }}>📋 Quy tắc đặt tên Camp & UTM</div>
+              <div style={{ fontSize: 13, color: t.textMuted }}>Bắt buộc áp dụng từ tất cả MKT — đảm bảo hệ thống đọc đúng đơn, đúng người, đúng video.</div>
+            </div>
+
+            {/* ─── WHY — tại sao phải đặt đúng ─── */}
+            <div style={{ ...sBox, marginBottom: 16, background: dark ? "rgba(239,68,68,0.07)" : "#fff5f5", borderColor: dark ? "rgba(239,68,68,0.2)" : "#fecaca" }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: dark ? "#fca5a5" : "#dc2626", marginBottom: 10 }}>⚠️ Đặt sai tên / UTM → hệ thống mù</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12, color: t.textMuted }}>
+                {[
+                  ["Rule chăm sóc Dạng A", "Lọc camp theo tên SP → không tìm được nếu tên viết tắt hoặc sai"],
+                  ["Ghép đơn Pancake ↔ Camp", "utm_campaign phải là campaign_id FB → không ghép được đơn vào đúng camp"],
+                  ["Báo cáo MKT", "Tên camp phải chứa MKT code → không biết ai chạy camp nào"],
+                  ["Phân tích video", "Video ID (VD...) trong tên camp → không biết video nào ra đơn"],
+                ].map(([title, desc]) => (
+                  <div key={title} style={{ display: "flex", gap: 8 }}>
+                    <span style={{ color: dark ? "#f87171" : "#dc2626", flexShrink: 0 }}>✗</span>
+                    <div><b style={{ color: t.text }}>{title}:</b> {desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ─── QUY TẮC TÊN CAMP ─── */}
+            <div style={{ ...sBox, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 12 }}>1️⃣ Đặt tên Campaign</div>
+
+              {/* Format */}
+              <div style={{ background: dark ? "#0b1220" : "#fff", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 8 }}>Format bắt buộc</div>
+                <div style={{ ...mono, fontSize: 14, color: t.blue, wordBreak: "break-all", lineHeight: 1.7 }}>
+                  <span style={{ color: "#f59e0b" }}>DD/MM</span>_<span style={{ color: "#22c55e" }}>MKTCODE</span>_<span style={{ color: "#a78bfa" }}>TÊN SP</span>_<span style={{ color: "#60a5fa" }}>ADSXXX</span>_<span style={{ color: "#f472b6" }}>AUDIENCE</span>_<span style={{ color: "#fb923c" }}>VDXXX</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 6 }}>Các phần phân cách bằng dấu <b style={{ color: t.text }}>_</b> (gạch dưới đơn, không có khoảng trắng)</div>
+              </div>
+
+              {/* Bảng giải thích từng phần */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: dark ? "#111827" : "#f1f5f9" }}>
+                      {["Phần", "Ý nghĩa", "Quy tắc", "Ví dụ"].map(h => (
+                        <th key={h} style={{ padding: "7px 12px", textAlign: "left", fontWeight: 600, color: t.textMuted, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { part: "DD/MM", color: "#f59e0b", mean: "Ngày tạo camp", rule: "Ngày/tháng thực tế, không zero-pad bắt buộc", ex: "9/5, 17/5, 28/5" },
+                      { part: "MKTCODE", color: "#22c55e", mean: "Tên MKT phụ trách", rule: "KIENLB / XUANLT / NAMDV / LINHMT / ANHNT / DUPD — viết hoa, đúng code", ex: "KIENLB" },
+                      { part: "TÊN SP", color: "#a78bfa", mean: "Tên sản phẩm", rule: "Viết HOA, đầy đủ, dùng dấu cách (không _). Khớp với product_key trong hệ thống", ex: "CHẢO VÀNG HẤP, NỒI ÁP SUẤT" },
+                      { part: "ADSXXX", color: "#60a5fa", mean: "Tài khoản ads", rule: "ADS + số tài khoản. Không viết tắt khác", ex: "ADS346, ADS343, ADS329" },
+                      { part: "AUDIENCE", color: "#f472b6", mean: "Đối tượng / chiến lược", rule: "Tự do nhưng ngắn gọn. Dùng _ thay khoảng trắng nếu nhiều từ", ex: "30ALL, VN-PAGE MỚI, BROAD, LAL2" },
+                      { part: "VDXXX", color: "#fb923c", mean: "Video ID", rule: "Bắt đầu bằng VD + mã định danh. Giúp biết video nào ra đơn", ex: "VD7, VD82126, VD8131415" },
+                      { part: "[_SUFFIX]", color: t.textMuted, mean: "Hậu tố tuỳ chọn", rule: "S1/S2 (split test), BS (broad scale), TẶNG NỒI...", ex: "_S2, _BS, _TẶNG NỒI" },
+                    ].map(r => (
+                      <tr key={r.part} style={{ borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}` }}>
+                        <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontWeight: 700, color: r.color, whiteSpace: "nowrap" }}>{r.part}</td>
+                        <td style={{ padding: "8px 12px", color: t.text, fontWeight: 500 }}>{r.mean}</td>
+                        <td style={{ padding: "8px 12px", color: t.textMuted, lineHeight: 1.5 }}>{r.rule}</td>
+                        <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontSize: 11, color: dark ? "#94a3b8" : "#475569" }}>{r.ex}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Ví dụ thực tế */}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 8 }}>Ví dụ thực tế ✓ (từ DB)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {[
+                    "17/5_XUANLT_CHẢO VÀNG HẤP_ADS344_MĐGD_VD82126284361_30ALL_S2",
+                    "9/5_KIENLB_NỒI CHIÊN_ADS346_VN-PAGE MỚI_VD7-1",
+                    "28/5_NAMDV_NỒI ÁP SUẤT_ADS343_VD25V_BS",
+                  ].map(name => (
+                    <div key={name} style={{ ...mono, padding: "7px 12px", background: dark ? "rgba(34,197,94,0.07)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.2)" : "#bbf7d0"}`, borderRadius: 6, color: dark ? "#86efac" : "#15803d", wordBreak: "break-all" }}>
+                      ✓ {name}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, margin: "12px 0 8px" }}>Ví dụ SAI ✗ (cần sửa)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[
+                    { bad: "16/5_ANHNT_CHỔI 3 GIẺ_ADS329 - VID 15.5", fix: "Dùng ` - ` thay `_`, thiếu VD prefix, khoảng trắng trước/sau dấu phân cách" },
+                    { bad: "28/5_NAMDV_CHẢO VÀNG_ADS343 _VD17V _ BS", fix: "Có khoảng trắng thừa trước `_`, tên SP viết tắt (CHẢO VÀNG → thiếu HẤP/TITAN...)" },
+                  ].map(({ bad, fix }) => (
+                    <div key={bad}>
+                      <div style={{ ...mono, padding: "7px 12px", background: dark ? "rgba(239,68,68,0.07)" : "#fff5f5", border: `1px solid ${dark ? "rgba(239,68,68,0.2)" : "#fecaca"}`, borderRadius: "6px 6px 0 0", color: dark ? "#fca5a5" : "#dc2626", wordBreak: "break-all" }}>
+                        ✗ {bad}
+                      </div>
+                      <div style={{ fontSize: 11.5, padding: "5px 12px", background: dark ? "#0b1220" : "#f9fafb", border: `1px solid ${dark ? "rgba(239,68,68,0.1)" : "#fecaca"}`, borderTop: "none", borderRadius: "0 0 6px 6px", color: t.textMuted }}>
+                        → {fix}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ─── QUY TẮC UTM ─── */}
+            <div style={{ ...sBox, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 4 }}>2️⃣ UTM trong link landing page</div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14 }}>Đặt trực tiếp trong link của <b style={{ color: t.text }}>website bán hàng</b> (không phải trong Facebook Ads Manager). Mỗi ad set dùng 1 link có UTM riêng.</div>
+
+              <div style={{ overflowX: "auto", marginBottom: 14 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: dark ? "#111827" : "#f1f5f9" }}>
+                      {["Tham số UTM", "Giá trị", "Bắt buộc?", "Ý nghĩa"].map(h => (
+                        <th key={h} style={{ padding: "7px 12px", textAlign: "left", fontWeight: 600, color: t.textMuted, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { param: "utm_source", val: "Tên campaign (đầy đủ, giống tên FB)", req: true, mean: "Pancake dùng để ghép đơn → MKT code và SP" },
+                      { param: "utm_medium", val: "{{adset.id}}", req: true, mean: "FB tự điền ad set ID → biết nhóm quảng cáo nào" },
+                      { param: "utm_campaign", val: "{{campaign.id}}", req: true, mean: "FB tự điền campaign ID → ghép đơn vào đúng camp trong DB" },
+                      { param: "utm_content", val: "{{ad.id}}", req: true, mean: "FB tự điền ad ID → biết mẫu quảng cáo nào" },
+                      { param: "fbclid", val: "(FB tự gắn)", req: false, mean: "Tự động, không cần làm gì" },
+                    ].map(r => (
+                      <tr key={r.param} style={{ borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}` }}>
+                        <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontWeight: 700, color: t.blue, whiteSpace: "nowrap" }}>{r.param}</td>
+                        <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontSize: 11, color: dark ? "#fcd34d" : "#92400e", whiteSpace: "nowrap" }}>{r.val}</td>
+                        <td style={{ padding: "8px 12px", textAlign: "center" }}>{r.req ? chip("Bắt buộc", "#ef4444", "rgba(239,68,68,0.1)") : chip("Tự động", t.textMuted, "transparent")}</td>
+                        <td style={{ padding: "8px 12px", color: t.textMuted, lineHeight: 1.5 }}>{r.mean}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Ví dụ link thực tế */}
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 6 }}>Ví dụ link thực tế ✓</div>
+              <div style={{ ...mono, fontSize: 11, padding: "10px 12px", background: dark ? "#0b1220" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 7, wordBreak: "break-all", color: t.textSub, lineHeight: 1.8 }}>
+                https://giadungphanviet.shop/chaovinhhap<br/>
+                ?<span style={{ color: "#60a5fa" }}>utm_source</span>=<span style={{ color: "#fcd34d" }}>9%2F5_KIENLB_N%E1%BB%92I+CHI%C3%8AN_ADS346_VD7</span><br/>
+                &<span style={{ color: "#60a5fa" }}>utm_medium</span>=<span style={{ color: "#fcd34d" }}>{"{{adset.id}}"}</span><br/>
+                &<span style={{ color: "#60a5fa" }}>utm_campaign</span>=<span style={{ color: "#fcd34d" }}>{"{{campaign.id}}"}</span><br/>
+                &<span style={{ color: "#60a5fa" }}>utm_content</span>=<span style={{ color: "#fcd34d" }}>{"{{ad.id}}"}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 8 }}>
+                💡 Trong Facebook Ads Manager: <b style={{ color: t.text }}>Ad level → Website URL → Tracking → URL Parameters</b> → dán các tham số vào đây. FB tự thay <code style={{ background: dark ? "#1f2937" : "#f1f5f9", padding: "1px 5px", borderRadius: 3 }}>{"{{campaign.id}}"}</code> bằng ID thực.
+              </div>
+            </div>
+
+            {/* ─── LIVE VALIDATOR ─── */}
+            <div style={{ ...sBox }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 12 }}>🔍 Kiểm tra tên camp ngay</div>
+              <input
+                value={campInput}
+                onChange={e => setCampInput(e.target.value)}
+                placeholder="Dán tên campaign vào đây... VD: 9/5_KIENLB_NỒI CHIÊN_ADS346_VN-PAGE MỚI_VD7-1"
+                style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1.5px solid ${campInput ? (issues.length ? "#ef4444" : "#22c55e") : (dark ? "#374151" : "#cbd5e1")}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 13, outline: "none", boxSizing: "border-box" as any }}
+              />
+
+              {campInput && (
+                <div style={{ marginTop: 10 }}>
+                  {issues.length === 0 ? (
+                    <div style={{ padding: "10px 14px", background: dark ? "rgba(34,197,94,0.1)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.25)" : "#bbf7d0"}`, borderRadius: 8, color: dark ? "#86efac" : "#15803d", fontSize: 13, fontWeight: 600 }}>
+                      ✅ Tên camp hợp lệ!
+                    </div>
+                  ) : (
+                    <div style={{ padding: "10px 14px", background: dark ? "rgba(239,68,68,0.08)" : "#fff5f5", border: `1px solid ${dark ? "rgba(239,68,68,0.25)" : "#fecaca"}`, borderRadius: 8 }}>
+                      {issues.map((iss, i) => (
+                        <div key={i} style={{ fontSize: 12.5, color: dark ? "#fca5a5" : "#dc2626", marginBottom: i < issues.length - 1 ? 4 : 0 }}>⚠ {iss}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Parse breakdown */}
+                  {parsed && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 7 }}>Phân tích tên camp</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {[
+                          { label: "Ngày", val: parsed[1], color: "#f59e0b" },
+                          { label: "MKT", val: parsed[2], color: "#22c55e" },
+                          { label: "Sản phẩm", val: parsed[3], color: "#a78bfa" },
+                          { label: "Tài khoản Ads", val: parsed[4], color: "#60a5fa" },
+                          { label: "Audience", val: parsed[5], color: "#f472b6" },
+                          { label: "Video ID", val: parsed[6], color: "#fb923c" },
+                          ...(parsed[7] ? [{ label: "Suffix", val: parsed[7].slice(1), color: t.textMuted }] : []),
+                        ].map(p => (
+                          <div key={p.label} style={{ background: dark ? "#111827" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 7, padding: "5px 10px" }}>
+                            <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 2 }}>{p.label}</div>
+                            <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 700, color: p.color }}>{p.val}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* UTM builder */}
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted }}>UTM tương ứng</div>
+                          <div style={{ display: "flex", background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 6, padding: 2, gap: 2 }}>
+                            {(["fb", "web"] as const).map(m => (
+                              <button key={m} onClick={() => setUtmMode(m)}
+                                style={{ border: "none", background: utmMode === m ? (dark ? "#374151" : "#fff") : "transparent", color: utmMode === m ? t.text : t.textMuted, padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                {m === "fb" ? "Facebook Dynamic" : "Tĩnh (web)"}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ ...mono, fontSize: 11.5, padding: "10px 13px", background: dark ? "#0b1220" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 7, wordBreak: "break-all", lineHeight: 1.9, color: t.textSub }}>
+                          {utmFields && Object.entries(utmFields[utmMode]).map(([k, v]) => (
+                            <div key={k}><span style={{ color: "#60a5fa" }}>{k}</span>=<span style={{ color: "#fcd34d" }}>{v}</span></div>
+                          ))}
+                        </div>
+                        <button onClick={() => {
+                          if (!utmFields) return
+                          const str = Object.entries(utmFields[utmMode]).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")
+                          navigator.clipboard.writeText(str).then(() => {
+                            const el = document.createElement("div")
+                            el.textContent = "✓ Đã copy UTM string"
+                            Object.assign(el.style, { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 9999 })
+                            document.body.appendChild(el)
+                            setTimeout(() => el.remove(), 1800)
+                          })
+                        }} style={{ marginTop: 7, background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, color: t.text, borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                          📋 Copy UTM string
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )
+      })()}
 
       {/* ===== TAB RULES ===== */}
       {activeTab === "rules" && (() => {
