@@ -2588,24 +2588,18 @@ export default function BaoCaoMktPage() {
           if (campInput.includes(" _") || campInput.includes("_ ")) issues.push("Có khoảng trắng thừa trước/sau dấu _")
         }
 
-        // UTM builder
-        const utmFields = parsed ? (() => {
-          const [, date, mkt, sp, ads, audience, video] = parsed
-          return {
-            fb: {
-              "utm_source": campInput.trim(),
-              "utm_medium": "{{adset.id}}",
-              "utm_campaign": "{{campaign.id}}",
-              "utm_content": "{{ad.id}}",
-            },
-            web: {
-              "utm_source": "facebook",
-              "utm_medium": "paid_social",
-              "utm_campaign": campInput.trim(),
-              "utm_content": video,
-            }
-          }
-        })() : null
+        // UTM builder — dùng chung 1 string, chỉ thay utm_source = tên camp cụ thể
+        const UTM_STATIC = "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
+        const utmFields = parsed ? {
+          "utm_source":   "{{campaign.name}}",
+          "utm_medium":   "{{adset.name}}",
+          "utm_campaign": "{{campaign.id}}",
+          "utm_content":  "{{ad.name}}",
+          "campaign_id":  "{{campaign.id}}",
+          "adset_id":     "{{adset.id}}",
+          "ad_id":        "{{ad.id}}",
+          "placement":    "{{placement}}",
+        } : null
 
         const sBox = { background: dark ? "#111827" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 10, padding: "14px 16px" }
         const mono = { fontFamily: "ui-monospace,monospace", fontSize: 12 }
@@ -2718,51 +2712,87 @@ export default function BaoCaoMktPage() {
             </div>
 
             {/* ─── QUY TẮC UTM ─── */}
-            <div style={{ ...sBox, marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 4 }}>2️⃣ UTM trong link landing page</div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14 }}>Đặt trực tiếp trong link của <b style={{ color: t.text }}>website bán hàng</b> (không phải trong Facebook Ads Manager). Mỗi ad set dùng 1 link có UTM riêng.</div>
+            {(() => {
+              const UTM_STRING = "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
+              const copyUtm = () => {
+                navigator.clipboard.writeText(UTM_STRING).then(() => {
+                  const el = document.createElement("div")
+                  el.textContent = "✓ Đã copy UTM string"
+                  Object.assign(el.style, { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 9999, pointerEvents: "none" })
+                  document.body.appendChild(el)
+                  setTimeout(() => el.remove(), 1800)
+                })
+              }
+              return (
+                <div style={{ ...sBox, marginBottom: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 4 }}>2️⃣ UTM tracking — copy 1 lần dùng cho mọi camp</div>
+                  <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14 }}>
+                    Dán vào ô <b style={{ color: t.text }}>URL Parameters</b> trong FB Ads Manager (Ad level → Website URL → Tracking).
+                    FB tự thay giá trị động khi chạy — <b style={{ color: t.text }}>không cần sửa gì, dùng chung 1 string cho mọi camp.</b>
+                  </div>
 
-              <div style={{ overflowX: "auto", marginBottom: 14 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: dark ? "#111827" : "#f1f5f9" }}>
-                      {["Tham số UTM", "Giá trị", "Bắt buộc?", "Ý nghĩa"].map(h => (
-                        <th key={h} style={{ padding: "7px 12px", textAlign: "left", fontWeight: 600, color: t.textMuted, whiteSpace: "nowrap" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { param: "utm_source", val: "Tên campaign (đầy đủ, giống tên FB)", req: true, mean: "Pancake dùng để ghép đơn → MKT code và SP" },
-                      { param: "utm_medium", val: "{{adset.id}}", req: true, mean: "FB tự điền ad set ID → biết nhóm quảng cáo nào" },
-                      { param: "utm_campaign", val: "{{campaign.id}}", req: true, mean: "FB tự điền campaign ID → ghép đơn vào đúng camp trong DB" },
-                      { param: "utm_content", val: "{{ad.id}}", req: true, mean: "FB tự điền ad ID → biết mẫu quảng cáo nào" },
-                      { param: "fbclid", val: "(FB tự gắn)", req: false, mean: "Tự động, không cần làm gì" },
-                    ].map(r => (
-                      <tr key={r.param} style={{ borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}` }}>
-                        <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontWeight: 700, color: t.blue, whiteSpace: "nowrap" }}>{r.param}</td>
-                        <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontSize: 11, color: dark ? "#fcd34d" : "#92400e", whiteSpace: "nowrap" }}>{r.val}</td>
-                        <td style={{ padding: "8px 12px", textAlign: "center" }}>{r.req ? chip("Bắt buộc", "#ef4444", "rgba(239,68,68,0.1)") : chip("Tự động", t.textMuted, "transparent")}</td>
-                        <td style={{ padding: "8px 12px", color: t.textMuted, lineHeight: 1.5 }}>{r.mean}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  {/* String copy */}
+                  <div style={{ position: "relative", marginBottom: 10 }}>
+                    <div style={{ ...mono, fontSize: 12, padding: "14px 120px 14px 14px", background: dark ? "#0b1220" : "#f0f9ff", border: `1.5px solid ${dark ? "#1e3a5f" : "#bae6fd"}`, borderRadius: 9, wordBreak: "break-all", lineHeight: 2, color: t.textSub }}>
+                      {"utm_source="}  <span style={{ color: "#fcd34d" }}>{"{{campaign.name}}"}</span>
+                      {"&utm_medium="} <span style={{ color: "#fcd34d" }}>{"{{adset.name}}"}</span>
+                      {"&utm_campaign="}<span style={{ color: "#fcd34d" }}>{"{{campaign.id}}"}</span>
+                      {"&utm_content="}<span style={{ color: "#fcd34d" }}>{"{{ad.name}}"}</span>
+                      {"&campaign_id="}<span style={{ color: "#94a3b8" }}>{"{{campaign.id}}"}</span>
+                      {"&adset_id="}   <span style={{ color: "#94a3b8" }}>{"{{adset.id}}"}</span>
+                      {"&ad_id="}      <span style={{ color: "#94a3b8" }}>{"{{ad.id}}"}</span>
+                      {"&placement="}  <span style={{ color: "#94a3b8" }}>{"{{placement}}"}</span>
+                    </div>
+                    <button onClick={copyUtm} style={{ position: "absolute", top: "50%", right: 10, transform: "translateY(-50%)", background: t.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 2px 8px rgba(37,99,235,0.35)" }}>
+                      📋 Copy
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 16 }}>
+                    ⚠️ Camp cũ đã chạy giữ nguyên UTM cũ. Chỉ áp dụng string mới cho <b style={{ color: t.text }}>camp tạo từ giờ trở đi.</b>
+                  </div>
 
-              {/* Ví dụ link thực tế */}
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 6 }}>Ví dụ link thực tế ✓</div>
-              <div style={{ ...mono, fontSize: 11, padding: "10px 12px", background: dark ? "#0b1220" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 7, wordBreak: "break-all", color: t.textSub, lineHeight: 1.8 }}>
-                https://giadungphanviet.shop/chaovinhhap<br/>
-                ?<span style={{ color: "#60a5fa" }}>utm_source</span>=<span style={{ color: "#fcd34d" }}>9%2F5_KIENLB_N%E1%BB%92I+CHI%C3%8AN_ADS346_VD7</span><br/>
-                &<span style={{ color: "#60a5fa" }}>utm_medium</span>=<span style={{ color: "#fcd34d" }}>{"{{adset.id}}"}</span><br/>
-                &<span style={{ color: "#60a5fa" }}>utm_campaign</span>=<span style={{ color: "#fcd34d" }}>{"{{campaign.id}}"}</span><br/>
-                &<span style={{ color: "#60a5fa" }}>utm_content</span>=<span style={{ color: "#fcd34d" }}>{"{{ad.id}}"}</span>
-              </div>
-              <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 8 }}>
-                💡 Trong Facebook Ads Manager: <b style={{ color: t.text }}>Ad level → Website URL → Tracking → URL Parameters</b> → dán các tham số vào đây. FB tự thay <code style={{ background: dark ? "#1f2937" : "#f1f5f9", padding: "1px 5px", borderRadius: 3 }}>{"{{campaign.id}}"}</code> bằng ID thực.
-              </div>
-            </div>
+                  {/* Bảng giải thích */}
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: dark ? "#111827" : "#f1f5f9" }}>
+                          {["Tham số", "Giá trị FB", "Ý nghĩa & dùng để làm gì"].map(h => (
+                            <th key={h} style={{ padding: "7px 12px", textAlign: "left", fontWeight: 600, color: t.textMuted, whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { param: "utm_source",   val: "{{campaign.name}}", note: "Tên camp → parse ra MKT code, tên SP, video ID" },
+                          { param: "utm_medium",   val: "{{adset.name}}",    note: "Tên adset → biết audience / chiến lược nào" },
+                          { param: "utm_campaign", val: "{{campaign.id}}",   note: "Campaign ID số → ghép đơn Pancake vào đúng camp trong DB, không bị nhầm khi đổi tên" },
+                          { param: "utm_content",  val: "{{ad.name}}",       note: "Tên ad → biết creative nào đang chạy" },
+                          { param: "campaign_id",  val: "{{campaign.id}}",   note: "Thông số tùy chỉnh — dự phòng lấy campaign ID" },
+                          { param: "adset_id",     val: "{{adset.id}}",      note: "Thông số tùy chỉnh — adset ID số" },
+                          { param: "ad_id",        val: "{{ad.id}}",         note: "Thông số tùy chỉnh — ad ID số, tra được exact creative" },
+                          { param: "placement",    val: "{{placement}}",     note: "Vị trí hiển thị (Feed / Reels / Story) → phân tích hiệu quả theo placement" },
+                        ].map((r, i) => (
+                          <tr key={r.param} style={{ borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}`, background: i >= 4 ? (dark ? "rgba(255,255,255,0.02)" : "#fafafa") : "transparent" }}>
+                            <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontWeight: 700, color: i < 4 ? t.blue : t.textMuted, whiteSpace: "nowrap" }}>
+                              {r.param}
+                              {i >= 4 && <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 3, background: dark ? "#1f2937" : "#f1f5f9", color: t.textMuted }}>custom</span>}
+                            </td>
+                            <td style={{ padding: "8px 12px", fontFamily: "ui-monospace,monospace", fontSize: 11, color: "#fcd34d", whiteSpace: "nowrap" }}>{r.val}</td>
+                            <td style={{ padding: "8px 12px", color: t.textMuted, lineHeight: 1.5 }}>{r.note}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Hướng dẫn dán vào FB */}
+                  <div style={{ marginTop: 14, background: dark ? "rgba(59,130,246,0.07)" : "#eff6ff", border: `1px solid ${dark ? "rgba(59,130,246,0.2)" : "#bfdbfe"}`, borderRadius: 8, padding: "11px 14px", fontSize: 12, color: t.textMuted, lineHeight: 1.7 }}>
+                    <b style={{ color: dark ? "#93c5fd" : "#1d4ed8" }}>Cách dán vào FB Ads Manager:</b><br/>
+                    Vào Ad → chỉnh sửa → Website URL → <b style={{ color: t.text }}>Tracking</b> → <b style={{ color: t.text }}>Tạo thông số URL</b> → dán string trên vào ô <b style={{ color: t.text }}>"Xem trước thông số"</b> hoặc điền từng dòng theo bảng trên → Áp dụng.
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* ─── LIVE VALIDATOR ─── */}
             <div style={{ ...sBox }}>
@@ -2809,38 +2839,29 @@ export default function BaoCaoMktPage() {
                         ))}
                       </div>
 
-                      {/* UTM builder */}
-                      <div style={{ marginTop: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted }}>UTM tương ứng</div>
-                          <div style={{ display: "flex", background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, borderRadius: 6, padding: 2, gap: 2 }}>
-                            {(["fb", "web"] as const).map(m => (
-                              <button key={m} onClick={() => setUtmMode(m)}
-                                style={{ border: "none", background: utmMode === m ? (dark ? "#374151" : "#fff") : "transparent", color: utmMode === m ? t.text : t.textMuted, padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                                {m === "fb" ? "Facebook Dynamic" : "Tĩnh (web)"}
-                              </button>
-                            ))}
+                      {/* UTM string copy */}
+                      {utmFields && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 7 }}>UTM string — dán vào FB Ads Manager</div>
+                          <div style={{ position: "relative" }}>
+                            <div style={{ ...mono, fontSize: 11, padding: "10px 90px 10px 12px", background: dark ? "#0b1220" : "#f0f9ff", border: `1.5px solid ${dark ? "#1e3a5f" : "#bae6fd"}`, borderRadius: 8, wordBreak: "break-all", lineHeight: 1.9, color: t.textSub }}>
+                              {UTM_STATIC}
+                            </div>
+                            <button onClick={() => {
+                              navigator.clipboard.writeText(UTM_STATIC).then(() => {
+                                const el = document.createElement("div")
+                                el.textContent = "✓ Đã copy UTM string"
+                                Object.assign(el.style, { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 9999, pointerEvents: "none" })
+                                document.body.appendChild(el)
+                                setTimeout(() => el.remove(), 1800)
+                              })
+                            }} style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", background: t.blue, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                              📋 Copy
+                            </button>
                           </div>
+                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 5 }}>String này dùng chung — FB tự điền ID và tên thực khi chạy.</div>
                         </div>
-                        <div style={{ ...mono, fontSize: 11.5, padding: "10px 13px", background: dark ? "#0b1220" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 7, wordBreak: "break-all", lineHeight: 1.9, color: t.textSub }}>
-                          {utmFields && Object.entries(utmFields[utmMode]).map(([k, v]) => (
-                            <div key={k}><span style={{ color: "#60a5fa" }}>{k}</span>=<span style={{ color: "#fcd34d" }}>{v}</span></div>
-                          ))}
-                        </div>
-                        <button onClick={() => {
-                          if (!utmFields) return
-                          const str = Object.entries(utmFields[utmMode]).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")
-                          navigator.clipboard.writeText(str).then(() => {
-                            const el = document.createElement("div")
-                            el.textContent = "✓ Đã copy UTM string"
-                            Object.assign(el.style, { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 9999 })
-                            document.body.appendChild(el)
-                            setTimeout(() => el.remove(), 1800)
-                          })
-                        }} style={{ marginTop: 7, background: dark ? "#1e293b" : "#f1f5f9", border: `1px solid ${dark ? "#2d3748" : "#e2e8f0"}`, color: t.text, borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                          📋 Copy UTM string
-                        </button>
-                      </div>
+                      )}
                     </div>
                   )}
                 </div>
