@@ -1,13 +1,5 @@
-import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
-
-const TOKENS_CSS = `
-.hqv-scope { --bg:#F4F5F9; --bg-card:#FFFFFF; --bg-subtle:#F0F1F5; --border:#E5E7EB;
-  --text-1:#111827; --text-2:#4B5563; --text-3:#9CA3AF; --accent:#1877F2;
-  --shadow-sm:0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04); color:var(--text-1); }
-.hqv-scope .hover-bg:hover{background:rgba(0,0,0,0.035) !important;}
-`
 
 const PERSON_COLORS: Record<string, string> = { "Hậu": "#1877F2", "Khải": "#10B981", "Quân": "#F59E0B" }
 const fmtVnd = (n: number) => (n || 0).toLocaleString("vi-VN")
@@ -16,7 +8,7 @@ const fmtVnd = (n: number) => (n || 0).toLocaleString("vi-VN")
 function hookColor(r: number) { return r >= 40 ? "#16A34A" : r >= 20 ? "#D97706" : "#DC2626" }
 function ctrColor(r: number) { return r >= 1.5 ? "#16A34A" : r >= 0.8 ? "#D97706" : "#DC2626" }
 
-const HieuQuaVideoPage = () => {
+export function HieuQuaSection() {
   const [from, setFrom] = useState("2026-06-01")
   const [to, setTo] = useState("2026-06-30")
   const [rows, setRows] = useState<any[]>([])
@@ -52,8 +44,7 @@ const HieuQuaVideoPage = () => {
   const inpSt: React.CSSProperties = { background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none" }
 
   return (
-    <div className="hqv-scope" style={{ background: "var(--bg)", margin: -24, minHeight: "calc(100vh - 56px)", padding: 20 }}>
-      <style>{TOKENS_CSS}</style>
+    <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)" }}>Hiệu quả Video qua Quảng cáo</h1>
         <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>Mỗi video (VD-code) tổng hợp spend, CTR, CPM, hook rate, thruplay từ tất cả ad/tài khoản đang chạy.</p>
@@ -111,7 +102,3 @@ const HieuQuaVideoPage = () => {
     </div>
   )
 }
-
-export const config = defineRouteConfig({ label: "Hiệu quả Video" })
-
-export default HieuQuaVideoPage

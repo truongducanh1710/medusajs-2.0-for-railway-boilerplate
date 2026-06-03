@@ -111,10 +111,10 @@ export const SEPAY_API_URL = process.env.SEPAY_API_URL
 /**
  * (optional) Facebook Pages configuration — dùng cho Marketing Hub (đăng bài + đọc data page).
  * FB_USER_TOKEN là long-lived user token (60 ngày) quản lý các Pages.
- * Lưu ý: token này KHÁC FB_ACCESS_TOKEN (dùng cho Ads insights trong bao-cao-mkt).
+ * Fallback sang FB_ACCESS_TOKEN nếu chưa set riêng — token Ads hiện tại đã có đủ
+ * quyền Pages (pages_manage_posts...) nên dùng chung được.
  */
-export const FB_USER_TOKEN = process.env.FB_USER_TOKEN || ''
-export const FB_APP_ID = process.env.FB_APP_ID || ''
+export const FB_USER_TOKEN = process.env.FB_USER_TOKEN || process.env.FB_ACCESS_TOKEN || ''
 export const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v21.0'
 export const FB_GRAPH_BASE = `https://graph.facebook.com/${process.env.FB_GRAPH_VERSION || 'v21.0'}`
 
