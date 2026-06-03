@@ -216,140 +216,175 @@ function structureReviews(rawReviews: string[]): Array<{ rating: number; text: s
     .slice(0, 10)
 }
 
-// ── Landing page HTML ──────────────────────────────────────────────────────
-// Nhận structured reviews (đã parse), không nhận raw string nữa
-function buildLandingPage(
+// ── Build GrapesJS-compatible landing page ─────────────────────────────────
+// Output: { html, css } — parseGrapesContent() sẽ render đúng trên storefront
+// Dùng pvb-* classes để admin có thể mở GrapesJS editor và edit từng block
+function buildGrapesContent(
   ai: AIContent,
   images: string[],
   structuredReviews: Array<{ rating: number; text: string; name: string; date: string }>
 ): string {
-  const C = "#e63946"
+  // ── Benefits block (pvb-ben) ────────────────────────────────────────────
+  const benefitCards = ai.benefits.map(b =>
+    `<div class="card"><div class="icon">${b.icon}</div><h4>${b.title}</h4>${b.desc ? `<p>${b.desc}</p>` : ""}</div>`
+  ).join("")
 
-  function sectionTitle(emoji: string, text: string) {
-    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid ${C}">
-      <span style="font-size:20px">${emoji}</span>
-      <h2 style="margin:0;font-size:18px;font-weight:700;color:#111">${text}</h2>
-    </div>`
-  }
+  const benHtml = `<section class="pvb-ben">
+  <div class="inner">
+    <h2>✨ Điểm nổi bật</h2>
+    <div class="grid">${benefitCards}</div>
+  </div>
+</section>`
 
-  // Benefits — 2x2 grid
-  const benefitsHtml = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      ${ai.benefits.map(b => `
-      <div style="background:white;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)">
-        <div style="font-size:30px;margin-bottom:8px">${b.icon}</div>
-        <div style="font-weight:700;color:#111;font-size:14px;margin-bottom:4px">${b.title}</div>
-        ${b.desc ? `<div style="color:#6b7280;font-size:12px;line-height:1.5">${b.desc}</div>` : ""}
-      </div>`).join("")}
-    </div>`
+  const benCss = `.pvb-ben{padding:40px 16px;background:#fff}
+.pvb-ben .inner{max-width:1100px;margin:0 auto}
+.pvb-ben h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 20px;text-align:center}
+.pvb-ben .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pvb-ben .card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:16px;padding:16px;text-align:center}
+.pvb-ben .icon{font-size:28px;margin-bottom:8px}
+.pvb-ben h4{margin:0 0 4px;font-weight:800;font-size:14px;color:#111827}
+.pvb-ben p{margin:0;color:#6b7280;font-size:13px}
+@media(min-width:640px){.pvb-ben{padding:56px 24px}.pvb-ben .grid{grid-template-columns:repeat(4,1fr);gap:18px}.pvb-ben .card{padding:20px}.pvb-ben .icon{font-size:32px}.pvb-ben h4{font-size:16px}}`
 
-  // Pain/Solution
-  const painSolutionHtml = ai.pains.map((pain, i) => `
-    <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:10px">
-      <div style="flex:1;background:#fff1f2;border-radius:10px;padding:14px">
-        <div style="font-size:10px;font-weight:800;color:#f43f5e;margin-bottom:6px;letter-spacing:.05em">✕ VẤN ĐỀ</div>
-        <div style="color:#374151;font-size:13px;line-height:1.6">${pain}</div>
-      </div>
-      <div style="display:flex;align-items:center;color:#d1d5db;font-size:22px;padding:0 2px">→</div>
-      <div style="flex:1;background:#f0fdf4;border-radius:10px;padding:14px">
-        <div style="font-size:10px;font-weight:800;color:#10b981;margin-bottom:6px;letter-spacing:.05em">✓ GIẢI PHÁP</div>
-        <div style="color:#374151;font-size:13px;line-height:1.6">${ai.solutions[i] || ""}</div>
-      </div>
-    </div>`).join("")
+  // ── Gallery block (pvb-gal) ─────────────────────────────────────────────
+  const galHtml = images.length > 1 ? `<section class="pvb-gal">
+  <div class="inner">
+    <h2>🖼️ Hình ảnh sản phẩm</h2>
+    <div class="grid">
+      ${images.slice(0, 9).map(src => `<img src="${src}" alt="Ảnh sản phẩm" loading="lazy" />`).join("")}
+    </div>
+  </div>
+</section>` : ""
 
-  // Specs — zebra table
-  const specsRows = Object.entries(ai.specs_vi).map(([k, v], i) => `
-    <tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
-      <td style="padding:10px 14px;font-weight:600;color:#374151;font-size:13px;border-bottom:1px solid #f3f4f6;width:42%">${k}</td>
-      <td style="padding:10px 14px;color:#111;font-size:13px;border-bottom:1px solid #f3f4f6">${v}</td>
-    </tr>`).join("")
+  const galCss = `.pvb-gal{padding:40px 16px;background:#f9fafb}
+.pvb-gal .inner{max-width:1100px;margin:0 auto}
+.pvb-gal h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 16px;text-align:center}
+.pvb-gal .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pvb-gal img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid #e5e7eb;display:block}
+@media(min-width:640px){.pvb-gal{padding:56px 24px}.pvb-gal .grid{grid-template-columns:repeat(4,1fr);gap:12px}}`
 
-  // FAQ accordion
-  const faqHtml = ai.faq.map(item => `
-    <details style="border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;overflow:hidden">
-      <summary style="padding:14px 18px;font-weight:600;color:#111;cursor:pointer;font-size:14px;background:white;list-style:none;display:flex;justify-content:space-between;align-items:center">
-        <span>${item.q}</span><span style="color:#9ca3af;font-size:18px">+</span>
-      </summary>
-      <div style="padding:12px 18px 16px;color:#4b5563;font-size:13px;line-height:1.7;background:#fafafa;border-top:1px solid #f3f4f6">${item.a}</div>
-    </details>`).join("")
+  // ── Pain/Solution block (pvb-ps) ────────────────────────────────────────
+  const painItems = ai.pains.map(p => `<li>${p}</li>`).join("")
+  const solItems = ai.solutions.map(s => `<li>${s}</li>`).join("")
 
-  // Gallery — chỉ thumbs (ảnh hero đã có ở ImageGallery storefront)
-  const galleryHtml = images.length > 1 ? `
-    <div style="margin-bottom:32px">
-      ${sectionTitle("🖼️", "Hình ảnh sản phẩm")}
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
-        ${images.slice(0, 9).map(img =>
-          `<img src="${img}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1.5px solid #e5e7eb" loading="lazy" />`
-        ).join("")}
-      </div>
-    </div>` : ""
+  const psHtml = `<section class="pvb-ps">
+  <div class="inner">
+    <div class="box pain">
+      <h3>😤 Bạn đang gặp vấn đề?</h3>
+      <ul>${painItems}</ul>
+    </div>
+    <div class="box solution">
+      <h3>✅ Giải pháp của chúng tôi</h3>
+      <ul>${solItems}</ul>
+    </div>
+  </div>
+</section>`
 
-  // Reviews — dùng structured reviews đã parse sạch
+  const psCss = `.pvb-ps{padding:40px 16px;background:#fff}
+.pvb-ps .inner{max-width:1100px;margin:0 auto;display:grid;gap:16px}
+.pvb-ps .box{border-radius:18px;padding:20px}
+.pvb-ps .pain{background:#fff1f2;border:1px solid #fecdd3}
+.pvb-ps .solution{background:#ecfdf5;border:1px solid #bbf7d0}
+.pvb-ps h3{margin:0 0 12px;font-size:20px;font-weight:900}
+.pvb-ps .pain h3{color:#be123c}
+.pvb-ps .solution h3{color:#047857}
+.pvb-ps ul{margin:0;padding-left:18px;line-height:1.9;color:#4b5563;font-size:15px}
+@media(min-width:640px){.pvb-ps{padding:56px 24px}.pvb-ps .inner{grid-template-columns:1fr 1fr;gap:24px}.pvb-ps h3{font-size:24px}}`
+
+  // ── Specs block (pvb-spec) ──────────────────────────────────────────────
+  const specEntries = Object.entries(ai.specs_vi)
+  const specRows = specEntries.map(([k, v], i) =>
+    `<tr class="${i % 2 === 0 ? "even" : "odd"}"><td>${k}</td><td>${v}</td></tr>`
+  ).join("")
+
+  const specHtml = specEntries.length ? `<section class="pvb-spec">
+  <div class="inner">
+    <h2>📋 Thông số kỹ thuật</h2>
+    <div class="wrap">
+      <table><tbody>${specRows}</tbody></table>
+    </div>
+  </div>
+</section>` : ""
+
+  const specCss = `.pvb-spec{padding:40px 16px;background:#f9fafb}
+.pvb-spec .inner{max-width:860px;margin:0 auto}
+.pvb-spec h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 16px}
+.pvb-spec .wrap{border-radius:14px;overflow:hidden;border:1px solid #e5e7eb}
+.pvb-spec table{width:100%;border-collapse:collapse}
+.pvb-spec td{padding:12px 16px;font-size:14px;border-bottom:1px solid #f3f4f6}
+.pvb-spec td:first-child{font-weight:700;color:#374151;width:42%}
+.pvb-spec tr.even td{background:#fff}
+.pvb-spec tr.odd td{background:#f9fafb}
+@media(min-width:640px){.pvb-spec{padding:56px 24px}}`
+
+  // ── Reviews block (pvb-rev) ─────────────────────────────────────────────
   const PASTEL = ["#dbeafe","#dcfce7","#fce7f3","#fef3c7","#f3e8ff","#ffedd5","#e0f2fe","#fef9c3"]
-  const reviewCardsHtml = structuredReviews.slice(0, 6).map(r => {
-    const { rating, text, name, date } = r
-    const initials = name.slice(0, 2).toUpperCase()
-    const bg = PASTEL[name.charCodeAt(0) % PASTEL.length]
-    const starStr = Array.from({length: 5}, (_, i) =>
-      `<span style="color:${i < rating ? "#f59e0b" : "#d1d5db"};font-size:13px">★</span>`
-    ).join("")
-    return `
-    <div style="background:white;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="width:36px;height:36px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#374151;flex-shrink:0">${initials}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:13px;color:#111">${name}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
-            <span>${starStr}</span>
-            ${date ? `<span style="font-size:11px;color:#9ca3af">${date}</span>` : ""}
-          </div>
-        </div>
-      </div>
-      <p style="margin:0;font-size:13px;color:#374151;line-height:1.7">${text}</p>
-    </div>`
+  const revCards = structuredReviews.slice(0, 6).map(r => {
+    const stars = "★".repeat(r.rating) + "☆".repeat(5 - r.rating)
+    const initials = r.name.slice(0, 2).toUpperCase()
+    const bg = PASTEL[r.name.charCodeAt(0) % PASTEL.length]
+    return `<div class="card">
+  <div class="head">
+    <div class="avatar" style="background:${bg}">${initials}</div>
+    <div class="meta">
+      <div class="name">${r.name}</div>
+      <div class="stars">${stars}${r.date ? ` <span class="date">${r.date}</span>` : ""}</div>
+    </div>
+  </div>
+  <p class="body">${r.text}</p>
+</div>`
   }).join("")
 
-  // Không có Hero section — storefront đã render title/desc/gallery ở trên
-  return `<div style="max-width:840px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111;line-height:1.6">
-
-  <!-- Benefits -->
-  <div style="margin-bottom:32px">
-    ${sectionTitle("✨", "Điểm nổi bật")}
-    ${benefitsHtml}
+  const revHtml = revCards ? `<section class="pvb-rev">
+  <div class="inner">
+    <h2>⭐ Đánh giá từ khách hàng</h2>
+    <div class="grid">${revCards}</div>
   </div>
+</section>` : ""
 
-  <!-- Gallery -->
-  ${galleryHtml}
+  const revCss = `.pvb-rev{padding:40px 16px;background:#fff}
+.pvb-rev .inner{max-width:1100px;margin:0 auto}
+.pvb-rev h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 20px;text-align:center}
+.pvb-rev .grid{display:grid;grid-template-columns:1fr;gap:14px}
+.pvb-rev .card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:16px}
+.pvb-rev .head{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+.pvb-rev .avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#374151;flex-shrink:0}
+.pvb-rev .name{font-weight:700;font-size:14px;color:#111}
+.pvb-rev .stars{color:#f59e0b;font-size:13px}
+.pvb-rev .date{color:#9ca3af;font-size:11px;margin-left:6px}
+.pvb-rev .body{margin:0;font-size:13px;color:#374151;line-height:1.7}
+@media(min-width:640px){.pvb-rev{padding:56px 24px}.pvb-rev .grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1024px){.pvb-rev .grid{grid-template-columns:repeat(3,1fr)}}`
 
-  <!-- Pain/Solution -->
-  <div style="margin-bottom:32px">
-    ${sectionTitle("💡", "Vì sao chọn sản phẩm này?")}
-    ${painSolutionHtml}
+  // ── FAQ block (pvb-faq dùng details/summary) ───────────────────────────
+  const faqItems = ai.faq.map(f => `<details class="item">
+  <summary>${f.q}</summary>
+  <div class="ans">${f.a}</div>
+</details>`).join("")
+
+  const faqHtml = ai.faq.length ? `<section class="pvb-faq">
+  <div class="inner">
+    <h2>❓ Câu hỏi thường gặp</h2>
+    ${faqItems}
   </div>
+</section>` : ""
 
-  <!-- Specs -->
-  ${specsRows ? `<div style="margin-bottom:32px">
-    ${sectionTitle("📋", "Thông số kỹ thuật")}
-    <div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse">${specsRows}</table>
-    </div>
-  </div>` : ""}
+  const faqCss = `.pvb-faq{padding:40px 16px;background:#f9fafb}
+.pvb-faq .inner{max-width:860px;margin:0 auto}
+.pvb-faq h2{font-size:clamp(20px,4vw,28px);font-weight:900;margin:0 0 20px;text-align:center}
+.pvb-faq .item{background:#fff;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:8px;overflow:hidden}
+.pvb-faq summary{padding:14px 18px;font-weight:700;font-size:14px;color:#111;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.pvb-faq summary::-webkit-details-marker{display:none}
+.pvb-faq summary::after{content:"+";color:#9ca3af;font-size:20px;line-height:1}
+.pvb-faq details[open] summary::after{content:"−"}
+.pvb-faq .ans{padding:0 18px 16px;color:#4b5563;font-size:13px;line-height:1.7;border-top:1px solid #f3f4f6;padding-top:12px;background:#fafafa}
+@media(min-width:640px){.pvb-faq{padding:56px 24px}}`
 
-  <!-- Reviews -->
-  ${reviewCardsHtml ? `<div style="margin-bottom:32px">
-    ${sectionTitle("⭐", "Đánh giá từ khách hàng")}
-    <div style="display:grid;gap:10px">
-      ${reviewCardsHtml}
-    </div>
-  </div>` : ""}
+  // ── Assemble ────────────────────────────────────────────────────────────
+  const html = [benHtml, galHtml, psHtml, specHtml, revHtml, faqHtml].filter(Boolean).join("\n")
+  const css = [benCss, images.length > 1 ? galCss : "", psCss, specEntries.length ? specCss : "", revCards ? revCss : "", ai.faq.length ? faqCss : ""].filter(Boolean).join("\n")
 
-  <!-- FAQ -->
-  ${faqHtml ? `<div style="margin-bottom:32px">
-    ${sectionTitle("❓", "Câu hỏi thường gặp")}
-    ${faqHtml}
-  </div>` : ""}
-
-</div>`
+  return JSON.stringify({ html, css })
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────
@@ -457,14 +492,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const product = productResult[0]
 
-    // 3. Sinh landing page HTML và lưu vào product metadata
-    const pageHtml = buildLandingPage(ai, finalImages, reviews)
+    // 3. Build GrapesJS-compatible landing page và lưu vào product metadata
+    const pageContent = buildGrapesContent(ai, finalImages, reviews)
 
     const productModule = req.scope.resolve(Modules.PRODUCT)
     await productModule.updateProducts(product.id, {
       metadata: {
         ...(product.metadata as Record<string, any>),
-        page_content: pageHtml,
+        page_content: pageContent,
       },
     })
 
