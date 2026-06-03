@@ -80,10 +80,8 @@ async function uploadImages(urls: string[], folder: string): Promise<string[]> {
 // ── AI Content ─────────────────────────────────────────────────────────────
 async function generateContent(data: Scrape1688Data): Promise<AIContent> {
   const client = new OpenAI({
-    baseURL: process.env.OPENROUTER_API_KEY
-      ? "https://openrouter.ai/api/v1"
-      : "https://api.deepseek.com",
-    apiKey: process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY,
+    baseURL: "https://api.deepseek.com",
+    apiKey: process.env.DEEPSEEK_API_KEY!,
   })
 
   const specsText = Object.entries(data.specs).slice(0, 20).map(([k, v]) => `${k}: ${v}`).join("\n")
@@ -122,7 +120,7 @@ Trả về JSON thuần túy (không markdown), format:
   "specs_vi": {"Chất liệu": "...", "Kích thước": "...", "Xuất xứ": "Trung Quốc"}
 }`
 
-  const model = process.env.OPENROUTER_API_KEY ? "deepseek/deepseek-chat" : "deepseek-chat"
+  const model = "deepseek-chat"
   const completion = await client.chat.completions.create({
     model,
     messages: [{ role: "user", content: prompt }],
