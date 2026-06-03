@@ -75,6 +75,21 @@ export default defineMiddlewares({
 
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
 
+    // 1688-import: allow cả Secret API Key (actor_type=api_key) và user với quyền san-pham.edit
+    {
+      matcher: "/admin/1688-import",
+      method: ["POST"],
+      middlewares: [
+        async (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+          const auth = (req as any).auth_context
+          // Secret API Key → cho qua luôn
+          if (auth?.actor_type === "api_key") return next()
+          // User → check perm bình thường
+          return requirePerm("page.san-pham.edit")(req, res, next)
+        }
+      ]
+    },
+
     // Quản lý user — không chặn ở đây vì Medusa native auth đã guard /admin/users
     // requirePerm chạy trước auth_context được inject nên sẽ 401
   ],
