@@ -27,6 +27,20 @@ function requirePerm(...needed: string[]) {
   }
 }
 
+// CORS middleware cho Chrome Extension
+const extensionCors: MedusaNextFunction = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+  const origin = req.headers.origin || ""
+  // Cho phép chrome-extension://* và moz-extension://*
+  if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
+    res.setHeader("Access-Control-Allow-Origin", origin)
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,x-medusa-access-token")
+    res.setHeader("Access-Control-Allow-Credentials", "true")
+  }
+  if (req.method === "OPTIONS") return res.status(204).end()
+  return next()
+}
+
 export default defineMiddlewares({
   routes: [
     // Body parser cho product-content (giữ nguyên)
@@ -34,6 +48,13 @@ export default defineMiddlewares({
       matcher: "/admin/product-content",
       method: ["POST"],
       bodyParser: { sizeLimit: "100mb" },
+    },
+
+    // CORS cho Chrome Extension — phải đứng trước auth middleware
+    {
+      matcher: "/admin/1688-import",
+      method: ["POST", "OPTIONS"],
+      middlewares: [extensionCors],
     },
 
     // Custom routes — permission guards
