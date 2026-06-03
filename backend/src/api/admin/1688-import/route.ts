@@ -292,8 +292,9 @@ function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): s
 // ── Main handler ───────────────────────────────────────────────────────────
 function setCorsForExtension(req: MedusaRequest, res: MedusaResponse) {
   const origin = req.headers.origin || ""
-  if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
-    res.setHeader("Access-Control-Allow-Origin", origin)
+  // Cho phép mọi chrome-extension và moz-extension origin
+  if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://") || !origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin || "*")
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-medusa-access-token")
     res.setHeader("Access-Control-Allow-Credentials", "true")
