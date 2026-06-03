@@ -1,8 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import OpenAI from "openai"
 import { Client } from "minio"
-import { Readable } from "stream"
 
 interface Scrape1688Data {
   title: string
@@ -63,7 +63,7 @@ async function uploadImageFromUrl(imageUrl: string, folder: string): Promise<str
   const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg"
   const filename = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
 
-  await client.putObject(bucket, filename, Readable.from(buffer), buffer.length, { "Content-Type": contentType })
+  await client.putObject(bucket, filename, buffer, buffer.length, { "Content-Type": contentType })
   return getPublicUrl(bucket, filename)
 }
 
@@ -270,66 +270,71 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const finalImages = uploadedImages.length > 0 ? uploadedImages : imageUrls.slice(0, 8)
     const thumbnail = finalImages[0] || null
 
-    // 2. Tạo Medusa product
-    const productModule = req.scope.resolve(Modules.PRODUCT)
-
-    // Parse giá VND để tạo variant
+    // 2. Tạo Medusa product via workflow
     const priceVND = parsePriceVND(body.price)
 
-    const product = await productModule.createProducts({
-      title: ai.title_vi || body.title,
-      description: ai.description_vi,
-      status: "draft" as any,
-      thumbnail: thumbnail || undefined,
-      images: finalImages.map(url => ({ url })),
-      options: [{ title: "Màu sắc", values: ["Mặc định"] }],
-      variants: [
-        {
-          title: "Mặc định",
-          sku: `1688-${Date.now()}`,
-          options: { "Màu sắc": "Mặc định" },
-          prices: priceVND > 0
-            ? [{ currency_code: "vnd", amount: priceVND }]
-            : [],
-          inventory_quantity: 100,
-          manage_inventory: false,
-        },
-      ],
-      metadata: {
-        source_url: body.url,
-        source_platform: body.url.includes("aliexpress") ? "aliexpress" : "1688",
-        source_price: body.price,
-        source_rating: body.rating || "",
-        benefit_icon_1: ai.benefits[0]?.icon || "",
-        benefit_title_1: ai.benefits[0]?.title || "",
-        benefit_desc_1: ai.benefits[0]?.desc || "",
-        benefit_icon_2: ai.benefits[1]?.icon || "",
-        benefit_title_2: ai.benefits[1]?.title || "",
-        benefit_desc_2: ai.benefits[1]?.desc || "",
-        benefit_icon_3: ai.benefits[2]?.icon || "",
-        benefit_title_3: ai.benefits[2]?.title || "",
-        benefit_desc_3: ai.benefits[2]?.desc || "",
-        benefit_icon_4: ai.benefits[3]?.icon || "",
-        benefit_title_4: ai.benefits[3]?.title || "",
-        benefit_desc_4: ai.benefits[3]?.desc || "",
-        pain_1: ai.pains[0] || "",
-        pain_2: ai.pains[1] || "",
-        pain_3: ai.pains[2] || "",
-        solution_1: ai.solutions[0] || "",
-        solution_2: ai.solutions[1] || "",
-        solution_3: ai.solutions[2] || "",
-        faq: JSON.stringify(ai.faq.map(f => ({ question: f.q, answer: f.a }))),
-        reviews: JSON.stringify((body.reviews || []).slice(0, 10)),
-        xuat_xu: "Trung Quốc",
-        ...(ai.specs_vi["Chất liệu"] ? { chat_lieu: ai.specs_vi["Chất liệu"] } : {}),
-        ...(ai.specs_vi["Kích thước"] ? { kich_thuoc: ai.specs_vi["Kích thước"] } : {}),
-        ...(ai.specs_vi["Trọng lượng"] ? { trong_luong: ai.specs_vi["Trọng lượng"] } : {}),
+    const { result: productResult } = await createProductsWorkflow(req.scope).run({
+      input: {
+        products: [
+          {
+            title: ai.title_vi || body.title,
+            description: ai.description_vi,
+            status: "draft" as any,
+            thumbnail: thumbnail || undefined,
+            images: finalImages.map(url => ({ url })),
+            options: [{ title: "Màu sắc", values: ["Mặc định"] }],
+            variants: [
+              {
+                title: "Mặc định",
+                sku: `1688-${Date.now()}`,
+                options: { "Màu sắc": "Mặc định" },
+                prices: priceVND > 0
+                  ? [{ currency_code: "vnd", amount: priceVND }]
+                  : [],
+                manage_inventory: false,
+              },
+            ],
+            metadata: {
+              source_url: body.url,
+              source_platform: body.url.includes("aliexpress") ? "aliexpress" : "1688",
+              source_price: body.price,
+              source_rating: body.rating || "",
+              benefit_icon_1: ai.benefits[0]?.icon || "",
+              benefit_title_1: ai.benefits[0]?.title || "",
+              benefit_desc_1: ai.benefits[0]?.desc || "",
+              benefit_icon_2: ai.benefits[1]?.icon || "",
+              benefit_title_2: ai.benefits[1]?.title || "",
+              benefit_desc_2: ai.benefits[1]?.desc || "",
+              benefit_icon_3: ai.benefits[2]?.icon || "",
+              benefit_title_3: ai.benefits[2]?.title || "",
+              benefit_desc_3: ai.benefits[2]?.desc || "",
+              benefit_icon_4: ai.benefits[3]?.icon || "",
+              benefit_title_4: ai.benefits[3]?.title || "",
+              benefit_desc_4: ai.benefits[3]?.desc || "",
+              pain_1: ai.pains[0] || "",
+              pain_2: ai.pains[1] || "",
+              pain_3: ai.pains[2] || "",
+              solution_1: ai.solutions[0] || "",
+              solution_2: ai.solutions[1] || "",
+              solution_3: ai.solutions[2] || "",
+              faq: JSON.stringify(ai.faq.map(f => ({ question: f.q, answer: f.a }))),
+              reviews: JSON.stringify((body.reviews || []).slice(0, 10)),
+              xuat_xu: "Trung Quốc",
+              ...(ai.specs_vi["Chất liệu"] ? { chat_lieu: ai.specs_vi["Chất liệu"] } : {}),
+              ...(ai.specs_vi["Kích thước"] ? { kich_thuoc: ai.specs_vi["Kích thước"] } : {}),
+              ...(ai.specs_vi["Trọng lượng"] ? { trong_luong: ai.specs_vi["Trọng lượng"] } : {}),
+            },
+          },
+        ],
       },
     })
+
+    const product = productResult[0]
 
     // 3. Sinh landing page HTML và lưu vào product metadata
     const pageHtml = buildLandingPage(ai, finalImages)
 
+    const productModule = req.scope.resolve(Modules.PRODUCT)
     await productModule.updateProducts(product.id, {
       metadata: {
         ...(product.metadata as Record<string, any>),
