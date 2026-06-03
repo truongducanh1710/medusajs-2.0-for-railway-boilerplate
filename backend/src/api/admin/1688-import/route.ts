@@ -290,7 +290,23 @@ function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): s
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────
+function setCorsForExtension(req: MedusaRequest, res: MedusaResponse) {
+  const origin = req.headers.origin || ""
+  if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
+    res.setHeader("Access-Control-Allow-Origin", origin)
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-medusa-access-token")
+    res.setHeader("Access-Control-Allow-Credentials", "true")
+  }
+}
+
+export async function OPTIONS(req: MedusaRequest, res: MedusaResponse) {
+  setCorsForExtension(req, res)
+  return res.status(204).end()
+}
+
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  setCorsForExtension(req, res)
   try {
     const body = req.body as Scrape1688Data
 
