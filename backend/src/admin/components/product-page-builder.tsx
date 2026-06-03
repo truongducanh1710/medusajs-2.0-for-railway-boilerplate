@@ -1149,9 +1149,13 @@ export default function ProductPageBuilder({
       if (initialContent && initialContent !== "{}") {
         try {
           const saved = JSON.parse(initialContent)
-          // New format: {html, css, projectData}
+          // Format {projectData}: GrapesJS native full project
           if (saved.projectData) {
             editor.loadProjectData(stripScriptsFromProjectData(saved.projectData))
+          // Format {html, css}: generated từ 1688-import hoặc manual
+          } else if (saved.html !== undefined) {
+            editor.setComponents(stripScripts(saved.html))
+            if (saved.css) editor.setStyle(saved.css)
           } else {
             // Old format: raw projectData JSON
             editor.loadProjectData(stripScriptsFromProjectData(saved))
