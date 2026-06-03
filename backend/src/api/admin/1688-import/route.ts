@@ -142,153 +142,148 @@ function parsePriceVND(priceStr: string): number {
   return Math.round(parseFloat(match[1].replace(/[,. ]/g, "").replace(/(\d{3})$/, ".$1")) * 1000) || 0
 }
 
-// ── Landing page HTML — do DeepSeek sinh ra ───────────────────────────────
-async function buildLandingPage(ai: AIContent, images: string[], data: Scrape1688Data): Promise<string> {
-  const client = new OpenAI({ baseURL: "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY! })
+// ── Landing page HTML ──────────────────────────────────────────────────────
+function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): string {
+  const C = "#e63946" // brand red
 
-  const specsText = Object.entries(ai.specs_vi).map(([k, v]) => `${k}: ${v}`).join("\n")
-  const reviewsText = (data.reviews || []).slice(0, 6).map((r, i) => `${i + 1}. ${r.slice(0, 250)}`).join("\n")
-  const imagesHtml = images.slice(0, 8).map((url, i) =>
-    i === 0
-      ? `<img src="${url}" class="hero-img" alt="hero" />`
-      : `<img src="${url}" class="thumb-img" alt="thumb ${i}" />`
-  ).join("\n")
+  function sectionTitle(emoji: string, text: string) {
+    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid ${C}">
+      <span style="font-size:20px">${emoji}</span>
+      <h2 style="margin:0;font-size:18px;font-weight:700;color:#111">${text}</h2>
+    </div>`
+  }
 
-  const prompt = `Bạn là designer chuyên làm landing page bán hàng online Việt Nam. Hãy tạo một trang HTML HOÀN CHỈNH và ĐẸP cho sản phẩm sau.
+  // Benefits — 2x2 grid
+  const benefitsHtml = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${ai.benefits.map(b => `
+      <div style="background:white;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="font-size:30px;margin-bottom:8px">${b.icon}</div>
+        <div style="font-weight:700;color:#111;font-size:14px;margin-bottom:4px">${b.title}</div>
+        ${b.desc ? `<div style="color:#6b7280;font-size:12px;line-height:1.5">${b.desc}</div>` : ""}
+      </div>`).join("")}
+    </div>`
 
-THÔNG TIN SẢN PHẨM:
-Tên: ${ai.title_vi}
-Mô tả: ${ai.description_vi}
-Lợi ích: ${ai.benefits.map(b => `${b.icon} ${b.title}: ${b.desc}`).join(" | ")}
-Vấn đề: ${ai.pains.join(" / ")}
-Giải pháp: ${ai.solutions.join(" / ")}
-Thông số:
-${specsText}
-FAQ: ${ai.faq.map(f => `Q: ${f.q} A: ${f.a}`).join(" | ")}
-Reviews: ${reviewsText || "(không có)"}
-Rating: ${data.rating || ""}
-
-HÌNH ẢNH (đã có sẵn):
-${imagesHtml}
-
-YÊU CẦU THIẾT KẾ:
-- Trả về HTML fragment (KHÔNG cần <!DOCTYPE>, <html>, <head>, <body> tags)
-- Dùng inline CSS hoàn toàn (không dùng class external)
-- Style: modern, clean, mobile-friendly, màu chủ đạo #e63946 (đỏ Phan Viet)
-- Sections: Hero (ảnh lớn + tên + mô tả), Benefits grid, Gallery thumbnails, Pain/Solution, Specs table, Reviews cards đẹp (avatar chữ cái + star rating), FAQ accordion
-- Review cards: hiển thị avatar (2 chữ cái đầu, background màu pastel), tên người dùng, số sao, ngày, nội dung review
-- Tất cả text hiển thị phải bằng tiếng Việt
-- KHÔNG dùng JavaScript
-- Responsive với max-width 840px
-- Đẹp như trang bán hàng chuyên nghiệp Shopee/Tiki`
-
-  const completion = await client.chat.completions.create({
-    model: "deepseek-chat",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 4000,
-    temperature: 0.5,
-  })
-
-  let html = completion.choices[0]?.message?.content ?? ""
-  // Strip markdown code blocks nếu có
-  html = html.replace(/^```html?\s*/i, "").replace(/```\s*$/, "").trim()
-  return html
-}
-
-// ── Landing page HTML (legacy sync version — unused) ──────────────────────
-function _buildLandingPageLegacy(ai: AIContent, images: string[]): string {
-  const benefitsHtml = ai.benefits.map(b => `
-    <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#f0fdf4;border-radius:10px;margin-bottom:10px;border:1px solid #bbf7d0">
-      <span style="font-size:28px;flex-shrink:0;line-height:1">${b.icon}</span>
-      <div>
-        <div style="font-weight:700;color:#111;font-size:15px;margin-bottom:3px">${b.title}</div>
-        ${b.desc ? `<div style="color:#4b5563;font-size:13px;line-height:1.5">${b.desc}</div>` : ""}
-      </div>
-    </div>`).join("")
-
+  // Pain/Solution — với arrow
   const painSolutionHtml = ai.pains.map((pain, i) => `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <div style="background:#fff5f5;border-left:4px solid #ef4444;padding:12px;border-radius:0 8px 8px 0">
-        <div style="font-size:10px;font-weight:800;color:#ef4444;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.05em">❌ Vấn đề</div>
-        <div style="color:#374151;font-size:13px;line-height:1.5">${pain}</div>
+    <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:10px">
+      <div style="flex:1;background:#fff1f2;border-radius:10px;padding:14px">
+        <div style="font-size:10px;font-weight:800;color:#f43f5e;margin-bottom:6px;letter-spacing:.05em">✕ VẤN ĐỀ</div>
+        <div style="color:#374151;font-size:13px;line-height:1.6">${pain}</div>
       </div>
-      <div style="background:#f0fdf4;border-left:4px solid #10b981;padding:12px;border-radius:0 8px 8px 0">
-        <div style="font-size:10px;font-weight:800;color:#10b981;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.05em">✅ Giải pháp</div>
-        <div style="color:#374151;font-size:13px;line-height:1.5">${ai.solutions[i] || ""}</div>
+      <div style="display:flex;align-items:center;color:#d1d5db;font-size:22px;padding:0 2px">→</div>
+      <div style="flex:1;background:#f0fdf4;border-radius:10px;padding:14px">
+        <div style="font-size:10px;font-weight:800;color:#10b981;margin-bottom:6px;letter-spacing:.05em">✓ GIẢI PHÁP</div>
+        <div style="color:#374151;font-size:13px;line-height:1.6">${ai.solutions[i] || ""}</div>
       </div>
     </div>`).join("")
 
-  const specsHtml = Object.entries(ai.specs_vi).map(([k, v]) => `
-    <tr>
-      <td style="padding:10px 12px;background:#f9fafb;font-weight:600;color:#374151;border:1px solid #e5e7eb;width:40%">${k}</td>
-      <td style="padding:10px 12px;color:#111;border:1px solid #e5e7eb">${v}</td>
+  // Specs — zebra table
+  const specsRows = Object.entries(ai.specs_vi).map(([k, v], i) => `
+    <tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
+      <td style="padding:10px 14px;font-weight:600;color:#374151;font-size:13px;border-bottom:1px solid #f3f4f6;width:42%">${k}</td>
+      <td style="padding:10px 14px;color:#111;font-size:13px;border-bottom:1px solid #f3f4f6">${v}</td>
     </tr>`).join("")
 
+  // FAQ accordion
   const faqHtml = ai.faq.map(item => `
-    <details style="border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px;overflow:hidden">
-      <summary style="padding:14px 16px;font-weight:600;color:#111;cursor:pointer;background:#fafafa;user-select:none">
-        ${item.q}
+    <details style="border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;overflow:hidden">
+      <summary style="padding:14px 18px;font-weight:600;color:#111;cursor:pointer;font-size:14px;background:white;list-style:none;display:flex;justify-content:space-between;align-items:center">
+        <span>${item.q}</span><span style="color:#9ca3af;font-size:18px">+</span>
       </summary>
-      <div style="padding:12px 16px;color:#4b5563;font-size:14px;line-height:1.7;border-top:1px solid #e5e7eb">${item.a}</div>
+      <div style="padding:12px 18px 16px;color:#4b5563;font-size:13px;line-height:1.7;background:#fafafa;border-top:1px solid #f3f4f6">${item.a}</div>
     </details>`).join("")
 
-  // Gallery lớn — tất cả ảnh
+  // Gallery — hero lớn + thumbs
   const galleryHtml = images.length > 1 ? `
-    <div style="margin-bottom:28px">
-      <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e63946">🖼️ Hình ảnh sản phẩm</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
-        ${images.slice(1).map(img =>
-          `<img src="${img}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb" loading="lazy" />`
+    <div style="margin-bottom:32px">
+      ${sectionTitle("🖼️", "Hình ảnh sản phẩm")}
+      <img src="${images[0]}" style="width:100%;max-height:460px;object-fit:contain;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;margin-bottom:8px" loading="lazy" />
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px">
+        ${images.slice(1, 9).map(img =>
+          `<img src="${img}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1.5px solid #e5e7eb" loading="lazy" />`
         ).join("")}
       </div>
+    </div>` : images[0] ? `
+    <div style="margin-bottom:32px">
+      <img src="${images[0]}" style="width:100%;max-height:460px;object-fit:contain;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa" />
     </div>` : ""
 
-  return `<div style="max-width:820px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;line-height:1.6">
+  // Reviews — parse + card đẹp
+  const PASTEL = ["#dbeafe","#dcfce7","#fce7f3","#fef3c7","#f3e8ff","#ffedd5","#e0f2fe","#fef9c3"]
+  const reviewCardsHtml = reviews.slice(0, 6).map(r => {
+    // Parse: "5.0 - Color:green - Nội dung review. Name | Date"
+    const starM = r.match(/^(\d(?:\.\d)?)\s*[-–]?\s*/)
+    const stars = starM ? Math.round(parseFloat(starM[1])) : 5
+    const stripped = r.replace(/^\d(?:\.\d)?\s*[-–]?\s*/, "").replace(/^Color:\w+\s*[-–]\s*/i, "")
+    const pipeIdx = stripped.lastIndexOf("|")
+    const nameRaw = pipeIdx > 0 ? stripped.slice(stripped.lastIndexOf(" - ") + 3, pipeIdx).trim() : ""
+    const date = pipeIdx > 0 ? stripped.slice(pipeIdx + 1).trim() : ""
+    const content = pipeIdx > 0 ? stripped.slice(0, stripped.lastIndexOf(" - ")).trim() : stripped.trim()
+    const name = nameRaw || "Khách hàng"
+    const initials = name.slice(0, 2).toUpperCase()
+    const bg = PASTEL[name.charCodeAt(0) % PASTEL.length]
+    const starStr = Array.from({length:5},(_,i)=>`<span style="color:${i<stars?"#f59e0b":"#d1d5db"};font-size:13px">★</span>`).join("")
+    return `
+    <div style="background:white;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#374151;flex-shrink:0">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;color:#111">${name}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            <span>${starStr}</span>
+            ${date ? `<span style="font-size:11px;color:#9ca3af">${date}</span>` : ""}
+          </div>
+        </div>
+      </div>
+      <p style="margin:0;font-size:13px;color:#374151;line-height:1.7">${content.slice(0,280)}</p>
+    </div>`
+  }).join("")
+
+  return `<div style="max-width:840px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111;line-height:1.6">
 
   <!-- Hero -->
-  <div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%);padding:36px 24px;border-radius:14px;margin-bottom:28px;text-align:center">
-    ${images[0] ? `<img src="${images[0]}" style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;margin-bottom:20px;background:white;padding:8px" />` : ""}
-    <h1 style="color:white;font-size:22px;font-weight:800;line-height:1.35;margin-bottom:12px">${ai.title_vi}</h1>
-    <p style="color:#94a3b8;font-size:14px;line-height:1.7;max-width:600px;margin:0 auto">${ai.description_vi}</p>
+  <div style="background:linear-gradient(135deg,#1e1b4b,#312e81,#1e40af);padding:32px 24px;border-radius:16px;margin-bottom:32px;text-align:center">
+    ${images[0] ? `<img src="${images[0]}" style="width:100%;max-height:400px;object-fit:contain;border-radius:10px;margin-bottom:20px;background:rgba(255,255,255,.95);padding:10px" />` : ""}
+    <h1 style="color:white;font-size:22px;font-weight:800;line-height:1.4;margin:0 0 12px">${ai.title_vi}</h1>
+    <p style="color:#bfdbfe;font-size:14px;line-height:1.7;max-width:580px;margin:0 auto">${ai.description_vi}</p>
   </div>
 
   <!-- Benefits -->
-  <div style="margin-bottom:28px">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e63946">✨ Điểm nổi bật</h2>
+  <div style="margin-bottom:32px">
+    ${sectionTitle("✨", "Điểm nổi bật")}
     ${benefitsHtml}
   </div>
 
   <!-- Gallery -->
   ${galleryHtml}
 
-  <!-- Pain / Solution -->
-  <div style="margin-bottom:28px">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e63946">💡 Vấn đề & Giải pháp</h2>
+  <!-- Pain/Solution -->
+  <div style="margin-bottom:32px">
+    ${sectionTitle("💡", "Vì sao chọn sản phẩm này?")}
     ${painSolutionHtml}
   </div>
 
   <!-- Specs -->
-  ${specsHtml ? `
-  <div style="margin-bottom:28px">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e63946">📋 Thông số kỹ thuật</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:14px">${specsHtml}</table>
-  </div>` : ""}
-
-  <!-- FAQ -->
-  ${faqHtml ? `
-  <div style="margin-bottom:28px">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e63946">❓ Câu hỏi thường gặp</h2>
-    ${faqHtml}
+  ${specsRows ? `<div style="margin-bottom:32px">
+    ${sectionTitle("📋", "Thông số kỹ thuật")}
+    <div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">${specsRows}</table>
+    </div>
   </div>` : ""}
 
   <!-- Reviews -->
-  ${(ai as any)._reviews?.length ? `
-  <div style="margin-bottom:28px">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e63946">⭐ Đánh giá khách hàng</h2>
-    ${(ai as any)._reviews.slice(0, 6).map((r: string) => `
-    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;margin-bottom:10px;font-size:13px;color:#374151;line-height:1.6">
-      ${r.slice(0, 300)}
-    </div>`).join("")}
+  ${reviewCardsHtml ? `<div style="margin-bottom:32px">
+    ${sectionTitle("⭐", "Đánh giá từ khách hàng")}
+    <div style="display:grid;gap:10px">
+      ${reviewCardsHtml}
+    </div>
+  </div>` : ""}
+
+  <!-- FAQ -->
+  ${faqHtml ? `<div style="margin-bottom:32px">
+    ${sectionTitle("❓", "Câu hỏi thường gặp")}
+    ${faqHtml}
   </div>` : ""}
 
 </div>`
@@ -314,8 +309,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       uploadImages(imageUrls, folder),
     ])
 
-    // Gắn reviews vào ai object để dùng trong landing page
-    ;(ai as any)._reviews = body.reviews || []
+    const reviews = body.reviews || []
 
     // Dùng ảnh đã upload nếu có, fallback về URL gốc
     const finalImages = uploadedImages.length > 0 ? uploadedImages : imageUrls.slice(0, 8)
@@ -383,7 +377,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const product = productResult[0]
 
     // 3. Sinh landing page HTML và lưu vào product metadata
-    const pageHtml = await buildLandingPage(ai, finalImages, body)
+    const pageHtml = buildLandingPage(ai, finalImages, reviews)
 
     const productModule = req.scope.resolve(Modules.PRODUCT)
     await productModule.updateProducts(product.id, {
