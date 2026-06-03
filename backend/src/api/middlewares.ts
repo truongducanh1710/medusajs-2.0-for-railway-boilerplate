@@ -28,7 +28,7 @@ function requirePerm(...needed: string[]) {
 }
 
 // CORS middleware cho Chrome Extension
-const extensionCors: MedusaNextFunction = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
   const origin = req.headers.origin || ""
   // Cho phép chrome-extension://* và moz-extension://*
   if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
