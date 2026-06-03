@@ -102,8 +102,6 @@ export default function BundleSelector({ product, region }: Props) {
     variant?.prices?.[0]?.amount ??
     0
 
-  if (!basePrice || basePrice === 0) return null
-
   const defaultGifts: GiftItem[] = [
     { name: "Túi đựng sản phẩm cao cấp", value: 89000 },
     { name: "Hướng dẫn sử dụng chi tiết", value: 49000 },

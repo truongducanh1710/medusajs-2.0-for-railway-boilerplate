@@ -139,6 +139,29 @@ Lưu ý reviews_vi: viết tự nhiên như người thật, đa dạng giới t
   return JSON.parse(jsonStr) as AIContent
 }
 
+// ── Tính giá combo từ giá nhập ─────────────────────────────────────────────
+// margin 50% → giá bán = giá nhập × 2, làm tròn lên bội số 1000
+// combo 2: × 1.8/cái (10% off) → tổng = giá nhập × 3.6
+// combo 3: × 1.6/cái (20% off) → tổng = giá nhập × 4.8
+function round1k(n: number): number {
+  return Math.ceil(n / 1000) * 1000
+}
+
+function calcBundlePrices(importPriceVND: number): {
+  sell1: number; orig1: number
+  sell2: number; orig2: number
+  sell3: number; orig3: number
+} {
+  const p = importPriceVND
+  const sell1 = round1k(p * 2)           // margin 50%
+  const orig1 = round1k(sell1 * 1.4)     // gạch chân +40%
+  const sell2 = round1k(p * 3.6)         // 2 cái × 1.8
+  const orig2 = round1k(sell1 * 2 * 1.2) // gạch chân 2 cái +20%
+  const sell3 = round1k(p * 4.8)         // 3 cái × 1.6
+  const orig3 = round1k(sell1 * 3 * 1.2) // gạch chân 3 cái +20%
+  return { sell1, orig1, sell2, orig2, sell3, orig3 }
+}
+
 // ── Parse giá từ string ────────────────────────────────────────────────────
 function parsePriceVND(priceStr: string): number {
   if (!priceStr) return 0
@@ -437,8 +460,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const finalImages = uploadedImages.length > 0 ? uploadedImages : imageUrls.slice(0, 8)
     const thumbnail = finalImages[0] || null
 
-    // 2. Tạo Medusa product via workflow
-    const priceVND = parsePriceVND(body.price)
+    // 2. Tính giá bán từ giá nhập
+    const importPrice = parsePriceVND(body.price)
+    const bundle = importPrice > 0 ? calcBundlePrices(importPrice) : null
+    const priceVND = bundle?.sell1 ?? 0
 
     const { result: productResult } = await createProductsWorkflow(req.scope).run({
       input: {
@@ -486,6 +511,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               solution_3: ai.solutions[2] || "",
               faq: JSON.stringify(ai.faq.map(f => ({ question: f.q, answer: f.a }))),
               reviews: JSON.stringify(ai.reviews_vi || []),
+              import_price: importPrice > 0 ? String(importPrice) : "",
+              ...(bundle ? {
+                bundle_options: JSON.stringify([
+                  { qty: 1, label: "1 SẢN PHẨM", price: bundle.sell1, originalPrice: bundle.orig1 },
+                  { qty: 2, label: "MUA 1 TẶNG 1", badge: "HÔM NAY THÔI", badgeColor: "bg-orange-500", price: bundle.sell2, originalPrice: bundle.orig2 },
+                  { qty: 3, label: "MUA 2 TẶNG 1", badge: "TIẾT KIỆM NHẤT 🔥", badgeColor: "bg-red-500", price: bundle.sell3, originalPrice: bundle.orig3 },
+                ]),
+              } : {}),
               xuat_xu: "Trung Quốc",
               ...(ai.specs_vi["Chất liệu"] ? { chat_lieu: ai.specs_vi["Chất liệu"] } : {}),
               ...(ai.specs_vi["Kích thước"] ? { kich_thuoc: ai.specs_vi["Kích thước"] } : {}),
