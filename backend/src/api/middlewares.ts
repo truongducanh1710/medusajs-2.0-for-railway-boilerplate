@@ -96,6 +96,21 @@ export default defineMiddlewares({
 
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
 
+    // Marketing Hub — nguyên liệu video (thay Google Sheet)
+    { matcher: "/admin/marketing-video*", method: ["GET"], middlewares: [requirePerm("page.marketing-video.view")] },
+    { matcher: "/admin/marketing-video*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.marketing-video.edit")] },
+
+    // Marketing Hub — Facebook Content Manager
+    // GET (gồm /post/status poll) cần view; mutate cần post
+    { matcher: "/admin/fb-content*", method: ["GET"], middlewares: [requirePerm("page.fb-content.view")] },
+    { matcher: "/admin/fb-content/post*", method: ["POST", "DELETE"], middlewares: [requirePerm("page.fb-content.post")] },
+    { matcher: "/admin/fb-content/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.fb-content.post")] },
+    { matcher: "/admin/fb-content/refresh-tokens", method: ["POST"], middlewares: [requirePerm("page.fb-content.post")] },
+
+    // Đo video qua Ads — tab Hiệu quả Video trong bao-cao-mkt
+    { matcher: "/admin/pancake-sync/report/video-performance*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/pancake-sync/report/video-performance*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
+
     // 1688-import: allow cả Secret API Key (actor_type=api_key) và user với quyền san-pham.edit
     {
       matcher: "/admin/1688-import",
