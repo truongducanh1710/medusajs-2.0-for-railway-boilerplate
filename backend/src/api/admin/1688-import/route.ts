@@ -23,6 +23,7 @@ interface AIContent {
   solutions: string[]
   faq: Array<{ q: string; a: string }>
   specs_vi: Record<string, string>
+  reviews_vi: Array<{ name: string; location: string; rating: number; text: string; date: string }>
 }
 
 // ── MinIO ──────────────────────────────────────────────────────────────────
@@ -85,7 +86,6 @@ async function generateContent(data: Scrape1688Data): Promise<AIContent> {
   })
 
   const specsText = Object.entries(data.specs).slice(0, 20).map(([k, v]) => `${k}: ${v}`).join("\n")
-  const reviewsText = data.reviews?.slice(0, 5).map((r, i) => `${i + 1}. ${r.slice(0, 200)}`).join("\n") || ""
 
   const prompt = `Bạn là chuyên gia viết content marketing bán hàng online Việt Nam cho cửa hàng đồ gia dụng Phan Viet.
 
@@ -94,11 +94,8 @@ Tên gốc: ${data.title}
 Mô tả: ${data.description.slice(0, 600)}
 Thông số:
 ${specsText || "(không có)"}
-Đánh giá khách:
-${reviewsText || "(không có)"}
-Rating: ${data.rating || "(không có)"}
+Rating gốc: ${data.rating || "(không có)"}
 Giá: ${data.price || "(không có)"}
-URL: ${data.url}
 
 Trả về JSON thuần túy (không markdown), format:
 {
@@ -117,14 +114,23 @@ Trả về JSON thuần túy (không markdown), format:
     {"q": "Câu hỏi 2?", "a": "Trả lời"},
     {"q": "Câu hỏi 3?", "a": "Trả lời"}
   ],
-  "specs_vi": {"Chất liệu": "...", "Kích thước": "...", "Xuất xứ": "Trung Quốc"}
-}`
+  "specs_vi": {"Chất liệu": "...", "Kích thước": "...", "Xuất xứ": "Trung Quốc"},
+  "reviews_vi": [
+    {"name": "Tên người Việt", "location": "Hà Nội", "rating": 5, "text": "Nhận xét chân thực 1-2 câu về sản phẩm này, đúng với tính năng thực tế", "date": "2 ngày trước"},
+    {"name": "...", "location": "TP.HCM", "rating": 5, "text": "...", "date": "1 tuần trước"},
+    {"name": "...", "location": "Đà Nẵng", "rating": 5, "text": "...", "date": "2 tuần trước"},
+    {"name": "...", "location": "Hải Phòng", "rating": 4, "text": "...", "date": "3 tuần trước"},
+    {"name": "...", "location": "Cần Thơ", "rating": 5, "text": "...", "date": "1 tháng trước"}
+  ]
+}
+
+Lưu ý reviews_vi: viết tự nhiên như người thật, đa dạng giới tính (nam/nữ), đề cập đúng tính năng sản phẩm này, không copy nhau, không dùng từ ngữ quảng cáo lộ liễu.`
 
   const model = "deepseek-chat"
   const completion = await client.chat.completions.create({
     model,
     messages: [{ role: "user", content: prompt }],
-    max_tokens: 1500,
+    max_tokens: 2500,
     temperature: 0.7,
   })
 
@@ -222,7 +228,7 @@ function structureReviews(rawReviews: string[]): Array<{ rating: number; text: s
 function buildGrapesContent(
   ai: AIContent,
   images: string[],
-  structuredReviews: Array<{ rating: number; text: string; name: string; date: string }>
+  structuredReviews: Array<{ name: string; location?: string; rating: number; text: string; date: string }>
 ): string {
   // ── Benefits block (pvb-ben) ────────────────────────────────────────────
   const benefitCards = ai.benefits.map(b =>
@@ -327,7 +333,7 @@ function buildGrapesContent(
   <div class="head">
     <div class="avatar" style="background:${bg}">${initials}</div>
     <div class="meta">
-      <div class="name">${r.name}</div>
+      <div class="name">${r.name}${r.location ? ` <span class="loc">— ${r.location}</span>` : ""}</div>
       <div class="stars">${stars}${r.date ? ` <span class="date">${r.date}</span>` : ""}</div>
     </div>
   </div>
@@ -351,6 +357,7 @@ function buildGrapesContent(
 .pvb-rev .avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#374151;flex-shrink:0}
 .pvb-rev .name{font-weight:700;font-size:14px;color:#111}
 .pvb-rev .stars{color:#f59e0b;font-size:13px}
+.pvb-rev .loc{color:#9ca3af;font-size:12px;font-weight:400}
 .pvb-rev .date{color:#9ca3af;font-size:11px;margin-left:6px}
 .pvb-rev .body{margin:0;font-size:13px;color:#374151;line-height:1.7}
 @media(min-width:640px){.pvb-rev{padding:56px 24px}.pvb-rev .grid{grid-template-columns:repeat(2,1fr)}}
@@ -424,8 +431,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       uploadImages(imageUrls, folder),
     ])
 
-    // Parse reviews thành structured format
-    const reviews = structureReviews(body.reviews || [])
+    // Reviews do AI tạo bằng tiếng Việt (trong ai.reviews_vi)
 
     // Dùng ảnh đã upload nếu có, fallback về URL gốc
     const finalImages = uploadedImages.length > 0 ? uploadedImages : imageUrls.slice(0, 8)
@@ -479,7 +485,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               solution_2: ai.solutions[1] || "",
               solution_3: ai.solutions[2] || "",
               faq: JSON.stringify(ai.faq.map(f => ({ question: f.q, answer: f.a }))),
-              reviews: JSON.stringify(reviews),
+              reviews: JSON.stringify(ai.reviews_vi || []),
               xuat_xu: "Trung Quốc",
               ...(ai.specs_vi["Chất liệu"] ? { chat_lieu: ai.specs_vi["Chất liệu"] } : {}),
               ...(ai.specs_vi["Kích thước"] ? { kich_thuoc: ai.specs_vi["Kích thước"] } : {}),
@@ -493,7 +499,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const product = productResult[0]
 
     // 3. Build GrapesJS-compatible landing page và lưu vào product metadata
-    const pageContent = buildGrapesContent(ai, finalImages, reviews)
+    const pageContent = buildGrapesContent(ai, finalImages, ai.reviews_vi || [])
 
     const productModule = req.scope.resolve(Modules.PRODUCT)
     await productModule.updateProducts(product.id, {
