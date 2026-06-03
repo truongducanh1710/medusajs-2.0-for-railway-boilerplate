@@ -218,10 +218,20 @@ function SpecsSection({ product }: { product: HttpTypes.StoreProduct }) {
 // Section: Reviews
 function ReviewsSection({ product }: { product: HttpTypes.StoreProduct }) {
   const reviewsRaw = meta(product, "reviews")
-  let reviews: Array<{ name: string; location: string; rating: number; text: string; date: string }> = []
+  let reviews: Array<{ name: string; location?: string; rating: number; text: string; date: string }> = []
 
   if (reviewsRaw) {
-    try { reviews = JSON.parse(reviewsRaw) } catch {}
+    try {
+      const parsed = JSON.parse(reviewsRaw)
+      // Hỗ trợ cả 2 format: structured {rating,name,text,date} và raw string array
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (typeof parsed[0] === "string") {
+          // Raw strings — bỏ qua, dùng fallback
+        } else {
+          reviews = parsed.filter((r: any) => r.text && r.rating)
+        }
+      }
+    } catch {}
   }
 
   // Default reviews nếu chưa có
@@ -272,7 +282,11 @@ function FAQSection({ product }: { product: HttpTypes.StoreProduct }) {
   let faqs: Array<{ q: string; a: string }> = []
 
   if (faqRaw) {
-    try { faqs = JSON.parse(faqRaw) } catch {}
+    try {
+      const parsed = JSON.parse(faqRaw)
+      // Hỗ trợ cả {q,a} và {question,answer}
+      faqs = parsed.map((f: any) => ({ q: f.q || f.question || "", a: f.a || f.answer || "" })).filter((f: any) => f.q)
+    } catch {}
   }
 
   if (!faqs.length) {

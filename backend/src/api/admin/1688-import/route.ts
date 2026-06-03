@@ -136,15 +136,94 @@ Trả về JSON thuần túy (không markdown), format:
 // ── Parse giá từ string ────────────────────────────────────────────────────
 function parsePriceVND(priceStr: string): number {
   if (!priceStr) return 0
-  // "₫28,679" → 28679 | "¥40.00" → 0 (không parse CNY)
-  const match = priceStr.match(/[₫đ][\s]*([\d,. ]+)/)
-  if (!match) return 0
-  return Math.round(parseFloat(match[1].replace(/[,. ]/g, "").replace(/(\d{3})$/, ".$1")) * 1000) || 0
+  // "₫28,679" → 28679
+  const vndMatch = priceStr.match(/[₫đ][\s]*([\d,. ]+)/)
+  if (vndMatch) {
+    const digits = vndMatch[1].replace(/[,. ]/g, "")
+    // nếu < 1000 thì đơn vị nghìn đồng (VD: "₫280" → 280,000)
+    const num = parseFloat(digits)
+    return num < 10000 ? num * 1000 : num
+  }
+  // "¥40.00" → estimate CNY × 3500
+  const cnyMatch = priceStr.match(/[¥￥]([\d,.]+)/)
+  if (cnyMatch) {
+    const cny = parseFloat(cnyMatch[1].replace(/,/g, ""))
+    return Math.round(cny * 3500 / 1000) * 1000
+  }
+  return 0
+}
+
+// ── Clean review string từ AliExpress DOM ──────────────────────────────────
+// Input: "5.0 - Color:green - Ships From:China Mainland Good product | UserName | 2024-01-15"
+// Output: { rating, text, name, date } hoặc null nếu quá ngắn/rác
+function parseReviewString(raw: string): { rating: number; text: string; name: string; date: string } | null {
+  if (!raw || raw.length < 10) return null
+
+  // Bỏ qua các dòng là aggregate stats (chứa "ratings", "verified purchases", "All ratings")
+  if (/\d+\s+ratings|verified purchases|All ratings|works well|fast delivery|good quality/i.test(raw)) return null
+
+  let str = raw.trim()
+
+  // Lấy rating ở đầu: "5.0 - " hoặc "4.0"
+  let rating = 5
+  const ratingM = str.match(/^(\d(?:\.\d)?)\s*[-–]?\s*/)
+  if (ratingM) {
+    rating = Math.round(parseFloat(ratingM[1]))
+    str = str.slice(ratingM[0].length)
+  }
+
+  // Bỏ "Color:xxx - Ships From:yyy - " prefix
+  str = str.replace(/^(Color:\S+\s*[-–]?\s*)?(Ships\s+From:[^-–|]+([-–]|\s*\|)\s*)?/i, "").trim()
+
+  // Tách name + date từ cuối: "...content | Name | 2024-01-15"
+  const parts = str.split("|").map(s => s.trim()).filter(Boolean)
+  let text = str
+  let name = "Khách hàng"
+  let date = ""
+
+  if (parts.length >= 3) {
+    text = parts.slice(0, parts.length - 2).join(" ")
+    name = parts[parts.length - 2] || "Khách hàng"
+    date = parts[parts.length - 1] || ""
+  } else if (parts.length === 2) {
+    text = parts[0]
+    name = parts[1]
+  }
+
+  // Bỏ "Sort by default Show original language" trailing garbage
+  text = text.replace(/Sort by default.*$/i, "").replace(/Show original language.*/i, "").trim()
+
+  // Nếu text quá ngắn hoặc vẫn có rác → bỏ
+  if (text.length < 8) return null
+  if (/^[\d\s★☆.,]+$/.test(text)) return null
+
+  return { rating: Math.min(5, Math.max(1, rating)), text: text.slice(0, 300), name, date }
+}
+
+// Convert raw review strings → structured array lưu vào metadata
+function structureReviews(rawReviews: string[]): Array<{ rating: number; text: string; name: string; date: string }> {
+  const seen = new Set<string>()
+  return rawReviews
+    .flatMap(r => r.includes("\n") ? r.split("\n") : [r])
+    .map(r => parseReviewString(r))
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .filter(r => {
+      const key = r.text.slice(0, 60)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, 10)
 }
 
 // ── Landing page HTML ──────────────────────────────────────────────────────
-function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): string {
-  const C = "#e63946" // brand red
+// Nhận structured reviews (đã parse), không nhận raw string nữa
+function buildLandingPage(
+  ai: AIContent,
+  images: string[],
+  structuredReviews: Array<{ rating: number; text: string; name: string; date: string }>
+): string {
+  const C = "#e63946"
 
   function sectionTitle(emoji: string, text: string) {
     return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid ${C}">
@@ -164,7 +243,7 @@ function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): s
       </div>`).join("")}
     </div>`
 
-  // Pain/Solution — với arrow
+  // Pain/Solution
   const painSolutionHtml = ai.pains.map((pain, i) => `
     <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:10px">
       <div style="flex:1;background:#fff1f2;border-radius:10px;padding:14px">
@@ -194,36 +273,26 @@ function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): s
       <div style="padding:12px 18px 16px;color:#4b5563;font-size:13px;line-height:1.7;background:#fafafa;border-top:1px solid #f3f4f6">${item.a}</div>
     </details>`).join("")
 
-  // Gallery — hero lớn + thumbs
+  // Gallery — chỉ thumbs (ảnh hero đã có ở ImageGallery storefront)
   const galleryHtml = images.length > 1 ? `
     <div style="margin-bottom:32px">
       ${sectionTitle("🖼️", "Hình ảnh sản phẩm")}
-      <img src="${images[0]}" style="width:100%;max-height:460px;object-fit:contain;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;margin-bottom:8px" loading="lazy" />
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px">
-        ${images.slice(1, 9).map(img =>
-          `<img src="${img}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1.5px solid #e5e7eb" loading="lazy" />`
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
+        ${images.slice(0, 9).map(img =>
+          `<img src="${img}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1.5px solid #e5e7eb" loading="lazy" />`
         ).join("")}
       </div>
-    </div>` : images[0] ? `
-    <div style="margin-bottom:32px">
-      <img src="${images[0]}" style="width:100%;max-height:460px;object-fit:contain;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa" />
     </div>` : ""
 
-  // Reviews — parse + card đẹp
+  // Reviews — dùng structured reviews đã parse sạch
   const PASTEL = ["#dbeafe","#dcfce7","#fce7f3","#fef3c7","#f3e8ff","#ffedd5","#e0f2fe","#fef9c3"]
-  const reviewCardsHtml = reviews.slice(0, 6).map(r => {
-    // Parse: "5.0 - Color:green - Nội dung review. Name | Date"
-    const starM = r.match(/^(\d(?:\.\d)?)\s*[-–]?\s*/)
-    const stars = starM ? Math.round(parseFloat(starM[1])) : 5
-    const stripped = r.replace(/^\d(?:\.\d)?\s*[-–]?\s*/, "").replace(/^Color:\w+\s*[-–]\s*/i, "")
-    const pipeIdx = stripped.lastIndexOf("|")
-    const nameRaw = pipeIdx > 0 ? stripped.slice(stripped.lastIndexOf(" - ") + 3, pipeIdx).trim() : ""
-    const date = pipeIdx > 0 ? stripped.slice(pipeIdx + 1).trim() : ""
-    const content = pipeIdx > 0 ? stripped.slice(0, stripped.lastIndexOf(" - ")).trim() : stripped.trim()
-    const name = nameRaw || "Khách hàng"
+  const reviewCardsHtml = structuredReviews.slice(0, 6).map(r => {
+    const { rating, text, name, date } = r
     const initials = name.slice(0, 2).toUpperCase()
     const bg = PASTEL[name.charCodeAt(0) % PASTEL.length]
-    const starStr = Array.from({length:5},(_,i)=>`<span style="color:${i<stars?"#f59e0b":"#d1d5db"};font-size:13px">★</span>`).join("")
+    const starStr = Array.from({length: 5}, (_, i) =>
+      `<span style="color:${i < rating ? "#f59e0b" : "#d1d5db"};font-size:13px">★</span>`
+    ).join("")
     return `
     <div style="background:white;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -236,18 +305,12 @@ function buildLandingPage(ai: AIContent, images: string[], reviews: string[]): s
           </div>
         </div>
       </div>
-      <p style="margin:0;font-size:13px;color:#374151;line-height:1.7">${content.slice(0,280)}</p>
+      <p style="margin:0;font-size:13px;color:#374151;line-height:1.7">${text}</p>
     </div>`
   }).join("")
 
+  // Không có Hero section — storefront đã render title/desc/gallery ở trên
   return `<div style="max-width:840px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111;line-height:1.6">
-
-  <!-- Hero -->
-  <div style="background:linear-gradient(135deg,#1e1b4b,#312e81,#1e40af);padding:32px 24px;border-radius:16px;margin-bottom:32px;text-align:center">
-    ${images[0] ? `<img src="${images[0]}" style="width:100%;max-height:400px;object-fit:contain;border-radius:10px;margin-bottom:20px;background:rgba(255,255,255,.95);padding:10px" />` : ""}
-    <h1 style="color:white;font-size:22px;font-weight:800;line-height:1.4;margin:0 0 12px">${ai.title_vi}</h1>
-    <p style="color:#bfdbfe;font-size:14px;line-height:1.7;max-width:580px;margin:0 auto">${ai.description_vi}</p>
-  </div>
 
   <!-- Benefits -->
   <div style="margin-bottom:32px">
@@ -326,7 +389,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       uploadImages(imageUrls, folder),
     ])
 
-    const reviews = body.reviews || []
+    // Parse reviews thành structured format
+    const reviews = structureReviews(body.reviews || [])
 
     // Dùng ảnh đã upload nếu có, fallback về URL gốc
     const finalImages = uploadedImages.length > 0 ? uploadedImages : imageUrls.slice(0, 8)
@@ -380,7 +444,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               solution_2: ai.solutions[1] || "",
               solution_3: ai.solutions[2] || "",
               faq: JSON.stringify(ai.faq.map(f => ({ question: f.q, answer: f.a }))),
-              reviews: JSON.stringify((body.reviews || []).slice(0, 10)),
+              reviews: JSON.stringify(reviews),
               xuat_xu: "Trung Quốc",
               ...(ai.specs_vi["Chất liệu"] ? { chat_lieu: ai.specs_vi["Chất liệu"] } : {}),
               ...(ai.specs_vi["Kích thước"] ? { kich_thuoc: ai.specs_vi["Kích thước"] } : {}),
@@ -400,7 +464,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await productModule.updateProducts(product.id, {
       metadata: {
         ...(product.metadata as Record<string, any>),
-        page_content_draft: pageHtml,
+        page_content: pageHtml,
       },
     })
 
