@@ -206,6 +206,7 @@ type Meta = {
   page_content?: string
   fb_pixel_id?: string
   fb_capi_token?: string
+  hidden?: string
   [key: string]: string | undefined
 }
 
@@ -1511,7 +1512,43 @@ setShowPain(!!(clean.pain_1 || clean.pain_2 || clean.pain_3))
       </div>
 
       {/* Save button bottom — sticky */}
-      <div style={{ position: "sticky", bottom: 16, zIndex: 10, display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+      <div style={{ position: "sticky", bottom: 16, zIndex: 10, display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, gap: 10 }}>
+        {/* Toggle ẩn/hiện khỏi listing */}
+        {(() => {
+          const isHidden = meta.hidden === "true"
+          const [toggling, setToggling] = React.useState(false)
+          const toggle = async () => {
+            setToggling(true)
+            const newVal = isHidden ? null : "true"
+            try {
+              await fetch(`/admin/products/${product.id}`, {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ metadata: { hidden: newVal } }),
+              })
+              setMeta(m => ({ ...m, hidden: newVal ?? undefined }))
+            } finally {
+              setToggling(false)
+            }
+          }
+          return (
+            <button onClick={toggle} disabled={toggling}
+              title={isHidden ? "Đang ẩn khỏi cửa hàng — bấm để hiện lại" : "Đang hiện trong cửa hàng — bấm để ẩn"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: isHidden ? "#fef3c7" : "#f0fdf4",
+                color: isHidden ? "#92400e" : "#166534",
+                border: `1.5px solid ${isHidden ? "#fcd34d" : "#86efac"}`,
+                borderRadius: 10, padding: "10px 16px",
+                fontWeight: 700, fontSize: 13, cursor: toggling ? "not-allowed" : "pointer",
+                opacity: toggling ? 0.6 : 1, whiteSpace: "nowrap",
+              }}>
+              {isHidden ? "🙈 Đang ẩn khỏi cửa hàng" : "👁️ Đang hiện trong cửa hàng"}
+            </button>
+          )
+        })()}
+
         <button onClick={() => save()} disabled={saving}
           style={{ background: saving ? "#9ca3af" : "#f97316", color: "white", border: "none", borderRadius: 10, padding: "12px 28px", fontWeight: 800, fontSize: 14, cursor: saving ? "not-allowed" : "pointer", boxShadow: "0 4px 16px rgba(249,115,22,0.4)" }}>
           {saving ? "Đang lưu..." : "💾 Lưu tất cả thay đổi"}
