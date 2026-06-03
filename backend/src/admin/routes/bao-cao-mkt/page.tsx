@@ -62,6 +62,7 @@ export default function BaoCaoMktPage() {
   const [thresholdSectionOpen, setThresholdSectionOpen] = useState(false)
   const [namingCampInput, setNamingCampInput] = useState("")
   const [namingUtmMode, setNamingUtmMode] = useState<"fb" | "web">("fb")
+  const [skuSearch, setSkuSearch] = useState("")
   const [thresholdSaving, setThresholdSaving] = useState(false)
   const [thresholdEditId, setThresholdEditId] = useState<string | null>(null)
   const [thresholdEditForm, setThresholdEditForm] = useState<any>(null)
@@ -2579,15 +2580,17 @@ export default function BaoCaoMktPage() {
         const utmMode = namingUtmMode
         const setUtmMode = setNamingUtmMode
 
-        // Regex parse tên camp: DD/MM_MKT_SANPHAM_ADSXXX_AUDIENCE_VIDEO[_SUFFIX]
-        const CAMP_REGEX = /^(\d{1,2}\/\d{1,2})_([A-Z]+)_(.+?)_(ADS\d+)_(.+?)_(VD[\w\d\-\.]+)(_.+)?$/i
+        // Regex parse tên camp: MÃSP_DD/MM_MKT_TÊN SP_ADSXXX_AUDIENCE_VIDEO[_SUFFIX]
+        // Mã SP từ POS viết liền không dấu, vd PHVVN026CV (gốc POS: PHVVN026_CV)
+        const CAMP_REGEX = /^([A-Z0-9]+)_(\d{1,2}\/\d{1,2})_([A-Z]+)_(.+?)_(ADS\d+)_(.+?)_(VD[\w\d\-\.]+)(_.+)?$/i
         const parsed = campInput.trim() ? CAMP_REGEX.exec(campInput.trim()) : null
         const issues: string[] = []
         if (campInput.trim()) {
           if (!parsed) {
             issues.push("Tên camp không đúng format. Xem quy tắc bên dưới.")
           } else {
-            const [, date, mkt, sp, ads, audience, video, suffix] = parsed
+            const [, code, date, mkt, sp, ads, audience, video, suffix] = parsed
+            if (!/^PHVVN\d+[A-Z]*$/i.test(code)) issues.push(`Mã SP "${code}" — phải là mã từ POS dạng PHVVN026CV (viết liền, bỏ dấu _)`)
             if (!/^\d{1,2}\/\d{1,2}$/.test(date)) issues.push(`Ngày "${date}" — dùng D/M hoặc DD/MM`)
             if (!["KIENLB","XUANLT","NAMDV","LINHMT","ANHNT","DUPD"].includes(mkt.toUpperCase())) issues.push(`MKT code "${mkt}" không trong danh sách (KIENLB/XUANLT/NAMDV/LINHMT/ANHNT/DUPD)`)
             if (sp.includes("  ") || sp !== sp.trim()) issues.push("Tên SP có khoảng trắng thừa")
@@ -2631,8 +2634,8 @@ export default function BaoCaoMktPage() {
               <div style={{ fontWeight: 700, fontSize: 13, color: dark ? "#fca5a5" : "#dc2626", marginBottom: 10 }}>⚠️ Đặt sai tên / UTM → hệ thống mù</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12, color: t.textMuted }}>
                 {[
-                  ["Rule chăm sóc Dạng A", "Lọc camp theo tên SP → không tìm được nếu tên viết tắt hoặc sai"],
-                  ["Ghép đơn Pancake ↔ Camp", "utm_campaign phải là campaign_id FB → không ghép được đơn vào đúng camp"],
+                  ["Ghép camp ↔ sản phẩm", "Mã SP ở đầu (PHVVN...) là khoá khớp camp với SP trên POS → sai/thiếu mã thì không gom được chi phí về đúng sản phẩm"],
+                  ["Rule chăm sóc Dạng B", "Ngưỡng CPR theo từng SP dựa vào mã SP → thiếu mã thì rule không áp đúng"],
                   ["Báo cáo MKT", "Tên camp phải chứa MKT code → không biết ai chạy camp nào"],
                   ["Phân tích video", "Video ID (VD...) trong tên camp → không biết video nào ra đơn"],
                 ].map(([title, desc]) => (
@@ -2652,7 +2655,7 @@ export default function BaoCaoMktPage() {
               <div style={{ background: dark ? "#0b1220" : "#fff", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 8 }}>Format bắt buộc</div>
                 <div style={{ ...mono, fontSize: 14, color: t.blue, wordBreak: "break-all", lineHeight: 1.7 }}>
-                  <span style={{ color: "#f59e0b" }}>DD/MM</span>_<span style={{ color: "#22c55e" }}>MKTCODE</span>_<span style={{ color: "#a78bfa" }}>TÊN SP</span>_<span style={{ color: "#60a5fa" }}>ADSXXX</span>_<span style={{ color: "#f472b6" }}>AUDIENCE</span>_<span style={{ color: "#fb923c" }}>VDXXX</span>
+                  <span style={{ color: "#ef4444" }}>MÃSP</span>_<span style={{ color: "#f59e0b" }}>DD/MM</span>_<span style={{ color: "#22c55e" }}>MKTCODE</span>_<span style={{ color: "#a78bfa" }}>TÊN SP</span>_<span style={{ color: "#60a5fa" }}>ADSXXX</span>_<span style={{ color: "#f472b6" }}>AUDIENCE</span>_<span style={{ color: "#fb923c" }}>VDXXX</span>
                 </div>
                 <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 6 }}>Các phần phân cách bằng dấu <b style={{ color: t.text }}>_</b> (gạch dưới đơn, không có khoảng trắng)</div>
               </div>
@@ -2669,9 +2672,10 @@ export default function BaoCaoMktPage() {
                   </thead>
                   <tbody>
                     {[
+                      { part: "MÃSP", color: "#ef4444", mean: "Mã SP trên POS", rule: "Lấy đúng Mã sản phẩm từ Pancake POS (vd PHVVN026_CV) → viết LIỀN, BỎ dấu _ → PHVVN026CV. Đây là khoá ghép camp ↔ sản phẩm, BẮT BUỘC chính xác", ex: "PHVVN026CV, PHVVN030NAS, PHVVN016CCD" },
                       { part: "DD/MM", color: "#f59e0b", mean: "Ngày tạo camp", rule: "Ngày/tháng thực tế, không zero-pad bắt buộc", ex: "9/5, 17/5, 28/5" },
                       { part: "MKTCODE", color: "#22c55e", mean: "Tên MKT phụ trách", rule: "KIENLB / XUANLT / NAMDV / LINHMT / ANHNT / DUPD — viết hoa, đúng code", ex: "KIENLB" },
-                      { part: "TÊN SP", color: "#a78bfa", mean: "Tên sản phẩm", rule: "Viết HOA, đầy đủ, dùng dấu cách (không _). Khớp với product_key trong hệ thống", ex: "CHẢO VÀNG HẤP, NỒI ÁP SUẤT" },
+                      { part: "TÊN SP", color: "#a78bfa", mean: "Tên sản phẩm", rule: "MKT tự đặt tên gợi nhớ — viết HOA, dùng dấu cách (không _). KHÔNG cần khớp cứng vì đã có Mã SP định danh", ex: "CHẢO VÀNG, NỒI ÁP SUẤT 5L" },
                       { part: "ADSXXX", color: "#60a5fa", mean: "Tài khoản ads", rule: "ADS + số tài khoản. Không viết tắt khác", ex: "ADS346, ADS343, ADS329" },
                       { part: "AUDIENCE", color: "#f472b6", mean: "Đối tượng / chiến lược", rule: "Tự do nhưng ngắn gọn. Dùng _ thay khoảng trắng nếu nhiều từ", ex: "30ALL, VN-PAGE MỚI, BROAD, LAL2" },
                       { part: "VDXXX", color: "#fb923c", mean: "Video ID", rule: "Bắt đầu bằng VD + mã định danh. Giúp biết video nào ra đơn", ex: "VD7, VD82126, VD8131415" },
@@ -2693,9 +2697,9 @@ export default function BaoCaoMktPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 8 }}>Ví dụ thực tế ✓ (từ DB)</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {[
-                    "17/5_XUANLT_CHẢO VÀNG HẤP_ADS344_MĐGD_VD82126284361_30ALL_S2",
-                    "9/5_KIENLB_NỒI CHIÊN_ADS346_VN-PAGE MỚI_VD7-1",
-                    "28/5_NAMDV_NỒI ÁP SUẤT_ADS343_VD25V_BS",
+                    "PHVVN026CV_17/5_XUANLT_CHẢO VÀNG HẤP_ADS344_MĐGD_VD82126284361_30ALL_S2",
+                    "PHVVN036NC_9/5_KIENLB_NỒI CHIÊN_ADS346_VN-PAGE MỚI_VD7-1",
+                    "PHVVN030NAS_28/5_NAMDV_NỒI ÁP SUẤT_ADS343_BROAD_VD25V_BS",
                   ].map(name => (
                     <div key={name} style={{ ...mono, padding: "7px 12px", background: dark ? "rgba(34,197,94,0.07)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.2)" : "#bbf7d0"}`, borderRadius: 6, color: dark ? "#86efac" : "#15803d", wordBreak: "break-all" }}>
                       ✓ {name}
@@ -2705,8 +2709,8 @@ export default function BaoCaoMktPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, margin: "12px 0 8px" }}>Ví dụ SAI ✗ (cần sửa)</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {[
-                    { bad: "16/5_ANHNT_CHỔI 3 GIẺ_ADS329 - VID 15.5", fix: "Dùng ` - ` thay `_`, thiếu VD prefix, khoảng trắng trước/sau dấu phân cách" },
-                    { bad: "28/5_NAMDV_CHẢO VÀNG_ADS343 _VD17V _ BS", fix: "Có khoảng trắng thừa trước `_`, tên SP viết tắt (CHẢO VÀNG → thiếu HẤP/TITAN...)" },
+                    { bad: "16/5_ANHNT_CHỔI 3 GIẺ_ADS329_30ALL_VID 15.5", fix: "Thiếu Mã SP ở đầu (PHVVN..._), dùng `VID` thay `VD`, khoảng trắng trong video ID" },
+                    { bad: "PHVVN026_CV_28/5_NAMDV_CHẢO VÀNG_ADS343_BROAD_VD17V _ BS", fix: "Mã SP còn dấu `_` (PHVVN026_CV) → phải viết liền PHVVN026CV; có khoảng trắng thừa quanh `_`" },
                   ].map(({ bad, fix }) => (
                     <div key={bad}>
                       <div style={{ ...mono, padding: "7px 12px", background: dark ? "rgba(239,68,68,0.07)" : "#fff5f5", border: `1px solid ${dark ? "rgba(239,68,68,0.2)" : "#fecaca"}`, borderRadius: "6px 6px 0 0", color: dark ? "#fca5a5" : "#dc2626", wordBreak: "break-all" }}>
@@ -2719,6 +2723,89 @@ export default function BaoCaoMktPage() {
                   ))}
                 </div>
               </div>
+
+              {/* ─── TRA CỨU MÃ SP TỪ POS ─── */}
+              {(() => {
+                // Mã sản phẩm lấy từ Pancake POS. Dạng gốc POS có dấu _ (PHVVN026_CV);
+                // khi dán vào tên camp viết LIỀN, bỏ dấu _ (PHVVN026CV).
+                const SKU_LIST: { pos: string; name: string }[] = [
+                  { pos: "PHVVN040_KG",     name: "KẸP GẮP ĐỒ" },
+                  { pos: "PHVVN016_CCD",    name: "CHẢO CHỐNG DÍNH KÈM KHAY HẤP" },
+                  { pos: "PHVVN014_MBDN",   name: "DỤNG CỤ BÀO ĐA NĂNG" },
+                  { pos: "PHVVN026_CV",     name: "CHẢO VÀNG CHỐNG DÍNH KÈM KHAY HẤP" },
+                  { pos: "PHVVN034_KĐĐ",    name: "KỆ ĐỂ ĐỒ HAI TẦNG" },
+                  { pos: "PHVVN030_NAS",    name: "NỒI ÁP SUẤT" },
+                  { pos: "PHVVN036_NC",     name: "NỒI CHIÊN INOX 304" },
+                  { pos: "PHVVN023_GĐQA",   name: "GIỎ ĐỰNG QUẦN ÁO ĐA NĂNG" },
+                  { pos: "PHVVN035_GCNG",   name: "GẬY CHỐNG CHO NGƯỜI GIÀ" },
+                  { pos: "PHVVN031_BCX",    name: "BỘ CÂY LAU NHÀ XANH" },
+                  { pos: "PHVVN038_KLD",    name: "BỘ KHAY LỌC DẦU" },
+                  { pos: "PHVVN004_GBLN",   name: "GIẺ LAU NHÀ TÁCH NƯỚC" },
+                  { pos: "PHVVN001_XKC",    name: "DỤNG CỤ XỎ KIM CHỈ" },
+                  { pos: "PHVVN037_HDTP",   name: "HỘP ĐỰNG THỰC PHẨM INOX" },
+                  { pos: "PHVVN003_BLN",    name: "BỘ LAU NHÀ TÁCH NƯỚC" },
+                  { pos: "PHVVN033_NCDTMS", name: "NỒI CHỐNG DÍNH TRÁNG MEN SỨ" },
+                  { pos: "PHVVN028_BL",     name: "BALO CHẠY BỘ" },
+                  { pos: "PHVVN008_GLNTV",  name: "GIẺ LAU NHÀ TỰ VẮT PHUN SƯƠNG" },
+                  { pos: "PHVVN015_MXCLN",  name: "MÚT XỐP CÂY LAU NHÀ TỰ VẮT" },
+                ]
+                const toCamp = (pos: string) => pos.replace(/_/g, "")
+                const q = skuSearch.trim().toLowerCase()
+                const filtered = q
+                  ? SKU_LIST.filter(s => s.pos.toLowerCase().includes(q) || toCamp(s.pos).toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+                  : SKU_LIST
+                const copySku = (val: string) => {
+                  navigator.clipboard.writeText(val).then(() => {
+                    const el = document.createElement("div")
+                    el.textContent = `✓ Đã copy ${val}`
+                    Object.assign(el.style, { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, zIndex: 9999, pointerEvents: "none" })
+                    document.body.appendChild(el)
+                    setTimeout(() => el.remove(), 1500)
+                  })
+                }
+                return (
+                  <div style={{ marginTop: 18, borderTop: `1px dashed ${dark ? "#1f2937" : "#e2e8f0"}`, paddingTop: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>🔑 Tra cứu Mã SP (lấy từ POS)</span>
+                      <span style={{ fontSize: 11.5, color: t.textMuted }}>Bấm copy mã rồi dán vào đầu tên camp (đã tự bỏ dấu _).</span>
+                    </div>
+                    <input
+                      value={skuSearch}
+                      onChange={e => setSkuSearch(e.target.value)}
+                      placeholder="Tìm theo mã hoặc tên SP... (VD: chảo, NAS, PHVVN026)"
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${dark ? "#374151" : "#cbd5e1"}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 12.5, outline: "none", boxSizing: "border-box" as any, marginBottom: 10 }}
+                    />
+                    <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 8 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: dark ? "#111827" : "#f1f5f9", position: "sticky", top: 0 }}>
+                            {["Mã trên POS", "Dùng trong camp", "Tên sản phẩm", ""].map(h => (
+                              <th key={h} style={{ padding: "7px 12px", textAlign: "left", fontWeight: 600, color: t.textMuted, whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.length === 0 ? (
+                            <tr><td colSpan={4} style={{ padding: 18, textAlign: "center", color: t.textMuted }}>Không tìm thấy mã/tên khớp.</td></tr>
+                          ) : filtered.map(s => (
+                            <tr key={s.pos} style={{ borderTop: `1px solid ${dark ? "#1f2937" : "#f1f5f9"}` }}>
+                              <td style={{ padding: "7px 12px", fontFamily: "ui-monospace,monospace", color: t.textMuted, whiteSpace: "nowrap" }}>{s.pos}</td>
+                              <td style={{ padding: "7px 12px", fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#ef4444", whiteSpace: "nowrap" }}>{toCamp(s.pos)}</td>
+                              <td style={{ padding: "7px 12px", color: t.text }}>{s.name}</td>
+                              <td style={{ padding: "7px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                                <button onClick={() => copySku(toCamp(s.pos))} style={{ background: "none", border: `1px solid ${dark ? "#374151" : "#e2e8f0"}`, color: t.blue, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>📋 Copy mã</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 7 }}>
+                      ⚠️ Danh sách tham khảo các SP đang chạy. SP mới chưa có trong bảng → lấy đúng <b style={{ color: t.text }}>Mã sản phẩm</b> trong POS (Sản phẩm → mở SP → ô "Mã sản phẩm"), viết liền bỏ dấu <b style={{ color: t.text }}>_</b>.
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* ─── QUY TẮC UTM ─── */}
@@ -2810,7 +2897,7 @@ export default function BaoCaoMktPage() {
               <input
                 value={campInput}
                 onChange={e => setCampInput(e.target.value)}
-                placeholder="Dán tên campaign vào đây... VD: 9/5_KIENLB_NỒI CHIÊN_ADS346_VN-PAGE MỚI_VD7-1"
+                placeholder="Dán tên campaign vào đây... VD: PHVVN036NC_9/5_KIENLB_NỒI CHIÊN_ADS346_VN-PAGE MỚI_VD7-1"
                 style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1.5px solid ${campInput ? (issues.length ? "#ef4444" : "#22c55e") : (dark ? "#374151" : "#cbd5e1")}`, background: dark ? "#111827" : "#fff", color: t.text, fontSize: 13, outline: "none", boxSizing: "border-box" as any }}
               />
 
@@ -2834,13 +2921,14 @@ export default function BaoCaoMktPage() {
                       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, marginBottom: 7 }}>Phân tích tên camp</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {[
-                          { label: "Ngày", val: parsed[1], color: "#f59e0b" },
-                          { label: "MKT", val: parsed[2], color: "#22c55e" },
-                          { label: "Sản phẩm", val: parsed[3], color: "#a78bfa" },
-                          { label: "Tài khoản Ads", val: parsed[4], color: "#60a5fa" },
-                          { label: "Audience", val: parsed[5], color: "#f472b6" },
-                          { label: "Video ID", val: parsed[6], color: "#fb923c" },
-                          ...(parsed[7] ? [{ label: "Suffix", val: parsed[7].slice(1), color: t.textMuted }] : []),
+                          { label: "Mã SP (POS)", val: parsed[1], color: "#ef4444" },
+                          { label: "Ngày", val: parsed[2], color: "#f59e0b" },
+                          { label: "MKT", val: parsed[3], color: "#22c55e" },
+                          { label: "Tên SP", val: parsed[4], color: "#a78bfa" },
+                          { label: "Tài khoản Ads", val: parsed[5], color: "#60a5fa" },
+                          { label: "Audience", val: parsed[6], color: "#f472b6" },
+                          { label: "Video ID", val: parsed[7], color: "#fb923c" },
+                          ...(parsed[8] ? [{ label: "Suffix", val: parsed[8].slice(1), color: t.textMuted }] : []),
                         ].map(p => (
                           <div key={p.label} style={{ background: dark ? "#111827" : "#f8fafc", border: `1px solid ${dark ? "#1f2937" : "#e2e8f0"}`, borderRadius: 7, padding: "5px 10px" }}>
                             <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 2 }}>{p.label}</div>
