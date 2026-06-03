@@ -77,11 +77,12 @@ export const getProductsList = cache(async function ({
     )
     .then(({ products, count }) => {
       const nextPage = count > offset + limit ? pageParam + 1 : null
+      const visible = products.filter(p => p.metadata?.hidden !== "true")
 
       return {
         response: {
-          products,
-          count,
+          products: visible,
+          count: visible.length,
         },
         nextPage: nextPage,
         queryParams,
