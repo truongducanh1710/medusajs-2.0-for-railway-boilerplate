@@ -142,8 +142,61 @@ function parsePriceVND(priceStr: string): number {
   return Math.round(parseFloat(match[1].replace(/[,. ]/g, "").replace(/(\d{3})$/, ".$1")) * 1000) || 0
 }
 
-// ── Landing page HTML ──────────────────────────────────────────────────────
-function buildLandingPage(ai: AIContent, images: string[]): string {
+// ── Landing page HTML — do DeepSeek sinh ra ───────────────────────────────
+async function buildLandingPage(ai: AIContent, images: string[], data: Scrape1688Data): Promise<string> {
+  const client = new OpenAI({ baseURL: "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY! })
+
+  const specsText = Object.entries(ai.specs_vi).map(([k, v]) => `${k}: ${v}`).join("\n")
+  const reviewsText = (data.reviews || []).slice(0, 6).map((r, i) => `${i + 1}. ${r.slice(0, 250)}`).join("\n")
+  const imagesHtml = images.slice(0, 8).map((url, i) =>
+    i === 0
+      ? `<img src="${url}" class="hero-img" alt="hero" />`
+      : `<img src="${url}" class="thumb-img" alt="thumb ${i}" />`
+  ).join("\n")
+
+  const prompt = `Bạn là designer chuyên làm landing page bán hàng online Việt Nam. Hãy tạo một trang HTML HOÀN CHỈNH và ĐẸP cho sản phẩm sau.
+
+THÔNG TIN SẢN PHẨM:
+Tên: ${ai.title_vi}
+Mô tả: ${ai.description_vi}
+Lợi ích: ${ai.benefits.map(b => `${b.icon} ${b.title}: ${b.desc}`).join(" | ")}
+Vấn đề: ${ai.pains.join(" / ")}
+Giải pháp: ${ai.solutions.join(" / ")}
+Thông số:
+${specsText}
+FAQ: ${ai.faq.map(f => `Q: ${f.q} A: ${f.a}`).join(" | ")}
+Reviews: ${reviewsText || "(không có)"}
+Rating: ${data.rating || ""}
+
+HÌNH ẢNH (đã có sẵn):
+${imagesHtml}
+
+YÊU CẦU THIẾT KẾ:
+- Trả về HTML fragment (KHÔNG cần <!DOCTYPE>, <html>, <head>, <body> tags)
+- Dùng inline CSS hoàn toàn (không dùng class external)
+- Style: modern, clean, mobile-friendly, màu chủ đạo #e63946 (đỏ Phan Viet)
+- Sections: Hero (ảnh lớn + tên + mô tả), Benefits grid, Gallery thumbnails, Pain/Solution, Specs table, Reviews cards đẹp (avatar chữ cái + star rating), FAQ accordion
+- Review cards: hiển thị avatar (2 chữ cái đầu, background màu pastel), tên người dùng, số sao, ngày, nội dung review
+- Tất cả text hiển thị phải bằng tiếng Việt
+- KHÔNG dùng JavaScript
+- Responsive với max-width 840px
+- Đẹp như trang bán hàng chuyên nghiệp Shopee/Tiki`
+
+  const completion = await client.chat.completions.create({
+    model: "deepseek-chat",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 4000,
+    temperature: 0.5,
+  })
+
+  let html = completion.choices[0]?.message?.content ?? ""
+  // Strip markdown code blocks nếu có
+  html = html.replace(/^```html?\s*/i, "").replace(/```\s*$/, "").trim()
+  return html
+}
+
+// ── Landing page HTML (legacy sync version — unused) ──────────────────────
+function _buildLandingPageLegacy(ai: AIContent, images: string[]): string {
   const benefitsHtml = ai.benefits.map(b => `
     <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#f0fdf4;border-radius:10px;margin-bottom:10px;border:1px solid #bbf7d0">
       <span style="font-size:28px;flex-shrink:0;line-height:1">${b.icon}</span>
@@ -330,7 +383,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const product = productResult[0]
 
     // 3. Sinh landing page HTML và lưu vào product metadata
-    const pageHtml = buildLandingPage(ai, finalImages)
+    const pageHtml = await buildLandingPage(ai, finalImages, body)
 
     const productModule = req.scope.resolve(Modules.PRODUCT)
     await productModule.updateProducts(product.id, {
