@@ -68,6 +68,7 @@ export default function BaoCaoMktPage() {
   const [ruleTemplateOpen, setRuleTemplateOpen] = useState(false)
   const [campRows, setCampRows] = useState<any[]>([])
   const [campMktFilter, setCampMktFilter] = useState<string>("")
+  const [campKeyword, setCampKeyword] = useState<string>("")
   const [campLoading, setCampLoading] = useState(false)
   const [campDate, setCampDate] = useState(todayVN())
   const [campFrom, setCampFrom] = useState(todayVN())
@@ -814,6 +815,13 @@ export default function BaoCaoMktPage() {
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
+            <input
+              type="text"
+              placeholder="🔍 Lọc theo từ khóa..."
+              value={campKeyword}
+              onChange={e => setCampKeyword(e.target.value)}
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, minWidth: 180 }}
+            />
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
               <option value="">Tất cả trạng thái</option>
@@ -828,8 +836,10 @@ export default function BaoCaoMktPage() {
             </button>
           </div>
           {(() => {
+            const kw = campKeyword.trim().toLowerCase()
             const sortedCamps = [...campRows]
               .filter(r => !filterStatus || r.effective_status === filterStatus)
+              .filter(r => !kw || (r.campaign_name ?? "").toLowerCase().includes(kw))
               .sort((a, b) => {
                 const colMap: Record<string, (x: any) => number> = {
                   spend: x => Number(x.spend),
@@ -899,7 +909,7 @@ export default function BaoCaoMktPage() {
           ) : (
             <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any }}>
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
-                {filterStatus ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
+                {(filterStatus || kw) ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
                 {campRangeMode && <span style={{ marginLeft: 8, color: t.amber }}>📅 Tổng {campFrom} → {campTo}</span>}
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 920 }}>
