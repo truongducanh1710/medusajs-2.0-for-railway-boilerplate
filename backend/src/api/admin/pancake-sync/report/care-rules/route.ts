@@ -18,11 +18,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   `
   const params: any[] = []
 
-  if (!auth.isSuper) {
-    if (!auth.mktCode) return res.status(403).json({ error: "User chưa có MKT Code" })
+  if (!auth.isSuper && auth.mktCode) {
+    // Marketer: chỉ thấy rule của mình
     query += ` AND r.mkt_name = $${params.length + 1}`
     params.push(auth.mktCode)
-  } else if (mkt) {
+  } else if ((auth.isSuper || !auth.mktCode) && mkt) {
+    // Super hoặc admin không gắn MKT: có thể filter theo ?mkt
     query += ` AND r.mkt_name = $${params.length + 1}`
     params.push(mkt)
   }
