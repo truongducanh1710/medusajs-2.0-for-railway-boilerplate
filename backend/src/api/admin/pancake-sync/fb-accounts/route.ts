@@ -13,8 +13,9 @@ const FB_API_BASE = "https://graph.facebook.com/v18.0"
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const svc = getService(req)
+    await svc.sql(`ALTER TABLE fb_ad_account ADD COLUMN IF NOT EXISTS allowed_mkt_codes TEXT[] DEFAULT '{}'`)
     const accounts = await svc.sql(`
-      SELECT id, account_id, account_name, mkt_name, active, note, created_at
+      SELECT id, account_id, account_name, mkt_name, active, note, created_at, allowed_mkt_codes
       FROM fb_ad_account
       WHERE deleted_at IS NULL
       ORDER BY active DESC, created_at ASC

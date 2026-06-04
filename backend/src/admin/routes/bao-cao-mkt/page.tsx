@@ -135,6 +135,7 @@ export default function BaoCaoMktPage() {
   const [fbEditName, setFbEditName] = useState("")
   const [fbEditMkt, setFbEditMkt] = useState("")
   const [fbEditNote, setFbEditNote] = useState("")
+  const [fbEditAllowed, setFbEditAllowed] = useState<string[]>([])  // MKT được phép lên camp
   const canControl = has("page.bao-cao.camp-control") || isSuper
   const canManageFb = has("page.bao-cao.fb-accounts") || isSuper
   const [editingBudget, setEditingBudget] = useState<string | null>(null)
@@ -602,10 +603,12 @@ export default function BaoCaoMktPage() {
   }, [fbNewId, fbNewName, fbNewMkt, fbNewNote, fetchFbAccounts])
 
   const fbSaveEdit = useCallback(async (acc: any) => {
-    const patch: Record<string, string> = {}
+    const patch: Record<string, any> = {}
     if (fbEditName !== acc.account_name) patch.account_name = fbEditName
     if (fbEditMkt !== (acc.mkt_name ?? "")) patch.mkt_name = fbEditMkt
     if (fbEditNote !== (acc.note ?? "")) patch.note = fbEditNote
+    const curAllowed = (acc.allowed_mkt_codes ?? []).join(",")
+    if (fbEditAllowed.join(",") !== curAllowed) patch.allowed_mkt_codes = fbEditAllowed
     if (Object.keys(patch).length > 0) {
       await apiFetch(`/admin/pancake-sync/fb-accounts/${acc.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -614,7 +617,7 @@ export default function BaoCaoMktPage() {
     }
     setFbEditingId(null)
     await fetchFbAccounts()
-  }, [fbEditName, fbEditMkt, fbEditNote, fetchFbAccounts])
+  }, [fbEditName, fbEditMkt, fbEditNote, fbEditAllowed, fetchFbAccounts])
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
@@ -1838,6 +1841,7 @@ export default function BaoCaoMktPage() {
                       <th style={thS}>Account ID</th>
                       <th style={thS}>Tên tài khoản</th>
                       <th style={thS}>MKT phụ trách</th>
+                      <th style={thS}>MKT được lên camp</th>
                       <th style={thS}>Camp hôm nay</th>
                       <th style={thS}>Ghi chú</th>
                       <th style={thS}></th>
@@ -1873,6 +1877,29 @@ export default function BaoCaoMktPage() {
                                   {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                               : <span style={{ color: acc.mkt_name ? t.purple : t.textMuted, fontWeight: acc.mkt_name ? 600 : 400 }}>{acc.mkt_name || "Tự động"}</span>}
+                          </td>
+                          {/* MKT được phép lên camp — chọn nhiều */}
+                          <td style={tdS}>
+                            {isEditing ? (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, maxWidth: 220 }}>
+                                {MKT_ORDER.map(m => {
+                                  const on = fbEditAllowed.includes(m)
+                                  return (
+                                    <button key={m} type="button"
+                                      onClick={() => setFbEditAllowed(prev => on ? prev.filter(x => x !== m) : [...prev, m])}
+                                      style={{ background: on ? (dark ? "#1e3a5f" : "#dbeafe") : t.card, color: on ? t.blue : t.textMuted, border: `1px solid ${on ? t.blue + "55" : t.cardBorder}`, borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                      {on ? "✓ " : ""}{m}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              (acc.allowed_mkt_codes && acc.allowed_mkt_codes.length > 0)
+                                ? <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 200 }}>
+                                    {acc.allowed_mkt_codes.map((m: string) => <span key={m} style={{ background: dark ? "#1e3a5f" : "#dbeafe", color: t.blue, borderRadius: 10, padding: "1px 8px", fontSize: 11, fontWeight: 600 }}>{m}</span>)}
+                                  </div>
+                                : <span style={{ color: t.textMuted, fontSize: 12 }}>{acc.mkt_name ? `(chỉ ${acc.mkt_name})` : "—"}</span>
+                            )}
                           </td>
                           <td style={{ ...tdS, textAlign: "center" }}>
                             {(() => {
@@ -1910,7 +1937,7 @@ export default function BaoCaoMktPage() {
                               </>
                             ) : (
                               <>
-                                <button onClick={() => { setFbEditingId(acc.id); setFbEditName(acc.account_name ?? ""); setFbEditMkt(acc.mkt_name ?? ""); setFbEditNote(acc.note ?? "") }}
+                                <button onClick={() => { setFbEditingId(acc.id); setFbEditName(acc.account_name ?? ""); setFbEditMkt(acc.mkt_name ?? ""); setFbEditNote(acc.note ?? ""); setFbEditAllowed(acc.allowed_mkt_codes ?? []) }}
                                   style={{ background: dark ? "#1e3a5f" : "#dbeafe", color: t.blue, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Sửa</button>
                                 <button onClick={() => fbDelete(acc)} style={{ background: dark ? "#3b0d0d" : "#fee2e2", color: t.red, border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Xóa</button>
                               </>
