@@ -148,6 +148,34 @@ export async function getFbCampaignsWithAdsets(accId: string): Promise<Array<{ i
   }))
 }
 
+/** Map camp → pixel: quét adsets của 1 account, lấy pixel_id + event + campaign.
+ * Trả mỗi adset 1 dòng (1 camp có thể nhiều adset → group ở caller). */
+export async function getAdsetsPixelMap(accId: string): Promise<Array<{
+  adset_id: string; adset_name: string; campaign_id: string; campaign_name: string
+  status: string; pixel_id: string | null; event_type: string | null
+}>> {
+  let url = `/${accId}/adsets?fields=id,name,effective_status,campaign{id,name},promoted_object{pixel_id,custom_event_type}&limit=100`
+  const all: any[] = []
+  let guard = 0
+  while (url && guard++ < 20) {
+    const d = await callFb("GET", url)
+    for (const a of (d.data || [])) {
+      const po = a.promoted_object || {}
+      all.push({
+        adset_id: a.id,
+        adset_name: a.name,
+        campaign_id: a.campaign?.id || "",
+        campaign_name: a.campaign?.name || "",
+        status: a.effective_status || "",
+        pixel_id: po.pixel_id || null,
+        event_type: po.custom_event_type || null,
+      })
+    }
+    url = d.paging?.next ? d.paging.next.replace(FB_GRAPH, "").replace(/&access_token=[^&]*/, "") : ""
+  }
+  return all
+}
+
 export type AuthInfo = { email: string; isSuper: boolean; isAdmin: boolean; fbPageIds: string[] | null; mktCode: string | null }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {

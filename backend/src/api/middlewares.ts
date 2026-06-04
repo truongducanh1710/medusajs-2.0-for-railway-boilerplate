@@ -108,6 +108,7 @@ export default defineMiddlewares({
     // GET (gồm /post/status poll) cần view; mutate cần post
     { matcher: "/admin/fb-content/boost/meta*", method: ["GET"], middlewares: [requirePerm("page.fb-content.post")] },
     { matcher: "/admin/fb-content/boost", method: ["POST"], middlewares: [requirePerm("page.fb-content.post")] },
+    { matcher: "/admin/fb-content/pixel-map*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/fb-content*", method: ["GET"], middlewares: [requirePerm("page.fb-content.view")] },
     { matcher: "/admin/fb-content/post*", method: ["POST", "DELETE"], middlewares: [requirePerm("page.fb-content.post")] },
     { matcher: "/admin/fb-content/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.fb-content.post")] },

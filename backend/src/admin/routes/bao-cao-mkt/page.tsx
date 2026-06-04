@@ -48,7 +48,7 @@ export default function BaoCaoMktPage() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
   })
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming">("mkt")
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming" | "pixelmap">("mkt")
   // Tab Rules
   const [rules, setRules] = useState<any[]>([])
   const [rulesLoading, setRulesLoading] = useState(false)
@@ -143,6 +143,24 @@ export default function BaoCaoMktPage() {
   const [fbEditMkt, setFbEditMkt] = useState("")
   const [fbEditNote, setFbEditNote] = useState("")
   const [fbEditAllowed, setFbEditAllowed] = useState<string[]>([])  // MKT được phép lên camp
+
+  // Tab Pixel theo Camp
+  const [pixelMapData, setPixelMapData] = useState<any>(null)
+  const [pixelMapLoading, setPixelMapLoading] = useState(false)
+  const [pixelMapOnlyActive, setPixelMapOnlyActive] = useState(true)
+  const [pixelFilterMkt, setPixelFilterMkt] = useState("")
+  const [pixelFilterPixel, setPixelFilterPixel] = useState("")
+  const fetchPixelMap = useCallback((force = false) => {
+    setPixelMapLoading(true)
+    const p = new URLSearchParams()
+    if (pixelMapOnlyActive) p.set("only_active", "1")
+    if (force) p.set("force", "1")
+    apiFetch(`/admin/fb-content/pixel-map?${p}`).then(r => r.json())
+      .then(d => setPixelMapData(d))
+      .catch(() => {})
+      .finally(() => setPixelMapLoading(false))
+  }, [pixelMapOnlyActive])
+  useEffect(() => { if (activeTab === "pixelmap" && !pixelMapData) fetchPixelMap() }, [activeTab, pixelMapData, fetchPixelMap])
   const canControl = has("page.bao-cao.camp-control") || isSuper
   const canManageFb = has("page.bao-cao.fb-accounts") || isSuper
   const [editingBudget, setEditingBudget] = useState<string | null>(null)
@@ -747,6 +765,7 @@ export default function BaoCaoMktPage() {
           ...(has("page.bao-cao.care-rules") ? [["rules", "⚙️ Rule chăm sóc"]] : []),
           ["naming", "📋 Quy tắc đặt tên"],
           ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
+          ...(canManageFb ? [["pixelmap", "📊 Pixel theo Camp"]] : []),
           ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key as any)} style={{
@@ -1965,6 +1984,118 @@ export default function BaoCaoMktPage() {
                 </table>
               </div>
             )}
+          </div>
+        )
+      })()}
+
+      {/* Tab — Pixel theo Camp */}
+      {activeTab === "pixelmap" && canManageFb && (() => {
+        const data = pixelMapData
+        const allRows: any[] = data?.rows || []
+        const rows = allRows.filter(r => {
+          if (pixelFilterMkt && r.mkt !== pixelFilterMkt) return false
+          if (pixelFilterPixel && (r.pixel_id || "none") !== pixelFilterPixel) return false
+          return true
+        })
+        // group hiển thị theo pixel
+        const groups: Record<string, any[]> = {}
+        for (const r of rows) { const k = r.pixel_id || "none"; (groups[k] = groups[k] || []).push(r) }
+        const byPixel: any[] = data?.byPixel || []
+        const warnings: any[] = data?.warnings || []
+        const pixelOpts = byPixel.map(p => ({ id: p.pixel_id, name: p.pixel_name }))
+        const fmtTr = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + "tr" : n.toLocaleString("vi-VN") + "đ"
+        const PX_MKT_COLORS: Record<string, string> = { KIENLB: "#60a5fa", ANHNT: "#f472b6", NAMDV: "#34d399", XUANLT: "#fb923c", LINHMT: "#a78bfa", DUPD: "#facc15", "NGUYEN MAI": "#e879f9" }
+        const mktColor = (name: string) => PX_MKT_COLORS[(name ?? "").trim()] ?? "#9ca3af"
+
+        return (
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 18, color: t.text }}>📊 Pixel theo Camp</div>
+              <div style={{ fontSize: 13, color: t.textMuted }}>Theo dõi camp đang dùng pixel nào — phục vụ gộp dần về 1 pixel chung. Token: env <code style={{ background: t.cronBg, padding: "1px 5px", borderRadius: 3 }}>FB_SYSTEM_TOKEN</code></div>
+            </div>
+
+            {/* Filter bar */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <select value={pixelFilterMkt} onChange={e => setPixelFilterMkt(e.target.value)}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
+                <option value="">Tất cả MKT</option>
+                {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select value={pixelFilterPixel} onChange={e => setPixelFilterPixel(e.target.value)}
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, maxWidth: 260 }}>
+                <option value="">Tất cả pixel</option>
+                {pixelOpts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: t.text }}>
+                <input type="checkbox" checked={pixelMapOnlyActive} onChange={e => { setPixelMapOnlyActive(e.target.checked); setPixelMapData(null) }} style={{ accentColor: "#1877F2", width: 14, height: 14 }} />
+                Chỉ ACTIVE
+              </label>
+              <button onClick={() => fetchPixelMap(true)} disabled={pixelMapLoading} style={{
+                background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
+                padding: "8px 16px", cursor: pixelMapLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: pixelMapLoading ? 0.6 : 1
+              }}>
+                {pixelMapLoading ? "Đang quét..." : "↻ Quét lại"}
+              </button>
+              {data && <span style={{ color: t.textMuted, fontSize: 12 }}>{data.total_camps} camp · {data.scanned_accounts} account{data.cached ? " · cache" : ""}</span>}
+            </div>
+
+            {/* Cảnh báo */}
+            {warnings.length > 0 && (
+              <div style={{ background: dark ? "rgba(245,158,11,0.1)" : "#fffbeb", border: `1px solid ${dark ? "rgba(245,158,11,0.3)" : "#fde68a"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: t.amber, marginBottom: 6 }}>⚠️ {warnings.length} sản phẩm đang dùng nhiều pixel — nên gộp về 1</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {warnings.map((w: any) => (
+                    <span key={w.sp} style={{ fontSize: 12, color: t.text, background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "3px 10px" }}>
+                      {w.sp} <b style={{ color: t.amber }}>({w.pixel_count} pixel)</b>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {pixelMapLoading && !data && <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Đang quét FB (có thể mất 10-20s)…</div>}
+
+            {/* Nhóm theo pixel */}
+            {data && Object.keys(groups).length === 0 && (
+              <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Không có camp nào.</div>
+            )}
+            {byPixel.filter(p => groups[p.pixel_id]).map((pg: any) => {
+              const gr = groups[pg.pixel_id] || []
+              return (
+                <div key={pg.pixel_id} style={{ marginBottom: 16, background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "10px 16px", background: dark ? "#0f172a" : "#f1f5f9", borderBottom: `1px solid ${t.cardBorder}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <span style={{ fontWeight: 700, color: t.text, fontSize: 14 }}>📍 {pg.pixel_name}</span>
+                      <span style={{ fontFamily: "monospace", fontSize: 11, color: t.textMuted, marginLeft: 8 }}>{pg.pixel_id}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: t.textMuted }}>{gr.length} camp · <b style={{ color: t.green }}>{fmtTr(gr.reduce((s, r) => s + r.spend, 0))}</b></div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        {["Campaign", "MKT", "SP", "Event", "Status", "Spend 30d"].map(h => (
+                          <th key={h} style={{ textAlign: h === "Spend 30d" ? "right" : "left", padding: "8px 14px", color: t.textMuted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", borderBottom: `1px solid ${t.cardBorder}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gr.map((r: any) => (
+                        <tr key={r.campaign_id}>
+                          <td style={{ padding: "7px 14px", color: t.text, maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderBottom: `1px solid ${t.cardBorder}` }} title={r.campaign_name}>{r.campaign_name}</td>
+                          <td style={{ padding: "7px 14px", fontWeight: 700, color: mktColor(r.mkt), borderBottom: `1px solid ${t.cardBorder}` }}>{r.mkt || "—"}</td>
+                          <td style={{ padding: "7px 14px", color: t.textMuted, borderBottom: `1px solid ${t.cardBorder}` }}>{r.sp || "—"}</td>
+                          <td style={{ padding: "7px 14px", color: t.textMuted, fontSize: 11, borderBottom: `1px solid ${t.cardBorder}` }}>{r.event_type || "—"}</td>
+                          <td style={{ padding: "7px 14px", borderBottom: `1px solid ${t.cardBorder}` }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: r.status === "ACTIVE" ? t.green : t.textMuted }}>{r.status === "ACTIVE" ? "● ACTIVE" : "○ " + (r.status || "?")}</span>
+                          </td>
+                          <td style={{ padding: "7px 14px", textAlign: "right", fontWeight: 600, color: t.text, borderBottom: `1px solid ${t.cardBorder}` }}>{r.spend ? fmtTr(r.spend) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })}
           </div>
         )
       })()}
