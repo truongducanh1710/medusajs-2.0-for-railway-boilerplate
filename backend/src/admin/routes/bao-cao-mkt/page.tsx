@@ -2,6 +2,8 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { CreateCampPicker } from "../../components/marketing-hub/create-camp-picker"
+import { BoostCampModal, type BoostTarget } from "../../components/marketing-hub/boost-camp-modal"
 
 function fmtMoney(n: number): string {
   return n.toLocaleString("vi-VN") + "đ"
@@ -87,6 +89,11 @@ export default function BaoCaoMktPage() {
   const [spTo, setSpTo] = useState(to)
 
   const { isSuper, mktCode, has } = useCurrentPermissions()
+
+  // Tạo Camp từ video (picker → BoostCampModal)
+  const canCreateCamp = isSuper || has("page.fb-content.post")
+  const [campPickerOpen, setCampPickerOpen] = useState(false)
+  const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
 
   // Tab 3 — Lịch hẹn Camp (schedules + logs)
   const [jobsSubTab, setJobsSubTab] = useState<"schedules" | "logs" | "fb-history">("schedules")
@@ -876,6 +883,14 @@ export default function BaoCaoMktPage() {
             }}>
               {campLoading ? "Đang tải..." : "↻ Refresh"}
             </button>
+            {canCreateCamp && (
+              <button onClick={() => setCampPickerOpen(true)} style={{
+                background: "#10b981", color: "#fff", border: "none", borderRadius: 6,
+                padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap"
+              }}>
+                🚀 Tạo Camp
+              </button>
+            )}
           </div>
           {(() => {
             const kw = campKeyword.trim().toLowerCase()
@@ -3851,6 +3866,23 @@ export default function BaoCaoMktPage() {
           </div>
         )
       })()}
+
+      {/* Tạo Camp từ video: picker → BoostCampModal */}
+      {campPickerOpen && (
+        <CreateCampPicker
+          mktCode={mktCode}
+          isAdmin={isSuper}
+          onClose={() => setCampPickerOpen(false)}
+          onPick={(target) => { setCampPickerOpen(false); setBoostTarget(target) }}
+        />
+      )}
+      {boostTarget && (
+        <BoostCampModal
+          target={boostTarget}
+          onClose={() => setBoostTarget(null)}
+          onDone={() => fetchCampData()}
+        />
+      )}
 
     </div>
   )

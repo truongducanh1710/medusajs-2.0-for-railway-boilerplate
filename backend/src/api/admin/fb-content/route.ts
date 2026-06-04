@@ -20,9 +20,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (q.status) { params.push(q.status); where += ` AND p.status = $${params.length}` }
       if (q.from) { params.push(q.from); where += ` AND COALESCE(p.scheduled_for, p.created_at) >= $${params.length}` }
       if (q.to)   { params.push(q.to);   where += ` AND COALESCE(p.scheduled_for, p.created_at) <= $${params.length}` }
-      // JOIN mkt_video để lấy vd_code + product (cho tính năng Lên Camp)
+      // only_posted: chỉ video đã đăng FB thành công (có post_id) — cho tính năng Tạo Camp
+      if (q.only_posted === "1") where += ` AND p.post_id IS NOT NULL AND p.media_type = 'video'`
+      // maker: lọc theo MKT (tên người làm video)
+      if (q.maker) { params.push(q.maker); where += ` AND v.maker = $${params.length}` }
+      // JOIN mkt_video để lấy vd_code + product + maker (cho tính năng Lên Camp)
       const { rows } = await pool.query(
-        `SELECT p.*, v.vd_code, v.product
+        `SELECT p.*, v.vd_code, v.product, v.maker
            FROM fb_scheduled_post p
            LEFT JOIN mkt_video v ON v.id = p.video_id
          ${where} ORDER BY COALESCE(p.scheduled_for, p.created_at) DESC LIMIT 200`,
