@@ -233,7 +233,20 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
       <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 1020, borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", minWidth: 1300, borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: 36 }} />   {/* # */}
+              <col style={{ width: 76 }} />   {/* VD */}
+              <col style={{ width: 90 }} />   {/* Ngày */}
+              <col style={{ width: 70 }} />   {/* Nguồn */}
+              <col style={{ width: 150 }} />  {/* Người làm */}
+              <col style={{ width: 220 }} />  {/* Sản phẩm */}
+              <col style={{ width: 100 }} />  {/* Loại */}
+              <col style={{ width: 90 }} />   {/* Link */}
+              <col style={{ width: 120 }} />  {/* Trạng thái */}
+              <col />                         {/* Ghi chú — fill phần còn lại */}
+              <col style={{ width: 160 }} />  {/* Actions */}
+            </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
                 {["#", "VD", "Ngày", "Nguồn", "Người làm", "Sản phẩm", "Loại", "Link", "Trạng thái", "Ghi chú", ""].map((h, i) => (
@@ -260,7 +273,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     <span style={{ background: row.nguon === "Team" ? "#DBEAFE" : "#F0F1F5", color: row.nguon === "Team" ? "#1e40af" : "#4B5563", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>{row.nguon}</span>
                   </td>
                   {/* Người làm */}
-                  <td style={{ padding: "9px 12px", minWidth: isEditing ? 130 : undefined }}>
+                  <td style={{ padding: "9px 12px" }}>
                     {isEditing
                       ? <select value={ed.nguoiLam} onChange={e => setEditDraft(p => ({ ...p!, nguoiLam: e.target.value }))} style={cellInp}>
                           {mktUsers.map(u => <option key={u.email} value={u.name}>{u.name}{u.mkt_code ? ` · ${u.mkt_code}` : ""}</option>)}
@@ -271,7 +284,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         </div>}
                   </td>
                   {/* Sản phẩm */}
-                  <td style={{ padding: "9px 12px", maxWidth: isEditing ? undefined : 170, minWidth: isEditing ? 180 : undefined }}>
+                  <td style={{ padding: "9px 12px" }}>
                     {isEditing
                       ? <select value={ed.sp} onChange={e => setEditDraft(p => ({ ...p!, sp: e.target.value }))} style={cellInp}>
                           {spList.map(s => <option key={s} value={s}>{s}</option>)}
@@ -287,7 +300,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       : <VideoTypeChip type={row.loaiVideo} />}
                   </td>
                   {/* Link */}
-                  <td style={{ padding: "9px 12px", minWidth: isEditing ? 160 : undefined }}>
+                  <td style={{ padding: "9px 12px" }}>
                     {isEditing
                       ? <input value={ed.link} onChange={e => setEditDraft(p => ({ ...p!, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
                       : row.link ? <a href={row.link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>↗ Drive</a> : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
@@ -308,7 +321,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     </div>
                   </td>
                   {/* Ghi chú */}
-                  <td style={{ padding: "9px 12px", maxWidth: isEditing ? undefined : 150, minWidth: isEditing ? 150 : undefined }}>
+                  <td style={{ padding: "9px 12px" }}>
                     {isEditing
                       ? <input value={ed.ghiChu} onChange={e => setEditDraft(p => ({ ...p!, ghiChu: e.target.value }))} placeholder="Ghi chú…" style={cellInp} onKeyDown={e => { if (e.key === "Enter") saveEdit(row.id); if (e.key === "Escape") cancelEdit() }} />
                       : <span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{row.ghiChu || "—"}</span>}
@@ -356,7 +369,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "8px 12px" }}>
                     <span style={{ background: "#DBEAFE", color: "#1e40af", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>Team</span>
                   </td>
-                  <td style={{ padding: "8px 12px", minWidth: 130 }}>
+                  <td style={{ padding: "8px 12px" }}>
                     <select value={draft.nguoiLam} onChange={e => setDraft(p => ({ ...p, nguoiLam: e.target.value }))} style={cellInp}>
                       {mktUsers.length === 0 && <option value="">Đang tải…</option>}
                       {mktUsers.map(u => (
@@ -364,24 +377,24 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       ))}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px", minWidth: 200 }}>
+                  <td style={{ padding: "8px 12px" }}>
                     <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={cellInp}>
                       {spList.length === 0 && <option value="">Đang tải…</option>}
                       {spList.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px", minWidth: 110 }}>
+                  <td style={{ padding: "8px 12px" }}>
                     <select value={draft.loaiVideo} onChange={e => setDraft(p => ({ ...p, loaiVideo: e.target.value }))} style={cellInp}>
                       {LOAI_LIST.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                  <td style={{ padding: "8px 12px" }}>
                     <input value={draft.link} onChange={e => setDraft(p => ({ ...p, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
                   </td>
                   <td style={{ padding: "8px 12px" }}>
                     <StatusPill status="Cần làm" />
                   </td>
-                  <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                  <td style={{ padding: "8px 12px" }}>
                     <input value={draft.ghiChu} onChange={e => setDraft(p => ({ ...p, ghiChu: e.target.value }))} placeholder="Ghi chú (tuỳ chọn)…" style={cellInp} />
                   </td>
                   <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
