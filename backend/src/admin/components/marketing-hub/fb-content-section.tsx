@@ -462,11 +462,16 @@ function ThuVienTab() {
 function PhanQuyenTrangTab() {
   const [pages, setPages] = useState<Page[]>([])
   const [loadingPages, setLoadingPages] = useState(true)
+  const [pageSearch, setPageSearch] = useState("")
   const [mktUsers, setMktUsers] = useState<any[]>([])
   const [saving, setSaving] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [selUser, setSelUser] = useState<string | null>(null)
   const [userPageIds, setUserPageIds] = useState<Set<string>>(new Set())
+
+  const filteredPages = pages.filter(p =>
+    !pageSearch || p.page_name.toLowerCase().includes(pageSearch.toLowerCase())
+  )
 
   const fetchPages = (forceRefresh = false) => {
     setLoadingPages(true)
@@ -588,12 +593,21 @@ function PhanQuyenTrangTab() {
                 </button>
               </div>
             </div>
-            {/* Quick select */}
-            <div style={{ padding: "8px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", gap: 8 }}>
-              <button onClick={() => setUserPageIds(new Set(pages.map(p => p.page_id)))}
-                style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600 }}>Chọn tất cả</button>
+            {/* Search + Quick select */}
+            <div style={{ padding: "10px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 8 }}>
+                <span style={{ padding: "0 8px", color: "#9CA3AF", fontSize: 13 }}>⌕</span>
+                <input
+                  value={pageSearch} onChange={e => setPageSearch(e.target.value)}
+                  placeholder="Tìm tên trang…"
+                  style={{ flex: 1, background: "none", border: "none", outline: "none", padding: "7px 8px 7px 0", fontSize: 13, color: "#111827" }}
+                />
+                {pageSearch && <button onClick={() => setPageSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", padding: "0 8px", fontSize: 14 }}>✕</button>}
+              </div>
+              <button onClick={() => setUserPageIds(new Set(filteredPages.map((p: any) => p.page_id)))}
+                style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600, whiteSpace: "nowrap" }}>Chọn tất cả</button>
               <button onClick={() => setUserPageIds(new Set())}
-                style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600 }}>Bỏ tất cả</button>
+                style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600, whiteSpace: "nowrap" }}>Bỏ tất cả</button>
             </div>
             <div style={{ maxHeight: 480, overflowY: "auto" }}>
               {loadingPages && <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
@@ -603,7 +617,10 @@ function PhanQuyenTrangTab() {
                   <button onClick={() => fetchPages(true)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🔄 Tải từ Facebook</button>
                 </div>
               )}
-              {pages.map(p => {
+              {!loadingPages && filteredPages.length === 0 && pages.length > 0 && (
+                <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Không tìm thấy trang nào</div>
+              )}
+              {filteredPages.map((p: any) => {
                 const checked = userPageIds.has(p.page_id)
                 return (
                   <label key={p.page_id} onClick={() => togglePage(p.page_id)}

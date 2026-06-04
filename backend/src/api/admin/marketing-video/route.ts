@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, ensureTables, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 
 /** Map 1 DB row → shape UI design (field tiếng Việt). */
@@ -84,10 +85,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const vdCode = await nextVdCode(pool)
 
     // Lấy mkt_code của người tạo để sinh ad_name
-    const { Modules } = await import("@medusajs/framework/utils")
     const userModule = (req as any).scope.resolve(Modules.USER)
     const userDetail = await userModule.retrieveUser((req as any).auth_context.actor_id, { select: ["metadata"] })
-    const mktCode: string = (userDetail.metadata as any)?.mkt_code || maker.toUpperCase().replace(/\s+/g, "")
+    const mktCode: string = (userDetail.metadata as any)?.mkt_code || maker.toUpperCase().replace(/\s+/g, "").slice(0, 8)
 
     // Sinh sp_code từ tên SP (SP1, SP2...) hoặc dùng maker
     const spRaw: string = b.sp ?? b.product ?? ""
