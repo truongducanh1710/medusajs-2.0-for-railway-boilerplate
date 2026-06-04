@@ -87,7 +87,9 @@ async function publishVideoByUrl(pageId: string, pageToken: string, message: str
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-  const data = await res.json()
+  const rawText = await res.text()
+  let data: any
+  try { data = JSON.parse(rawText) } catch { throw new Error(`FB parse error: ${rawText.slice(0, 300)}`) }
   if (data?.error) throw new FbError(data.error.message, data.error.code)
   return data.id
 }
@@ -104,7 +106,9 @@ async function publishVideoBinary(pageId: string, pageToken: string, message: st
     if (scheduledTime) { form.append("published", "false"); form.append("scheduled_publish_time", String(scheduledTime)) }
     form.append("source", new Blob([buf]), "video.mp4")
     const res = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: form })
-    const data = await res.json()
+    const rawText = await res.text()
+    let data: any
+    try { data = JSON.parse(rawText) } catch { throw new Error(`FB parse error: ${rawText.slice(0, 300)}`) }
     if (data?.error) throw new FbError(data.error.message, data.error.code)
     return data.id
   } finally {
