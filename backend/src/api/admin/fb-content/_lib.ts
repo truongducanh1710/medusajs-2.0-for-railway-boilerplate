@@ -62,7 +62,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
   _tablesReady = true
 }
 
-export type AuthInfo = { email: string; isSuper: boolean; fbPageIds: string[] | null }
+export type AuthInfo = { email: string; isSuper: boolean; isAdmin: boolean; fbPageIds: string[] | null }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {
   const auth = (req as any).auth_context
@@ -70,9 +70,11 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   const userModule = req.scope.resolve(Modules.USER)
   const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
+  const perms: string[] = Array.isArray((user.metadata as any)?.permissions) ? (user.metadata as any).permissions : []
+  const isAdmin = isSuper || perms.includes("users.manage")
   const raw = (user.metadata as any)?.fb_page_ids
-  const fbPageIds = isSuper ? null : (Array.isArray(raw) ? raw.map(String) : [])
-  return { email: user.email || "", isSuper, fbPageIds }
+  const fbPageIds = isAdmin ? null : (Array.isArray(raw) ? raw.map(String) : [])
+  return { email: user.email || "", isSuper, isAdmin, fbPageIds }
 }
 
 const CACHE_TTL_HOURS = 24
@@ -104,9 +106,9 @@ export async function getPageTokens(pool: Pool, force = false): Promise<Array<{ 
   return pages.map(p => ({ page_id: p.page_id, page_name: p.page_name, access_token: p.access_token, category: p.category, fan_count: p.fan_count }))
 }
 
-/** Lọc theo quyền marketer (fb_page_ids). isSuper → all. */
+/** Lọc theo quyền marketer (fb_page_ids). isAdmin/isSuper → all. */
 export function filterByPerm<T extends { page_id: string }>(pages: T[], auth: AuthInfo): T[] {
-  if (auth.isSuper || auth.fbPageIds === null) return pages
+  if (auth.isAdmin || auth.fbPageIds === null) return pages
   const allow = new Set(auth.fbPageIds)
   return pages.filter(p => allow.has(p.page_id))
 }
