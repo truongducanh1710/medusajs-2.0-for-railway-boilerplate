@@ -193,6 +193,7 @@ export default function BaoCaoMktPage() {
   // Multi-model compare
   const [aiCompareMode, setAiCompareMode] = useState(false)
   const [aiCompareModels, setAiCompareModels] = useState<string[]>(["deepseek-v4-pro", "google/gemini-3.5-flash", "anthropic/claude-sonnet-4-5"])
+  const [verifyWarn, setVerifyWarn] = useState<string | null>(null)
 
   const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
 
@@ -311,6 +312,7 @@ export default function BaoCaoMktPage() {
 
   const toggleStatus = useCallback(async (camp: any) => {
     const action = camp.effective_status === "ACTIVE" ? "pause" : "activate"
+    const expectedStatus = action === "pause" ? "PAUSED" : "ACTIVE"
     if (!confirm(`${action === "pause" ? "Tắt" : "Bật"} camp "${camp.campaign_name}"?`)) return
     setActingCampId(camp.campaign_id)
     try {
@@ -321,6 +323,16 @@ export default function BaoCaoMktPage() {
       const data = await res.json()
       if (!res.ok) { alert("Lỗi: " + (data.error || "unknown")); return }
       await fetchCampData()
+      // Verify sau 1.5s — nếu FB trả khác thì cảnh báo
+      setTimeout(async () => {
+        try {
+          const vRes = await apiFetch(`/admin/pancake-sync/report/camp-control/verify?campaign_id=${camp.campaign_id}`)
+          const v = await vRes.json()
+          if (vRes.ok && v.status && v.status !== expectedStatus) {
+            setVerifyWarn(`⚠️ Camp "${camp.campaign_name}": FB trả về ${v.status} thay vì ${expectedStatus}. Có thể bị giới hạn bởi FB.`)
+          }
+        } catch { /* bỏ qua lỗi verify */ }
+      }, 1500)
     } finally { setActingCampId(null) }
   }, [fetchCampData])
 
@@ -337,6 +349,16 @@ export default function BaoCaoMktPage() {
       if (!res.ok) { alert("Lỗi: " + (data.error || "unknown")); return }
       setEditingBudget(null)
       await fetchCampData()
+      // Verify sau 1.5s
+      setTimeout(async () => {
+        try {
+          const vRes = await apiFetch(`/admin/pancake-sync/report/camp-control/verify?campaign_id=${camp.campaign_id}`)
+          const v = await vRes.json()
+          if (vRes.ok && v.daily_budget && v.daily_budget !== Math.round(budget)) {
+            setVerifyWarn(`⚠️ Budget "${camp.campaign_name}": FB xác nhận ${v.daily_budget.toLocaleString("vi-VN")}đ thay vì ${Math.round(budget).toLocaleString("vi-VN")}đ.`)
+          }
+        } catch { /* bỏ qua lỗi verify */ }
+      }, 1500)
     } finally { setActingCampId(null) }
   }, [budgetValue, fetchCampData])
 
@@ -773,6 +795,12 @@ export default function BaoCaoMktPage() {
       {/* Camp tab content */}
       {activeTab === "camp" && (
         <div>
+          {verifyWarn && (
+            <div style={{ background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: 8, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#92400E", fontSize: 13 }}>{verifyWarn}</span>
+              <button onClick={() => setVerifyWarn(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#92400E", fontSize: 16, lineHeight: 1 }}>×</button>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
             {/* Quick range buttons */}
             {[
