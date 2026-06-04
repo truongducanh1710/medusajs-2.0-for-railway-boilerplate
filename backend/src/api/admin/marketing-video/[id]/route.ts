@@ -30,6 +30,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (b.nguon !== undefined || b.source !== undefined) set("source", (b.nguon === "CTV" || b.source === "ctv") ? "ctv" : "team")
     if (b.postDate !== undefined || b.post_date !== undefined) set("post_date", b.postDate ?? b.post_date)
     if (b.adName !== undefined) set("ad_name", b.adName)
+    if (b.script !== undefined) set("script", b.script)
 
     if (!sets.length) return res.status(400).json({ error: "Không có trường nào để cập nhật" })
     sets.push(`updated_at = now()`)

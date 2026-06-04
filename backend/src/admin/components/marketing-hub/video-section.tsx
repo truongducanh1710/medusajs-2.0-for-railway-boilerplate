@@ -16,7 +16,7 @@ const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B
 
 type VideoRow = {
   id: string; vdCode: string; ngayDang: string; postDate?: string | null
-  createdAt?: string; adName?: string
+  createdAt?: string; adName?: string; script?: string
   nguon: string; nguoiLam: string; sp: string; productCode?: string
   loaiVideo: string; link: string; trangThai: string; ghiChu: string; createdBy?: string
 }
@@ -86,7 +86,7 @@ const LOAI_LIST = ["Video AI", "Real", "Review"]
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
-type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string }
+type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string; script: string }
 
 function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
   const [statusDropId, setStatusDropId] = useState<string | null>(null)
@@ -161,7 +161,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const startEdit = (row: VideoRow) => {
     setEditRowId(row.id)
-    setEditDraft({ nguoiLam: row.nguoiLam, sp: row.sp, loaiVideo: row.loaiVideo, link: row.link || "", ghiChu: row.ghiChu || "", postDate: row.postDate || "", adName: row.adName || "" })
+    setEditDraft({ nguoiLam: row.nguoiLam, sp: row.sp, loaiVideo: row.loaiVideo, link: row.link || "", ghiChu: row.ghiChu || "", postDate: row.postDate || "", adName: row.adName || "", script: row.script || "" })
     setDeleteConfirmId(null)
   }
 
@@ -245,13 +245,14 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               <col style={{ width: 90 }} />   {/* Loại */}
               <col style={{ width: 70 }} />   {/* Link */}
               <col style={{ width: 110 }} />  {/* Trạng thái */}
-              <col style={{ width: 180 }} />  {/* Ad Name */}
+              <col style={{ width: 160 }} />  {/* Ad Name */}
+              <col style={{ width: 200 }} />  {/* Lời thoại */}
               <col />                         {/* Ghi chú — fill phần còn lại */}
               <col style={{ width: 160 }} />  {/* Actions */}
             </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
-                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Sản phẩm", "Loại", "Link", "Trạng thái", "Ad Name", "Ghi chú", ""].map((h, i) => (
+                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Sản phẩm", "Loại", "Link", "Trạng thái", "Ad Name", "Lời thoại", "Ghi chú", ""].map((h, i) => (
                   <th key={i} style={{ padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -326,6 +327,14 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     {isEditing
                       ? <input value={ed.adName} onChange={e => setEditDraft(p => ({ ...p!, adName: e.target.value }))} placeholder="Ad name…" style={cellInp} />
                       : <span style={{ fontFamily: "monospace", fontSize: 11, color: "#1654B8", background: "#EFF6FF", borderRadius: 5, padding: "2px 6px" }}>{row.adName || "—"}</span>}
+                  </td>
+                  {/* Lời thoại */}
+                  <td style={{ padding: "9px 12px" }}>
+                    {isEditing
+                      ? <textarea value={ed.script} onChange={e => setEditDraft(p => ({ ...p!, script: e.target.value }))} placeholder="Lời thoại…" rows={2} style={{ ...cellInp, resize: "vertical", fontFamily: "inherit" }} />
+                      : row.script
+                        ? <span className="line-clamp-2" style={{ color: "#374151", fontSize: 12, lineHeight: 1.5, cursor: "help", whiteSpace: "pre-wrap" }} title={row.script}>{row.script}</span>
+                        : <span style={{ color: "#D1D5DB", fontSize: 12 }}>—</span>}
                   </td>
                   {/* Ghi chú */}
                   <td style={{ padding: "9px 12px" }}>
@@ -407,6 +416,10 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   {/* Ad Name — tự sinh sau khi lưu */}
                   <td style={{ padding: "8px 12px" }}>
                     <span style={{ color: "#9CA3AF", fontSize: 11, fontStyle: "italic" }}>tự sinh…</span>
+                  </td>
+                  {/* Lời thoại */}
+                  <td style={{ padding: "8px 12px" }}>
+                    <span style={{ color: "#9CA3AF", fontSize: 11, fontStyle: "italic" }}>thêm sau…</span>
                   </td>
                   <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 5 }}>

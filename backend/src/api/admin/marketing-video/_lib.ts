@@ -45,6 +45,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
       status       VARCHAR(20) DEFAULT 'todo',
       note         TEXT,
       ad_name      VARCHAR(128),
+      script       TEXT,
       created_by   VARCHAR(255) NOT NULL,
       created_at   TIMESTAMPTZ DEFAULT now(),
       updated_at   TIMESTAMPTZ DEFAULT now()
@@ -53,6 +54,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`CREATE SEQUENCE IF NOT EXISTS mkt_video_vd_seq START 1001`)
   // Backfill cột ad_name nếu bảng đã tồn tại trước khi có cột này
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ad_name VARCHAR(128)`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS script TEXT`)
   _tablesReady = true
 }
 

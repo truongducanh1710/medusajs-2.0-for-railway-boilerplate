@@ -20,6 +20,7 @@ function toUiRow(r: any) {
     postDate: r.post_date,
     createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "",
     adName: r.ad_name || computeAdName(r),
+    script: r.script || "",
     nguon: r.source === "ctv" ? "CTV" : "Team",
     nguoiLam: r.maker,
     sp: r.product || "",
@@ -118,8 +119,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const { rows: [row] } = await pool.query(
       `INSERT INTO mkt_video
-        (vd_code, post_date, source, maker, product, product_code, video_type, link, status, note, ad_name, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        (vd_code, post_date, source, maker, product, product_code, video_type, link, status, note, ad_name, script, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         vdCode,
@@ -133,6 +134,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status,
         b.ghiChu ?? b.note ?? "",
         adName,
+        b.script ?? "",
         auth.email,
       ]
     )
