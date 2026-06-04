@@ -231,9 +231,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
       </div>
 
-      <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 1300, borderCollapse: "collapse", tableLayout: "fixed" }}>
+      <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 280px)" }}>
+        <div style={{ overflowX: "auto", flex: 1 }}>
+          <table style={{ width: "100%", minWidth: 1300, borderCollapse: "collapse", tableLayout: "fixed", height: "100%" }}>
             <colgroup>
               <col style={{ width: 36 }} />   {/* # */}
               <col style={{ width: 76 }} />   {/* VD */}
