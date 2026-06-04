@@ -26,11 +26,20 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     const sqlSvc = req.scope.resolve("cskhAnalysisModule") as any
     if (fb.ok) {
+      // Verify budget thật từ FB
+      let verifiedBudget = Math.round(budget)
+      try {
+        const verify = await callFbApi("GET", `/${campaign_id}?fields=daily_budget`)
+        if (verify.ok && verify.data?.daily_budget) {
+          verifiedBudget = Math.round(Number(verify.data.daily_budget))
+        }
+      } catch { /* fallback giá trị local */ }
+
       await sqlSvc.sql(
         `UPDATE mkt_ads_cost SET daily_budget = $1, updated_at = now()
          WHERE campaign_id = $2
            AND date = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`,
-        [Math.round(budget), campaign_id]
+        [verifiedBudget, campaign_id]
       ).catch(() => {})
     }
 
