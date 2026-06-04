@@ -220,10 +220,12 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
 // Tab: Lịch đăng — lịch sử tất cả bài đã đăng + lên lịch
 // ============================================================================
 const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
-  success:   { label: "Đã đăng",   c: "#059669", bg: "#DCFCE7" },
-  scheduled: { label: "Lên lịch",  c: "#D97706", bg: "#FEF3C7" },
-  failed:    { label: "Lỗi",       c: "#DC2626", bg: "#FEE2E2" },
-  pending:   { label: "Chờ",       c: "#6B7280", bg: "#F3F4F6" },
+  success:   { label: "Đã đăng",  c: "#059669", bg: "#DCFCE7" },
+  published: { label: "Đã đăng",  c: "#059669", bg: "#DCFCE7" },
+  scheduled: { label: "Lên lịch", c: "#D97706", bg: "#FEF3C7" },
+  failed:    { label: "Lỗi",      c: "#DC2626", bg: "#FEE2E2" },
+  pending:   { label: "Chờ",      c: "#6B7280", bg: "#F3F4F6" },
+  running:   { label: "Đang xử lý", c: "#2563EB", bg: "#DBEAFE" },
 }
 const MEDIA_ICON: Record<string, string> = { video: "🎬", photo: "🖼️", text: "📝" }
 
