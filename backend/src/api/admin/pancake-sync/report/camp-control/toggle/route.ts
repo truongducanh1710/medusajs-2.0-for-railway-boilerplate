@@ -23,22 +23,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const sqlSvc = req.scope.resolve("cskhAnalysisModule") as any
     if (fb.ok) {
-      // Verify status thật từ FB (tránh lệch nếu FB xử lý chậm hoặc trả về khác)
-      let verifiedStatus = newStatus
-      try {
-        const verify = await callFbApi("GET", `/${campaign_id}?fields=status,effective_status`)
-        if (verify.ok && verify.data?.status) {
-          verifiedStatus = verify.data.status
-        }
-      } catch { /* fallback giá trị local */ }
-
-      // Dùng timezone VN để tránh lệch ngày sau 23:00 (CURRENT_DATE = UTC, sai múi giờ)
+      // Update DB ngay với giá trị local (optimistic), rồi verify nền
       await sqlSvc.sql(
         `UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now()
          WHERE campaign_id = $2
            AND date = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`,
-        [verifiedStatus, campaign_id]
+        [newStatus, campaign_id]
       ).catch(() => {})
+
+      // Verify nền — không await, không chặn response
+      callFbApi("GET", `/${campaign_id}?fields=status`).then(verify => {
+        if (verify.ok && verify.data?.status && verify.data.status !== newStatus) {
+          sqlSvc.sql(
+            `UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now()
+             WHERE campaign_id = $2 AND date = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`,
+            [verify.data.status, campaign_id]
+          ).catch(() => {})
+        }
+      }).catch(() => {})
     }
 
     await logAction(req, {
