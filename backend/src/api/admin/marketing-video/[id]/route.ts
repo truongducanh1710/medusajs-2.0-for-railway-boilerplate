@@ -29,6 +29,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (b.loaiVideo !== undefined || b.video_type !== undefined) set("video_type", b.loaiVideo ?? b.video_type)
     if (b.nguon !== undefined || b.source !== undefined) set("source", (b.nguon === "CTV" || b.source === "ctv") ? "ctv" : "team")
     if (b.postDate !== undefined || b.post_date !== undefined) set("post_date", b.postDate ?? b.post_date)
+    if (b.adName !== undefined) set("ad_name", b.adName)
 
     if (!sets.length) return res.status(400).json({ error: "Không có trường nào để cập nhật" })
     sets.push(`updated_at = now()`)

@@ -9,6 +9,7 @@ function toUiRow(r: any) {
     ngayDang: r.post_date ? new Date(r.post_date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : "",
     postDate: r.post_date,
     createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "",
+    adName: r.ad_name || "",
     nguon: r.source === "ctv" ? "CTV" : "Team",
     nguoiLam: r.maker,
     sp: r.product || "",
@@ -82,22 +83,39 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await ensureTables(pool)
     const vdCode = await nextVdCode(pool)
 
+    // Lấy mkt_code của người tạo để sinh ad_name
+    const { Modules } = await import("@medusajs/framework/utils")
+    const userModule = (req as any).scope.resolve(Modules.USER)
+    const userDetail = await userModule.retrieveUser((req as any).auth_context.actor_id, { select: ["metadata"] })
+    const mktCode: string = (userDetail.metadata as any)?.mkt_code || maker.toUpperCase().replace(/\s+/g, "")
+
+    // Sinh sp_code từ tên SP (SP1, SP2...) hoặc dùng maker
+    const spRaw: string = b.sp ?? b.product ?? ""
+    const spCodeMatch = spRaw.match(/^(SP\d+)/i)
+    const spCode = spCodeMatch ? spCodeMatch[1].toUpperCase() : "SP"
+
+    const loaiCode = (b.loaiVideo ?? b.video_type ?? "Video AI")
+      .replace(/\s+/g, "").replace(/AI/i, "AI").toUpperCase().slice(0, 8)
+
+    const adName = `${mktCode}_${spCode}_${loaiCode}_${vdCode}`
+
     const { rows: [row] } = await pool.query(
       `INSERT INTO mkt_video
-        (vd_code, post_date, source, maker, product, product_code, video_type, link, status, note, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        (vd_code, post_date, source, maker, product, product_code, video_type, link, status, note, ad_name, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         vdCode,
         postDate,
         source,
         maker,
-        b.sp ?? b.product ?? "",
+        spRaw,
         b.productCode ?? b.product_code ?? null,
         b.loaiVideo ?? b.video_type ?? "Video AI",
         b.link ?? "",
         status,
         b.ghiChu ?? b.note ?? "",
+        adName,
         auth.email,
       ]
     )
