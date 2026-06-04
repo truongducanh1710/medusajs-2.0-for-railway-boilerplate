@@ -23,8 +23,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const sqlSvc = req.scope.resolve("cskhAnalysisModule") as any
     if (fb.ok) {
+      // Dùng timezone VN để tránh lệch ngày sau 23:00 (CURRENT_DATE = UTC, sai múi giờ)
       await sqlSvc.sql(
-        `UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now() WHERE campaign_id = $2 AND date = CURRENT_DATE`,
+        `UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now()
+         WHERE campaign_id = $2
+           AND date = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`,
         [newStatus, campaign_id]
       ).catch(() => {})
     }

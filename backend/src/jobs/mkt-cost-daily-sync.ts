@@ -77,6 +77,29 @@ async function syncDate(
 
         nextUrl = data.paging?.next ?? null
       }
+
+      // Pull status + budget và UPSERT (kể cả camp spend=0 trong ngày đó)
+      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${FB_TOKEN}`
+      let nextMeta: string | null = metaUrl
+      while (nextMeta) {
+        const metaData: any = await fetchJson(nextMeta)
+        if (metaData.error) break
+        for (const camp of (metaData.data ?? [])) {
+          const budget = camp.daily_budget || camp.lifetime_budget
+          const budgetValue = budget ? Math.round(Number(budget)) : null
+          const mktName = extractMkt(camp.name ?? "")
+          await cskhService.sql(`
+            INSERT INTO mkt_ads_cost
+              (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
+            VALUES ($1::date, $2, $3, $4, $5, 0, 0, 0, $6, $7)
+            ON CONFLICT (date, campaign_id) DO UPDATE SET
+              effective_status = EXCLUDED.effective_status,
+              daily_budget     = EXCLUDED.daily_budget,
+              updated_at       = now()
+          `, [date, mktName, actId, camp.id, camp.name ?? "", camp.status ?? null, budgetValue])
+        }
+        nextMeta = metaData.paging?.next ?? null
+      }
     } catch (err: any) {
       logger?.error?.(`[MktCostDaily] Error account ${actId} date=${date}: ${err.message}`)
       totalErrors++

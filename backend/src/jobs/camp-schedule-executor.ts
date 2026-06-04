@@ -56,11 +56,12 @@ export default async function campScheduleExecutor(container: MedusaContainer) {
 
     if (fb.ok) {
       // Update local
+      const todayVNDate = `(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`
       if (s.action === "set_budget") {
-        await sqlSvc.sql(`UPDATE mkt_ads_cost SET daily_budget = $1, updated_at = now() WHERE campaign_id = $2 AND date = CURRENT_DATE`,
+        await sqlSvc.sql(`UPDATE mkt_ads_cost SET daily_budget = $1, updated_at = now() WHERE campaign_id = $2 AND date = ${todayVNDate}`,
           [newValue.daily_budget, s.campaign_id]).catch(() => {})
       } else {
-        await sqlSvc.sql(`UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now() WHERE campaign_id = $2 AND date = CURRENT_DATE`,
+        await sqlSvc.sql(`UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now() WHERE campaign_id = $2 AND date = ${todayVNDate}`,
           [newValue.status, s.campaign_id]).catch(() => {})
       }
       await sqlSvc.sql(`UPDATE camp_schedule SET status = 'done', executed_at = now() WHERE id = $1`, [s.id])
