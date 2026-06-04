@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
+import { getPool, getAuthInfo, ensureTables, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 
 /** Map 1 DB row → shape UI design (field tiếng Việt). */
 function toUiRow(r: any) {
@@ -48,6 +48,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const pool = getPool()
+    await ensureTables(pool)
     const { rows } = await pool.query(
       `SELECT * FROM mkt_video ${where} ORDER BY post_date DESC NULLS LAST, created_at DESC`,
       params
@@ -77,6 +78,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const postDate: string | null = b.postDate ?? b.post_date ?? null
 
     const pool = getPool()
+    await ensureTables(pool)
     const vdCode = await nextVdCode(pool)
 
     const { rows: [row] } = await pool.query(

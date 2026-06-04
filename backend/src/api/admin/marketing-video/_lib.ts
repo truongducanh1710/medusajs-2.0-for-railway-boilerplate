@@ -26,10 +26,35 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   return { email: user.email || "", isSuper, fbPageIds }
 }
 
-/** Sinh vd_code kế tiếp dạng "VD<n>". Tự tạo sequence nếu chưa có. */
-export async function nextVdCode(pool: Pool): Promise<string> {
-  // Đảm bảo sequence tồn tại (idempotent — safe khi gọi nhiều lần)
+let _tablesReady = false
+
+/** Tạo bảng + sequence nếu chưa có. Idempotent — gọi trước mỗi write operation. */
+export async function ensureTables(pool: Pool): Promise<void> {
+  if (_tablesReady) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mkt_video (
+      id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      vd_code      VARCHAR(16) UNIQUE NOT NULL DEFAULT 'VD0',
+      post_date    DATE,
+      source       VARCHAR(16) DEFAULT 'team',
+      maker        VARCHAR(64) NOT NULL,
+      product      VARCHAR(128),
+      product_code VARCHAR(64),
+      video_type   VARCHAR(32),
+      link         TEXT,
+      status       VARCHAR(20) DEFAULT 'todo',
+      note         TEXT,
+      created_by   VARCHAR(255) NOT NULL,
+      created_at   TIMESTAMPTZ DEFAULT now(),
+      updated_at   TIMESTAMPTZ DEFAULT now()
+    )
+  `)
   await pool.query(`CREATE SEQUENCE IF NOT EXISTS mkt_video_vd_seq START 1001`)
+  _tablesReady = true
+}
+
+/** Sinh vd_code kế tiếp dạng "VD<n>". */
+export async function nextVdCode(pool: Pool): Promise<string> {
   const { rows } = await pool.query(`SELECT nextval('mkt_video_vd_seq') AS n`)
   return `VD${rows[0].n}`
 }
