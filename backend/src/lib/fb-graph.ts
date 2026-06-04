@@ -94,23 +94,59 @@ async function publishVideoByUrl(pageId: string, pageToken: string, message: str
   return data.id
 }
 
-/** Upload video binary (fallback khi file_url fail). Tự xóa tmp ở finally. */
-async function publishVideoBinary(pageId: string, pageToken: string, message: string, driveDirectUrl: string, scheduledTime?: number): Promise<string> {
+/** Upload video dùng FB Resumable Upload (chunked) — đúng cách cho file >10MB. */
+async function publishVideoResumable(pageId: string, pageToken: string, message: string, driveDirectUrl: string, scheduledTime?: number): Promise<string> {
   let tmpPath: string | null = null
   try {
     tmpPath = await downloadToTmp(driveDirectUrl)
+    const stat = await fs.promises.stat(tmpPath)
+    const fileSize = stat.size
+
+    // Bước 1: khởi tạo upload session
+    const initForm = new FormData()
+    initForm.append("upload_phase", "start")
+    initForm.append("access_token", pageToken)
+    initForm.append("file_size", String(fileSize))
+    const initRes = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: initForm })
+    const initText = await initRes.text()
+    let initData: any
+    try { initData = JSON.parse(initText) } catch { throw new Error(`FB init parse: ${initText.slice(0, 300)}`) }
+    if (initData?.error) throw new FbError(initData.error.message, initData.error.code)
+    const uploadSessionId = initData.upload_session_id
+
+    // Bước 2: upload từng chunk 10MB
+    const CHUNK = 10 * 1024 * 1024
     const buf = await fs.promises.readFile(tmpPath)
-    const form = new FormData()
-    form.append("description", message)
-    form.append("access_token", pageToken)
-    if (scheduledTime) { form.append("published", "false"); form.append("scheduled_publish_time", String(scheduledTime)) }
-    form.append("source", new Blob([buf]), "video.mp4")
-    const res = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: form })
-    const rawText = await res.text()
-    let data: any
-    try { data = JSON.parse(rawText) } catch { throw new Error(`FB parse error: ${rawText.slice(0, 300)}`) }
-    if (data?.error) throw new FbError(data.error.message, data.error.code)
-    return data.id
+    let offset = 0
+    while (offset < fileSize) {
+      const chunk = buf.slice(offset, offset + CHUNK)
+      const chunkForm = new FormData()
+      chunkForm.append("upload_phase", "transfer")
+      chunkForm.append("access_token", pageToken)
+      chunkForm.append("upload_session_id", uploadSessionId)
+      chunkForm.append("start_offset", String(offset))
+      chunkForm.append("video_file_chunk", new Blob([chunk]), "chunk.mp4")
+      const chunkRes = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: chunkForm })
+      const chunkText = await chunkRes.text()
+      let chunkData: any
+      try { chunkData = JSON.parse(chunkText) } catch { throw new Error(`FB chunk parse: ${chunkText.slice(0, 300)}`) }
+      if (chunkData?.error) throw new FbError(chunkData.error.message, chunkData.error.code)
+      offset = chunkData.start_offset ?? (offset + chunk.length)
+    }
+
+    // Bước 3: finish — commit video
+    const finishForm = new FormData()
+    finishForm.append("upload_phase", "finish")
+    finishForm.append("access_token", pageToken)
+    finishForm.append("upload_session_id", uploadSessionId)
+    finishForm.append("description", message)
+    if (scheduledTime) { finishForm.append("published", "false"); finishForm.append("scheduled_publish_time", String(scheduledTime)) }
+    const finishRes = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: finishForm })
+    const finishText = await finishRes.text()
+    let finishData: any
+    try { finishData = JSON.parse(finishText) } catch { throw new Error(`FB finish parse: ${finishText.slice(0, 300)}`) }
+    if (finishData?.error) throw new FbError(finishData.error.message, finishData.error.code)
+    return finishData.video_id || finishData.id
   } finally {
     await cleanupTmp(tmpPath)
   }
@@ -137,8 +173,8 @@ export async function publishPost(opts: {
       const id = await publishVideoByUrl(pageId, pageToken, message, direct, scheduledTime)
       return { post_id: id }
     } catch {
-      // fallback: tải về upload binary
-      const id = await publishVideoBinary(pageId, pageToken, message, direct, scheduledTime)
+      // fallback: resumable upload (chunked 10MB) — đúng cho file lớn
+      const id = await publishVideoResumable(pageId, pageToken, message, direct, scheduledTime)
       return { post_id: id }
     }
   }
