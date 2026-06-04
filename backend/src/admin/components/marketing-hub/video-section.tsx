@@ -604,9 +604,148 @@ function BaoCaoTab() {
 }
 
 // ============================================================================
+// Tab: Hướng dẫn — quy tắc đặt tên & upload link video
+// ============================================================================
+function HuongDanTab({ mktCode }: { mktCode: string | null }) {
+  const code = mktCode || "MKT_CODE"
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+  const exAI   = `${code}_SP1_AI_${today}_v1.mp4`
+  const exReal = `${code}_SP3_REAL_${today}_v1.mp4`
+  const exV2   = `${code}_SP1_AI_${today}_v2.mp4`
+
+  const s = {
+    card:   { background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" } as React.CSSProperties,
+    h:      { color: "#111827", fontWeight: 700, fontSize: 15, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 } as React.CSSProperties,
+    label:  { color: "#6B7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 6 },
+    code:   { background: "#F0F6FF", border: "1px solid #BFDBFE", borderRadius: 7, padding: "8px 14px", fontFamily: "monospace", fontSize: 13, color: "#1654B8", display: "block", marginBottom: 6 } as React.CSSProperties,
+    note:   { color: "#6B7280", fontSize: 12, marginTop: 4 } as React.CSSProperties,
+    step:   { display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 14 } as React.CSSProperties,
+    num:    { background: "#1877F2", color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 } as React.CSSProperties,
+    warn:   { background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 10, padding: "12px 16px", display: "flex", gap: 10, alignItems: "flex-start" } as React.CSSProperties,
+    ok:     { background: "#DCFCE7", border: "1px solid #BBF7D0", borderRadius: 10, padding: "12px 16px", display: "flex", gap: 10, alignItems: "flex-start" } as React.CSSProperties,
+    tag:    (c: string, bg: string) => ({ background: bg, color: c, borderRadius: 5, padding: "2px 8px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }) as React.CSSProperties,
+  }
+
+  const SP_CODES = [
+    ["SP1", "Hộp Inox 304"], ["SP2", "Chảo Titan"], ["SP3", "Nồi Chiên Không Dầu"],
+    ["SP4", "Thùng Hạt"], ["SP5", "Máy Lọc Nước"], ["SP6", "Ấm Siêu Tốc"],
+  ]
+  const LOAI_CODES = [
+    ["AI", "Video AI — dựng bằng AI, voiceover tự động"],
+    ["REAL", "Real — quay thực tế, người thật"],
+    ["REVIEW", "Review — đánh giá sản phẩm, unboxing"],
+  ]
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 860 }}>
+
+      {/* 1. Naming convention */}
+      <div style={s.card}>
+        <div style={s.h}>📝 Quy tắc đặt tên file video</div>
+
+        <div style={s.label}>Format chuẩn</div>
+        <div style={s.code}>[MKT_CODE]_[SP_CODE]_[LOAI]_[YYYYMMDD]_v[version].mp4</div>
+
+        <div style={s.label}>Ví dụ thực tế (MKT code của bạn: <span style={{ color: "#1877F2", fontWeight: 700 }}>{code}</span>)</div>
+        <div style={s.code}>{exAI}</div>
+        <div style={s.code}>{exReal}</div>
+        <div style={{ ...s.code, marginBottom: 0 }}>{exV2} <span style={{ color: "#9CA3AF", fontSize: 11 }}>← nếu render lại</span></div>
+
+        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={s.label}>SP_CODE</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+            {SP_CODES.map(([code, name]) => (
+              <div key={code} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={s.tag("#1654B8", "#EFF6FF")}>{code}</span>
+                <span style={{ color: "#4B5563", fontSize: 12 }}>{name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={s.label}>LOAI</div>
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 5 }}>
+            {LOAI_CODES.map(([code, desc]) => (
+              <div key={code} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={s.tag("#059669", "#DCFCE7")}>{code}</span>
+                <span style={{ color: "#4B5563", fontSize: 12 }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Cấu trúc folder Drive */}
+      <div style={s.card}>
+        <div style={s.h}>📁 Cấu trúc folder Google Drive</div>
+        <div style={{ background: "#F8FAFC", border: "1px solid #E5E7EB", borderRadius: 10, padding: "14px 18px", fontFamily: "monospace", fontSize: 12, color: "#374151", lineHeight: 2 }}>
+          <div>📁 <b>Phan Viet — Video MKT/</b></div>
+          <div style={{ paddingLeft: 20 }}>📁 <b>2026-06/</b> <span style={{ color: "#9CA3AF" }}>(tháng hiện tại)</span></div>
+          <div style={{ paddingLeft: 40 }}>📁 <b>SP1 - Hộp Inox 304/</b></div>
+          <div style={{ paddingLeft: 60, color: "#1654B8" }}>{exAI}</div>
+          <div style={{ paddingLeft: 40 }}>📁 <b>SP3 - Nồi Chiên Không Dầu/</b></div>
+          <div style={{ paddingLeft: 60, color: "#1654B8" }}>{exReal}</div>
+          <div style={{ paddingLeft: 20 }}>📁 <b>2026-07/</b></div>
+          <div style={{ paddingLeft: 40, color: "#9CA3AF" }}>...</div>
+        </div>
+        <div style={{ ...s.note, marginTop: 10 }}>Upload đúng tháng và đúng SP folder — admin kiểm tra theo folder này khi duyệt.</div>
+      </div>
+
+      {/* 3. Quy trình lấy link */}
+      <div style={s.card}>
+        <div style={s.h}>🔗 Cách lấy link Drive để paste vào bảng</div>
+        {[
+          ["Upload file vào đúng folder Drive (xem cấu trúc trên)", ""],
+          ["Chuột phải vào file → \"Chia sẻ\" → đổi quyền thành \"Bất kỳ ai có đường liên kết\"", "Nếu để chế độ riêng tư, admin/leader không xem được khi duyệt"],
+          ["Chuột phải → \"Sao chép đường liên kết\" → paste vào cột Link trong bảng", ""],
+          ["Đổi trạng thái sang \"Chờ duyệt\" để leader biết có video cần review", ""],
+        ].map(([text, warn], i) => (
+          <div key={i} style={s.step}>
+            <div style={s.num}>{i + 1}</div>
+            <div>
+              <div style={{ color: "#111827", fontSize: 13 }}>{text}</div>
+              {warn && <div style={{ color: "#D97706", fontSize: 12, marginTop: 3 }}>⚠️ {warn}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 4. Đúng / Sai */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={s.ok}>
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div>
+            <div style={{ color: "#15803D", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Đúng</div>
+            {[exAI, exReal, exV2].map(e => <div key={e} style={{ fontFamily: "monospace", fontSize: 11, color: "#166534", marginBottom: 4 }}>{e}</div>)}
+          </div>
+        </div>
+        <div style={s.warn}>
+          <span style={{ fontSize: 18 }}>❌</span>
+          <div>
+            <div style={{ color: "#92400E", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Sai — dễ bị nhầm</div>
+            {[
+              ["video1.mp4", "thiếu code, không biết của ai"],
+              [`sp1_${today}.mp4`, "thiếu MKT_CODE và LOAI"],
+              ["Video AI hộp inox.mp4", "tên tiếng Việt, có dấu cách"],
+              [`${code}_sp1_ai_${today}_v1.mp4`, "chữ thường — nên viết HOA"],
+            ].map(([name, reason]) => (
+              <div key={name} style={{ marginBottom: 6 }}>
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: "#92400E" }}>{name}</div>
+                <div style={{ fontSize: 11, color: "#B45309" }}>→ {reason}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+// ============================================================================
 // Page
 // ============================================================================
-// onDangFB: do route cha truyền vào — chuyển sang tab Đăng Facebook + prefill (cùng trang).
 export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }) {
   const [tab, setTab] = useState("bang")
   const [rows, setRows] = useState<VideoRow[]>([])
@@ -620,10 +759,11 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
   }, [])
 
   const tabs = [
-    { id: "bang", label: "Bảng" },
-    { id: "kanban", label: "Kanban" },
+    { id: "bang",      label: "Bảng" },
+    { id: "kanban",    label: "Kanban" },
     { id: "theonguoi", label: "Theo người" },
-    { id: "baocao", label: "Báo cáo" },
+    { id: "baocao",    label: "Báo cáo" },
+    { id: "huongdan",  label: "📋 Hướng dẫn" },
   ]
 
   return (
@@ -634,10 +774,11 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
         ))}
       </div>
       <div style={{ padding: 20 }}>
-        {tab === "bang" && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
-        {tab === "kanban" && <KanbanTab rows={rows} reload={reload} />}
+        {tab === "bang"      && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
+        {tab === "kanban"    && <KanbanTab rows={rows} reload={reload} />}
         {tab === "theonguoi" && <TheoNguoiTab rows={rows} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
-        {tab === "baocao" && <BaoCaoTab />}
+        {tab === "baocao"    && <BaoCaoTab />}
+        {tab === "huongdan"  && <HuongDanTab mktCode={mktCode} />}
       </div>
     </div>
   )
