@@ -85,9 +85,13 @@ const LOAI_LIST = ["Video AI", "Real", "Review"]
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
+type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string }
+
 function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
-  const [editId, setEditId] = useState<string | null>(null)
-  // filter theo mkt_code; admin mặc định "all"
+  const [statusDropId, setStatusDropId] = useState<string | null>(null)
+  const [editRowId, setEditRowId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
@@ -110,7 +114,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   }, [])
 
   useEffect(() => {
-    const fn = () => setEditId(null)
+    const fn = () => { setStatusDropId(null); setDeleteConfirmId(null) }
     document.addEventListener("click", fn)
     return () => document.removeEventListener("click", fn)
   }, [])
@@ -119,10 +123,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     if (adding) spRef.current?.focus()
   }, [adding])
 
-  // Lookup: mkt_code → name (để POST maker = tên hiển thị)
   const mktCodeToName = (code: string) => mktUsers.find(u => u.mkt_code === code)?.name || code
-  // Lookup: name → mkt_code (để filter)
-  const nameToMktCode = (name: string) => mktUsers.find(u => u.name === name)?.mkt_code || name
 
   const openAdd = () => {
     const defaultPerson = (!isSuper && mktCode) ? mktCodeToName(mktCode) : (mktUsers[0]?.name || "")
@@ -139,17 +140,11 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
       const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm" })
       setAdding(false)
       const id = res?.row?.id || res?.id || null
-      if (id) {
-        setNewRowId(id)
-        setTimeout(() => setNewRowId(null), 2000)
-      }
+      if (id) { setNewRowId(id); setTimeout(() => setNewRowId(null), 2000) }
       setToast("Đã thêm: " + draft.sp)
       reload()
-    } catch (e: any) {
-      setToast("Lỗi: " + e.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+    finally { setSaving(false) }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -158,9 +153,32 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   }
 
   const updateStatus = async (id: string, s: string) => {
-    setEditId(null)
+    setStatusDropId(null)
     try { await apiJson(`/admin/marketing-video/${id}`, "PATCH", { trangThai: s }); reload() }
     catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
+  const startEdit = (row: VideoRow) => {
+    setEditRowId(row.id)
+    setEditDraft({ nguoiLam: row.nguoiLam, sp: row.sp, loaiVideo: row.loaiVideo, link: row.link || "", ghiChu: row.ghiChu || "", postDate: row.postDate || "" })
+    setDeleteConfirmId(null)
+  }
+
+  const cancelEdit = () => { setEditRowId(null); setEditDraft(null) }
+
+  const saveEdit = async (id: string) => {
+    if (!editDraft) return
+    try {
+      await apiJson(`/admin/marketing-video/${id}`, "PATCH", editDraft)
+      setToast("Đã lưu"); cancelEdit(); reload()
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
+  const deleteRow = async (id: string) => {
+    try {
+      await apiJson(`/admin/marketing-video/${id}`, "DELETE")
+      setDeleteConfirmId(null); setToast("Đã xóa dòng"); reload()
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
 
   const filtered = rows.filter(r => {
@@ -224,30 +242,62 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row, idx) => (
-                <tr key={row.id} className="hover-bg" style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: newRowId === row.id ? "#EFF6FF" : undefined }}>
+              {filtered.map((row, idx) => {
+                const isEditing = editRowId === row.id
+                const ed = editDraft!
+                const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
+                return (
+                <tr key={row.id} className={isEditing ? "" : "hover-bg"} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: rowBg, outline: isEditing ? "2px solid #93C5FD" : "none", outlineOffset: -1 }}>
                   <td style={{ padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
                   <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
-                  <td style={{ padding: "9px 12px", color: "#4B5563", fontSize: 12, whiteSpace: "nowrap" }}>{row.ngayDang || "—"}</td>
+                  {/* Ngày */}
+                  <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
+                    {isEditing
+                      ? <input type="date" value={ed.postDate || ""} onChange={e => setEditDraft(p => ({ ...p!, postDate: e.target.value }))} style={cellInp} />
+                      : <span style={{ color: "#4B5563", fontSize: 12 }}>{row.ngayDang || "—"}</span>}
+                  </td>
                   <td style={{ padding: "9px 12px" }}>
                     <span style={{ background: row.nguon === "Team" ? "#DBEAFE" : "#F0F1F5", color: row.nguon === "Team" ? "#1e40af" : "#4B5563", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>{row.nguon}</span>
                   </td>
-                  <td style={{ padding: "9px 12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <Avatar name={row.nguoiLam} size={22} />
-                      <span style={{ color: "#111827", fontSize: 13, fontWeight: 500 }}>{row.nguoiLam}</span>
-                    </div>
+                  {/* Người làm */}
+                  <td style={{ padding: "9px 12px", minWidth: isEditing ? 130 : undefined }}>
+                    {isEditing
+                      ? <select value={ed.nguoiLam} onChange={e => setEditDraft(p => ({ ...p!, nguoiLam: e.target.value }))} style={cellInp}>
+                          {mktUsers.map(u => <option key={u.email} value={u.name}>{u.name}{u.mkt_code ? ` · ${u.mkt_code}` : ""}</option>)}
+                        </select>
+                      : <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <Avatar name={row.nguoiLam} size={22} />
+                          <span style={{ color: "#111827", fontSize: 13, fontWeight: 500 }}>{row.nguoiLam}</span>
+                        </div>}
                   </td>
-                  <td style={{ padding: "9px 12px", maxWidth: 170 }}><span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{row.sp}</span></td>
-                  <td style={{ padding: "9px 12px" }}><VideoTypeChip type={row.loaiVideo} /></td>
-                  <td style={{ padding: "9px 12px" }}>
-                    {row.link ? <a href={row.link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>↗ Drive</a> : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
+                  {/* Sản phẩm */}
+                  <td style={{ padding: "9px 12px", maxWidth: isEditing ? undefined : 170, minWidth: isEditing ? 180 : undefined }}>
+                    {isEditing
+                      ? <select value={ed.sp} onChange={e => setEditDraft(p => ({ ...p!, sp: e.target.value }))} style={cellInp}>
+                          {spList.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      : <span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{row.sp}</span>}
                   </td>
+                  {/* Loại */}
+                  <td style={{ padding: "9px 12px" }}>
+                    {isEditing
+                      ? <select value={ed.loaiVideo} onChange={e => setEditDraft(p => ({ ...p!, loaiVideo: e.target.value }))} style={cellInp}>
+                          {LOAI_LIST.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      : <VideoTypeChip type={row.loaiVideo} />}
+                  </td>
+                  {/* Link */}
+                  <td style={{ padding: "9px 12px", minWidth: isEditing ? 160 : undefined }}>
+                    {isEditing
+                      ? <input value={ed.link} onChange={e => setEditDraft(p => ({ ...p!, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
+                      : row.link ? <a href={row.link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>↗ Drive</a> : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
+                  </td>
+                  {/* Trạng thái */}
                   <td style={{ padding: "9px 12px" }}>
                     <div style={{ position: "relative", display: "inline-block" }} onClick={e => e.stopPropagation()}>
-                      <StatusPill status={row.trangThai} onClick={() => setEditId(editId === row.id ? null : row.id)} />
-                      {editId === row.id && (
-                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 500, background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.10),0 2px 4px rgba(0,0,0,0.05)", padding: "4px 0", minWidth: 130 }}>
+                      <StatusPill status={row.trangThai} onClick={() => setStatusDropId(statusDropId === row.id ? null : row.id)} />
+                      {statusDropId === row.id && (
+                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 500, background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", padding: "4px 0", minWidth: 130 }}>
                           {ALL_STATUSES.map(s => (
                             <button key={s} onClick={() => updateStatus(row.id, s)} className="hover-bg" style={{ display: "flex", alignItems: "center", padding: "6px 10px", width: "100%", background: "none", border: "none", cursor: "pointer" }}>
                               <StatusPill status={s} />
@@ -257,14 +307,43 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       )}
                     </div>
                   </td>
-                  <td style={{ padding: "9px 12px", maxWidth: 150 }}><span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{row.ghiChu || "—"}</span></td>
+                  {/* Ghi chú */}
+                  <td style={{ padding: "9px 12px", maxWidth: isEditing ? undefined : 150, minWidth: isEditing ? 150 : undefined }}>
+                    {isEditing
+                      ? <input value={ed.ghiChu} onChange={e => setEditDraft(p => ({ ...p!, ghiChu: e.target.value }))} placeholder="Ghi chú…" style={cellInp} onKeyDown={e => { if (e.key === "Enter") saveEdit(row.id); if (e.key === "Escape") cancelEdit() }} />
+                      : <span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{row.ghiChu || "—"}</span>}
+                  </td>
+                  {/* Actions */}
                   <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
-                    {(row.trangThai === "Xong" || row.trangThai === "Chờ duyệt") && (
-                      <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
+                    {isEditing ? (
+                      <div style={{ display: "flex", gap: 5 }}>
+                        <button onClick={() => saveEdit(row.id)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ Lưu</button>
+                        <button onClick={cancelEdit} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        {(row.trangThai === "Xong" || row.trangThai === "Chờ duyệt") && (
+                          <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
+                        )}
+                        <button onClick={e => { e.stopPropagation(); startEdit(row) }} title="Chỉnh sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>✏️</button>
+                        <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
+                          <button onClick={() => setDeleteConfirmId(deleteConfirmId === row.id ? null : row.id)} title="Xóa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#EF4444" }}>🗑</button>
+                          {deleteConfirmId === row.id && (
+                            <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 500, background: "#FFF", border: "1px solid #FECACA", borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", padding: "10px 14px", minWidth: 160, whiteSpace: "nowrap" }}>
+                              <div style={{ color: "#111827", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Xóa dòng này?</div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => deleteRow(row.id)} style={{ background: "#EF4444", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Xóa</button>
+                                <button onClick={() => setDeleteConfirmId(null)} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Hủy</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
               {filtered.length === 0 && !adding && (
                 <tr><td colSpan={11} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
               )}
