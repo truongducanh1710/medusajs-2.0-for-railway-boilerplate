@@ -217,24 +217,111 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
 }
 
 // ============================================================================
-// Tab: Lịch đăng
+// Tab: Lịch đăng — lịch sử tất cả bài đã đăng + lên lịch
 // ============================================================================
+const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
+  success:   { label: "Đã đăng",   c: "#059669", bg: "#DCFCE7" },
+  scheduled: { label: "Lên lịch",  c: "#D97706", bg: "#FEF3C7" },
+  failed:    { label: "Lỗi",       c: "#DC2626", bg: "#FEE2E2" },
+  pending:   { label: "Chờ",       c: "#6B7280", bg: "#F3F4F6" },
+}
+const MEDIA_ICON: Record<string, string> = { video: "🎬", photo: "🖼️", text: "📝" }
+
 function LichDangTab() {
   const [posts, setPosts] = useState<any[]>([])
-  useEffect(() => { apiJson("/admin/fb-content?posts=1&status=scheduled").then(d => setPosts(d.posts || [])).catch(() => {}) }, [])
+  const [filterStatus, setFilterStatus] = useState("all")
+  const [filterFrom, setFilterFrom] = useState("")
+  const [filterTo, setFilterTo]   = useState("")
+  const [loading, setLoading] = useState(true)
+
+  const load = () => {
+    setLoading(true)
+    const params = new URLSearchParams({ posts: "1" })
+    if (filterStatus !== "all") params.set("status", filterStatus)
+    if (filterFrom) params.set("from", filterFrom)
+    if (filterTo)   params.set("to",   filterTo)
+    apiJson(`/admin/fb-content?${params}`)
+      .then(d => setPosts(d.posts || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [filterStatus, filterFrom, filterTo])
+
+  const inp: React.CSSProperties = { background: "#FFFFFF", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none" }
+
+  // Group theo ngày
+  const grouped: Record<string, any[]> = {}
+  for (const p of posts) {
+    const d = new Date(p.created_at || p.scheduled_for || Date.now())
+    const key = d.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })
+    ;(grouped[key] = grouped[key] || []).push(p)
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ color: "#4B5563", fontSize: 13 }}>Các bài đã lên lịch ({posts.length})</div>
-      <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
-        {posts.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có bài lên lịch</div>}
-        {posts.map((p, i) => (
-          <div key={p.id} className="hover-bg" style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < posts.length - 1 ? "1px solid #E5E7EB" : "none" }}>
-            <div style={{ color: "#1877F2", fontSize: 12, fontWeight: 700, minWidth: 120 }}>{p.scheduled_for ? new Date(p.scheduled_for).toLocaleString("vi-VN") : "—"}</div>
-            <div style={{ color: "#111827", fontSize: 13, fontWeight: 500, minWidth: 150 }}>{p.page_name}</div>
-            <div className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12, flex: 1 }}>{p.message}</div>
-          </div>
-        ))}
+      {/* Filter bar */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={inp}>
+          <option value="all">Tất cả trạng thái</option>
+          <option value="success">Đã đăng</option>
+          <option value="scheduled">Lên lịch</option>
+          <option value="failed">Lỗi</option>
+        </select>
+        <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={inp} placeholder="Từ ngày" />
+        <span style={{ color: "#9CA3AF" }}>→</span>
+        <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} style={inp} placeholder="Đến ngày" />
+        <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{posts.length} bài</span>
       </div>
+
+      {loading && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
+
+      {!loading && posts.length === 0 && (
+        <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có bài nào</div>
+      )}
+
+      {/* Group theo ngày */}
+      {Object.entries(grouped).map(([day, dayPosts]) => (
+        <div key={day}>
+          <div style={{ color: "#6B7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{day}</div>
+          <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+            {dayPosts.map((p, i) => {
+              const st = STATUS_POST[p.status] || STATUS_POST.pending
+              const time = new Date(p.created_at || p.scheduled_for).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+              const mediaIcon = MEDIA_ICON[p.media_type] || "📝"
+              return (
+                <div key={p.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", borderBottom: i < dayPosts.length - 1 ? "1px solid #F3F4F6" : "none" }}>
+                  {/* Time + status */}
+                  <div style={{ minWidth: 70, textAlign: "center", paddingTop: 2 }}>
+                    <div style={{ color: "#374151", fontSize: 12, fontWeight: 600 }}>{time}</div>
+                    <span style={{ background: st.bg, color: st.c, borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>{st.label}</span>
+                  </div>
+                  {/* Icon loại */}
+                  <div style={{ fontSize: 20, paddingTop: 2 }}>{mediaIcon}</div>
+                  {/* Content */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ color: "#111827", fontSize: 13, fontWeight: 600 }}>{p.page_name || "—"}</span>
+                      {p.post_id && (
+                        <a href={`https://facebook.com/${p.post_id}`} target="_blank" rel="noopener noreferrer"
+                          style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
+                      )}
+                    </div>
+                    <div className="line-clamp-2" style={{ color: "#4B5563", fontSize: 12, lineHeight: 1.5 }}>{p.message || "—"}</div>
+                    {p.error_msg && <div style={{ color: "#DC2626", fontSize: 11, marginTop: 4 }}>⚠️ {p.error_msg}</div>}
+                    {p.created_by && <div style={{ color: "#9CA3AF", fontSize: 11, marginTop: 4 }}>by {p.created_by}</div>}
+                  </div>
+                  {/* Drive link nếu có */}
+                  {p.drive_url && (
+                    <a href={p.drive_url} target="_blank" rel="noopener noreferrer"
+                      style={{ color: "#6B7280", fontSize: 11, textDecoration: "none", paddingTop: 2, whiteSpace: "nowrap" }}>📁 Drive</a>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
