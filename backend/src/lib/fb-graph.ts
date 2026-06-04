@@ -114,24 +114,25 @@ async function publishVideoResumable(pageId: string, pageToken: string, message:
     if (initData?.error) throw new FbError(initData.error.message, initData.error.code)
     const uploadSessionId = initData.upload_session_id
 
-    // Bước 2: upload từng chunk 10MB
-    const CHUNK = 10 * 1024 * 1024
+    // Bước 2: upload từng chunk theo end_offset FB trả về
     const buf = await fs.promises.readFile(tmpPath)
-    let offset = 0
-    while (offset < fileSize) {
-      const chunk = buf.slice(offset, offset + CHUNK)
+    let startOffset = Number(initData.start_offset ?? 0)
+    let endOffset = Number(initData.end_offset ?? fileSize)
+    while (startOffset < fileSize) {
+      const chunk = buf.slice(startOffset, endOffset)
       const chunkForm = new FormData()
       chunkForm.append("upload_phase", "transfer")
       chunkForm.append("access_token", pageToken)
       chunkForm.append("upload_session_id", uploadSessionId)
-      chunkForm.append("start_offset", String(offset))
+      chunkForm.append("start_offset", String(startOffset))
       chunkForm.append("video_file_chunk", new Blob([chunk]), "chunk.mp4")
       const chunkRes = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: chunkForm })
       const chunkText = await chunkRes.text()
       let chunkData: any
       try { chunkData = JSON.parse(chunkText) } catch { throw new Error(`FB chunk parse: ${chunkText.slice(0, 300)}`) }
       if (chunkData?.error) throw new FbError(chunkData.error.message, chunkData.error.code)
-      offset = chunkData.start_offset ?? (offset + chunk.length)
+      startOffset = Number(chunkData.start_offset)
+      endOffset   = Number(chunkData.end_offset)
     }
 
     // Bước 3: finish — commit video
