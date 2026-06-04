@@ -98,6 +98,7 @@ export default defineMiddlewares({
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
 
     // Marketing Hub — nguyên liệu video (thay Google Sheet)
+    { matcher: "/admin/permissions/mkt-users", method: ["GET"], middlewares: [requirePerm("page.marketing-video.view")] },
     { matcher: "/admin/marketing-video*", method: ["GET"], middlewares: [requirePerm("page.marketing-video.view")] },
     { matcher: "/admin/marketing-video*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.marketing-video.edit")] },
 

@@ -344,31 +344,51 @@ function KanbanTab({ rows, reload }: { rows: VideoRow[]; reload: () => void }) {
 }
 
 // ============================================================================
-// Tab: Theo người
+// Tab: Theo người — lấy từ users có role marketing + mkt_code
 // ============================================================================
+type MktUser = { email: string; name: string; mkt_code: string | null }
+
 function TheoNguoiTab({ rows, myEmail }: { rows: VideoRow[]; myEmail: string }) {
   const [showAll, setShowAll] = useState(true)
-  const people = ["Hậu", "Khải", "Quân"]
+  const [mktUsers, setMktUsers] = useState<MktUser[]>([])
+
+  useEffect(() => {
+    apiJson(`/admin/permissions/mkt-users`)
+      .then(d => setMktUsers(d.users || []))
+      .catch(() => {})
+  }, [])
+
   const visibleRows = showAll ? rows : rows.filter(r => r.createdBy === myEmail)
-  const peopleToShow = showAll ? people : [...new Set(visibleRows.map(r => r.nguoiLam))]
+
+  // Ghép rows với mktUsers theo field nguoiLam (maker) — match theo name hoặc mkt_code
+  const usersToShow = mktUsers.length > 0
+    ? (showAll ? mktUsers : mktUsers.filter(u => u.email === myEmail))
+    : []
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         {[["Tất cả", true], ["Của tôi", false]].map(([label, val]) => (
           <button key={String(label)} onClick={() => setShowAll(val as boolean)} style={{ background: showAll === val ? "#1877F2" : "#FFFFFF", color: showAll === val ? "#fff" : "#4B5563", border: `1px solid ${showAll === val ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{label}</button>
         ))}
+        {mktUsers.length === 0 && <span style={{ color: "#9CA3AF", fontSize: 12 }}>Đang tải…</span>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
-        {peopleToShow.map(name => {
-          const pRows = visibleRows.filter(r => r.nguoiLam === name)
+        {usersToShow.map(user => {
+          const pRows = visibleRows.filter(r => r.nguoiLam === user.name || r.nguoiLam === user.mkt_code)
           const stats = ALL_STATUSES.reduce((a, s) => ({ ...a, [s]: pRows.filter(r => r.trangThai === s).length }), {} as Record<string, number>)
           return (
-            <div key={name} style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
+            <div key={user.email} style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
               <div style={{ padding: "16px 18px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", gap: 12 }}>
-                <Avatar name={name} size={42} />
+                <Avatar name={user.name} size={42} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ color: "#111827", fontWeight: 700, fontSize: 16 }}>{name}</div>
-                  <div style={{ color: "#9CA3AF", fontSize: 12 }}>{pRows.length} video</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ color: "#111827", fontWeight: 700, fontSize: 16 }}>{user.name}</span>
+                    {user.mkt_code && (
+                      <span style={{ background: "#EFF6FF", color: "#1877F2", border: "1px solid #BFDBFE", borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{user.mkt_code}</span>
+                    )}
+                  </div>
+                  <div style={{ color: "#9CA3AF", fontSize: 12 }}>{user.email} · {pRows.length} video</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: "#1877F2", fontWeight: 800, fontSize: 24 }}>{stats["Đã đăng"] || 0}</div>
@@ -381,6 +401,7 @@ function TheoNguoiTab({ rows, myEmail }: { rows: VideoRow[]; myEmail: string }) 
                     <StatusPill status={s} /><span style={{ color: "#4B5563", fontSize: 12, fontWeight: 600 }}>{stats[s]}</span>
                   </div>
                 ))}
+                {ALL_STATUSES.every(s => !stats[s]) && <span style={{ color: "#D1D5DB", fontSize: 12 }}>Chưa có video nào</span>}
               </div>
               <div style={{ maxHeight: 220, overflowY: "auto" }}>
                 {pRows.map((r, i) => (
@@ -396,6 +417,9 @@ function TheoNguoiTab({ rows, myEmail }: { rows: VideoRow[]; myEmail: string }) 
             </div>
           )
         })}
+        {usersToShow.length === 0 && mktUsers.length > 0 && (
+          <div style={{ color: "#9CA3AF", fontSize: 13, padding: "20px 0" }}>Không có dữ liệu</div>
+        )}
       </div>
     </div>
   )
