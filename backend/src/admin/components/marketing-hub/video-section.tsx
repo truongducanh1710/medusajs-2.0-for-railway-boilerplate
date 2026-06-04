@@ -80,14 +80,9 @@ function Toast({ msg, onDone }: { msg: string; onDone: () => void }) {
 // ============================================================================
 // Tab: Bảng
 // ============================================================================
-const SP_LIST = [
-  "SP1 - Hộp Inox 304", "SP2 - Chảo Titan", "SP3 - Nồi Chiên Không Dầu",
-  "SP4 - Thùng Hạt", "SP5 - Máy Lọc Nước", "SP6 - Ấm Siêu Tốc",
-]
-const NGUOI_LIST = ["Hậu", "Khải", "Quân"]
 const LOAI_LIST = ["Video AI", "Real", "Review"]
 
-type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; ghiChu: string }
+type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
 function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void }) {
   const [editId, setEditId] = useState<string | null>(null)
@@ -96,8 +91,28 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
   const [newRowId, setNewRowId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [draft, setDraft] = useState<QuickAdd>({ sp: SP_LIST[0], nguoiLam: NGUOI_LIST[0], loaiVideo: LOAI_LIST[0], ghiChu: "" })
+  const [spList, setSpList] = useState<string[]>([])
+  const [nguoiList, setNguoiList] = useState<string[]>([])
+  const [draft, setDraft] = useState<QuickAdd>({ sp: "", nguoiLam: "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
   const spRef = useRef<HTMLSelectElement>(null)
+
+  // Fetch products từ Medusa + mkt users một lần khi mount
+  useEffect(() => {
+    apiFetch("/admin/products?limit=100&fields=id,title,handle")
+      .then(r => r.json())
+      .then(d => {
+        const titles = (d.products || []).map((p: any) => p.title).filter(Boolean)
+        setSpList(titles)
+      })
+      .catch(() => {})
+
+    apiJson("/admin/permissions/mkt-users")
+      .then(d => {
+        const names = (d.users || []).map((u: any) => u.mkt_code || u.name).filter(Boolean)
+        setNguoiList(names)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const fn = () => setEditId(null)
@@ -110,7 +125,7 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
   }, [adding])
 
   const openAdd = () => {
-    setDraft({ sp: SP_LIST[0], nguoiLam: NGUOI_LIST[0], loaiVideo: LOAI_LIST[0], ghiChu: "" })
+    setDraft({ sp: spList[0] || "", nguoiLam: nguoiList[0] || "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
     setAdding(true)
   }
 
@@ -120,7 +135,7 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
     if (saving) return
     setSaving(true)
     try {
-      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, trangThai: "Cần làm" })
+      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm" })
       setAdding(false)
       const id = res?.row?.id || res?.id || null
       if (id) {
@@ -149,7 +164,7 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
 
   const filtered = rows.filter(r => {
     if (filters.nguoi !== "all" && r.nguoiLam !== filters.nguoi) return false
-    if (filters.sp !== "all" && !r.sp.startsWith(filters.sp)) return false
+    if (filters.sp !== "all" && r.sp !== filters.sp) return false
     if (filters.tts !== "all" && r.trangThai !== filters.tts) return false
     if (filters.q && !r.sp.toLowerCase().includes(filters.q.toLowerCase()) && !(r.ghiChu || "").toLowerCase().includes(filters.q.toLowerCase())) return false
     return true
@@ -166,15 +181,18 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
           <span style={{ margin: "0 0 0 10px", color: "#9CA3AF", fontSize: 13 }}>⌕</span>
           <input value={filters.q} onChange={e => setFilters(p => ({ ...p, q: e.target.value }))} placeholder="Tìm sản phẩm, ghi chú…" style={{ flex: 1, background: "none", border: "none", outline: "none", padding: "7px 10px", fontSize: 12, color: "#111827" }} />
         </div>
-        {[
-          { k: "nguoi" as const, opts: [["all", "Tất cả người"], ["Hậu", "Hậu"], ["Khải", "Khải"], ["Quân", "Quân"]] },
-          { k: "sp" as const, opts: [["all", "Tất cả SP"], ["SP1", "SP1 - Hộp Inox"], ["SP2", "SP2 - Chảo Titan"], ["SP3", "SP3 - Nồi Chiên"], ["SP4", "SP4 - Thùng Hạt"], ["SP5", "SP5 - Máy Lọc"], ["SP6", "SP6 - Ấm Siêu Tốc"]] },
-          { k: "tts" as const, opts: [["all", "Trạng thái"], ...ALL_STATUSES.map(s => [s, s])] },
-        ].map(({ k, opts }) => (
-          <select key={k} value={(filters as any)[k]} onChange={e => setFilters(p => ({ ...p, [k]: e.target.value }))} style={inp}>
-            {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        ))}
+        <select value={filters.nguoi} onChange={e => setFilters(p => ({ ...p, nguoi: e.target.value }))} style={inp}>
+          <option value="all">Tất cả người</option>
+          {nguoiList.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={filters.sp} onChange={e => setFilters(p => ({ ...p, sp: e.target.value }))} style={inp}>
+          <option value="all">Tất cả SP</option>
+          {spList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filters.tts} onChange={e => setFilters(p => ({ ...p, tts: e.target.value }))} style={inp}>
+          <option value="all">Trạng thái</option>
+          {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
       </div>
 
@@ -244,12 +262,14 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
                   </td>
                   <td style={{ padding: "8px 12px", minWidth: 110 }}>
                     <select value={draft.nguoiLam} onChange={e => setDraft(p => ({ ...p, nguoiLam: e.target.value }))} style={cellInp}>
-                      {NGUOI_LIST.map(n => <option key={n} value={n}>{n}</option>)}
+                      {nguoiList.length === 0 && <option value="">Đang tải…</option>}
+                      {nguoiList.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: "8px 12px", minWidth: 200 }}>
                     <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={cellInp}>
-                      {SP_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                      {spList.length === 0 && <option value="">Đang tải…</option>}
+                      {spList.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: "8px 12px", minWidth: 110 }}>
@@ -257,7 +277,9 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
                       {LOAI_LIST.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>—</td>
+                  <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                    <input value={draft.link} onChange={e => setDraft(p => ({ ...p, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
+                  </td>
                   <td style={{ padding: "8px 12px" }}>
                     <StatusPill status="Cần làm" />
                   </td>
