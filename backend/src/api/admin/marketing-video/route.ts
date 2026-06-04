@@ -2,6 +2,15 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, ensureTables, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 
+/** Tính ad_name từ các field có sẵn — dùng khi DB chưa có ad_name. */
+function computeAdName(r: any): string {
+  const mktCode = (r.maker || "MKT").toUpperCase().replace(/\s+/g, "").slice(0, 10)
+  const spMatch = (r.product || "").match(/^(SP\d+)/i)
+  const spCode = spMatch ? spMatch[1].toUpperCase() : "SP"
+  const loaiCode = (r.video_type || "VIDEO").replace(/\s+/g, "").toUpperCase().slice(0, 8)
+  return `${mktCode}_${spCode}_${loaiCode}_${r.vd_code}`
+}
+
 /** Map 1 DB row → shape UI design (field tiếng Việt). */
 function toUiRow(r: any) {
   return {
@@ -10,7 +19,7 @@ function toUiRow(r: any) {
     ngayDang: r.post_date ? new Date(r.post_date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : "",
     postDate: r.post_date,
     createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "",
-    adName: r.ad_name || "",
+    adName: r.ad_name || computeAdName(r),
     nguon: r.source === "ctv" ? "CTV" : "Team",
     nguoiLam: r.maker,
     sp: r.product || "",
@@ -56,6 +65,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       `SELECT * FROM mkt_video ${where} ORDER BY post_date DESC NULLS LAST, created_at DESC`,
       params
     )
+    // Backfill ad_name cho các dòng cũ chưa có
+    const needsFill = rows.filter(r => !r.ad_name)
+    if (needsFill.length > 0) {
+      await Promise.all(needsFill.map(r =>
+        pool.query(`UPDATE mkt_video SET ad_name = $1 WHERE id = $2`, [computeAdName(r), r.id])
+      ))
+      needsFill.forEach(r => { r.ad_name = computeAdName(r) })
+    }
     return res.json({ rows: rows.map(toUiRow), total: rows.length })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
