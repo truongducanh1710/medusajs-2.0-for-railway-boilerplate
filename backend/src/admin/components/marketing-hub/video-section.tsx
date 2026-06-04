@@ -85,9 +85,9 @@ const LOAI_LIST = ["Video AI", "Real", "Review"]
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
-function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null }) {
+function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
   const [editId, setEditId] = useState<string | null>(null)
-  // MKT user mặc định chỉ thấy của mình, admin thấy tất cả
+  // filter theo mkt_code; admin mặc định "all"
   const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
@@ -95,24 +95,16 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
   const [spList, setSpList] = useState<string[]>([])
-  const [nguoiList, setNguoiList] = useState<string[]>([])
   const [draft, setDraft] = useState<QuickAdd>({ sp: "", nguoiLam: "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
   const spRef = useRef<HTMLSelectElement>(null)
 
-  // Fetch products từ Medusa + mkt users một lần khi mount
+  // Fetch products từ Medusa
   useEffect(() => {
     apiFetch("/admin/products?limit=100&fields=id,title,handle")
       .then(r => r.json())
       .then(d => {
         const titles = (d.products || []).map((p: any) => p.title).filter(Boolean)
         setSpList(titles)
-      })
-      .catch(() => {})
-
-    apiJson("/admin/permissions/mkt-users")
-      .then(d => {
-        const names = (d.users || []).map((u: any) => u.mkt_code || u.name).filter(Boolean)
-        setNguoiList(names)
       })
       .catch(() => {})
   }, [])
@@ -127,8 +119,14 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[
     if (adding) spRef.current?.focus()
   }, [adding])
 
+  // Lookup: mkt_code → name (để POST maker = tên hiển thị)
+  const mktCodeToName = (code: string) => mktUsers.find(u => u.mkt_code === code)?.name || code
+  // Lookup: name → mkt_code (để filter)
+  const nameToMktCode = (name: string) => mktUsers.find(u => u.name === name)?.mkt_code || name
+
   const openAdd = () => {
-    setDraft({ sp: spList[0] || "", nguoiLam: nguoiList[0] || "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
+    const defaultPerson = (!isSuper && mktCode) ? mktCodeToName(mktCode) : (mktUsers[0]?.name || "")
+    setDraft({ sp: spList[0] || "", nguoiLam: defaultPerson, loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
     setAdding(true)
   }
 
@@ -166,7 +164,11 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[
   }
 
   const filtered = rows.filter(r => {
-    if (filters.nguoi !== "all" && r.nguoiLam !== filters.nguoi) return false
+    if (filters.nguoi !== "all") {
+      // filters.nguoi là mkt_code — map sang name để match với r.nguoiLam (maker = tên)
+      const expectedName = mktCodeToName(filters.nguoi)
+      if (r.nguoiLam !== expectedName && r.nguoiLam !== filters.nguoi) return false
+    }
     if (filters.sp !== "all" && r.sp !== filters.sp) return false
     if (filters.tts !== "all" && r.trangThai !== filters.tts) return false
     if (filters.q && !r.sp.toLowerCase().includes(filters.q.toLowerCase()) && !(r.ghiChu || "").toLowerCase().includes(filters.q.toLowerCase())) return false
@@ -186,7 +188,11 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[
         </div>
         <select value={filters.nguoi} onChange={e => setFilters(p => ({ ...p, nguoi: e.target.value }))} style={inp}>
           <option value="all">Tất cả người</option>
-          {nguoiList.map(n => <option key={n} value={n}>{n}</option>)}
+          {mktUsers.map(u => (
+            <option key={u.email} value={u.mkt_code || u.name}>
+              {u.name}{u.mkt_code ? ` (${u.mkt_code})` : ""}
+            </option>
+          ))}
         </select>
         <select value={filters.sp} onChange={e => setFilters(p => ({ ...p, sp: e.target.value }))} style={inp}>
           <option value="all">Tất cả SP</option>
@@ -271,10 +277,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[
                   <td style={{ padding: "8px 12px" }}>
                     <span style={{ background: "#DBEAFE", color: "#1e40af", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>Team</span>
                   </td>
-                  <td style={{ padding: "8px 12px", minWidth: 110 }}>
+                  <td style={{ padding: "8px 12px", minWidth: 130 }}>
                     <select value={draft.nguoiLam} onChange={e => setDraft(p => ({ ...p, nguoiLam: e.target.value }))} style={cellInp}>
-                      {nguoiList.length === 0 && <option value="">Đang tải…</option>}
-                      {nguoiList.map(n => <option key={n} value={n}>{n}</option>)}
+                      {mktUsers.length === 0 && <option value="">Đang tải…</option>}
+                      {mktUsers.map(u => (
+                        <option key={u.email} value={u.name}>{u.name}{u.mkt_code ? ` · ${u.mkt_code}` : ""}</option>
+                      ))}
                     </select>
                   </td>
                   <td style={{ padding: "8px 12px", minWidth: 200 }}>
@@ -381,33 +389,22 @@ function KanbanTab({ rows, reload }: { rows: VideoRow[]; reload: () => void }) {
 // ============================================================================
 type MktUser = { email: string; name: string; mkt_code: string | null }
 
-function TheoNguoiTab({ rows, isSuper, mktCode }: { rows: VideoRow[]; isSuper: boolean; mktCode: string | null }) {
-  // Admin/super mặc định xem tổng; MKT user mặc định xem của mình
+function TheoNguoiTab({ rows, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
   const [showAll, setShowAll] = useState(isSuper || !mktCode)
-  const [mktUsers, setMktUsers] = useState<MktUser[]>([])
 
-  useEffect(() => {
-    apiJson(`/admin/permissions/mkt-users`)
-      .then(d => setMktUsers(d.users || []))
-      .catch(() => {})
-  }, [])
+  // Tên của user hiện tại (để match với maker trong DB)
+  const myName = mktUsers.find(u => u.mkt_code === mktCode)?.name ?? null
 
-  // MKT user "xem của mình": chỉ show card của chính mình
-  // "xem tổng": show tất cả MKT users
-  const usersToShow = mktUsers.length > 0
-    ? (showAll ? mktUsers : mktUsers.filter(u => u.mkt_code === mktCode || u.name === mktCode))
-    : []
-
-  // Rows phù hợp: nếu showAll → tất cả; nếu !showAll → chỉ rows của mkt_code mình
-  const visibleRows = showAll ? rows : rows.filter(r => r.nguoiLam === mktCode)
+  const usersToShow = showAll ? mktUsers : mktUsers.filter(u => u.mkt_code === mktCode)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        {/* Admin thấy cả 2 nút, MKT user cũng có nút toggle xem tổng */}
-        <button onClick={() => setShowAll(false)} style={{ background: !showAll ? "#1877F2" : "#FFFFFF", color: !showAll ? "#fff" : "#4B5563", border: `1px solid ${!showAll ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-          {mktCode ? `👤 Của tôi (${mktCode})` : "Của tôi"}
-        </button>
+        {mktCode && (
+          <button onClick={() => setShowAll(false)} style={{ background: !showAll ? "#1877F2" : "#FFFFFF", color: !showAll ? "#fff" : "#4B5563", border: `1px solid ${!showAll ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            👤 Của tôi ({mktCode})
+          </button>
+        )}
         <button onClick={() => setShowAll(true)} style={{ background: showAll ? "#1877F2" : "#FFFFFF", color: showAll ? "#fff" : "#4B5563", border: `1px solid ${showAll ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           🌐 Xem tổng
         </button>
@@ -415,7 +412,8 @@ function TheoNguoiTab({ rows, isSuper, mktCode }: { rows: VideoRow[]; isSuper: b
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
         {usersToShow.map(user => {
-          const pRows = rows.filter(r => r.nguoiLam === user.name || r.nguoiLam === user.mkt_code)
+          // maker trong DB = name (first_name+last_name)
+          const pRows = rows.filter(r => r.nguoiLam === user.name)
           const stats = ALL_STATUSES.reduce((a, s) => ({ ...a, [s]: pRows.filter(r => r.trangThai === s).length }), {} as Record<string, number>)
           return (
             <div key={user.email} style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
@@ -533,10 +531,14 @@ function BaoCaoTab() {
 export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }) {
   const [tab, setTab] = useState("bang")
   const [rows, setRows] = useState<VideoRow[]>([])
+  const [mktUsers, setMktUsers] = useState<MktUser[]>([])
   const { isSuper, mktCode } = useCurrentPermissions()
 
   const reload = () => { apiJson(`/admin/marketing-video`).then(d => setRows(d.rows || [])).catch(() => {}) }
-  useEffect(() => { reload() }, [])
+  useEffect(() => {
+    reload()
+    apiJson("/admin/permissions/mkt-users").then(d => setMktUsers(d.users || [])).catch(() => {})
+  }, [])
 
   const tabs = [
     { id: "bang", label: "Bảng" },
@@ -553,9 +555,9 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
         ))}
       </div>
       <div style={{ padding: 20 }}>
-        {tab === "bang" && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} />}
+        {tab === "bang" && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
         {tab === "kanban" && <KanbanTab rows={rows} reload={reload} />}
-        {tab === "theonguoi" && <TheoNguoiTab rows={rows} isSuper={isSuper} mktCode={mktCode} />}
+        {tab === "theonguoi" && <TheoNguoiTab rows={rows} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
         {tab === "baocao" && <BaoCaoTab />}
       </div>
     </div>
