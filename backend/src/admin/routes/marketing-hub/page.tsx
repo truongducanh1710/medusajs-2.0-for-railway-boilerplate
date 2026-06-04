@@ -4,10 +4,14 @@ import { VideoSection, type VideoRow } from "../../components/marketing-hub/vide
 import { FbContentSection, type FbPrefill } from "../../components/marketing-hub/fb-content-section"
 import { HieuQuaSection } from "../../components/marketing-hub/hieu-qua-section"
 import { QuanLyPageTab } from "../../components/marketing-hub/quan-ly-page-tab"
+import { AudienceTab } from "../../components/marketing-hub/audience-tab"
+import { useCurrentPermissions } from "../../lib/use-permissions"
 
 const MarketingHubPage = () => {
-  const [section, setSection] = useState<"video" | "fb" | "hieuqua" | "quanly">("video")
+  const [section, setSection] = useState<"video" | "fb" | "hieuqua" | "quanly" | "audience">("video")
   const [prefill, setPrefill] = useState<FbPrefill>(null)
+  const { isSuper, mktCode, has } = useCurrentPermissions()
+  const canAudience = isSuper || has("page.fb-content.post")
 
   const onDangFB = (row: VideoRow) => {
     setPrefill({ videoId: row.id, driveUrl: row.link || "", sp: row.sp, vd: row.vdCode })
@@ -19,6 +23,7 @@ const MarketingHubPage = () => {
     { id: "fb",       label: "Đăng Facebook" },
     { id: "hieuqua",  label: "Hiệu quả Video" },
     { id: "quanly",   label: "🗂 Quản lý Page" },
+    ...(canAudience ? [{ id: "audience", label: "🎯 Tệp đối tượng" }] : []),
   ] as const
 
   return (
@@ -43,6 +48,7 @@ const MarketingHubPage = () => {
       {section === "fb"      && <FbContentSection prefill={prefill} initialTab="dangbai" />}
       {section === "hieuqua" && <HieuQuaSection />}
       {section === "quanly"  && <div style={{ padding: 20 }}><QuanLyPageTab /></div>}
+      {section === "audience" && <div style={{ padding: 20 }}><AudienceTab isAdmin={isSuper} mktCode={mktCode} /></div>}
     </div>
   )
 }

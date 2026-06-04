@@ -43,6 +43,7 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
   const [ctaType, setCtaType] = useState("GET_OFFER")
   const [ageMin, setAgeMin] = useState(25)
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  const [funnel, setFunnel] = useState<"" | "top" | "middle" | "bottom">("")
 
   const [submitting, setSubmitting] = useState(false)
   const [progress, setProgress] = useState<string[]>([])
@@ -91,6 +92,27 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
   const toggleExcl = (id: string) => setExcluded(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
+
+  // Gợi ý tầng phễu: tự set audience + tick loại trừ theo bản chất
+  const applyFunnel = (f: "top" | "middle" | "bottom") => {
+    setFunnel(f)
+    const auds = meta.audiences
+    const find = (re: RegExp) => auds.filter(a => re.test(a.name)).map(a => a.id)
+    const purchaseIds = find(/^PUR_|PURCH|MUA HÀNG|ĐÃ MUA/i)
+    if (f === "top") {
+      // Lạnh: broad + loại trừ người đã mua
+      setAudience("BROAD")
+      setExcluded(new Set(purchaseIds))
+    } else if (f === "middle") {
+      // Ấm: retarget — vẫn loại trừ đã mua (chốt người quan tâm chưa mua)
+      setAudience("RETARGET")
+      setExcluded(new Set(purchaseIds))
+    } else {
+      // Nóng: upsell người đã mua → KHÔNG loại trừ
+      setAudience("UPSELL")
+      setExcluded(new Set())
+    }
+  }
 
   const canSubmit = accId && (
     mode === "existing_adset" ? adsetId : (budget >= 50000)
@@ -214,6 +236,29 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
                   <div>
                     <label style={lbl}>Tên Campaign (tự sinh)</label>
                     <div style={{ fontFamily: "monospace", fontSize: 11.5, color: "#1654B8", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "8px 10px", wordBreak: "break-all", lineHeight: 1.5 }}>{campNamePreview}</div>
+                  </div>
+                  {/* Gợi ý tầng phễu — chọn để tự set audience + loại trừ */}
+                  <div>
+                    <label style={lbl}>Tầng phễu (chọn để gợi ý loại trừ)</label>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {([
+                        ["top", "❄️ Lạnh", "Khách mới, loại trừ người đã mua"],
+                        ["middle", "🔥 Ấm", "Retarget người quan tâm chưa mua"],
+                        ["bottom", "💎 Nóng", "Upsell người đã mua"],
+                      ] as const).map(([f, label, desc]) => (
+                        <button key={f} type="button" onClick={() => applyFunnel(f)} title={desc}
+                          style={{ flex: 1, background: funnel === f ? "#1877F2" : "#F3F4F6", color: funnel === f ? "#fff" : "#4B5563", border: "none", borderRadius: 8, padding: "8px 6px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {funnel && (
+                      <div style={{ fontSize: 11, color: "#6B7280", marginTop: 5, background: "#F9FAFB", borderRadius: 6, padding: "6px 10px" }}>
+                        {funnel === "top" && "❄️ Khách lạnh: nhắm rộng + Advantage+, đã tự loại trừ người MUA HÀNG để khỏi đốt tiền."}
+                        {funnel === "middle" && "🔥 Khách ấm: chạy lại người đã xem/thêm giỏ, vẫn loại trừ người đã mua để chốt đơn mới."}
+                        {funnel === "bottom" && "💎 Khách nóng: upsell người đã mua sản phẩm khác — KHÔNG loại trừ."}
+                      </div>
+                    )}
                   </div>
                   {/* Mã SP */}
                   <div>

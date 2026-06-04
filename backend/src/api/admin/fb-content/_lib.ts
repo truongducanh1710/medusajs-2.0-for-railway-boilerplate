@@ -148,6 +148,46 @@ export async function getFbCampaignsWithAdsets(accId: string): Promise<Array<{ i
   }))
 }
 
+/** Tạo Website Custom Audience từ pixel event (Purchase/AddToCart/ViewContent...).
+ * Trả audience id. */
+export async function createWebsiteAudience(accId: string, opts: {
+  name: string; pixelId: string; event: string; retentionDays: number
+}): Promise<string> {
+  // rule chuẩn: ai fire event X trên pixel trong N ngày
+  const rule = {
+    inclusions: {
+      operator: "or",
+      rules: [{
+        event_sources: [{ type: "pixel", id: opts.pixelId }],
+        retention_seconds: opts.retentionDays * 86400,
+        filter: { operator: "and", filters: [{ field: "event", operator: "eq", value: opts.event }] },
+      }],
+    },
+  }
+  const d = await callFb("POST", `/${accId}/customaudiences`, {
+    name: opts.name,
+    subtype: "WEBSITE",
+    retention_days: opts.retentionDays,
+    rule: JSON.stringify(rule),
+    prefill: true,
+  })
+  return d.id
+}
+
+/** Tạo Lookalike audience từ 1 source audience (vd tệp Purchase). */
+export async function createLookalike(accId: string, opts: {
+  name: string; sourceAudienceId: string; ratio: number; country?: string
+}): Promise<string> {
+  const spec = { country: opts.country || "VN", ratio: opts.ratio / 100 }
+  const d = await callFb("POST", `/${accId}/customaudiences`, {
+    name: opts.name,
+    subtype: "LOOKALIKE",
+    origin_audience_id: opts.sourceAudienceId,
+    lookalike_spec: JSON.stringify(spec),
+  })
+  return d.id
+}
+
 /** Map camp → pixel: quét adsets của 1 account, lấy pixel_id + event + campaign.
  * Trả mỗi adset 1 dòng (1 camp có thể nhiều adset → group ở caller). */
 export async function getAdsetsPixelMap(accId: string): Promise<Array<{

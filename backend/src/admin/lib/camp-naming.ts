@@ -94,3 +94,28 @@ export function buildCampaignName(o: {
 export function buildAdName(vdCode: string, postId?: string): string {
   return postId ? `${vdCode} - ${postId}` : vdCode
 }
+
+// ============================================================================
+// Custom Audience — bộ chuẩn theo tầng phễu
+// ============================================================================
+export type AudienceGroup = "hot" | "exclude" | "lookalike"
+
+/** Bộ audience chuẩn tạo cho mỗi SP. event_type theo pixel custom event. */
+export const AUDIENCE_PRESETS: Array<{
+  key: string; group: AudienceGroup; label: string; event?: string
+  retention?: number; lookalike?: boolean; ratio?: number; desc: string
+}> = [
+  { key: "PUR",  group: "exclude",   label: "Đã mua 90 ngày",      event: "Purchase",            retention: 90,  desc: "Người ĐÃ MUA — loại trừ ở camp lạnh/ấm để khỏi đốt tiền lại" },
+  { key: "ATC",  group: "hot",       label: "Thêm giỏ 14 ngày",    event: "AddToCart",           retention: 14,  desc: "Người thêm giỏ chưa mua — retarget tầng giữa (ấm)" },
+  { key: "VC",   group: "hot",       label: "Xem SP 30 ngày",      event: "ViewContent",         retention: 30,  desc: "Người xem trang SP — retarget tầng giữa (ấm)" },
+  { key: "REG",  group: "hot",       label: "Điền form 30 ngày",   event: "CompleteRegistration", retention: 30, desc: "Người điền form Webcake — retarget người quan tâm cao" },
+  { key: "LAL",  group: "lookalike", label: "Tương tự người mua",  lookalike: true, ratio: 1,      desc: "Lookalike 1% từ tệp người mua — mở rộng tệp lạnh chất lượng" },
+]
+
+/** Tên audience chuẩn: [KEY]_[SP]_[Nd]  hoặc LAL_[SP]_1pct
+ *  VD: PUR_CHẢO VÀNG_90d, ATC_CHẢO VÀNG_14d, LAL_CHẢO VÀNG_1pct */
+export function buildAudienceName(key: string, spName: string, retention?: number, lookalike?: boolean, ratio = 1): string {
+  const sp = (spName || "SP").toUpperCase().trim()
+  if (lookalike) return `LAL_${sp}_${ratio}pct`
+  return `${key}_${sp}_${retention}d`
+}
