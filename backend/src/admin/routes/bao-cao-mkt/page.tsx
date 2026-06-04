@@ -2055,7 +2055,72 @@ export default function BaoCaoMktPage() {
 
             {pixelMapLoading && !data && <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Đang quét FB (có thể mất 10-20s)…</div>}
 
-            {/* Nhóm theo pixel */}
+            {/* Summary cards — tiến độ gộp pixel */}
+            {data && (() => {
+              const totalCamps = data.total_camps || 0
+              const commonCamps = data.common_camps || 0
+              const pct = totalCamps ? Math.round(commonCamps / totalCamps * 100) : 0
+              const cards = [
+                { label: "Tổng pixel đang dùng", value: data.total_pixels, sub: "càng ít càng tốt", color: data.total_pixels > 3 ? t.amber : t.green },
+                { label: "Tổng camp", value: totalCamps, sub: `${data.scanned_accounts} tài khoản`, color: t.blue },
+                { label: "Đã về PX CHUNG", value: `${pct}%`, sub: `${commonCamps}/${totalCamps} camp`, color: pct >= 70 ? t.green : t.amber },
+                { label: "SP cần gộp pixel", value: warnings.length, sub: "dùng >1 pixel", color: warnings.length ? t.red : t.green },
+              ]
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+                  {cards.map(c => (
+                    <div key={c.label} style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ color: t.textMuted, fontSize: 12, marginBottom: 6 }}>{c.label}</div>
+                      <div style={{ color: c.color, fontWeight: 800, fontSize: 26, lineHeight: 1 }}>{c.value}</div>
+                      <div style={{ color: t.textMuted, fontSize: 11, marginTop: 4 }}>{c.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
+            {/* Tổng quan pixel — bảng để quyết định gộp */}
+            {data && byPixel.length > 0 && (
+              <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${t.cardBorder}`, fontWeight: 700, color: t.text, fontSize: 14 }}>
+                  📍 Tổng quan Pixel ({byPixel.length}) — ưu tiên gộp pixel ít camp về PX CHUNG
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      {["Pixel", "Camp", "MKT dùng", "Số SP", "Spend 30d", ""].map(h => (
+                        <th key={h} style={{ textAlign: h === "Camp" || h === "Số SP" || h === "Spend 30d" ? "right" : "left", padding: "8px 14px", color: t.textMuted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", borderBottom: `1px solid ${t.cardBorder}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byPixel.map((p: any) => (
+                      <tr key={p.pixel_id} style={{ background: p.is_common ? (dark ? "rgba(16,185,129,0.08)" : "#f0fdf4") : "transparent" }}>
+                        <td style={{ padding: "8px 14px", borderBottom: `1px solid ${t.cardBorder}` }}>
+                          <span style={{ fontWeight: 600, color: t.text }}>{p.pixel_name}</span>
+                          {p.is_common && <span style={{ marginLeft: 6, fontSize: 10, color: t.green, fontWeight: 700 }}>● ĐÍCH GỘP</span>}
+                          <div style={{ fontFamily: "monospace", fontSize: 10, color: t.textMuted }}>{p.pixel_id}</div>
+                        </td>
+                        <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: t.text, borderBottom: `1px solid ${t.cardBorder}` }}>{p.camps}</td>
+                        <td style={{ padding: "8px 14px", borderBottom: `1px solid ${t.cardBorder}` }}>
+                          {(p.mkts || []).map((m: string) => <span key={m} style={{ fontSize: 11, fontWeight: 600, color: mktColor(m), marginRight: 6 }}>{m}</span>)}
+                        </td>
+                        <td style={{ padding: "8px 14px", textAlign: "right", color: t.textMuted, borderBottom: `1px solid ${t.cardBorder}` }}>{p.sp_count}</td>
+                        <td style={{ padding: "8px 14px", textAlign: "right", color: t.text, borderBottom: `1px solid ${t.cardBorder}` }}>{p.spend ? fmtTr(p.spend) : "—"}</td>
+                        <td style={{ padding: "8px 14px", borderBottom: `1px solid ${t.cardBorder}` }}>
+                          {!p.is_common && p.camps <= 15 && <span style={{ fontSize: 11, color: t.amber }}>→ nên gộp</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Chi tiết camp theo pixel */}
+            {data && byPixel.length > 0 && (
+              <div style={{ fontWeight: 700, color: t.text, fontSize: 14, marginBottom: 8 }}>Chi tiết camp theo pixel</div>
+            )}
             {data && Object.keys(groups).length === 0 && (
               <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>Không có camp nào.</div>
             )}

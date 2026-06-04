@@ -98,13 +98,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const rows = Object.values(campRows)
 
     // 5. Group theo pixel + warnings (SP dùng nhiều pixel)
-    const byPixel: Record<string, { pixel_id: string; pixel_name: string; camps: number; spend: number }> = {}
+    const byPixel: Record<string, { pixel_id: string; pixel_name: string; camps: number; spend: number; mkts: Set<string>; sps: Set<string>; is_common: boolean }> = {}
+    const COMMON_PIXEL = "941188901527786" // PX CHUNG VIETNAM — đích gộp về
     for (const r of rows as any[]) {
       const pid = r.pixel_id || "none"
-      if (!byPixel[pid]) byPixel[pid] = { pixel_id: pid, pixel_name: r.pixel_name, camps: 0, spend: 0 }
+      if (!byPixel[pid]) byPixel[pid] = { pixel_id: pid, pixel_name: r.pixel_name, camps: 0, spend: 0, mkts: new Set(), sps: new Set(), is_common: pid === COMMON_PIXEL }
       byPixel[pid].camps++
       byPixel[pid].spend += r.spend
+      if (r.mkt) byPixel[pid].mkts.add(r.mkt)
+      if (r.sp) byPixel[pid].sps.add(r.sp)
     }
+    const byPixelArr = Object.values(byPixel).map(p => ({
+      pixel_id: p.pixel_id, pixel_name: p.pixel_name, camps: p.camps, spend: p.spend,
+      is_common: p.is_common, mkts: [...p.mkts], sp_count: p.sps.size,
+    })).sort((a, b) => b.camps - a.camps)
     // Cảnh báo: cùng SP (chuẩn hoá) dùng >1 pixel
     const spPixels: Record<string, Set<string>> = {}
     for (const r of rows as any[]) {
@@ -118,9 +125,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const data = {
       rows,
-      byPixel: Object.values(byPixel).sort((a, b) => b.spend - a.spend),
+      byPixel: byPixelArr,
       warnings,
       total_camps: rows.length,
+      total_pixels: byPixelArr.length,
+      common_camps: byPixel[COMMON_PIXEL]?.camps || 0,
       scanned_accounts: accounts.length,
     }
     _cache = { at: Date.now(), data }
