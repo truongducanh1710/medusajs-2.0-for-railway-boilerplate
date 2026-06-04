@@ -26,8 +26,10 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   return { email: user.email || "", isSuper, fbPageIds }
 }
 
-/** Sinh vd_code kế tiếp dạng "VD<seq>" qua sequence DB (atomic, không trùng). */
+/** Sinh vd_code kế tiếp dạng "VD<n>". Tự tạo sequence nếu chưa có. */
 export async function nextVdCode(pool: Pool): Promise<string> {
+  // Đảm bảo sequence tồn tại (idempotent — safe khi gọi nhiều lần)
+  await pool.query(`CREATE SEQUENCE IF NOT EXISTS mkt_video_vd_seq START 1001`)
   const { rows } = await pool.query(`SELECT nextval('mkt_video_vd_seq') AS n`)
   return `VD${rows[0].n}`
 }
