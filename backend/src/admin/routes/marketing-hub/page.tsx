@@ -6,7 +6,7 @@ import { HieuQuaSection } from "../../components/marketing-hub/hieu-qua-section"
 import { QuanLyPageTab } from "../../components/marketing-hub/quan-ly-page-tab"
 
 const MarketingHubPage = () => {
-  const [section, setSection] = useState<"video" | "fb" | "hieuqua">("video")
+  const [section, setSection] = useState<"video" | "fb" | "hieuqua" | "quanly">("video")
   const [prefill, setPrefill] = useState<FbPrefill>(null)
 
   const onDangFB = (row: VideoRow) => {

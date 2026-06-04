@@ -14,6 +14,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const { account_name, mkt_name, active, note } = req.body as any
     const svc = getService(req)
 
+    const { allowed_mkt_codes } = req.body as any
+
+    // Đảm bảo cột allowed_mkt_codes tồn tại
+    await svc.sql(`ALTER TABLE fb_ad_account ADD COLUMN IF NOT EXISTS allowed_mkt_codes TEXT[] DEFAULT '{}'`)
+
     const sets: string[] = ["updated_at = now()"]
     const params: any[] = []
 
@@ -21,6 +26,10 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (mkt_name !== undefined) { params.push(mkt_name.trim().toUpperCase()); sets.push(`mkt_name = $${params.length}`) }
     if (active !== undefined) { params.push(Boolean(active)); sets.push(`active = $${params.length}`) }
     if (note !== undefined) { params.push(note.trim()); sets.push(`note = $${params.length}`) }
+    if (allowed_mkt_codes !== undefined) {
+      const codes = Array.isArray(allowed_mkt_codes) ? allowed_mkt_codes.map((c: string) => c.trim().toUpperCase()).filter(Boolean) : []
+      params.push(codes); sets.push(`allowed_mkt_codes = $${params.length}`)
+    }
 
     if (sets.length === 1) return res.status(400).json({ error: "Không có field nào để cập nhật" })
 

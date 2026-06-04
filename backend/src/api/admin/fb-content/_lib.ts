@@ -71,10 +71,84 @@ export async function ensureTables(pool: Pool): Promise<void> {
       finished_at TIMESTAMPTZ
     )
   `)
+  // Boost columns — tạo camp/ad từ bài đăng
+  await pool.query(`ALTER TABLE fb_scheduled_post ADD COLUMN IF NOT EXISTS campaign_id VARCHAR(64)`)
+  await pool.query(`ALTER TABLE fb_scheduled_post ADD COLUMN IF NOT EXISTS adset_id VARCHAR(64)`)
+  await pool.query(`ALTER TABLE fb_scheduled_post ADD COLUMN IF NOT EXISTS ad_id VARCHAR(64)`)
+  await pool.query(`ALTER TABLE fb_scheduled_post ADD COLUMN IF NOT EXISTS boost_status VARCHAR(20) DEFAULT 'none'`)
   _tablesReady = true
 }
 
-export type AuthInfo = { email: string; isSuper: boolean; isAdmin: boolean; fbPageIds: string[] | null }
+// ============================================================================
+// FB Graph API helpers cho tính năng Lên Camp
+// ============================================================================
+const FB_GRAPH = "https://graph.facebook.com/v18.0"
+
+/** System User Token (không hết hạn) → fallback FB_ACCESS_TOKEN. */
+export function getSysToken(): string {
+  return process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
+}
+
+/** Gọi FB Graph API. method GET/POST. body cho POST (form-encoded). */
+export async function callFb(method: "GET" | "POST", path: string, body?: Record<string, any>): Promise<any> {
+  const token = getSysToken()
+  const url = `${FB_GRAPH}${path}${path.includes("?") ? "&" : "?"}access_token=${token}`
+  const opts: any = { method }
+  if (method === "POST" && body) {
+    const form = new URLSearchParams()
+    for (const [k, v] of Object.entries(body)) {
+      form.append(k, typeof v === "object" ? JSON.stringify(v) : String(v))
+    }
+    opts.body = form
+  }
+  const res = await fetch(url, opts)
+  const text = await res.text()
+  let data: any
+  try { data = JSON.parse(text) } catch { throw new Error(`FB parse error: ${text.slice(0, 300)}`) }
+  if (data?.error) throw new Error(`FB: ${data.error.message} (code ${data.error.code})`)
+  return data
+}
+
+/** Lấy tất cả ad accounts (có name) — đọc paging. */
+export async function getFbAdAccounts(): Promise<Array<{ id: string; name: string; account_status: number }>> {
+  let url = `/me/adaccounts?fields=id,name,account_status&limit=50`
+  const all: any[] = []
+  while (url) {
+    const d = await callFb("GET", url)
+    all.push(...(d.data || []))
+    url = d.paging?.next ? d.paging.next.replace(FB_GRAPH, "").replace(/&access_token=[^&]*/, "") : ""
+  }
+  return all
+}
+
+/** Custom audiences của 1 ad account. */
+export async function getFbAudiences(accId: string): Promise<Array<{ id: string; name: string; subtype: string }>> {
+  let url = `/${accId}/customaudiences?fields=id,name,subtype&limit=50`
+  const all: any[] = []
+  while (url) {
+    const d = await callFb("GET", url)
+    all.push(...(d.data || []))
+    url = d.paging?.next ? d.paging.next.replace(FB_GRAPH, "").replace(/&access_token=[^&]*/, "") : ""
+  }
+  return all
+}
+
+/** Pixels của 1 ad account. */
+export async function getFbPixels(accId: string): Promise<Array<{ id: string; name: string }>> {
+  const d = await callFb("GET", `/${accId}/adspixels?fields=id,name&limit=50`)
+  return d.data || []
+}
+
+/** Campaigns + adsets của 1 ad account (để chọn adset có sẵn — Mode A). */
+export async function getFbCampaignsWithAdsets(accId: string): Promise<Array<{ id: string; name: string; status: string; adsets: Array<{ id: string; name: string; status: string }> }>> {
+  const d = await callFb("GET", `/${accId}/campaigns?fields=id,name,status,adsets{id,name,status}&limit=30`)
+  return (d.data || []).map((c: any) => ({
+    id: c.id, name: c.name, status: c.status,
+    adsets: (c.adsets?.data || []).map((a: any) => ({ id: a.id, name: a.name, status: a.status })),
+  }))
+}
+
+export type AuthInfo = { email: string; isSuper: boolean; isAdmin: boolean; fbPageIds: string[] | null; mktCode: string | null }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {
   const auth = (req as any).auth_context
@@ -86,7 +160,8 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   const isAdmin = isSuper || perms.includes("users.manage")
   const raw = (user.metadata as any)?.fb_page_ids
   const fbPageIds = isAdmin ? null : (Array.isArray(raw) ? raw.map(String) : [])
-  return { email: user.email || "", isSuper, isAdmin, fbPageIds }
+  const mktCode = (user.metadata as any)?.mkt_code ?? null
+  return { email: user.email || "", isSuper, isAdmin, fbPageIds, mktCode }
 }
 
 const CACHE_TTL_HOURS = 24

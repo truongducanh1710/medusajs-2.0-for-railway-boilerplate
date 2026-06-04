@@ -17,11 +17,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (q.posts === "1") {
       const params: any[] = []
       let where = "WHERE 1=1"
-      if (q.status) { params.push(q.status); where += ` AND status = $${params.length}` }
-      if (q.from) { params.push(q.from); where += ` AND COALESCE(scheduled_for, created_at) >= $${params.length}` }
-      if (q.to)   { params.push(q.to);   where += ` AND COALESCE(scheduled_for, created_at) <= $${params.length}` }
+      if (q.status) { params.push(q.status); where += ` AND p.status = $${params.length}` }
+      if (q.from) { params.push(q.from); where += ` AND COALESCE(p.scheduled_for, p.created_at) >= $${params.length}` }
+      if (q.to)   { params.push(q.to);   where += ` AND COALESCE(p.scheduled_for, p.created_at) <= $${params.length}` }
+      // JOIN mkt_video để lấy vd_code + product (cho tính năng Lên Camp)
       const { rows } = await pool.query(
-        `SELECT * FROM fb_scheduled_post ${where} ORDER BY COALESCE(scheduled_for, created_at) DESC LIMIT 200`,
+        `SELECT p.*, v.vd_code, v.product
+           FROM fb_scheduled_post p
+           LEFT JOIN mkt_video v ON v.id = p.video_id
+         ${where} ORDER BY COALESCE(p.scheduled_for, p.created_at) DESC LIMIT 200`,
         params
       )
       return res.json({ posts: rows })

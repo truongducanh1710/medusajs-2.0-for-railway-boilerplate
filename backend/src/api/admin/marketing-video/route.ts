@@ -2,13 +2,10 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, ensureTables, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 
-/** Tính ad_name từ các field có sẵn — dùng khi DB chưa có ad_name. */
+/** Tên Ad (tên quảng cáo cho video) — mặc định = VD_CODE.
+ * Khi lên camp, ad name thật sẽ là "[VD_CODE] - [post_id]" (xử lý ở boost route). */
 function computeAdName(r: any): string {
-  const mktCode = (r.maker || "MKT").toUpperCase().replace(/\s+/g, "").slice(0, 10)
-  const spMatch = (r.product || "").match(/^(SP\d+)/i)
-  const spCode = spMatch ? spMatch[1].toUpperCase() : "SP"
-  const loaiCode = (r.video_type || "VIDEO").replace(/\s+/g, "").toUpperCase().slice(0, 8)
-  return `${mktCode}_${spCode}_${loaiCode}_${r.vd_code}`
+  return r.vd_code
 }
 
 /** Map 1 DB row → shape UI design (field tiếng Việt). */
@@ -66,13 +63,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       `SELECT * FROM mkt_video ${where} ORDER BY post_date DESC NULLS LAST, created_at DESC`,
       params
     )
-    // Backfill ad_name cho các dòng cũ chưa có
-    const needsFill = rows.filter(r => !r.ad_name)
+    // Backfill ad_name: dòng chưa có, hoặc còn format auto cũ (MKT_SP_LOAI_VD...)
+    const OLD_AUTO = /_SP_(REAL|REVIEW|VIDEOAI|VIDEO)_VD/i
+    const needsFill = rows.filter(r => !r.ad_name || OLD_AUTO.test(r.ad_name))
     if (needsFill.length > 0) {
-      await Promise.all(needsFill.map(r =>
-        pool.query(`UPDATE mkt_video SET ad_name = $1 WHERE id = $2`, [computeAdName(r), r.id])
-      ))
-      needsFill.forEach(r => { r.ad_name = computeAdName(r) })
+      await Promise.all(needsFill.map(r => {
+        r.ad_name = computeAdName(r)
+        return pool.query(`UPDATE mkt_video SET ad_name = $1 WHERE id = $2`, [r.ad_name, r.id])
+      }))
     }
     return res.json({ rows: rows.map(toUiRow), total: rows.length })
   } catch (err: any) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { BoostCampModal, type BoostTarget } from "./boost-camp-modal"
 
 export type FbPrefill = { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null
 
@@ -356,6 +357,9 @@ function LichDangTab() {
   const [filterTo, setFilterTo]   = useState("")
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar")
+  const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
+  const { mktCode, has, isSuper } = useCurrentPermissions()
+  const canBoost = isSuper || has("page.fb-content.post")
 
   const load = () => {
     setLoading(true)
@@ -447,17 +451,29 @@ function LichDangTab() {
                     {p.error_msg && <div style={{ color: "#DC2626", fontSize: 11, marginTop: 4 }}>⚠️ {p.error_msg}</div>}
                     {p.created_by && <div style={{ color: "#9CA3AF", fontSize: 11, marginTop: 4 }}>by {p.created_by}</div>}
                   </div>
-                  {/* Drive link nếu có */}
-                  {p.drive_url && (
-                    <a href={p.drive_url} target="_blank" rel="noopener noreferrer"
-                      style={{ color: "#6B7280", fontSize: 11, textDecoration: "none", paddingTop: 2, whiteSpace: "nowrap" }}>📁 Drive</a>
-                  )}
+                  {/* Actions */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                    {p.drive_url && (
+                      <a href={p.drive_url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: "#6B7280", fontSize: 11, textDecoration: "none", whiteSpace: "nowrap" }}>📁 Drive</a>
+                    )}
+                    {canBoost && p.post_id && p.media_type === "video" && (
+                      p.boost_status === "active"
+                        ? <span style={{ fontSize: 11, color: "#059669", fontWeight: 600, whiteSpace: "nowrap" }}>✓ Đã lên camp</span>
+                        : <button onClick={() => setBoostTarget({ postId: p.id, pageName: p.page_name, vdCode: p.vd_code, productName: p.product || "", mktCode })}
+                            style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>🚀 Lên Camp</button>
+                    )}
+                  </div>
                 </div>
               )
             })}
           </div>
         </div>
       ))}
+
+      {boostTarget && (
+        <BoostCampModal target={boostTarget} onClose={() => setBoostTarget(null)} onDone={load} />
+      )}
     </div>
   )
 }
