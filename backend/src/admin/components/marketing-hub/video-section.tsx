@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
+import { useCurrentPermissions } from "../../lib/use-permissions"
 
 const STATUS_VARS: Record<string, { c: string; bg: string }> = {
   "Cần làm":   { c: "#6B7280",  bg: "#F3F4F6" },
@@ -84,9 +85,11 @@ const LOAI_LIST = ["Video AI", "Real", "Review"]
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
-function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void }) {
+function BangTab({ rows, reload, onDangFB, isSuper, mktCode }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null }) {
   const [editId, setEditId] = useState<string | null>(null)
-  const [filters, setFilters] = useState({ nguoi: "all", sp: "all", tts: "all", q: "" })
+  // MKT user mặc định chỉ thấy của mình, admin thấy tất cả
+  const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
+  const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
   const [newRowId, setNewRowId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -193,6 +196,14 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
           <option value="all">Trạng thái</option>
           {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        {/* MKT user: toggle xem của mình / xem tổng */}
+        {!isSuper && mktCode && (
+          <button
+            onClick={() => setFilters(p => ({ ...p, nguoi: p.nguoi === mktCode ? "all" : mktCode }))}
+            style={{ background: filters.nguoi === mktCode ? "#EFF6FF" : "#F3F4F6", color: filters.nguoi === mktCode ? "#1877F2" : "#4B5563", border: `1px solid ${filters.nguoi === mktCode ? "#BFDBFE" : "#E5E7EB"}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {filters.nguoi === mktCode ? `👤 Của tôi (${mktCode})` : "🌐 Xem tổng"}
+          </button>
+        )}
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
       </div>
 
@@ -370,8 +381,9 @@ function KanbanTab({ rows, reload }: { rows: VideoRow[]; reload: () => void }) {
 // ============================================================================
 type MktUser = { email: string; name: string; mkt_code: string | null }
 
-function TheoNguoiTab({ rows, myEmail }: { rows: VideoRow[]; myEmail: string }) {
-  const [showAll, setShowAll] = useState(true)
+function TheoNguoiTab({ rows, isSuper, mktCode }: { rows: VideoRow[]; isSuper: boolean; mktCode: string | null }) {
+  // Admin/super mặc định xem tổng; MKT user mặc định xem của mình
+  const [showAll, setShowAll] = useState(isSuper || !mktCode)
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])
 
   useEffect(() => {
@@ -380,24 +392,30 @@ function TheoNguoiTab({ rows, myEmail }: { rows: VideoRow[]; myEmail: string }) 
       .catch(() => {})
   }, [])
 
-  const visibleRows = showAll ? rows : rows.filter(r => r.createdBy === myEmail)
-
-  // Ghép rows với mktUsers theo field nguoiLam (maker) — match theo name hoặc mkt_code
+  // MKT user "xem của mình": chỉ show card của chính mình
+  // "xem tổng": show tất cả MKT users
   const usersToShow = mktUsers.length > 0
-    ? (showAll ? mktUsers : mktUsers.filter(u => u.email === myEmail))
+    ? (showAll ? mktUsers : mktUsers.filter(u => u.mkt_code === mktCode || u.name === mktCode))
     : []
+
+  // Rows phù hợp: nếu showAll → tất cả; nếu !showAll → chỉ rows của mkt_code mình
+  const visibleRows = showAll ? rows : rows.filter(r => r.nguoiLam === mktCode)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        {[["Tất cả", true], ["Của tôi", false]].map(([label, val]) => (
-          <button key={String(label)} onClick={() => setShowAll(val as boolean)} style={{ background: showAll === val ? "#1877F2" : "#FFFFFF", color: showAll === val ? "#fff" : "#4B5563", border: `1px solid ${showAll === val ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{label}</button>
-        ))}
+        {/* Admin thấy cả 2 nút, MKT user cũng có nút toggle xem tổng */}
+        <button onClick={() => setShowAll(false)} style={{ background: !showAll ? "#1877F2" : "#FFFFFF", color: !showAll ? "#fff" : "#4B5563", border: `1px solid ${!showAll ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          {mktCode ? `👤 Của tôi (${mktCode})` : "Của tôi"}
+        </button>
+        <button onClick={() => setShowAll(true)} style={{ background: showAll ? "#1877F2" : "#FFFFFF", color: showAll ? "#fff" : "#4B5563", border: `1px solid ${showAll ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          🌐 Xem tổng
+        </button>
         {mktUsers.length === 0 && <span style={{ color: "#9CA3AF", fontSize: 12 }}>Đang tải…</span>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
         {usersToShow.map(user => {
-          const pRows = visibleRows.filter(r => r.nguoiLam === user.name || r.nguoiLam === user.mkt_code)
+          const pRows = rows.filter(r => r.nguoiLam === user.name || r.nguoiLam === user.mkt_code)
           const stats = ALL_STATUSES.reduce((a, s) => ({ ...a, [s]: pRows.filter(r => r.trangThai === s).length }), {} as Record<string, number>)
           return (
             <div key={user.email} style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
@@ -515,13 +533,10 @@ function BaoCaoTab() {
 export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }) {
   const [tab, setTab] = useState("bang")
   const [rows, setRows] = useState<VideoRow[]>([])
-  const [myEmail, setMyEmail] = useState("")
+  const { isSuper, mktCode } = useCurrentPermissions()
 
   const reload = () => { apiJson(`/admin/marketing-video`).then(d => setRows(d.rows || [])).catch(() => {}) }
-  useEffect(() => {
-    reload()
-    apiFetch("/admin/permissions/me").then(r => r.json()).then(d => setMyEmail(d.email || "")).catch(() => {})
-  }, [])
+  useEffect(() => { reload() }, [])
 
   const tabs = [
     { id: "bang", label: "Bảng" },
@@ -538,9 +553,9 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
         ))}
       </div>
       <div style={{ padding: 20 }}>
-        {tab === "bang" && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} />}
+        {tab === "bang" && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} />}
         {tab === "kanban" && <KanbanTab rows={rows} reload={reload} />}
-        {tab === "theonguoi" && <TheoNguoiTab rows={rows} myEmail={myEmail} />}
+        {tab === "theonguoi" && <TheoNguoiTab rows={rows} isSuper={isSuper} mktCode={mktCode} />}
         {tab === "baocao" && <BaoCaoTab />}
       </div>
     </div>
