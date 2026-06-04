@@ -79,7 +79,7 @@ async function syncDate(
       }
 
       // Pull status + budget và UPSERT (kể cả camp spend=0 trong ngày đó)
-      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${FB_TOKEN}`
+      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=500&access_token=${FB_TOKEN}`
       let nextMeta: string | null = metaUrl
       while (nextMeta) {
         const metaData: any = await fetchJson(nextMeta)
@@ -88,15 +88,23 @@ async function syncDate(
           const budget = camp.daily_budget || camp.lifetime_budget
           const budgetValue = budget ? Math.round(Number(budget)) : null
           const mktName = extractMkt(camp.name ?? "")
-          await cskhService.sql(`
-            INSERT INTO mkt_ads_cost
-              (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
-            VALUES ($1::date, $2, $3, $4, $5, 0, 0, 0, $6, $7)
-            ON CONFLICT (date, campaign_id) DO UPDATE SET
-              effective_status = EXCLUDED.effective_status,
-              daily_budget     = EXCLUDED.daily_budget,
-              updated_at       = now()
-          `, [date, mktName, actId, camp.id, camp.name ?? "", camp.status ?? null, budgetValue])
+          if (camp.status === "ACTIVE") {
+            await cskhService.sql(`
+              INSERT INTO mkt_ads_cost
+                (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
+              VALUES ($1::date, $2, $3, $4, $5, 0, 0, 0, $6, $7)
+              ON CONFLICT (date, campaign_id) DO UPDATE SET
+                effective_status = EXCLUDED.effective_status,
+                daily_budget     = EXCLUDED.daily_budget,
+                updated_at       = now()
+            `, [date, mktName, actId, camp.id, camp.name ?? "", camp.status, budgetValue])
+          } else {
+            await cskhService.sql(`
+              UPDATE mkt_ads_cost
+              SET effective_status = $1, daily_budget = $2, updated_at = now()
+              WHERE campaign_id = $3 AND date = $4::date
+            `, [camp.status ?? null, budgetValue, camp.id, date])
+          }
         }
         nextMeta = metaData.paging?.next ?? null
       }

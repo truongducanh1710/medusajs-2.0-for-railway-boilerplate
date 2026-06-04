@@ -93,11 +93,10 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
         nextUrl = data.paging?.next ?? null
       }
 
-      // Pull meta (status + budget) cho TẤT CẢ camps của account — kể cả camp chưa tiêu tiền hôm nay.
-      // Dùng UPSERT: INSERT nếu chưa có row hôm nay (camp spend=0 vẫn được ghi status),
-      //              UPDATE nếu đã có (từ insights pull ở trên).
-      // Dùng `status` (config) thay vì `effective_status` để khớp UI Ads Manager.
-      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=200&access_token=${FB_TOKEN}`
+      // Pull meta: 2 bước tách biệt để giữ DB gọn
+      // 1) UPDATE status/budget cho camps đã có row hôm nay (từ insights)
+      // 2) UPSERT chỉ camps đang ACTIVE mà chưa có row (spend=0 nhưng đang chạy)
+      const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=500&access_token=${FB_TOKEN}`
       try {
         let nextMeta: string | null = metaUrl
         while (nextMeta) {
@@ -110,16 +109,26 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
             const budget = camp.daily_budget || camp.lifetime_budget
             const budgetValue = budget ? Math.round(Number(budget)) : null
             const mktName = extractMkt(camp.name ?? "")
-            // UPSERT: tạo row với spend=0 nếu chưa có — để status hiển thị đúng trên UI
-            await cskhService.sql(`
-              INSERT INTO mkt_ads_cost
-                (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
-              VALUES ($1::date, $2, $3, $4, $5, 0, 0, 0, $6, $7)
-              ON CONFLICT (date, campaign_id) DO UPDATE SET
-                effective_status = EXCLUDED.effective_status,
-                daily_budget     = EXCLUDED.daily_budget,
-                updated_at       = now()
-            `, [today, mktName, actId, camp.id, camp.name ?? "", camp.status ?? null, budgetValue])
+
+            if (camp.status === "ACTIVE") {
+              // ACTIVE: UPSERT — tạo row spend=0 nếu chưa có (camp bật nhưng chưa tiêu)
+              await cskhService.sql(`
+                INSERT INTO mkt_ads_cost
+                  (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
+                VALUES ($1::date, $2, $3, $4, $5, 0, 0, 0, $6, $7)
+                ON CONFLICT (date, campaign_id) DO UPDATE SET
+                  effective_status = EXCLUDED.effective_status,
+                  daily_budget     = EXCLUDED.daily_budget,
+                  updated_at       = now()
+              `, [today, mktName, actId, camp.id, camp.name ?? "", camp.status, budgetValue])
+            } else {
+              // PAUSED/khác: chỉ UPDATE nếu đã có row — không tạo row mới
+              await cskhService.sql(`
+                UPDATE mkt_ads_cost
+                SET effective_status = $1, daily_budget = $2, updated_at = now()
+                WHERE campaign_id = $3 AND date = $4::date
+              `, [camp.status ?? null, budgetValue, camp.id, today])
+            }
           }
           nextMeta = metaData.paging?.next ?? null
         }
