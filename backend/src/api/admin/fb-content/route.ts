@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, getPageTokens, filterByPerm } from "./_lib"
+import { getPool, getAuthInfo, getPageTokens, filterByPerm, ensureTables } from "./_lib"
 import { isTokenError } from "../../../lib/fb-graph"
 
 /**
@@ -12,6 +12,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (!auth) return res.status(401).json({ error: "Unauthenticated" })
     const q = req.query as Record<string, string>
     const pool = getPool()
+    await ensureTables(pool)
 
     if (q.posts === "1") {
       const params: any[] = []

@@ -9,6 +9,59 @@ export function getPool(): Pool {
   return _pool
 }
 
+let _tablesReady = false
+export async function ensureTables(pool: Pool): Promise<void> {
+  if (_tablesReady) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_page_token (
+      page_id      VARCHAR(32) PRIMARY KEY,
+      page_name    VARCHAR(255) NOT NULL,
+      access_token TEXT NOT NULL,
+      category     VARCHAR(128),
+      fan_count    INT DEFAULT 0,
+      fetched_at   TIMESTAMPTZ DEFAULT now()
+    )
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_scheduled_post (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      page_id       VARCHAR(32) NOT NULL,
+      page_name     VARCHAR(255),
+      post_id       VARCHAR(64),
+      message       TEXT NOT NULL,
+      drive_url     TEXT,
+      media_type    VARCHAR(16) DEFAULT 'text',
+      video_id      UUID,
+      scheduled_for TIMESTAMPTZ,
+      published_at  TIMESTAMPTZ,
+      status        VARCHAR(20) DEFAULT 'pending',
+      error_msg     TEXT,
+      created_by    VARCHAR(255) NOT NULL,
+      template_id   UUID,
+      tags          TEXT[],
+      created_at    TIMESTAMPTZ DEFAULT now()
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_status ON fb_scheduled_post (status, scheduled_for)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_page   ON fb_scheduled_post (page_id, created_at DESC)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_user   ON fb_scheduled_post (created_by, created_at DESC)`)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_content_template (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title       VARCHAR(255) NOT NULL,
+      message     TEXT NOT NULL,
+      tags        TEXT[],
+      usage_count INT DEFAULT 0,
+      created_by  VARCHAR(255) NOT NULL,
+      created_at  TIMESTAMPTZ DEFAULT now(),
+      updated_at  TIMESTAMPTZ DEFAULT now(),
+      deleted_at  TIMESTAMPTZ
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_template_tags ON fb_content_template USING GIN (tags)`)
+  _tablesReady = true
+}
+
 export type AuthInfo = { email: string; isSuper: boolean; fbPageIds: string[] | null }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {
