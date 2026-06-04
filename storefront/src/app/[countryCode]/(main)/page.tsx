@@ -9,6 +9,21 @@ export const metadata: Metadata = {
   title: "Phan Việt",
   description:
     "Cửa hàng thương mại điện tử Phan Việt với trải nghiệm nhanh và thân thiện.",
+  openGraph: {
+    title: "Phan Việt",
+    description:
+      "Cửa hàng thương mại điện tử Phan Việt với trải nghiệm nhanh và thân thiện.",
+    type: "website",
+    siteName: "Phan Việt",
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 1200,
+        alt: "Chảo Hợp Kim Titan - Phan Việt",
+      },
+    ],
+  },
 }
 
 export default async function Home({
