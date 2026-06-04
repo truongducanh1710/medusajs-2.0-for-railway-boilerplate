@@ -13,15 +13,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const q = req.query as Record<string, string>
     const params: any[] = []
     let where = "WHERE 1=1"
-    if (q.from) { params.push(q.from); where += ` AND post_date >= $${params.length}` }
-    if (q.to)   { params.push(q.to);   where += ` AND post_date <= $${params.length}` }
+    // Lọc theo ngày — dùng COALESCE(post_date, created_at) để dòng chưa có ngày đăng
+    // vẫn tính theo ngày tạo (tránh báo cáo rỗng khi post_date NULL)
+    if (q.from) { params.push(q.from); where += ` AND COALESCE(post_date, created_at::date) >= $${params.length}` }
+    if (q.to)   { params.push(q.to);   where += ` AND COALESCE(post_date, created_at::date) <= $${params.length}` }
 
     const pool = getPool()
 
     const [byPerson, byType, byProduct, byStatus, totalRow] = await Promise.all([
       pool.query(`SELECT maker AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY maker ORDER BY value DESC`, params),
       pool.query(`SELECT video_type AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY video_type ORDER BY value DESC`, params),
-      pool.query(`SELECT split_part(product, ' - ', 1) AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY 1 ORDER BY 1`, params),
+      pool.query(`SELECT product AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY product ORDER BY value DESC LIMIT 8`, params),
       pool.query(`SELECT status AS key, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY status`, params),
       pool.query(`SELECT COUNT(*)::int AS total FROM mkt_video ${where}`, params),
     ])
