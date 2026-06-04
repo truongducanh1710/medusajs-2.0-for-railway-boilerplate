@@ -34,7 +34,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (isTokenError(e)) return res.status(200).json({ pages: [], error: "FB_TOKEN_EXPIRED" })
       throw e
     }
-    const visible = filterByPerm(pages, auth).map(p => ({
+    // all=true: admin lấy tất cả pages để phân quyền (không lọc quyền)
+    const filtered = (q.all === "true" && auth.isSuper) ? pages : filterByPerm(pages, auth)
+    const visible = filtered.map(p => ({
       page_id: p.page_id, page_name: p.page_name, category: p.category, fan_count: p.fan_count,
     }))
     return res.json({ pages: visible })

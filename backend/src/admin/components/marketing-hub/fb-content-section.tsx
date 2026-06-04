@@ -341,14 +341,26 @@ function ThuVienTab() {
 // ============================================================================
 function PhanQuyenTrangTab() {
   const [pages, setPages] = useState<Page[]>([])
+  const [loadingPages, setLoadingPages] = useState(true)
   const [mktUsers, setMktUsers] = useState<any[]>([])
   const [saving, setSaving] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [selUser, setSelUser] = useState<string | null>(null)
   const [userPageIds, setUserPageIds] = useState<Set<string>>(new Set())
 
+  const fetchPages = (forceRefresh = false) => {
+    setLoadingPages(true)
+    apiJson(`/admin/fb-content?all=true${forceRefresh ? "&force_refresh=true" : ""}`)
+      .then(d => {
+        setPages(d.pages || [])
+        if (d.error === "FB_TOKEN_EXPIRED") setToast("Token FB hết hạn — liên hệ admin cập nhật FB_USER_TOKEN")
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPages(false))
+  }
+
   useEffect(() => {
-    apiJson("/admin/fb-content").then(d => setPages(d.pages || [])).catch(() => {})
+    fetchPages()
     apiJson("/admin/permissions/mkt-users").then(d => setMktUsers(d.users || [])).catch(() => {})
   }, [])
 
@@ -405,8 +417,8 @@ function PhanQuyenTrangTab() {
 
       {/* Cột trái — danh sách MKT users */}
       <div style={{ ...s.card, width: 240, flexShrink: 0 }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", color: "#111827", fontWeight: 700, fontSize: 13 }}>
-          👤 Nhân sự MKT
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "#111827", fontWeight: 700, fontSize: 13 }}>👤 Nhân sự MKT</span>
         </div>
         {mktUsers.length === 0 && <div style={{ padding: 20, color: "#9CA3AF", fontSize: 13, textAlign: "center" }}>Đang tải…</div>}
         {mktUsers.map(u => (
@@ -426,8 +438,19 @@ function PhanQuyenTrangTab() {
       {/* Cột phải — danh sách pages để tick */}
       <div style={{ flex: 1 }}>
         {!selUser ? (
-          <div style={{ ...s.card, padding: "40px 20px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
-            ← Chọn nhân sự bên trái để phân quyền trang
+          <div style={{ ...s.card, padding: "40px 20px", textAlign: "center" }}>
+            <div style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 12 }}>← Chọn nhân sự bên trái để phân quyền trang</div>
+            {loadingPages
+              ? <div style={{ color: "#9CA3AF", fontSize: 12 }}>Đang tải danh sách trang…</div>
+              : pages.length === 0
+                ? <div>
+                    <div style={{ color: "#EF4444", fontSize: 13, marginBottom: 10 }}>Chưa có trang nào trong cache</div>
+                    <button onClick={() => fetchPages(true)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                      🔄 Tải trang từ Facebook
+                    </button>
+                  </div>
+                : <div style={{ color: "#6B7280", fontSize: 12 }}>Tìm thấy {pages.length} trang — chọn nhân sự để phân quyền</div>
+            }
           </div>
         ) : (
           <div style={s.card}>
@@ -438,6 +461,7 @@ function PhanQuyenTrangTab() {
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span style={{ color: "#6B7280", fontSize: 12 }}>{userPageIds.size} / {pages.length} trang</span>
+                <button onClick={() => fetchPages(true)} title="Đồng bộ lại từ Facebook" style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>🔄</button>
                 <button onClick={savePerms} disabled={!!saving}
                   style={{ background: saving ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
                   {saving ? "Đang lưu…" : "💾 Lưu"}
@@ -452,7 +476,13 @@ function PhanQuyenTrangTab() {
                 style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600 }}>Bỏ tất cả</button>
             </div>
             <div style={{ maxHeight: 480, overflowY: "auto" }}>
-              {pages.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Không có trang nào</div>}
+              {loadingPages && <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
+              {!loadingPages && pages.length === 0 && (
+                <div style={{ padding: 30, textAlign: "center" }}>
+                  <div style={{ color: "#EF4444", fontSize: 13, marginBottom: 10 }}>Chưa có trang nào — cần đồng bộ từ Facebook</div>
+                  <button onClick={() => fetchPages(true)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🔄 Tải từ Facebook</button>
+                </div>
+              )}
               {pages.map(p => {
                 const checked = userPageIds.has(p.page_id)
                 return (
