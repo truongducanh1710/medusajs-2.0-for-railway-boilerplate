@@ -22,8 +22,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (q.to)   { params.push(q.to);   where += ` AND COALESCE(p.scheduled_for, p.created_at) <= $${params.length}` }
       // only_posted: chỉ video đã đăng FB thành công (có post_id) — cho tính năng Tạo Camp
       if (q.only_posted === "1") where += ` AND p.post_id IS NOT NULL AND p.media_type = 'video'`
-      // maker: lọc theo MKT (tên người làm video)
+      // maker: lọc theo MKT (tên người làm video) — admin chọn dropdown
       if (q.maker) { params.push(q.maker); where += ` AND v.maker = $${params.length}` }
+      // Auto-scope: MKT thường chỉ thấy video của mình (created_by = email).
+      // Admin/super thấy tất cả. Áp dụng cho luồng Tạo Camp (only_posted).
+      if (q.only_posted === "1" && !auth.isAdmin && auth.email) {
+        params.push(auth.email); where += ` AND p.created_by = $${params.length}`
+      }
       // JOIN mkt_video để lấy vd_code + product + maker (cho tính năng Lên Camp)
       const { rows } = await pool.query(
         `SELECT p.*, v.vd_code, v.product, v.maker
