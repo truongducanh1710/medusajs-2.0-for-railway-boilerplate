@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
+import { useCurrentPermissions } from "../../lib/use-permissions"
 
 export type FbPrefill = { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null
 
@@ -336,17 +337,164 @@ function ThuVienTab() {
 }
 
 // ============================================================================
+// Tab: Phân quyền trang — chỉ admin thấy
+// ============================================================================
+function PhanQuyenTrangTab() {
+  const [pages, setPages] = useState<Page[]>([])
+  const [mktUsers, setMktUsers] = useState<any[]>([])
+  const [saving, setSaving] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [selUser, setSelUser] = useState<string | null>(null)
+  const [userPageIds, setUserPageIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    apiJson("/admin/fb-content").then(d => setPages(d.pages || [])).catch(() => {})
+    apiJson("/admin/permissions/mkt-users").then(d => setMktUsers(d.users || [])).catch(() => {})
+  }, [])
+
+  const selectUser = async (email: string) => {
+    setSelUser(email)
+    // Lấy fb_page_ids hiện tại của user từ /admin/users list
+    try {
+      const d = await apiJson(`/admin/permissions/mkt-users`)
+      // Fetch user detail để lấy metadata
+      const res = await apiFetch(`/admin/users?email=${encodeURIComponent(email)}&limit=1`)
+      const ud = await res.json()
+      const user = (ud.users || [])[0]
+      const ids: string[] = Array.isArray(user?.metadata?.fb_page_ids) ? user.metadata.fb_page_ids : []
+      setUserPageIds(new Set(ids))
+    } catch { setUserPageIds(new Set()) }
+  }
+
+  const togglePage = (pageId: string) => {
+    setUserPageIds(prev => {
+      const n = new Set(prev)
+      n.has(pageId) ? n.delete(pageId) : n.add(pageId)
+      return n
+    })
+  }
+
+  const savePerms = async () => {
+    if (!selUser) return
+    setSaving(selUser)
+    try {
+      // Lấy user hiện tại để merge metadata
+      const res = await apiFetch(`/admin/users?email=${encodeURIComponent(selUser)}&limit=1`)
+      const ud = await res.json()
+      const user = (ud.users || [])[0]
+      if (!user) throw new Error("Không tìm thấy user")
+      await apiFetch(`/admin/users/${user.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metadata: { ...(user.metadata ?? {}), fb_page_ids: [...userPageIds] }
+        }),
+      })
+      setToast(`Đã cập nhật quyền trang cho ${selUser}`)
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+    finally { setSaving(null) }
+  }
+
+  const s = {
+    card: { background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" } as React.CSSProperties,
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+      {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+
+      {/* Cột trái — danh sách MKT users */}
+      <div style={{ ...s.card, width: 240, flexShrink: 0 }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", color: "#111827", fontWeight: 700, fontSize: 13 }}>
+          👤 Nhân sự MKT
+        </div>
+        {mktUsers.length === 0 && <div style={{ padding: 20, color: "#9CA3AF", fontSize: 13, textAlign: "center" }}>Đang tải…</div>}
+        {mktUsers.map(u => (
+          <button key={u.email} onClick={() => selectUser(u.email)}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", background: selUser === u.email ? "#EFF6FF" : "none", border: "none", borderBottom: "1px solid #F3F4F6", cursor: "pointer", textAlign: "left" as const }}>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", background: selUser === u.email ? "#1877F2" : "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: selUser === u.email ? "#fff" : "#6B7280", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+              {(u.name || "?")[0].toUpperCase()}
+            </div>
+            <div>
+              <div style={{ color: "#111827", fontSize: 13, fontWeight: selUser === u.email ? 700 : 500 }}>{u.name}</div>
+              {u.mkt_code && <div style={{ color: "#1877F2", fontSize: 11, fontFamily: "monospace", fontWeight: 700 }}>{u.mkt_code}</div>}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Cột phải — danh sách pages để tick */}
+      <div style={{ flex: 1 }}>
+        {!selUser ? (
+          <div style={{ ...s.card, padding: "40px 20px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
+            ← Chọn nhân sự bên trái để phân quyền trang
+          </div>
+        ) : (
+          <div style={s.card}>
+            <div style={{ padding: "12px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <span style={{ color: "#111827", fontWeight: 700, fontSize: 13 }}>Trang được phép đăng</span>
+                <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: 8 }}>— {selUser}</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ color: "#6B7280", fontSize: 12 }}>{userPageIds.size} / {pages.length} trang</span>
+                <button onClick={savePerms} disabled={!!saving}
+                  style={{ background: saving ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
+                  {saving ? "Đang lưu…" : "💾 Lưu"}
+                </button>
+              </div>
+            </div>
+            {/* Quick select */}
+            <div style={{ padding: "8px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", gap: 8 }}>
+              <button onClick={() => setUserPageIds(new Set(pages.map(p => p.page_id)))}
+                style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600 }}>Chọn tất cả</button>
+              <button onClick={() => setUserPageIds(new Set())}
+                style={{ background: "#F0F1F5", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "#4B5563", fontWeight: 600 }}>Bỏ tất cả</button>
+            </div>
+            <div style={{ maxHeight: 480, overflowY: "auto" }}>
+              {pages.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Không có trang nào</div>}
+              {pages.map(p => {
+                const checked = userPageIds.has(p.page_id)
+                return (
+                  <label key={p.page_id} onClick={() => togglePage(p.page_id)}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", borderBottom: "1px solid #F3F4F6", cursor: "pointer", background: checked ? "#F0F6FF" : "none" }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${checked ? "#1877F2" : "#D1D5DB"}`, background: checked ? "#1877F2" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      {checked && <span style={{ color: "#fff", fontSize: 12, fontWeight: 900 }}>✓</span>}
+                    </div>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: pageColor(p.page_id), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>
+                      {(p.page_name || "?")[0]}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: "#111827", fontSize: 13, fontWeight: 600 }}>{p.page_name}</div>
+                      <div style={{ color: "#9CA3AF", fontSize: 11 }}>{p.category || "Page"} · {(p.fan_count || 0).toLocaleString("vi-VN")} follows</div>
+                    </div>
+                    {checked && <span style={{ background: "#DBEAFE", color: "#1e40af", borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>✓ Có quyền</span>}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // Page
 // ============================================================================
-// prefill + activeSubTab: route cha điều khiển khi bấm "Đăng FB" từ tab Video.
 export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; initialTab?: string }) {
   const [tab, setTab] = useState(initialTab || "dangbai")
+  const { isSuper, has } = useCurrentPermissions()
+
+  const canManagePages = isSuper || has("users.manage")
 
   const tabs = [
-    { id: "dangbai", label: "Đăng bài" },
-    { id: "lichdang", label: "Lịch đăng" },
+    { id: "dangbai",      label: "Đăng bài" },
+    { id: "lichdang",     label: "Lịch đăng" },
     { id: "viraltracker", label: "Viral Tracker" },
-    { id: "thuvien", label: "Thư viện" },
+    { id: "thuvien",      label: "Thư viện" },
+    ...(canManagePages ? [{ id: "phanquyen", label: "🔐 Phân quyền trang" }] : []),
   ]
 
   return (
@@ -357,10 +505,11 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
         ))}
       </div>
       <div style={{ padding: 20 }}>
-        {tab === "dangbai" && <DangBaiTab key={prefill?.videoId || "blank"} prefill={prefill} />}
-        {tab === "lichdang" && <LichDangTab />}
+        {tab === "dangbai"      && <DangBaiTab key={prefill?.videoId || "blank"} prefill={prefill} />}
+        {tab === "lichdang"     && <LichDangTab />}
         {tab === "viraltracker" && <ViralTrackerTab />}
-        {tab === "thuvien" && <ThuVienTab />}
+        {tab === "thuvien"      && <ThuVienTab />}
+        {tab === "phanquyen"    && <PhanQuyenTrangTab />}
       </div>
     </div>
   )
