@@ -242,9 +242,10 @@ function CalendarView({ posts }: { posts: any[] }) {
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7 // Mon=0
   const daysInMonth = new Date(year, month + 1, 0).getDate()
 
-  // Group posts theo ngày YYYY-MM-DD
+  // Group posts theo ngày — bỏ qua bài lỗi
   const byDay: Record<string, any[]> = {}
   for (const p of posts) {
+    if (p.status === "failed" || p.status === "error") continue
     const d = new Date(p.created_at || p.scheduled_for)
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`
     ;(byDay[key] = byDay[key] || []).push(p)
