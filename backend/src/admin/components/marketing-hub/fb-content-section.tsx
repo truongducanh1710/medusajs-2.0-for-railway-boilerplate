@@ -337,7 +337,7 @@ function CalendarView({ posts }: { posts: any[] }) {
                   <div style={{ color: "#111827", fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{p.page_name}</div>
                   <div className="line-clamp-2" style={{ color: "#6B7280", fontSize: 11 }}>{p.message}</div>
                   {p.post_id && (
-                    <a href={p.media_type === "video" ? `https://www.facebook.com/reel/${p.post_id}/` : `https://www.facebook.com/${p.post_id}`}
+                    <a href={`https://www.facebook.com/${p.post_id}`}
                       target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
                   )}
                 </div>
@@ -443,7 +443,7 @@ function LichDangTab() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ color: "#111827", fontSize: 13, fontWeight: 600 }}>{p.page_name || "—"}</span>
                       {p.post_id && (
-                        <a href={p.media_type === "video" ? `https://www.facebook.com/reel/${p.post_id}/` : `https://www.facebook.com/${p.post_id}`} target="_blank" rel="noopener noreferrer"
+                        <a href={`https://www.facebook.com/${p.post_id}`} target="_blank" rel="noopener noreferrer"
                           style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
                       )}
                     </div>

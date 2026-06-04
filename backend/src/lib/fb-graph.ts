@@ -154,8 +154,30 @@ async function publishVideoResumable(pageId: string, pageToken: string, message:
 }
 
 /**
+ * Lấy post_id (story id) thật từ video_id. Video reel trả video_id,
+ * nhưng object_story_id để boost ad + link share cần post_id của feed story.
+ * Thử video_reels trước (cho reel), fallback /{video_id}?fields=post_id.
+ */
+async function getPostIdFromVideo(pageId: string, pageToken: string, videoId: string): Promise<string | null> {
+  // Cách 1: /{video_id}?fields=post_id
+  try {
+    const res = await fetch(`${FB_GRAPH_BASE}/${videoId}?fields=post_id&access_token=${pageToken}`)
+    const d: any = await res.json()
+    if (d?.post_id) return d.post_id
+  } catch { /* ignore */ }
+  // Cách 2: tìm trong video_reels của page
+  try {
+    const res = await fetch(`${FB_GRAPH_BASE}/${pageId}/video_reels?fields=id,post_id&limit=10&access_token=${pageToken}`)
+    const d: any = await res.json()
+    const match = (d?.data || []).find((r: any) => r.id === videoId)
+    if (match?.post_id) return match.post_id
+  } catch { /* ignore */ }
+  return null
+}
+
+/**
  * Đăng 1 bài lên 1 page. Video: thử file_url → fail thì tải về upload binary → xóa.
- * Trả { post_id } hoặc throw.
+ * Trả { post_id, video_id } — post_id là story id để share/boost, video_id để tham chiếu.
  */
 export async function publishPost(opts: {
   pageId: string
@@ -164,20 +186,22 @@ export async function publishPost(opts: {
   driveUrl?: string
   mediaType: "text" | "video" | "photo"
   scheduledTime?: number
-}): Promise<{ post_id: string }> {
+}): Promise<{ post_id: string; video_id?: string }> {
   const { pageId, pageToken, message, driveUrl, mediaType, scheduledTime } = opts
 
   if (mediaType === "video") {
     const direct = driveToDirectUrl(driveUrl || "")
     if (!direct) throw new FbError("Link Google Drive không hợp lệ", 0)
+    let videoId: string
     try {
-      const id = await publishVideoByUrl(pageId, pageToken, message, direct, scheduledTime)
-      return { post_id: id }
+      videoId = await publishVideoByUrl(pageId, pageToken, message, direct, scheduledTime)
     } catch {
-      // fallback: resumable upload (chunked 10MB) — đúng cho file lớn
-      const id = await publishVideoResumable(pageId, pageToken, message, direct, scheduledTime)
-      return { post_id: id }
+      // fallback: resumable upload (chunked) — đúng cho file lớn
+      videoId = await publishVideoResumable(pageId, pageToken, message, direct, scheduledTime)
     }
+    // Lấy post_id thật của reel/video (cho share link + boost ad)
+    const realPostId = await getPostIdFromVideo(pageId, pageToken, videoId)
+    return { post_id: realPostId || videoId, video_id: videoId }
   }
 
   if (mediaType === "photo") {
