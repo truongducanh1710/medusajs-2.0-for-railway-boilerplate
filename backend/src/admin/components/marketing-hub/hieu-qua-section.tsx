@@ -41,57 +41,57 @@ export function HieuQuaSection() {
     setSyncing(false)
   }
 
-  const inpSt: React.CSSProperties = { background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none" }
+  const inpSt: React.CSSProperties = { background: "#FFFFFF", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none" }
 
   return (
     <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)" }}>Hiệu quả Video qua Quảng cáo</h1>
-        <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>Mỗi video (VD-code) tổng hợp spend, CTR, CPM, hook rate, thruplay từ tất cả ad/tài khoản đang chạy.</p>
+        <h1 style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>Hiệu quả Video qua Quảng cáo</h1>
+        <p style={{ fontSize: 13, color: "#9CA3AF", marginTop: 4 }}>Mỗi video (VD-code) tổng hợp spend, CTR, CPM, hook rate, thruplay từ tất cả ad/tài khoản đang chạy.</p>
       </div>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-        <span style={{ color: "var(--text-3)" }}>📅</span>
+        <span style={{ color: "#9CA3AF" }}>📅</span>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={inpSt} />
-        <span style={{ color: "var(--text-3)" }}>→</span>
+        <span style={{ color: "#9CA3AF" }}>→</span>
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={inpSt} />
-        <button onClick={load} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{loading ? "Đang tải…" : "Tải dữ liệu"}</button>
-        {canSync && <button onClick={syncToday} disabled={syncing} style={{ background: "var(--bg-card)", color: "var(--text-2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{syncing ? "Đang sync…" : "↻ Sync ad hôm nay"}</button>}
-        {msg && <span style={{ fontSize: 12, color: "var(--text-2)" }}>{msg}</span>}
+        <button onClick={load} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{loading ? "Đang tải…" : "Tải dữ liệu"}</button>
+        {canSync && <button onClick={syncToday} disabled={syncing} style={{ background: "#FFFFFF", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{syncing ? "Đang sync…" : "↻ Sync ad hôm nay"}</button>}
+        {msg && <span style={{ fontSize: 12, color: "#4B5563" }}>{msg}</span>}
       </div>
 
-      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+      <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", minWidth: 1000, borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ background: "var(--bg-subtle)" }}>
+              <tr style={{ background: "#F0F1F5" }}>
                 {["VD", "Người làm", "Sản phẩm", "Loại", "Ad/TK", "Spend", "CTR", "CPM", "Hook 3s", "Thruplay"].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: i >= 4 ? "right" : "left", color: "var(--text-3)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
+                  <th key={i} style={{ padding: "9px 12px", textAlign: i >= 4 ? "right" : "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r, idx) => (
-                <tr key={r.vdCode} className="hover-bg" style={{ borderBottom: idx < rows.length - 1 ? "1px solid var(--border)" : "none" }}>
+                <tr key={r.vdCode} className="hover-bg" style={{ borderBottom: idx < rows.length - 1 ? "1px solid #E5E7EB" : "none" }}>
                   <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 12, fontWeight: 700, fontFamily: "monospace" }}>{r.vdCode}</td>
                   <td style={{ padding: "9px 12px" }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 18, height: 18, borderRadius: "50%", background: PERSON_COLORS[r.maker] || "#6B7280", color: "#fff", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{(r.maker || "?")[0]}</span>
-                      <span style={{ fontSize: 12, color: "var(--text-1)" }}>{r.maker}</span>
+                      <span style={{ fontSize: 12, color: "#111827" }}>{r.maker}</span>
                     </span>
                   </td>
-                  <td style={{ padding: "9px 12px", color: "var(--text-1)", fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.product}</td>
-                  <td style={{ padding: "9px 12px", color: "var(--text-2)", fontSize: 12 }}>{r.videoType}</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--text-3)", fontSize: 12 }}>{r.adCount}/{r.accountCount}</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--text-1)", fontSize: 12, fontWeight: 600 }}>{fmtVnd(r.spend)}</td>
+                  <td style={{ padding: "9px 12px", color: "#111827", fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.product}</td>
+                  <td style={{ padding: "9px 12px", color: "#4B5563", fontSize: 12 }}>{r.videoType}</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", color: "#9CA3AF", fontSize: 12 }}>{r.adCount}/{r.accountCount}</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", color: "#111827", fontSize: 12, fontWeight: 600 }}>{fmtVnd(r.spend)}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right", color: ctrColor(r.ctr), fontSize: 12, fontWeight: 600 }}>{r.ctr}%</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--text-2)", fontSize: 12 }}>{fmtVnd(r.cpm)}</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", color: "#4B5563", fontSize: 12 }}>{fmtVnd(r.cpm)}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right", color: hookColor(r.hookRate), fontSize: 12, fontWeight: 600 }}>{r.hookRate}%</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--text-2)", fontSize: 12 }}>{r.thruplayRate}%</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", color: "#4B5563", fontSize: 12 }}>{r.thruplayRate}%</td>
                 </tr>
               ))}
               {rows.length === 0 && !loading && (
-                <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>
+                <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
                   Chưa có dữ liệu. Bấm "Sync ad hôm nay" để kéo insights từ FB (tên ad cần chứa VD-code).
                 </td></tr>
               )}
