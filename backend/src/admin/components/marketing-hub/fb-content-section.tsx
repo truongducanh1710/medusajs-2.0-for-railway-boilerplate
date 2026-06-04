@@ -20,10 +20,14 @@ function pageColor(id: string) {
 // ============================================================================
 // Tab: Đăng bài
 // ============================================================================
+const DRAFT_KEY = "fb_dangbai_draft"
+
 function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null }) {
-  const [content, setContent] = useState(prefill?.sp ? `Video: ${prefill.sp}\n` : "")
-  const [driveLink, setDriveLink] = useState(prefill?.driveUrl || "")
-  const [postType, setPostType] = useState<"text" | "video" | "anh">("video")
+  // Khôi phục draft từ localStorage nếu không có prefill
+  const savedDraft = (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null") } catch { return null } })()
+  const [content, setContent] = useState(prefill?.sp ? `Video: ${prefill.sp}\n` : (savedDraft?.content || ""))
+  const [driveLink, setDriveLink] = useState(prefill?.driveUrl || savedDraft?.driveLink || "")
+  const [postType, setPostType] = useState<"text" | "video" | "anh">(savedDraft?.postType || "video")
   const [schedule, setSchedule] = useState<"now" | "schedule">("now")
   const [schedTime, setSchedTime] = useState("2026-06-05T09:00")
   const [pages, setPages] = useState<Page[]>([])
@@ -34,6 +38,28 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
   const [results, setResults] = useState<any[]>([])
   const [showSim, setShowSim] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [hasDraft, setHasDraft] = useState(!!savedDraft && !prefill)
+
+  // Autosave draft vào localStorage khi content/driveLink/postType thay đổi
+  useEffect(() => {
+    if (posting) return
+    if (!content && !driveLink) { localStorage.removeItem(DRAFT_KEY); return }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ content, driveLink, postType }))
+  }, [content, driveLink, postType, posting])
+
+  // Warn khi thoát trang nếu có nội dung chưa đăng
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if ((content || driveLink) && !posting) {
+        e.preventDefault()
+        e.returnValue = "Bạn có nội dung chưa đăng. Rời trang?"
+      }
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [content, driveLink, posting])
+
+  const clearDraft = () => { localStorage.removeItem(DRAFT_KEY); setHasDraft(false) }
 
   useEffect(() => {
     apiJson("/admin/fb-content").then(d => {
@@ -72,7 +98,7 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
       }
       if (schedule === "schedule") body.scheduled_for = new Date(schedTime).toISOString()
       const d = await apiJson("/admin/fb-content/post", "POST", body)
-      if (d?.jobId) pollJob(d.jobId)
+      if (d?.jobId) { clearDraft(); pollJob(d.jobId) }
       else { setPosting(false); setToast("Lỗi: không tạo được job") }
     } catch (e: any) { setPosting(false); setToast("Lỗi: " + e.message) }
   }
@@ -82,6 +108,13 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+      {hasDraft && (
+        <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 16 }}>📝</span>
+          <span style={{ color: "#92400E", fontSize: 13, flex: 1 }}>Đã khôi phục bản nháp từ lần trước. Kiểm tra lại nội dung trước khi đăng.</span>
+          <button onClick={clearDraft} style={{ background: "none", border: "1px solid #FDE68A", borderRadius: 6, padding: "3px 10px", fontSize: 12, color: "#92400E", cursor: "pointer" }}>Xóa nháp</button>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16 }}>
         {/* LEFT */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
