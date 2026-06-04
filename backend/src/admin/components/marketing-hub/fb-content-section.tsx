@@ -229,12 +229,132 @@ const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
 }
 const MEDIA_ICON: Record<string, string> = { video: "🎬", photo: "🖼️", text: "📝" }
 
+// ── Calendar View ────────────────────────────────────────────────────────────
+const DOW = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+const MEDIA_COLOR: Record<string, string> = { video: "#8B5CF6", photo: "#0EA5E9", text: "#1877F2" }
+
+function CalendarView({ posts }: { posts: any[] }) {
+  const today = new Date()
+  const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const [selected, setSelected] = useState<string | null>(null)
+
+  const year = cur.getFullYear(), month = cur.getMonth()
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7 // Mon=0
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  // Group posts theo ngày YYYY-MM-DD
+  const byDay: Record<string, any[]> = {}
+  for (const p of posts) {
+    const d = new Date(p.created_at || p.scheduled_for)
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`
+    ;(byDay[key] = byDay[key] || []).push(p)
+  }
+
+  const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({length: daysInMonth}, (_, i) => i+1)]
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const selectedKey = selected
+  const selectedPosts = selectedKey ? (byDay[selectedKey] || []) : []
+
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      {/* Calendar grid */}
+      <div style={{ flex: 1, background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+        {/* Header tháng */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid #E5E7EB" }}>
+          <button onClick={() => setCur(new Date(year, month-1, 1))} style={{ background: "#F3F4F6", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}>‹</button>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>
+            Tháng {month+1}/{year}
+          </span>
+          <button onClick={() => setCur(new Date(year, month+1, 1))} style={{ background: "#F3F4F6", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}>›</button>
+        </div>
+        {/* DOW header */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", borderBottom: "1px solid #E5E7EB" }}>
+          {DOW.map(d => <div key={d} style={{ textAlign: "center", padding: "6px 0", fontSize: 11, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase" }}>{d}</div>)}
+        </div>
+        {/* Cells */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
+          {cells.map((day, idx) => {
+            if (!day) return <div key={idx} style={{ minHeight: 80, borderBottom: "1px solid #F3F4F6", borderRight: "1px solid #F3F4F6" }} />
+            const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`
+            const ps = byDay[key] || []
+            const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+            const isSel = selected === key
+            return (
+              <div key={idx} onClick={() => setSelected(isSel ? null : key)}
+                style={{ minHeight: 80, borderBottom: "1px solid #F3F4F6", borderRight: "1px solid #F3F4F6", padding: "6px 5px", cursor: ps.length ? "pointer" : "default", background: isSel ? "#EFF6FF" : "transparent", transition: "background 0.15s" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <span style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: isToday ? "#1877F2" : "transparent", color: isToday ? "#fff" : "#374151", fontSize: 12, fontWeight: isToday ? 700 : 500 }}>{day}</span>
+                  {ps.length > 0 && <span style={{ background: "#1877F2", color: "#fff", borderRadius: 20, fontSize: 9, fontWeight: 700, padding: "1px 5px" }}>{ps.length}</span>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {ps.slice(0, 3).map((p: any, i: number) => {
+                    const st = STATUS_POST[p.status] || STATUS_POST.pending
+                    const mc = MEDIA_COLOR[p.media_type] || "#6B7280"
+                    return (
+                      <div key={i} style={{ background: mc + "18", borderLeft: `2px solid ${mc}`, borderRadius: "0 4px 4px 0", padding: "1px 4px", fontSize: 10, color: mc, fontWeight: 600, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                        {MEDIA_ICON[p.media_type]}{" "}{p.page_name?.split(" ").slice(0,3).join(" ")}
+                      </div>
+                    )
+                  })}
+                  {ps.length > 3 && <div style={{ fontSize: 9, color: "#9CA3AF", paddingLeft: 4 }}>+{ps.length - 3} nữa</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* Legend */}
+        <div style={{ display: "flex", gap: 12, padding: "10px 18px", borderTop: "1px solid #E5E7EB" }}>
+          {[["video","#8B5CF6","🎬 Video"],["photo","#0EA5E9","🖼️ Ảnh"],["text","#1877F2","📝 Văn bản"]].map(([k,c,l]) => (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 10, height: 10, background: c, borderRadius: 3 }} />
+              <span style={{ fontSize: 11, color: "#6B7280" }}>{l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Panel ngày được chọn */}
+      {selectedPosts.length > 0 && (
+        <div style={{ width: 280, flexShrink: 0, background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{selectedKey}</span>
+            <span style={{ color: "#9CA3AF", fontSize: 12 }}>{selectedPosts.length} bài</span>
+          </div>
+          <div style={{ maxHeight: 480, overflowY: "auto" }}>
+            {selectedPosts.map((p: any, i: number) => {
+              const st = STATUS_POST[p.status] || STATUS_POST.pending
+              const time = new Date(p.created_at || p.scheduled_for).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+              return (
+                <div key={p.id} style={{ padding: "10px 16px", borderBottom: i < selectedPosts.length-1 ? "1px solid #F3F4F6" : "none" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ color: "#6B7280", fontSize: 11 }}>{time}</span>
+                    <span style={{ fontSize: 14 }}>{MEDIA_ICON[p.media_type] || "📝"}</span>
+                    <span style={{ background: st.bg, color: st.c, borderRadius: 20, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{st.label}</span>
+                  </div>
+                  <div style={{ color: "#111827", fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{p.page_name}</div>
+                  <div className="line-clamp-2" style={{ color: "#6B7280", fontSize: 11 }}>{p.message}</div>
+                  {p.post_id && (
+                    <a href={p.media_type === "video" ? `https://www.facebook.com/reel/${p.post_id}/` : `https://www.facebook.com/${p.post_id}`}
+                      target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LichDangTab() {
   const [posts, setPosts] = useState<any[]>([])
   const [filterStatus, setFilterStatus] = useState("all")
   const [filterFrom, setFilterFrom] = useState("")
   const [filterTo, setFilterTo]   = useState("")
   const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar")
 
   const load = () => {
     setLoading(true)
@@ -264,26 +384,39 @@ function LichDangTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Filter bar */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {/* View toggle */}
+        <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 2, gap: 2 }}>
+          {([["calendar","📅 Lịch"],["list","☰ Danh sách"]] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setViewMode(v)}
+              style={{ background: viewMode === v ? "#FFFFFF" : "transparent", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: viewMode === v ? "#111827" : "#6B7280", boxShadow: viewMode === v ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>
+              {l}
+            </button>
+          ))}
+        </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={inp}>
           <option value="all">Tất cả trạng thái</option>
           <option value="success">Đã đăng</option>
           <option value="scheduled">Lên lịch</option>
           <option value="failed">Lỗi</option>
         </select>
-        <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={inp} placeholder="Từ ngày" />
-        <span style={{ color: "#9CA3AF" }}>→</span>
-        <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} style={inp} placeholder="Đến ngày" />
+        {viewMode === "list" && <>
+          <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={inp} />
+          <span style={{ color: "#9CA3AF" }}>→</span>
+          <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} style={inp} />
+        </>}
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{posts.length} bài</span>
       </div>
 
       {loading && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
 
-      {!loading && posts.length === 0 && (
+      {!loading && viewMode === "calendar" && <CalendarView posts={posts} />}
+
+      {!loading && viewMode === "list" && posts.length === 0 && (
         <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có bài nào</div>
       )}
 
-      {/* Group theo ngày */}
-      {Object.entries(grouped).map(([day, dayPosts]) => (
+      {/* List view */}
+      {!loading && viewMode === "list" && Object.entries(grouped).map(([day, dayPosts]) => (
         <div key={day}>
           <div style={{ color: "#6B7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{day}</div>
           <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
