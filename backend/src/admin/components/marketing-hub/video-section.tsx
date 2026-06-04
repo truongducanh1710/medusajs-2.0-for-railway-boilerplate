@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 
 const STATUS_VARS: Record<string, { c: string; bg: string }> = {
@@ -80,10 +80,24 @@ function Toast({ msg, onDone }: { msg: string; onDone: () => void }) {
 // ============================================================================
 // Tab: Bảng
 // ============================================================================
+const SP_LIST = [
+  "SP1 - Hộp Inox 304", "SP2 - Chảo Titan", "SP3 - Nồi Chiên Không Dầu",
+  "SP4 - Thùng Hạt", "SP5 - Máy Lọc Nước", "SP6 - Ấm Siêu Tốc",
+]
+const NGUOI_LIST = ["Hậu", "Khải", "Quân"]
+const LOAI_LIST = ["Video AI", "Real", "Review"]
+
+type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; ghiChu: string }
+
 function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void }) {
   const [editId, setEditId] = useState<string | null>(null)
   const [filters, setFilters] = useState({ nguoi: "all", sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
+  const [newRowId, setNewRowId] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<QuickAdd>({ sp: SP_LIST[0], nguoiLam: NGUOI_LIST[0], loaiVideo: LOAI_LIST[0], ghiChu: "" })
+  const spRef = useRef<HTMLSelectElement>(null)
 
   useEffect(() => {
     const fn = () => setEditId(null)
@@ -91,17 +105,46 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
     return () => document.removeEventListener("click", fn)
   }, [])
 
+  useEffect(() => {
+    if (adding) spRef.current?.focus()
+  }, [adding])
+
+  const openAdd = () => {
+    setDraft({ sp: SP_LIST[0], nguoiLam: NGUOI_LIST[0], loaiVideo: LOAI_LIST[0], ghiChu: "" })
+    setAdding(true)
+  }
+
+  const cancelAdd = () => setAdding(false)
+
+  const saveRow = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, trangThai: "Cần làm" })
+      setAdding(false)
+      const id = res?.row?.id || res?.id || null
+      if (id) {
+        setNewRowId(id)
+        setTimeout(() => setNewRowId(null), 2000)
+      }
+      setToast("Đã thêm: " + draft.sp)
+      reload()
+    } catch (e: any) {
+      setToast("Lỗi: " + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") { e.preventDefault(); saveRow() }
+    if (e.key === "Escape") cancelAdd()
+  }
+
   const updateStatus = async (id: string, s: string) => {
     setEditId(null)
     try { await apiJson(`/admin/marketing-video/${id}`, "PATCH", { trangThai: s }); reload() }
     catch (e: any) { setToast("Lỗi: " + e.message) }
-  }
-
-  const addRow = async () => {
-    try {
-      await apiJson(`/admin/marketing-video`, "POST", { nguoiLam: "Hậu", sp: "SP1 - Hộp Inox 304", loaiVideo: "Video AI", trangThai: "Cần làm" })
-      setToast("Đã thêm dòng mới"); reload()
-    } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
 
   const filtered = rows.filter(r => {
@@ -113,6 +156,7 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
   })
 
   const inp: React.CSSProperties = { background: "#FFFFFF", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none" }
+  const cellInp: React.CSSProperties = { background: "#F0F6FF", color: "#111827", border: "1px solid #93C5FD", borderRadius: 6, padding: "4px 8px", fontSize: 12, outline: "none", width: "100%" }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -146,7 +190,7 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
             </thead>
             <tbody>
               {filtered.map((row, idx) => (
-                <tr key={row.id} className="hover-bg" style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none" }}>
+                <tr key={row.id} className="hover-bg" style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: newRowId === row.id ? "#EFF6FF" : undefined }}>
                   <td style={{ padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
                   <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
                   <td style={{ padding: "9px 12px", color: "#4B5563", fontSize: 12, whiteSpace: "nowrap" }}>{row.ngayDang || "—"}</td>
@@ -186,14 +230,58 @@ function BangTab({ rows, reload, onDangFB }: { rows: VideoRow[]; reload: () => v
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {filtered.length === 0 && !adding && (
                 <tr><td colSpan={11} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
+              )}
+              {/* ── Inline quick-add row ── */}
+              {adding && (
+                <tr style={{ background: "#F0F6FF", borderTop: "2px solid #93C5FD" }} onKeyDown={handleKeyDown}>
+                  <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>✦</td>
+                  <td style={{ padding: "8px 12px", color: "#93C5FD", fontSize: 11, fontFamily: "monospace" }}>mới</td>
+                  <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>hôm nay</td>
+                  <td style={{ padding: "8px 12px" }}>
+                    <span style={{ background: "#DBEAFE", color: "#1e40af", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>Team</span>
+                  </td>
+                  <td style={{ padding: "8px 12px", minWidth: 110 }}>
+                    <select value={draft.nguoiLam} onChange={e => setDraft(p => ({ ...p, nguoiLam: e.target.value }))} style={cellInp}>
+                      {NGUOI_LIST.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "8px 12px", minWidth: 200 }}>
+                    <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={cellInp}>
+                      {SP_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "8px 12px", minWidth: 110 }}>
+                    <select value={draft.loaiVideo} onChange={e => setDraft(p => ({ ...p, loaiVideo: e.target.value }))} style={cellInp}>
+                      {LOAI_LIST.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>—</td>
+                  <td style={{ padding: "8px 12px" }}>
+                    <StatusPill status="Cần làm" />
+                  </td>
+                  <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                    <input value={draft.ghiChu} onChange={e => setDraft(p => ({ ...p, ghiChu: e.target.value }))} placeholder="Ghi chú (tuỳ chọn)…" style={cellInp} />
+                  </td>
+                  <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                    <div style={{ display: "flex", gap: 5 }}>
+                      <button onClick={saveRow} disabled={saving} style={{ background: saving ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
+                        {saving ? "…" : "✓"}
+                      </button>
+                      <button onClick={cancelAdd} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
+                    </div>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
-        <div style={{ padding: "9px 12px", borderTop: "1px solid #E5E7EB", background: "#F0F1F5" }}>
-          <button onClick={addRow} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", color: "#4B5563", fontSize: 12, fontWeight: 500 }}>＋ Thêm dòng</button>
+        <div style={{ padding: "9px 12px", borderTop: "1px solid #E5E7EB", background: "#F0F1F5", display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={adding ? cancelAdd : openAdd} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: adding ? "#FEE2E2" : "none", border: adding ? "1px solid #FECACA" : "none", borderRadius: 6, cursor: "pointer", color: adding ? "#DC2626" : "#4B5563", fontSize: 12, fontWeight: 500, padding: adding ? "3px 8px" : "0" }}>
+            {adding ? "✕ Hủy" : "＋ Thêm dòng"}
+          </button>
+          {adding && <span style={{ color: "#93C5FD", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>}
         </div>
       </div>
     </div>
