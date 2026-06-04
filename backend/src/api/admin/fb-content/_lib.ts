@@ -59,6 +59,18 @@ export async function ensureTables(pool: Pool): Promise<void> {
     )
   `)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_template_tags ON fb_content_template USING GIN (tags)`)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_publish_job (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      total       INT NOT NULL DEFAULT 0,
+      done        INT NOT NULL DEFAULT 0,
+      status      VARCHAR(20) DEFAULT 'running',
+      progress    JSONB DEFAULT '[]',
+      created_by  VARCHAR(255),
+      created_at  TIMESTAMPTZ DEFAULT now(),
+      finished_at TIMESTAMPTZ
+    )
+  `)
   _tablesReady = true
 }
 

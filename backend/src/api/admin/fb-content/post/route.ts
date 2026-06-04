@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, getPageTokens, filterByPerm } from "../_lib"
+import { getPool, getAuthInfo, getPageTokens, filterByPerm, ensureTables } from "../_lib"
 import { publishPost, isTokenError } from "../../../../lib/fb-graph"
 
 const BATCH = 5
@@ -91,6 +91,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     catch (e: any) { return res.status(400).json({ error: e.message }) }
 
     const pool = getPool()
+    await ensureTables(pool)
     let allPages: any[]
     try { allPages = await getPageTokens(pool) }
     catch (e: any) {
