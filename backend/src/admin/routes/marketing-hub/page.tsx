@@ -3,6 +3,7 @@ import { useState } from "react"
 import { VideoSection, type VideoRow } from "../../components/marketing-hub/video-section"
 import { FbContentSection, type FbPrefill } from "../../components/marketing-hub/fb-content-section"
 import { HieuQuaSection } from "../../components/marketing-hub/hieu-qua-section"
+import { QuanLyPageTab } from "../../components/marketing-hub/quan-ly-page-tab"
 
 const MarketingHubPage = () => {
   const [section, setSection] = useState<"video" | "fb" | "hieuqua">("video")
@@ -17,6 +18,7 @@ const MarketingHubPage = () => {
     { id: "video",    label: "Nguyên liệu Video" },
     { id: "fb",       label: "Đăng Facebook" },
     { id: "hieuqua",  label: "Hiệu quả Video" },
+    { id: "quanly",   label: "🗂 Quản lý Page" },
   ] as const
 
   return (
@@ -40,6 +42,7 @@ const MarketingHubPage = () => {
       {section === "video"   && <VideoSection onDangFB={onDangFB} />}
       {section === "fb"      && <FbContentSection prefill={prefill} initialTab="dangbai" />}
       {section === "hieuqua" && <HieuQuaSection />}
+      {section === "quanly"  && <div style={{ padding: 20 }}><QuanLyPageTab /></div>}
     </div>
   )
 }
