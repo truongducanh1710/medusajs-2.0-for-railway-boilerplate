@@ -75,6 +75,7 @@ export default function BaoCaoMktPage() {
   const [campFrom, setCampFrom] = useState(todayVN())
   const [campTo, setCampTo] = useState(todayVN())
   const [campRangeMode, setCampRangeMode] = useState(false)
+  const [campOnlySpend, setCampOnlySpend] = useState(true)
 
   // Tab Chi phí SP
   const [spRows, setSpRows] = useState<any[]>([])
@@ -834,6 +835,10 @@ export default function BaoCaoMktPage() {
               <option value="ACTIVE">ACTIVE</option>
               <option value="PAUSED">PAUSED</option>
             </select>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: t.text, whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={campOnlySpend} onChange={e => setCampOnlySpend(e.target.checked)} style={{ accentColor: "#1877F2", width: 14, height: 14 }} />
+              Có tiêu tiền
+            </label>
             <button onClick={fetchCampData} disabled={campLoading} style={{
               background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
               padding: "8px 16px", cursor: campLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: campLoading ? 0.6 : 1
@@ -846,6 +851,7 @@ export default function BaoCaoMktPage() {
             const sortedCamps = [...campRows]
               .filter(r => !filterStatus || r.effective_status === filterStatus)
               .filter(r => !kw || (r.campaign_name ?? "").toLowerCase().includes(kw))
+              .filter(r => !campOnlySpend || Number(r.spend ?? 0) > 0)
               .sort((a, b) => {
                 const colMap: Record<string, (x: any) => number> = {
                   spend: x => Number(x.spend),
