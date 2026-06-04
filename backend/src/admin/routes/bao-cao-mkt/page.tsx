@@ -147,7 +147,7 @@ export default function BaoCaoMktPage() {
   // Tab Pixel theo Camp
   const [pixelMapData, setPixelMapData] = useState<any>(null)
   const [pixelMapLoading, setPixelMapLoading] = useState(false)
-  const [pixelMapOnlyActive, setPixelMapOnlyActive] = useState(true)
+  const [pixelMapOnlyActive, setPixelMapOnlyActive] = useState(false)
   const [pixelFilterMkt, setPixelFilterMkt] = useState("")
   const [pixelFilterPixel, setPixelFilterPixel] = useState("")
   const fetchPixelMap = useCallback((force = false) => {
