@@ -16,6 +16,7 @@ const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B
 
 type VideoRow = {
   id: string; vdCode: string; ngayDang: string; postDate?: string | null
+  createdAt?: string
   nguon: string; nguoiLam: string; sp: string; productCode?: string
   loaiVideo: string; link: string; trangThai: string; ghiChu: string; createdBy?: string
 }
@@ -264,10 +265,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
                   <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
                   {/* Ngày */}
+                  {/* Ngày tạo — cố định, không cho sửa */}
                   <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
-                    {isEditing
-                      ? <input type="date" value={ed.postDate || ""} onChange={e => setEditDraft(p => ({ ...p!, postDate: e.target.value }))} style={cellInp} />
-                      : <span style={{ color: "#4B5563", fontSize: 12 }}>{row.ngayDang || "—"}</span>}
+                    <span style={{ color: "#4B5563", fontSize: 12 }}>{row.createdAt || "—"}</span>
                   </td>
                   <td style={{ padding: "9px 12px" }}>
                     <span style={{ background: row.nguon === "Team" ? "#DBEAFE" : "#F0F1F5", color: row.nguon === "Team" ? "#1e40af" : "#4B5563", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>{row.nguon}</span>
@@ -335,7 +335,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       </div>
                     ) : (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                        {(row.trangThai === "Xong" || row.trangThai === "Chờ duyệt") && (
+                        {row.link && (
                           <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
                         )}
                         <button onClick={e => { e.stopPropagation(); startEdit(row) }} title="Chỉnh sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>✏️</button>

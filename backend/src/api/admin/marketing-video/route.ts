@@ -8,6 +8,7 @@ function toUiRow(r: any) {
     vdCode: r.vd_code,
     ngayDang: r.post_date ? new Date(r.post_date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : "",
     postDate: r.post_date,
+    createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "",
     nguon: r.source === "ctv" ? "CTV" : "Team",
     nguoiLam: r.maker,
     sp: r.product || "",
