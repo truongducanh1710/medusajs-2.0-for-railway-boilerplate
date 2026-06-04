@@ -221,11 +221,16 @@ export default function BaoCaoMktPage() {
       const data = await res.json()
       setRows(data.rows ?? [])
       setSummary(data.summary ?? {})
-      const names = Object.keys(data.summary ?? {})
+      const allNames = Object.keys(data.summary ?? {})
+      // Chỉ giữ MKT có ít nhất spend hoặc doanh thu trong kỳ
+      const activeNames = allNames.filter(m => {
+        const s = (data.summary ?? {})[m] || {}
+        return Number(s.ads_cost || 0) > 0 || Number(s.revenue_total || 0) > 0
+      })
       const sorted = [
-        ...MKT_ORDER.filter(m => names.includes(m)),
-        ...names.filter(m => !MKT_ORDER.includes(m) && m !== "KHÁC"),
-        ...(names.includes("KHÁC") ? ["KHÁC"] : []),
+        ...MKT_ORDER.filter(m => activeNames.includes(m)),
+        ...activeNames.filter(m => !MKT_ORDER.includes(m) && m !== "KHÁC"),
+        ...(activeNames.includes("KHÁC") ? ["KHÁC"] : []),
       ]
       setMktNames(sorted)
     } catch (e) {
