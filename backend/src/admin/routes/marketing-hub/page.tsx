@@ -27,7 +27,7 @@ function ProductsTab() {
     setSyncing(true); setMsg(null)
     try {
       const r = await apiFetch("/admin/marketing-video/products", { method: "POST", body: JSON.stringify({ action: "sync" }) }).then(r => r.json())
-      setMsg(`Đã sync ${r.synced} sản phẩm từ Pancake`)
+      setMsg(r.ok ? `Đã sync ${r.synced ?? r.total ?? "?"} sản phẩm từ Pancake` : `Lỗi: ${r.error || "unknown"}`)
       load()
     } catch { setMsg("Sync thất bại") }
     finally { setSyncing(false) }

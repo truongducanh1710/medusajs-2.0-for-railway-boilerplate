@@ -35,13 +35,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         return res.status(503).json({ error: "Chưa cấu hình PANCAKE_API_KEY" })
       }
 
+      // Đảm bảo unique constraint tồn tại trước khi upsert
+      await pool.query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'mkt_product_pancake_id_key'
+          ) THEN
+            ALTER TABLE mkt_product ADD CONSTRAINT mkt_product_pancake_id_key UNIQUE (pancake_id);
+          END IF;
+        END $$
+      `).catch(() => {})
+
       const fetched: { name: string; code: string; pancake_id: string }[] = []
       let page = 1
       while (true) {
         const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/products?api_key=${PANCAKE_API_KEY}&page=${page}&limit=100`
         const r = await fetch(url)
-        if (!r.ok) break
+        if (!r.ok) {
+          console.error("[mkt-products sync] Pancake fetch failed:", r.status, r.statusText)
+          break
+        }
         const data = await r.json()
+        console.log(`[mkt-products sync] page=${page} keys=${Object.keys(data).join(",")} total_pages=${data.total_pages}`)
         const items: any[] = data.data ?? data.products ?? []
         if (!items.length) break
         for (const p of items) {
@@ -54,31 +69,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         page++
       }
 
-      // Upsert theo pancake_id — giữ lại code đã sửa tay nếu có
       let upserted = 0
       for (const p of fetched) {
-        await pool.query(`
-          INSERT INTO mkt_product (name, code, pancake_id, active, updated_at)
-          VALUES ($1, $2, $3, true, now())
-          ON CONFLICT (pancake_id) DO UPDATE SET
-            name = EXCLUDED.name,
-            active = true,
-            updated_at = now()
-        `, [p.name, p.code, p.pancake_id])
-        upserted++
+        try {
+          await pool.query(`
+            INSERT INTO mkt_product (name, code, pancake_id, active, updated_at)
+            VALUES ($1, $2, $3, true, now())
+            ON CONFLICT (pancake_id) DO UPDATE SET
+              name = EXCLUDED.name,
+              active = true,
+              updated_at = now()
+          `, [p.name, p.code, p.pancake_id])
+          upserted++
+        } catch (e: any) {
+          console.error("[mkt-products upsert] error:", e.message, p)
+        }
       }
 
-      // Tạo unique constraint nếu chưa có
-      await pool.query(`
-        DO $$ BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint WHERE conname = 'mkt_product_pancake_id_key'
-          ) THEN
-            ALTER TABLE mkt_product ADD CONSTRAINT mkt_product_pancake_id_key UNIQUE (pancake_id);
-          END IF;
-        END $$
-      `).catch(() => {})
-
+      console.log(`[mkt-products sync] done: fetched=${fetched.length} upserted=${upserted}`)
       return res.json({ ok: true, synced: upserted, total: fetched.length })
     }
 
