@@ -59,6 +59,17 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ai_review JSONB`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS fb_post_links JSONB DEFAULT '[]'`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS deadline DATE`)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mkt_product (
+      id          SERIAL PRIMARY KEY,
+      name        VARCHAR(255) NOT NULL,
+      code        VARCHAR(64)  NOT NULL DEFAULT '',
+      pancake_id  VARCHAR(64),
+      active      BOOLEAN DEFAULT true,
+      created_at  TIMESTAMPTZ DEFAULT now(),
+      updated_at  TIMESTAMPTZ DEFAULT now()
+    )
+  `)
   _tablesReady = true
 }
 
