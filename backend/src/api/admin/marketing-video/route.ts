@@ -65,9 +65,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       `SELECT * FROM mkt_video ${where} ORDER BY post_date DESC NULLS LAST, created_at DESC`,
       params
     )
-    // Backfill ad_name: dòng chưa có, hoặc còn format auto cũ (MKT_SP_LOAI_VD...)
-    const OLD_AUTO = /_SP_(REAL|REVIEW|VIDEOAI|VIDEO)_VD/i
-    const needsFill = rows.filter(r => !r.ad_name || OLD_AUTO.test(r.ad_name))
+    // Backfill ad_name chỉ khi thực sự trống
+    const needsFill = rows.filter(r => !r.ad_name)
     if (needsFill.length > 0) {
       await Promise.all(needsFill.map(r => {
         r.ad_name = computeAdName(r)
