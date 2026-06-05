@@ -46,3 +46,17 @@ export const lineClamp = (n: number): React.CSSProperties => ({
 })
 
 export type FbPrefill = { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null
+
+export const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
+  published: { label: "Đã đăng",  c: "#059669", bg: "#D1FAE5" },
+  scheduled: { label: "Lịch đăng", c: "#2563EB", bg: "#DBEAFE" },
+  pending:   { label: "Chờ đăng", c: "#D97706", bg: "#FEF3C7" },
+  running:   { label: "Đang đăng", c: "#7C3AED", bg: "#EDE9FE" },
+  failed:    { label: "Thất bại",  c: "#DC2626", bg: "#FEE2E2" },
+}
+
+export function pageColorFn(pageId: string): string {
+  const colors = ["#1877F2","#E91E63","#9C27B0","#FF5722","#4CAF50","#FF9800","#00BCD4"]
+  let h = 0; for (let i = 0; i < pageId.length; i++) h = (h * 31 + pageId.charCodeAt(i)) >>> 0
+  return colors[h % colors.length]
+}

@@ -47,6 +47,29 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_user   ON fb_scheduled_post (created_by, created_at DESC)`)
   await pool.query(`ALTER TABLE fb_scheduled_post ADD COLUMN IF NOT EXISTS post_id VARCHAR(64)`)
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fb_post_post_id ON fb_scheduled_post (post_id) WHERE post_id IS NOT NULL`)
+  // fb_post_stats: lưu insights từ Facebook API (likes, comments, shares, reach)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_post_stats (
+      post_id       VARCHAR(64) PRIMARY KEY,
+      page_id       VARCHAR(32) NOT NULL,
+      page_name     VARCHAR(255),
+      message       TEXT,
+      media_type    VARCHAR(16),
+      product_code  VARCHAR(64),
+      product_name  VARCHAR(255),
+      created_by    VARCHAR(255),
+      published_at  TIMESTAMPTZ,
+      likes         INT DEFAULT 0,
+      comments      INT DEFAULT 0,
+      shares        INT DEFAULT 0,
+      reach         INT DEFAULT 0,
+      video_views   INT DEFAULT 0,
+      synced_at     TIMESTAMPTZ DEFAULT now()
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_page ON fb_post_stats (page_id, published_at DESC)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_product ON fb_post_stats (product_code)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_likes ON fb_post_stats (likes DESC)`)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fb_content_template (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

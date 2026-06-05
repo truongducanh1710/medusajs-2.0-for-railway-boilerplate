@@ -134,6 +134,10 @@ export default defineMiddlewares({
       ]
     },
 
+    // Facebook post stats — xem insights tổng hợp
+    { matcher: "/admin/fb-content/post-stats*", method: ["GET"], middlewares: [requirePerm("page.fb-content.stats")] },
+    { matcher: "/admin/fb-content/post-stats*", method: ["POST"], middlewares: [requirePerm("page.fb-content.stats")] },
+
     // Facebook webhook — public, không cần auth (Facebook gọi vào, không có token)
     { matcher: "/admin/facebook/webhook", method: ["GET", "POST"], middlewares: [] },
 

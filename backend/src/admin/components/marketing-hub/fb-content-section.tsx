@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { BoostCampModal, type BoostTarget } from "./boost-camp-modal"
+import { PostStatsTab } from "./post-stats-tab"
 
 export type FbPrefill = { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null
 
@@ -813,6 +814,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
     { id: "lichdang",     label: "Lịch đăng" },
     { id: "viraltracker", label: "Viral Tracker" },
     { id: "thuvien",      label: "Thư viện" },
+    { id: "poststats",    label: "📊 Tổng hợp bài viết" },
     ...(canManagePages ? [{ id: "phanquyen", label: "🔐 Phân quyền trang" }] : []),
   ]
 
@@ -828,6 +830,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
         {tab === "lichdang"     && <LichDangTab />}
         {tab === "viraltracker" && <ViralTrackerTab />}
         {tab === "thuvien"      && <ThuVienTab />}
+        {tab === "poststats"    && <PostStatsTab />}
         {tab === "phanquyen"    && <PhanQuyenTrangTab />}
       </div>
     </div>
