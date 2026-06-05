@@ -14,11 +14,14 @@ const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Xong", "Đã
 const PERSON_COLORS: Record<string, string> = { "Hậu": "#1877F2", "Khải": "#10B981", "Quân": "#F59E0B" }
 const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B981", "Review": "#F59E0B" }
 
+type FbPostLink = { page_id: string; page_name: string; post_url: string; posted_at: string }
+
 type VideoRow = {
   id: string; vdCode: string; ngayDang: string; postDate?: string | null
   createdAt?: string; adName?: string; script?: string
   nguon: string; nguoiLam: string; sp: string; productCode?: string
   loaiVideo: string; link: string; trangThai: string; ghiChu: string; createdBy?: string
+  fbPostLinks?: FbPostLink[]
 }
 
 // ============================================================================
@@ -96,6 +99,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
+  const [fbLinkModal, setFbLinkModal] = useState<{ row: VideoRow } | null>(null)
+  const [fbLinkDraft, setFbLinkDraft] = useState<{ page_name: string; post_url: string }>({ page_name: "", post_url: "" })
   const [newRowId, setNewRowId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -182,6 +187,34 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
 
+  const saveFbLink = async () => {
+    if (!fbLinkModal || !fbLinkDraft.post_url.trim()) return
+    const row = fbLinkModal.row
+    const existing = row.fbPostLinks || []
+    const newLink: FbPostLink = {
+      page_id: "",
+      page_name: fbLinkDraft.page_name.trim() || "Page",
+      post_url: fbLinkDraft.post_url.trim(),
+      posted_at: new Date().toISOString(),
+    }
+    const updated = [...existing, newLink]
+    try {
+      await apiJson(`/admin/marketing-video/${row.id}`, "PATCH", { fbPostLinks: updated })
+      setFbLinkModal(null)
+      setFbLinkDraft({ page_name: "", post_url: "" })
+      setToast("Đã lưu link bài đăng")
+      reload()
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
+  const removeFbLink = async (row: VideoRow, idx: number) => {
+    const updated = (row.fbPostLinks || []).filter((_, i) => i !== idx)
+    try {
+      await apiJson(`/admin/marketing-video/${row.id}`, "PATCH", { fbPostLinks: updated })
+      setToast("Đã xóa link"); reload()
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
   const filtered = rows.filter(r => {
     if (filters.nguoi !== "all") {
       // filters.nguoi là mkt_code — map sang name để match với r.nguoiLam (maker = tên)
@@ -244,6 +277,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               <col style={{ width: 190 }} />  {/* Sản phẩm */}
               <col style={{ width: 90 }} />   {/* Loại */}
               <col style={{ width: 70 }} />   {/* Link */}
+              <col style={{ width: 90 }} />   {/* Bài FB */}
               <col style={{ width: 110 }} />  {/* Trạng thái */}
               <col style={{ width: 160 }} />  {/* Ad Name */}
               <col style={{ width: 200 }} />  {/* Lời thoại */}
@@ -252,7 +286,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
-                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Sản phẩm", "Loại", "Link", "Trạng thái", "Ad Name", "Lời thoại", "Ghi chú", ""].map((h, i) => (
+                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Sản phẩm", "Loại", "Link", "Bài FB", "Trạng thái", "Ad Name", "Lời thoại", "Ghi chú", ""].map((h, i) => (
                   <th key={i} style={{ padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -306,6 +340,18 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     {isEditing
                       ? <input value={ed.link} onChange={e => setEditDraft(p => ({ ...p!, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
                       : row.link ? <a href={row.link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>↗ Drive</a> : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
+                  </td>
+                  {/* Bài FB */}
+                  <td style={{ padding: "9px 12px" }}>
+                    {(row.fbPostLinks && row.fbPostLinks.length > 0) ? (
+                      <button onClick={() => { setFbLinkModal({ row }); setFbLinkDraft({ page_name: "", post_url: "" }) }} title="Xem / thêm link bài đăng" style={{ display: "flex", alignItems: "center", gap: 4, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#1D4ED8", fontWeight: 600 }}>
+                        ✓ {row.fbPostLinks.length} bài
+                      </button>
+                    ) : (
+                      <button onClick={() => { setFbLinkModal({ row }); setFbLinkDraft({ page_name: "", post_url: "" }) }} title="Thêm link bài đăng Facebook" style={{ background: "none", border: "1px dashed #D1D5DB", borderRadius: 12, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#9CA3AF" }}>
+                        + Link
+                      </button>
+                    )}
                   </td>
                   {/* Trạng thái */}
                   <td style={{ padding: "9px 12px" }}>
@@ -374,7 +420,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 )
               })}
               {filtered.length === 0 && !adding && (
-                <tr><td colSpan={11} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
+                <tr><td colSpan={12} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
               )}
               {/* ── Inline quick-add row ── */}
               {adding && (
@@ -407,6 +453,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "8px 12px" }}>
                     <input value={draft.link} onChange={e => setDraft(p => ({ ...p, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
                   </td>
+                  <td style={{ padding: "8px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
                   <td style={{ padding: "8px 12px" }}>
                     <StatusPill status="Cần làm" />
                   </td>
@@ -441,6 +488,51 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           {adding && <span style={{ color: "#93C5FD", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>}
         </div>
       </div>
+
+      {/* ── Modal: link bài đăng FB ── */}
+      {fbLinkModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setFbLinkModal(null)}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "95vw", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>Link bài đăng Facebook</span>
+              <button onClick={() => setFbLinkModal(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 18 }}>✕</button>
+            </div>
+
+            {/* Danh sách link đã lưu */}
+            {(fbLinkModal.row.fbPostLinks || []).length > 0 && (
+              <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                {(fbLinkModal.row.fbPostLinks || []).map((lnk, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "#F0F6FF", borderRadius: 8, padding: "7px 10px" }}>
+                    <span style={{ fontSize: 11, color: "#1D4ED8", fontWeight: 600, minWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lnk.page_name || "Page"}</span>
+                    <a href={lnk.post_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, fontSize: 11, color: "#1877F2", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lnk.post_url.replace("https://www.facebook.com/", "fb.com/")}</a>
+                    <button onClick={() => removeFbLink(fbLinkModal.row, i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", fontSize: 14, flexShrink: 0 }} title="Xóa">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Form thêm link mới */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <input
+                value={fbLinkDraft.page_name}
+                onChange={e => setFbLinkDraft(p => ({ ...p, page_name: e.target.value }))}
+                placeholder="Tên Page (vd: Phan Việt Official)"
+                style={{ border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none" }}
+              />
+              <input
+                value={fbLinkDraft.post_url}
+                onChange={e => setFbLinkDraft(p => ({ ...p, post_url: e.target.value }))}
+                placeholder="Link bài đăng Facebook..."
+                style={{ border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none" }}
+              />
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                <button onClick={() => setFbLinkModal(null)} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#4B5563" }}>Đóng</button>
+                <button onClick={saveFbLink} disabled={!fbLinkDraft.post_url.trim()} style={{ background: fbLinkDraft.post_url.trim() ? "#1877F2" : "#93C5FD", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: fbLinkDraft.post_url.trim() ? "pointer" : "default", color: "#fff" }}>＋ Thêm link</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
