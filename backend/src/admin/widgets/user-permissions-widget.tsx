@@ -81,6 +81,11 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
     Array.isArray(data?.metadata?.permissions) ? data.metadata.permissions : []
   )
   const [mktCode, setMktCode] = useState<string>((data?.metadata?.mkt_code as string) ?? "")
+  const [mktCodesRaw, setMktCodesRaw] = useState<string>(
+    Array.isArray(data?.metadata?.mkt_codes)
+      ? (data.metadata.mkt_codes as string[]).join(", ")
+      : ""
+  )
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [autoAdded, setAutoAdded] = useState<string[]>([])
@@ -113,6 +118,10 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
             ...(data.metadata ?? {}),
             permissions: finalPerms,
             mkt_code: mktCode.trim().toUpperCase() || null,
+            mkt_codes: mktCodesRaw
+              .split(",")
+              .map(s => s.trim().toUpperCase())
+              .filter(Boolean),
           },
         }),
       })
@@ -155,6 +164,21 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
         />
         <span className="text-xs text-gray-500">
           User chỉ bật/tắt được camp có MKT code này
+        </span>
+      </div>
+
+      {/* MKT Codes bàn giao */}
+      <div className="flex items-center gap-3 pb-3 border-b">
+        <label className="text-sm font-medium whitespace-nowrap">Codes bàn giao:</label>
+        <input
+          type="text"
+          value={mktCodesRaw}
+          onChange={(e) => setMktCodesRaw(e.target.value)}
+          placeholder="VD: KIENLB, XUANLT (cách nhau bằng dấu phẩy)"
+          className="px-2 py-1 text-sm border rounded font-mono uppercase flex-1 max-w-sm"
+        />
+        <span className="text-xs text-gray-500">
+          User care được camp của tất cả codes này (kể cả code bàn giao từ người khác)
         </span>
       </div>
 

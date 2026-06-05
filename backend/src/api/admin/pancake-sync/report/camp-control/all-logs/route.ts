@@ -16,8 +16,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const params: any[] = []
 
     if (mkt) {
-      params.push(`%_${mkt}_%`)
-      conditions.push(`campaign_name ILIKE $${params.length}`)
+      const codes = mkt.split(",").map(s => s.trim().toUpperCase()).filter(Boolean)
+      if (codes.length === 1) {
+        params.push(`%_${codes[0]}_%`)
+        conditions.push(`campaign_name ILIKE $${params.length}`)
+      } else {
+        const likeClauses = codes.map(c => { params.push(`%_${c}_%`); return `campaign_name ILIKE $${params.length}` })
+        conditions.push(`(${likeClauses.join(" OR ")})`)
+      }
     }
     if (user_email) {
       params.push(user_email)

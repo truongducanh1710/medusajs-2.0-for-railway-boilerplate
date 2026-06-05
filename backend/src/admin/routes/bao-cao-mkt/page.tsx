@@ -88,7 +88,7 @@ export default function BaoCaoMktPage() {
   const [spFrom, setSpFrom] = useState(from)
   const [spTo, setSpTo] = useState(to)
 
-  const { isSuper, mktCode, has } = useCurrentPermissions()
+  const { isSuper, mktCode, mktCodes, has } = useCurrentPermissions()
 
   // Tạo Camp từ video (picker → BoostCampModal)
   const canCreateCamp = isSuper || has("page.fb-content.post")
@@ -221,7 +221,7 @@ export default function BaoCaoMktPage() {
   const [aiCompareModels, setAiCompareModels] = useState<string[]>(["deepseek-v4-pro", "google/gemini-3.5-flash", "anthropic/claude-sonnet-4-5"])
   const [verifyWarn, setVerifyWarn] = useState<string | null>(null)
 
-  const ownerOf = (camp: any) => isSuper || (canControl && mktCode === camp.mkt_name)
+  const ownerOf = (camp: any) => isSuper || (canControl && mktCodes.includes(camp.mkt_name))
 
   // Theme tokens
   const t = dark ? {
@@ -394,7 +394,7 @@ export default function BaoCaoMktPage() {
       const p = new URLSearchParams({ limit: String(SCHED_LIMIT), offset: String(schedOffset) })
       if (schedStatus) p.set("status", schedStatus)
       if (schedMkt) p.set("mkt", schedMkt)
-      else if (!isSuper && mktCode) p.set("mkt", mktCode)
+      else if (!isSuper && mktCodes.length) p.set("mkt", mktCodes.join(","))
       const res = await apiFetch(`/admin/pancake-sync/report/camp-control/all-schedules?${p}`)
       const data = await res.json()
       setSchedules(data.schedules ?? [])
@@ -407,7 +407,7 @@ export default function BaoCaoMktPage() {
     try {
       const p = new URLSearchParams({ limit: String(LOGS_LIMIT), offset: String(actLogsOffset) })
       if (actLogsMkt) p.set("mkt", actLogsMkt)
-      else if (!isSuper && mktCode) p.set("mkt", mktCode)
+      else if (!isSuper && mktCodes.length) p.set("mkt", mktCodes.join(","))
       if (actLogsAction) p.set("action", actLogsAction)
       if (actLogsFrom) p.set("from", actLogsFrom)
       if (actLogsTo) p.set("to", actLogsTo)
@@ -425,7 +425,7 @@ export default function BaoCaoMktPage() {
       if (fbHistFrom) p.set("from", fbHistFrom)
       if (fbHistTo) p.set("to", fbHistTo)
       if (fbHistMkt) p.set("mkt", fbHistMkt)
-      else if (!isSuper && mktCode) p.set("mkt", mktCode)
+      else if (!isSuper && mktCodes.length) p.set("mkt", mktCodes.join(","))
       if (fbHistActorType) p.set("actor_type", fbHistActorType)
       const res = await apiFetch(`/admin/pancake-sync/report/fb-activity?${p}`)
       const data = await res.json()

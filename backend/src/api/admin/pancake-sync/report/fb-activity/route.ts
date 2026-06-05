@@ -21,7 +21,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     if (from) { params.push(from); conditions.push(`event_time >= $${params.length}::date`) }
     if (to) { params.push(to); conditions.push(`event_time < ($${params.length}::date + interval '1 day')`) }
-    if (mkt) { params.push(mkt); conditions.push(`mkt_name = $${params.length}`) }
+    if (mkt) {
+      const codes = mkt.split(",").map(s => s.trim().toUpperCase()).filter(Boolean)
+      if (codes.length === 1) {
+        params.push(codes[0]); conditions.push(`mkt_name = $${params.length}`)
+      } else {
+        params.push(codes); conditions.push(`mkt_name = ANY($${params.length}::text[])`)
+      }
+    }
     if (campaign_id) { params.push(campaign_id); conditions.push(`campaign_id = $${params.length}`) }
     if (actor_type) { params.push(actor_type); conditions.push(`actor_type = $${params.length}`) }
     if (event_type) { params.push(event_type); conditions.push(`event_type = $${params.length}`) }

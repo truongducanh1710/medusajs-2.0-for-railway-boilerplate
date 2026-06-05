@@ -13,5 +13,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ? (user.metadata as any).permissions
     : []
   const mktCode = (user.metadata as any)?.mkt_code ?? null
-  res.json({ email: user.email, permissions: isSuper ? "*" : perms, is_super: isSuper, mkt_code: mktCode })
+  // mkt_codes: danh sách code được quản lý (bao gồm cả code bàn giao từ người khác)
+  const rawCodes = (user.metadata as any)?.mkt_codes
+  const mktCodes: string[] = Array.isArray(rawCodes) ? rawCodes : (mktCode ? [mktCode] : [])
+  res.json({ email: user.email, permissions: isSuper ? "*" : perms, is_super: isSuper, mkt_code: mktCode, mkt_codes: mktCodes })
 }
