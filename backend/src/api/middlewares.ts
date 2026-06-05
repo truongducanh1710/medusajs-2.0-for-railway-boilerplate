@@ -134,6 +134,9 @@ export default defineMiddlewares({
       ]
     },
 
+    // Facebook webhook — public, không cần auth (Facebook gọi vào, không có token)
+    { matcher: "/admin/facebook/webhook", method: ["GET", "POST"], middlewares: [] },
+
     // Quản lý user — không chặn ở đây vì Medusa native auth đã guard /admin/users
     // requirePerm chạy trước auth_context được inject nên sẽ 401
   ],
