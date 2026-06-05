@@ -136,7 +136,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     apiFetch("/admin/marketing-video/products")
       .then(r => r.json())
       .then(d => {
-        const list = (d.products || []).filter((p: any) => p.name)
+        const list = (d.products || []).filter((p: any) => p.name && p.active !== false)
         setSpList(list)
       })
       .catch(() => {})
