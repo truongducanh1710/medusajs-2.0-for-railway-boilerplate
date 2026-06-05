@@ -42,7 +42,7 @@ async function syncPageStats(pool: any, pageId: string, pageToken: string, pageN
     const shares = post.shares?.count ?? 0
     const publishedAt = post.created_time ? new Date(post.created_time).toISOString() : null
     const mediaType = post.attachments?.data?.[0]?.type?.includes("video") ? "video" : "text"
-    const meta = productMap[postId] ?? {}
+    const meta: { product_code?: string; product_name?: string; created_by?: string } = productMap[postId] ?? {}
 
     // Lấy reach từ Page Insights
     let reach = 0
