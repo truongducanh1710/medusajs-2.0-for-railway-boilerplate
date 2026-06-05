@@ -303,6 +303,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           </button>
         )}
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
+        <button onClick={adding ? cancelAdd : openAdd} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: adding ? "#FEE2E2" : "#1877F2", border: adding ? "1px solid #FECACA" : "none", borderRadius: 6, cursor: "pointer", color: adding ? "#DC2626" : "#fff", fontSize: 12, fontWeight: 600, padding: "5px 12px", whiteSpace: "nowrap" }}>
+          {adding ? "✕ Hủy" : "＋ Thêm dòng"}
+        </button>
       </div>
 
       <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 280px)" }}>
@@ -530,12 +533,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             </tbody>
           </table>
         </div>
-        <div style={{ padding: "9px 12px", borderTop: "1px solid #E5E7EB", background: "#F0F1F5", display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={adding ? cancelAdd : openAdd} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: adding ? "#FEE2E2" : "none", border: adding ? "1px solid #FECACA" : "none", borderRadius: 6, cursor: "pointer", color: adding ? "#DC2626" : "#4B5563", fontSize: 12, fontWeight: 500, padding: adding ? "3px 8px" : "0" }}>
-            {adding ? "✕ Hủy" : "＋ Thêm dòng"}
-          </button>
-          {adding && <span style={{ color: "#93C5FD", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>}
-        </div>
+        {adding && <div style={{ padding: "6px 12px", borderTop: "1px solid #E5E7EB", background: "#F0F1F5" }}>
+          <span style={{ color: "#93C5FD", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>
+        </div>}
       </div>
 
       {/* ── Popup: chọn deadline ── */}
