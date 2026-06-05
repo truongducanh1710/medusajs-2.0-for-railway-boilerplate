@@ -4226,7 +4226,7 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
         </div>
 
       {/* ===== TAB: BÀN GIAO MKT ===== */}
-      {activeTab === "handover" && isSuper && (() => {
+      {activeTab === "handover" && (() => {
         const inputS: React.CSSProperties = { background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, flex: 1 }
         const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, background: t.card }
         const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, verticalAlign: "middle" }
