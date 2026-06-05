@@ -127,17 +127,17 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [newRowId, setNewRowId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [spList, setSpList] = useState<string[]>([])
+  const [spList, setSpList] = useState<{ name: string; code: string }[]>([])
   const [draft, setDraft] = useState<QuickAdd>({ sp: "", nguoiLam: "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
   const spRef = useRef<HTMLSelectElement>(null)
 
-  // Fetch products từ Medusa
+  // Fetch products từ Pancake POS
   useEffect(() => {
-    apiFetch("/admin/products?limit=100&fields=id,title,handle")
+    apiFetch("/admin/marketing-video/products")
       .then(r => r.json())
       .then(d => {
-        const titles = (d.products || []).map((p: any) => p.title).filter(Boolean)
-        setSpList(titles)
+        const list = (d.products || []).filter((p: any) => p.name)
+        setSpList(list)
       })
       .catch(() => {})
   }, [])
@@ -156,7 +156,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const openAdd = () => {
     const defaultPerson = (!isSuper && mktCode) ? mktCodeToName(mktCode) : (mktUsers[0]?.name || "")
-    setDraft({ sp: spList[0] || "", nguoiLam: defaultPerson, loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
+    setDraft({ sp: spList[0]?.name || "", nguoiLam: defaultPerson, loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
     setAdding(true)
   }
 
@@ -166,7 +166,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     if (saving) return
     setSaving(true)
     try {
-      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm" })
+      const spEntry = spList.find(s => s.name === draft.sp)
+      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm", productCode: spEntry?.code || "" })
       setAdding(false)
       const id = res?.row?.id || res?.id || null
       if (id) { setNewRowId(id); setTimeout(() => setNewRowId(null), 2000) }
@@ -198,7 +199,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const saveEdit = async (id: string) => {
     if (!editDraft) return
     try {
-      await apiJson(`/admin/marketing-video/${id}`, "PATCH", editDraft)
+      const spEntry = spList.find(s => s.name === editDraft.sp)
+      const payload = { ...editDraft, ...(spEntry?.code ? { productCode: spEntry.code } : {}) }
+      await apiJson(`/admin/marketing-video/${id}`, "PATCH", payload)
       setToast("Đã lưu"); cancelEdit(); reload()
     } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
@@ -285,7 +288,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </select>
         <select value={filters.sp} onChange={e => setFilters(p => ({ ...p, sp: e.target.value }))} style={inp}>
           <option value="all">Tất cả SP</option>
-          {spList.map(s => <option key={s} value={s}>{s}</option>)}
+          {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
         </select>
         <select value={filters.tts} onChange={e => setFilters(p => ({ ...p, tts: e.target.value }))} style={inp}>
           <option value="all">Trạng thái</option>
@@ -368,7 +371,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "9px 12px" }}>
                     {isEditing
                       ? <select value={ed.sp} onChange={e => setEditDraft(p => ({ ...p!, sp: e.target.value }))} style={cellInp}>
-                          {spList.map(s => <option key={s} value={s}>{s}</option>)}
+                          {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
                         </select>
                       : <span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{row.sp}</span>}
                   </td>
@@ -488,7 +491,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "8px 12px" }}>
                     <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={cellInp}>
                       {spList.length === 0 && <option value="">Đang tải…</option>}
-                      {spList.map(s => <option key={s} value={s}>{s}</option>)}
+                      {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: "8px 12px" }}>
