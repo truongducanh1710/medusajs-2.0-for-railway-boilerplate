@@ -61,7 +61,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         if (!items.length) break
         for (const p of items) {
           const name = (p.name || "").trim()
-          const code = (p.code || p.sku || p.barcode || "").trim().toUpperCase()
+          // Mã SP trong Pancake lưu ở custom_id hoặc variations[0].display_id
+          const code = (p.custom_id || p.variations?.[0]?.display_id || "").trim().toUpperCase()
           const pancake_id = String(p.id || "")
           if (name) fetched.push({ name, code, pancake_id })
         }
@@ -77,6 +78,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             VALUES ($1, $2, $3, true, now())
             ON CONFLICT (pancake_id) DO UPDATE SET
               name = EXCLUDED.name,
+              code = EXCLUDED.code,
               active = true,
               updated_at = now()
           `, [p.name, p.code, p.pancake_id])
