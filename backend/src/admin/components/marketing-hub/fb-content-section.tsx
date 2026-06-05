@@ -400,7 +400,7 @@ function LichDangTab() {
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={inp}>
           <option value="all">Tất cả trạng thái</option>
-          <option value="success">Đã đăng</option>
+          <option value="published">Đã đăng</option>
           <option value="scheduled">Lên lịch</option>
           <option value="failed">Lỗi</option>
         </select>
