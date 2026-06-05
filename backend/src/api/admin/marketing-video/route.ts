@@ -2,10 +2,20 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, ensureTables, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 
-/** Tên Ad (tên quảng cáo cho video) — mặc định = VD_CODE.
- * Khi lên camp, ad name thật sẽ là "[VD_CODE] - [post_id]" (xử lý ở boost route). */
-function computeAdName(r: any): string {
-  return r.vd_code
+const VIDEO_TYPE_CODE: Record<string, string> = {
+  "Video AI": "VIDEOAI",
+  "Real":     "REAL",
+  "Review":   "REVIEW",
+}
+
+/** Sinh ad_name: {MKT_CODE}_{PRODUCT_CODE}_{VIDEO_TYPE}_{VD_CODE}
+ *  Ví dụ: NAMDV_PHVVN036NC_REAL_VD1042
+ *  mktCode: lấy từ user metadata khi tạo, hoặc truyền vào khi backfill. */
+function computeAdName(r: any, mktCode?: string): string {
+  const mkCode = (mktCode || "MKT").toUpperCase()
+  const spCode = (r.product_code || "SP").replace(/[^A-Z0-9]/gi, "").toUpperCase()
+  const vtCode = VIDEO_TYPE_CODE[r.video_type] || (r.video_type || "VIDEO").toUpperCase().replace(/\s+/g, "")
+  return `${mkCode}_${spCode}_${vtCode}_${r.vd_code}`
 }
 
 /** Map 1 DB row → shape UI design (field tiếng Việt). */
@@ -65,11 +75,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       `SELECT * FROM mkt_video ${where} ORDER BY post_date DESC NULLS LAST, created_at DESC`,
       params
     )
-    // Backfill ad_name chỉ khi thực sự trống
-    const needsFill = rows.filter(r => !r.ad_name)
+    // Backfill ad_name khi trống hoặc chỉ là VD_CODE (bị ghi đè lỗi)
+    const isVdCodeOnly = (s: string) => /^VD\d+$/.test(s)
+    const needsFill = rows.filter(r => !r.ad_name || isVdCodeOnly(r.ad_name))
     if (needsFill.length > 0) {
+      // Lấy mkt_code của tất cả users 1 lần
+      const userModule = (req as any).scope.resolve(Modules.USER)
+      const allUsers = await userModule.listUsers({}, { select: ["id", "first_name", "last_name", "metadata"] })
+      const mktCodeByName: Record<string, string> = {}
+      for (const u of allUsers) {
+        const name = [u.first_name, u.last_name].filter(Boolean).join(" ")
+        const code = (u.metadata as any)?.mkt_code
+        if (name && code) mktCodeByName[name] = code
+      }
       await Promise.all(needsFill.map(r => {
-        r.ad_name = computeAdName(r)
+        const mktCode = mktCodeByName[r.maker] || r.maker.toUpperCase().replace(/\s+/g, "").slice(0, 8)
+        r.ad_name = computeAdName(r, mktCode)
         return pool.query(`UPDATE mkt_video SET ad_name = $1 WHERE id = $2`, [r.ad_name, r.id])
       }))
     }
@@ -106,15 +127,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const userDetail = await userModule.retrieveUser((req as any).auth_context.actor_id, { select: ["metadata"] })
     const mktCode: string = (userDetail.metadata as any)?.mkt_code || maker.toUpperCase().replace(/\s+/g, "").slice(0, 8)
 
-    // Sinh sp_code từ tên SP (SP1, SP2...) hoặc dùng maker
     const spRaw: string = b.sp ?? b.product ?? ""
-    const spCodeMatch = spRaw.match(/^(SP\d+)/i)
-    const spCode = spCodeMatch ? spCodeMatch[1].toUpperCase() : "SP"
-
-    const loaiCode = (b.loaiVideo ?? b.video_type ?? "Video AI")
-      .replace(/\s+/g, "").replace(/AI/i, "AI").toUpperCase().slice(0, 8)
-
-    const adName = `${mktCode}_${spCode}_${loaiCode}_${vdCode}`
+    const productCode: string = b.productCode ?? b.product_code ?? ""
+    const videoType: string = b.loaiVideo ?? b.video_type ?? "Video AI"
+    const adName = computeAdName({ product_code: productCode, video_type: videoType, vd_code: vdCode }, mktCode)
 
     const { rows: [row] } = await pool.query(
       `INSERT INTO mkt_video
