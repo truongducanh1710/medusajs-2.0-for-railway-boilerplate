@@ -4091,6 +4091,110 @@ export default function BaoCaoMktPage() {
         />
       )}
 
+      {/* ===== TAB: BÀN GIAO MKT ===== */}
+      {activeTab === "handover" && (() => {
+        const inputS: React.CSSProperties = { background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, flex: 1 }
+        const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, background: t.card }
+        const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, verticalAlign: "middle" }
+
+        const addRule = async () => {
+          if (!handoverForm.from_code || !handoverForm.to_code || !handoverForm.effective_from) return alert("Điền đủ Từ code, Sang code, Từ ngày")
+          setHandoverSaving(true)
+          try {
+            await apiFetch("/admin/pancake-sync/report/mkt-handover", { method: "POST", body: JSON.stringify(handoverForm) })
+            const r = await apiFetch("/admin/pancake-sync/report/mkt-handover").then(res => res.json())
+            setHandoverRules(r.rules ?? [])
+            setHandoverForm({ from_code: "", to_code: "", effective_from: "", note: "" })
+          } catch (e: any) { alert(e.message) }
+          finally { setHandoverSaving(false) }
+        }
+
+        const deleteRule = async (id: number) => {
+          if (!confirm("Xóa rule này?")) return
+          await apiFetch(`/admin/pancake-sync/report/mkt-handover/${id}`, { method: "DELETE" }).catch(() => {})
+          setHandoverRules(prev => prev.filter(r => r.id !== id))
+        }
+
+        return (
+          <div style={{ padding: 24 }}>
+            <div style={{ marginBottom: 16 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 4 }}>Bàn giao camp giữa MKT</h2>
+              <div style={{ fontSize: 12, color: t.textMuted }}>
+                Từ ngày hiệu lực trở đi, chi phí + doanh số của camp <b>Từ code</b> sẽ được tính vào <b>Sang code</b> trong báo cáo.
+                Dữ liệu gốc không bị xóa — chỉ đổi cách hiển thị.
+              </div>
+            </div>
+            <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: 16, marginBottom: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: 10 }}>Thêm rule bàn giao</div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Từ code (người nghỉ)</div>
+                  <input style={inputS} placeholder="VD: XUANLT" value={handoverForm.from_code}
+                    onChange={e => setHandoverForm(f => ({ ...f, from_code: e.target.value.toUpperCase() }))} />
+                </div>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Sang code (người nhận)</div>
+                  <input style={inputS} placeholder="VD: KIENLB" value={handoverForm.to_code}
+                    onChange={e => setHandoverForm(f => ({ ...f, to_code: e.target.value.toUpperCase() }))} />
+                </div>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Từ ngày (hiệu lực)</div>
+                  <input type="date" style={inputS} value={handoverForm.effective_from}
+                    onChange={e => setHandoverForm(f => ({ ...f, effective_from: e.target.value }))} />
+                </div>
+                <div style={{ flex: 2, minWidth: 160 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Ghi chú</div>
+                  <input style={inputS} placeholder="VD: Xuân nghỉ việc, Kiên care tiếp" value={handoverForm.note}
+                    onChange={e => setHandoverForm(f => ({ ...f, note: e.target.value }))} />
+                </div>
+                <button onClick={addRule} disabled={handoverSaving} style={{
+                  padding: "7px 18px", borderRadius: 6, border: "none", cursor: "pointer",
+                  background: "#7c3aed", color: "#fff", fontWeight: 600, fontSize: 13,
+                  opacity: handoverSaving ? 0.6 : 1,
+                }}>
+                  {handoverSaving ? "Đang lưu..." : "+ Thêm rule"}
+                </button>
+              </div>
+            </div>
+            {handoverLoading ? (
+              <div style={{ color: t.textMuted, fontSize: 13, padding: 20, textAlign: "center" }}>Đang tải...</div>
+            ) : handoverRules.length === 0 ? (
+              <div style={{ color: t.textMuted, fontSize: 13, padding: 20, textAlign: "center" }}>Chưa có rule bàn giao nào.</div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", background: t.card, borderRadius: 8, overflow: "hidden" }}>
+                  <thead>
+                    <tr>
+                      <th style={thS}>Từ code</th>
+                      <th style={thS}>Sang code</th>
+                      <th style={thS}>Từ ngày</th>
+                      <th style={thS}>Ghi chú</th>
+                      <th style={thS}>Tạo lúc</th>
+                      <th style={thS}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {handoverRules.map(r => (
+                      <tr key={r.id}>
+                        <td style={tdS}><code style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.from_code}</code></td>
+                        <td style={tdS}><code style={{ background: "#d1fae5", color: "#065f46", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.to_code}</code></td>
+                        <td style={tdS}>{r.effective_from?.slice(0, 10)}</td>
+                        <td style={{ ...tdS, color: t.textMuted }}>{r.note || "—"}</td>
+                        <td style={{ ...tdS, color: t.textMuted, fontSize: 11 }}>{r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : ""}</td>
+                        <td style={tdS}>
+                          <button onClick={() => deleteRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 13, padding: "2px 8px" }}>Xóa</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      </div>
     </div>
   )
 }
@@ -4225,117 +4329,6 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
           )}
         </div>
 
-      {/* ===== TAB: BÀN GIAO MKT ===== */}
-      {activeTab === "handover" && (() => {
-        const inputS: React.CSSProperties = { background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, flex: 1 }
-        const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, background: t.card }
-        const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, verticalAlign: "middle" }
-
-        const addRule = async () => {
-          if (!handoverForm.from_code || !handoverForm.to_code || !handoverForm.effective_from) return alert("Điền đủ Từ code, Sang code, Từ ngày")
-          setHandoverSaving(true)
-          try {
-            await apiFetch("/admin/pancake-sync/report/mkt-handover", { method: "POST", body: JSON.stringify(handoverForm) })
-            const r = await apiFetch("/admin/pancake-sync/report/mkt-handover").then(res => res.json())
-            setHandoverRules(r.rules ?? [])
-            setHandoverForm({ from_code: "", to_code: "", effective_from: "", note: "" })
-          } catch (e: any) { alert(e.message) }
-          finally { setHandoverSaving(false) }
-        }
-
-        const deleteRule = async (id: number) => {
-          if (!confirm("Xóa rule này?")) return
-          await apiFetch(`/admin/pancake-sync/report/mkt-handover/${id}`, { method: "DELETE" }).catch(() => {})
-          setHandoverRules(prev => prev.filter(r => r.id !== id))
-        }
-
-        return (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 4 }}>Bàn giao camp giữa MKT</h2>
-              <div style={{ fontSize: 12, color: t.textMuted }}>
-                Từ ngày hiệu lực trở đi, chi phí + doanh số của camp <b>Từ code</b> sẽ được tính vào <b>Sang code</b> trong báo cáo.
-                Dữ liệu gốc không bị xóa — chỉ đổi cách hiển thị.
-              </div>
-            </div>
-
-            {/* Form thêm rule */}
-            <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: 16, marginBottom: 20 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: 10 }}>Thêm rule bàn giao</div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-                <div style={{ flex: 1, minWidth: 120 }}>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Từ code (người nghỉ)</div>
-                  <input style={inputS} placeholder="VD: XUANLT" value={handoverForm.from_code}
-                    onChange={e => setHandoverForm(f => ({ ...f, from_code: e.target.value.toUpperCase() }))} />
-                </div>
-                <div style={{ flex: 1, minWidth: 120 }}>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Sang code (người nhận)</div>
-                  <input style={inputS} placeholder="VD: KIENLB" value={handoverForm.to_code}
-                    onChange={e => setHandoverForm(f => ({ ...f, to_code: e.target.value.toUpperCase() }))} />
-                </div>
-                <div style={{ flex: 1, minWidth: 140 }}>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Từ ngày (hiệu lực)</div>
-                  <input type="date" style={inputS} value={handoverForm.effective_from}
-                    onChange={e => setHandoverForm(f => ({ ...f, effective_from: e.target.value }))} />
-                </div>
-                <div style={{ flex: 2, minWidth: 160 }}>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Ghi chú</div>
-                  <input style={inputS} placeholder="VD: Xuân nghỉ việc, Kiên care tiếp" value={handoverForm.note}
-                    onChange={e => setHandoverForm(f => ({ ...f, note: e.target.value }))} />
-                </div>
-                <button onClick={addRule} disabled={handoverSaving} style={{
-                  padding: "7px 18px", borderRadius: 6, border: "none", cursor: "pointer",
-                  background: "#7c3aed", color: "#fff", fontWeight: 600, fontSize: 13,
-                  opacity: handoverSaving ? 0.6 : 1,
-                }}>
-                  {handoverSaving ? "Đang lưu..." : "+ Thêm rule"}
-                </button>
-              </div>
-            </div>
-
-            {/* Danh sách rules */}
-            {handoverLoading ? (
-              <div style={{ color: t.textMuted, fontSize: 13, padding: 20, textAlign: "center" }}>Đang tải...</div>
-            ) : handoverRules.length === 0 ? (
-              <div style={{ color: t.textMuted, fontSize: 13, padding: 20, textAlign: "center" }}>Chưa có rule bàn giao nào.</div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", background: t.card, borderRadius: 8, overflow: "hidden" }}>
-                  <thead>
-                    <tr>
-                      <th style={thS}>Từ code</th>
-                      <th style={thS}>Sang code</th>
-                      <th style={thS}>Từ ngày</th>
-                      <th style={thS}>Ghi chú</th>
-                      <th style={thS}>Tạo lúc</th>
-                      <th style={thS}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {handoverRules.map(r => (
-                      <tr key={r.id}>
-                        <td style={tdS}><code style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.from_code}</code></td>
-                        <td style={tdS}><code style={{ background: "#d1fae5", color: "#065f46", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.to_code}</code></td>
-                        <td style={tdS}>{r.effective_from?.slice(0, 10)}</td>
-                        <td style={{ ...tdS, color: t.textMuted }}>{r.note || "—"}</td>
-                        <td style={{ ...tdS, color: t.textMuted, fontSize: 11 }}>{r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : ""}</td>
-                        <td style={tdS}>
-                          <button onClick={() => deleteRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 13, padding: "2px 8px" }}>Xóa</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )
-      })()}
-
-      </div>
-    </div>
-  )
-}
 
 export const config = defineRouteConfig({
   label: "Doanh số MKT",
