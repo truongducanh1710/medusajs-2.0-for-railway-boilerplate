@@ -32,6 +32,12 @@ export default function Page() {
         <li>Hủy đăng ký nhận email marketing bất cứ lúc nào.</li>
       </ul>
       <p>Liên hệ: <strong>hoanpd@phanviet.vn</strong> hoặc <strong>0967 993 609</strong>.</p>
+
+      <h2>Xóa dữ liệu</h2>
+      <p>
+        Bạn có thể yêu cầu xóa toàn bộ dữ liệu cá nhân của mình bất cứ lúc nào.{" "}
+        <a href="/xoa-du-lieu">Xem hướng dẫn yêu cầu xóa dữ liệu.</a>
+      </p>
     </PolicyLayout>
   )
 }
