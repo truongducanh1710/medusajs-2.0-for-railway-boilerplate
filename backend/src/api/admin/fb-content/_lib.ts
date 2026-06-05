@@ -45,6 +45,8 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_status ON fb_scheduled_post (status, scheduled_for)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_page   ON fb_scheduled_post (page_id, created_at DESC)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_post_user   ON fb_scheduled_post (created_by, created_at DESC)`)
+  await pool.query(`ALTER TABLE fb_scheduled_post ADD COLUMN IF NOT EXISTS post_id VARCHAR(64)`)
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fb_post_post_id ON fb_scheduled_post (post_id) WHERE post_id IS NOT NULL`)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fb_content_template (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
