@@ -43,6 +43,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       )
     `
 
+    // Load handover rules — áp dụng khi tính attribution theo ngày
+    let handoverRules: { from_code: string; to_code: string; effective_from: string }[] = []
+    try {
+      await cskhService.sql(`CREATE TABLE IF NOT EXISTS mkt_handover (
+        id SERIAL PRIMARY KEY, from_code TEXT NOT NULL, to_code TEXT NOT NULL,
+        effective_from DATE NOT NULL, note TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT now(), deleted_at TIMESTAMPTZ
+      )`)
+      handoverRules = await cskhService.sql(
+        `SELECT from_code, to_code, effective_from::text FROM mkt_handover WHERE deleted_at IS NULL`
+      )
+    } catch { /* ignore nếu bảng chưa tồn tại */ }
+
     const rows = await cskhService.sql(`
       SELECT
         COALESCE(r.date, c.date) AS date,
@@ -97,6 +109,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ) c ON c.date = r.date AND c.mkt_name = r.mkt_name
       ORDER BY COALESCE(r.date, c.date) DESC, COALESCE(r.revenue_total, 0) DESC
     `, [`${from}T00:00:00Z`, to])
+
+    // Apply handover rules: nếu date >= effective_from thì đổi mkt_name
+    for (const row of rows) {
+      for (const rule of handoverRules) {
+        if (row.mkt_name === rule.from_code && row.date >= rule.effective_from) {
+          row.mkt_name = rule.to_code
+          break
+        }
+      }
+    }
 
     // Build summary per MKT
     const summary: Record<string, any> = {}
