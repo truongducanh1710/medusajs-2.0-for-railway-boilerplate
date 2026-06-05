@@ -7,6 +7,7 @@ export type AuthInfo = {
   email: string
   isSuper: boolean
   mktCode: string | null
+  mktCodes: string[]
 }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {
@@ -16,7 +17,9 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
   const mktCode = ((user.metadata as any)?.mkt_code as string | undefined) ?? null
-  return { email: user.email || "", isSuper, mktCode }
+  const rawCodes = (user.metadata as any)?.mkt_codes
+  const mktCodes: string[] = Array.isArray(rawCodes) ? rawCodes : (mktCode ? [mktCode] : [])
+  return { email: user.email || "", isSuper, mktCode, mktCodes }
 }
 
 /**
@@ -36,9 +39,9 @@ export async function checkCampOwner(req: MedusaRequest, campaignId: string, aut
   if (!rows.length) return { ok: false, reason: "Campaign không tồn tại trong DB" }
   const camp = rows[0]
   if (auth.isSuper) return { ok: true, camp }
-  if (!auth.mktCode) return { ok: false, reason: "User chưa được gán MKT Code", camp }
-  if (auth.mktCode !== camp.mkt_name) {
-    return { ok: false, reason: `Camp thuộc MKT ${camp.mkt_name}, bạn là ${auth.mktCode}`, camp }
+  if (!auth.mktCodes.length) return { ok: false, reason: "User chưa được gán MKT Code", camp }
+  if (!auth.mktCodes.includes(camp.mkt_name)) {
+    return { ok: false, reason: `Camp thuộc MKT ${camp.mkt_name}, bạn được phép: ${auth.mktCodes.join(", ")}`, camp }
   }
   return { ok: true, camp }
 }
