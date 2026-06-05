@@ -27,6 +27,8 @@ function toUiRow(r: any) {
     trangThai: STATUS_KEY_TO_VI[r.status] || "Cần làm",
     ghiChu: r.note || "",
     createdBy: r.created_by,
+    fbPostLinks: Array.isArray(r.fb_post_links) ? r.fb_post_links : [],
+    deadline: r.deadline ? new Date(r.deadline).toISOString().slice(0, 10) : null,
   }
 }
 

@@ -31,6 +31,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (b.postDate !== undefined || b.post_date !== undefined) set("post_date", b.postDate ?? b.post_date)
     if (b.adName !== undefined) set("ad_name", b.adName)
     if (b.script !== undefined) set("script", b.script)
+    // fb_post_links: [{page_id, page_name, post_url, posted_at}]
+    if (b.fbPostLinks !== undefined) set("fb_post_links", JSON.stringify(b.fbPostLinks))
+    if (b.deadline !== undefined) set("deadline", b.deadline || null)
 
     if (!sets.length) return res.status(400).json({ error: "Không có trường nào để cập nhật" })
     sets.push(`updated_at = now()`)

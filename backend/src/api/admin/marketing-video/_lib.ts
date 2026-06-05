@@ -55,6 +55,10 @@ export async function ensureTables(pool: Pool): Promise<void> {
   // Backfill cột ad_name nếu bảng đã tồn tại trước khi có cột này
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ad_name VARCHAR(128)`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS script TEXT`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ai_score NUMERIC(4,1)`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ai_review JSONB`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS fb_post_links JSONB DEFAULT '[]'`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS deadline DATE`)
   _tablesReady = true
 }
 

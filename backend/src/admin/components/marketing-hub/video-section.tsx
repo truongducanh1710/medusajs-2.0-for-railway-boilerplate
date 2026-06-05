@@ -22,6 +22,7 @@ type VideoRow = {
   nguon: string; nguoiLam: string; sp: string; productCode?: string
   loaiVideo: string; link: string; trangThai: string; ghiChu: string; createdBy?: string
   fbPostLinks?: FbPostLink[]
+  deadline?: string | null
 }
 
 // ============================================================================
@@ -49,6 +50,26 @@ function Avatar({ name, size = 28 }: { name: string; size?: number }) {
 function VideoTypeChip({ type }: { type: string }) {
   const c = VT_COLORS[type] || "#6B7280"
   return <span style={{ background: c + "18", color: c, border: `1px solid ${c}28`, borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 600 }}>{type}</span>
+}
+
+function DeadlineChip({ deadline, onClick }: { deadline?: string | null; onClick?: () => void }) {
+  if (!deadline) return (
+    <span onClick={onClick} style={{ color: "#D1D5DB", fontSize: 11, cursor: onClick ? "pointer" : "default" }}>—</span>
+  )
+  const today = new Date(); today.setHours(0,0,0,0)
+  const d = new Date(deadline); d.setHours(0,0,0,0)
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000)
+  const label = d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })
+  const { bg, c } = diff < 0
+    ? { bg: "#FEE2E2", c: "#DC2626" }
+    : diff <= 2
+    ? { bg: "#FEF3C7", c: "#D97706" }
+    : { bg: "#DCFCE7", c: "#16A34A" }
+  return (
+    <span onClick={onClick} style={{ background: bg, color: c, borderRadius: 10, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: onClick ? "pointer" : "default", whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  )
 }
 
 function MiniBarChart({ data }: { data: { label: string; value: number; color?: string }[] }) {
@@ -101,6 +122,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [toast, setToast] = useState<string | null>(null)
   const [fbLinkModal, setFbLinkModal] = useState<{ row: VideoRow } | null>(null)
   const [fbLinkDraft, setFbLinkDraft] = useState<{ page_name: string; post_url: string }>({ page_name: "", post_url: "" })
+  const [deadlinePopup, setDeadlinePopup] = useState<{ row: VideoRow } | null>(null)
+  const [makerPopup, setMakerPopup] = useState<{ row: VideoRow } | null>(null)
   const [newRowId, setNewRowId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -215,6 +238,20 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
 
+  const saveDeadline = async (row: VideoRow, deadline: string | null) => {
+    try {
+      await apiJson(`/admin/marketing-video/${row.id}`, "PATCH", { deadline })
+      setDeadlinePopup(null); setToast("Đã lưu deadline"); reload()
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
+  const saveMaker = async (row: VideoRow, maker: string) => {
+    try {
+      await apiJson(`/admin/marketing-video/${row.id}`, "PATCH", { nguoiLam: maker })
+      setMakerPopup(null); setToast("Đã cập nhật người làm"); reload()
+    } catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
   const filtered = rows.filter(r => {
     if (filters.nguoi !== "all") {
       // filters.nguoi là mkt_code — map sang name để match với r.nguoiLam (maker = tên)
@@ -274,6 +311,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               <col style={{ width: 90 }} />   {/* Ngày */}
               <col style={{ width: 70 }} />   {/* Nguồn */}
               <col style={{ width: 140 }} />  {/* Người làm */}
+              <col style={{ width: 85 }} />   {/* Deadline */}
               <col style={{ width: 190 }} />  {/* Sản phẩm */}
               <col style={{ width: 90 }} />   {/* Loại */}
               <col style={{ width: 70 }} />   {/* Link */}
@@ -286,7 +324,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
-                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Sản phẩm", "Loại", "Link", "Bài FB", "Trạng thái", "Ad Name", "Lời thoại", "Ghi chú", ""].map((h, i) => (
+                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Deadline", "Sản phẩm", "Loại", "Link", "Bài FB", "Trạng thái", "Ad Name", "Lời thoại", "Ghi chú", ""].map((h, i) => (
                   <th key={i} style={{ padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -314,10 +352,17 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       ? <select value={ed.nguoiLam} onChange={e => setEditDraft(p => ({ ...p!, nguoiLam: e.target.value }))} style={cellInp}>
                           {mktUsers.map(u => <option key={u.email} value={u.name}>{u.name}{u.mkt_code ? ` · ${u.mkt_code}` : ""}</option>)}
                         </select>
-                      : <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      : <div onClick={isSuper ? () => setMakerPopup({ row }) : undefined} style={{ display: "flex", alignItems: "center", gap: 7, cursor: isSuper ? "pointer" : "default" }}>
                           <Avatar name={row.nguoiLam} size={22} />
                           <span style={{ color: "#111827", fontSize: 13, fontWeight: 500 }}>{row.nguoiLam}</span>
+                          {isSuper && <span style={{ color: "#D1D5DB", fontSize: 10 }}>✎</span>}
                         </div>}
+                  </td>
+                  {/* Deadline */}
+                  <td style={{ padding: "9px 12px" }}>
+                    {isSuper
+                      ? <DeadlineChip deadline={row.deadline} onClick={() => setDeadlinePopup({ row })} />
+                      : <DeadlineChip deadline={row.deadline} />}
                   </td>
                   {/* Sản phẩm */}
                   <td style={{ padding: "9px 12px" }}>
@@ -420,7 +465,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 )
               })}
               {filtered.length === 0 && !adding && (
-                <tr><td colSpan={12} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
+                <tr><td colSpan={13} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
               )}
               {/* ── Inline quick-add row ── */}
               {adding && (
@@ -439,6 +484,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       ))}
                     </select>
                   </td>
+                  <td style={{ padding: "8px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
                   <td style={{ padding: "8px 12px" }}>
                     <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={cellInp}>
                       {spList.length === 0 && <option value="">Đang tải…</option>}
@@ -488,6 +534,41 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           {adding && <span style={{ color: "#93C5FD", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>}
         </div>
       </div>
+
+      {/* ── Popup: chọn deadline ── */}
+      {deadlinePopup && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 8000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setDeadlinePopup(null)}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 20, width: 280, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: "#111827" }}>Đặt deadline — {deadlinePopup.row.vdCode}</div>
+            <input type="date" defaultValue={deadlinePopup.row.deadline || ""}
+              style={{ width: "100%", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}
+              onChange={e => {}}
+              id="deadline-input"
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => saveDeadline(deadlinePopup.row, null)} style={{ background: "#FEE2E2", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "#DC2626", cursor: "pointer" }}>Xóa</button>
+              <button onClick={() => setDeadlinePopup(null)} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Hủy</button>
+              <button onClick={() => { const v = (document.getElementById("deadline-input") as HTMLInputElement)?.value; saveDeadline(deadlinePopup.row, v || null) }} style={{ background: "#1877F2", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Popup: đổi người làm (admin only) ── */}
+      {makerPopup && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 8000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setMakerPopup(null)}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 20, width: 280, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: "#111827" }}>Đổi người làm — {makerPopup.row.vdCode}</div>
+            <select id="maker-select" defaultValue={makerPopup.row.nguoiLam} style={{ width: "100%", border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}>
+              {mktUsers.map(u => <option key={u.email} value={u.name}>{u.name}</option>)}
+            </select>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setMakerPopup(null)} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Hủy</button>
+              <button onClick={() => { const v = (document.getElementById("maker-select") as HTMLSelectElement)?.value; saveMaker(makerPopup.row, v) }} style={{ background: "#1877F2", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal: link bài đăng FB ── */}
       {fbLinkModal && (
