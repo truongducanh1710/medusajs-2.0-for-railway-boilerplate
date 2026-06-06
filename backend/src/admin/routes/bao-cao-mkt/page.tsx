@@ -69,6 +69,7 @@ export default function BaoCaoMktPage() {
   const [namingCampInput, setNamingCampInput] = useState("")
   const [namingUtmMode, setNamingUtmMode] = useState<"fb" | "web">("fb")
   const [skuSearch, setSkuSearch] = useState("")
+  const [skuList, setSkuList] = useState<{ pos: string; name: string }[]>([])
   const [thresholdSaving, setThresholdSaving] = useState(false)
   const [thresholdEditId, setThresholdEditId] = useState<string | null>(null)
   const [thresholdEditForm, setThresholdEditForm] = useState<any>(null)
@@ -691,6 +692,13 @@ export default function BaoCaoMktPage() {
     const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [fetchCronStatus])
+
+  useEffect(() => {
+    apiFetch("/admin/marketing-video/products").then(r => r.json()).then(d => {
+      const list = (d.products || []).filter((p: any) => p.name && p.active !== false)
+      setSkuList(list.map((p: any) => ({ pos: p.code || p.name, name: p.name.toUpperCase() })))
+    }).catch(() => {})
+  }, [])
 
   const byDate: Record<string, Record<string, any>> = {}
   for (const row of rows) {
@@ -3014,34 +3022,11 @@ export default function BaoCaoMktPage() {
 
               {/* ─── TRA CỨU MÃ SP TỪ POS ─── */}
               {(() => {
-                // Mã sản phẩm lấy từ Pancake POS. Dạng gốc POS có dấu _ (PHVVN026_CV);
-                // khi dán vào tên camp viết LIỀN, bỏ dấu _ (PHVVN026CV).
-                const SKU_LIST: { pos: string; name: string }[] = [
-                  { pos: "PHVVN040_KG",     name: "KẸP GẮP ĐỒ" },
-                  { pos: "PHVVN016_CCD",    name: "CHẢO CHỐNG DÍNH KÈM KHAY HẤP" },
-                  { pos: "PHVVN014_MBDN",   name: "DỤNG CỤ BÀO ĐA NĂNG" },
-                  { pos: "PHVVN026_CV",     name: "CHẢO VÀNG CHỐNG DÍNH KÈM KHAY HẤP" },
-                  { pos: "PHVVN034_KĐĐ",    name: "KỆ ĐỂ ĐỒ HAI TẦNG" },
-                  { pos: "PHVVN030_NAS",    name: "NỒI ÁP SUẤT" },
-                  { pos: "PHVVN036_NC",     name: "NỒI CHIÊN INOX 304" },
-                  { pos: "PHVVN023_GĐQA",   name: "GIỎ ĐỰNG QUẦN ÁO ĐA NĂNG" },
-                  { pos: "PHVVN035_GCNG",   name: "GẬY CHỐNG CHO NGƯỜI GIÀ" },
-                  { pos: "PHVVN031_BCX",    name: "BỘ CÂY LAU NHÀ XANH" },
-                  { pos: "PHVVN038_KLD",    name: "BỘ KHAY LỌC DẦU" },
-                  { pos: "PHVVN004_GBLN",   name: "GIẺ LAU NHÀ TÁCH NƯỚC" },
-                  { pos: "PHVVN001_XKC",    name: "DỤNG CỤ XỎ KIM CHỈ" },
-                  { pos: "PHVVN037_HDTP",   name: "HỘP ĐỰNG THỰC PHẨM INOX" },
-                  { pos: "PHVVN003_BLN",    name: "BỘ LAU NHÀ TÁCH NƯỚC" },
-                  { pos: "PHVVN033_NCDTMS", name: "NỒI CHỐNG DÍNH TRÁNG MEN SỨ" },
-                  { pos: "PHVVN028_BL",     name: "BALO CHẠY BỘ" },
-                  { pos: "PHVVN008_GLNTV",  name: "GIẺ LAU NHÀ TỰ VẮT PHUN SƯƠNG" },
-                  { pos: "PHVVN015_MXCLN",  name: "MÚT XỐP CÂY LAU NHÀ TỰ VẮT" },
-                ]
                 const toCamp = (pos: string) => pos.replace(/_/g, "")
                 const q = skuSearch.trim().toLowerCase()
                 const filtered = q
-                  ? SKU_LIST.filter(s => s.pos.toLowerCase().includes(q) || toCamp(s.pos).toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-                  : SKU_LIST
+                  ? skuList.filter(s => s.pos.toLowerCase().includes(q) || toCamp(s.pos).toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+                  : skuList
                 const copySku = (val: string) => {
                   navigator.clipboard.writeText(val).then(() => {
                     const el = document.createElement("div")
