@@ -23,9 +23,9 @@ function toUiRow(r: any) {
   return {
     id: r.id,
     vdCode: r.vd_code,
-    ngayDang: r.post_date ? new Date(r.post_date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : "",
+    ngayDang: r.post_date ? new Date(r.post_date).toISOString().slice(0, 10) : "",
     postDate: r.post_date,
-    createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "",
+    createdAt: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : "",
     adName: r.ad_name || computeAdName(r),
     script: r.script || "",
     nguon: r.source === "ctv" ? "CTV" : "Team",

@@ -2,6 +2,16 @@ import { useEffect, useRef, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
+/** ISO "yyyy-mm-dd" hoặc "yyyy-mm-ddT..." → "dd/mm" hoặc "dd/mm/yyyy" */
+function fmtDate(s: string | null | undefined, withYear = false): string {
+  if (!s) return ""
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return s
+  const dd = String(d.getUTCDate()).padStart(2, "0")
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0")
+  return withYear ? `${dd}/${mm}/${d.getUTCFullYear()}` : `${dd}/${mm}`
+}
+
 const STATUS_VARS: Record<string, { c: string; bg: string }> = {
   "Cần làm":   { c: "#6B7280",  bg: "#F3F4F6" },
   "Đang làm":  { c: "#2563EB", bg: "#DBEAFE" },
@@ -347,7 +357,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   {/* Ngày */}
                   {/* Ngày tạo — cố định, không cho sửa */}
                   <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
-                    <span style={{ color: "#4B5563", fontSize: 12 }}>{row.createdAt || "—"}</span>
+                    <span style={{ color: "#4B5563", fontSize: 12 }}>{fmtDate(row.createdAt, true) || "—"}</span>
                   </td>
                   <td style={{ padding: "9px 12px" }}>
                     <span style={{ background: row.nguon === "Team" ? "#DBEAFE" : "#F0F1F5", color: row.nguon === "Team" ? "#1e40af" : "#4B5563", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>{row.nguon}</span>
@@ -667,7 +677,7 @@ function KanbanTab({ rows, reload }: { rows: VideoRow[]; reload: () => void }) {
                       <Avatar name={row.nguoiLam} size={20} />
                       <span style={{ color: "#4B5563", fontSize: 11 }}>{row.nguoiLam}</span>
                     </div>
-                    <span style={{ color: "#9CA3AF", fontSize: 11 }}>{row.ngayDang}</span>
+                    <span style={{ color: "#9CA3AF", fontSize: 11 }}>{fmtDate(row.ngayDang)}</span>
                   </div>
                 </div>
               ))}

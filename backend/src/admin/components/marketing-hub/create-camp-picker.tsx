@@ -2,8 +2,6 @@ import { useEffect, useState } from "react"
 import { apiJson } from "../../lib/api-client"
 import type { BoostTarget } from "./boost-camp-modal"
 
-const MKT_CODES = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT"]
-
 /**
  * Bước 1 của luồng "Tạo Camp": chọn 1 video đã đăng FB (có post_id).
  * Sau khi chọn → gọi onPick(BoostTarget) để mở BoostCampModal.
@@ -18,6 +16,7 @@ export function CreateCampPicker({ mktCode, isAdmin, onPick, onClose }: {
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState("")
   const [mktFilter, setMktFilter] = useState("")
+  const [mktCodes, setMktCodes] = useState<string[]>([])
 
   const load = () => {
     setLoading(true)
@@ -26,7 +25,10 @@ export function CreateCampPicker({ mktCode, isAdmin, onPick, onClose }: {
       .catch(() => {})
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    apiJson("/admin/permissions/mkt-users").then(d => setMktCodes((d.users || []).map((u: any) => u.mkt_code).filter(Boolean))).catch(() => {})
+  }, [])
 
   const filtered = posts.filter(p => {
     if (mktFilter && (p.maker || "") !== mktFilter) return false
@@ -63,7 +65,7 @@ export function CreateCampPicker({ mktCode, isAdmin, onPick, onClose }: {
           {isAdmin && (
             <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} style={inp}>
               <option value="">Tất cả MKT</option>
-              {MKT_CODES.map(m => <option key={m} value={m}>{m}</option>)}
+              {mktCodes.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           )}
         </div>

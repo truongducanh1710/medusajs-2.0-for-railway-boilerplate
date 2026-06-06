@@ -11,7 +11,6 @@ type MktPage = {
 
 const STATUS_OPTS = ["ĐÃ THÊM", "CHƯA", "CẦN THÊM", "N/A"]
 const HOAT_DONG_OPTS = ["ĐANG CHẠY", "TẠM DỪNG", "ĐÃ DỪNG"]
-const MKT_CODES = ["XUANLT", "ANHNT", "KIENLB", "NAMDV", "LINHMT"]
 
 function StatusBadge({ val }: { val: string }) {
   const map: Record<string, { c: string; bg: string }> = {
@@ -89,12 +88,13 @@ export function QuanLyPageTab() {
   const [innerTab, setInnerTab] = useState<"danh-sach" | "thong-ke">("danh-sach")
   const [pages, setPages] = useState<MktPage[]>([])
   const [fbPageNames, setFbPageNames] = useState<Set<string>>(new Set())
+  const [mktCodes, setMktCodes] = useState<string[]>([])
   const [filterMkt, setFilterMkt] = useState("all")
   const [filterHoatDong, setFilterHoatDong] = useState("all")
   const [q, setQ] = useState("")
   const [toast, setToast] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState({ mkt_code: "XUANLT", page_name: "", page_link: "", sp_chay: "", pancake: "CHƯA", hoat_dong: "ĐANG CHẠY", share_anhtd: "CHƯA", pos: "CHƯA", bm: "CHƯA", share_hoan: "CHƯA", ghi_chu: "" })
+  const [draft, setDraft] = useState({ mkt_code: "", page_name: "", page_link: "", sp_chay: "", pancake: "CHƯA", hoat_dong: "ĐANG CHẠY", share_anhtd: "CHƯA", pos: "CHƯA", bm: "CHƯA", share_hoan: "CHƯA", ghi_chu: "" })
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const load = () => apiJson("/admin/mkt-pages").then(d => setPages(d.pages || [])).catch(() => {})
@@ -104,6 +104,7 @@ export function QuanLyPageTab() {
       const names = new Set<string>((d.pages || []).map((p: any) => p.page_name?.toLowerCase().trim()))
       setFbPageNames(names)
     }).catch(() => {})
+    apiJson("/admin/permissions/mkt-users").then(d => setMktCodes((d.users || []).map((u: any) => u.mkt_code).filter(Boolean))).catch(() => {})
   }, [])
 
   const patch = async (id: string, field: string, val: string) => {
@@ -115,7 +116,7 @@ export function QuanLyPageTab() {
     if (!draft.page_name.trim()) return
     await apiJson("/admin/mkt-pages", "POST", draft)
     setAdding(false)
-    setDraft({ mkt_code: "XUANLT", page_name: "", page_link: "", sp_chay: "", pancake: "CHƯA", hoat_dong: "ĐANG CHẠY", share_anhtd: "CHƯA", pos: "CHƯA", bm: "CHƯA", share_hoan: "CHƯA", ghi_chu: "" })
+    setDraft({ mkt_code: "", page_name: "", page_link: "", sp_chay: "", pancake: "CHƯA", hoat_dong: "ĐANG CHẠY", share_anhtd: "CHƯA", pos: "CHƯA", bm: "CHƯA", share_hoan: "CHƯA", ghi_chu: "" })
     setToast("Đã thêm page")
     load()
   }
@@ -180,7 +181,7 @@ export function QuanLyPageTab() {
         </div>
         <select value={filterMkt} onChange={e => setFilterMkt(e.target.value)} style={inp}>
           <option value="all">Tất cả MKT</option>
-          {MKT_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+          {mktCodes.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={filterHoatDong} onChange={e => setFilterHoatDong(e.target.value)} style={inp}>
           <option value="all">Tất cả trạng thái</option>
@@ -284,7 +285,7 @@ export function QuanLyPageTab() {
                   <td style={{ padding: "8px 10px", color: "#9CA3AF" }}>✦</td>
                   <td style={{ padding: "8px 10px" }}>
                     <select value={draft.mkt_code} onChange={e => setDraft(p => ({ ...p, mkt_code: e.target.value }))} style={cellInp}>
-                      {MKT_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+                      {mktCodes.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: "8px 10px" }}>

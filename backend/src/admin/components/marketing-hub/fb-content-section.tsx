@@ -42,11 +42,14 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
   const [toast, setToast] = useState<string | null>(null)
   const [hasDraft, setHasDraft] = useState(!!savedDraft && !prefill)
 
-  // Autosave draft vào localStorage khi content/driveLink/postType thay đổi
+  // Autosave draft vào localStorage — debounce 1s tránh ghi mỗi keystroke
   useEffect(() => {
     if (posting) return
     if (!content && !driveLink) { localStorage.removeItem(DRAFT_KEY); return }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ content, driveLink, postType }))
+    const t = setTimeout(() => {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ content, driveLink, postType }))
+    }, 1000)
+    return () => clearTimeout(t)
   }, [content, driveLink, postType, posting])
 
   // Warn khi thoát trang nếu có nội dung chưa đăng

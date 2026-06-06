@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { apiFetch } from "../../lib/api-client"
+import { apiJson, apiFetch } from "../../lib/api-client"
 import { T, pageColorFn } from "./tokens"
 
 type PageStat = {
@@ -61,8 +61,7 @@ export function PageStatsTab() {
 
   const load = () => {
     setLoading(true)
-    apiFetch("/admin/fb-content/page-stats")
-      .then(r => r.json())
+    apiJson("/admin/fb-content/page-stats")
       .then(d => { setPages(d.pages ?? []); setSyncedAt(d.synced_at ?? null) })
       .catch(() => {})
       .finally(() => setLoading(false))
