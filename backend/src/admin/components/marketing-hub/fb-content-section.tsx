@@ -807,6 +807,11 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
   const [tab, setTab] = useState(initialTab || "dangbai")
   const { isSuper, has } = useCurrentPermissions()
 
+  const changeTab = (t: string) => {
+    history.replaceState(null, "", `#fb:${t}`)
+    setTab(t)
+  }
+
   const canManagePages = isSuper || has("users.manage")
 
   const tabs = [
@@ -822,7 +827,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
     <div>
       <div style={{ display: "flex", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF", paddingLeft: 20 }}>
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "11px 16px", color: tab === t.id ? "#1877F2" : "#4B5563", background: "none", border: "none", borderBottom: tab === t.id ? "2px solid #1877F2" : "2px solid transparent", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{t.label}</button>
+          <button key={t.id} onClick={() => changeTab(t.id)} style={{ padding: "11px 16px", color: tab === t.id ? "#1877F2" : "#4B5563", background: "none", border: "none", borderBottom: tab === t.id ? "2px solid #1877F2" : "2px solid transparent", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{t.label}</button>
         ))}
       </div>
       <div style={{ padding: 20 }}>
