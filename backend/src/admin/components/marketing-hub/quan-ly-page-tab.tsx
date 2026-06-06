@@ -62,6 +62,7 @@ export function QuanLyPageTab() {
   const canEdit = isSuper || has("page.marketing-video.edit")
 
   const [pages, setPages] = useState<MktPage[]>([])
+  const [fbPageNames, setFbPageNames] = useState<Set<string>>(new Set())
   const [filterMkt, setFilterMkt] = useState("all")
   const [filterHoatDong, setFilterHoatDong] = useState("all")
   const [q, setQ] = useState("")
@@ -71,7 +72,13 @@ export function QuanLyPageTab() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const load = () => apiJson("/admin/mkt-pages").then(d => setPages(d.pages || [])).catch(() => {})
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    apiJson("/admin/fb-content?all=true").then(d => {
+      const names = new Set<string>((d.pages || []).map((p: any) => p.page_name?.toLowerCase().trim()))
+      setFbPageNames(names)
+    }).catch(() => {})
+  }, [])
 
   const patch = async (id: string, field: string, val: string) => {
     await apiJson(`/admin/mkt-pages/${id}`, "PATCH", { [field]: val })
@@ -111,7 +118,8 @@ export function QuanLyPageTab() {
   const cellInp: React.CSSProperties = { background: "#F0F6FF", color: "#111827", border: "1px solid #93C5FD", borderRadius: 6, padding: "4px 8px", fontSize: 12, outline: "none", width: "100%" }
 
   const COLS = [
-    { label: "#", w: 36 }, { label: "MKT", w: 80 }, { label: "Tên Page", w: 220 },
+    { label: "#", w: 36 }, { label: "MKT", w: 80 }, { label: "Tên Page", w: 200 },
+    { label: "Trên FB", w: 90 },
     { label: "SP Chạy", w: 160 }, { label: "Pancake", w: 100 }, { label: "Hoạt động", w: 110 },
     { label: "Share ANHTD", w: 110 }, { label: "POS", w: 90 }, { label: "BM", w: 90 },
     { label: "Share A Hoàn", w: 110 }, { label: "Ghi chú", w: 0 }, { label: "", w: 60 },
@@ -161,7 +169,7 @@ export function QuanLyPageTab() {
                 <>
                   {/* Group header */}
                   <tr key={`h-${mkt}`} style={{ background: "#F8FAFC" }}>
-                    <td colSpan={12} style={{ padding: "6px 12px", borderBottom: "1px solid #E5E7EB" }}>
+                    <td colSpan={13} style={{ padding: "6px 12px", borderBottom: "1px solid #E5E7EB" }}>
                       <span style={{ background: "#1877F2", color: "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 12, fontWeight: 700, fontFamily: "monospace" }}>{mkt}</span>
                       <span style={{ color: "#9CA3AF", fontSize: 11, marginLeft: 8 }}>{mktPages.length} page</span>
                     </td>
@@ -178,6 +186,15 @@ export function QuanLyPageTab() {
                               <span className="line-clamp-1">{p.page_name}</span>
                             </a>
                           : <span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{p.page_name}</span>}
+                      </td>
+                      {/* Trên FB API */}
+                      <td style={{ padding: "8px 10px" }}>
+                        {fbPageNames.size === 0
+                          ? <span style={{ color: "#9CA3AF", fontSize: 11 }}>…</span>
+                          : fbPageNames.has(p.page_name?.toLowerCase().trim())
+                            ? <span style={{ background: "#DCFCE7", color: "#059669", borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>✓ Có</span>
+                            : <span style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>✗ Thiếu</span>
+                        }
                       </td>
                       <td style={{ padding: "8px 10px" }}>
                         <span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{p.sp_chay || "—"}</span>
@@ -220,7 +237,7 @@ export function QuanLyPageTab() {
                 </>
               ))}
               {filtered.length === 0 && !adding && (
-                <tr><td colSpan={12} style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có page nào</td></tr>
+                <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có page nào</td></tr>
               )}
               {/* Add row */}
               {adding && canEdit && (
@@ -234,6 +251,7 @@ export function QuanLyPageTab() {
                   <td style={{ padding: "8px 10px" }}>
                     <input value={draft.page_name} onChange={e => setDraft(p => ({ ...p, page_name: e.target.value }))} placeholder="Tên page *" style={cellInp} autoFocus />
                   </td>
+                  <td style={{ padding: "8px 10px" }}>{/* Trên FB — auto khi lưu */}</td>
                   <td style={{ padding: "8px 10px" }}>
                     <input value={draft.sp_chay} onChange={e => setDraft(p => ({ ...p, sp_chay: e.target.value }))} placeholder="SP chạy" style={cellInp} />
                   </td>
