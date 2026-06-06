@@ -53,18 +53,18 @@ function PostCard({ post, onCopy }: { post: PostStat; onCopy: (id: string) => vo
         </div>
       </div>
 
-      {/* Embed iframe cho video, text preview cho text post */}
-      {post.media_type === "video" ? (
-        <div style={{ background: "#000", lineHeight: 0 }}>
-          <iframe
-            src={embedUrl}
-            width="100%" height="200"
-            style={{ border: "none", display: "block" }}
-            scrolling="no"
-            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-          />
+      {/* Thumbnail placeholder — click để mở FB */}
+      <a href={fbUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "block" }}>
+        <div style={{ background: `linear-gradient(135deg, ${color}22, ${color}44)`, height: 90, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `1px solid ${T.border}`, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, background: `${color}18` }} />
+          <div style={{ textAlign: "center", zIndex: 1 }}>
+            <div style={{ fontSize: 28 }}>{post.media_type === "video" ? "▶️" : "📄"}</div>
+            <div style={{ fontSize: 10, color: color, fontWeight: 700, marginTop: 4 }}>
+              {post.media_type === "video" ? "Xem video ↗" : "Xem bài ↗"}
+            </div>
+          </div>
         </div>
-      ) : null}
+      </a>
 
       {/* Body */}
       <div style={{ padding: "12px 14px", flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
