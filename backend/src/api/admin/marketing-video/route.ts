@@ -77,7 +77,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
     // Backfill ad_name khi trống hoặc chỉ là VD_CODE (bị ghi đè lỗi)
     const isVdCodeOnly = (s: string) => /^VD\d+$/.test(s)
-    const needsFill = rows.filter(r => !r.ad_name || isVdCodeOnly(r.ad_name))
+    const hasSpFallback = (r: any) => !r.product_code && /_SP_/.test(r.ad_name || "")
+    const needsFill = rows.filter(r => !r.ad_name || isVdCodeOnly(r.ad_name) || hasSpFallback(r))
     if (needsFill.length > 0) {
       // Lấy mkt_code của tất cả users 1 lần
       const userModule = (req as any).scope.resolve(Modules.USER)
