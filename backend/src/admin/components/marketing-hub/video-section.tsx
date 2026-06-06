@@ -127,6 +127,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
   const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
@@ -351,7 +352,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 const ed = editDraft!
                 const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
                 return (
-                <tr key={row.id} className={isEditing ? "" : "hover-bg"} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: rowBg, outline: isEditing ? "2px solid #93C5FD" : "none", outlineOffset: -1 }}>
+                <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: rowBg, outline: isEditing ? "2px solid #93C5FD" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
                   <td style={{ padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
                   <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
                   {/* Ngày */}
@@ -435,7 +436,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       ? <input value={ed.adName} onChange={e => setEditDraft(p => ({ ...p!, adName: e.target.value }))} placeholder="Ad name…" style={cellInp} />
                       : <span
                           title={row.adName ? `Click để copy: ${row.adName}` : ""}
-                          onClick={() => { if (row.adName) { navigator.clipboard.writeText(row.adName); setToast("Đã copy: " + row.adName) } }}
+                          onClick={e => { e.stopPropagation(); if (row.adName) { navigator.clipboard.writeText(row.adName); setToast("Đã copy: " + row.adName) } }}
                           style={{ fontFamily: "monospace", fontSize: 11, color: "#1654B8", background: "#EFF6FF", borderRadius: 5, padding: "2px 6px", cursor: "copy", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                         >{row.adName || "—"}</span>}
                   </td>
@@ -454,7 +455,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       : <span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{row.ghiChu || "—"}</span>}
                   </td>
                   {/* Actions */}
-                  <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
+                  <td onClick={e => e.stopPropagation()} style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
                     {isEditing ? (
                       <div style={{ display: "flex", gap: 5 }}>
                         <button onClick={() => saveEdit(row.id)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ Lưu</button>
@@ -627,6 +628,90 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 <button onClick={() => setFbLinkModal(null)} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#4B5563" }}>Đóng</button>
                 <button onClick={saveFbLink} disabled={!fbLinkDraft.post_url.trim()} style={{ background: fbLinkDraft.post_url.trim() ? "#1877F2" : "#93C5FD", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: fbLinkDraft.post_url.trim() ? "pointer" : "default", color: "#fff" }}>＋ Thêm link</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail popup */}
+      {detailRow && (
+        <div onClick={() => setDetailRow(null)} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #E5E7EB" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15, color: "#1877F2" }}>{detailRow.vdCode}</span>
+                <VideoTypeChip type={detailRow.loaiVideo} />
+                <StatusPill status={detailRow.trangThai} />
+              </div>
+              <button onClick={() => setDetailRow(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9CA3AF", lineHeight: 1 }}>✕</button>
+            </div>
+            {/* Body */}
+            <div style={{ overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Row 1 */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 3 }}>NGƯỜI LÀM</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{detailRow.nguoiLam}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 3 }}>NGÀY ĐĂNG</div>
+                  <div style={{ fontSize: 13 }}>{detailRow.ngayDang || "—"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 3 }}>SẢN PHẨM</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{detailRow.sp || "—"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 3 }}>DEADLINE</div>
+                  <div style={{ fontSize: 13 }}><DeadlineChip deadline={detailRow.deadline} /></div>
+                </div>
+              </div>
+              {/* AD NAME */}
+              <div>
+                <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>AD NAME</div>
+                <div
+                  onClick={() => { if (detailRow.adName) { navigator.clipboard.writeText(detailRow.adName); setToast("Đã copy: " + detailRow.adName) } }}
+                  style={{ fontFamily: "monospace", fontSize: 13, color: "#1654B8", background: "#EFF6FF", borderRadius: 8, padding: "8px 12px", cursor: "copy", wordBreak: "break-all" }}
+                >{detailRow.adName || "—"} <span style={{ fontSize: 10, color: "#93C5FD" }}>click để copy</span></div>
+              </div>
+              {/* Lời thoại */}
+              <div>
+                <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>LỜI THOẠI</div>
+                {detailRow.script
+                  ? <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7, background: "#F9FAFB", borderRadius: 8, padding: "10px 12px", whiteSpace: "pre-wrap" }}>{detailRow.script}</div>
+                  : <span style={{ color: "#DC2626", fontSize: 12, fontWeight: 600, background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 4, padding: "4px 8px" }}>⚠ Chưa có lời thoại</span>}
+              </div>
+              {/* Ghi chú */}
+              {detailRow.ghiChu && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>GHI CHÚ</div>
+                  <div style={{ fontSize: 13, color: "#4B5563", lineHeight: 1.6, background: "#F9FAFB", borderRadius: 8, padding: "8px 12px", whiteSpace: "pre-wrap" }}>{detailRow.ghiChu}</div>
+                </div>
+              )}
+              {/* Link */}
+              {detailRow.link && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>LINK VIDEO</div>
+                  <a href={detailRow.link} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#1877F2", wordBreak: "break-all" }}>{detailRow.link}</a>
+                </div>
+              )}
+              {/* FB Posts */}
+              {detailRow.fbPostLinks && detailRow.fbPostLinks.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>BÀI ĐĂNG FB</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {detailRow.fbPostLinks.map((l, i) => (
+                      <a key={i} href={l.post_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#1877F2" }}>{l.page_name || l.post_url}</a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #E5E7EB", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => { setDetailRow(null); startEdit(detailRow) }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#374151", fontWeight: 600 }}>✏️ Chỉnh sửa</button>
+              <button onClick={() => { onDangFB(detailRow); setDetailRow(null) }} style={{ background: "#1877F2", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#fff", fontWeight: 700 }}>Đăng FB</button>
             </div>
           </div>
         </div>
