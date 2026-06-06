@@ -122,7 +122,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const source = (b.nguon === "CTV" || b.source === "ctv") ? "ctv" : "team"
     const statusVi: string = b.trangThai ?? "Cần làm"
     const status = STATUS_VI_TO_KEY[statusVi] || "todo"
-    const postDate: string | null = b.postDate ?? b.post_date ?? null
+    const postDate: string | null = (b.postDate ?? b.post_date) || null
 
     const pool = getPool()
     await ensureTables(pool)

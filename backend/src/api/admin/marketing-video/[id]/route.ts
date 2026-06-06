@@ -28,7 +28,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (b.productCode !== undefined) set("product_code", b.productCode)
     if (b.loaiVideo !== undefined || b.video_type !== undefined) set("video_type", b.loaiVideo ?? b.video_type)
     if (b.nguon !== undefined || b.source !== undefined) set("source", (b.nguon === "CTV" || b.source === "ctv") ? "ctv" : "team")
-    if (b.postDate !== undefined || b.post_date !== undefined) set("post_date", b.postDate ?? b.post_date)
+    if (b.postDate !== undefined || b.post_date !== undefined) set("post_date", (b.postDate ?? b.post_date) || null)
     if (b.adName !== undefined) set("ad_name", b.adName)
     if (b.script !== undefined) set("script", b.script)
     // fb_post_links: [{page_id, page_name, post_url, posted_at}]
