@@ -1,6 +1,25 @@
 import { useEffect, useRef, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { useResizableColumns, ResizeHandle, type ColumnDef } from "../../lib/resizable-columns"
+
+const BANG_TAB_COLS = [
+  { id: "stt",      label: "#",           default: 36,  min: 36  },
+  { id: "vd",       label: "VD",          default: 72,  min: 50  },
+  { id: "ngay",     label: "Ngày",        default: 84,  min: 60  },
+  { id: "nguon",    label: "Nguồn",       default: 64,  min: 50  },
+  { id: "nguoilam", label: "Người làm",   default: 130, min: 80  },
+  { id: "deadline", label: "Deadline",    default: 80,  min: 60  },
+  { id: "sp",       label: "Sản phẩm",   default: 170, min: 100 },
+  { id: "loai",     label: "Loại",        default: 84,  min: 60  },
+  { id: "link",     label: "Link",        default: 64,  min: 50  },
+  { id: "baifb",    label: "Bài FB",      default: 84,  min: 60  },
+  { id: "trangthai",label: "Trạng thái",  default: 100, min: 80  },
+  { id: "adname",   label: "Ad Name",     default: 180, min: 100 },
+  { id: "loithoai", label: "Lời thoại",   default: 220, min: 100 },
+  { id: "ghichu",   label: "Ghi chú",     default: 160, min: 80  },
+  { id: "actions",  label: "",            default: 150, min: 100 },
+] as const satisfies readonly ColumnDef[]
 
 /** ISO "yyyy-mm-dd" hoặc "yyyy-mm-ddT..." → "dd/mm" hoặc "dd/mm/yyyy" */
 function fmtDate(s: string | null | undefined, withYear = false): string {
@@ -141,6 +160,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [spList, setSpList] = useState<{ name: string; code: string }[]>([])
   const [draft, setDraft] = useState<QuickAdd>({ sp: "", nguoiLam: "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
   const spRef = useRef<HTMLSelectElement>(null)
+  const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } = useResizableColumns("mkt-video-bang.col-widths.v1", BANG_TAB_COLS)
 
   // Fetch products từ Pancake POS
   useEffect(() => {
@@ -314,6 +334,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           </button>
         )}
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
+        <button onClick={resetColWidths} title="Reset độ rộng cột về mặc định" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "5px 8px", fontSize: 11, color: "#9CA3AF", cursor: "pointer" }}>⇔</button>
         <button onClick={adding ? cancelAdd : openAdd} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: adding ? "#FEE2E2" : "#1877F2", border: adding ? "1px solid #FECACA" : "none", borderRadius: 6, cursor: "pointer", color: adding ? "#DC2626" : "#fff", fontSize: 12, fontWeight: 600, padding: "5px 12px", whiteSpace: "nowrap" }}>
           {adding ? "✕ Hủy" : "＋ Thêm dòng"}
         </button>
@@ -321,28 +342,17 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
       <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 280px)" }}>
         <div style={{ overflowX: "auto", flex: 1 }}>
-          <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", tableLayout: "fixed", height: "100%" }}>
+          <table style={{ width: totalWidth, minWidth: totalWidth, borderCollapse: "collapse", tableLayout: "fixed", height: "100%" }}>
             <colgroup>
-              <col style={{ width: 36 }} />   {/* # */}
-              <col style={{ width: 72 }} />   {/* VD */}
-              <col style={{ width: 84 }} />   {/* Ngày */}
-              <col style={{ width: 64 }} />   {/* Nguồn */}
-              <col style={{ width: 130 }} />  {/* Người làm */}
-              <col style={{ width: 80 }} />   {/* Deadline */}
-              <col style={{ width: 170 }} />  {/* Sản phẩm */}
-              <col style={{ width: 84 }} />   {/* Loại */}
-              <col style={{ width: 64 }} />   {/* Link */}
-              <col style={{ width: 84 }} />   {/* Bài FB */}
-              <col style={{ width: 100 }} />  {/* Trạng thái */}
-              <col style={{ width: 180 }} />  {/* Ad Name */}
-              <col style={{ width: 220 }} />  {/* Lời thoại */}
-              <col style={{ width: 160 }} />  {/* Ghi chú */}
-              <col style={{ width: 150 }} />  {/* Actions */}
+              {BANG_TAB_COLS.map(c => <col key={c.id} style={{ width: colWidths[c.id] }} />)}
             </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
-                {["#", "VD", "Ngày", "Nguồn", "Người làm", "Deadline", "Sản phẩm", "Loại", "Link", "Bài FB", "Trạng thái", "Ad Name", "Lời thoại", "Ghi chú", ""].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
+                {BANG_TAB_COLS.map(c => (
+                  <th key={c.id} style={{ position: "relative", padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>
+                    {c.label}
+                    {c.id !== "actions" && <ResizeHandle onMouseDown={onResizeMouseDown(c.id)} />}
+                  </th>
                 ))}
               </tr>
             </thead>
