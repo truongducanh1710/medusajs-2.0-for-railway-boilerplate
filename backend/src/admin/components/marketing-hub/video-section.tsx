@@ -423,7 +423,11 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "9px 12px" }}>
                     {isEditing
                       ? <input value={ed.adName} onChange={e => setEditDraft(p => ({ ...p!, adName: e.target.value }))} placeholder="Ad name…" style={cellInp} />
-                      : <span style={{ fontFamily: "monospace", fontSize: 11, color: "#1654B8", background: "#EFF6FF", borderRadius: 5, padding: "2px 6px" }}>{row.adName || "—"}</span>}
+                      : <span
+                          title="Click để copy"
+                          onClick={() => { if (row.adName) { navigator.clipboard.writeText(row.adName); setToast("Đã copy: " + row.adName) } }}
+                          style={{ fontFamily: "monospace", fontSize: 11, color: "#1654B8", background: "#EFF6FF", borderRadius: 5, padding: "2px 6px", cursor: "copy" }}
+                        >{row.adName || "—"}</span>}
                   </td>
                   {/* Lời thoại */}
                   <td style={{ padding: "9px 12px" }}>
