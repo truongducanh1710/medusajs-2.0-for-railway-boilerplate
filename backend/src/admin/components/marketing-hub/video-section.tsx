@@ -430,22 +430,22 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     </div>
                   </td>
                   {/* Ad Name */}
-                  <td style={{ padding: "9px 12px" }}>
+                  <td style={{ padding: "9px 12px", maxWidth: 0 }}>
                     {isEditing
                       ? <input value={ed.adName} onChange={e => setEditDraft(p => ({ ...p!, adName: e.target.value }))} placeholder="Ad name…" style={cellInp} />
                       : <span
-                          title="Click để copy"
+                          title={row.adName ? `Click để copy: ${row.adName}` : ""}
                           onClick={() => { if (row.adName) { navigator.clipboard.writeText(row.adName); setToast("Đã copy: " + row.adName) } }}
-                          style={{ fontFamily: "monospace", fontSize: 11, color: "#1654B8", background: "#EFF6FF", borderRadius: 5, padding: "2px 6px", cursor: "copy" }}
+                          style={{ fontFamily: "monospace", fontSize: 11, color: "#1654B8", background: "#EFF6FF", borderRadius: 5, padding: "2px 6px", cursor: "copy", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                         >{row.adName || "—"}</span>}
                   </td>
                   {/* Lời thoại */}
-                  <td style={{ padding: "9px 12px" }}>
+                  <td style={{ padding: "9px 12px", maxWidth: 0 }}>
                     {isEditing
                       ? <textarea value={ed.script} onChange={e => setEditDraft(p => ({ ...p!, script: e.target.value }))} placeholder="Lời thoại…" rows={2} style={{ ...cellInp, resize: "vertical", fontFamily: "inherit" }} />
                       : row.script
-                        ? <span className="line-clamp-2" style={{ color: "#374151", fontSize: 12, lineHeight: 1.5, cursor: "help", whiteSpace: "pre-wrap" }} title={row.script}>{row.script}</span>
-                        : <span style={{ color: "#DC2626", fontSize: 11, fontWeight: 600, background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 4, padding: "2px 6px" }}>⚠ Chưa có lời thoại</span>}
+                        ? <span title={row.script} style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", color: "#374151", fontSize: 12, lineHeight: 1.5, cursor: "help" }}>{row.script}</span>
+                        : <span style={{ color: "#DC2626", fontSize: 11, fontWeight: 600, background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>⚠ Chưa có lời thoại</span>}
                   </td>
                   {/* Ghi chú */}
                   <td style={{ padding: "9px 12px" }}>
