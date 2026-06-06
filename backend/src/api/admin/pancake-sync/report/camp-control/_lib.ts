@@ -1,7 +1,7 @@
 import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
-export const FB_API_BASE = "https://graph.facebook.com/v18.0"
+export const FB_API_BASE = "https://graph.facebook.com/v25.0"
 
 export type AuthInfo = {
   email: string
@@ -47,7 +47,7 @@ export async function checkCampOwner(req: MedusaRequest, campaignId: string, aut
 }
 
 export async function callFbApi(method: "GET" | "POST", path: string): Promise<{ ok: boolean; data: any; status: number }> {
-  const token = process.env.FB_ACCESS_TOKEN || ""
+  const token = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
   const sep = path.includes("?") ? "&" : "?"
   const url = `${FB_API_BASE}${path}${sep}access_token=${token}`
   try {

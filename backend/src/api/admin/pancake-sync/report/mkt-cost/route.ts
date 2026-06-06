@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
-const FB_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
+const FB_API_BASE = "https://graph.facebook.com/v25.0"
+const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
 
 /**
  * Extract MKT code từ campaign name.

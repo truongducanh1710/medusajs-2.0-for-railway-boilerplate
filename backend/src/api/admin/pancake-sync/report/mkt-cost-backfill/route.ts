@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const DELAY_MS = 300
 
 function extractMkt(campaignName: string): string {
@@ -47,7 +47,7 @@ function dateRange(from: string, to: string): string[] {
  * Streaming response — log từng ngày để theo dõi progress.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const FB_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
+  const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
   if (!FB_TOKEN) return res.status(400).json({ error: "FB_ACCESS_TOKEN chưa cấu hình" })
 
   const body = req.body as any

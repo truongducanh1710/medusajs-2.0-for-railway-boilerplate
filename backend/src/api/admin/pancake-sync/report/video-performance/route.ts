@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-const FB_API_BASE = "https://graph.facebook.com/v21.0"
-const FB_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
+const FB_API_BASE = "https://graph.facebook.com/v25.0"
+const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
 
 /** Parse VD-code (VD + số) từ ad_name. Trả null nếu không có. */
 function extractVdCode(adName: string): string | null {
