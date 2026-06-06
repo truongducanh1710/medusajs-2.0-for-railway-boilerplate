@@ -70,6 +70,22 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_page ON fb_post_stats (page_id, published_at DESC)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_product ON fb_post_stats (product_code)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_likes ON fb_post_stats (likes DESC)`)
+  // fb_page_stats: thống kê tổng thể từng Facebook Page
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_page_stats (
+      page_id        VARCHAR(32) PRIMARY KEY,
+      page_name      VARCHAR(255),
+      fan_count      INT DEFAULT 0,
+      new_fans_7d    INT DEFAULT 0,
+      reach_7d       INT DEFAULT 0,
+      engaged_7d     INT DEFAULT 0,
+      post_count_7d  INT DEFAULT 0,
+      total_posts    INT DEFAULT 0,
+      total_likes    INT DEFAULT 0,
+      total_reach    INT DEFAULT 0,
+      synced_at      TIMESTAMPTZ DEFAULT now()
+    )
+  `)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fb_content_template (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

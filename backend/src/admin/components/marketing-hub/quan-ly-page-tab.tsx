@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { PageStatsTab } from "./page-stats-tab"
 
 type MktPage = {
   id: string; mkt_code: string; page_name: string; page_link: string
@@ -85,6 +86,7 @@ export function QuanLyPageTab() {
   const { isSuper, has } = useCurrentPermissions()
   const canEdit = isSuper || has("page.marketing-video.edit")
 
+  const [innerTab, setInnerTab] = useState<"danh-sach" | "thong-ke">("danh-sach")
   const [pages, setPages] = useState<MktPage[]>([])
   const [fbPageNames, setFbPageNames] = useState<Set<string>>(new Set())
   const [filterMkt, setFilterMkt] = useState("all")
@@ -156,6 +158,19 @@ export function QuanLyPageTab() {
           ✓ {toast}
         </div>
       )}
+
+      {/* Inner tab bar */}
+      <div style={{ display: "flex", borderBottom: "1px solid #E5E7EB" }}>
+        {[{ id: "danh-sach", label: "📋 Danh sách" }, { id: "thong-ke", label: "📈 Thống kê" }].map(t => (
+          <button key={t.id} onClick={() => setInnerTab(t.id as any)}
+            style={{ padding: "9px 16px", background: "none", border: "none", borderBottom: innerTab === t.id ? "2px solid #1877F2" : "2px solid transparent", color: innerTab === t.id ? "#1877F2" : "#4B5563", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {innerTab === "thong-ke" && <PageStatsTab />}
+      {innerTab === "danh-sach" && <>
 
       {/* Filter bar */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -337,6 +352,7 @@ export function QuanLyPageTab() {
           </div>
         )}
       </div>
+      </>}
     </div>
   )
 }
