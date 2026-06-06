@@ -8,6 +8,7 @@ type PostStat = {
   page_name: string
   message: string
   media_type: string
+  thumbnail_url: string | null
   product_code: string | null
   product_name: string | null
   created_by: string | null
@@ -53,17 +54,25 @@ function PostCard({ post, onCopy }: { post: PostStat; onCopy: (id: string) => vo
         </div>
       </div>
 
-      {/* Thumbnail placeholder — click để mở FB */}
-      <a href={fbUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "block" }}>
-        <div style={{ background: `linear-gradient(135deg, ${color}22, ${color}44)`, height: 90, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `1px solid ${T.border}`, cursor: "pointer", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", inset: 0, background: `${color}18` }} />
-          <div style={{ textAlign: "center", zIndex: 1 }}>
-            <div style={{ fontSize: 28 }}>{post.media_type === "video" ? "▶️" : "📄"}</div>
-            <div style={{ fontSize: 10, color: color, fontWeight: 700, marginTop: 4 }}>
-              {post.media_type === "video" ? "Xem video ↗" : "Xem bài ↗"}
+      {/* Thumbnail — ảnh thật nếu có, fallback placeholder */}
+      <a href={fbUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "block", position: "relative" }}>
+        {post.thumbnail_url ? (
+          <div style={{ height: 160, overflow: "hidden", borderBottom: `1px solid ${T.border}`, position: "relative" }}>
+            <img src={post.thumbnail_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            {post.media_type === "video" && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>▶</div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ background: `linear-gradient(135deg, ${color}18, ${color}30)`, height: 80, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 24 }}>{post.media_type === "video" ? "🎬" : post.media_type === "image" ? "🖼️" : "📝"}</div>
+              <div style={{ fontSize: 10, color: color, fontWeight: 600, marginTop: 2 }}>Xem bài ↗</div>
             </div>
           </div>
-        </div>
+        )}
       </a>
 
       {/* Body */}

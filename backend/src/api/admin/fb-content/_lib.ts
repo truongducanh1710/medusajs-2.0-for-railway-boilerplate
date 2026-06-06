@@ -55,6 +55,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
       page_name     VARCHAR(255),
       message       TEXT,
       media_type    VARCHAR(16),
+      thumbnail_url TEXT,
       product_code  VARCHAR(64),
       product_name  VARCHAR(255),
       created_by    VARCHAR(255),
@@ -70,6 +71,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_page ON fb_post_stats (page_id, published_at DESC)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_product ON fb_post_stats (product_code)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_stats_likes ON fb_post_stats (likes DESC)`)
+  await pool.query(`ALTER TABLE fb_post_stats ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`)
   // fb_page_stats: thống kê tổng thể từng Facebook Page
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fb_page_stats (

@@ -9,8 +9,8 @@ async function fetchJson(url: string) {
 }
 
 async function syncPageStats(pool: any, pageId: string, pageToken: string, pageName: string) {
-  // Pull posts từ page feed
-  const feedUrl = `https://graph.facebook.com/${FB_V}/${pageId}/feed?fields=id,message,created_time,likes.summary(true),comments.summary(true),shares,attachments&limit=50&access_token=${pageToken}`
+  // Pull posts từ page feed — thêm full_picture để lấy thumbnail
+  const feedUrl = `https://graph.facebook.com/${FB_V}/${pageId}/feed?fields=id,message,created_time,full_picture,likes.summary(true),comments.summary(true),shares,attachments&limit=50&access_token=${pageToken}`
   const feed = await fetchJson(feedUrl)
   const posts: any[] = feed.data ?? []
 
@@ -41,7 +41,9 @@ async function syncPageStats(pool: any, pageId: string, pageToken: string, pageN
     const comments = post.comments?.summary?.total_count ?? 0
     const shares = post.shares?.count ?? 0
     const publishedAt = post.created_time ? new Date(post.created_time).toISOString() : null
-    const mediaType = post.attachments?.data?.[0]?.type?.includes("video") ? "video" : "text"
+    const attachType = post.attachments?.data?.[0]?.type ?? ""
+    const mediaType = attachType.includes("video") ? "video" : attachType.includes("photo") || attachType.includes("album") ? "image" : "text"
+    const thumbnailUrl: string | null = post.full_picture ?? null
     const meta: { product_code?: string; product_name?: string; created_by?: string } = productMap[postId] ?? {}
 
     // Lấy reach từ Page Insights
@@ -63,15 +65,17 @@ async function syncPageStats(pool: any, pageId: string, pageToken: string, pageN
     }
 
     await pool.query(`
-      INSERT INTO fb_post_stats (post_id, page_id, page_name, message, media_type, product_code, product_name, created_by, published_at, likes, comments, shares, reach, video_views, synced_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())
+      INSERT INTO fb_post_stats (post_id, page_id, page_name, message, media_type, thumbnail_url, product_code, product_name, created_by, published_at, likes, comments, shares, reach, video_views, synced_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
       ON CONFLICT (post_id) DO UPDATE SET
         likes=EXCLUDED.likes, comments=EXCLUDED.comments, shares=EXCLUDED.shares,
         reach=EXCLUDED.reach, video_views=EXCLUDED.video_views, synced_at=now(),
+        media_type=EXCLUDED.media_type,
+        thumbnail_url=COALESCE(EXCLUDED.thumbnail_url, fb_post_stats.thumbnail_url),
         product_code=COALESCE(EXCLUDED.product_code, fb_post_stats.product_code),
         product_name=COALESCE(EXCLUDED.product_name, fb_post_stats.product_name),
         created_by=COALESCE(EXCLUDED.created_by, fb_post_stats.created_by)
-    `, [postId, pageId, pageName, post.message ?? "", mediaType,
+    `, [postId, pageId, pageName, post.message ?? "", mediaType, thumbnailUrl,
         meta.product_code ?? null, meta.product_name ?? null, meta.created_by ?? null,
         publishedAt, likes, comments, shares, reach, videoViews])
     synced++
