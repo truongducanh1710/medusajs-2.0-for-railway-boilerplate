@@ -30,6 +30,75 @@ type Summary = {
 
 const PAGE_SIZE = 50
 
+function PostCard({ post, onCopy }: { post: PostStat; onCopy: (id: string) => void }) {
+  const color = pageColorFn(post.page_id)
+  const fbUrl = `https://www.facebook.com/${post.post_id}`
+  const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(fbUrl)}&width=320&show_text=false&appId=`
+
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: T.shadowSm }}>
+      {/* Header */}
+      <div style={{ background: color, color: "#fff", padding: "9px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+          <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+            {(post.page_name || "?")[0]}
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{post.page_name}</span>
+        </div>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <a href={fbUrl} target="_blank" rel="noreferrer"
+            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, background: "rgba(255,255,255,0.2)", color: "#fff", textDecoration: "none" }}>↗ FB</a>
+          <button onClick={() => onCopy(post.post_id)} title="Copy Post ID"
+            style={{ fontSize: 10, padding: "2px 6px", borderRadius: 5, background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", cursor: "pointer" }}>📋</button>
+        </div>
+      </div>
+
+      {/* Embed iframe cho video, text preview cho text post */}
+      {post.media_type === "video" ? (
+        <div style={{ background: "#000", lineHeight: 0 }}>
+          <iframe
+            src={embedUrl}
+            width="100%" height="200"
+            style={{ border: "none", display: "block" }}
+            scrolling="no"
+            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+          />
+        </div>
+      ) : null}
+
+      {/* Body */}
+      <div style={{ padding: "12px 14px", flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.5, ...lineClamp(3) }}>
+          {post.message || "—"}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, color: T.text3 }}>📅 {fmtDate(post.published_at)}</span>
+          {post.product_code && (
+            <code style={{ fontSize: 10, background: T.subtle, padding: "1px 6px", borderRadius: 4, color: T.text3 }}>{post.product_code}</code>
+          )}
+          {post.created_by && (
+            <span style={{ fontSize: 10, color: T.text3, ...lineClamp(1) }}>· {post.created_by}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Stats footer */}
+      <div style={{ background: T.subtle, padding: "9px 14px", display: "flex", gap: 14, borderTop: `1px solid ${T.border}` }}>
+        {[
+          { icon: "👍", val: post.likes, hi: post.likes > 100 },
+          { icon: "💬", val: post.comments, hi: post.comments > 20 },
+          { icon: "🔁", val: post.shares, hi: false },
+          { icon: "👁", val: post.reach, hi: post.reach > 5000 },
+        ].map(s => (
+          <span key={s.icon} style={{ fontSize: 11, fontWeight: 700, color: s.hi ? T.accent : T.text2 }}>
+            {s.icon} {fmt(s.val)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const inp: React.CSSProperties = {
   background: "#fff", color: T.text1, border: `1px solid ${T.border}`,
   borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none",
@@ -70,6 +139,7 @@ export function PostStatsTab() {
   const [toast, setToast] = useState<string | null>(null)
   const [syncLog, setSyncLog] = useState<string[]>([])
   const [showLog, setShowLog] = useState(false)
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table")
   const debounceRef = useRef<any>(null)
 
   const addLog = (msg: string) => setSyncLog(prev => [`[${new Date().toLocaleTimeString("vi-VN")}] ${msg}`, ...prev].slice(0, 50))
@@ -222,6 +292,17 @@ export function PostStatsTab() {
             style={{ ...inp, cursor: "pointer", color: T.text3, fontSize: 11 }}>
             {showLog ? "Ẩn log" : "🔍 Log"}
           </button>
+          {/* View mode toggle */}
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={() => setViewMode("table")} title="Bảng"
+              style={{ padding: "5px 9px", borderRadius: 7, border: `1px solid ${T.border}`, background: viewMode === "table" ? T.accentSubtle : T.card, color: viewMode === "table" ? T.accent : T.text3, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>
+              ≡
+            </button>
+            <button onClick={() => setViewMode("grid")} title="Lưới"
+              style={{ padding: "5px 9px", borderRadius: 7, border: `1px solid ${T.border}`, background: viewMode === "grid" ? T.accentSubtle : T.card, color: viewMode === "grid" ? T.accent : T.text3, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>
+              ⊞
+            </button>
+          </div>
           <span style={{ fontSize: 12, color: T.text3 }}>{total} bài</span>
         </div>
       </div>
@@ -244,8 +325,20 @@ export function PostStatsTab() {
         </div>
       )}
 
+      {/* Grid view */}
+      {viewMode === "grid" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14, marginBottom: 16 }}>
+          {loading
+            ? <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 40, color: T.text3 }}>Đang tải...</div>
+            : posts.length === 0
+              ? <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 40, color: T.text3 }}>Không có bài nào — bấm Refresh để sync từ Facebook</div>
+              : posts.map(post => <PostCard key={post.post_id} post={post} onCopy={copyPostId} />)
+          }
+        </div>
+      )}
+
       {/* Table */}
-      <div style={{ overflowX: "auto", background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+      {viewMode === "table" && <div style={{ overflowX: "auto", background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
         <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse" }}>
           <thead>
             <tr>
@@ -326,7 +419,7 @@ export function PostStatsTab() {
             })}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {/* Pagination */}
       {totalPages > 1 && (
