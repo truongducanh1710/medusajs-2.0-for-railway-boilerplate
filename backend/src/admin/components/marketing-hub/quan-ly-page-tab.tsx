@@ -57,6 +57,30 @@ function InlineSelect({ value, opts, onSave }: { value: string; opts: string[]; 
   )
 }
 
+function LinkCell({ value, onSave, canEdit }: { value: string; onSave: (v: string) => void; canEdit: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(value || "")
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (editing) ref.current?.focus() }, [editing])
+  if (editing) return (
+    <input ref={ref} value={val}
+      onChange={e => setVal(e.target.value)}
+      onBlur={() => { onSave(val); setEditing(false) }}
+      onKeyDown={e => { if (e.key === "Enter") { onSave(val); setEditing(false) } if (e.key === "Escape") setEditing(false) }}
+      placeholder="https://fb.com/…"
+      style={{ background: "#F0F6FF", color: "#111827", border: "1px solid #93C5FD", borderRadius: 6, padding: "3px 7px", fontSize: 11, outline: "none", width: 130 }} />
+  )
+  if (value) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <a href={value} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ FB</a>
+      {canEdit && <span onClick={() => setEditing(true)} style={{ color: "#9CA3AF", fontSize: 10, cursor: "pointer" }}>✎</span>}
+    </div>
+  )
+  return canEdit
+    ? <span onClick={() => setEditing(true)} style={{ color: "#9CA3AF", fontSize: 11, cursor: "pointer", borderBottom: "1px dashed #D1D5DB" }}>+ Link</span>
+    : <span style={{ color: "#9CA3AF" }}>—</span>
+}
+
 export function QuanLyPageTab() {
   const { isSuper, has } = useCurrentPermissions()
   const canEdit = isSuper || has("page.marketing-video.edit")
@@ -118,8 +142,8 @@ export function QuanLyPageTab() {
   const cellInp: React.CSSProperties = { background: "#F0F6FF", color: "#111827", border: "1px solid #93C5FD", borderRadius: 6, padding: "4px 8px", fontSize: 12, outline: "none", width: "100%" }
 
   const COLS = [
-    { label: "#", w: 36 }, { label: "MKT", w: 80 }, { label: "Tên Page", w: 200 },
-    { label: "Trên FB", w: 90 },
+    { label: "#", w: 36 }, { label: "MKT", w: 80 }, { label: "Tên Page", w: 180 },
+    { label: "Link Page", w: 90 }, { label: "Trên FB", w: 90 },
     { label: "SP Chạy", w: 160 }, { label: "Pancake", w: 100 }, { label: "Hoạt động", w: 110 },
     { label: "Share ANHTD", w: 110 }, { label: "POS", w: 90 }, { label: "BM", w: 90 },
     { label: "Share A Hoàn", w: 110 }, { label: "Ghi chú", w: 0 }, { label: "", w: 60 },
@@ -169,7 +193,7 @@ export function QuanLyPageTab() {
                 <>
                   {/* Group header */}
                   <tr key={`h-${mkt}`} style={{ background: "#F8FAFC" }}>
-                    <td colSpan={13} style={{ padding: "6px 12px", borderBottom: "1px solid #E5E7EB" }}>
+                    <td colSpan={14} style={{ padding: "6px 12px", borderBottom: "1px solid #E5E7EB" }}>
                       <span style={{ background: "#1877F2", color: "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 12, fontWeight: 700, fontFamily: "monospace" }}>{mkt}</span>
                       <span style={{ color: "#9CA3AF", fontSize: 11, marginLeft: 8 }}>{mktPages.length} page</span>
                     </td>
@@ -181,11 +205,11 @@ export function QuanLyPageTab() {
                         <span style={{ background: "#EFF6FF", color: "#1877F2", borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{p.mkt_code}</span>
                       </td>
                       <td style={{ padding: "8px 10px" }}>
-                        {p.page_link
-                          ? <a href={p.page_link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 600, textDecoration: "none" }} title={p.page_name}>
-                              <span className="line-clamp-1">{p.page_name}</span>
-                            </a>
-                          : <span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{p.page_name}</span>}
+                        <span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{p.page_name}</span>
+                      </td>
+                      {/* Link Page */}
+                      <td style={{ padding: "8px 10px" }}>
+                        <LinkCell value={p.page_link} onSave={v => patch(p.id, "page_link", v)} canEdit={canEdit} />
                       </td>
                       {/* Trên FB API */}
                       <td style={{ padding: "8px 10px" }}>
@@ -237,7 +261,7 @@ export function QuanLyPageTab() {
                 </>
               ))}
               {filtered.length === 0 && !adding && (
-                <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có page nào</td></tr>
+                <tr><td colSpan={14} style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có page nào</td></tr>
               )}
               {/* Add row */}
               {adding && canEdit && (
@@ -250,6 +274,9 @@ export function QuanLyPageTab() {
                   </td>
                   <td style={{ padding: "8px 10px" }}>
                     <input value={draft.page_name} onChange={e => setDraft(p => ({ ...p, page_name: e.target.value }))} placeholder="Tên page *" style={cellInp} autoFocus />
+                  </td>
+                  <td style={{ padding: "8px 10px" }}>
+                    <input value={draft.page_link} onChange={e => setDraft(p => ({ ...p, page_link: e.target.value }))} placeholder="https://fb.com/…" style={cellInp} />
                   </td>
                   <td style={{ padding: "8px 10px" }}>{/* Trên FB — auto khi lưu */}</td>
                   <td style={{ padding: "8px 10px" }}>
