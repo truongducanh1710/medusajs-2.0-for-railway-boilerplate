@@ -320,23 +320,23 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
       <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 280px)" }}>
         <div style={{ overflowX: "auto", flex: 1 }}>
-          <table style={{ width: "100%", minWidth: 1300, borderCollapse: "collapse", tableLayout: "fixed", height: "100%" }}>
+          <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", tableLayout: "fixed", height: "100%" }}>
             <colgroup>
               <col style={{ width: 36 }} />   {/* # */}
-              <col style={{ width: 76 }} />   {/* VD */}
-              <col style={{ width: 90 }} />   {/* Ngày */}
-              <col style={{ width: 70 }} />   {/* Nguồn */}
-              <col style={{ width: 140 }} />  {/* Người làm */}
-              <col style={{ width: 85 }} />   {/* Deadline */}
-              <col style={{ width: 190 }} />  {/* Sản phẩm */}
-              <col style={{ width: 90 }} />   {/* Loại */}
-              <col style={{ width: 70 }} />   {/* Link */}
-              <col style={{ width: 90 }} />   {/* Bài FB */}
-              <col style={{ width: 110 }} />  {/* Trạng thái */}
-              <col style={{ width: 160 }} />  {/* Ad Name */}
-              <col style={{ width: 200 }} />  {/* Lời thoại */}
-              <col />                         {/* Ghi chú — fill phần còn lại */}
-              <col style={{ width: 160 }} />  {/* Actions */}
+              <col style={{ width: 72 }} />   {/* VD */}
+              <col style={{ width: 84 }} />   {/* Ngày */}
+              <col style={{ width: 64 }} />   {/* Nguồn */}
+              <col style={{ width: 130 }} />  {/* Người làm */}
+              <col style={{ width: 80 }} />   {/* Deadline */}
+              <col style={{ width: 170 }} />  {/* Sản phẩm */}
+              <col style={{ width: 84 }} />   {/* Loại */}
+              <col style={{ width: 64 }} />   {/* Link */}
+              <col style={{ width: 84 }} />   {/* Bài FB */}
+              <col style={{ width: 100 }} />  {/* Trạng thái */}
+              <col style={{ width: 180 }} />  {/* Ad Name */}
+              <col style={{ width: 220 }} />  {/* Lời thoại */}
+              <col style={{ width: 160 }} />  {/* Ghi chú */}
+              <col style={{ width: 150 }} />  {/* Actions */}
             </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
