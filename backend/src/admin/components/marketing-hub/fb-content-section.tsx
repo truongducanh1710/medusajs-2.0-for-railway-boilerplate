@@ -804,6 +804,257 @@ function PhanQuyenTrangTab() {
 }
 
 // ============================================================================
+// Tab: Lên lịch hàng loạt
+// ============================================================================
+type ScheduleRow = {
+  videoId: string
+  vdCode: string
+  product: string
+  driveUrl: string
+  pageName: string   // page được gán (chọn từ dropdown)
+  pageId: string
+  templateId: string
+  message: string
+  scheduledFor: string  // datetime-local string
+}
+
+function LenLichHangLoatTab() {
+  const [videos, setVideos]       = useState<any[]>([])
+  const [pages, setPages]         = useState<any[]>([])
+  const [templates, setTemplates] = useState<any[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [rows, setRows]           = useState<ScheduleRow[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [results, setResults]     = useState<{ vd: string; page: string; status: string; error?: string }[]>([])
+  const [toast, setToast]         = useState<string | null>(null)
+
+  // Ngày mặc định: sáng mai 8:00
+  const defaultTime = () => {
+    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0)
+    return d.toISOString().slice(0, 16)
+  }
+
+  useEffect(() => {
+    Promise.all([
+      apiJson("/admin/fb-content?all=true"),
+      apiJson("/admin/fb-content/templates"),
+      apiJson("/admin/marketing-video?status=ready&limit=50"),
+    ]).then(([pd, td, vd]) => {
+      setPages(pd.pages || [])
+      setTemplates(td.templates || [])
+      // Lấy video có drive_url (sẵn sàng đăng)
+      const vids = (vd.videos || []).filter((v: any) => v.link || v.drive_url)
+      setVideos(vids)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  // Tìm template phù hợp nhất với sản phẩm
+  const findTemplate = (product: string) => {
+    if (!templates.length) return null
+    const p = product.toLowerCase()
+    const match = templates.find(t =>
+      (t.tags || []).some((tag: string) => p.includes(tag.replace("#", "").toLowerCase())) ||
+      (t.title || "").toLowerCase().split(/\s+/).some((w: string) => w.length > 3 && p.includes(w))
+    )
+    return match || templates[0] || null
+  }
+
+  // Thêm video vào danh sách lên lịch
+  const addVideo = (v: any) => {
+    if (rows.find(r => r.videoId === v.id)) return
+    const tpl = findTemplate(v.product || v.sp || "")
+    // Gán page phù hợp nếu có (so tên)
+    const matchPage = pages.find(p => p.page_name?.toLowerCase().trim() === (v.page_name || "").toLowerCase().trim()) || pages[0]
+    setRows(prev => [...prev, {
+      videoId: v.id,
+      vdCode: v.vd_code || v.vdCode || "",
+      product: v.product || v.sp || "",
+      driveUrl: v.link || v.drive_url || "",
+      pageName: matchPage?.page_name || "",
+      pageId: matchPage?.page_id || "",
+      templateId: tpl?.id || "",
+      message: tpl?.message || "",
+      scheduledFor: defaultTime(),
+    }])
+  }
+
+  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx))
+
+  const updateRow = (idx: number, patch: Partial<ScheduleRow>) => {
+    setRows(prev => prev.map((r, i) => i !== idx ? r : { ...r, ...patch }))
+  }
+
+  const onTemplateChange = (idx: number, tplId: string) => {
+    const tpl = templates.find(t => t.id === tplId)
+    updateRow(idx, { templateId: tplId, message: tpl?.message || rows[idx].message })
+  }
+
+  const onPageChange = (idx: number, pageId: string) => {
+    const pg = pages.find(p => p.page_id === pageId)
+    updateRow(idx, { pageId, pageName: pg?.page_name || "" })
+  }
+
+  const handleSubmit = async () => {
+    const valid = rows.filter(r => r.pageId && r.message.trim() && r.scheduledFor)
+    if (!valid.length) { setToast("Chưa có hàng hợp lệ nào"); return }
+    setSubmitting(true); setResults([])
+
+    const out: typeof results = []
+    for (const row of valid) {
+      try {
+        const body = {
+          page_ids: [row.pageId],
+          message: row.message,
+          drive_url: row.driveUrl,
+          media_type: "video",
+          video_id: row.videoId,
+          scheduled_for: new Date(row.scheduledFor).toISOString(),
+        }
+        const d = await apiJson("/admin/fb-content/post", "POST", body)
+        out.push({ vd: row.vdCode, page: row.pageName, status: d?.jobId ? "scheduled" : "error", error: d?.error })
+      } catch (e: any) {
+        out.push({ vd: row.vdCode, page: row.pageName, status: "error", error: e.message })
+      }
+    }
+    setResults(out)
+    setSubmitting(false)
+    const ok = out.filter(r => r.status === "scheduled").length
+    setToast(`Đã lên lịch ${ok}/${out.length} bài`)
+  }
+
+  const inp: React.CSSProperties = { background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#111827", outline: "none", width: "100%" }
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF" }}>Đang tải…</div>
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+
+      {/* Hướng dẫn */}
+      <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: "#1e40af" }}>
+        <b>Cách dùng:</b> Chọn video bên dưới → hệ thống tự khớp page + template → chỉnh giờ → bấm <b>Lên lịch tất cả</b>.
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "flex-start" }}>
+
+        {/* Cột trái — danh sách video */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid #E5E7EB", fontWeight: 700, fontSize: 13, color: "#111827" }}>
+            🎬 Video sẵn sàng ({videos.length})
+          </div>
+          <div style={{ maxHeight: 520, overflowY: "auto" }}>
+            {videos.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có video nào có Drive URL</div>}
+            {videos.map((v: any) => {
+              const added = !!rows.find(r => r.videoId === v.id)
+              return (
+                <div key={v.id} onClick={() => !added && addVideo(v)}
+                  style={{ padding: "10px 14px", borderBottom: "1px solid #F3F4F6", cursor: added ? "default" : "pointer", background: added ? "#F0FDF4" : "transparent", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ marginTop: 2, width: 16, height: 16, borderRadius: "50%", background: added ? "#059669" : "#E5E7EB", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {added && <span style={{ color: "#fff", fontSize: 9, fontWeight: 900 }}>✓</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#111827", fontSize: 12, fontWeight: 600 }}>{v.vd_code || "—"}</div>
+                    <div className="line-clamp-1" style={{ color: "#4B5563", fontSize: 11 }}>{v.product || v.sp || "—"}</div>
+                    <div className="line-clamp-1" style={{ color: "#9CA3AF", fontSize: 10 }}>{v.page_name}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Cột phải — bảng lên lịch */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>📅 Lịch đăng ({rows.length} bài)</span>
+            {rows.length > 0 && (
+              <button onClick={handleSubmit} disabled={submitting}
+                style={{ background: submitting ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 700, cursor: submitting ? "wait" : "pointer" }}>
+                {submitting ? "Đang lên lịch…" : `🚀 Lên lịch ${rows.length} bài`}
+              </button>
+            )}
+          </div>
+
+          {rows.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
+              ← Click vào video bên trái để thêm vào lịch
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
+                <thead>
+                  <tr style={{ background: "#F9FAFB" }}>
+                    {["Video", "Sản phẩm", "Page", "Template / Nội dung", "Giờ đăng", ""].map((h, i) => (
+                      <th key={i} style={{ padding: "9px 12px", textAlign: "left", color: "#6B7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => (
+                    <tr key={row.videoId} style={{ borderBottom: "1px solid #F3F4F6" }}>
+                      {/* Video code */}
+                      <td style={{ padding: "8px 12px" }}>
+                        <span style={{ background: "#EEF2FF", color: "#4338CA", borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode || "—"}</span>
+                      </td>
+                      {/* SP */}
+                      <td style={{ padding: "8px 12px", fontSize: 11, color: "#4B5563", maxWidth: 120 }}>
+                        <div className="line-clamp-1">{row.product || "—"}</div>
+                      </td>
+                      {/* Page dropdown */}
+                      <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                        <select value={row.pageId} onChange={e => onPageChange(idx, e.target.value)} style={inp}>
+                          {pages.map(p => <option key={p.page_id} value={p.page_id}>{p.page_name}</option>)}
+                        </select>
+                      </td>
+                      {/* Template + nội dung */}
+                      <td style={{ padding: "8px 12px", minWidth: 240 }}>
+                        <select value={row.templateId} onChange={e => onTemplateChange(idx, e.target.value)} style={{ ...inp, marginBottom: 5 }}>
+                          <option value="">— Tùy chỉnh —</option>
+                          {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+                        </select>
+                        <textarea value={row.message} onChange={e => updateRow(idx, { message: e.target.value })} rows={2}
+                          style={{ ...inp, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, fontSize: 11 }} />
+                      </td>
+                      {/* Giờ đăng */}
+                      <td style={{ padding: "8px 12px", minWidth: 170 }}>
+                        <input type="datetime-local" value={row.scheduledFor} onChange={e => updateRow(idx, { scheduledFor: e.target.value })} style={inp} />
+                      </td>
+                      {/* Xóa */}
+                      <td style={{ padding: "8px 12px" }}>
+                        <button onClick={() => removeRow(idx)} style={{ background: "#FEE2E2", color: "#DC2626", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Kết quả sau submit */}
+          {results.length > 0 && (
+            <div style={{ borderTop: "1px solid #E5E7EB", padding: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, color: "#374151", marginBottom: 8 }}>Kết quả lên lịch</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {results.map((r, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+                    <span style={{ background: r.status === "scheduled" ? "#DCFCE7" : "#FEE2E2", color: r.status === "scheduled" ? "#059669" : "#DC2626", borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
+                      {r.status === "scheduled" ? "✓ Đã lên lịch" : "✗ Lỗi"}
+                    </span>
+                    <span style={{ color: "#374151" }}><b>{r.vd}</b> → {r.page}</span>
+                    {r.error && <span style={{ color: "#DC2626" }}>{r.error}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // Page
 // ============================================================================
 export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; initialTab?: string }) {
@@ -819,6 +1070,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
 
   const tabs = [
     { id: "dangbai",      label: "Đăng bài" },
+    { id: "lenlich",      label: "📅 Lên lịch hàng loạt" },
     { id: "lichdang",     label: "Lịch đăng" },
     { id: "viraltracker", label: "Viral Tracker" },
     { id: "thuvien",      label: "Thư viện" },
@@ -835,6 +1087,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
       </div>
       <div style={{ padding: 20 }}>
         {tab === "dangbai"      && <DangBaiTab key={prefill?.videoId || "blank"} prefill={prefill} />}
+        {tab === "lenlich"      && <LenLichHangLoatTab />}
         {tab === "lichdang"     && <LichDangTab />}
         {tab === "viraltracker" && <ViralTrackerTab />}
         {tab === "thuvien"      && <ThuVienTab />}
