@@ -19,13 +19,14 @@ async function syncOnePageStats(pool: any, pageId: string, pageToken: string, pa
   // 2. Page Insights (7 ngày)
   let reach7d = 0, engaged7d = 0, newFans7d = 0
   try {
-    const insightUrl = `https://graph.facebook.com/${FB_V}/${pageId}/insights?metric=page_impressions_unique,page_engaged_users,page_fan_adds_unique&period=week&access_token=${pageToken}`
+    const insightUrl = `https://graph.facebook.com/${FB_V}/${pageId}/insights?metric=page_impressions_unique,page_post_engagements,page_views_total&period=week&access_token=${pageToken}`
     const ins = await fetchJson(insightUrl)
     for (const m of (ins.data ?? [])) {
       const val = m.values?.[m.values.length - 1]?.value ?? 0
       if (m.name === "page_impressions_unique") reach7d = val
-      if (m.name === "page_engaged_users")      engaged7d = val
-      if (m.name === "page_fan_adds_unique")    newFans7d = val
+      if (m.name === "page_post_engagements")   engaged7d = val
+      // page_views_total dự phòng nếu impressions = 0
+      if (m.name === "page_views_total" && reach7d === 0) reach7d = val
     }
   } catch {}
 
