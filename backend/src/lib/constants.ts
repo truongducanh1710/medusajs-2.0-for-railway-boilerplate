@@ -114,9 +114,9 @@ export const SEPAY_API_URL = process.env.SEPAY_API_URL
  * Fallback sang FB_ACCESS_TOKEN nếu chưa set riêng — token Ads hiện tại đã có đủ
  * quyền Pages (pages_manage_posts...) nên dùng chung được.
  */
-export const FB_USER_TOKEN = process.env.FB_USER_TOKEN || process.env.FB_ACCESS_TOKEN || ''
-export const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v21.0'
-export const FB_GRAPH_BASE = `https://graph.facebook.com/${process.env.FB_GRAPH_VERSION || 'v21.0'}`
+export const FB_USER_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_USER_TOKEN || process.env.FB_ACCESS_TOKEN || ''
+export const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v25.0'
+export const FB_GRAPH_BASE = `https://graph.facebook.com/${process.env.FB_GRAPH_VERSION || 'v25.0'}`
 
 /**
  * Worker mode
