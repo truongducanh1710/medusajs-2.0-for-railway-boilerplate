@@ -42,8 +42,8 @@ const SanPhamPage = () => {
     setPage(0)
   }
 
-  const goEdit = (id: string) => {
-    window.location.href = `/app/san-pham/${id}/edit`
+  const goDetail = (id: string) => {
+    window.location.href = `/app/san-pham/${id}`
   }
 
   return (
@@ -80,7 +80,7 @@ const SanPhamPage = () => {
             </thead>
             <tbody>
               {products.map((p) => (
-                <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
+                <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50 cursor-pointer" onClick={() => goDetail(p.id)}>
                   <td className="px-4 py-3">
                     {p.thumbnail ? (
                       <img
@@ -108,10 +108,10 @@ const SanPhamPage = () => {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => goEdit(p.id)}
+                      onClick={() => goDetail(p.id)}
                       className="px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded hover:bg-violet-700 transition-colors"
                     >
-                      Sửa nội dung
+                      Xem chi tiết
                     </button>
                   </td>
                 </tr>

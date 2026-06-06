@@ -61,7 +61,7 @@ const SanPhamEditPage = () => {
       productTitle={product.title}
       initialContent={product.metadata?.page_content_draft ?? product.metadata?.page_content}
       hasLiveContent={!!product.metadata?.page_content}
-      onClose={() => { window.location.href = "/app/san-pham" }}
+      onClose={() => { window.location.href = `/app/san-pham/${id}` }}
       onSaveDraft={handleSaveDraft}
       onPublish={handlePublish}
     />
