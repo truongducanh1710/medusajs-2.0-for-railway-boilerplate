@@ -56,6 +56,11 @@ export default defineMiddlewares({
       method: ["POST", "OPTIONS"],
       middlewares: [extensionCors],
     },
+    {
+      matcher: "/admin/1688-auth",
+      method: ["POST", "OPTIONS"],
+      middlewares: [extensionCors],
+    },
 
     // Custom routes — permission guards
     { matcher: "/admin/pancake-sync", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
