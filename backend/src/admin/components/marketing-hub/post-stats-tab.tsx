@@ -68,12 +68,22 @@ export function PostStatsTab() {
     page_id: "", product_code: "", from: "", to: "", sort: "published_at"
   })
   const [toast, setToast] = useState<string | null>(null)
+  const [syncLog, setSyncLog] = useState<string[]>([])
+  const [showLog, setShowLog] = useState(false)
   const debounceRef = useRef<any>(null)
+
+  const addLog = (msg: string) => setSyncLog(prev => [`[${new Date().toLocaleTimeString("vi-VN")}] ${msg}`, ...prev].slice(0, 50))
 
   // Load pages + products once
   useEffect(() => {
-    apiFetch("/admin/fb-content?all=true").then(r => r.json()).then(d => setPages(d.pages ?? []))
-    apiFetch("/admin/marketing-video/products").then(r => r.json()).then(d => setProducts(d.products ?? []))
+    apiFetch("/admin/fb-content?all=true").then(r => r.json()).then(d => {
+      setPages(d.pages ?? [])
+      addLog(`Đã load ${(d.pages ?? []).length} page từ DB`)
+    }).catch(e => addLog(`Lỗi load pages: ${e.message}`))
+    apiFetch("/admin/marketing-video/products").then(r => r.json()).then(d => {
+      setProducts(d.products ?? [])
+      addLog(`Đã load ${(d.products ?? []).length} sản phẩm`)
+    }).catch(e => addLog(`Lỗi load products: ${e.message}`))
   }, [])
 
   const load = useCallback(() => {
@@ -105,15 +115,31 @@ export function PostStatsTab() {
 
   const refresh = async (pageId?: string) => {
     setSyncing(true)
+    setSyncLog([])
+    setShowLog(true)
+    addLog(pageId ? `Bắt đầu sync page: ${pageId}` : "Bắt đầu sync tất cả page...")
     try {
-      const r = await apiFetch("/admin/fb-content/post-stats", {
+      addLog("→ Gọi POST /admin/fb-content/post-stats")
+      const res = await apiFetch("/admin/fb-content/post-stats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(pageId ? { page_id: pageId } : {}),
-      }).then(r => r.json())
-      showToast(r.ok ? `Đã sync ${r.synced} bài từ ${r.pages} page` : `Lỗi: ${r.error}`)
-      load()
-    } catch { showToast("Sync thất bại") }
+      })
+      addLog(`← HTTP ${res.status}`)
+      const r = await res.json()
+      addLog(`Response: ${JSON.stringify(r)}`)
+      if (r.ok) {
+        addLog(`✅ Sync xong: ${r.synced} bài / ${r.pages} page`)
+        showToast(`Đã sync ${r.synced} bài từ ${r.pages} page`)
+        load()
+      } else {
+        addLog(`❌ Lỗi: ${r.error || JSON.stringify(r)}`)
+        showToast(`Lỗi: ${r.error || "Unknown error"}`)
+      }
+    } catch (e: any) {
+      addLog(`❌ Exception: ${e.message}`)
+      showToast("Sync thất bại — xem log bên dưới")
+    }
     finally { setSyncing(false) }
   }
 
@@ -190,11 +216,33 @@ export function PostStatsTab() {
           )}
           <button onClick={() => refresh(filters.page_id || undefined)} disabled={syncing}
             style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: syncing ? "not-allowed" : "pointer", opacity: syncing ? 0.7 : 1 }}>
-            {syncing ? "Đang sync..." : "↻ Refresh"}
+            {syncing ? "⏳ Đang sync..." : "↻ Refresh"}
+          </button>
+          <button onClick={() => setShowLog(v => !v)}
+            style={{ ...inp, cursor: "pointer", color: T.text3, fontSize: 11 }}>
+            {showLog ? "Ẩn log" : "🔍 Log"}
           </button>
           <span style={{ fontSize: 12, color: T.text3 }}>{total} bài</span>
         </div>
       </div>
+
+      {/* Debug Log Panel */}
+      {showLog && (
+        <div style={{ background: "#0f172a", borderRadius: 10, padding: "12px 16px", marginBottom: 12, fontFamily: "monospace", fontSize: 11 }}>
+          <div style={{ color: "#94a3b8", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+            <span>🔍 Sync Log ({syncLog.length} dòng)</span>
+            <button onClick={() => setSyncLog([])} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 11 }}>Xóa</button>
+          </div>
+          {syncLog.length === 0
+            ? <div style={{ color: "#475569" }}>Chưa có log — bấm Refresh để sync</div>
+            : syncLog.map((l, i) => (
+              <div key={i} style={{ color: l.includes("❌") ? "#f87171" : l.includes("✅") ? "#4ade80" : l.includes("→") || l.includes("←") ? "#60a5fa" : "#e2e8f0", padding: "1px 0" }}>
+                {l}
+              </div>
+            ))
+          }
+        </div>
+      )}
 
       {/* Table */}
       <div style={{ overflowX: "auto", background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
