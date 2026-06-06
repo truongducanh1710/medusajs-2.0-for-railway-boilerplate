@@ -9,8 +9,106 @@ type MktPage = {
   share_anhtd: string; pos: string; bm: string; share_hoan: string; ghi_chu: string
 }
 
+type MktProduct = { id: number; name: string; code: string; active: boolean }
+
 const STATUS_OPTS = ["ĐÃ THÊM", "CHƯA", "CẦN THÊM", "N/A"]
 const HOAT_DONG_OPTS = ["ĐANG CHẠY", "TẠM DỪNG", "ĐÃ DỪNG"]
+
+function SpChayMultiSelect({ value, products, onSave, canEdit }: {
+  value: string; products: MktProduct[]; onSave: (v: string) => void; canEdit: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const [search, setSearch] = useState("")
+
+  // Parse comma-separated string → array of names (trimmed, non-empty)
+  const selected = value ? value.split(",").map(s => s.trim()).filter(Boolean) : []
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSearch("") } }
+    document.addEventListener("mousedown", fn)
+    return () => document.removeEventListener("mousedown", fn)
+  }, [])
+
+  const toggle = (name: string) => {
+    const next = selected.includes(name) ? selected.filter(s => s !== name) : [...selected, name]
+    onSave(next.join(", "))
+  }
+
+  const filtered = products.filter(p =>
+    !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.code || "").toLowerCase().includes(search.toLowerCase())
+  )
+
+  if (!canEdit) {
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+        {selected.length === 0
+          ? <span style={{ color: "#9CA3AF", fontSize: 11 }}>—</span>
+          : selected.map(s => (
+            <span key={s} style={{ background: "#EEF2FF", color: "#4338CA", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 600 }}>{s}</span>
+          ))}
+      </div>
+    )
+  }
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div
+        onClick={() => { setOpen(o => !o); setSearch("") }}
+        style={{ cursor: "pointer", minHeight: 24, display: "flex", flexWrap: "wrap", gap: 3, alignItems: "center", border: open ? "1px solid #93C5FD" : "1px solid transparent", borderRadius: 6, padding: "2px 4px", background: open ? "#F0F6FF" : "transparent" }}
+      >
+        {selected.length === 0
+          ? <span style={{ color: "#9CA3AF", fontSize: 11 }}>— chọn SP</span>
+          : selected.map(s => (
+            <span key={s} style={{ background: "#EEF2FF", color: "#4338CA", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 600 }}>{s}</span>
+          ))}
+        <span style={{ color: "#9CA3AF", fontSize: 9, marginLeft: "auto" }}>▾</span>
+      </div>
+
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 700, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 6px 24px rgba(0,0,0,0.12)", padding: "6px 0", minWidth: 220, maxHeight: 280, display: "flex", flexDirection: "column" }}>
+          {/* Search */}
+          <div style={{ padding: "4px 8px 6px" }}>
+            <input
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Tìm SP..."
+              style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: 6, padding: "4px 8px", fontSize: 12, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          {/* Selected summary */}
+          {selected.length > 0 && (
+            <div style={{ padding: "2px 10px 6px", borderBottom: "1px solid #F3F4F6", display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {selected.map(s => (
+                <span key={s} onClick={() => toggle(s)} style={{ background: "#4338CA", color: "#fff", borderRadius: 10, padding: "1px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                  {s} ✕
+                </span>
+              ))}
+            </div>
+          )}
+          {/* List */}
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {filtered.length === 0 && <div style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>Không tìm thấy</div>}
+            {filtered.map(p => {
+              const checked = selected.includes(p.name)
+              return (
+                <button key={p.id} onClick={() => toggle(p.name)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 12px", background: checked ? "#EEF2FF" : "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ width: 14, height: 14, border: `2px solid ${checked ? "#4338CA" : "#D1D5DB"}`, borderRadius: 3, background: checked ? "#4338CA" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {checked && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#111827" }}>{p.name}</span>
+                  {p.code && <span style={{ fontSize: 10, color: "#9CA3AF", marginLeft: "auto" }}>{p.code}</span>}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function StatusBadge({ val }: { val: string }) {
   const map: Record<string, { c: string; bg: string }> = {
@@ -87,6 +185,7 @@ export function QuanLyPageTab() {
 
   const [innerTab, setInnerTab] = useState<"danh-sach" | "thong-ke">("danh-sach")
   const [pages, setPages] = useState<MktPage[]>([])
+  const [products, setProducts] = useState<MktProduct[]>([])
   const [fbPageNames, setFbPageNames] = useState<Set<string>>(new Set())
   const [mktCodes, setMktCodes] = useState<string[]>([])
   const [filterMkt, setFilterMkt] = useState("all")
@@ -100,6 +199,7 @@ export function QuanLyPageTab() {
   const load = () => apiJson("/admin/mkt-pages").then(d => setPages(d.pages || [])).catch(() => {})
   useEffect(() => {
     load()
+    apiJson("/admin/marketing-video/products").then(d => setProducts(d.products || [])).catch(() => {})
     apiJson("/admin/fb-content?all=true").then(d => {
       const names = new Set<string>((d.pages || []).map((p: any) => p.page_name?.toLowerCase().trim()))
       setFbPageNames(names)
@@ -237,7 +337,7 @@ export function QuanLyPageTab() {
                         }
                       </td>
                       <td style={{ padding: "8px 10px" }}>
-                        <span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{p.sp_chay || "—"}</span>
+                        <SpChayMultiSelect value={p.sp_chay || ""} products={products} canEdit={canEdit} onSave={v => patch(p.id, "sp_chay", v)} />
                       </td>
                       {/* Status cells — click để đổi */}
                       {canEdit ? <>
@@ -296,7 +396,7 @@ export function QuanLyPageTab() {
                   </td>
                   <td style={{ padding: "8px 10px" }}>{/* Trên FB — auto khi lưu */}</td>
                   <td style={{ padding: "8px 10px" }}>
-                    <input value={draft.sp_chay} onChange={e => setDraft(p => ({ ...p, sp_chay: e.target.value }))} placeholder="SP chạy" style={cellInp} />
+                    <SpChayMultiSelect value={draft.sp_chay} products={products} canEdit={true} onSave={v => setDraft(p => ({ ...p, sp_chay: v }))} />
                   </td>
                   <td style={{ padding: "8px 10px" }}>
                     <select value={draft.pancake} onChange={e => setDraft(p => ({ ...p, pancake: e.target.value }))} style={cellInp}>
