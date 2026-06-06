@@ -88,10 +88,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const code = (u.metadata as any)?.mkt_code
         if (name && code) mktCodeByName[name] = code
       }
+      // Lookup mkt_product để resolve product_code khi bị rỗng do bug cũ
+      const { rows: mktProducts } = await pool.query(`SELECT name, code FROM mkt_product WHERE active = true`)
+      const codeByProductName: Record<string, string> = {}
+      for (const p of mktProducts) if (p.name && p.code) codeByProductName[p.name.toLowerCase()] = p.code
       await Promise.all(needsFill.map(r => {
         const mktCode = mktCodeByName[r.maker] || r.maker.toUpperCase().replace(/\s+/g, "").slice(0, 8)
-        r.ad_name = computeAdName(r, mktCode)
-        return pool.query(`UPDATE mkt_video SET ad_name = $1 WHERE id = $2`, [r.ad_name, r.id])
+        const resolvedCode = r.product_code || codeByProductName[(r.product || "").toLowerCase()] || ""
+        r.ad_name = computeAdName({ ...r, product_code: resolvedCode }, mktCode)
+        return pool.query(`UPDATE mkt_video SET ad_name = $1, product_code = $2 WHERE id = $3`, [r.ad_name, resolvedCode || r.product_code, r.id])
       }))
     }
     return res.json({ rows: rows.map(toUiRow), total: rows.length })

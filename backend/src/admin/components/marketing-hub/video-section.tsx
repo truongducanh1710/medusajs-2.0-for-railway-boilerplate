@@ -166,7 +166,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     if (saving) return
     setSaving(true)
     try {
-      const spEntry = spList.find(s => s.name === draft.sp)
+      const spEntry = spList.find(s => s.name.toLowerCase() === draft.sp.toLowerCase())
       const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm", productCode: spEntry?.code || "" })
       setAdding(false)
       const id = res?.row?.id || res?.id || null
@@ -199,7 +199,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const saveEdit = async (id: string) => {
     if (!editDraft) return
     try {
-      const spEntry = spList.find(s => s.name === editDraft.sp)
+      const spEntry = spList.find(s => s.name.toLowerCase() === editDraft.sp.toLowerCase())
       const payload = { ...editDraft, ...(spEntry?.code ? { productCode: spEntry.code } : {}) }
       await apiJson(`/admin/marketing-video/${id}`, "PATCH", payload)
       setToast("Đã lưu"); cancelEdit(); reload()
