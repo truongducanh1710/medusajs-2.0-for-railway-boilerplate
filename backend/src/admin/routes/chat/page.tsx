@@ -612,18 +612,47 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* Orders */}
-                  {detail?.orders?.length ? (
+                  {/* Đơn Pancake khớp theo SĐT */}
+                  {conv?.active_phone && (
                     <div style={{ padding: "12px 16px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 8 }}>🛍 Đơn hàng</div>
-                      {detail.orders.map((o: any) => (
-                        <div key={o.id} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 10px", fontSize: 12, marginBottom: 6 }}>
-                          {o.medusa_order_id && <div>Medusa: <code>{o.medusa_order_id}</code></div>}
-                          {o.pancake_order_id && <div>Pancake: <code>{o.pancake_order_id}</code></div>}
-                        </div>
-                      ))}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 8 }}>
+                        🛍 Đơn hàng {detail?.orders?.length ? `(${detail.orders.length})` : ""}
+                      </div>
+                      {!detail?.orders?.length && (
+                        <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đơn theo SĐT này</div>
+                      )}
+                      {(detail?.orders || []).map((o: any) => {
+                        const items: any[] = Array.isArray(o.items) ? o.items : []
+                        const statusColor = o.status_name?.includes("hủy") ? "#ef4444"
+                          : o.status_name?.includes("thành công") || o.status_name?.includes("giao") ? "#16a34a"
+                          : "#f59e0b"
+                        return (
+                          <div key={o.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "#374151" }}>#{o.id}</span>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: statusColor }}>{o.status_name || "—"}</span>
+                            </div>
+                            {items.length > 0 && (
+                              <div style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
+                                {items.map((it: any, i: number) => (
+                                  <div key={i}>{it.name} x{it.qty} — {Number(it.price || 0).toLocaleString("vi-VN")}đ</div>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                              <span style={{ fontSize: 11, color: "#64748b" }}>{o.province}</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>
+                                {Number(o.cod_amount || o.total || 0).toLocaleString("vi-VN")}đ
+                              </span>
+                            </div>
+                            {o.tracking_code && (
+                              <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>🚚 {o.tracking_code}</div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
-                  ) : null}
+                  )}
                 </div>
               )
             }

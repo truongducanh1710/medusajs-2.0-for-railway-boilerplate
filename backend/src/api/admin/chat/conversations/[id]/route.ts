@@ -30,12 +30,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       `SELECT * FROM fb_conversation_event WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [id]
     )
-    const orders = await pool.query(
-      `SELECT * FROM fb_chat_order_link WHERE conversation_id = $1 ORDER BY created_at DESC`,
-      [id]
-    )
+    // Khớp đơn Pancake theo SĐT khách (từ context 24h)
+    const phone = conv.rows[0]?.active_phone || null
+    let pancakeOrders: any[] = []
+    if (phone) {
+      const cleanPhone = phone.replace(/\D/g, "")
+      const { rows: po } = await pool.query(
+        `SELECT id, status_name, customer_name, customer_phone, total, cod_amount,
+                tracking_code, province, items, items_count, sale_name, pancake_created_at, tags
+         FROM pancake_order
+         WHERE regexp_replace(customer_phone, '[^0-9]', '', 'g') = $1
+         ORDER BY pancake_created_at DESC NULLS LAST LIMIT 10`,
+        [cleanPhone]
+      ).catch(() => ({ rows: [] }))
+      pancakeOrders = po
+    }
     await pool.query(`UPDATE fb_conversation SET unread_count = 0 WHERE id = $1`, [id])
-    return res.json({ conversation: c, messages: messages.rows, events: events.rows, orders: orders.rows })
+    return res.json({ conversation: c, messages: messages.rows, events: events.rows, orders: pancakeOrders })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
