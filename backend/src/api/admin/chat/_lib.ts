@@ -448,7 +448,8 @@ export async function refreshConversationContext(pool: Pool, conversationId: str
   )
   const activeText = active.rows.map((m: any) => `${m.sender_type}: ${m.text || ""}`).join("\n").slice(-4000)
   const historyText = historical.rows.reverse().map((m: any) => `${m.sender_type}: ${m.text || ""}`).join("\n").slice(-2500)
-  const combined = active.rows.map((m: any) => m.text || "").join("\n")
+  // Chỉ extract phone từ inbound (khách gửi), tránh match số trong reply bot/sale
+  const combined = active.rows.filter((m: any) => m.direction === "inbound").map((m: any) => m.text || "").join("\n")
   const phone = extractPhone(combined)
   const address = active.rows.map((m: any) => looksLikeAddress(m.text || "")).find(Boolean) || null
   const intentTexts = active.rows.filter((m: any) => m.direction === "inbound").map((m: any) => m.text || "").join(" ")

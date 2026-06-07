@@ -40,7 +40,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       where.push(`(c.customer_name ILIKE $${params.length} OR c.last_message ILIKE $${params.length} OR c.page_name ILIKE $${params.length})`)
     }
     if (q.has_phone === "1") {
-      where.push(`ctx.active_phone IS NOT NULL AND ctx.active_phone != ''`)
+      // Chỉ lấy conv mà context có phone VÀ phone đó đến từ inbound message trong 24h
+      where.push(`ctx.active_phone IS NOT NULL AND ctx.active_phone != '' AND EXISTS (
+        SELECT 1 FROM fb_message m
+        WHERE m.conversation_id = c.id
+          AND m.direction = 'inbound'
+          AND m.created_at >= now() - interval '24 hours'
+          AND m.text ~ '(?:84|0)(?:3|5|7|8|9)[0-9]{8}'
+      )`)
     }
 
     params.push(limit, offset)
