@@ -76,8 +76,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const vals: any[] = []
     for (const f of fields) {
       if (b[f] !== undefined) {
-        vals.push(Array.isArray(b[f]) ? b[f] : b[f])
-        sets.push(`${f} = $${vals.length}`)
+        vals.push(b[f])
+        const cast = f === "tags" ? `::text[]` : ""
+        sets.push(`${f} = $${vals.length}${cast}`)
       }
     }
     if (!sets.length) return res.status(400).json({ error: "No fields" })

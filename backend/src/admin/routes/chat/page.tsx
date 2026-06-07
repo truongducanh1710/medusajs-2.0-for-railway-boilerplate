@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { apiJson } from "../../lib/api-client"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+type ConvTag = "mua_hang" | "chot_duoc" | "hoi_gia" | "voucher_30k" | "kieu_nai" | "mua_lai"
 type Conversation = {
   id: string; page_id: string; page_name: string
   customer_name?: string; customer_psid: string
@@ -12,6 +13,7 @@ type Conversation = {
   handoff_reason?: string; bot_paused: boolean; bot_mode?: string
   product_names?: string[]; active_phone?: string
   active_address?: string; active_order_state?: string
+  tags?: string[]
 }
 type Attachment = { type: string; payload?: { url?: string; title?: string }; name?: string }
 type Message = {
@@ -23,9 +25,7 @@ type BotEvent = {
   auto_sent: boolean; skipped_reason?: string; created_at: string
 }
 type ConvDetail = {
-  conversation: Conversation & {
-    active_window_summary?: string; historical_summary?: string
-  }
+  conversation: Conversation & { active_window_summary?: string; historical_summary?: string }
   messages: Message[]; events: any[]; orders: any[]
 }
 type Agent = {
@@ -46,19 +46,36 @@ const TABS = [
   ["complaint", "Khiếu nại"], ["mine", "Của tôi"],
 ] as const
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  complaint:    { label: "Khiếu nại",   bg: "#fee2e2", color: "#dc2626" },
-  handoff:      { label: "Cần sale",    bg: "#fef3c7", color: "#d97706" },
-  assigned:     { label: "Đang xử lý", bg: "#dbeafe", color: "#2563eb" },
-  ordered:      { label: "Đã đặt",      bg: "#dcfce7", color: "#16a34a" },
-  bot_handling: { label: "Bot xử lý",  bg: "#ede9fe", color: "#7c3aed" },
-  new:          { label: "Mới",         bg: "#f1f5f9", color: "#64748b" },
-}
+const STATUS_PIPELINE: { key: string; label: string; color: string; bg: string }[] = [
+  { key: "new",          label: "Mới",           color: "#64748b", bg: "#f1f5f9" },
+  { key: "consulting",   label: "Tư vấn",        color: "#2563eb", bg: "#dbeafe" },
+  { key: "waiting_info", label: "Chờ TT",        color: "#d97706", bg: "#fef3c7" },
+  { key: "ordered",      label: "Đã đặt",        color: "#16a34a", bg: "#dcfce7" },
+  { key: "complaint",    label: "Khiếu nại",     color: "#dc2626", bg: "#fee2e2" },
+  { key: "done",         label: "Xong",          color: "#94a3b8", bg: "#f8fafc" },
+]
+
+const CONV_TAGS: { key: ConvTag; label: string; emoji: string; bg: string; color: string }[] = [
+  { key: "mua_hang",    label: "Mua hàng",    emoji: "🛍",  bg: "#dcfce7", color: "#16a34a" },
+  { key: "chot_duoc",   label: "Chốt được",   emoji: "💰",  bg: "#d1fae5", color: "#059669" },
+  { key: "hoi_gia",     label: "Hỏi giá",     emoji: "❓",  bg: "#f1f5f9", color: "#64748b" },
+  { key: "voucher_30k", label: "Voucher 30K",  emoji: "🎁",  bg: "#fff7ed", color: "#c2410c" },
+  { key: "kieu_nai",    label: "Khiếu nại",   emoji: "⚠️", bg: "#fee2e2", color: "#dc2626" },
+  { key: "mua_lai",     label: "Mua lại",     emoji: "🔄",  bg: "#ede9fe", color: "#7c3aed" },
+]
+
+const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = Object.fromEntries(
+  STATUS_PIPELINE.map(s => [s.key, { label: s.label, bg: s.bg, color: s.color }])
+)
+STATUS_CONFIG["handoff"]      = { label: "Cần sale",   bg: "#fef3c7", color: "#d97706" }
+STATUS_CONFIG["assigned"]     = { label: "Đang xử lý", bg: "#dbeafe", color: "#2563eb" }
+STATUS_CONFIG["bot_handling"] = { label: "Bot xử lý",  bg: "#ede9fe", color: "#7c3aed" }
+
 const MODE_CONFIG: Record<string, { label: string; color: string }> = {
-  off:            { label: "OFF",       color: "#94a3b8" },
-  suggest:        { label: "Gợi ý",    color: "#3b82f6" },
-  auto_24h:       { label: "Auto 24h", color: "#10b981" },
-  paused_by_error:{ label: "Lỗi",      color: "#ef4444" },
+  off:             { label: "OFF",       color: "#94a3b8" },
+  suggest:         { label: "Gợi ý",    color: "#3b82f6" },
+  auto_24h:        { label: "Auto 24h", color: "#10b981" },
+  paused_by_error: { label: "Lỗi",      color: "#ef4444" },
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -95,67 +112,61 @@ function isCommentReply(t: string) {
 function isSystemText(t: string) {
   return isCommentReply(t) || /^\[attachment\]$/i.test(t.trim())
 }
-function avatarChar(name?: string) {
-  return (name || "?")[0].toUpperCase()
-}
+function avatarChar(name?: string) { return (name || "?")[0].toUpperCase() }
 function avatarColor(name?: string) {
   const colors = ["#6366f1","#ec4899","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ef4444","#14b8a6"]
   let h = 0; for (const c of (name || "")) h = (h * 31 + c.charCodeAt(0)) & 0xff
   return colors[h % colors.length]
 }
+function convTags(c: Conversation): string[] {
+  if (!c.tags) return []
+  if (Array.isArray(c.tags)) return c.tags
+  try { return JSON.parse(c.tags as any) } catch { return [] }
+}
 
 // ─── Micro UI ────────────────────────────────────────────────────────────────
 function Avatar({ name, size = 36 }: { name?: string; size?: number }) {
-  const bg = avatarColor(name)
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: bg, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: size * 0.38, flexShrink: 0, userSelect: "none" }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: avatarColor(name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: size * 0.38, flexShrink: 0, userSelect: "none" }}>
       {avatarChar(name)}
     </div>
   )
 }
-
-function Tag({ label, bg, color }: { label: string; bg: string; color: string }) {
-  return <span style={{ background: bg, color, borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>
+function Chip({ label, bg, color, emoji }: { label: string; bg: string; color: string; emoji?: string }) {
+  return <span style={{ background: bg, color, borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{emoji ? `${emoji} ` : ""}{label}</span>
 }
-
 function Btn({ children, onClick, disabled, variant = "default", size = "md" }: {
   children: React.ReactNode; onClick?: () => void; disabled?: boolean
   variant?: "default" | "primary" | "danger" | "ghost" | "success"
   size?: "xs" | "sm" | "md"
 }) {
   const styles: Record<string, React.CSSProperties> = {
-    default:  { background: "#fff", color: "#374151", border: "1px solid #e2e8f0" },
-    primary:  { background: "#1877f2", color: "#fff", border: "1px solid #1877f2" },
-    danger:   { background: "#fff5f5", color: "#ef4444", border: "1px solid #fecaca" },
-    ghost:    { background: "transparent", color: "#64748b", border: "1px solid transparent" },
-    success:  { background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" },
+    default: { background: "#fff",    color: "#374151", border: "1px solid #e2e8f0" },
+    primary: { background: "#1877f2", color: "#fff",    border: "1px solid #1877f2" },
+    danger:  { background: "#fff5f5", color: "#ef4444", border: "1px solid #fecaca" },
+    ghost:   { background: "transparent", color: "#64748b", border: "1px solid transparent" },
+    success: { background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" },
   }
   const pad = size === "xs" ? "2px 8px" : size === "sm" ? "5px 12px" : "7px 16px"
-  const fs = size === "xs" ? 11 : size === "sm" ? 12 : 13
+  const fs  = size === "xs" ? 11 : size === "sm" ? 12 : 13
   return (
-    <button onClick={onClick} disabled={disabled} style={{
-      ...styles[variant], borderRadius: 8, padding: pad, fontSize: fs, fontWeight: 500,
-      cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1,
-      display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
-    }}>{children}</button>
+    <button onClick={onClick} disabled={disabled} style={{ ...styles[variant], borderRadius: 8, padding: pad, fontSize: fs, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+      {children}
+    </button>
   )
 }
-
 function AttView({ att }: { att: Attachment }) {
   const url = att.payload?.url
   if (!url) return <span style={{ fontSize: 12, color: "#9ca3af" }}>[{att.type}]</span>
   if (att.type === "image") return (
     <a href={url} target="_blank" rel="noreferrer">
-      <img src={url} alt="" style={{ maxWidth: 220, maxHeight: 220, borderRadius: 12, display: "block", cursor: "zoom-in", objectFit: "cover" }}
-        onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+      <img src={url} alt="" style={{ maxWidth: 220, maxHeight: 220, borderRadius: 12, display: "block", cursor: "zoom-in", objectFit: "cover" }} onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
     </a>
   )
   if (att.type === "video") return <video src={url} controls style={{ maxWidth: 260, borderRadius: 12 }} />
   if (att.type === "audio") return <audio src={url} controls style={{ maxWidth: 240 }} />
   return <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#3b82f6" }}>📎 {att.payload?.title || att.name || att.type}</a>
 }
-
-// Date separator
 function DateSep({ label }: { label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "8px 0" }}>
@@ -165,37 +176,106 @@ function DateSep({ label }: { label: string }) {
     </div>
   )
 }
+function InfoRow({ icon, label, value, mono }: { icon: string; label: string; value?: string; mono?: boolean }) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <span style={{ fontSize: 13, width: 18, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+        <div style={{ fontSize: 12, color: value ? "#0f172a" : "#d1d5db", fontFamily: mono ? "monospace" : undefined, fontWeight: value ? 500 : 400, wordBreak: "break-word" }}>{value || "—"}</div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Status Pipeline Bar ─────────────────────────────────────────────────────
+function StatusPipeline({ current, onChange }: { current: string; onChange: (s: string) => void }) {
+  return (
+    <div style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Trạng thái</div>
+      <div style={{ display: "flex", gap: 3 }}>
+        {STATUS_PIPELINE.map((s, i) => {
+          const isActive = current === s.key
+          return (
+            <button key={s.key} onClick={() => onChange(s.key)} title={s.label} style={{
+              flex: 1, padding: "5px 2px", fontSize: 10, fontWeight: isActive ? 700 : 500,
+              background: isActive ? s.bg : "#f8fafc",
+              color: isActive ? s.color : "#94a3b8",
+              border: isActive ? `1.5px solid ${s.color}` : "1.5px solid #e2e8f0",
+              borderRadius: i === 0 ? "6px 0 0 6px" : i === STATUS_PIPELINE.length - 1 ? "0 6px 6px 0" : 0,
+              cursor: "pointer", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden",
+              transition: "all 0.1s",
+            }}>{s.label}</button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Tag Picker ──────────────────────────────────────────────────────────────
+function TagPicker({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const toggle = (key: string) => {
+    onChange(tags.includes(key) ? tags.filter(t => t !== key) : [...tags, key])
+  }
+  return (
+    <div style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Tags</div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {CONV_TAGS.map(t => {
+          const active = tags.includes(t.key)
+          return (
+            <button key={t.key} onClick={() => toggle(t.key)} style={{
+              background: active ? t.bg : "#f8fafc",
+              color: active ? t.color : "#94a3b8",
+              border: active ? `1.5px solid ${t.color}` : "1.5px solid #e2e8f0",
+              borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: active ? 700 : 400,
+              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3,
+              transition: "all 0.1s",
+            }}>
+              {t.emoji} {t.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const [view, setView] = useState<"inbox" | "agents" | "examples">("inbox")
-  const [tab, setTab] = useState("all")
+  const [view, setView]           = useState<"inbox" | "agents" | "examples">("inbox")
+  const [tab, setTab]             = useState("all")
   const [pageFilter, setPageFilter] = useState("")
-  const [hasPhone, setHasPhone] = useState(false)
-  const [pageList, setPageList] = useState<{ page_id: string; page_name: string }[]>([])
-  const [convs, setConvs] = useState<Conversation[]>([])
-  const [search, setSearch] = useState("")
+  const [tagFilter, setTagFilter] = useState<string>("")   // "" = all
+  const [hasPhone, setHasPhone]   = useState(false)
+  const [pageList, setPageList]   = useState<{ page_id: string; page_name: string }[]>([])
+  const [convs, setConvs]         = useState<Conversation[]>([])
+  const [search, setSearch]       = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ConvDetail | null>(null)
+  const [detail, setDetail]       = useState<ConvDetail | null>(null)
   const [botEvents, setBotEvents] = useState<BotEvent[]>([])
-  const [loading, setLoading] = useState(false)
-  const [text, setText] = useState("")
-  const [sending, setSending] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState("")
+  const [loading, setLoading]     = useState(false)
+  const [text, setText]           = useState("")
+  const [sending, setSending]     = useState(false)
+  const [syncing, setSyncing]     = useState(false)
+  const [syncMsg, setSyncMsg]     = useState("")
   const [syncDetail, setSyncDetail] = useState<Record<string, any>>({})
   const [showSyncDetail, setShowSyncDetail] = useState(false)
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [examples, setExamples] = useState<Example[]>([])
-  const [exTab, setExTab] = useState("pending")
+  const [agents, setAgents]       = useState<Agent[]>([])
+  const [examples, setExamples]   = useState<Example[]>([])
+  const [exTab, setExTab]         = useState("pending")
   const msgEndRef = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<any>(null)
+  const timerRef  = useRef<any>(null)
 
   const selected = useMemo(() => convs.find(c => c.id === selectedId), [convs, selectedId])
-  const conv = detail?.conversation
+  const conv     = detail?.conversation
+
+  // Frontend filter
   const filtered = useMemo(() => {
     let list = convs
-    if (hasPhone) list = list.filter(c => c.active_phone && c.active_phone.trim() !== "")
+    if (hasPhone)   list = list.filter(c => c.active_phone && c.active_phone.trim() !== "")
+    if (tagFilter)  list = list.filter(c => convTags(c).includes(tagFilter))
     if (!search.trim()) return list
     const s = search.toLowerCase()
     return list.filter(c =>
@@ -203,37 +283,32 @@ export default function ChatPage() {
       c.customer_psid.toLowerCase().includes(s) ||
       (c.last_message || "").toLowerCase().includes(s)
     )
-  }, [convs, search])
+  }, [convs, hasPhone, tagFilter, search])
+
   const botSuggestion = useMemo(() =>
     botEvents.find(e => e.reply_text && !e.auto_sent && !e.skipped_reason?.includes("handoff")),
     [botEvents]
   )
-
-  // Group messages by date for separators
   const groupedMessages = useMemo(() => {
     const msgs = detail?.messages || []
     const groups: { date: string; messages: Message[] }[] = []
     for (const m of msgs) {
       const d = fmtDateOnly(m.created_at)
-      if (!groups.length || groups[groups.length - 1].date !== d) {
-        groups.push({ date: d, messages: [m] })
-      } else {
-        groups[groups.length - 1].messages.push(m)
-      }
+      if (!groups.length || groups[groups.length - 1].date !== d) groups.push({ date: d, messages: [m] })
+      else groups[groups.length - 1].messages.push(m)
     }
     return groups
   }, [detail?.messages])
 
-  const loadConvs = useCallback(async (t = tab, p = pageFilter, hp = hasPhone) => {
+  const loadConvs = useCallback(async (t = tab, p = pageFilter) => {
     setLoading(true)
     try {
-      let url = `/admin/chat/conversations?status=${t}&limit=80`
+      let url = `/admin/chat/conversations?status=${t}&limit=100`
       if (p) url += `&page_id=${p}`
-      // has_phone filter ở frontend, không cần gửi lên backend
       const d = await apiJson(url)
       setConvs(d.conversations || [])
     } finally { setLoading(false) }
-  }, [tab, pageFilter, hasPhone])
+  }, [tab, pageFilter])
 
   const loadDetail = useCallback(async (id = selectedId) => {
     if (!id) return
@@ -255,6 +330,14 @@ export default function ChatPage() {
     setExamples(d.examples || [])
   }, [exTab])
 
+  const patchConv = useCallback(async (fields: Record<string, any>) => {
+    if (!selectedId) return
+    await apiJson(`/admin/chat/conversations/${selectedId}`, "PATCH", fields)
+    // Update local state optimistically
+    setConvs(prev => prev.map(c => c.id === selectedId ? { ...c, ...fields } : c))
+    setDetail(prev => prev ? { ...prev, conversation: { ...prev.conversation, ...fields } } : prev)
+  }, [selectedId])
+
   useEffect(() => { loadConvs(); loadAgents() }, [])
   useEffect(() => { if (selectedId) loadDetail(selectedId) }, [selectedId])
   useEffect(() => {
@@ -264,11 +347,11 @@ export default function ChatPage() {
     if (view !== "inbox") return
     clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      loadConvs(tab, pageFilter, hasPhone)
+      loadConvs(tab, pageFilter)
       if (selectedId) loadDetail(selectedId)
     }, 15000)
     return () => clearInterval(timerRef.current)
-  }, [view, tab, pageFilter, hasPhone, selectedId])
+  }, [view, tab, pageFilter, selectedId])
   useEffect(() => { if (view === "examples") loadExamples(exTab) }, [view])
 
   async function send() {
@@ -276,7 +359,7 @@ export default function ChatPage() {
     setSending(true)
     try {
       await apiJson(`/admin/chat/conversations/${selectedId}/send`, "POST", { text })
-      setText(""); await loadDetail(selectedId); await loadConvs(tab, pageFilter, hasPhone)
+      setText(""); await loadDetail(selectedId); await loadConvs(tab, pageFilter)
     } finally { setSending(false) }
   }
 
@@ -293,16 +376,16 @@ export default function ChatPage() {
             const s = await apiJson("/admin/chat/sync-inbox")
             setSyncDetail(s?.results || {})
             if (s?.status === "running") { setSyncMsg(`⏳ ${s.pages_synced}/${d.pages_count}...`); setTimeout(poll, 2000) }
-            else if (s?.status === "done") { setSyncMsg(`✅ ${s.total_saved} tin · ${s.pages_synced} page`); setSyncing(false); loadConvs(tab, pageFilter, hasPhone) }
+            else if (s?.status === "done") { setSyncMsg(`✅ ${s.total_saved} tin · ${s.pages_synced} page`); setSyncing(false); loadConvs(tab, pageFilter) }
             else { setSyncMsg(`❌ ${s?.error || "Lỗi"}`); setSyncing(false) }
           } catch { setTimeout(poll, 3000) }
         }
         setTimeout(poll, 2000)
-      } else { setSyncMsg(`✅ ${d.total_saved || 0} tin`); setSyncing(false); loadConvs(tab, pageFilter, hasPhone) }
+      } else { setSyncMsg(`✅ ${d.total_saved || 0} tin`); setSyncing(false); loadConvs(tab, pageFilter) }
     } catch (e: any) { setSyncMsg(`❌ ${e.message}`); setSyncing(false) }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", margin: -24, background: "#f8fafc", fontFamily: "Inter,system-ui,sans-serif", fontSize: 13, color: "#0f172a" }}>
 
@@ -311,12 +394,9 @@ export default function ChatPage() {
         <span style={{ fontSize: 18, marginRight: 6 }}>💬</span>
         <b style={{ fontSize: 15, marginRight: 8 }}>Chat</b>
         {(["inbox","agents","examples"] as const).map(v => (
-          <button key={v} onClick={() => setView(v)} style={{
-            border: "none", background: "none", color: view === v ? "#1877f2" : "#64748b",
-            borderBottom: view === v ? "2px solid #1877f2" : "2px solid transparent",
-            padding: "0 14px", height: 50, fontSize: 13, fontWeight: view === v ? 600 : 400,
-            cursor: "pointer",
-          }}>{v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Câu cần học"}</button>
+          <button key={v} onClick={() => setView(v)} style={{ border: "none", background: "none", color: view === v ? "#1877f2" : "#64748b", borderBottom: view === v ? "2px solid #1877f2" : "2px solid transparent", padding: "0 14px", height: 50, fontSize: 13, fontWeight: view === v ? 600 : 400, cursor: "pointer" }}>
+            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Câu cần học"}
+          </button>
         ))}
         {view === "inbox" && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
@@ -325,13 +405,13 @@ export default function ChatPage() {
                 {syncMsg}
               </span>
             )}
-            <select value={pageFilter} onChange={e => { setPageFilter(e.target.value); loadConvs(tab, e.target.value, hasPhone) }}
+            <select value={pageFilter} onChange={e => { setPageFilter(e.target.value); loadConvs(tab, e.target.value) }}
               style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 8px", fontSize: 12, maxWidth: 180, background: "#fff" }}>
               <option value="">Tất cả page</option>
               {pageList.map(p => <option key={p.page_id} value={p.page_id}>{p.page_name}</option>)}
             </select>
             <Btn onClick={syncInbox} disabled={syncing} size="sm">⬇ {syncing ? "Đang sync..." : "Sync"}</Btn>
-            <button onClick={() => loadConvs(tab, pageFilter, hasPhone)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 15, color: "#64748b" }}>↺</button>
+            <button onClick={() => loadConvs(tab, pageFilter)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 15, color: "#64748b" }}>↺</button>
           </div>
         )}
       </div>
@@ -363,26 +443,37 @@ export default function ChatPage() {
               <div style={{ display: "flex", alignItems: "center", background: "#f8fafc", border: "1px solid #e8edf2", borderRadius: 10, padding: "7px 10px", gap: 6 }}>
                 <span style={{ color: "#94a3b8", fontSize: 14 }}>🔍</span>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm kiếm..."
-                  style={{ border: "none", background: "none", outline: "none", fontSize: 12, flex: 1, color: "#0f172a" }} />
+                  style={{ border: "none", background: "none", outline: "none", fontSize: 12, flex: 1 }} />
               </div>
             </div>
-            {/* Tabs */}
+
+            {/* Status tabs */}
             <div style={{ display: "flex", padding: "8px 10px 4px", gap: 2, flexWrap: "wrap" }}>
               {TABS.map(([id, label]) => (
-                <button key={id} onClick={() => { setTab(id); loadConvs(id, pageFilter, hasPhone) }} style={{
-                  border: "none", background: tab === id ? "#eff6ff" : "transparent",
-                  color: tab === id ? "#1877f2" : "#64748b",
-                  borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: tab === id ? 600 : 400, cursor: "pointer",
-                }}>{label}</button>
+                <button key={id} onClick={() => { setTab(id); loadConvs(id, pageFilter) }} style={{ border: "none", background: tab === id ? "#eff6ff" : "transparent", color: tab === id ? "#1877f2" : "#64748b", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: tab === id ? 600 : 400, cursor: "pointer" }}>{label}</button>
               ))}
             </div>
+
             {/* Filter row */}
-            <div style={{ display: "flex", alignItems: "center", padding: "4px 12px 8px", borderBottom: "1px solid #f1f5f9", gap: 6 }}>
-              <button onClick={() => { const v = !hasPhone; setHasPhone(v); loadConvs(tab, pageFilter, v) }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${hasPhone ? "#3b82f6" : "#e2e8f0"}`, background: hasPhone ? "#eff6ff" : "#fff", color: hasPhone ? "#1877f2" : "#64748b", borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: hasPhone ? 600 : 400, cursor: "pointer" }}>
-                📞 Có SĐT
-              </button>
-              <span style={{ fontSize: 10, color: "#cbd5e1", marginLeft: "auto" }}>mới nhất ↑</span>
+            <div style={{ padding: "4px 10px 8px", borderBottom: "1px solid #f1f5f9" }}>
+              {/* Tag filter pills */}
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+                <button onClick={() => setTagFilter("")} style={{ background: tagFilter === "" ? "#eff6ff" : "#f8fafc", color: tagFilter === "" ? "#1877f2" : "#94a3b8", border: `1px solid ${tagFilter === "" ? "#bfdbfe" : "#e2e8f0"}`, borderRadius: 99, padding: "2px 9px", fontSize: 11, cursor: "pointer", fontWeight: tagFilter === "" ? 600 : 400 }}>
+                  Tất cả
+                </button>
+                {CONV_TAGS.map(t => (
+                  <button key={t.key} onClick={() => setTagFilter(tagFilter === t.key ? "" : t.key)} style={{ background: tagFilter === t.key ? t.bg : "#f8fafc", color: tagFilter === t.key ? t.color : "#94a3b8", border: `1px solid ${tagFilter === t.key ? t.color : "#e2e8f0"}`, borderRadius: 99, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: tagFilter === t.key ? 600 : 400 }}>
+                    {t.emoji} {t.label}
+                  </button>
+                ))}
+              </div>
+              {/* SĐT toggle */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => setHasPhone(v => !v)} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${hasPhone ? "#3b82f6" : "#e2e8f0"}`, background: hasPhone ? "#eff6ff" : "#fff", color: hasPhone ? "#1877f2" : "#64748b", borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: hasPhone ? 600 : 400, cursor: "pointer" }}>
+                  📞 Có SĐT
+                </button>
+                <span style={{ fontSize: 10, color: "#cbd5e1", marginLeft: "auto" }}>mới nhất ↑</span>
+              </div>
             </div>
 
             {/* Conv list */}
@@ -392,42 +483,38 @@ export default function ChatPage() {
               {filtered.map(c => {
                 const isSelected = selectedId === c.id
                 const sc = STATUS_CONFIG[c.status]
+                const ctags = convTags(c)
                 return (
-                  <div key={c.id} onClick={() => setSelectedId(c.id)} style={{
-                    padding: "10px 14px", borderBottom: "1px solid #f8fafc", cursor: "pointer",
-                    background: isSelected ? "#eff6ff" : "#fff",
-                    borderLeft: `3px solid ${isSelected ? "#1877f2" : "transparent"}`,
-                    transition: "background 0.1s",
-                  }}>
+                  <div key={c.id} onClick={() => setSelectedId(c.id)} style={{ padding: "10px 14px", borderBottom: "1px solid #f8fafc", cursor: "pointer", background: isSelected ? "#eff6ff" : "#fff", borderLeft: `3px solid ${isSelected ? "#1877f2" : "transparent"}`, transition: "background 0.1s" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <Avatar name={c.customer_name || c.customer_psid} size={38} />
                         {c.unread_count > 0 && (
-                          <span style={{ position: "absolute", top: -3, right: -3, background: "#ef4444", color: "#fff", borderRadius: 99, fontSize: 9, fontWeight: 700, padding: "1px 4px", border: "1.5px solid #fff" }}>
-                            {c.unread_count}
-                          </span>
+                          <span style={{ position: "absolute", top: -3, right: -3, background: "#ef4444", color: "#fff", borderRadius: 99, fontSize: 9, fontWeight: 700, padding: "1px 4px", border: "1.5px solid #fff" }}>{c.unread_count}</span>
                         )}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                          <span style={{ fontWeight: 600, fontSize: 13, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {c.customer_name || c.customer_psid}
-                          </span>
+                          <span style={{ fontWeight: 600, fontSize: 13, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name || c.customer_psid}</span>
                           <span style={{ fontSize: 10, color: "#94a3b8", flexShrink: 0 }}>{fmtAgo(c.last_message_at)}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3 }}>{c.page_name}</div>
-                        <div style={{ fontSize: 12, color: c.unread_count > 0 ? "#0f172a" : "#94a3b8", fontWeight: c.unread_count > 0 ? 500 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {c.last_message}
-                        </div>
+                        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2 }}>{c.page_name}</div>
+                        <div style={{ fontSize: 12, color: c.unread_count > 0 ? "#0f172a" : "#94a3b8", fontWeight: c.unread_count > 0 ? 500 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_message}</div>
                         <div style={{ display: "flex", gap: 4, marginTop: 5, flexWrap: "wrap", alignItems: "center" }}>
-                          {sc && c.status !== "new" && <Tag label={sc.label} bg={sc.bg} color={sc.color} />}
+                          {/* Status chip */}
+                          {sc && c.status !== "new" && <Chip label={sc.label} bg={sc.bg} color={sc.color} />}
+                          {/* Conv tags */}
+                          {ctags.slice(0, 2).map(tk => {
+                            const tc = CONV_TAGS.find(t => t.key === tk)
+                            return tc ? <Chip key={tk} label={tc.label} bg={tc.bg} color={tc.color} emoji={tc.emoji} /> : null
+                          })}
+                          {ctags.length > 2 && <span style={{ fontSize: 10, color: "#94a3b8" }}>+{ctags.length - 2}</span>}
+                          {/* Bot mode */}
                           {c.bot_mode && c.bot_mode !== "off" && (
-                            <Tag label={`🤖 ${MODE_CONFIG[c.bot_mode]?.label || c.bot_mode}${c.bot_paused ? " ⏸" : ""}`}
-                              bg="#f5f3ff" color={MODE_CONFIG[c.bot_mode]?.color || "#7c3aed"} />
+                            <Chip label={`🤖 ${MODE_CONFIG[c.bot_mode]?.label || c.bot_mode}${c.bot_paused ? " ⏸" : ""}`} bg="#f5f3ff" color={MODE_CONFIG[c.bot_mode]?.color || "#7c3aed"} />
                           )}
-                          {c.active_phone && (
-                            <span style={{ fontSize: 10, color: "#3b82f6", fontFamily: "monospace", fontWeight: 600 }}>📞 {c.active_phone}</span>
-                          )}
+                          {/* Phone */}
+                          {c.active_phone && <span style={{ fontSize: 10, color: "#3b82f6", fontFamily: "monospace", fontWeight: 600 }}>📞 {c.active_phone}</span>}
                         </div>
                       </div>
                     </div>
@@ -448,22 +535,13 @@ export default function ChatPage() {
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{selected.customer_name || selected.customer_psid}</div>
                     <div style={{ fontSize: 11, color: "#94a3b8" }}>{selected.page_name}</div>
                   </div>
-                  {conv?.handoff_reason && (
-                    <Tag
-                      label={`⚠ ${conv.handoff_reason === "complaint" ? "Khiếu nại" : "Cần nhân viên"}`}
-                      bg="#fff7ed" color="#c2410c"
-                    />
-                  )}
+                  {conv?.handoff_reason && <Chip label={`⚠ ${conv.handoff_reason === "complaint" ? "Khiếu nại" : "Cần nhân viên"}`} bg="#fff7ed" color="#c2410c" />}
                   <div style={{ display: "flex", gap: 6 }}>
-                    <Btn size="sm" onClick={async () => { await apiJson(`/admin/chat/conversations/${selectedId}/assign-me`, "POST"); loadDetail(selectedId!); loadConvs(tab, pageFilter, hasPhone) }}>
-                      Nhận xử lý
-                    </Btn>
+                    <Btn size="sm" onClick={async () => { await apiJson(`/admin/chat/conversations/${selectedId}/assign-me`, "POST"); loadDetail(selectedId!); loadConvs(tab, pageFilter) }}>Nhận xử lý</Btn>
                     {selected.bot_paused && (
-                      <Btn size="sm" variant="success" onClick={async () => { await apiJson(`/admin/chat/conversations/${selectedId}/resume-bot`, "POST"); loadDetail(selectedId!); loadConvs(tab, pageFilter, hasPhone) }}>
-                        ▶ Bật bot
-                      </Btn>
+                      <Btn size="sm" variant="success" onClick={async () => { await apiJson(`/admin/chat/conversations/${selectedId}/resume-bot`, "POST"); loadDetail(selectedId!); loadConvs(tab, pageFilter) }}>▶ Bật bot</Btn>
                     )}
-                    <Btn size="sm" variant="danger" onClick={async () => { if (!confirm("Xóa hội thoại này?")) return; await apiJson(`/admin/chat/conversations/${selectedId}`, "DELETE"); setSelectedId(null); setDetail(null); loadConvs(tab, pageFilter, hasPhone) }}>Xóa</Btn>
+                    <Btn size="sm" variant="danger" onClick={async () => { if (!confirm("Xóa hội thoại này?")) return; await apiJson(`/admin/chat/conversations/${selectedId}`, "DELETE"); setSelectedId(null); setDetail(null); loadConvs(tab, pageFilter) }}>Xóa</Btn>
                   </div>
                 </>
               ) : (
@@ -483,11 +561,11 @@ export default function ChatPage() {
                 <div key={group.date}>
                   <DateSep label={group.date} />
                   {group.messages.map(m => {
-                    const isOut = m.direction === "outbound"
-                    const isBot = m.sender_type === "bot"
+                    const isOut  = m.direction === "outbound"
+                    const isBot  = m.sender_type === "bot"
                     const isSale = m.sender_type === "sale"
                     const isPage = m.sender_type === "page"
-                    const atts = parseAtts(m.attachments)
+                    const atts   = parseAtts(m.attachments)
                     if (!m.text && atts.length === 0) return null
                     if (m.text && isCommentReply(m.text)) return (
                       <div key={m.id} style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
@@ -496,7 +574,7 @@ export default function ChatPage() {
                         </div>
                       </div>
                     )
-                    const bubbleBg = isBot ? "#7c3aed" : (isSale || isPage) ? "#1877f2" : "#fff"
+                    const bubbleBg    = isBot ? "#7c3aed" : (isSale || isPage) ? "#1877f2" : "#fff"
                     const bubbleColor = (isBot || isSale || isPage) ? "#fff" : "#0f172a"
                     const br = isOut ? "18px 18px 4px 18px" : "18px 18px 18px 4px"
                     return (
@@ -542,13 +620,11 @@ export default function ChatPage() {
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "8px 12px" }}>
                 <textarea value={text} onChange={e => setText(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send() } }}
-                  placeholder="Nhập tin nhắn… (Ctrl+Enter gửi)"
-                  disabled={!selectedId}
-                  rows={1}
+                  placeholder="Nhập tin nhắn… (Ctrl+Enter gửi)" disabled={!selectedId} rows={1}
                   style={{ flex: 1, resize: "none", border: "none", background: "none", outline: "none", fontSize: 13, fontFamily: "inherit", lineHeight: 1.5, maxHeight: 100, overflow: "auto" }}
                 />
                 <button onClick={send} disabled={!text.trim() || sending || !selectedId}
-                  style={{ background: !text.trim() || !selectedId ? "#e2e8f0" : "#1877f2", color: !text.trim() || !selectedId ? "#94a3b8" : "#fff", border: "none", borderRadius: 8, width: 36, height: 36, cursor: !text.trim() || !selectedId ? "not-allowed" : "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.15s" }}>
+                  style={{ background: !text.trim() || !selectedId ? "#e2e8f0" : "#1877f2", color: !text.trim() || !selectedId ? "#94a3b8" : "#fff", border: "none", borderRadius: 8, width: 36, height: 36, cursor: !text.trim() || !selectedId ? "not-allowed" : "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   ➤
                 </button>
               </div>
@@ -557,14 +633,14 @@ export default function ChatPage() {
           </div>
 
           {/* ── Right panel ── */}
-          <div style={{ background: "#fff", borderLeft: "1px solid #e8edf2", overflow: "auto" }}>
+          <div style={{ background: "#fff", borderLeft: "1px solid #e8edf2", overflow: "auto", display: "flex", flexDirection: "column" }}>
             {!selected
               ? <div style={{ padding: 24, color: "#94a3b8", fontSize: 12, textAlign: "center" }}>Chọn hội thoại</div>
               : (
-                <div>
+                <>
                   {/* Customer card */}
                   <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid #f1f5f9" }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                       <Avatar name={selected.customer_name || selected.customer_psid} size={44} />
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{selected.customer_name || selected.customer_psid}</div>
@@ -572,22 +648,28 @@ export default function ChatPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                      {STATUS_CONFIG[selected.status] && selected.status !== "new" && (
-                        <Tag label={STATUS_CONFIG[selected.status].label} bg={STATUS_CONFIG[selected.status].bg} color={STATUS_CONFIG[selected.status].color} />
+                      {conv?.bot_mode && conv.bot_mode !== "off" && (
+                        <Chip label={`🤖 ${MODE_CONFIG[conv.bot_mode]?.label || conv.bot_mode}${selected.bot_paused ? " ⏸" : ""}`} bg="#f5f3ff" color={MODE_CONFIG[conv.bot_mode]?.color || "#7c3aed"} />
                       )}
-                      {conv?.bot_mode && (
-                        <Tag label={`🤖 ${MODE_CONFIG[conv.bot_mode]?.label || conv.bot_mode}${selected.bot_paused ? " ⏸" : ""}`}
-                          bg="#f5f3ff" color={MODE_CONFIG[conv.bot_mode]?.color || "#7c3aed"} />
-                      )}
-                      {selected.priority === "high" && <Tag label="⚡ Ưu tiên" bg="#fff7ed" color="#c2410c" />}
+                      {selected.priority === "high" && <Chip label="⚡ Ưu tiên" bg="#fff7ed" color="#c2410c" />}
                     </div>
                   </div>
 
+                  {/* Status pipeline */}
+                  <StatusPipeline
+                    current={conv?.status || selected.status || "new"}
+                    onChange={s => patchConv({ status: s })}
+                  />
+
+                  {/* Tag picker */}
+                  <TagPicker
+                    tags={convTags(conv || selected)}
+                    onChange={tags => patchConv({ tags })}
+                  />
+
                   {/* Context 24h */}
                   <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#3b82f6", marginBottom: 10, display: "flex", alignItems: "center", gap: 4 }}>
-                      📍 Context 24h
-                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#3b82f6", marginBottom: 10 }}>📍 Context 24h</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <InfoRow icon="📞" label="SĐT" value={conv?.active_phone || selected.active_phone} mono />
                       <InfoRow icon="📦" label="Sản phẩm" value={(conv?.product_names || selected.product_names || []).join(", ") || undefined} />
@@ -614,20 +696,17 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* Đơn Pancake khớp theo SĐT */}
+                  {/* Đơn Pancake */}
                   {conv?.active_phone && (
                     <div style={{ padding: "12px 16px" }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 8 }}>
                         🛍 Đơn hàng {detail?.orders?.length ? `(${detail.orders.length})` : ""}
                       </div>
-                      {!detail?.orders?.length && (
-                        <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đơn theo SĐT này</div>
-                      )}
+                      {!detail?.orders?.length && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đơn theo SĐT này</div>}
                       {(detail?.orders || []).map((o: any) => {
                         const items: any[] = Array.isArray(o.items) ? o.items : []
                         const statusColor = o.status_name?.includes("hủy") ? "#ef4444"
-                          : o.status_name?.includes("thành công") || o.status_name?.includes("giao") ? "#16a34a"
-                          : "#f59e0b"
+                          : o.status_name?.includes("thành công") || o.status_name?.includes("giao") ? "#16a34a" : "#f59e0b"
                         return (
                           <div key={o.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -643,19 +722,15 @@ export default function ChatPage() {
                             )}
                             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
                               <span style={{ fontSize: 11, color: "#64748b" }}>{o.province}</span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>
-                                {Number(o.cod_amount || o.total || 0).toLocaleString("vi-VN")}đ
-                              </span>
+                              <span style={{ fontSize: 12, fontWeight: 700 }}>{Number(o.cod_amount || o.total || 0).toLocaleString("vi-VN")}đ</span>
                             </div>
-                            {o.tracking_code && (
-                              <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>🚚 {o.tracking_code}</div>
-                            )}
+                            {o.tracking_code && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>🚚 {o.tracking_code}</div>}
                           </div>
                         )
                       })}
                     </div>
                   )}
-                </div>
+                </>
               )
             }
           </div>
@@ -665,7 +740,7 @@ export default function ChatPage() {
       {/* ── AGENTS ── */}
       {view === "agents" && (
         <div style={{ padding: 20, overflow: "auto", flex: 1 }}>
-          <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
             <Btn variant="primary" onClick={async () => { await apiJson("/admin/chat/agents", "POST"); loadAgents() }}>⚙ Tạo agent từ danh sách Page</Btn>
           </div>
           <div style={{ display: "grid", gap: 12 }}>
@@ -732,18 +807,6 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function InfoRow({ icon, label, value, mono }: { icon: string; label: string; value?: string; mono?: boolean }) {
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-      <span style={{ fontSize: 13, width: 18, flexShrink: 0, marginTop: 1 }}>{icon}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
-        <div style={{ fontSize: 12, color: value ? "#0f172a" : "#d1d5db", fontFamily: mono ? "monospace" : undefined, fontWeight: value ? 500 : 400, wordBreak: "break-word" }}>{value || "—"}</div>
-      </div>
     </div>
   )
 }
