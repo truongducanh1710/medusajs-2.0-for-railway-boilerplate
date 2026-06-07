@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHmac, timingSafeEqual } from "crypto"
 import { Pool } from "pg"
+import { upsertIncomingMessage } from "../../chat/_lib"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -56,6 +57,30 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   for (const entry of body.entry ?? []) {
     const pageId = String(entry.id)
+    for (const event of entry.messaging ?? []) {
+      const senderId = String(event?.sender?.id || "")
+      const message = event?.message
+      const postback = event?.postback
+      const text = String(message?.text || postback?.title || postback?.payload || "").trim()
+      if (!senderId || !text) continue
+      if (message?.is_echo) continue
+
+      try {
+        await upsertIncomingMessage({
+          pageId,
+          psid: senderId,
+          text,
+          fbMessageId: message?.mid || postback?.mid || `${pageId}:${senderId}:${event.timestamp || Date.now()}`,
+          attachments: message?.attachments || [],
+          raw: event,
+          createdAt: event.timestamp ? new Date(Number(event.timestamp)) : new Date(),
+        })
+        console.log(`[FB Chat Webhook] Saved message page=${pageId} psid=${senderId}`)
+      } catch (e: any) {
+        console.error("[FB Chat Webhook] DB error:", e.message)
+      }
+    }
+
     for (const change of entry.changes ?? []) {
       if (change.field !== "feed") continue
       const v = change.value

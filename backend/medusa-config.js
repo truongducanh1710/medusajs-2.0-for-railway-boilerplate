@@ -142,6 +142,10 @@ const medusaConfig = {
       key: "webTrackingModule",
     },
     {
+      resolve: "./src/modules/facebook-chat",
+      key: "facebookChatModule",
+    },
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {
