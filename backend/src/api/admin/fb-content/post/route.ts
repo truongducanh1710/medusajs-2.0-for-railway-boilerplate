@@ -65,9 +65,10 @@ async function runPublishJob(
   const finalStatus = allOk ? "completed" : anyOk ? "completed" : "failed"
   await pool.query(`UPDATE fb_publish_job SET status = $1, finished_at = now() WHERE id = $2`, [finalStatus, jobId])
 
-  // Cập nhật nguồn video → posted (chỉ khi có ít nhất 1 page thành công + đăng ngay)
-  if (payload.videoId && anyOk && !payload.scheduledTime) {
-    await pool.query(`UPDATE mkt_video SET status = 'posted', updated_at = now() WHERE id = $1`, [payload.videoId])
+  // Cập nhật trạng thái video
+  if (payload.videoId && anyOk) {
+    const newStatus = payload.scheduledTime ? "scheduled" : "posted"
+    await pool.query(`UPDATE mkt_video SET status = $1, updated_at = now() WHERE id = $2`, [newStatus, payload.videoId])
   }
 }
 
