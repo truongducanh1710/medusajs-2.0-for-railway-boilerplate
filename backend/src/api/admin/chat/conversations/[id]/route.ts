@@ -22,10 +22,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const c = conv.rows[0]
     if (auth.fbPageIds && !auth.fbPageIds.includes(c.page_id)) return res.status(403).json({ error: "Forbidden" })
 
-    const messages = await pool.query(
-      `SELECT * FROM fb_message WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 300`,
-      [id]
-    )
+    const before = (req.query as any).before  // ISO string — load messages trước thời điểm này
+    const msgParams: any[] = [id]
+    let msgSql = `SELECT * FROM fb_message WHERE conversation_id = $1`
+    if (before) {
+      msgParams.push(before)
+      msgSql += ` AND created_at < $2`
+    }
+    msgSql += ` ORDER BY created_at DESC LIMIT 60`  // newest-first rồi reverse ở client
+
+    const messages = await pool.query(msgSql, msgParams)
     const events = await pool.query(
       `SELECT * FROM fb_conversation_event WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [id]

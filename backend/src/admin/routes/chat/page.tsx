@@ -244,10 +244,10 @@ function TagPicker({ tags, onChange }: { tags: string[]; onChange: (tags: string
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const [view, setView]           = useState<"inbox" | "agents" | "examples">("inbox")
+  const [view, setView]           = useState<"inbox" | "agents" | "examples" | "settings">("inbox")
   const [tab, setTab]             = useState("all")
   const [pageFilter, setPageFilter] = useState("")
-  const [tagFilter, setTagFilter] = useState<string>("")   // "" = all
+  const [tagFilter, setTagFilter] = useState<string>("")
   const [hasPhone, setHasPhone]   = useState(false)
   const [pageList, setPageList]   = useState<{ page_id: string; page_name: string }[]>([])
   const [convs, setConvs]         = useState<Conversation[]>([])
@@ -256,6 +256,8 @@ export default function ChatPage() {
   const [detail, setDetail]       = useState<ConvDetail | null>(null)
   const [botEvents, setBotEvents] = useState<BotEvent[]>([])
   const [loading, setLoading]     = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore]     = useState(false)
   const [text, setText]           = useState("")
   const [sending, setSending]     = useState(false)
   const [syncing, setSyncing]     = useState(false)
@@ -265,8 +267,11 @@ export default function ChatPage() {
   const [agents, setAgents]       = useState<Agent[]>([])
   const [examples, setExamples]   = useState<Example[]>([])
   const [exTab, setExTab]         = useState("pending")
-  const msgEndRef = useRef<HTMLDivElement>(null)
-  const timerRef  = useRef<any>(null)
+  const [settingPages, setSettingPages] = useState<any[]>([])
+  const msgEndRef  = useRef<HTMLDivElement>(null)
+  const msgTopRef  = useRef<HTMLDivElement>(null)
+  const msgAreaRef = useRef<HTMLDivElement>(null)
+  const timerRef   = useRef<any>(null)
 
   const selected = useMemo(() => convs.find(c => c.id === selectedId), [convs, selectedId])
   const conv     = detail?.conversation
@@ -316,8 +321,36 @@ export default function ChatPage() {
       apiJson(`/admin/chat/conversations/${id}`),
       apiJson(`/admin/chat/conversations/${id}/bot-events`).catch(() => ({ events: [] })),
     ])
+    // API trả về DESC (mới nhất trước), reverse lại để hiển thị cũ→mới
+    if (d?.messages) d.messages = [...d.messages].reverse()
+    setHasMore((d?.messages?.length || 0) >= 60)
     setDetail(d); setBotEvents(ev.events || [])
   }, [selectedId])
+
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedId || !detail?.messages?.length || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const oldest = detail.messages[0]?.created_at
+      const d = await apiJson(`/admin/chat/conversations/${selectedId}?before=${encodeURIComponent(oldest)}`)
+      if (!d?.messages?.length) { setHasMore(false); return }
+      const older = [...d.messages].reverse()
+      setHasMore(older.length >= 60)
+      // Prepend older messages, giữ scroll position
+      const area = msgAreaRef.current
+      const prevHeight = area?.scrollHeight || 0
+      setDetail(prev => prev ? { ...prev, messages: [...older, ...prev.messages] } : prev)
+      // Restore scroll sau khi DOM update
+      requestAnimationFrame(() => {
+        if (area) area.scrollTop = area.scrollHeight - prevHeight
+      })
+    } finally { setLoadingMore(false) }
+  }, [selectedId, detail, loadingMore])
+
+  const loadSettingPages = useCallback(async () => {
+    const d = await apiJson("/admin/chat/pages")
+    setSettingPages(d.pages || [])
+  }, [])
 
   const loadAgents = useCallback(async () => {
     const d = await apiJson("/admin/chat/agents")
@@ -340,9 +373,15 @@ export default function ChatPage() {
 
   useEffect(() => { loadConvs(); loadAgents() }, [])
   useEffect(() => { if (selectedId) loadDetail(selectedId) }, [selectedId])
+  const prevSelectedId = useRef<string | null>(null)
   useEffect(() => {
-    if (detail?.messages?.length) msgEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [detail?.messages?.length])
+    if (!detail?.messages?.length) return
+    // Chỉ scroll xuống cuối khi lần đầu load conv (không phải load-more)
+    if (selectedId !== prevSelectedId.current) {
+      prevSelectedId.current = selectedId
+      msgEndRef.current?.scrollIntoView({ behavior: "auto" })
+    }
+  }, [detail?.messages])
   useEffect(() => {
     if (view !== "inbox") return
     clearInterval(timerRef.current)
@@ -353,6 +392,7 @@ export default function ChatPage() {
     return () => clearInterval(timerRef.current)
   }, [view, tab, pageFilter, selectedId])
   useEffect(() => { if (view === "examples") loadExamples(exTab) }, [view])
+  useEffect(() => { if (view === "settings") loadSettingPages() }, [view])
 
   async function send() {
     if (!selectedId || !text.trim() || sending) return
@@ -393,9 +433,9 @@ export default function ChatPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 16px", height: 50, background: "#fff", borderBottom: "1px solid #e8edf2", flexShrink: 0 }}>
         <span style={{ fontSize: 18, marginRight: 6 }}>💬</span>
         <b style={{ fontSize: 15, marginRight: 8 }}>Chat</b>
-        {(["inbox","agents","examples"] as const).map(v => (
+        {(["inbox","agents","examples","settings"] as const).map(v => (
           <button key={v} onClick={() => setView(v)} style={{ border: "none", background: "none", color: view === v ? "#1877f2" : "#64748b", borderBottom: view === v ? "2px solid #1877f2" : "2px solid transparent", padding: "0 14px", height: 50, fontSize: 13, fontWeight: view === v ? 600 : 400, cursor: "pointer" }}>
-            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Câu cần học"}
+            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : v === "examples" ? "Câu cần học" : "⚙ Cài đặt"}
           </button>
         ))}
         {view === "inbox" && (
@@ -550,7 +590,16 @@ export default function ChatPage() {
             </div>
 
             {/* Messages */}
-            <div style={{ flex: 1, overflow: "auto", padding: "12px 20px", display: "flex", flexDirection: "column" }}>
+            <div ref={msgAreaRef} style={{ flex: 1, overflow: "auto", padding: "12px 20px", display: "flex", flexDirection: "column" }}>
+              {/* Load more */}
+              {hasMore && (
+                <div style={{ textAlign: "center", marginBottom: 8 }}>
+                  <button onClick={loadMoreMessages} disabled={loadingMore} style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 20, padding: "5px 16px", fontSize: 12, color: "#64748b", cursor: loadingMore ? "not-allowed" : "pointer" }}>
+                    {loadingMore ? "⏳ Đang tải..." : "⬆ Tải thêm tin nhắn cũ hơn"}
+                  </button>
+                </div>
+              )}
+              <div ref={msgTopRef} />
               {selectedId && detail && (detail.messages || []).length === 0 && (
                 <div style={{ margin: "auto", color: "#94a3b8", fontSize: 13, textAlign: "center" }}>
                   <div style={{ fontSize: 36, marginBottom: 8 }}>💬</div>
@@ -805,6 +854,77 @@ export default function ChatPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── SETTINGS ── */}
+      {view === "settings" && (
+        <div style={{ padding: 24, overflow: "auto", flex: 1, maxWidth: 700 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>⚙ Cài đặt Sync Page</h2>
+          <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
+            Chọn page nào sẽ được sync tin nhắn về. Nút "Sync" trên topbar sẽ chỉ lấy các page đang bật.
+          </p>
+          {settingPages.length === 0 && (
+            <div style={{ color: "#94a3b8", padding: 20, textAlign: "center" }}>
+              Chưa có page nào. Cần có access_token trong bảng fb_page_token.
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {settingPages.map(p => (
+              <div key={p.page_id} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+                <Avatar name={p.page_name} size={40} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.page_name}</div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace" }}>{p.page_id}</div>
+                  {!p.has_token && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>⚠ Chưa có access token</div>}
+                </div>
+                {/* Sync days */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "#64748b" }}>Lấy</span>
+                  <select
+                    value={p.sync_days || 7}
+                    onChange={async e => {
+                      const sync_days = parseInt(e.target.value)
+                      await apiJson("/admin/chat/pages", "PATCH", { page_id: p.page_id, sync_days })
+                      setSettingPages(prev => prev.map(x => x.page_id === p.page_id ? { ...x, sync_days } : x))
+                    }}
+                    style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "4px 8px", fontSize: 12 }}
+                  >
+                    {[1,3,7,14,30].map(d => <option key={d} value={d}>{d} ngày</option>)}
+                  </select>
+                </div>
+                {/* Toggle sync_enabled */}
+                <button
+                  onClick={async () => {
+                    const sync_enabled = !p.sync_enabled
+                    await apiJson("/admin/chat/pages", "PATCH", { page_id: p.page_id, sync_enabled })
+                    setSettingPages(prev => prev.map(x => x.page_id === p.page_id ? { ...x, sync_enabled } : x))
+                  }}
+                  style={{
+                    background: p.sync_enabled ? "#dcfce7" : "#f1f5f9",
+                    color: p.sync_enabled ? "#16a34a" : "#94a3b8",
+                    border: `1.5px solid ${p.sync_enabled ? "#86efac" : "#e2e8f0"}`,
+                    borderRadius: 99, padding: "5px 16px", fontSize: 12, fontWeight: 600,
+                    cursor: "pointer", minWidth: 80,
+                  }}
+                >
+                  {p.sync_enabled ? "✓ Bật sync" : "Tắt"}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Sync now button */}
+          {settingPages.some(p => p.sync_enabled) && (
+            <div style={{ marginTop: 20, padding: "14px 18px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12 }}>
+              <div style={{ fontSize: 13, color: "#16a34a", fontWeight: 600, marginBottom: 8 }}>
+                Sync ngay {settingPages.filter(p => p.sync_enabled).length} page đang bật
+              </div>
+              <Btn variant="success" onClick={() => { setView("inbox"); syncInbox() }}>
+                ⬇ Sync inbox ngay
+              </Btn>
+            </div>
+          )}
         </div>
       )}
     </div>
