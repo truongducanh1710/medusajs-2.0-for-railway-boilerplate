@@ -206,6 +206,8 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false)
   const [text, setText] = useState("")
   const [sending, setSending] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [examples, setExamples] = useState<Example[]>([])
   const [exampleTab, setExampleTab] = useState("pending")
@@ -299,6 +301,20 @@ export default function ChatPage() {
     }
   }
 
+  async function syncInbox(pageId?: string) {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const d = await apiJson("/admin/chat/sync-inbox", "POST", { page_id: pageId, days: 7 })
+      setSyncResult(`✅ Đã lấy ${d.total_saved} tin nhắn từ ${d.pages_synced} page${d.total_errors ? ` (${d.total_errors} lỗi)` : ""}`)
+      await loadConversations(tab)
+    } catch (e: any) {
+      setSyncResult(`❌ Lỗi: ${e.message}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   async function sendSuggestion() {
     if (!botSuggestion?.reply_text) return
     setText(botSuggestion.reply_text)
@@ -365,10 +381,15 @@ export default function ChatPage() {
             {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Câu bot cần học"}
           </Btn>
         ))}
-        <Btn onClick={() => view === "inbox" ? loadConversations() : view === "agents" ? loadAgents() : loadExamples(exampleTab)}
-          style={{ marginLeft: "auto" }}>
-          ↺ Refresh
-        </Btn>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          {syncResult && <span style={{ fontSize: 12, color: syncResult.startsWith("✅") ? "#16a34a" : "#dc2626" }}>{syncResult}</span>}
+          <Btn onClick={() => syncInbox()} disabled={syncing}>
+            {syncing ? "Đang lấy..." : "⬇ Lấy inbox về"}
+          </Btn>
+          <Btn onClick={() => view === "inbox" ? loadConversations() : view === "agents" ? loadAgents() : loadExamples(exampleTab)}>
+            ↺ Refresh
+          </Btn>
+        </div>
       </div>
 
       {/* ── INBOX VIEW ─────────────────────────────────────────────────────── */}
