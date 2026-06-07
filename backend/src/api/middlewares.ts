@@ -140,8 +140,8 @@ export default defineMiddlewares({
     },
 
     // Facebook post stats — xem insights tổng hợp
-    { matcher: "/admin/fb-content/post-stats*", method: ["GET"], middlewares: [requirePerm("page.fb-content.stats")] },
-    { matcher: "/admin/fb-content/post-stats*", method: ["POST"], middlewares: [requirePerm("page.fb-content.stats")] },
+    { matcher: "/admin/fb-content/post-stats*", method: ["GET"], middlewares: [requirePerm("page.fb-content.view")] },
+    { matcher: "/admin/fb-content/post-stats*", method: ["POST"], middlewares: [requirePerm("page.fb-content.post")] },
 
     // Facebook page stats — thống kê tổng thể từng page
     { matcher: "/admin/fb-content/page-stats*", method: ["GET", "POST"], middlewares: [requirePerm("page.fb-content.view")] },
