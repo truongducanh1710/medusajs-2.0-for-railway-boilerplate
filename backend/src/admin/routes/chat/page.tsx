@@ -166,6 +166,7 @@ export default function ChatPage() {
   const [pageList, setPageList] = useState<{ page_id: string; page_name: string }[]>([])
   const [convs, setConvs] = useState<Conversation[]>([])
   const [search, setSearch] = useState("")
+  const [hasPhone, setHasPhone] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<ConvDetail | null>(null)
   const [botEvents, setBotEvents] = useState<BotEvent[]>([])
@@ -200,15 +201,16 @@ export default function ChatPage() {
     [botEvents]
   )
 
-  const loadConvs = useCallback(async (t = tab, p = pageFilter) => {
+  const loadConvs = useCallback(async (t = tab, p = pageFilter, hp = hasPhone) => {
     setLoading(true)
     try {
       let url = `/admin/chat/conversations?status=${t}&limit=80`
       if (p) url += `&page_id=${p}`
+      if (hp) url += `&has_phone=1`
       const d = await apiJson(url)
       setConvs(d.conversations || [])
     } finally { setLoading(false) }
-  }, [tab, pageFilter])
+  }, [tab, pageFilter, hasPhone])
 
   const loadDetail = useCallback(async (id = selectedId) => {
     if (!id) return
@@ -247,11 +249,11 @@ export default function ChatPage() {
     if (view !== "inbox") return
     clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      loadConvs(tab, pageFilter)
+      loadConvs(tab, pageFilter, hasPhone)
       if (selectedId) loadDetail(selectedId)
     }, 15000)
     return () => clearInterval(timerRef.current)
-  }, [view, tab, pageFilter, selectedId])
+  }, [view, tab, pageFilter, hasPhone, selectedId])
 
   useEffect(() => {
     if (view === "examples") loadExamples(exTab)
@@ -395,14 +397,30 @@ export default function ChatPage() {
                 style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", background: "#f8fafc", boxSizing: "border-box" }} />
             </div>
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 4, padding: "4px 12px 8px", borderBottom: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 4, padding: "4px 12px 6px", flexWrap: "wrap" }}>
               {TABS.map(([id, label]) => (
-                <button key={id} onClick={() => { setTab(id); loadConvs(id, pageFilter) }} style={{
+                <button key={id} onClick={() => { setTab(id); loadConvs(id, pageFilter, hasPhone) }} style={{
                   border: "none", background: tab === id ? "#eff6ff" : "transparent",
                   color: tab === id ? "#1877f2" : "#64748b",
                   borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: tab === id ? 600 : 400, cursor: "pointer",
                 }}>{label}</button>
               ))}
+            </div>
+            {/* Filter bar */}
+            <div style={{ display: "flex", alignItems: "center", padding: "4px 12px 8px", borderBottom: "1px solid #f1f5f9", gap: 6 }}>
+              <button
+                onClick={() => { const v = !hasPhone; setHasPhone(v); loadConvs(tab, pageFilter, v) }}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  border: `1px solid ${hasPhone ? "#3b82f6" : "#e2e8f0"}`,
+                  background: hasPhone ? "#eff6ff" : "#fff",
+                  color: hasPhone ? "#1877f2" : "#64748b",
+                  borderRadius: 99, padding: "3px 10px", fontSize: 11,
+                  fontWeight: hasPhone ? 600 : 400, cursor: "pointer",
+                }}>
+                <span style={{ fontSize: 12 }}>📞</span> Có SĐT
+              </button>
+              <span style={{ fontSize: 10, color: "#cbd5e1", marginLeft: "auto" }}>mới nhất ↑</span>
             </div>
             {/* List */}
             <div style={{ flex: 1, overflow: "auto" }}>
@@ -437,6 +455,9 @@ export default function ChatPage() {
                         <div style={{ fontSize: 12, color: c.unread_count > 0 ? "#0f172a" : "#94a3b8", fontWeight: c.unread_count > 0 ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {c.last_message}
                         </div>
+                        {c.active_phone && (
+                          <div style={{ fontSize: 11, color: "#3b82f6", fontFamily: "monospace", marginTop: 2 }}>📞 {c.active_phone}</div>
+                        )}
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                           {c.status !== "new" && (
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, color: STATUS_DOT[c.status] || "#94a3b8" }}>

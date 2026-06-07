@@ -39,6 +39,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       params.push(`%${q.q}%`)
       where.push(`(c.customer_name ILIKE $${params.length} OR c.last_message ILIKE $${params.length} OR c.page_name ILIKE $${params.length})`)
     }
+    if (q.has_phone === "1") {
+      where.push(`ctx.active_phone IS NOT NULL AND ctx.active_phone != ''`)
+    }
 
     params.push(limit, offset)
     const sqlWhere = where.length ? `WHERE ${where.join(" AND ")}` : ""
@@ -48,9 +51,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        LEFT JOIN fb_conversation_context ctx ON ctx.conversation_id = c.id
        LEFT JOIN fb_bot_agent a ON a.page_id = c.page_id
        ${sqlWhere}
-       ORDER BY
-         CASE c.priority WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC,
-         COALESCE(c.handoff_at, c.last_message_at, c.updated_at) DESC
+       ORDER BY COALESCE(c.last_message_at, c.updated_at) DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
