@@ -552,7 +552,7 @@ export default function ChatPage() {
                       {m.text && !systemText && (
                         <div style={{
                           background: isBot ? "#7c3aed" : (isSale || isPage) ? "#1877f2" : "#fff",
-                          color: isOut ? "#fff" : "#0f172a",
+                          color: (isBot || isSale || isPage) ? "#fff" : "#0f172a",
                           borderRadius: isOut ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                           padding: "9px 13px", fontSize: 13, lineHeight: 1.5,
                           boxShadow: "0 1px 3px rgba(0,0,0,.08)",
