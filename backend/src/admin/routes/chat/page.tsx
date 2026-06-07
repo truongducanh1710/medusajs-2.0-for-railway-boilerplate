@@ -1,6 +1,8 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { apiJson } from "../../lib/api-client"
+
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 type Conversation = {
   id: string
@@ -31,6 +33,29 @@ type Message = {
   created_at: string
 }
 
+type BotEvent = {
+  id: string
+  intent: string
+  reply_text?: string
+  confidence?: number
+  auto_sent: boolean
+  skipped_reason?: string
+  created_at: string
+}
+
+type ConversationDetail = {
+  conversation: Conversation & {
+    bot_mode?: string
+    product_names?: string[]
+    active_window_summary?: string
+    historical_summary?: string
+    generated_instruction?: string
+  }
+  messages: Message[]
+  events: any[]
+  orders: any[]
+}
+
 type Agent = {
   id: string
   page_id: string
@@ -42,6 +67,7 @@ type Agent = {
   last_generated_at?: string
   error_count?: number
   sp_chay?: string
+  fan_count?: number
 }
 
 type Example = {
@@ -55,48 +81,156 @@ type Example = {
   created_at: string
 }
 
-const tabs = [
-  ["all", "Tat ca"],
-  ["unread", "Chua doc"],
-  ["handoff", "Can sale xu ly"],
-  ["complaint", "Khieu nai"],
-  ["mine", "Da gan cho toi"],
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const TABS = [
+  ["all", "Tất cả"],
+  ["unread", "Chưa đọc"],
+  ["handoff", "Cần sale xử lý"],
+  ["complaint", "Khiếu nại"],
+  ["mine", "Đã gán cho tôi"],
 ] as const
 
-const modeLabel: Record<string, string> = {
+const MODE_LABEL: Record<string, string> = {
   off: "OFF",
-  suggest: "SUGGEST",
+  suggest: "GỢI Ý",
   auto_24h: "AUTO 24H",
   paused_by_error: "PAUSED",
 }
 
-const statusColor: Record<string, string> = {
+const MODE_COLOR: Record<string, string> = {
+  off: "#6b7280",
+  suggest: "#2563eb",
+  auto_24h: "#16a34a",
+  paused_by_error: "#dc2626",
+}
+
+const STATUS_COLOR: Record<string, string> = {
   complaint: "#dc2626",
   handoff: "#d97706",
   assigned: "#2563eb",
   ordered: "#16a34a",
   new: "#6b7280",
+  bot_handling: "#7c3aed",
 }
+
+const STATUS_LABEL: Record<string, string> = {
+  complaint: "Khiếu nại",
+  handoff: "Cần sale",
+  assigned: "Đang xử lý",
+  ordered: "Đã đặt hàng",
+  new: "Mới",
+  bot_handling: "Bot đang xử lý",
+}
+
+const HANDOFF_LABEL: Record<string, string> = {
+  customer_requests_human: "Khách cần nhân viên",
+  complaint: "Khiếu nại",
+  low_confidence: "Bot không chắc",
+  outside_24h: "Ngoài 24h",
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function fmtTime(v?: string) {
   if (!v) return ""
+  const d = new Date(v)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return "vừa xong"
+  if (diffMin < 60) return `${diffMin}p trước`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24) return `${diffH}h trước`
+  return d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })
+}
+
+function fmtDateTime(v?: string) {
+  if (!v) return ""
   return new Date(v).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })
 }
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function Info({ label, value, mono }: { label: string; value?: any; mono?: boolean }) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: 13, color: value ? "#111827" : "#d1d5db", fontWeight: value ? 600 : 400, fontFamily: mono ? "monospace" : undefined }}>{value || "—"}</div>
+    </div>
+  )
+}
+
+function Badge({ label, color, bg }: { label: string; color: string; bg?: string }) {
+  return (
+    <span style={{ background: bg || color + "18", color, borderRadius: 99, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{label}</span>
+  )
+}
+
+function Btn({
+  children, onClick, disabled, primary, danger, small, style: extraStyle,
+}: {
+  children: React.ReactNode
+  onClick?: () => void
+  disabled?: boolean
+  primary?: boolean
+  danger?: boolean
+  small?: boolean
+  style?: React.CSSProperties
+}) {
+  const base: React.CSSProperties = {
+    border: "1px solid #d1d5db",
+    background: primary ? "#1877f2" : danger ? "#fee2e2" : "#fff",
+    color: primary ? "#fff" : danger ? "#dc2626" : "#374151",
+    borderColor: primary ? "#1877f2" : danger ? "#fecaca" : "#d1d5db",
+    borderRadius: 6,
+    padding: small ? "4px 10px" : "7px 12px",
+    fontSize: small ? 11 : 12,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.5 : 1,
+    ...extraStyle,
+  }
+  return <button style={base} onClick={onClick} disabled={disabled}>{children}</button>
+}
+
+// ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const [view, setView] = useState<"inbox" | "agents" | "examples">("inbox")
   const [tab, setTab] = useState("all")
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<any>(null)
+  const [detail, setDetail] = useState<ConversationDetail | null>(null)
+  const [botEvents, setBotEvents] = useState<BotEvent[]>([])
   const [loading, setLoading] = useState(false)
   const [text, setText] = useState("")
+  const [sending, setSending] = useState(false)
   const [agents, setAgents] = useState<Agent[]>([])
   const [examples, setExamples] = useState<Example[]>([])
+  const [exampleTab, setExampleTab] = useState("pending")
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const refreshTimer = useRef<any>(null)
 
   const selected = useMemo(() => conversations.find(c => c.id === selectedId), [conversations, selectedId])
 
-  async function loadConversations(nextTab = tab) {
+  const filteredConvs = useMemo(() => {
+    if (!search.trim()) return conversations
+    const s = search.toLowerCase()
+    return conversations.filter(c =>
+      (c.customer_name || "").toLowerCase().includes(s) ||
+      c.customer_psid.toLowerCase().includes(s) ||
+      (c.last_message || "").toLowerCase().includes(s) ||
+      (c.page_name || "").toLowerCase().includes(s)
+    )
+  }, [conversations, search])
+
+  // Latest bot suggestion (from suggest mode, not auto-sent)
+  const botSuggestion = useMemo(() => {
+    return botEvents.find(e => e.reply_text && !e.auto_sent && !e.skipped_reason?.includes("handoff"))
+  }, [botEvents])
+
+  const loadConversations = useCallback(async (nextTab = tab) => {
     setLoading(true)
     try {
       const d = await apiJson(`/admin/chat/conversations?status=${nextTab}&limit=80`)
@@ -105,34 +239,69 @@ export default function ChatPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tab, selectedId])
 
-  async function loadDetail(id = selectedId) {
+  const loadDetail = useCallback(async (id = selectedId) => {
     if (!id) return
-    const d = await apiJson(`/admin/chat/conversations/${id}`)
+    const [d, evts] = await Promise.all([
+      apiJson(`/admin/chat/conversations/${id}`),
+      apiJson(`/admin/chat/conversations/${id}/bot-events`).catch(() => ({ events: [] })),
+    ])
     setDetail(d)
-  }
+    setBotEvents(evts.events || [])
+  }, [selectedId])
 
-  async function loadAgents() {
+  const loadAgents = useCallback(async () => {
     const d = await apiJson("/admin/chat/agents")
     setAgents(d.agents || [])
-  }
+  }, [])
 
-  async function loadExamples(status = "pending") {
+  const loadExamples = useCallback(async (status = exampleTab) => {
     const d = await apiJson(`/admin/chat/reply-examples?status=${status}`)
     setExamples(d.examples || [])
-  }
+  }, [exampleTab])
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    if (detail?.messages?.length) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [detail?.messages?.length])
+
+  // Auto-refresh every 15s when viewing inbox
+  useEffect(() => {
+    if (view !== "inbox") return
+    clearInterval(refreshTimer.current)
+    refreshTimer.current = setInterval(() => {
+      loadConversations(tab)
+      if (selectedId) loadDetail(selectedId)
+    }, 15000)
+    return () => clearInterval(refreshTimer.current)
+  }, [view, tab, selectedId])
 
   useEffect(() => { loadConversations() }, [])
   useEffect(() => { if (selectedId) loadDetail(selectedId) }, [selectedId])
-  useEffect(() => { if (view === "agents") loadAgents(); if (view === "examples") loadExamples() }, [view])
+  useEffect(() => {
+    if (view === "agents") loadAgents()
+    else if (view === "examples") loadExamples(exampleTab)
+  }, [view])
 
   async function send() {
-    if (!selectedId || !text.trim()) return
-    await apiJson(`/admin/chat/conversations/${selectedId}/send`, "POST", { text })
-    setText("")
-    await loadDetail(selectedId)
-    await loadConversations(tab)
+    if (!selectedId || !text.trim() || sending) return
+    setSending(true)
+    try {
+      await apiJson(`/admin/chat/conversations/${selectedId}/send`, "POST", { text })
+      setText("")
+      await loadDetail(selectedId)
+      await loadConversations(tab)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function sendSuggestion() {
+    if (!botSuggestion?.reply_text) return
+    setText(botSuggestion.reply_text)
   }
 
   async function assignMe() {
@@ -152,7 +321,6 @@ export default function ChatPage() {
   async function setAgentMode(agent: Agent, mode: string) {
     await apiJson(`/admin/chat/agents/${agent.id}`, "PATCH", { mode })
     await loadAgents()
-    await loadConversations(tab)
   }
 
   async function generateAgents() {
@@ -162,147 +330,335 @@ export default function ChatPage() {
 
   async function reviewExample(ex: Example, review_status: "approved" | "rejected") {
     await apiJson(`/admin/chat/reply-examples/${ex.id}`, "PATCH", { review_status })
-    await loadExamples()
+    await loadExamples(exampleTab)
   }
 
-  const shell: React.CSSProperties = { display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", margin: -24, background: "#f3f4f6", color: "#111827" }
-  const button: React.CSSProperties = { border: "1px solid #d1d5db", background: "#fff", borderRadius: 6, padding: "7px 10px", fontSize: 12, cursor: "pointer" }
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      send()
+    }
+  }
+
+  // ─── Styles ───────────────────────────────────────────────────────────────
+
+  const shell: React.CSSProperties = {
+    display: "flex", flexDirection: "column",
+    height: "calc(100vh - 56px)", margin: -24,
+    background: "#f3f4f6", color: "#111827",
+    fontFamily: "'Inter', system-ui, sans-serif",
+  }
+
+  const conv = detail?.conversation
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div style={shell}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#fff", borderBottom: "1px solid #e5e7eb" }}>
-        <b style={{ fontSize: 16 }}>Facebook Chat</b>
+      {/* Top nav */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#fff", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
+        <span style={{ fontSize: 18 }}>💬</span>
+        <b style={{ fontSize: 15, marginRight: 4 }}>Facebook Chat</b>
         {(["inbox", "agents", "examples"] as const).map(v => (
-          <button key={v} onClick={() => setView(v)} style={{ ...button, background: view === v ? "#1877f2" : "#fff", color: view === v ? "#fff" : "#374151" }}>
-            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Cau bot can hoc"}
-          </button>
+          <Btn key={v} onClick={() => setView(v)} primary={view === v}
+            style={{ borderRadius: 20 }}>
+            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Câu bot cần học"}
+          </Btn>
         ))}
-        <button onClick={() => view === "inbox" ? loadConversations() : view === "agents" ? loadAgents() : loadExamples()} style={{ ...button, marginLeft: "auto" }}>Refresh</button>
+        <Btn onClick={() => view === "inbox" ? loadConversations() : view === "agents" ? loadAgents() : loadExamples(exampleTab)}
+          style={{ marginLeft: "auto" }}>
+          ↺ Refresh
+        </Btn>
       </div>
 
+      {/* ── INBOX VIEW ─────────────────────────────────────────────────────── */}
       {view === "inbox" && (
-        <div style={{ display: "grid", gridTemplateColumns: "320px minmax(420px, 1fr) 330px", flex: 1, minHeight: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "300px minmax(0,1fr) 310px", flex: 1, minHeight: 0 }}>
+
+          {/* Left: conversation list */}
           <aside style={{ background: "#fff", borderRight: "1px solid #e5e7eb", display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: 10, borderBottom: "1px solid #e5e7eb" }}>
-              {tabs.map(([id, label]) => (
+            {/* Search */}
+            <div style={{ padding: "10px 10px 0" }}>
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Tìm kiếm..."
+                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: "7px 10px", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            {/* Tab filters */}
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "8px 10px", borderBottom: "1px solid #e5e7eb" }}>
+              {TABS.map(([id, label]) => (
                 <button key={id} onClick={() => { setTab(id); loadConversations(id) }}
-                  style={{ ...button, padding: "5px 8px", background: tab === id ? "#eff6ff" : "#fff", color: tab === id ? "#1877f2" : "#374151", fontWeight: tab === id ? 700 : 500 }}>
+                  style={{
+                    border: "1px solid", borderColor: tab === id ? "#1877f2" : "#e5e7eb",
+                    background: tab === id ? "#eff6ff" : "#fff",
+                    color: tab === id ? "#1877f2" : "#6b7280",
+                    borderRadius: 99, padding: "3px 10px", fontSize: 11,
+                    fontWeight: tab === id ? 700 : 400, cursor: "pointer",
+                  }}>
                   {label}
                 </button>
               ))}
             </div>
+            {/* List */}
             <div style={{ overflow: "auto", flex: 1 }}>
-              {loading && <div style={{ padding: 20, color: "#6b7280" }}>Dang tai...</div>}
-              {conversations.map(c => (
+              {loading && <div style={{ padding: "16px 12px", color: "#9ca3af", fontSize: 13 }}>Đang tải...</div>}
+              {!loading && filteredConvs.length === 0 && (
+                <div style={{ padding: "16px 12px", color: "#9ca3af", fontSize: 13 }}>Không có hội thoại</div>
+              )}
+              {filteredConvs.map(c => (
                 <button key={c.id} onClick={() => setSelectedId(c.id)}
-                  style={{ width: "100%", textAlign: "left", border: "none", borderBottom: "1px solid #f3f4f6", background: selectedId === c.id ? "#eff6ff" : "#fff", padding: 12, cursor: "pointer" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <b style={{ fontSize: 13, flex: 1 }}>{c.customer_name || c.customer_psid}</b>
-                    {c.unread_count > 0 && <span style={{ background: "#ef4444", color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 11 }}>{c.unread_count}</span>}
+                  style={{
+                    width: "100%", textAlign: "left", border: "none",
+                    borderBottom: "1px solid #f3f4f6",
+                    background: selectedId === c.id ? "#eff6ff" : c.unread_count > 0 ? "#fafafe" : "#fff",
+                    padding: "10px 12px", cursor: "pointer",
+                    borderLeft: selectedId === c.id ? "3px solid #1877f2" : "3px solid transparent",
+                  }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <b style={{ fontSize: 13 }}>{c.customer_name || c.customer_psid}</b>
+                        {c.unread_count > 0 && (
+                          <span style={{ background: "#ef4444", color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 10 }}>{c.unread_count}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{c.page_name}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {c.last_message}
+                      </div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: "right" }}>
+                      <div style={{ fontSize: 10, color: "#9ca3af" }}>{fmtTime(c.last_message_at)}</div>
+                      {c.status !== "new" && (
+                        <span style={{ color: STATUS_COLOR[c.status] || "#6b7280", fontSize: 10, fontWeight: 700 }}>
+                          {STATUS_LABEL[c.status] || c.status}
+                        </span>
+                      )}
+                      {c.priority === "high" && <div style={{ fontSize: 10, color: "#dc2626" }}>⚡ ưu tiên</div>}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 3 }}>{c.page_name}</div>
-                  <div style={{ fontSize: 12, color: "#374151", marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_message}</div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 7, alignItems: "center" }}>
-                    <span style={{ color: statusColor[c.status] || "#6b7280", fontSize: 11, fontWeight: 700 }}>{c.status}</span>
-                    <span style={{ color: "#9ca3af", fontSize: 11 }}>{fmtTime(c.last_message_at)}</span>
-                    <span style={{ marginLeft: "auto", fontSize: 10, color: "#6b7280" }}>{modeLabel[c.bot_mode || "suggest"]}</span>
-                  </div>
+                  {c.bot_mode && (
+                    <div style={{ marginTop: 4, fontSize: 10, color: MODE_COLOR[c.bot_mode] || "#6b7280" }}>
+                      🤖 {MODE_LABEL[c.bot_mode] || c.bot_mode}
+                      {c.bot_paused && " · ⏸ dừng"}
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
           </aside>
 
-          <main style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "10px 14px", display: "flex", gap: 8, alignItems: "center" }}>
-              <b>{selected?.customer_name || selected?.customer_psid || "Chon hoi thoai"}</b>
-              {selected?.handoff_reason && <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 99, padding: "2px 8px", fontSize: 11 }}>Handoff: {selected.handoff_reason}</span>}
-              <button onClick={assignMe} disabled={!selectedId} style={{ ...button, marginLeft: "auto" }}>Nhan xu ly</button>
-              <button onClick={resumeBot} disabled={!selectedId} style={button}>Bat lai bot</button>
+          {/* Center: conversation */}
+          <main style={{ display: "flex", flexDirection: "column", minHeight: 0, background: "#f9fafb" }}>
+            {/* Chat header */}
+            <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <b style={{ fontSize: 14 }}>{conv?.customer_name || selected?.customer_name || selected?.customer_psid || "Chọn hội thoại"}</b>
+                {selected?.page_name && <span style={{ fontSize: 12, color: "#9ca3af", marginLeft: 8 }}>{selected.page_name}</span>}
+                {conv?.handoff_reason && (
+                  <div style={{ marginTop: 3 }}>
+                    <Badge label={"Handoff: " + (HANDOFF_LABEL[conv.handoff_reason] || conv.handoff_reason)} color="#d97706" />
+                  </div>
+                )}
+              </div>
+              <Btn onClick={assignMe} disabled={!selectedId} small>Nhận xử lý</Btn>
+              <Btn onClick={resumeBot} disabled={!selectedId || !selected?.bot_paused} small>Bật lại bot</Btn>
             </div>
-            <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+
+            {/* Messages */}
+            <div style={{ flex: 1, overflow: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+              {!selectedId && (
+                <div style={{ margin: "auto", color: "#9ca3af", fontSize: 14 }}>Chọn hội thoại để xem tin nhắn</div>
+              )}
               {(detail?.messages || []).map((m: Message) => {
-                const mine = m.direction === "outbound"
+                const isOut = m.direction === "outbound"
+                const isBot = m.sender_type === "bot"
+                const isSale = m.sender_type === "sale"
                 return (
-                  <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: 10 }}>
-                    <div style={{ maxWidth: "72%", background: mine ? "#1877f2" : "#fff", color: mine ? "#fff" : "#111827", borderRadius: 10, padding: "8px 10px", boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{m.text}</div>
-                      <div style={{ fontSize: 10, opacity: 0.75, marginTop: 4 }}>{m.sender_type} · {fmtTime(m.created_at)}</div>
+                  <div key={m.id} style={{ display: "flex", justifyContent: isOut ? "flex-end" : "flex-start" }}>
+                    <div style={{ maxWidth: "72%" }}>
+                      <div style={{
+                        background: isBot ? "#7c3aed" : isSale ? "#1877f2" : "#fff",
+                        color: isOut ? "#fff" : "#111827",
+                        borderRadius: isOut ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                        padding: "8px 12px",
+                        boxShadow: "0 1px 2px rgba(0,0,0,.07)",
+                        border: isOut ? "none" : "1px solid #e5e7eb",
+                      }}>
+                        <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.5 }}>{m.text}</div>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, textAlign: isOut ? "right" : "left" }}>
+                        {isBot ? "🤖 Bot" : isSale ? "👤 Sale" : "🙋 Khách"} · {fmtDateTime(m.created_at)}
+                      </div>
                     </div>
                   </div>
                 )
               })}
+              <div ref={messagesEndRef} />
             </div>
-            <div style={{ display: "flex", gap: 8, padding: 12, background: "#fff", borderTop: "1px solid #e5e7eb" }}>
-              <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Nhap tin nhan sale..." style={{ flex: 1, resize: "none", minHeight: 54, border: "1px solid #d1d5db", borderRadius: 8, padding: 10 }} />
-              <button onClick={send} disabled={!text.trim()} style={{ ...button, background: "#1877f2", color: "#fff", borderColor: "#1877f2", minWidth: 80 }}>Gui</button>
+
+            {/* Bot suggestion bar */}
+            {botSuggestion?.reply_text && !conv?.bot_paused && (
+              <div style={{ background: "#f0f4ff", borderTop: "1px solid #c7d7fe", padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: "#4f46e5", fontWeight: 700, marginBottom: 3 }}>🤖 Gợi ý từ bot ({botSuggestion.intent})</div>
+                  <div style={{ fontSize: 12, color: "#374151", whiteSpace: "pre-wrap" }}>{botSuggestion.reply_text}</div>
+                </div>
+                <Btn small onClick={sendSuggestion}>Dùng gợi ý này</Btn>
+              </div>
+            )}
+
+            {/* Composer */}
+            <div style={{ display: "flex", gap: 8, padding: "10px 12px", background: "#fff", borderTop: "1px solid #e5e7eb", flexShrink: 0 }}>
+              <textarea
+                value={text} onChange={e => setText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Nhập tin nhắn… (Ctrl+Enter để gửi)"
+                style={{ flex: 1, resize: "none", minHeight: 52, maxHeight: 140, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 12px", fontSize: 13, outline: "none", fontFamily: "inherit" }}
+              />
+              <Btn primary onClick={send} disabled={!text.trim() || sending} style={{ minWidth: 72, alignSelf: "flex-end" }}>
+                {sending ? "..." : "Gửi"}
+              </Btn>
             </div>
           </main>
 
-          <aside style={{ background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 14, overflow: "auto" }}>
-            <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Context khach</h3>
-            <Info label="Page" value={detail?.conversation?.page_name || selected?.page_name} />
-            <Info label="San pham dang chay" value={(detail?.conversation?.product_names || selected?.product_names || []).join(", ") || selected?.active_product_interest} />
-            <Info label="Bot mode" value={detail?.conversation?.bot_mode || selected?.bot_mode} />
-            <Info label="Status" value={detail?.conversation?.status || selected?.status} />
-            <Info label="Handoff" value={detail?.conversation?.handoff_reason || selected?.handoff_reason} />
-            <Info label="Assigned" value={detail?.conversation?.assigned_to || selected?.assigned_to} />
-            <hr style={{ border: 0, borderTop: "1px solid #e5e7eb", margin: "12px 0" }} />
-            <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Context 24h</h4>
-            <Info label="SDT" value={detail?.conversation?.active_phone || selected?.active_phone} />
-            <Info label="Dia chi" value={detail?.conversation?.active_address || selected?.active_address} />
-            <Info label="Trang thai don" value={detail?.conversation?.active_order_state || selected?.active_order_state} />
-            <div style={{ whiteSpace: "pre-wrap", color: "#4b5563", fontSize: 12, background: "#f9fafb", borderRadius: 8, padding: 10, marginTop: 8 }}>
-              {detail?.conversation?.active_window_summary || "Chua co context"}
-            </div>
-            <h4 style={{ margin: "14px 0 8px", fontSize: 13 }}>Lich su tham khao</h4>
-            <div style={{ whiteSpace: "pre-wrap", color: "#6b7280", fontSize: 12, background: "#f9fafb", borderRadius: 8, padding: 10 }}>
-              {detail?.conversation?.historical_summary || "Chua co lich su"}
-            </div>
+          {/* Right: context panel */}
+          <aside style={{ background: "#fff", borderLeft: "1px solid #e5e7eb", padding: "14px 14px", overflow: "auto", display: "flex", flexDirection: "column", gap: 0 }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>Thông tin khách</h3>
+
+            <Info label="Page" value={conv?.page_name || selected?.page_name} />
+            <Info label="Bot mode" value={conv?.bot_mode ? MODE_LABEL[conv.bot_mode] : undefined} />
+            <Info label="Trạng thái đơn" value={conv?.active_order_state} />
+            {(conv?.product_names || selected?.product_names)?.length ? (
+              <Info label="Sản phẩm đang quan tâm" value={(conv?.product_names || selected?.product_names || []).join(", ")} />
+            ) : null}
+
+            <hr style={{ border: 0, borderTop: "1px solid #f3f4f6", margin: "10px 0" }} />
+            <h4 style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#4f46e5" }}>Context 24h gần nhất</h4>
+            <Info label="SĐT" value={conv?.active_phone || selected?.active_phone} mono />
+            <Info label="Địa chỉ" value={conv?.active_address || selected?.active_address} />
+            <Info label="Assigned to" value={conv?.assigned_to || selected?.assigned_to} />
+
+            {conv?.active_window_summary && (
+              <div style={{ background: "#f9fafb", borderRadius: 8, padding: 10, fontSize: 12, color: "#374151", whiteSpace: "pre-wrap", marginBottom: 8, lineHeight: 1.5, maxHeight: 200, overflow: "auto" }}>
+                {conv.active_window_summary}
+              </div>
+            )}
+
+            {conv?.historical_summary && (
+              <>
+                <h4 style={{ margin: "8px 0 6px", fontSize: 12, fontWeight: 700, color: "#6b7280" }}>Lịch sử tham khảo</h4>
+                <div style={{ background: "#f9fafb", borderRadius: 8, padding: 10, fontSize: 11, color: "#6b7280", whiteSpace: "pre-wrap", maxHeight: 120, overflow: "auto" }}>
+                  {conv.historical_summary}
+                </div>
+              </>
+            )}
+
+            {/* Bot events */}
+            {botEvents.length > 0 && (
+              <>
+                <hr style={{ border: 0, borderTop: "1px solid #f3f4f6", margin: "12px 0 8px" }} />
+                <h4 style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>Nhật ký Bot</h4>
+                {botEvents.slice(0, 5).map(ev => (
+                  <div key={ev.id} style={{ background: "#faf5ff", borderRadius: 6, padding: "6px 8px", marginBottom: 4, fontSize: 11 }}>
+                    <div style={{ color: ev.auto_sent ? "#16a34a" : "#6b7280", fontWeight: 700 }}>
+                      {ev.auto_sent ? "✅ Đã gửi tự động" : ev.skipped_reason ? `⏭ ${ev.skipped_reason}` : "💡 Gợi ý"}
+                      <span style={{ float: "right", color: "#9ca3af" }}>{fmtTime(ev.created_at)}</span>
+                    </div>
+                    {ev.reply_text && <div style={{ color: "#374151", marginTop: 3 }}>{ev.reply_text.slice(0, 100)}{ev.reply_text.length > 100 ? "…" : ""}</div>}
+                    {ev.intent && <div style={{ color: "#9ca3af" }}>intent: {ev.intent}</div>}
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* Linked orders */}
+            {detail?.orders?.length ? (
+              <>
+                <hr style={{ border: 0, borderTop: "1px solid #f3f4f6", margin: "12px 0 8px" }} />
+                <h4 style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700 }}>Đơn hàng liên kết</h4>
+                {detail.orders.map((o: any) => (
+                  <div key={o.id} style={{ fontSize: 12, color: "#374151" }}>
+                    {o.medusa_order_id && <div>Medusa: <code style={{ fontSize: 11 }}>{o.medusa_order_id}</code></div>}
+                    {o.pancake_order_id && <div>Pancake: <code style={{ fontSize: 11 }}>{o.pancake_order_id}</code></div>}
+                  </div>
+                ))}
+              </>
+            ) : null}
           </aside>
         </div>
       )}
 
+      {/* ── AGENTS VIEW ────────────────────────────────────────────────────── */}
       {view === "agents" && (
-        <div style={{ padding: 16, overflow: "auto" }}>
-          <button onClick={generateAgents} style={{ ...button, background: "#1877f2", color: "#fff", borderColor: "#1877f2", marginBottom: 12 }}>Generate agent tu Page</button>
+        <div style={{ padding: 16, overflow: "auto", flex: 1 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
+            <Btn primary onClick={generateAgents}>⚙ Tự động tạo agent từ danh sách Page</Btn>
+            <span style={{ fontSize: 12, color: "#9ca3af" }}>Agent sẽ được tạo cho tất cả Page đang có token</span>
+          </div>
           <div style={{ display: "grid", gap: 10 }}>
+            {agents.length === 0 && <div style={{ color: "#9ca3af" }}>Chưa có agent nào. Bấm "Tự động tạo agent" để tạo.</div>}
             {agents.map(a => (
-              <div key={a.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <b>{a.page_name}</b>
-                  <span style={{ color: "#6b7280", fontSize: 12 }}>{(a.product_names || []).join(", ") || a.sp_chay || "Chua map SP"}</span>
-                  <select value={a.mode} onChange={e => setAgentMode(a, e.target.value)} style={{ marginLeft: "auto", border: "1px solid #d1d5db", borderRadius: 6, padding: 6 }}>
-                    <option value="off">OFF</option>
-                    <option value="suggest">SUGGEST</option>
-                    <option value="auto_24h">AUTO 24H</option>
-                    <option value="paused_by_error">PAUSED</option>
+              <div key={a.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <div>
+                    <b style={{ fontSize: 14 }}>{a.page_name}</b>
+                    {a.fan_count && <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 6 }}>{a.fan_count.toLocaleString()} followers</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>{(a.product_names || []).join(", ") || a.sp_chay || "Chưa map sản phẩm"}</span>
+                  </div>
+                  <select value={a.mode} onChange={e => setAgentMode(a, e.target.value)}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 8px", fontSize: 12, color: MODE_COLOR[a.mode] || "#374151" }}>
+                    <option value="off">OFF — tắt hoàn toàn</option>
+                    <option value="suggest">GỢI Ý — bot đề xuất, sale gửi</option>
+                    <option value="auto_24h">AUTO 24H — bot tự gửi trong 24h</option>
+                    <option value="paused_by_error">PAUSED — tạm dừng</option>
                   </select>
+                  {a.error_count ? <Badge label={`${a.error_count} lỗi`} color="#dc2626" /> : null}
                 </div>
-                <pre style={{ whiteSpace: "pre-wrap", background: "#f9fafb", borderRadius: 8, padding: 10, fontSize: 12, color: "#374151" }}>{a.generated_instruction || "Chua generate instruction"}</pre>
+                <pre style={{ whiteSpace: "pre-wrap", background: "#f9fafb", borderRadius: 8, padding: 10, fontSize: 11, color: "#374151", margin: 0, maxHeight: 180, overflow: "auto" }}>
+                  {a.manual_override_instruction || a.generated_instruction || "Chưa có instruction"}
+                </pre>
+                {a.last_generated_at && (
+                  <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 6 }}>Tự động tạo lúc {fmtDateTime(a.last_generated_at)}</div>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
+      {/* ── EXAMPLES VIEW ──────────────────────────────────────────────────── */}
       {view === "examples" && (
-        <div style={{ padding: 16, overflow: "auto" }}>
+        <div style={{ padding: 16, overflow: "auto", flex: 1 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            {["pending", "approved", "rejected"].map(s => (
+              <Btn key={s} small primary={exampleTab === s}
+                onClick={() => { setExampleTab(s); loadExamples(s) }}>
+                {s === "pending" ? "Chờ duyệt" : s === "approved" ? "Đã duyệt" : "Đã từ chối"}
+              </Btn>
+            ))}
+          </div>
           <div style={{ display: "grid", gap: 10 }}>
+            {examples.length === 0 && <div style={{ color: "#9ca3af" }}>Không có câu nào trong trạng thái này.</div>}
             {examples.map(ex => (
               <div key={ex.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
-                  <b>{ex.page_name || "Page"}</b>
-                  <span style={{ color: "#6b7280", fontSize: 12 }}>{ex.product_name || ""}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 12, color: "#d97706" }}>{ex.review_status}</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                  <b style={{ fontSize: 13 }}>{ex.page_name || "Page"}</b>
+                  {ex.product_name && <span style={{ fontSize: 12, color: "#6b7280" }}>{ex.product_name}</span>}
+                  {ex.bot_handoff_reason && <Badge label={`Handoff: ${HANDOFF_LABEL[ex.bot_handoff_reason] || ex.bot_handoff_reason}`} color="#d97706" />}
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "#9ca3af" }}>{fmtDateTime(ex.created_at)}</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Khach hoi</div>
-                <div style={{ background: "#f9fafb", padding: 10, borderRadius: 8, marginBottom: 8 }}>{ex.customer_text}</div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Sale tra loi</div>
-                <div style={{ background: "#f0fdf4", padding: 10, borderRadius: 8 }}>{ex.sale_reply}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>Khách hỏi</div>
+                <div style={{ background: "#f9fafb", padding: "8px 10px", borderRadius: 8, fontSize: 13, marginBottom: 8 }}>{ex.customer_text}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>Sale trả lời</div>
+                <div style={{ background: "#f0fdf4", padding: "8px 10px", borderRadius: 8, fontSize: 13 }}>{ex.sale_reply}</div>
                 {ex.review_status === "pending" && (
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <button onClick={() => reviewExample(ex, "approved")} style={{ ...button, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}>Approve</button>
-                    <button onClick={() => reviewExample(ex, "rejected")} style={{ ...button, background: "#fee2e2", color: "#dc2626", borderColor: "#fecaca" }}>Reject</button>
+                    <Btn small primary onClick={() => reviewExample(ex, "approved")}>✓ Approve — cho bot học</Btn>
+                    <Btn small danger onClick={() => reviewExample(ex, "rejected")}>✗ Reject</Btn>
                   </div>
                 )}
               </div>
@@ -310,15 +666,6 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function Info({ label, value }: { label: string; value?: any }) {
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, color: value ? "#111827" : "#9ca3af", fontWeight: value ? 600 : 400 }}>{value || "—"}</div>
     </div>
   )
 }
