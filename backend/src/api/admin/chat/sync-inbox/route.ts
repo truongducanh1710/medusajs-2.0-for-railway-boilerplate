@@ -3,6 +3,20 @@ import { ensureChatTables, getChatAuthInfo, getChatPool, upsertIncomingMessage }
 
 const FB_VERSION = "v20.0"
 
+// In-memory job state (đủ dùng cho 1 instance Railway)
+type SyncJob = {
+  status: "running" | "done" | "error"
+  startedAt: string
+  finishedAt?: string
+  pages_synced: number
+  total_saved: number
+  total_errors: number
+  results: Record<string, { saved: number; skipped: number; errors: string[] }>
+  error?: string
+}
+const jobs = new Map<string, SyncJob>()
+let currentJobId: string | null = null
+
 async function fbGet(path: string, token: string) {
   const url = `https://graph.facebook.com/${FB_VERSION}${path}${path.includes("?") ? "&" : "?"}access_token=${token}`
   const r = await fetch(url)
@@ -11,46 +25,35 @@ async function fbGet(path: string, token: string) {
   return d
 }
 
-/**
- * Pull conversations từ một page.
- * FB Conversations API: GET /{page-id}/conversations?fields=participants,messages{message,from,created_time,id}
- * Trả về danh sách conversation kèm messages mới nhất.
- */
 async function pullPageInbox(
   pageId: string,
   pageName: string,
   token: string,
-  since?: Date
+  since: Date
 ): Promise<{ saved: number; skipped: number; errors: string[] }> {
-  let saved = 0
-  let skipped = 0
+  let saved = 0, skipped = 0
   const errors: string[] = []
-  const sinceTs = since ? Math.floor(since.getTime() / 1000) : Math.floor(Date.now() / 1000) - 7 * 24 * 3600
-
-  // Lấy danh sách conversations (mặc định 25 conv mới nhất có messages)
-  let convUrl = `/${pageId}/conversations?fields=participants,updated_time&limit=25`
-  if (sinceTs) convUrl += `&since=${sinceTs}`
+  const sinceTs = Math.floor(since.getTime() / 1000)
 
   let convData: any
   try {
-    convData = await fbGet(convUrl, token)
+    convData = await fbGet(`/${pageId}/conversations?fields=participants,updated_time&limit=25&since=${sinceTs}`, token)
   } catch (e: any) {
     errors.push(`Lấy conversations thất bại: ${e.message}`)
     return { saved, skipped, errors }
   }
 
   const conversations = convData?.data || []
+  const pool = getChatPool()
 
   for (const conv of conversations) {
     const convId = conv.id
-    // Tìm PSID của người dùng (không phải page)
     const participants: any[] = conv.participants?.data || []
     const customer = participants.find((p: any) => p.id !== pageId)
     if (!customer) { skipped++; continue }
     const psid = customer.id
     const customerName = customer.name || undefined
 
-    // Lấy messages của conversation này
     let msgsData: any
     try {
       msgsData = await fbGet(
@@ -58,30 +61,22 @@ async function pullPageInbox(
         token
       )
     } catch (e: any) {
-      errors.push(`Conv ${convId}: lấy messages thất bại: ${e.message}`)
+      errors.push(`Conv ${convId}: ${e.message}`)
       skipped++
       continue
     }
 
-    const messages: any[] = msgsData?.data || []
-    // messages trả về newest first — xử lý theo thứ tự cũ → mới
-    const ordered = [...messages].reverse()
+    const messages: any[] = [...(msgsData?.data || [])].reverse() // oldest first
 
-    for (const msg of ordered) {
+    for (const msg of messages) {
       const text = (msg.message || "").trim()
       const msgId = msg.id
       const createdAt = msg.created_time ? new Date(msg.created_time) : new Date()
-      const fromId = msg.from?.id
-      const isFromPage = fromId === pageId
-
-      if (!text && !(msg.attachments?.data?.length)) { skipped++; continue }
+      const isFromPage = msg.from?.id === pageId
 
       try {
         if (isFromPage) {
-          // Tin nhắn từ page (outbound) — upsert trực tiếp vào DB, không chạy bot
-          const pool = getChatPool()
           await ensureChatTables(pool)
-          // Đảm bảo conversation tồn tại trước
           await pool.query(
             `INSERT INTO fb_conversation (page_id, page_name, customer_psid, customer_name, status, last_message, last_message_at)
              VALUES ($1,$2,$3,$4,'new',$5,$6)
@@ -94,29 +89,25 @@ async function pullPageInbox(
             `SELECT id FROM fb_conversation WHERE page_id=$1 AND customer_psid=$2`, [pageId, psid]
           )
           const dbConvId = convRow.rows[0]?.id
-          if (dbConvId) {
+          if (dbConvId && msgId) {
             await pool.query(
-              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, created_at)
-               VALUES ($1,$2,'outbound','page',$3,$4)
+              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, created_at)
+               VALUES ($1,$2,'outbound','page',$3,$4,$5)
                ON CONFLICT (fb_message_id) DO NOTHING`,
-              [dbConvId, msgId, text || "[attachment]", createdAt]
+              [dbConvId, msgId, text || "[attachment]", JSON.stringify(msg.attachments?.data || []), createdAt]
             )
           }
           saved++
         } else {
-          // Tin nhắn từ khách (inbound)
-          const pool = getChatPool()
-          // Cập nhật customer_name nếu có
           if (customerName) {
             await pool.query(
-              `UPDATE fb_conversation SET customer_name = $3, updated_at = now()
-               WHERE page_id = $1 AND customer_psid = $2 AND customer_name IS NULL`,
+              `UPDATE fb_conversation SET customer_name=$3, updated_at=now()
+               WHERE page_id=$1 AND customer_psid=$2 AND customer_name IS NULL`,
               [pageId, psid, customerName]
             )
           }
           await upsertIncomingMessage({
-            pageId,
-            psid,
+            pageId, psid,
             text: text || "[attachment]",
             fbMessageId: msgId,
             attachments: msg.attachments?.data || [],
@@ -135,12 +126,38 @@ async function pullPageInbox(
   return { saved, skipped, errors }
 }
 
+async function runSyncJob(jobId: string, pages: any[], days: number) {
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000)
+  const job = jobs.get(jobId)!
+
+  for (const page of pages) {
+    const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since).catch(e => ({
+      saved: 0, skipped: 0, errors: [e.message]
+    }))
+    job.results[page.page_name] = r
+    job.pages_synced++
+    job.total_saved += r.saved
+    job.total_errors += r.errors.length
+  }
+
+  job.status = "done"
+  job.finishedAt = new Date().toISOString()
+}
+
 /**
- * POST /admin/chat/sync-inbox
- * Body: { page_id?: string, days?: number }
- * - page_id: chỉ sync 1 page, không có thì sync tất cả
- * - days: số ngày lấy về (mặc định 7)
+ * POST /admin/chat/sync-inbox — khởi động sync background, trả về jobId ngay
+ * GET  /admin/chat/sync-inbox — poll trạng thái job hiện tại
  */
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const auth = await getChatAuthInfo(req)
+  if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+
+  if (!currentJobId) return res.json({ status: "idle" })
+  const job = jobs.get(currentJobId)
+  if (!job) return res.json({ status: "idle" })
+  return res.json({ jobId: currentJobId, ...job })
+}
+
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const auth = await getChatAuthInfo(req)
@@ -148,44 +165,51 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const body = (req.body as any) || {}
     const days = Math.min(parseInt(body.days || "7", 10), 30)
-    const since = new Date(Date.now() - days * 24 * 3600 * 1000)
 
     const pool = getChatPool()
     await ensureChatTables(pool)
 
-    // Lấy page tokens
-    let pagesQuery = `SELECT page_id, page_name, access_token FROM fb_page_token WHERE access_token IS NOT NULL`
+    let pagesQuery = `SELECT page_id, page_name, access_token FROM fb_page_token WHERE access_token IS NOT NULL ORDER BY page_name`
     const pagesParams: any[] = []
     if (body.page_id) {
-      pagesQuery += ` AND page_id = $1`
+      pagesQuery = `SELECT page_id, page_name, access_token FROM fb_page_token WHERE access_token IS NOT NULL AND page_id=$1`
       pagesParams.push(body.page_id)
     } else if (auth.fbPageIds?.length) {
-      pagesQuery += ` AND page_id = ANY($1)`
+      pagesQuery = `SELECT page_id, page_name, access_token FROM fb_page_token WHERE access_token IS NOT NULL AND page_id=ANY($1) ORDER BY page_name`
       pagesParams.push(auth.fbPageIds)
     }
 
     const { rows: pages } = await pool.query(pagesQuery, pagesParams)
     if (!pages.length) return res.status(404).json({ error: "Không tìm thấy page token" })
 
-    const results: Record<string, any> = {}
-    let totalSaved = 0
-    let totalErrors = 0
-
-    for (const page of pages) {
-      const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since)
-      results[page.page_name] = r
-      totalSaved += r.saved
-      totalErrors += r.errors.length
+    // Nếu đang có job chạy, trả về job đó
+    if (currentJobId) {
+      const running = jobs.get(currentJobId)
+      if (running?.status === "running") {
+        return res.json({ ok: true, jobId: currentJobId, status: "running", message: "Đang sync, poll GET để kiểm tra tiến độ" })
+      }
     }
 
-    return res.json({
-      ok: true,
-      pages_synced: pages.length,
-      total_saved: totalSaved,
-      total_errors: totalErrors,
-      days,
-      results,
+    const jobId = `sync_${Date.now()}`
+    currentJobId = jobId
+    const job: SyncJob = {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      pages_synced: 0,
+      total_saved: 0,
+      total_errors: 0,
+      results: {},
+    }
+    jobs.set(jobId, job)
+
+    // Chạy background — không await
+    runSyncJob(jobId, pages, days).catch(e => {
+      job.status = "error"
+      job.error = e.message
+      job.finishedAt = new Date().toISOString()
     })
+
+    return res.json({ ok: true, jobId, status: "running", pages_count: pages.length, days, message: "Đang sync background. Poll GET /admin/chat/sync-inbox để xem tiến độ." })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

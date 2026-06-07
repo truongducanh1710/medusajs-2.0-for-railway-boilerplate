@@ -346,14 +346,36 @@ export default function ChatPage() {
 
   async function syncInbox(pageId?: string) {
     setSyncing(true)
-    setSyncResult(null)
+    setSyncResult("⏳ Đang khởi động sync...")
     try {
       const d = await apiJson("/admin/chat/sync-inbox", "POST", { page_id: pageId, days: 7 })
-      setSyncResult(`✅ Đã lấy ${d.total_saved} tin nhắn từ ${d.pages_synced} page${d.total_errors ? ` (${d.total_errors} lỗi)` : ""}`)
-      await loadConversations(tab)
+      if (d?.status === "running") {
+        setSyncResult(`⏳ Đang sync ${d.pages_count} page...`)
+        // Poll cho đến khi xong
+        const poll = async () => {
+          try {
+            const status = await apiJson("/admin/chat/sync-inbox")
+            if (status?.status === "running") {
+              setSyncResult(`⏳ Đang sync... (${status.pages_synced || 0}/${Object.keys(status.results || {}).length} page)`)
+              setTimeout(poll, 2000)
+            } else if (status?.status === "done") {
+              setSyncResult(`✅ Xong: ${status.total_saved} tin nhắn từ ${status.pages_synced} page${status.total_errors ? ` (${status.total_errors} lỗi)` : ""}`)
+              setSyncing(false)
+              await loadConversations(tab)
+            } else {
+              setSyncResult(`❌ Lỗi sync: ${status?.error || "unknown"}`)
+              setSyncing(false)
+            }
+          } catch { setTimeout(poll, 3000) }
+        }
+        setTimeout(poll, 2000)
+      } else {
+        setSyncResult(`✅ Xong: ${d.total_saved} tin nhắn`)
+        setSyncing(false)
+        await loadConversations(tab)
+      }
     } catch (e: any) {
       setSyncResult(`❌ Lỗi: ${e.message}`)
-    } finally {
       setSyncing(false)
     }
   }

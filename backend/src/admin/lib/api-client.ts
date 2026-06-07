@@ -20,9 +20,11 @@ export async function apiJson(url: string, method = "GET", body?: unknown): Prom
     window.location.href = "/app"
     return null
   }
-  const data = await res.json()
+  const text = await res.text()
+  let data: any = null
+  try { data = JSON.parse(text) } catch { /* non-JSON response */ }
   if (!res.ok) {
-    const msg = data?.error || data?.message || `HTTP ${res.status}`
+    const msg = data?.error || data?.message || text?.slice(0, 120) || `HTTP ${res.status}`
     throw new Error(msg)
   }
   return data
