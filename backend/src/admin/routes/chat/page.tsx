@@ -251,6 +251,10 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [syncDetail, setSyncDetail] = useState<Record<string, any>>({})
+  const [showSyncDetail, setShowSyncDetail] = useState(false)
+  const [pageFilter, setPageFilter] = useState("")
+  const [pageList, setPageList] = useState<{ page_id: string; page_name: string }[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [examples, setExamples] = useState<Example[]>([])
   const [exampleTab, setExampleTab] = useState("pending")
@@ -275,16 +279,26 @@ export default function ChatPage() {
     return botEvents.find(e => e.reply_text && !e.auto_sent && !e.skipped_reason?.includes("handoff"))
   }, [botEvents])
 
-  const loadConversations = useCallback(async (nextTab = tab) => {
+  const loadConversations = useCallback(async (nextTab = tab, nextPage = pageFilter) => {
     setLoading(true)
     try {
-      const d = await apiJson(`/admin/chat/conversations?status=${nextTab}&limit=80`)
+      let url = `/admin/chat/conversations?status=${nextTab}&limit=80`
+      if (nextPage) url += `&page_id=${nextPage}`
+      const d = await apiJson(url)
       setConversations(d.conversations || [])
       if (!selectedId && d.conversations?.[0]) setSelectedId(d.conversations[0].id)
     } finally {
       setLoading(false)
     }
-  }, [tab, selectedId])
+  }, [tab, pageFilter, selectedId])
+
+  const loadPageList = useCallback(async () => {
+    try {
+      const d = await apiJson("/admin/chat/agents")
+      const pages = (d.agents || []).map((a: any) => ({ page_id: a.page_id, page_name: a.page_name }))
+      setPageList(pages)
+    } catch {}
+  }, [])
 
   const loadDetail = useCallback(async (id = selectedId) => {
     if (!id) return
@@ -318,13 +332,13 @@ export default function ChatPage() {
     if (view !== "inbox") return
     clearInterval(refreshTimer.current)
     refreshTimer.current = setInterval(() => {
-      loadConversations(tab)
+      loadConversations(tab, pageFilter)
       if (selectedId) loadDetail(selectedId)
     }, 15000)
     return () => clearInterval(refreshTimer.current)
-  }, [view, tab, selectedId])
+  }, [view, tab, pageFilter, selectedId])
 
-  useEffect(() => { loadConversations() }, [])
+  useEffect(() => { loadConversations(); loadPageList() }, [])
   useEffect(() => { if (selectedId) loadDetail(selectedId) }, [selectedId])
   useEffect(() => {
     if (view === "agents") loadAgents()
@@ -346,36 +360,40 @@ export default function ChatPage() {
 
   async function syncInbox(pageId?: string) {
     setSyncing(true)
-    setSyncResult("⏳ Đang khởi động sync...")
+    setSyncResult("⏳ Đang khởi động...")
+    setSyncDetail({})
     try {
-      const d = await apiJson("/admin/chat/sync-inbox", "POST", { page_id: pageId, days: 7 })
+      const body: any = { days: 7 }
+      if (pageId) body.page_id = pageId
+      const d = await apiJson("/admin/chat/sync-inbox", "POST", body)
       if (d?.status === "running") {
-        setSyncResult(`⏳ Đang sync ${d.pages_count} page...`)
-        // Poll cho đến khi xong
+        setSyncResult(`⏳ Sync ${d.pages_count} page...`)
         const poll = async () => {
           try {
-            const status = await apiJson("/admin/chat/sync-inbox")
-            if (status?.status === "running") {
-              setSyncResult(`⏳ Đang sync... (${status.pages_synced || 0}/${Object.keys(status.results || {}).length} page)`)
+            const s = await apiJson("/admin/chat/sync-inbox")
+            setSyncDetail(s?.results || {})
+            if (s?.status === "running") {
+              setSyncResult(`⏳ Đang sync... ${s.pages_synced}/${d.pages_count} page`)
               setTimeout(poll, 2000)
-            } else if (status?.status === "done") {
-              setSyncResult(`✅ Xong: ${status.total_saved} tin nhắn từ ${status.pages_synced} page${status.total_errors ? ` (${status.total_errors} lỗi)` : ""}`)
+            } else if (s?.status === "done") {
+              setSyncResult(`✅ ${s.total_saved} tin · ${s.pages_synced} page${s.total_errors ? ` · ${s.total_errors} lỗi` : ""}`)
               setSyncing(false)
               await loadConversations(tab)
+              await loadPageList()
             } else {
-              setSyncResult(`❌ Lỗi sync: ${status?.error || "unknown"}`)
+              setSyncResult(`❌ ${s?.error || "Lỗi không xác định"}`)
               setSyncing(false)
             }
           } catch { setTimeout(poll, 3000) }
         }
         setTimeout(poll, 2000)
       } else {
-        setSyncResult(`✅ Xong: ${d.total_saved} tin nhắn`)
+        setSyncResult(`✅ ${d.total_saved || 0} tin nhắn`)
         setSyncing(false)
         await loadConversations(tab)
       }
     } catch (e: any) {
-      setSyncResult(`❌ Lỗi: ${e.message}`)
+      setSyncResult(`❌ ${e.message}`)
       setSyncing(false)
     }
   }
@@ -446,16 +464,50 @@ export default function ChatPage() {
             {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : "Câu bot cần học"}
           </Btn>
         ))}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          {syncResult && <span style={{ fontSize: 12, color: syncResult.startsWith("✅") ? "#16a34a" : "#dc2626" }}>{syncResult}</span>}
-          <Btn onClick={() => syncInbox()} disabled={syncing}>
-            {syncing ? "Đang lấy..." : "⬇ Lấy inbox về"}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {syncResult && (
+            <span
+              onClick={() => setShowSyncDetail(v => !v)}
+              style={{ fontSize: 12, color: syncResult.startsWith("✅") ? "#16a34a" : syncResult.startsWith("❌") ? "#dc2626" : "#d97706", cursor: "pointer", textDecoration: "underline dotted" }}
+              title="Click để xem chi tiết"
+            >{syncResult}</span>
+          )}
+          <select
+            value={pageFilter}
+            onChange={e => { setPageFilter(e.target.value); loadConversations(tab, e.target.value) }}
+            style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 8px", fontSize: 12, maxWidth: 200 }}
+          >
+            <option value="">Tất cả page</option>
+            {pageList.map(p => <option key={p.page_id} value={p.page_id}>{p.page_name}</option>)}
+          </select>
+          <Btn onClick={() => syncInbox(pageFilter || undefined)} disabled={syncing}>
+            {syncing ? "Đang sync..." : pageFilter ? "⬇ Sync page này" : "⬇ Sync tất cả"}
           </Btn>
           <Btn onClick={() => view === "inbox" ? loadConversations() : view === "agents" ? loadAgents() : loadExamples(exampleTab)}>
-            ↺ Refresh
+            ↺
           </Btn>
         </div>
       </div>
+
+      {/* Sync detail panel */}
+      {showSyncDetail && Object.keys(syncDetail).length > 0 && (
+        <div style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a", padding: "10px 16px", flexShrink: 0, maxHeight: 200, overflow: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <b style={{ fontSize: 12 }}>Chi tiết sync từng page</b>
+            <button onClick={() => setShowSyncDetail(false)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, color: "#9ca3af" }}>✕</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px,1fr))", gap: 6 }}>
+            {Object.entries(syncDetail).map(([name, r]: [string, any]) => (
+              <div key={name} style={{ background: "#fff", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px", fontSize: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 2 }}>{name}</div>
+                <div style={{ color: "#16a34a" }}>✓ {r.saved} tin</div>
+                {r.skipped > 0 && <div style={{ color: "#9ca3af" }}>↷ {r.skipped} bỏ qua</div>}
+                {r.errors?.length > 0 && <div style={{ color: "#dc2626" }}>✗ {r.errors[0].slice(0, 60)}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── INBOX VIEW ─────────────────────────────────────────────────────── */}
       {view === "inbox" && (
@@ -474,7 +526,7 @@ export default function ChatPage() {
             {/* Tab filters */}
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "8px 10px", borderBottom: "1px solid #e5e7eb" }}>
               {TABS.map(([id, label]) => (
-                <button key={id} onClick={() => { setTab(id); loadConversations(id) }}
+                <button key={id} onClick={() => { setTab(id); loadConversations(id, pageFilter) }}
                   style={{
                     border: "1px solid", borderColor: tab === id ? "#1877f2" : "#e5e7eb",
                     background: tab === id ? "#eff6ff" : "#fff",
