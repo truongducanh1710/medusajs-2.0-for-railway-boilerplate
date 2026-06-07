@@ -451,7 +451,8 @@ export async function refreshConversationContext(pool: Pool, conversationId: str
   // Chỉ extract phone từ inbound (khách gửi), tránh match số trong reply bot/sale
   const combined = active.rows.filter((m: any) => m.direction === "inbound").map((m: any) => m.text || "").join("\n")
   const phone = extractPhone(combined)
-  const address = active.rows.map((m: any) => looksLikeAddress(m.text || "")).find(Boolean) || null
+  // Địa chỉ để sale điền thủ công khi lên đơn, không tự detect
+  const address = null
   const intentTexts = active.rows.filter((m: any) => m.direction === "inbound").map((m: any) => m.text || "").join(" ")
   const intent = detectIntent(intentTexts)
   const priceCount = active.rows.filter((m: any) => m.sender_type !== "customer" && /(giá|gia|799|499|1\.499|1499)/i.test(m.text || "")).length

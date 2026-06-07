@@ -590,9 +590,6 @@ export default function ChatPage() {
                       <InfoRow icon="📞" label="SĐT" value={conv?.active_phone || selected.active_phone} mono />
                       <InfoRow icon="📦" label="Sản phẩm" value={(conv?.product_names || selected.product_names || []).join(", ") || undefined} />
                       <InfoRow icon="🔖" label="Trạng thái đơn" value={conv?.active_order_state} />
-                      {conv?.active_address && !isSystemText(conv.active_address) && (
-                        <InfoRow icon="📍" label="Địa chỉ" value={conv.active_address} />
-                      )}
                       {selected.assigned_to && <InfoRow icon="👤" label="Gán cho" value={selected.assigned_to} />}
                     </div>
                   </div>
