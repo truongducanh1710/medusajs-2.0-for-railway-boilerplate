@@ -25,11 +25,18 @@ type Conversation = {
   active_order_state?: string
 }
 
+type Attachment = {
+  type: string // image | video | audio | file | template
+  payload?: { url?: string; title?: string }
+  name?: string
+}
+
 type Message = {
   id: string
   sender_type: string
   direction: string
   text: string
+  attachments: Attachment[] | string | null
   created_at: string
 }
 
@@ -151,6 +158,42 @@ function fmtDateTime(v?: string) {
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
+
+function parseAttachments(raw: Attachment[] | string | null | undefined): Attachment[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  try { return JSON.parse(raw as string) } catch { return [] }
+}
+
+function AttachmentView({ att }: { att: Attachment }) {
+  const url = att.payload?.url
+  if (!url) return <span style={{ fontSize: 12, color: "#9ca3af" }}>[{att.type}]</span>
+  if (att.type === "image") {
+    return (
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt="ảnh" style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, display: "block", cursor: "pointer" }}
+          onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+      </a>
+    )
+  }
+  if (att.type === "video") {
+    return (
+      <video src={url} controls style={{ maxWidth: 260, borderRadius: 8, display: "block" }}
+        onError={e => {
+          const el = e.target as HTMLVideoElement
+          el.outerHTML = `<a href="${url}" target="_blank" style="font-size:12px">▶ Xem video</a>`
+        }} />
+    )
+  }
+  if (att.type === "audio") {
+    return <audio src={url} controls style={{ maxWidth: 240 }} />
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#1877f2" }}>
+      📎 {att.payload?.title || att.name || att.type}
+    </a>
+  )
+}
 
 function Info({ label, value, mono }: { label: string; value?: any; mono?: boolean }) {
   return (
@@ -496,19 +539,29 @@ export default function ChatPage() {
                 const isOut = m.direction === "outbound"
                 const isBot = m.sender_type === "bot"
                 const isSale = m.sender_type === "sale"
+                const atts = parseAttachments(m.attachments)
                 return (
                   <div key={m.id} style={{ display: "flex", justifyContent: isOut ? "flex-end" : "flex-start" }}>
                     <div style={{ maxWidth: "72%" }}>
-                      <div style={{
-                        background: isBot ? "#7c3aed" : isSale ? "#1877f2" : "#fff",
-                        color: isOut ? "#fff" : "#111827",
-                        borderRadius: isOut ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                        padding: "8px 12px",
-                        boxShadow: "0 1px 2px rgba(0,0,0,.07)",
-                        border: isOut ? "none" : "1px solid #e5e7eb",
-                      }}>
-                        <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.5 }}>{m.text}</div>
-                      </div>
+                      {/* Attachments hiển thị trước bubble text (nếu có) */}
+                      {atts.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: m.text ? 4 : 0, alignItems: isOut ? "flex-end" : "flex-start" }}>
+                          {atts.map((att, i) => <AttachmentView key={i} att={att} />)}
+                        </div>
+                      )}
+                      {/* Text bubble */}
+                      {m.text && (
+                        <div style={{
+                          background: isBot ? "#7c3aed" : isSale ? "#1877f2" : "#fff",
+                          color: isOut ? "#fff" : "#111827",
+                          borderRadius: isOut ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                          padding: "8px 12px",
+                          boxShadow: "0 1px 2px rgba(0,0,0,.07)",
+                          border: isOut ? "none" : "1px solid #e5e7eb",
+                        }}>
+                          <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.5 }}>{m.text}</div>
+                        </div>
+                      )}
                       <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, textAlign: isOut ? "right" : "left" }}>
                         {isBot ? "🤖 Bot" : isSale ? "👤 Sale" : "🙋 Khách"} · {fmtDateTime(m.created_at)}
                       </div>
