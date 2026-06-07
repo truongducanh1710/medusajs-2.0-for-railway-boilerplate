@@ -41,6 +41,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
 }
 
+export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const auth = await getChatAuthInfo(req)
+    if (!auth?.isAdmin) return res.status(403).json({ error: "Admin only" })
+    const id = (req.params as any).id
+    const pool = getChatPool()
+    await pool.query(`DELETE FROM fb_conversation WHERE id = $1`, [id])
+    return res.json({ ok: true })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+}
+
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   try {
     const auth = await getChatAuthInfo(req)

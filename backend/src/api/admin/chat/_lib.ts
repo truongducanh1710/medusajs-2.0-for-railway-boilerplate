@@ -206,9 +206,12 @@ export function extractPhone(text: string): string | null {
 }
 
 export function looksLikeAddress(text: string): string | null {
+  // Loại bỏ URL, link Facebook, comment reply messages
+  if (/https?:\/\//i.test(text)) return null
+  if (/ban dang phan hoi binh luan|xem binh luan|comment_id/i.test(normalizeText(text))) return null
   const t = normalizeText(text)
-  const hasAddressWord = /(dia chi|dc|thon|xa|phuong|quan|huyen|tp|tinh|duong|so nha|ngo|ngach|ap|khu)/.test(t)
-  if (!hasAddressWord || text.length < 12) return null
+  const hasAddressWord = /(dia chi|thon|xa |phuong |quan |huyen |tp |tinh |duong |so nha|ngo |ngach|ap |khu )/.test(t)
+  if (!hasAddressWord || text.length < 12 || text.length > 300) return null
   return text.trim()
 }
 

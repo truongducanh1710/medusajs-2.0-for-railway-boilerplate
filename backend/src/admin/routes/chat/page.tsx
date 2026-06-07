@@ -602,6 +602,13 @@ export default function ChatPage() {
               </div>
               <Btn onClick={assignMe} disabled={!selectedId} small>Nhận xử lý</Btn>
               <Btn onClick={resumeBot} disabled={!selectedId || !selected?.bot_paused} small>Bật lại bot</Btn>
+              <Btn danger small disabled={!selectedId} onClick={async () => {
+                if (!selectedId || !confirm("Xóa hội thoại này khỏi DB?")) return
+                await apiJson(`/admin/chat/conversations/${selectedId}`, "DELETE")
+                setSelectedId(null)
+                setDetail(null)
+                await loadConversations(tab)
+              }}>Xóa</Btn>
             </div>
 
             {/* Messages */}
@@ -609,31 +616,39 @@ export default function ChatPage() {
               {!selectedId && (
                 <div style={{ margin: "auto", color: "#9ca3af", fontSize: 14 }}>Chọn hội thoại để xem tin nhắn</div>
               )}
+              {selectedId && detail && (detail.messages || []).length === 0 && (
+                <div style={{ margin: "auto", color: "#9ca3af", fontSize: 13 }}>Chưa có tin nhắn nào được lưu</div>
+              )}
               {(detail?.messages || []).map((m: Message) => {
                 const isOut = m.direction === "outbound"
                 const isBot = m.sender_type === "bot"
                 const isSale = m.sender_type === "sale"
                 const atts = parseAttachments(m.attachments)
+                const isSystemMsg = !m.text && atts.length === 0
+                if (isSystemMsg) return null
+                // Comment reply notification (không phải Messenger thật)
+                const isCommentReply = /ban dang phan hoi binh luan|comment_id=/i.test(m.text || "")
                 return (
                   <div key={m.id} style={{ display: "flex", justifyContent: isOut ? "flex-end" : "flex-start" }}>
                     <div style={{ maxWidth: "72%" }}>
-                      {/* Attachments hiển thị trước bubble text (nếu có) */}
                       {atts.length > 0 && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: m.text ? 4 : 0, alignItems: isOut ? "flex-end" : "flex-start" }}>
                           {atts.map((att, i) => <AttachmentView key={i} att={att} />)}
                         </div>
                       )}
-                      {/* Text bubble */}
                       {m.text && (
                         <div style={{
-                          background: isBot ? "#7c3aed" : isSale ? "#1877f2" : "#fff",
-                          color: isOut ? "#fff" : "#111827",
+                          background: isCommentReply ? "#f3f4f6" : isBot ? "#7c3aed" : isSale ? "#1877f2" : "#fff",
+                          color: isCommentReply ? "#9ca3af" : isOut ? "#fff" : "#111827",
                           borderRadius: isOut ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
                           padding: "8px 12px",
                           boxShadow: "0 1px 2px rgba(0,0,0,.07)",
-                          border: isOut ? "none" : "1px solid #e5e7eb",
+                          border: isOut && !isCommentReply ? "none" : "1px solid #e5e7eb",
                         }}>
-                          <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.5 }}>{m.text}</div>
+                          {isCommentReply
+                            ? <div style={{ fontSize: 11, fontStyle: "italic" }}>💬 Phản hồi bình luận</div>
+                            : <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.5 }}>{m.text}</div>
+                          }
                         </div>
                       )}
                       <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, textAlign: isOut ? "right" : "left" }}>
