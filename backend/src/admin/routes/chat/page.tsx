@@ -194,9 +194,11 @@ export default function ChatPage() {
   const selected = useMemo(() => convs.find(c => c.id === selectedId), [convs, selectedId])
   const conv = detail?.conversation
   const filtered = useMemo(() => {
-    if (!search.trim()) return convs
+    let list = convs
+    if (hasPhone) list = list.filter(c => c.active_phone && c.active_phone.trim() !== "")
+    if (!search.trim()) return list
     const s = search.toLowerCase()
-    return convs.filter(c =>
+    return list.filter(c =>
       (c.customer_name || "").toLowerCase().includes(s) ||
       c.customer_psid.toLowerCase().includes(s) ||
       (c.last_message || "").toLowerCase().includes(s)
@@ -227,7 +229,7 @@ export default function ChatPage() {
     try {
       let url = `/admin/chat/conversations?status=${t}&limit=80`
       if (p) url += `&page_id=${p}`
-      if (hp) url += `&has_phone=1`
+      // has_phone filter ở frontend, không cần gửi lên backend
       const d = await apiJson(url)
       setConvs(d.conversations || [])
     } finally { setLoading(false) }
