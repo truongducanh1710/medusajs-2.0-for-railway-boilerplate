@@ -256,6 +256,9 @@ function CalendarView({ posts }: { posts: any[] }) {
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`
     ;(byDay[key] = byDay[key] || []).push(p)
   }
+  Object.values(byDay).forEach(dayPosts => {
+    dayPosts.sort((a, b) => postDisplayDate(a).getTime() - postDisplayDate(b).getTime())
+  })
 
   const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({length: daysInMonth}, (_, i) => i+1)]
   while (cells.length % 7 !== 0) cells.push(null)
@@ -390,7 +393,7 @@ function LichDangTab() {
     ;(grouped[key] = grouped[key] || []).push(p)
   }
   Object.values(grouped).forEach(dayPosts => {
-    dayPosts.sort((a, b) => postDisplayDate(b).getTime() - postDisplayDate(a).getTime())
+    dayPosts.sort((a, b) => postDisplayDate(a).getTime() - postDisplayDate(b).getTime())
   })
 
   return (

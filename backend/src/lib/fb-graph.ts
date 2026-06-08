@@ -176,7 +176,11 @@ async function publishVideoResumable(pageId: string, pageToken: string, message:
     let finishData: any
     try { finishData = JSON.parse(finishText) } catch { throw new Error(`FB finish parse: ${finishText.slice(0, 300)}`) }
     if (finishData?.error) throw new FbError(finishData.error.message, finishData.error.code)
-    return finishData.video_id || finishData.id || uploadedVideoId
+    const resolvedId = finishData.video_id || finishData.id
+    if (!resolvedId && uploadedVideoId) {
+      console.warn(`[fb-graph] finish phase missing video_id, falling back to init-phase id: ${uploadedVideoId}`)
+    }
+    return resolvedId || uploadedVideoId
   } finally {
     await cleanupTmp(tmpPath)
   }
