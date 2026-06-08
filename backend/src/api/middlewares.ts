@@ -49,6 +49,12 @@ export default defineMiddlewares({
       method: ["POST"],
       bodyParser: { sizeLimit: "100mb" },
     },
+    // Video analyze — nhận base64 video từ browser (~50MB)
+    {
+      matcher: "/admin/marketing-video/:id/analyze",
+      method: ["POST"],
+      bodyParser: { sizeLimit: "100mb" },
+    },
 
     // CORS cho Chrome Extension — phải đứng trước auth middleware
     {

@@ -116,12 +116,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     fs.mkdirSync(tmpDir, { recursive: true })
     fs.mkdirSync(frameDir, { recursive: true })
 
-    // 1. Download video
-    const downloadUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`
-    await downloadFile(downloadUrl, videoPath)
+    // 1. Nhận video blob từ frontend (browser có Google session) hoặc download server-side
+    const body = req.body as any
+    if (body?.videoBase64) {
+      // Frontend đã fetch video và gửi base64
+      const buf = Buffer.from(body.videoBase64, "base64")
+      fs.writeFileSync(videoPath, buf)
+    } else {
+      // Fallback: server download (chỉ hoạt động nếu file public)
+      const downloadUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`
+      await downloadFile(downloadUrl, videoPath)
+    }
 
     if (!fs.existsSync(videoPath) || fs.statSync(videoPath).size < 10000) {
-      return res.status(400).json({ error: "Không download được video từ Drive (file quá nhỏ hoặc lỗi)" })
+      return res.status(400).json({ error: "Không nhận được video (file quá nhỏ hoặc lỗi)" })
     }
 
     // 2. Lấy duration
