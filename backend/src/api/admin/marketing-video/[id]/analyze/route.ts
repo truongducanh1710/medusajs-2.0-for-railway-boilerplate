@@ -150,9 +150,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const extractedFrames = fs.readdirSync(frameDir).filter(f => f.endsWith(".jpg"))
     if (extractedFrames.length < 3) {
       const videoSize = fs.existsSync(videoPath) ? fs.statSync(videoPath).size : 0
-      const probErr = probe.stderr?.toString().slice(0, 200) || ""
+      // Debug: check ffmpeg path + test extract stderr
+      const ffmpegWhich = spawnSync("which", ["ffmpeg"])
+      const ffmpegPath = ffmpegWhich.stdout?.toString().trim() || "not found"
+      const ffmpegVer = spawnSync("ffmpeg", ["-version"])
+      const ffmpegVerStr = ffmpegVer.stdout?.toString().slice(0, 80) || ffmpegVer.stderr?.toString().slice(0, 80) || "no output"
+      // Re-run 1 frame với loglevel verbose để lấy error
+      const testFrame = path.join(frameDir, "debug_frame.jpg")
+      const testRun = spawnSync("ffmpeg", [
+        "-ss", "5", "-i", videoPath,
+        "-frames:v", "1", "-q:v", "4", testFrame, "-y"
+      ])
+      const ffmpegErr = (testRun.stderr?.toString() || "").slice(0, 500)
       return res.status(400).json({
-        error: `ffmpeg chỉ extract được ${extractedFrames.length} frames (video size: ${Math.round(videoSize / 1024)}KB, duration: ${duration}s). Video có thể bị lỗi codec hoặc không phải video thật. ffprobe: ${probErr}`
+        error: `ffmpeg extract được ${extractedFrames.length} frames`,
+        debug: {
+          videoSize: Math.round(videoSize / 1024) + "KB",
+          duration,
+          ffmpegPath,
+          ffmpegVersion: ffmpegVerStr,
+          ffmpegStderr: ffmpegErr,
+          spawnStatus: testRun.status,
+        }
       })
     }
 
