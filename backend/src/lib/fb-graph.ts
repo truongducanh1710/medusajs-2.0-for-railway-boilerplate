@@ -1,6 +1,6 @@
 import * as fs from "fs"
 import { FB_USER_TOKEN, FB_GRAPH_BASE, FB_GRAPH_VERSION } from "./constants"
-import { driveToDirectUrl, downloadToTmp, cleanupTmp } from "./fb-drive"
+import { driveToDirectUrl, downloadToTmp, cleanupTmp, isLarkFileUrl } from "./fb-drive"
 
 const VIDEO_BASE = `https://graph-video.facebook.com/${FB_GRAPH_VERSION}`
 
@@ -76,6 +76,34 @@ async function publishFeed(pageId: string, pageToken: string, message: string, o
   if (opts.scheduledTime) { body.published = false; body.scheduled_publish_time = opts.scheduledTime }
   const data = await graphPost(`/${pageId}/feed`, body)
   return data.id
+}
+
+function pathBasename(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() || "upload.bin"
+}
+
+async function publishPhotoBinary(pageId: string, pageToken: string, message: string, mediaUrl: string, scheduledTime?: number): Promise<string> {
+  let tmpPath: string | null = null
+  try {
+    tmpPath = await downloadToTmp(mediaUrl)
+    const buf = await fs.promises.readFile(tmpPath)
+    const form = new FormData()
+    form.append("access_token", pageToken)
+    form.append("message", message)
+    form.append("source", new Blob([buf]), pathBasename(tmpPath))
+    if (scheduledTime) {
+      form.append("published", "false")
+      form.append("scheduled_publish_time", String(scheduledTime))
+    }
+    const res = await fetch(`${FB_GRAPH_BASE}/${pageId}/photos`, { method: "POST", body: form })
+    const rawText = await res.text()
+    let data: any
+    try { data = JSON.parse(rawText) } catch { throw new Error(`FB photo parse error: ${rawText.slice(0, 300)}`) }
+    if (data?.error) throw new FbError(data.error.message, data.error.code)
+    return data.post_id || data.id
+  } finally {
+    await cleanupTmp(tmpPath)
+  }
 }
 
 /** Đăng video qua file_url (FB tự tải từ Drive direct URL). */
@@ -190,6 +218,12 @@ export async function publishPost(opts: {
   const { pageId, pageToken, message, driveUrl, mediaType, scheduledTime } = opts
 
   if (mediaType === "video") {
+    if (driveUrl && isLarkFileUrl(driveUrl)) {
+      const videoId = await publishVideoResumable(pageId, pageToken, message, driveUrl, scheduledTime)
+      const realPostId = await getPostIdFromVideo(pageId, pageToken, videoId)
+      return { post_id: realPostId || videoId, video_id: videoId }
+    }
+
     const direct = driveToDirectUrl(driveUrl || "")
     if (!direct) throw new FbError("Link Google Drive không hợp lệ", 0)
     let videoId: string
@@ -205,6 +239,11 @@ export async function publishPost(opts: {
   }
 
   if (mediaType === "photo") {
+    if (driveUrl && isLarkFileUrl(driveUrl)) {
+      const id = await publishPhotoBinary(pageId, pageToken, message, driveUrl, scheduledTime)
+      return { post_id: id }
+    }
+
     const direct = driveToDirectUrl(driveUrl || "") || driveUrl
     const id = await publishFeed(pageId, pageToken, message, { imageUrl: direct, scheduledTime })
     return { post_id: id }

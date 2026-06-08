@@ -3,6 +3,8 @@ import * as os from "os"
 import * as path from "path"
 import { randomUUID } from "crypto"
 
+let larkTenantTokenCache: { token: string; expiresAt: number } | null = null
+
 /**
  * Trích FILE_ID từ Google Drive share link.
  */
@@ -23,12 +25,89 @@ export function driveToDirectUrl(url: string): string | null {
   return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`
 }
 
+export function extractLarkFileToken(url: string): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    const isLarkHost = /(^|\.)larksuite\.com$/i.test(u.hostname) || /(^|\.)larkoffice\.com$/i.test(u.hostname)
+    if (!isLarkHost) return null
+    const match = u.pathname.match(/\/file\/([^/?#]+)/)
+    return match ? decodeURIComponent(match[1]) : null
+  } catch {
+    return null
+  }
+}
+
+export function isLarkFileUrl(url: string): boolean {
+  return !!extractLarkFileToken(url)
+}
+
+async function getLarkTenantToken(): Promise<string> {
+  const now = Date.now()
+  if (larkTenantTokenCache && larkTenantTokenCache.expiresAt > now + 5 * 60 * 1000) {
+    return larkTenantTokenCache.token
+  }
+
+  const appId = process.env.LARK_APP_ID
+  const appSecret = process.env.LARK_APP_SECRET
+  if (!appId || !appSecret) throw new Error("LARK_APP_ID/LARK_APP_SECRET is not configured")
+
+  const res = await fetch("https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+  })
+  const data: any = await res.json().catch(() => null)
+  if (!res.ok || data?.code !== 0 || !data?.tenant_access_token) {
+    throw new Error(`Lark token failed: ${data?.msg || `HTTP ${res.status}`}`)
+  }
+
+  larkTenantTokenCache = {
+    token: data.tenant_access_token,
+    expiresAt: now + Math.max(0, Number(data.expire || 7200) - 300) * 1000,
+  }
+  return larkTenantTokenCache.token
+}
+
+async function downloadLarkToTmp(url: string): Promise<string> {
+  const token = extractLarkFileToken(url)
+  if (!token) throw new Error("Could not extract Lark file token")
+
+  const tenantToken = await getLarkTenantToken()
+  const res = await fetch(`https://open.larksuite.com/open-apis/drive/v1/files/${encodeURIComponent(token)}/download`, {
+    headers: { Authorization: `Bearer ${tenantToken}` },
+    redirect: "follow",
+  })
+  const contentType = res.headers.get("content-type") || ""
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(`Lark file download failed: HTTP ${res.status}${text ? ` - ${text.slice(0, 200)}` : ""}`)
+  }
+  if (contentType.includes("text/html")) throw new Error("Lark returned HTML instead of file bytes")
+
+  const buf = Buffer.from(await res.arrayBuffer())
+  if (buf.length < 1000) throw new Error("Downloaded Lark file is too small")
+
+  const disposition = res.headers.get("content-disposition") || ""
+  const extMatch = disposition.match(/filename\*?=(?:UTF-8''|")?[^";]*\.([a-zA-Z0-9]+)[";]?/i)
+  const ext = extMatch?.[1]
+    ? `.${extMatch[1].toLowerCase()}`
+    : contentType.includes("image/")
+      ? `.${contentType.split("/")[1].split(";")[0]}`
+      : ".mp4"
+  const tmpPath = path.join(os.tmpdir(), `fb-${randomUUID()}${ext}`)
+  await fs.promises.writeFile(tmpPath, buf)
+  return tmpPath
+}
+
 /**
  * Tải video từ Google Drive về file tạm.
  * Drive redirect qua trang confirm với cookie "download_warning" cho file lớn.
  * Ta follow redirect + extract confirm token từ cookie nếu cần.
  */
 export async function downloadToTmp(url: string): Promise<string> {
+  if (isLarkFileUrl(url)) return downloadLarkToTmp(url)
+
   const fileId = extractDriveFileId(url)
   if (!fileId) throw new Error("Không nhận diện được Google Drive file ID")
 
