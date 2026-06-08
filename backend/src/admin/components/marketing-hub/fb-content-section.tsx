@@ -845,12 +845,12 @@ function LenLichHangLoatTab() {
     Promise.all([
       apiJson("/admin/fb-content?all=true"),
       apiJson("/admin/fb-content/templates"),
-      apiJson("/admin/marketing-video?status=ready&limit=50"),
+      apiJson("/admin/marketing-video?limit=200"),
     ]).then(([pd, td, vd]) => {
       setPages(pd.pages || [])
       setTemplates(td.templates || [])
-      // Lấy video có drive_url (sẵn sàng đăng)
-      const vids = (vd.videos || []).filter((v: any) => v.link || v.drive_url)
+      // API trả về { rows: [...] }, lọc video có link Drive + chưa đăng (status Xong)
+      const vids = (vd.rows || []).filter((v: any) => v.link && v.trangThai === "Xong")
       setVideos(vids)
       setLoading(false)
     }).catch(() => setLoading(false))
