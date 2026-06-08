@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getChatAuthInfo, getChatPool } from "../_lib"
+import { getPageTokens, ensureTables, getPool } from "../../fb-content/_lib"
 
 // GET /admin/chat/pages — list all pages with sync config
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -7,8 +8,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const auth = await getChatAuthInfo(req)
     if (!auth) return res.status(401).json({ error: "Unauthenticated" })
     const pool = getChatPool()
+    const fbPool = getPool()
 
-    // Ensure sync_enabled column exists
+    // Ensure fb_page_token table exists and is populated
+    await ensureTables(fbPool)
+    await getPageTokens(fbPool) // refresh from FB Graph API if cache is stale/empty
+
+    // Ensure chat-specific columns exist
     await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`)
     await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_days INT DEFAULT 7`)
 
