@@ -39,6 +39,8 @@ function toUiRow(r: any) {
     createdBy: r.created_by,
     fbPostLinks: Array.isArray(r.fb_post_links) ? r.fb_post_links : [],
     deadline: r.deadline ? new Date(r.deadline).toISOString().slice(0, 10) : null,
+    aiScore: r.ai_score ? parseFloat(r.ai_score) : null,
+    aiReview: r.ai_review || null,
   }
 }
 

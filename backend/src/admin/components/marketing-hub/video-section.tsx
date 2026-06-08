@@ -52,6 +52,8 @@ type VideoRow = {
   loaiVideo: string; link: string; trangThai: string; ghiChu: string; createdBy?: string
   fbPostLinks?: FbPostLink[]
   deadline?: string | null
+  aiScore?: number | null
+  aiReview?: any
 }
 
 // ============================================================================
@@ -146,6 +148,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null)
+  const [aiModal, setAiModal] = useState<{ row: VideoRow; result: any } | null>(null)
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
   const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
@@ -217,6 +221,22 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     setStatusDropId(null)
     try { await apiJson(`/admin/marketing-video/${id}`, "PATCH", { trangThai: s }); reload() }
     catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
+  const analyzeVideo = async (row: VideoRow) => {
+    if (analyzingId) return
+    if (row.aiReview) { setAiModal({ row, result: row.aiReview }); return }
+    setAnalyzingId(row.id)
+    try {
+      const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", {})
+      if (result?.ai_review) {
+        setAiModal({ row: { ...row, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review })
+        reload()
+      } else {
+        setToast("Phân tích thất bại: không có kết quả")
+      }
+    } catch (e: any) { setToast("Lỗi phân tích: " + e.message) }
+    finally { setAnalyzingId(null) }
   }
 
   const startEdit = (row: VideoRow) => {
@@ -476,6 +496,23 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         {row.link && (
                           <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
                         )}
+                        {row.link && (
+                          <button
+                            onClick={e => { e.stopPropagation(); analyzeVideo(row) }}
+                            title={row.aiReview ? "Xem phân tích AI" : "Phân tích video AI"}
+                            disabled={analyzingId === row.id}
+                            style={{
+                              background: row.aiScore != null ? (row.aiScore >= 8 ? "#DCFCE7" : row.aiScore >= 6 ? "#FEF9C3" : "#FEE2E2") : "none",
+                              border: `1px solid ${row.aiScore != null ? (row.aiScore >= 8 ? "#86EFAC" : row.aiScore >= 6 ? "#FDE047" : "#FCA5A5") : "#E5E7EB"}`,
+                              borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: analyzingId === row.id ? "wait" : "pointer",
+                              color: row.aiScore != null ? (row.aiScore >= 8 ? "#166534" : row.aiScore >= 6 ? "#713F12" : "#991B1B") : "#6B7280",
+                              fontWeight: row.aiScore != null ? 700 : 400,
+                              minWidth: 36, textAlign: "center",
+                            }}
+                          >
+                            {analyzingId === row.id ? "⏳" : row.aiScore != null ? `★${row.aiScore}` : "🔍"}
+                          </button>
+                        )}
                         <button onClick={e => { e.stopPropagation(); startEdit(row) }} title="Chỉnh sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>✏️</button>
                         <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => setDeleteConfirmId(deleteConfirmId === row.id ? null : row.id)} title="Xóa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#EF4444" }}>🗑</button>
@@ -726,6 +763,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           </div>
         </div>
       )}
+      {/* AI Review Modal */}
+      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} onClose={() => setAiModal(null)} />}
     </div>
   )
 }
@@ -1101,6 +1140,135 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
         {tab === "theonguoi" && <TheoNguoiTab rows={rows} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
         {tab === "baocao"    && <BaoCaoTab />}
         {tab === "huongdan"  && <HuongDanTab mktCode={mktCode} />}
+      </div>
+    </div>
+  )
+}
+
+function AiReviewModal({ row, result, onClose }: { row: VideoRow; result: any; onClose: () => void }) {
+  const score = result?.diem_ban_hang ?? row.aiScore
+  const scoreColor = score >= 8 ? "#166534" : score >= 6 ? "#713F12" : "#991B1B"
+  const scoreBg = score >= 8 ? "#DCFCE7" : score >= 6 ? "#FEF9C3" : "#FEE2E2"
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 40, overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: "min(900px, 95vw)", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", padding: 0 }}>
+        {/* Header */}
+        <div style={{ background: "#1877F2", color: "#fff", padding: "16px 20px", borderRadius: "14px 14px 0 0", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Phân tích AI — {row.sp}</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>{row.adName} · {row.loaiVideo}</div>
+          </div>
+          {score != null && (
+            <div style={{ background: scoreBg, color: scoreColor, borderRadius: 20, padding: "4px 14px", fontWeight: 800, fontSize: 18 }}>★ {score}</div>
+          )}
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 16, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          {/* Tổng quan */}
+          {result?.tong_quan && (
+            <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>TỔNG QUAN</div>
+              <div style={{ fontSize: 13, color: "#111827", lineHeight: 1.6 }}>{result.tong_quan}</div>
+            </div>
+          )}
+
+          {/* Lỗi video */}
+          {result?.loi_video?.length > 0 && (
+            <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#BE123C", marginBottom: 6 }}>LỖI PHÁT HIỆN</div>
+              {result.loi_video.map((l: string, i: number) => (
+                <div key={i} style={{ fontSize: 13, color: "#9F1239", marginBottom: 3 }}>• {l}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Bố cục 4 ô */}
+          {result?.bo_cuc && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>BỐ CỤC VIDEO</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "🪝 Hook", key: "hook", color: "#EFF6FF" },
+                  { label: "😣 Pain Point", key: "pain_point", color: "#FFF7ED" },
+                  { label: "🛍 Demo", key: "solution_demo", color: "#F0FDF4" },
+                  { label: "📣 CTA", key: "cta", color: "#FDF4FF" },
+                ].map(({ label, key, color }) => result.bo_cuc[key] && (
+                  <div key={key} style={{ background: color, borderRadius: 8, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#374151", marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontSize: 12, color: "#4B5563", lineHeight: 1.5 }}>{result.bo_cuc[key]}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Điểm mạnh / yếu */}
+              {(result.bo_cuc.diem_manh?.length > 0 || result.bo_cuc.diem_yeu?.length > 0) && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  {result.bo_cuc.diem_manh?.length > 0 && (
+                    <div style={{ background: "#F0FDF4", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", marginBottom: 6 }}>✅ Điểm mạnh</div>
+                      {result.bo_cuc.diem_manh.map((d: string, i: number) => <div key={i} style={{ fontSize: 12, color: "#166534", marginBottom: 2 }}>• {d}</div>)}
+                    </div>
+                  )}
+                  {result.bo_cuc.diem_yeu?.length > 0 && (
+                    <div style={{ background: "#FFF7ED", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#9A3412", marginBottom: 6 }}>⚠️ Điểm yếu</div>
+                      {result.bo_cuc.diem_yeu.map((d: string, i: number) => <div key={i} style={{ fontSize: 12, color: "#9A3412", marginBottom: 2 }}>• {d}</div>)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Từng cảnh */}
+          {result?.tung_canh?.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>PHÂN TÍCH TỪNG CẢNH ({result.tung_canh.length} frames)</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {result.tung_canh.map((c: any, i: number) => (
+                  <div key={i} style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: "10px 12px", background: c.loi_phat_hien ? "#FFF8F8" : "#FAFAFA" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ background: "#1877F2", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 6px" }}>Frame {c.frame}</span>
+                      <span style={{ fontSize: 11, color: "#6B7280" }}>{c.timestamp}</span>
+                      {c.loai_canh && <span style={{ background: "#F3F4F6", fontSize: 10, color: "#374151", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>{c.loai_canh}</span>}
+                      {c.loi_phat_hien && <span style={{ background: "#FEE2E2", color: "#991B1B", fontSize: 10, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>⚠ {c.loi_phat_hien}</span>}
+                    </div>
+                    {c.phan_script && <div style={{ fontSize: 12, color: "#1D4ED8", fontStyle: "italic", marginBottom: 4, lineHeight: 1.5 }}>"{c.phan_script}"</div>}
+                    {c.mo_ta_hinh && <div style={{ fontSize: 12, color: "#374151", marginBottom: 2 }}>🎬 {c.mo_ta_hinh}</div>}
+                    {c.text_overlay && <div style={{ fontSize: 12, color: "#6B7280" }}>📝 {c.text_overlay}</div>}
+                    {c.danh_gia && <div style={{ fontSize: 11, color: "#059669", marginTop: 4 }}>→ {c.danh_gia}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Góc độ + visual */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+            {result?.goc_do_trien_khai && (
+              <div style={{ background: "#F8FAFC", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>GÓC ĐỘ TRIỂN KHAI</div>
+                <div style={{ fontSize: 12, color: "#374151" }}>{result.goc_do_trien_khai}</div>
+              </div>
+            )}
+            {result?.danh_gia_visual && (
+              <div style={{ background: "#F8FAFC", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>ĐÁNH GIÁ VISUAL</div>
+                <div style={{ fontSize: 12, color: "#374151" }}>{result.danh_gia_visual}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Khuyến nghị */}
+          {result?.khuyen_nghi?.length > 0 && (
+            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 16px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1D4ED8", marginBottom: 6 }}>💡 KHUYẾN NGHỊ</div>
+              {result.khuyen_nghi.map((k: string, i: number) => (
+                <div key={i} style={{ fontSize: 13, color: "#1E40AF", marginBottom: 4 }}>• {k}</div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
