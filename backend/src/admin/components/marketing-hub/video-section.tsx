@@ -764,7 +764,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </div>
       )}
       {/* AI Review Modal */}
-      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} onClose={() => setAiModal(null)} />}
+      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} onClose={() => setAiModal(null)} onReanalyze={() => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", {}).then(result => { if (result?.ai_review) { setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) }} />}
     </div>
   )
 }
@@ -1145,7 +1145,7 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
   )
 }
 
-function AiReviewModal({ row, result, onClose }: { row: VideoRow; result: any; onClose: () => void }) {
+function AiReviewModal({ row, result, onClose, onReanalyze }: { row: VideoRow; result: any; onClose: () => void; onReanalyze?: () => void }) {
   const score = result?.diem_ban_hang ?? row.aiScore
   const scoreColor = score >= 8 ? "#166534" : score >= 6 ? "#713F12" : "#991B1B"
   const scoreBg = score >= 8 ? "#DCFCE7" : score >= 6 ? "#FEF9C3" : "#FEE2E2"
@@ -1160,6 +1160,9 @@ function AiReviewModal({ row, result, onClose }: { row: VideoRow; result: any; o
           </div>
           {score != null && (
             <div style={{ background: scoreBg, color: scoreColor, borderRadius: 20, padding: "4px 14px", fontWeight: 800, fontSize: 18 }}>★ {score}</div>
+          )}
+          {onReanalyze && (
+            <button onClick={() => { onClose(); onReanalyze() }} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 8, padding: "4px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>🔄 Phân tích lại</button>
           )}
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 16, cursor: "pointer" }}>✕</button>
         </div>
