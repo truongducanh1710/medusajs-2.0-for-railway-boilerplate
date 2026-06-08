@@ -21,14 +21,23 @@ function extractDriveFileId(link: string): string | null {
 
 function downloadFile(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const follow = (u: string, redirects = 5) => {
+    const follow = (u: string, redirects = 8) => {
       const mod = u.startsWith("https") ? https : http
-      mod.get(u, (res) => {
+      mod.get(u, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (redirects <= 0) return reject(new Error("Too many redirects"))
           return follow(res.headers.location, redirects - 1)
         }
         if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
+        const ct = res.headers["content-type"] || ""
+        if (ct.includes("text/html")) {
+          // Drive virus-scan warning page — try confirm URL
+          res.resume()
+          if (u.includes("export=download") && !u.includes("confirm=")) {
+            return follow(u + "&confirm=t", redirects - 1)
+          }
+          return reject(new Error("Drive trả về HTML thay vì video — file có thể bị giới hạn tải (cần đặt quyền 'Anyone with link can view')"))
+        }
         const out = fs.createWriteStream(dest)
         res.pipe(out)
         out.on("finish", () => { out.close(); resolve() })
@@ -135,6 +144,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         "-frames:v", "1", "-q:v", "4", "-vf", "scale=640:-1",
         framePath, "-y", "-loglevel", "quiet"
       ])
+    }
+
+    // Check: phải có ít nhất 3 frames
+    const extractedFrames = fs.readdirSync(frameDir).filter(f => f.endsWith(".jpg"))
+    if (extractedFrames.length < 3) {
+      const videoSize = fs.existsSync(videoPath) ? fs.statSync(videoPath).size : 0
+      const probErr = probe.stderr?.toString().slice(0, 200) || ""
+      return res.status(400).json({
+        error: `ffmpeg chỉ extract được ${extractedFrames.length} frames (video size: ${Math.round(videoSize / 1024)}KB, duration: ${duration}s). Video có thể bị lỗi codec hoặc không phải video thật. ffprobe: ${probErr}`
+      })
     }
 
     // 4. Extract + transcribe audio (nếu chưa có script)
