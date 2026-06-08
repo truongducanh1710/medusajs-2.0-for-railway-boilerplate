@@ -233,6 +233,7 @@ const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
   running:   { label: "Đang xử lý", c: "#2563EB", bg: "#DBEAFE" },
 }
 const MEDIA_ICON: Record<string, string> = { video: "🎬", photo: "🖼️", text: "📝" }
+const postDisplayDate = (p: any) => new Date(p.published_at || p.scheduled_for || p.created_at || Date.now())
 
 // ── Calendar View ────────────────────────────────────────────────────────────
 const DOW = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
@@ -251,7 +252,7 @@ function CalendarView({ posts }: { posts: any[] }) {
   const byDay: Record<string, any[]> = {}
   for (const p of posts) {
     if (p.status === "failed" || p.status === "error") continue
-    const d = new Date(p.created_at || p.scheduled_for)
+    const d = postDisplayDate(p)
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`
     ;(byDay[key] = byDay[key] || []).push(p)
   }
@@ -330,7 +331,7 @@ function CalendarView({ posts }: { posts: any[] }) {
           <div style={{ maxHeight: 480, overflowY: "auto" }}>
             {selectedPosts.map((p: any, i: number) => {
               const st = STATUS_POST[p.status] || STATUS_POST.pending
-              const time = new Date(p.created_at || p.scheduled_for).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+              const time = postDisplayDate(p).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
               return (
                 <div key={p.id} style={{ padding: "10px 16px", borderBottom: i < selectedPosts.length-1 ? "1px solid #F3F4F6" : "none" }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
@@ -384,10 +385,13 @@ function LichDangTab() {
   // Group theo ngày
   const grouped: Record<string, any[]> = {}
   for (const p of posts) {
-    const d = new Date(p.created_at || p.scheduled_for || Date.now())
+    const d = postDisplayDate(p)
     const key = d.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })
     ;(grouped[key] = grouped[key] || []).push(p)
   }
+  Object.values(grouped).forEach(dayPosts => {
+    dayPosts.sort((a, b) => postDisplayDate(b).getTime() - postDisplayDate(a).getTime())
+  })
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -431,7 +435,7 @@ function LichDangTab() {
           <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
             {dayPosts.map((p, i) => {
               const st = STATUS_POST[p.status] || STATUS_POST.pending
-              const time = new Date(p.created_at || p.scheduled_for).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+              const time = postDisplayDate(p).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
               const mediaIcon = MEDIA_ICON[p.media_type] || "📝"
               return (
                 <div key={p.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 16px", borderBottom: i < dayPosts.length - 1 ? "1px solid #F3F4F6" : "none" }}>

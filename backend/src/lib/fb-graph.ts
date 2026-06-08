@@ -141,6 +141,7 @@ async function publishVideoResumable(pageId: string, pageToken: string, message:
     try { initData = JSON.parse(initText) } catch { throw new Error(`FB init parse: ${initText.slice(0, 300)}`) }
     if (initData?.error) throw new FbError(initData.error.message, initData.error.code)
     const uploadSessionId = initData.upload_session_id
+    const uploadedVideoId = initData.video_id || initData.id
 
     // Bước 2: upload từng chunk theo end_offset FB trả về
     const buf = await fs.promises.readFile(tmpPath)
@@ -175,7 +176,7 @@ async function publishVideoResumable(pageId: string, pageToken: string, message:
     let finishData: any
     try { finishData = JSON.parse(finishText) } catch { throw new Error(`FB finish parse: ${finishText.slice(0, 300)}`) }
     if (finishData?.error) throw new FbError(finishData.error.message, finishData.error.code)
-    return finishData.video_id || finishData.id
+    return finishData.video_id || finishData.id || uploadedVideoId
   } finally {
     await cleanupTmp(tmpPath)
   }

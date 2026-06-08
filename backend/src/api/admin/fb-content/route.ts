@@ -18,8 +18,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const params: any[] = []
       let where = "WHERE 1=1"
       if (q.status) { params.push(q.status); where += ` AND p.status = $${params.length}` }
-      if (q.from) { params.push(q.from); where += ` AND COALESCE(p.scheduled_for, p.created_at) >= $${params.length}` }
-      if (q.to)   { params.push(q.to);   where += ` AND COALESCE(p.scheduled_for, p.created_at) <= $${params.length}` }
+      if (q.from) { params.push(q.from); where += ` AND COALESCE(p.published_at, p.scheduled_for, p.created_at) >= $${params.length}` }
+      if (q.to)   { params.push(q.to);   where += ` AND COALESCE(p.published_at, p.scheduled_for, p.created_at) <= $${params.length}` }
       // only_posted: chỉ video đã đăng FB thành công (có post_id) — cho tính năng Tạo Camp
       if (q.only_posted === "1") where += ` AND p.post_id IS NOT NULL AND p.media_type = 'video'`
       // maker: lọc theo MKT (tên người làm video) — admin chọn dropdown
@@ -34,7 +34,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         `SELECT p.*, v.vd_code, v.product, v.maker
            FROM fb_scheduled_post p
            LEFT JOIN mkt_video v ON v.id = p.video_id
-         ${where} ORDER BY COALESCE(p.scheduled_for, p.created_at) DESC LIMIT 200`,
+         ${where} ORDER BY COALESCE(p.published_at, p.scheduled_for, p.created_at) DESC LIMIT 200`,
         params
       )
       return res.json({ posts: rows })
