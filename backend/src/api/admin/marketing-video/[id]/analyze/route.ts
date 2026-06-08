@@ -1,15 +1,11 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo } from "../../_lib"
-import { execSync, spawnSync } from "child_process"
-import * as fs from "fs"
-import * as path from "path"
+import { Client } from "minio"
 import * as https from "https"
-import * as http from "http"
+import { ulid } from "ulid"
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ""
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-const GEMINI_MODEL = "google/gemini-3-flash-preview"
-const N_FRAMES = 20
+const GEMINI_MODEL = "google/gemini-2.5-pro-preview"
 
 function extractDriveFileId(link: string): string | null {
   const m = link.match(/\/d\/([a-zA-Z0-9_-]+)/)
@@ -19,33 +15,16 @@ function extractDriveFileId(link: string): string | null {
   return null
 }
 
-function downloadFile(url: string, dest: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const follow = (u: string, redirects = 8) => {
-      const mod = u.startsWith("https") ? https : http
-      mod.get(u, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          if (redirects <= 0) return reject(new Error("Too many redirects"))
-          return follow(res.headers.location, redirects - 1)
-        }
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
-        const ct = res.headers["content-type"] || ""
-        if (ct.includes("text/html")) {
-          // Drive virus-scan warning page — try confirm URL
-          res.resume()
-          if (u.includes("export=download") && !u.includes("confirm=")) {
-            return follow(u + "&confirm=t", redirects - 1)
-          }
-          return reject(new Error("Drive trả về HTML thay vì video — file có thể bị giới hạn tải (cần đặt quyền 'Anyone with link can view')"))
-        }
-        const out = fs.createWriteStream(dest)
-        res.pipe(out)
-        out.on("finish", () => { out.close(); resolve() })
-        out.on("error", reject)
-      }).on("error", reject)
-    }
-    follow(url)
-  })
+function getMinioClient() {
+  const endpoint = process.env.MINIO_ENDPOINT!
+  const accessKey = process.env.MINIO_ACCESS_KEY!
+  const secretKey = process.env.MINIO_SECRET_KEY!
+  let host = endpoint.replace(/^https?:\/\//, "").replace(/\/$/, "")
+  const useSSL = !endpoint.startsWith("http://")
+  let port = useSSL ? 443 : 80
+  const pm = host.match(/:(\d+)$/)
+  if (pm) { port = parseInt(pm[1], 10); host = host.replace(/:\d+$/, "") }
+  return new Client({ endPoint: host, port, useSSL, accessKey, secretKey, pathStyle: true, region: "us-east-1" })
 }
 
 function callOpenRouter(messages: any[]): Promise<any> {
@@ -65,10 +44,8 @@ function callOpenRouter(messages: any[]): Promise<any> {
       const chunks: Buffer[] = []
       res.on("data", (c) => chunks.push(c))
       res.on("end", () => {
-        try {
-          const text = Buffer.concat(chunks).toString("utf-8")
-          resolve(JSON.parse(text))
-        } catch (e) { reject(e) }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8"))) }
+        catch (e) { reject(e) }
       })
     })
     req.on("error", reject)
@@ -78,9 +55,7 @@ function callOpenRouter(messages: any[]): Promise<any> {
 }
 
 function parseJsonFromContent(content: string): any {
-  // Strip markdown code block nếu có
   const stripped = content.replace(/^```json\s*/m, "").replace(/\s*```\s*$/m, "").trim()
-  // Tìm JSON object đầu tiên
   const start = stripped.indexOf("{")
   const end = stripped.lastIndexOf("}")
   if (start === -1 || end === -1) throw new Error("No JSON object found")
@@ -94,7 +69,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const id = (req.params as any).id
   const pool = getPool()
 
-  // Lấy thông tin video
   const { rows } = await pool.query(
     `SELECT link, product, product_code, video_type, script FROM mkt_video WHERE id = $1`,
     [id]
@@ -107,119 +81,35 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const fileId = extractDriveFileId(row.link)
   if (!fileId) return res.status(400).json({ error: "Không nhận ra link Google Drive" })
 
-  const tmpDir = `/tmp/analyze_${id}`
-  const videoPath = `${tmpDir}/video.mp4`
-  const audioPath = `${tmpDir}/audio.mp3`
-  const frameDir = `${tmpDir}/frames`
+  const body = req.body as any
+  if (!body?.videoBase64) {
+    return res.status(400).json({ error: "Thiếu videoBase64 — frontend phải fetch video trước" })
+  }
+
+  const bucket = process.env.MINIO_BUCKET || "medusa-media"
+  const minio = getMinioClient()
+  const fileKey = `tmp-analyze-${id}-${ulid()}.mp4`
+  let minioUrl = ""
 
   try {
-    fs.mkdirSync(tmpDir, { recursive: true })
-    fs.mkdirSync(frameDir, { recursive: true })
+    // 1. Upload video lên MinIO
+    const videoBuf = Buffer.from(body.videoBase64, "base64")
+    await minio.putObject(bucket, fileKey, videoBuf, videoBuf.length, {
+      "Content-Type": "video/mp4",
+      "x-amz-acl": "public-read",
+    })
 
-    // 1. Nhận video blob từ frontend (browser có Google session) hoặc download server-side
-    const body = req.body as any
-    if (body?.videoBase64) {
-      // Frontend đã fetch video và gửi base64
-      const buf = Buffer.from(body.videoBase64, "base64")
-      fs.writeFileSync(videoPath, buf)
-    } else {
-      // Fallback: server download (chỉ hoạt động nếu file public)
-      const downloadUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`
-      await downloadFile(downloadUrl, videoPath)
-    }
+    const endpoint = process.env.MINIO_ENDPOINT!.replace(/\/$/, "")
+    minioUrl = `${endpoint}/${bucket}/${fileKey}`
 
-    if (!fs.existsSync(videoPath) || fs.statSync(videoPath).size < 10000) {
-      return res.status(400).json({ error: "Không nhận được video (file quá nhỏ hoặc lỗi)" })
-    }
-
-    // 2. Lấy duration
-    const probe = spawnSync("ffprobe", [
-      "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", videoPath
-    ])
-    const duration = parseFloat(probe.stdout?.toString().trim() || "60")
-
-    // 3. Extract N_FRAMES frames
-    const timestamps: number[] = []
-    for (let i = 1; i <= N_FRAMES; i++) {
-      timestamps.push(parseFloat((duration * i / (N_FRAMES + 1)).toFixed(2)))
-    }
-
-    for (let i = 0; i < timestamps.length; i++) {
-      const ts = timestamps[i]
-      const framePath = path.join(frameDir, `frame_${String(i + 1).padStart(3, "0")}.jpg`)
-      spawnSync("ffmpeg", [
-        "-ss", String(ts), "-i", videoPath,
-        "-frames:v", "1", "-q:v", "4", "-vf", "scale=640:-1",
-        framePath, "-y", "-loglevel", "quiet"
-      ])
-    }
-
-    // Check: phải có ít nhất 3 frames
-    const extractedFrames = fs.readdirSync(frameDir).filter(f => f.endsWith(".jpg"))
-    if (extractedFrames.length < 3) {
-      const videoSize = fs.existsSync(videoPath) ? fs.statSync(videoPath).size : 0
-      // Debug: check ffmpeg path + test extract stderr
-      const ffmpegWhich = spawnSync("which", ["ffmpeg"])
-      const ffmpegPath = ffmpegWhich.stdout?.toString().trim() || "not found"
-      const ffmpegVer = spawnSync("ffmpeg", ["-version"])
-      const ffmpegVerStr = ffmpegVer.stdout?.toString().slice(0, 80) || ffmpegVer.stderr?.toString().slice(0, 80) || "no output"
-      // Re-run 1 frame với loglevel verbose để lấy error
-      const testFrame = path.join(frameDir, "debug_frame.jpg")
-      const testRun = spawnSync("ffmpeg", [
-        "-ss", "5", "-i", videoPath,
-        "-frames:v", "1", "-q:v", "4", testFrame, "-y"
-      ])
-      const ffmpegErr = (testRun.stderr?.toString() || "").slice(0, 500)
-      return res.status(400).json({
-        error: `ffmpeg=«${ffmpegPath}» ver=«${ffmpegVerStr}» status=${testRun.status} stderr=«${ffmpegErr}»`
-      })
-    }
-
-    // 4. Extract + transcribe audio (nếu chưa có script)
-    let transcript = row.script || ""
-    if (!transcript) {
-      spawnSync("ffmpeg", [
-        "-i", videoPath, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "32k",
-        audioPath, "-y", "-loglevel", "quiet"
-      ])
-
-      if (fs.existsSync(audioPath) && fs.statSync(audioPath).size > 1000) {
-        const audioB64 = fs.readFileSync(audioPath).toString("base64")
-        const transcribeResp = await callOpenRouter([{
-          role: "user",
-          content: [
-            { type: "input_audio", input_audio: { data: audioB64, format: "mp3" } },
-            { type: "text", text: "Transcribe toàn bộ nội dung audio này sang tiếng Việt có dấu đầy đủ. Chỉ trả về text transcript, không thêm gì khác." }
-          ]
-        }])
-        transcript = transcribeResp?.choices?.[0]?.message?.content || ""
-      }
-    }
-
-    // 5. Build content array với frames + prompt
-    const content: any[] = []
-    const frameFiles = fs.readdirSync(frameDir).sort()
-    for (let i = 0; i < frameFiles.length; i++) {
-      const framePath = path.join(frameDir, frameFiles[i])
-      if (!fs.existsSync(framePath)) continue
-      const b64 = fs.readFileSync(framePath).toString("base64")
-      const ts = timestamps[i] ?? 0
-      content.push({ type: "text", text: `[Frame ${i + 1} tại ${ts}s]` })
-      content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } })
-    }
-
+    // 2. Gọi Gemini với video URL — Gemini 2.5 Pro hiểu video native
     const prompt = `Bạn là chuyên gia phân tích video bán hàng thương mại điện tử Việt Nam.
-
-Trên đây là ${frameFiles.length} frames trích từ video theo thứ tự thời gian (video dài ~${Math.round(duration)}s).
 
 Sản phẩm: ${row.product || "Không rõ"} (mã: ${row.product_code || "N/A"})
 Loại video: ${row.video_type || "Không rõ"}
-Script/Lời thoại đầy đủ:
-"""
-${transcript || "Không có script — chỉ phân tích từ hình ảnh"}
-"""
+${row.script ? `Script/Lời thoại:\n"""\n${row.script}\n"""` : ""}
 
-Dựa vào ${frameFiles.length} frames VÀ script trên, phân tích chi tiết TỪNG CẢNH video, khớp phần script đang được đọc tại mỗi frame. Phát hiện lỗi nếu có (font chữ sai, subtitle lỗi, cảnh mờ, màu sắc không nhất quán, v.v.)
+Xem toàn bộ video này và phân tích chi tiết từng cảnh, lời thoại, lỗi phát hiện được.
 
 Trả về JSON THUẦN (không markdown, không code block):
 {
@@ -228,12 +118,12 @@ Trả về JSON THUẦN (không markdown, không code block):
   "tung_canh": [
     {
       "frame": 1,
-      "timestamp": "4.4s",
-      "phan_script": "phần script đang được đọc tại timestamp này — trích nguyên văn tiếng Việt",
+      "timestamp": "0s-5s",
+      "phan_script": "phần lời thoại đang được nói tại đoạn này — trích nguyên văn",
       "mo_ta_hinh": "mô tả chi tiết hình ảnh: ai, làm gì, sản phẩm, background",
-      "text_overlay": "text thực tế nhìn thấy trong hình (subtitle, tiêu đề, giá...)",
+      "text_overlay": "text thực tế nhìn thấy trên màn hình (subtitle, tiêu đề, giá...)",
       "loai_canh": "hook|problem|demo|testimonial|lifestyle|cta|other",
-      "loi_phat_hien": "lỗi phát hiện được nếu có (font, màu, mờ, subtitle sai...) hoặc để trống",
+      "loi_phat_hien": "lỗi phát hiện nếu có (font, màu, mờ, subtitle sai...) hoặc để trống",
       "danh_gia": "đánh giá hiệu quả bán hàng của cảnh này"
     }
   ],
@@ -253,26 +143,29 @@ Trả về JSON THUẦN (không markdown, không code block):
 
 Viết toàn bộ bằng tiếng Việt có dấu đầy đủ.`
 
-    content.push({ type: "text", text: prompt })
+    const analysisResp = await callOpenRouter([{
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: minioUrl } },
+        { type: "text", text: prompt },
+      ]
+    }])
 
-    // 6. Gọi Gemini phân tích
-    const analysisResp = await callOpenRouter([{ role: "user", content }])
     const rawContent = analysisResp?.choices?.[0]?.message?.content || ""
-    if (!rawContent) return res.status(500).json({ error: "Model không trả về kết quả" })
+    if (!rawContent) {
+      const errMsg = analysisResp?.error?.message || JSON.stringify(analysisResp?.error) || "Model không trả về kết quả"
+      return res.status(500).json({ error: errMsg })
+    }
 
     let aiReview: any
     try {
       aiReview = parseJsonFromContent(rawContent)
     } catch {
-      // Nếu parse lỗi, lưu raw text vào note
       aiReview = { tong_quan: rawContent, diem_ban_hang: null, parse_error: true }
     }
 
     const aiScore = typeof aiReview.diem_ban_hang === "number" ? aiReview.diem_ban_hang : null
-    // Gắn transcript vào kết quả nếu mới transcribe
-    if (transcript && !row.script) aiReview._transcript = transcript
 
-    // 7. Lưu DB
     await pool.query(
       `UPDATE mkt_video SET ai_score = $1, ai_review = $2, updated_at = now() WHERE id = $3`,
       [aiScore, JSON.stringify(aiReview), id]
@@ -283,7 +176,7 @@ Viết toàn bộ bằng tiếng Việt có dấu đầy đủ.`
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   } finally {
-    // Cleanup tmp files
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+    // Xóa video tạm khỏi MinIO
+    try { await minio.removeObject(bucket, fileKey) } catch {}
   }
 }
