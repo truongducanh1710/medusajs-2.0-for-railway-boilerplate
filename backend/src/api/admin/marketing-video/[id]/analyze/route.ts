@@ -171,15 +171,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ])
       const ffmpegErr = (testRun.stderr?.toString() || "").slice(0, 500)
       return res.status(400).json({
-        error: `ffmpeg extract được ${extractedFrames.length} frames`,
-        debug: {
-          videoSize: Math.round(videoSize / 1024) + "KB",
-          duration,
-          ffmpegPath,
-          ffmpegVersion: ffmpegVerStr,
-          ffmpegStderr: ffmpegErr,
-          spawnStatus: testRun.status,
-        }
+        error: `ffmpeg=«${ffmpegPath}» ver=«${ffmpegVerStr}» status=${testRun.status} stderr=«${ffmpegErr}»`
       })
     }
 
