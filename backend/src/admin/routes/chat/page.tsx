@@ -398,8 +398,11 @@ export default function ChatPage() {
     if (!selectedId || !text.trim() || sending) return
     setSending(true)
     try {
-      await apiJson(`/admin/chat/conversations/${selectedId}/send`, "POST", { text })
+      const r = await apiJson(`/admin/chat/conversations/${selectedId}/send`, "POST", { text })
+      if (r?.error) { alert(`Lỗi gửi tin: ${r.error}`); return }
       setText(""); await loadDetail(selectedId); await loadConvs(tab, pageFilter)
+    } catch (e: any) {
+      alert(`Lỗi gửi tin: ${e?.message || "Không rõ lỗi"}`)
     } finally { setSending(false) }
   }
 

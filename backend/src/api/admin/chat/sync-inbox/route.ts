@@ -99,15 +99,9 @@ async function pullPageInbox(
           }
           saved++
         } else {
-          if (customerName) {
-            await pool.query(
-              `UPDATE fb_conversation SET customer_name=$3, updated_at=now()
-               WHERE page_id=$1 AND customer_psid=$2 AND customer_name IS NULL`,
-              [pageId, psid, customerName]
-            )
-          }
           await upsertIncomingMessage({
             pageId, psid,
+            customerName: customerName || undefined,
             text: text || "[attachment]",
             fbMessageId: msgId,
             attachments: msg.attachments?.data || [],

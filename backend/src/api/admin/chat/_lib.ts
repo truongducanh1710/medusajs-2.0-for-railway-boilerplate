@@ -294,6 +294,7 @@ export async function upsertIncomingMessage(opts: {
   pageId: string
   psid: string
   text: string
+  customerName?: string
   fbMessageId?: string
   attachments?: any[]
   raw?: any
@@ -309,10 +310,11 @@ export async function upsertIncomingMessage(opts: {
 
   const conv = await pool.query(
     `INSERT INTO fb_conversation
-      (page_id, page_name, customer_psid, status, last_message, last_message_at, unread_count, message_window_expires_at, handoff_reason, handoff_at, handoff_by, priority, bot_paused)
-     VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10,$11,$12)
+      (page_id, page_name, customer_psid, customer_name, status, last_message, last_message_at, unread_count, message_window_expires_at, handoff_reason, handoff_at, handoff_by, priority, bot_paused)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,$9,$10,$11,$12,$13)
      ON CONFLICT (page_id, customer_psid) DO UPDATE SET
        page_name = EXCLUDED.page_name,
+       customer_name = COALESCE(EXCLUDED.customer_name, fb_conversation.customer_name),
        last_message = EXCLUDED.last_message,
        last_message_at = EXCLUDED.last_message_at,
        unread_count = fb_conversation.unread_count + 1,
@@ -329,6 +331,7 @@ export async function upsertIncomingMessage(opts: {
       opts.pageId,
       pageName,
       opts.psid,
+      opts.customerName || null,
       handoff?.reason === "complaint" ? "complaint" : handoff ? "handoff" : "new",
       opts.text,
       messageAt,
