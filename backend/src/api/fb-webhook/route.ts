@@ -59,12 +59,48 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const pageId = String(entry.id)
     for (const event of entry.messaging ?? []) {
       const senderId = String(event?.sender?.id || "")
+      const recipientId = String(event?.recipient?.id || "")
       const message = event?.message
       const postback = event?.postback
       const text = String(message?.text || postback?.title || postback?.payload || "").trim()
-      if (!senderId || !text) continue
-      if (message?.is_echo) continue
+      if (!text) continue
 
+      // Echo = page trả lời khách — lưu lại dưới dạng outbound
+      if (message?.is_echo) {
+        const psid = recipientId
+        if (!psid || psid === pageId) continue
+        try {
+          const msgId = message?.mid || `echo:${pageId}:${psid}:${event.timestamp || Date.now()}`
+          await pool.query(
+            `INSERT INTO fb_conversation (page_id, customer_psid, page_name, status, last_message, last_message_at)
+             VALUES ($1,$2,(SELECT page_name FROM fb_page_token WHERE page_id=$1 LIMIT 1),'new',$3,now())
+             ON CONFLICT (page_id, customer_psid) DO UPDATE SET
+               last_message = EXCLUDED.last_message,
+               last_message_at = now(),
+               updated_at = now()`,
+            [pageId, psid, text]
+          )
+          const convRow = await pool.query(
+            `SELECT id FROM fb_conversation WHERE page_id=$1 AND customer_psid=$2`, [pageId, psid]
+          )
+          const convId = convRow.rows[0]?.id
+          if (convId) {
+            await pool.query(
+              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, created_at)
+               VALUES ($1,$2,'outbound','page',$3,$4,$5)
+               ON CONFLICT (fb_message_id) DO NOTHING`,
+              [convId, msgId, text, JSON.stringify(message?.attachments || []),
+               event.timestamp ? new Date(Number(event.timestamp)) : new Date()]
+            )
+          }
+          console.log(`[FB Chat Webhook] Saved echo/page-reply page=${pageId} psid=${psid}`)
+        } catch (e: any) {
+          console.error("[FB Chat Webhook] Echo save error:", e.message)
+        }
+        continue
+      }
+
+      if (!senderId) continue
       try {
         await upsertIncomingMessage({
           pageId,
