@@ -384,12 +384,38 @@ export default function ChatPage() {
   }, [detail?.messages])
   useEffect(() => {
     if (view !== "inbox") return
+
+    // SSE — nhận push event khi có tin mới
+    let es: EventSource | null = null
+    let retryTimer: any = null
+
+    const connectSSE = () => {
+      es = new EventSource("/admin/chat/events")
+      es.addEventListener("new_message", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        loadConvs(tab, pageFilter)
+        if (selectedId && data.conversation_id === selectedId) loadDetail(selectedId)
+      })
+      es.onerror = () => {
+        es?.close()
+        // Reconnect sau 5s nếu SSE bị drop
+        retryTimer = setTimeout(connectSSE, 5000)
+      }
+    }
+    connectSSE()
+
+    // Fallback polling 30s — bắt các thay đổi không qua webhook (assign, status...)
     clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
       loadConvs(tab, pageFilter)
       if (selectedId) loadDetail(selectedId)
-    }, 15000)
-    return () => clearInterval(timerRef.current)
+    }, 30000)
+
+    return () => {
+      es?.close()
+      clearTimeout(retryTimer)
+      clearInterval(timerRef.current)
+    }
   }, [view, tab, pageFilter, selectedId])
   useEffect(() => { if (view === "examples") loadExamples(exTab) }, [view])
   useEffect(() => { if (view === "settings") loadSettingPages() }, [view])

@@ -10,6 +10,24 @@ export function getChatPool(): Pool {
   return _pool
 }
 
+// ── SSE broadcast ─────────────────────────────────────────────────────────────
+type SseClient = { res: any; pageIds: string[] | null }
+const _sseClients = new Set<SseClient>()
+
+export function registerSseClient(res: any, pageIds: string[] | null): () => void {
+  const client: SseClient = { res, pageIds }
+  _sseClients.add(client)
+  return () => _sseClients.delete(client)
+}
+
+export function broadcastChatEvent(event: string, data: Record<string, any>) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+  for (const client of _sseClients) {
+    if (client.pageIds && !client.pageIds.includes(data.page_id)) continue
+    try { client.res.write(payload) } catch { _sseClients.delete(client) }
+  }
+}
+
 export type ChatAuthInfo = {
   email: string
   isSuper: boolean
@@ -356,6 +374,7 @@ export async function upsertIncomingMessage(opts: {
   if (handoff) {
     await logConversationEvent(pool, conversation.id, "bot_handoff_created", "bot", null, handoff)
   }
+  broadcastChatEvent("new_message", { page_id: opts.pageId, conversation_id: conversation.id, direction: "inbound" })
   await processBotDecision(pool, conversation.id, msg.rows[0].id, opts.text, agent, !!handoff)
   return { conversation, message: msg.rows[0], agent, handoff }
 }

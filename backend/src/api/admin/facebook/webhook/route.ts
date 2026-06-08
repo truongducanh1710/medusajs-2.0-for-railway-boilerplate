@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHmac, timingSafeEqual } from "crypto"
 import { Pool } from "pg"
-import { upsertIncomingMessage } from "../../chat/_lib"
+import { broadcastChatEvent, upsertIncomingMessage } from "../../chat/_lib"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -93,6 +93,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
                event.timestamp ? new Date(Number(event.timestamp)) : new Date()]
             )
           }
+          broadcastChatEvent("new_message", { page_id: pageId, conversation_id: convId, direction: "outbound" })
           console.log(`[FB Chat Webhook] Saved echo/page-reply page=${pageId} psid=${psid}`)
         } catch (e: any) {
           console.error("[FB Chat Webhook] Echo save error:", e.message)
