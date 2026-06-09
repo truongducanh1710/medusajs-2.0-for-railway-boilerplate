@@ -242,46 +242,63 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await waitFileActive(fileUri)
 
     // 3. Gọi Gemini phân tích
-    const prompt = `Bạn là chuyên gia phân tích video bán hàng thương mại điện tử Việt Nam.
+    const prompt = `Bạn là chuyên gia phân tích video quảng cáo bán hàng trên mạng xã hội (TikTok, Facebook Reels) cho thị trường Việt Nam, chuyên ngành đồ gia dụng.
 
-Sản phẩm: ${row.product || "Không rõ"} (mã: ${row.product_code || "N/A"})
-Loại video: ${row.video_type || "Không rõ"}
-${row.script ? `Script tham khảo:\n"""\n${row.script}\n"""` : ""}
+## THÔNG TIN VIDEO
+- Sản phẩm: ${row.product || "Không rõ"} (mã: ${row.product_code || "N/A"})
+- Loại video: ${row.video_type || "Không rõ"} ${row.video_type === "Real" ? "(người thật review/demo)" : row.video_type === "Video AI" ? "(AI tạo hình ảnh)" : ""}
+${row.script ? `- Script gốc:\n"""\n${row.script}\n"""` : "- Script: không có (tự transcribe từ audio)"}
 
-Xem toàn bộ video, phân tích chi tiết từng cảnh và transcribe chính xác lời thoại.
+## NHIỆM VỤ
+Xem TOÀN BỘ video từ đầu đến cuối. Thực hiện đồng thời:
+1. **Transcribe** chính xác 100% lời thoại/voiceover (tiếng Việt có dấu đầy đủ)
+2. **Phân tích từng cảnh** theo mốc thời gian thực tế trong video
+3. **Phát hiện lỗi** kỹ thuật và nội dung
+4. **Chấm điểm** theo rubric bên dưới
 
-Trả về JSON THUẦN (không markdown, không code block):
+## RUBRIC CHẤM ĐIỂM (diem_ban_hang 0-10)
+- Hook 3s đầu có bắt mắt/gây tò mò không? (2đ)
+- Demo sản phẩm có thuyết phục, rõ tính năng không? (3đ)
+- Lời thoại tự nhiên, đáng tin, không đọc script cứng không? (2đ)
+- CTA rõ ràng, tạo urgency không? (1đ)
+- Chất lượng hình ảnh/âm thanh tổng thể? (2đ)
+
+## OUTPUT — JSON THUẦN, không markdown, không giải thích thêm:
 {
-  "tong_quan": "mô tả tổng quan nội dung và phong cách video",
-  "diem_ban_hang": 8.5,
-  "loi_thoai": "toàn bộ lời thoại transcribe chính xác tiếng Việt có dấu",
+  "tong_quan": "1-2 câu mô tả style và nội dung chính",
+  "diem_ban_hang": 7.5,
+  "diem_chi_tiet": { "hook": 1.5, "demo": 2.5, "loi_thoai": 1.5, "cta": 0.5, "chat_luong": 1.5 },
+  "loi_thoai": "TOÀN BỘ lời thoại transcript chính xác, giữ nguyên cách nói tự nhiên",
   "tung_canh": [
     {
-      "frame": 1,
-      "timestamp": "0s-5s",
-      "phan_script": "lời thoại đang được nói tại đoạn này — trích nguyên văn",
-      "mo_ta_hinh": "mô tả chi tiết hình ảnh: ai, làm gì, sản phẩm, background",
-      "text_overlay": "text thực tế nhìn thấy trên màn hình (subtitle, tiêu đề, giá...)",
-      "loai_canh": "hook|problem|demo|testimonial|lifestyle|cta|other",
-      "loi_phat_hien": "lỗi phát hiện nếu có (font, màu, mờ, subtitle sai...) hoặc để trống",
-      "danh_gia": "đánh giá hiệu quả bán hàng của cảnh này"
+      "stt": 1,
+      "timestamp": "0s-4s",
+      "loai_canh": "hook|problem|demo|social_proof|cta|outro|other",
+      "loi_thoai_canh": "lời thoại tại đoạn này — trích nguyên văn từ transcript",
+      "mo_ta_hinh": "mô tả cụ thể: góc quay, chủ thể, hành động, background, ánh sáng",
+      "text_overlay": "text/subtitle hiển thị trên màn hình (nếu không có để trống)",
+      "am_thanh": "nhạc nền/hiệu ứng âm thanh đặc biệt nếu có (ASMR, tiếng xèo, nhạc trend...)",
+      "loi_ky_thuat": "lỗi kỹ thuật nếu thấy: mờ, rung, cắt đột ngột, subtitle sai, font lỗi... (để trống nếu ok)",
+      "hieu_qua": "nhận xét ngắn về hiệu quả bán hàng của cảnh này"
     }
   ],
-  "bo_cuc": {
-    "hook": "phân tích 3-5s đầu",
-    "pain_point": "phân tích đoạn nêu vấn đề",
-    "solution_demo": "phân tích đoạn demo sản phẩm",
-    "cta": "phân tích lời kêu gọi",
-    "diem_manh": ["..."],
-    "diem_yeu": ["..."]
+  "phan_tich_bo_cuc": {
+    "hook_manh": true,
+    "co_pain_point": true,
+    "co_demo_ro": true,
+    "co_social_proof": false,
+    "cta_ro_rang": true,
+    "nhan_xet": "nhận xét tổng về bố cục narrative flow"
   },
-  "loi_video": ["danh sách lỗi phát hiện trong toàn video nếu có"],
-  "goc_do_trien_khai": "đánh giá angle: vấn đề/giải pháp/lifestyle/tính năng/storytelling",
-  "danh_gia_visual": "đánh giá chất lượng hình ảnh, màu sắc, ánh sáng, font chữ",
-  "khuyen_nghi": ["tip cải thiện cụ thể và khả thi"]
+  "am_thanh_tong_the": "đánh giá nhạc nền, voiceover, hiệu ứng âm thanh",
+  "danh_gia_visual": "đánh giá màu sắc, ánh sáng, góc quay, font chữ overlay",
+  "goc_do_trien_khai": "angle chính: storytelling|demo|ugc|asmr|comparison|lifestyle|education",
+  "loi_video": ["mảng lỗi cần sửa — cụ thể và actionable"],
+  "diem_manh": ["điểm mạnh nổi bật — cụ thể"],
+  "khuyen_nghi": ["gợi ý cải thiện cụ thể, ưu tiên impact cao trước"]
 }
 
-Viết toàn bộ bằng tiếng Việt có dấu đầy đủ.`
+Viết toàn bộ tiếng Việt có dấu. Phân tích trung thực, không khen chung chung.`
 
     const rawContent = await callGemini(fileUri, prompt, requestedModel)
 

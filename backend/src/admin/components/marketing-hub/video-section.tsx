@@ -1222,38 +1222,66 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
             </div>
           )}
 
-          {/* Bố cục 4 ô */}
-          {result?.bo_cuc && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>BỐ CỤC VIDEO</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {/* Điểm chi tiết theo rubric */}
+          {result?.diem_chi_tiet && (
+            <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>ĐIỂM THEO TIÊU CHÍ</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
-                  { label: "🪝 Hook", key: "hook", color: "#EFF6FF" },
-                  { label: "😣 Pain Point", key: "pain_point", color: "#FFF7ED" },
-                  { label: "🛍 Demo", key: "solution_demo", color: "#F0FDF4" },
-                  { label: "📣 CTA", key: "cta", color: "#FDF4FF" },
-                ].map(({ label, key, color }) => result.bo_cuc[key] && (
-                  <div key={key} style={{ background: color, borderRadius: 8, padding: "10px 12px" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#374151", marginBottom: 4 }}>{label}</div>
-                    <div style={{ fontSize: 12, color: "#4B5563", lineHeight: 1.5 }}>{result.bo_cuc[key]}</div>
+                  { key: "hook", label: "🪝 Hook", max: 2 },
+                  { key: "demo", label: "🛍 Demo", max: 3 },
+                  { key: "loi_thoai", label: "🗣 Lời thoại", max: 2 },
+                  { key: "cta", label: "📣 CTA", max: 1 },
+                  { key: "chat_luong", label: "🎬 Chất lượng", max: 2 },
+                ].map(({ key, label, max }) => {
+                  const val = result.diem_chi_tiet[key]
+                  if (val == null) return null
+                  const pct = val / max
+                  const c = pct >= 0.8 ? "#166534" : pct >= 0.5 ? "#713F12" : "#991B1B"
+                  const bg = pct >= 0.8 ? "#DCFCE7" : pct >= 0.5 ? "#FEF9C3" : "#FEE2E2"
+                  return <div key={key} style={{ background: bg, borderRadius: 8, padding: "6px 10px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#6B7280", marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: c }}>{val}<span style={{ fontSize: 10, fontWeight: 400 }}>/{max}</span></div>
                   </div>
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Bố cục */}
+          {result?.phan_tich_bo_cuc && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>BỐ CỤC NARRATIVE</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {[
+                  { key: "hook_manh", label: "Hook mạnh" },
+                  { key: "co_pain_point", label: "Pain point" },
+                  { key: "co_demo_ro", label: "Demo rõ" },
+                  { key: "co_social_proof", label: "Social proof" },
+                  { key: "cta_ro_rang", label: "CTA rõ" },
+                ].map(({ key, label }) => (
+                  <span key={key} style={{ fontSize: 11, borderRadius: 20, padding: "3px 10px", fontWeight: 600, background: result.phan_tich_bo_cuc[key] ? "#DCFCE7" : "#F3F4F6", color: result.phan_tich_bo_cuc[key] ? "#166534" : "#9CA3AF" }}>
+                    {result.phan_tich_bo_cuc[key] ? "✓" : "✗"} {label}
+                  </span>
                 ))}
               </div>
-              {/* Điểm mạnh / yếu */}
-              {(result.bo_cuc.diem_manh?.length > 0 || result.bo_cuc.diem_yeu?.length > 0) && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                  {result.bo_cuc.diem_manh?.length > 0 && (
-                    <div style={{ background: "#F0FDF4", borderRadius: 8, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", marginBottom: 6 }}>✅ Điểm mạnh</div>
-                      {result.bo_cuc.diem_manh.map((d: string, i: number) => <div key={i} style={{ fontSize: 12, color: "#166534", marginBottom: 2 }}>• {d}</div>)}
-                    </div>
-                  )}
-                  {result.bo_cuc.diem_yeu?.length > 0 && (
-                    <div style={{ background: "#FFF7ED", borderRadius: 8, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#9A3412", marginBottom: 6 }}>⚠️ Điểm yếu</div>
-                      {result.bo_cuc.diem_yeu.map((d: string, i: number) => <div key={i} style={{ fontSize: 12, color: "#9A3412", marginBottom: 2 }}>• {d}</div>)}
-                    </div>
-                  )}
+              {result.phan_tich_bo_cuc.nhan_xet && <div style={{ fontSize: 12, color: "#4B5563", background: "#F9FAFB", borderRadius: 8, padding: "8px 12px" }}>{result.phan_tich_bo_cuc.nhan_xet}</div>}
+            </div>
+          )}
+
+          {/* Điểm mạnh / lỗi */}
+          {(result?.diem_manh?.length > 0 || result?.loi_video?.length > 0) && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+              {result?.diem_manh?.length > 0 && (
+                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", marginBottom: 6 }}>✅ Điểm mạnh</div>
+                  {result.diem_manh.map((d: string, i: number) => <div key={i} style={{ fontSize: 12, color: "#166534", marginBottom: 3 }}>• {d}</div>)}
+                </div>
+              )}
+              {result?.loi_video?.length > 0 && (
+                <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#BE123C", marginBottom: 6 }}>⚠ Lỗi phát hiện</div>
+                  {result.loi_video.map((l: string, i: number) => <div key={i} style={{ fontSize: 12, color: "#9F1239", marginBottom: 3 }}>• {l}</div>)}
                 </div>
               )}
             </div>
@@ -1262,38 +1290,45 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
           {/* Từng cảnh */}
           {result?.tung_canh?.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>PHÂN TÍCH TỪNG CẢNH ({result.tung_canh.length} frames)</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>PHÂN TÍCH TỪNG CẢNH ({result.tung_canh.length} cảnh)</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {result.tung_canh.map((c: any, i: number) => (
-                  <div key={i} style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: "10px 12px", background: c.loi_phat_hien ? "#FFF8F8" : "#FAFAFA" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                      <span style={{ background: "#1877F2", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 6px" }}>Frame {c.frame}</span>
+                  <div key={i} style={{ border: `1px solid ${c.loi_ky_thuat ? "#FECDD3" : "#E5E7EB"}`, borderRadius: 8, padding: "10px 12px", background: c.loi_ky_thuat ? "#FFF8F8" : "#FAFAFA" }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                      <span style={{ background: "#1877F2", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 6px" }}>#{c.stt || i + 1}</span>
                       <span style={{ fontSize: 11, color: "#6B7280" }}>{c.timestamp}</span>
-                      {c.loai_canh && <span style={{ background: "#F3F4F6", fontSize: 10, color: "#374151", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>{c.loai_canh}</span>}
-                      {c.loi_phat_hien && <span style={{ background: "#FEE2E2", color: "#991B1B", fontSize: 10, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>⚠ {c.loi_phat_hien}</span>}
+                      {c.loai_canh && <span style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: 10, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>{c.loai_canh}</span>}
+                      {c.loi_ky_thuat && <span style={{ background: "#FEE2E2", color: "#991B1B", fontSize: 10, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>⚠ {c.loi_ky_thuat}</span>}
                     </div>
-                    {c.phan_script && <div style={{ fontSize: 12, color: "#1D4ED8", fontStyle: "italic", marginBottom: 4, lineHeight: 1.5 }}>"{c.phan_script}"</div>}
+                    {(c.loi_thoai_canh || c.phan_script) && <div style={{ fontSize: 12, color: "#1D4ED8", fontStyle: "italic", marginBottom: 4, lineHeight: 1.6, background: "#EFF6FF", borderRadius: 6, padding: "4px 8px" }}>"{c.loi_thoai_canh || c.phan_script}"</div>}
                     {c.mo_ta_hinh && <div style={{ fontSize: 12, color: "#374151", marginBottom: 2 }}>🎬 {c.mo_ta_hinh}</div>}
-                    {c.text_overlay && <div style={{ fontSize: 12, color: "#6B7280" }}>📝 {c.text_overlay}</div>}
-                    {c.danh_gia && <div style={{ fontSize: 11, color: "#059669", marginTop: 4 }}>→ {c.danh_gia}</div>}
+                    {c.text_overlay && <div style={{ fontSize: 12, color: "#7C3AED", marginBottom: 2 }}>📝 {c.text_overlay}</div>}
+                    {c.am_thanh && <div style={{ fontSize: 12, color: "#0891B2", marginBottom: 2 }}>🔊 {c.am_thanh}</div>}
+                    {(c.hieu_qua || c.danh_gia) && <div style={{ fontSize: 11, color: "#059669", marginTop: 4, fontStyle: "italic" }}>→ {c.hieu_qua || c.danh_gia}</div>}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Góc độ + visual */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+          {/* Âm thanh + visual + góc độ */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
             {result?.goc_do_trien_khai && (
               <div style={{ background: "#F8FAFC", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>GÓC ĐỘ TRIỂN KHAI</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>GÓC ĐỘ</div>
                 <div style={{ fontSize: 12, color: "#374151" }}>{result.goc_do_trien_khai}</div>
               </div>
             )}
             {result?.danh_gia_visual && (
               <div style={{ background: "#F8FAFC", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>ĐÁNH GIÁ VISUAL</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>VISUAL</div>
                 <div style={{ fontSize: 12, color: "#374151" }}>{result.danh_gia_visual}</div>
+              </div>
+            )}
+            {result?.am_thanh_tong_the && (
+              <div style={{ background: "#F8FAFC", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>ÂM THANH</div>
+                <div style={{ fontSize: 12, color: "#374151" }}>{result.am_thanh_tong_the}</div>
               </div>
             )}
           </div>
