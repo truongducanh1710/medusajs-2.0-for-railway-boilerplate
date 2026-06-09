@@ -1,5 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo } from "../../_lib"
+import { isLarkFileUrl, downloadToTmp, cleanupTmp } from "../../../../lib/fb-drive"
+import * as fs from "fs"
 import * as https from "https"
 import * as http from "http"
 
@@ -120,6 +122,69 @@ async function uploadToGemini(fileId: string): Promise<string> {
       }).on("error", reject)
     }
     followDrive(driveUrl)
+  })
+
+  return fileUri
+}
+
+// Upload từ file local (dùng cho Lark — đã download về tmp trước)
+async function uploadLocalFileToGemini(filePath: string): Promise<string> {
+  const stat = await fs.promises.stat(filePath)
+  const fileSize = stat.size
+  const fileBuffer = await fs.promises.readFile(filePath)
+
+  const initBody = Buffer.from(JSON.stringify({ file: { display_name: `analyze-${Date.now()}` } }), "utf-8")
+  const uploadUrl = await new Promise<string>((resolve, reject) => {
+    const req = https.request({
+      hostname: GEMINI_BASE,
+      path: `/upload/v1beta/files?key=${GEMINI_API_KEY}`,
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": fileSize,
+        "X-Goog-Upload-Header-Content-Type": "video/mp4",
+        "Content-Type": "application/json",
+        "Content-Length": initBody.length,
+      },
+    }, (res) => {
+      const url = res.headers["x-goog-upload-url"] as string
+      res.resume()
+      if (url) resolve(url)
+      else reject(new Error("No upload URL from Gemini Files API"))
+    })
+    req.on("error", reject)
+    req.write(initBody)
+    req.end()
+  })
+
+  const fileUri = await new Promise<string>((resolve, reject) => {
+    const uploadUrlObj = new URL(uploadUrl)
+    const req = https.request({
+      hostname: uploadUrlObj.hostname,
+      path: uploadUrlObj.pathname + uploadUrlObj.search,
+      method: "POST",
+      headers: {
+        "Content-Length": fileSize,
+        "X-Goog-Upload-Command": "upload, finalize",
+        "X-Goog-Upload-Offset": "0",
+        "Content-Type": "video/mp4",
+      },
+    }, (res) => {
+      const chunks: Buffer[] = []
+      res.on("data", c => chunks.push(c))
+      res.on("end", () => {
+        try {
+          const result = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
+          const uri = result?.file?.uri
+          if (uri) resolve(uri)
+          else reject(new Error("No file URI: " + JSON.stringify(result)))
+        } catch (e) { reject(e) }
+      })
+    })
+    req.on("error", reject)
+    req.write(fileBuffer)
+    req.end()
   })
 
   return fileUri
@@ -262,10 +327,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   if (!rows.length) return res.status(404).json({ error: "Không tìm thấy video" })
 
   const row = rows[0]
-  if (!row.link) return res.status(400).json({ error: "Video chưa có link Drive" })
+  if (!row.link) return res.status(400).json({ error: "Video chưa có link Drive/Lark" })
 
-  const fileId = extractDriveFileId(row.link)
-  if (!fileId) return res.status(400).json({ error: "Không nhận ra link Google Drive" })
+  const isLark = isLarkFileUrl(row.link)
+  const fileId = isLark ? null : extractDriveFileId(row.link)
+  if (!isLark && !fileId) return res.status(400).json({ error: "Không nhận ra link Google Drive hoặc Lark" })
 
   if (!GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
 
@@ -297,9 +363,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   ].filter(Boolean).join("\n") || "Chưa có thông tin chi tiết SP."
 
   let fileUri = ""
+  let larkTmpPath: string | null = null
   try {
-    // 1. Upload video Drive → Gemini Files API (stream, không lưu disk)
-    fileUri = await uploadToGemini(fileId)
+    // 1. Upload video → Gemini Files API
+    if (isLark) {
+      // Lark: download về tmp trước, rồi upload lên Gemini
+      larkTmpPath = await downloadToTmp(row.link)
+      fileUri = await uploadLocalFileToGemini(larkTmpPath)
+    } else {
+      // Drive: stream thẳng, không lưu disk
+      fileUri = await uploadToGemini(fileId!)
+    }
 
     // 2. Chờ Gemini xử lý xong
     await waitFileActive(fileUri)
@@ -455,7 +529,7 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   } finally {
-    // Xóa file khỏi Gemini Files API
     if (fileUri) await deleteGeminiFile(fileUri).catch(() => {})
+    if (larkTmpPath) await cleanupTmp(larkTmpPath).catch(() => {})
   }
 }
