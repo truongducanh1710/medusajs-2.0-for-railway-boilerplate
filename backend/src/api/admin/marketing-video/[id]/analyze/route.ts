@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo } from "../../_lib"
-import { isLarkFileUrl, downloadToTmp, cleanupTmp } from "../../../../lib/fb-drive"
+import { isLarkFileUrl, downloadToTmp, cleanupTmp } from "../../../../../lib/fb-drive"
 import * as fs from "fs"
 import * as https from "https"
 import * as http from "http"
