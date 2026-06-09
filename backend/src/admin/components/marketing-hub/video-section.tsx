@@ -227,34 +227,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     if (analyzingId) return
     if (row.aiReview) { setAiModal({ row, result: row.aiReview }); return }
     setAnalyzingId(row.id)
+    setToast("Đang upload + phân tích AI (~20s)...")
     try {
-      // Fetch video từ Drive qua browser (có Google session cookie) → base64 → gửi backend
-      let videoBase64: string | undefined
-      if (row.link) {
-        const fileId = row.link.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1] || row.link.match(/[?&]id=([a-zA-Z0-9_-]+)/)?.[1]
-        if (fileId) {
-          try {
-            setToast("Đang tải video từ Drive...")
-            const driveUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`
-            const resp = await fetch(driveUrl)
-            const ct = resp.headers.get("content-type") || ""
-            if (resp.ok && (ct.includes("video") || ct.includes("octet"))) {
-              const blob = await resp.blob()
-              videoBase64 = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader()
-                reader.onload = () => {
-                  const dataUrl = reader.result as string
-                  resolve(dataUrl.split(",")[1]) // strip "data:video/mp4;base64,"
-                }
-                reader.onerror = reject
-                reader.readAsDataURL(blob)
-              })
-            }
-          } catch {}
-        }
-      }
-      setToast("Đang phân tích AI...")
-      const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", videoBase64 ? { videoBase64 } : {})
+      const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", {})
       if (result?.ai_review) {
         setAiModal({ row: { ...row, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review })
         reload()
