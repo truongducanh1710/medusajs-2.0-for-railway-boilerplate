@@ -1,6 +1,6 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { Pool } from "pg"
-import { logAiUsage } from "../../lib/ai-usage.js"
+import { logAiUsage } from "../../lib/ai-usage"
 
 // Singleton pg pool dùng chung — tránh tạo connection mới mỗi lần gọi
 let _pool: Pool | null = null
