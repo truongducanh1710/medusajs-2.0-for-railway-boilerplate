@@ -1408,6 +1408,14 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
             </div>
           )}
 
+          {/* So sánh benchmark */}
+          {result?.so_sanh_benchmark && (
+            <div style={{ background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0369A1", marginBottom: 6 }}>📊 SO SÁNH VỚI VIDEO CÙNG SP</div>
+              <div style={{ fontSize: 13, color: "#0C4A6E", lineHeight: 1.7 }}>{result.so_sanh_benchmark}</div>
+            </div>
+          )}
+
           {/* Khuyến nghị */}
           {result?.khuyen_nghi?.length > 0 && (
             <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
