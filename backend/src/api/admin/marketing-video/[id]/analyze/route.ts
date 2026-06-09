@@ -312,11 +312,19 @@ Viết toàn bộ tiếng Việt có dấu. Phân tích trung thực, không khe
 
     const aiScore = typeof aiReview.diem_ban_hang === "number" ? aiReview.diem_ban_hang : null
 
-    // 4. Lưu DB
-    await pool.query(
-      `UPDATE mkt_video SET ai_score = $1, ai_review = $2, updated_at = now() WHERE id = $3`,
-      [aiScore, JSON.stringify(aiReview), id]
-    )
+    // 4. Lưu DB — nếu chưa có script thì bổ sung lời thoại transcribe vào cột script
+    const newScript = (!row.script && aiReview.loi_thoai) ? aiReview.loi_thoai : null
+    if (newScript) {
+      await pool.query(
+        `UPDATE mkt_video SET ai_score = $1, ai_review = $2, script = $3, updated_at = now() WHERE id = $4`,
+        [aiScore, JSON.stringify(aiReview), newScript, id]
+      )
+    } else {
+      await pool.query(
+        `UPDATE mkt_video SET ai_score = $1, ai_review = $2, updated_at = now() WHERE id = $3`,
+        [aiScore, JSON.stringify(aiReview), id]
+      )
+    }
 
     return res.json({ ok: true, ai_score: aiScore, ai_review: aiReview })
 
