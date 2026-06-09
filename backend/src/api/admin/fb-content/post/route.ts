@@ -1,6 +1,13 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, getPageTokens, filterByPerm, ensureTables } from "../_lib"
 import { publishPost, isTokenError } from "../../../../lib/fb-graph"
+
+async function pushNotif(notifSvc: any, title: string, description: string) {
+  try {
+    await notifSvc.createNotifications({ channel: "feed", template: "admin-ui", to: "admin", data: { title, description } })
+  } catch {}
+}
 
 const BATCH = 5
 
@@ -19,7 +26,7 @@ function parseScheduled(iso?: string): number | null {
  * ghi fb_scheduled_post, và set mkt_video.status='posted' nếu có video_id.
  */
 async function runPublishJob(
-  pool: any, jobId: string,
+  pool: any, jobId: string, notifSvc: any,
   pages: Array<{ page_id: string; page_name: string; access_token: string }>,
   payload: { message: string; driveUrl?: string; mediaType: "text" | "video" | "photo"; scheduledTime: number | null; videoId?: string; email: string }
 ) {
@@ -70,6 +77,27 @@ async function runPublishJob(
     const newStatus = payload.scheduledTime ? "scheduled" : "posted"
     await pool.query(`UPDATE mkt_video SET status = $1, updated_at = now() WHERE id = $2`, [newStatus, payload.videoId])
   }
+
+  // Push notification vào panel
+  const okCount = progress.filter(p => p.status === "success").length
+  const failCount = progress.filter(p => p.status !== "success").length
+  const isScheduled = !!payload.scheduledTime
+  if (allOk) {
+    await pushNotif(notifSvc,
+      isScheduled ? `📅 Đã lên lịch ${okCount} trang` : `✅ Đã đăng thành công ${okCount} trang`,
+      progress.map(p => `${p.page_name}: ${p.status === "success" ? "✓" : "✗ " + (p.error || "")}`).join("\n")
+    )
+  } else if (anyOk) {
+    await pushNotif(notifSvc,
+      `⚠️ Đăng xong: ${okCount} thành công, ${failCount} thất bại`,
+      progress.map(p => `${p.page_name}: ${p.status === "success" ? "✓" : "✗ " + (p.error || "")}`).join("\n")
+    )
+  } else {
+    await pushNotif(notifSvc,
+      `❌ Đăng thất bại tất cả ${failCount} trang`,
+      progress.map(p => `${p.page_name}: ${p.error || "lỗi không xác định"}`).join("\n")
+    )
+  }
 }
 
 /**
@@ -110,12 +138,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       [selected.length, auth.email]
     )
 
+    const notifSvc = req.scope.resolve(Modules.NOTIFICATION)
+
     // chạy nền — không await
-    runPublishJob(pool, job.id, selected, {
+    runPublishJob(pool, job.id, notifSvc, selected, {
       message, driveUrl: b.drive_url, mediaType: (b.media_type ?? "text"),
       scheduledTime, videoId: b.video_id, email: auth.email,
     }).catch(async (e) => {
       try { await pool.query(`UPDATE fb_publish_job SET status='failed', finished_at=now() WHERE id=$1`, [job.id]) } catch {}
+      try { await pushNotif(notifSvc, "❌ Job đăng FB bị lỗi nghiêm trọng", e?.message?.slice(0, 150)) } catch {}
       console.error("[fb-content publish job error]", e?.message)
     })
 

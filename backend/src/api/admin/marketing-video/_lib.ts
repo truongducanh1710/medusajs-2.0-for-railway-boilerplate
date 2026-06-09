@@ -2,6 +2,29 @@ import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { Pool } from "pg"
 
+/**
+ * Push thông báo vào Medusa Notifications panel.
+ * data.title + data.description là 2 field panel render.
+ * Fire-and-forget — không throw để không ảnh hưởng response chính.
+ */
+export async function pushNotification(req: MedusaRequest, opts: {
+  title: string
+  description?: string
+  channel?: string
+}): Promise<void> {
+  try {
+    const notifService = req.scope.resolve(Modules.NOTIFICATION)
+    await (notifService as any).createNotifications({
+      channel: opts.channel ?? "feed",
+      template: "admin-ui",
+      to: "admin",
+      data: { title: opts.title, description: opts.description ?? "" },
+    })
+  } catch {
+    // silent — không block response
+  }
+}
+
 let _pool: Pool | null = null
 export function getPool(): Pool {
   if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })

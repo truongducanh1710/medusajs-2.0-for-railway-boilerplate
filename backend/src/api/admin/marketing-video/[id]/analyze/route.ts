@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo } from "../../_lib"
+import { getPool, getAuthInfo, pushNotification } from "../../_lib"
 import { isLarkFileUrl, downloadToTmp, cleanupTmp } from "../../../../../lib/fb-drive"
 import * as fs from "fs"
 import * as https from "https"
@@ -524,9 +524,19 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
       )
     }
 
+    const scoreLabel = aiScore != null ? ` — điểm ${aiScore}/10` : ""
+    await pushNotification(req, {
+      title: `✅ Phân tích xong: ${row.product || id}`,
+      description: `${aiReview.tong_quan ? aiReview.tong_quan.slice(0, 120) + "…" : ""}${scoreLabel}`,
+    })
+
     return res.json({ ok: true, ai_score: aiScore, ai_review: aiReview })
 
   } catch (err: any) {
+    await pushNotification(req, {
+      title: `❌ Phân tích thất bại`,
+      description: err.message?.slice(0, 150),
+    }).catch(() => {})
     return res.status(500).json({ error: err.message })
   } finally {
     if (fileUri) await deleteGeminiFile(fileUri).catch(() => {})
