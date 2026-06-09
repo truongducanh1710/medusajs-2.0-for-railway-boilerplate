@@ -321,7 +321,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const pool = getPool()
 
   const { rows } = await pool.query(
-    `SELECT link, product, product_code, video_type, script FROM mkt_video WHERE id = $1`,
+    `SELECT link, product, product_code, video_type, script, vd_code, maker FROM mkt_video WHERE id = $1`,
     [id]
   )
   if (!rows.length) return res.status(404).json({ error: "Không tìm thấy video" })
@@ -524,17 +524,19 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
       )
     }
 
-    const scoreLabel = aiScore != null ? ` — điểm ${aiScore}/10` : ""
+    const scoreLabel = aiScore != null ? ` · ★${aiScore}/10` : ""
+    const vdLabel = row.vd_code ? `[${row.vd_code}] ` : ""
+    const makerLabel = row.maker ? ` · ${row.maker}` : ""
     await pushNotification(req, {
-      title: `✅ Phân tích xong: ${row.product || id}`,
-      description: `${aiReview.tong_quan ? aiReview.tong_quan.slice(0, 120) + "…" : ""}${scoreLabel}`,
+      title: `✅ ${vdLabel}${row.product || "Video"}${scoreLabel}${makerLabel}`,
+      description: `${aiReview.tong_quan ? aiReview.tong_quan.slice(0, 150) + "…" : ""}\n→ Mở Marketing Hub để xem chi tiết`,
     })
 
     return res.json({ ok: true, ai_score: aiScore, ai_review: aiReview })
 
   } catch (err: any) {
     await pushNotification(req, {
-      title: `❌ Phân tích thất bại`,
+      title: `❌ Phân tích thất bại: ${row?.vd_code || id}`,
       description: err.message?.slice(0, 150),
     }).catch(() => {})
     return res.status(500).json({ error: err.message })
