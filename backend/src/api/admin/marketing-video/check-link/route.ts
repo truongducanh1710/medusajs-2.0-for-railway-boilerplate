@@ -29,58 +29,12 @@ function headRequest(url: string, redirects = 6): Promise<{ status: number; cont
   })
 }
 
-let larkTokenCache: { token: string; expiresAt: number } | null = null
-
-async function getLarkToken(): Promise<string | null> {
-  const appId = process.env.LARK_APP_ID
-  const appSecret = process.env.LARK_APP_SECRET
-  if (!appId || !appSecret) return null
-
-  const now = Date.now()
-  if (larkTokenCache && larkTokenCache.expiresAt > now + 5 * 60 * 1000) return larkTokenCache.token
-
-  const res = await fetch("https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-  })
-  const data: any = await res.json().catch(() => null)
-  if (!res.ok || data?.code !== 0 || !data?.tenant_access_token) return null
-
-  larkTokenCache = { token: data.tenant_access_token, expiresAt: now + (Number(data.expire || 7200) - 300) * 1000 }
-  return larkTokenCache.token
-}
 
 async function checkLarkFile(url: string): Promise<{ ok: boolean; error?: string }> {
   const fileToken = extractLarkFileToken(url)
   if (!fileToken) return { ok: false, error: "Không nhận ra định dạng link Lark — cần dạng .../file/XXXXX" }
-
-  const token = await getLarkToken()
-  if (!token) return { ok: true }
-
-  // Thử drive/v2/files trước (file upload thường), fallback sang drive/v1/files (docs/sheets)
-  let r = await fetch(`https://open.larksuite.com/open-apis/drive/v2/files/${encodeURIComponent(fileToken)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  }).catch(() => null)
-
-  // Nếu v2 không hỗ trợ loại file này, thử v1
-  let data: any = r ? await r.json().catch(() => null) : null
-  if (data?.code === 1061045 || data?.code === 1061001) {
-    r = await fetch(`https://open.larksuite.com/open-apis/drive/v1/files/${encodeURIComponent(fileToken)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }).catch(() => null)
-    data = r ? await r.json().catch(() => null) : null
-  }
-
-  if (!r) return { ok: false, error: "Không kết nối được Lark API" }
-
-  if (data?.code === 0) return { ok: true }
-  // Log để debug — xóa sau khi xác định được lỗi
-  console.log("[lark-check] http=" + r.status + " code=" + data?.code + " msg=" + data?.msg)
-  if (data?.code === 99991663 || data?.code === 99991661) {
-    return { ok: false, error: "Không tìm thấy file Lark — kiểm tra lại link" }
-  }
-  // HTTP 404 hoặc permission error hoặc lỗi khác → cho qua
+  // Lark API không cho phép bot check file attachment qua metadata endpoint.
+  // Chỉ validate format link là đủ — nếu token extract được thì link hợp lệ.
   return { ok: true }
 }
 
