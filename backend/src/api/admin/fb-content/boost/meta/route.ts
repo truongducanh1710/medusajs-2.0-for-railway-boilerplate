@@ -55,7 +55,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }))
 
     // Trả thêm danh sách pages (cho mode Dark post)
-    const pool = (await import("../../_lib")).getPool()
+    const pool = (await import("../../_lib.js")).getPool()
     const { rows: pages } = await pool.query(
       `SELECT page_id, page_name FROM fb_page_token ORDER BY page_name`
     ).catch(() => ({ rows: [] }))
