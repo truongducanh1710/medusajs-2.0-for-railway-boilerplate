@@ -11,6 +11,8 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/ai-settings": "page.bao-cao.view",
   "/marketing-hub": "page.marketing-video.view",
   "/chat": "page.chat.view",
+  "/mkt-tasks": "page.mkt-tasks.view",
+  "/mkt-chat": "page.mkt-chat.view",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {

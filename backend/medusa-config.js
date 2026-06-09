@@ -126,6 +126,10 @@ const medusaConfig = {
       key: "pageModule",
     },
     {
+      resolve: "./src/modules/mkt-task",
+      key: "mktTaskModule",
+    },
+    {
       resolve: "./src/modules/pancake-sync",
       key: "pancakeSyncModule",
     },

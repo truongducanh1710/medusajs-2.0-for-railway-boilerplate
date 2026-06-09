@@ -1,0 +1,116 @@
+import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
+
+function actorId(req: MedusaRequest): string | null {
+  const auth = (req as any).auth_context
+  return auth?.actor_type === "user" ? auth.actor_id : null
+}
+
+async function isManager(req: MedusaRequest): Promise<boolean> {
+  const uid = actorId(req)
+  if (!uid) return false
+  const superEmail = process.env.SUPER_ADMIN_EMAIL
+  const userModule = req.scope.resolve(Modules.USER)
+  const user = await userModule.retrieveUser(uid, { select: ["email", "metadata"] })
+  if (user.email === superEmail) return true
+  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
+    ? (user.metadata as any).permissions : []
+  return perms.includes("page.mkt-tasks.manage")
+}
+
+// GET /admin/mkt-tasks/:id
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const uid = actorId(req)
+    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+
+    const svc = req.scope.resolve("mktTaskModule") as any
+    const { id } = req.params
+
+    const [task] = await svc.listMktTasks({ id, deleted_at: null })
+    if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
+
+    const manager = await isManager(req)
+    if (!manager && task.assignee_id !== uid) {
+      return res.status(403).json({ error: "Không có quyền" })
+    }
+
+    res.json({ task })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+// PATCH /admin/mkt-tasks/:id
+export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const uid = actorId(req)
+    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+
+    const svc = req.scope.resolve("mktTaskModule") as any
+    const { id } = req.params
+
+    const [task] = await svc.listMktTasks({ id, deleted_at: null })
+    if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
+
+    const manager = await isManager(req)
+    if (!manager && task.assignee_id !== uid) {
+      return res.status(403).json({ error: "Không có quyền" })
+    }
+
+    const body = req.body as any
+    const update: Record<string, any> = {}
+
+    if (manager) {
+      // Manager có thể sửa tất cả fields
+      if (body.title !== undefined) update.title = body.title
+      if (body.notes !== undefined) update.notes = body.notes
+      if (body.deadline !== undefined) update.deadline = body.deadline ? new Date(body.deadline) : null
+      if (body.assignee_id !== undefined) update.assignee_id = body.assignee_id
+      if (body.channel_id !== undefined) update.channel_id = body.channel_id
+    }
+    // Cả manager và MKT đều có thể đổi status
+    if (body.status !== undefined) {
+      const valid = ["todo", "in_progress", "done", "cancelled"]
+      if (!valid.includes(body.status)) return res.status(400).json({ error: "Status không hợp lệ" })
+      update.status = body.status
+    }
+
+    if (Object.keys(update).length === 0) return res.status(400).json({ error: "Không có field nào để cập nhật" })
+
+    const updated = await svc.updateMktTasks({ id }, update)
+
+    // Post system message if status changed to done and channel_id exists
+    if (body.status === "done" && task.channel_id) {
+      await svc.createMktMessages({
+        channel_id: task.channel_id,
+        author_id: uid,
+        content: `✅ Task hoàn thành: "${task.title}"`,
+        task_id: id,
+        msg_type: "task_done",
+        metadata: { task_title: task.title },
+      })
+    }
+
+    res.json({ task: updated })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+// DELETE /admin/mkt-tasks/:id
+export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const uid = actorId(req)
+    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
+
+    const svc = req.scope.resolve("mktTaskModule") as any
+    const { id } = req.params
+
+    await svc.updateMktTasks({ id }, { deleted_at: new Date() })
+    res.json({ success: true })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
