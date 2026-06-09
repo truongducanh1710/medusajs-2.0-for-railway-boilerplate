@@ -56,7 +56,7 @@ async function checkLarkFile(url: string): Promise<{ ok: boolean; error?: string
   if (!fileToken) return { ok: false, error: "Không nhận ra định dạng link Lark — cần dạng .../file/XXXXX" }
 
   const token = await getLarkToken()
-  if (!token) return { ok: true, warn: "Chưa cấu hình Lark app — không thể xác minh, link được chấp nhận" }
+  if (!token) return { ok: true }
 
   // Thử drive/v2/files trước (file upload thường), fallback sang drive/v1/files (docs/sheets)
   let r = await fetch(`https://open.larksuite.com/open-apis/drive/v2/files/${encodeURIComponent(fileToken)}`, {
