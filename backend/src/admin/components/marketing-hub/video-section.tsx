@@ -156,7 +156,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [aiModal, setAiModal] = useState<{ row: VideoRow; result: any } | null>(null)
   const [aiModel, setAiModel] = useState<string>("gemini-3.1-pro-preview")
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
-  const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
+  const defaultNguoi = "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
   const [toast, setToast] = useState<string | null>(null)
   const [fbLinkModal, setFbLinkModal] = useState<{ row: VideoRow } | null>(null)
@@ -638,15 +638,17 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         {row.link && (
                           <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
                         )}
-                        {row.link && (
+                        {/* Nút xem/phân tích AI — MKT chỉ xem nếu đã có kết quả, admin mới trigger phân tích */}
+                        {(row.aiScore != null || isSuper) && row.link && (
                           <button
-                            onClick={e => { e.stopPropagation(); analyzeVideo(row) }}
-                            title={row.aiReview ? "Xem phân tích AI" : "Phân tích video AI"}
-                            disabled={analyzingId === row.id}
+                            onClick={e => { e.stopPropagation(); if (isSuper || row.aiReview) analyzeVideo(row) }}
+                            title={row.aiReview ? "Xem phân tích AI" : (isSuper ? "Phân tích video AI" : "")}
+                            disabled={analyzingId === row.id || (!isSuper && !row.aiReview)}
                             style={{
                               background: row.aiScore != null ? (row.aiScore >= 8 ? "#DCFCE7" : row.aiScore >= 6 ? "#FEF9C3" : "#FEE2E2") : "none",
                               border: `1px solid ${row.aiScore != null ? (row.aiScore >= 8 ? "#86EFAC" : row.aiScore >= 6 ? "#FDE047" : "#FCA5A5") : "#E5E7EB"}`,
-                              borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: analyzingId === row.id ? "wait" : "pointer",
+                              borderRadius: 6, padding: "3px 7px", fontSize: 12,
+                              cursor: analyzingId === row.id ? "wait" : (row.aiReview || isSuper) ? "pointer" : "default",
                               color: row.aiScore != null ? (row.aiScore >= 8 ? "#166534" : row.aiScore >= 6 ? "#713F12" : "#991B1B") : "#6B7280",
                               fontWeight: row.aiScore != null ? 700 : 400,
                               minWidth: 36, textAlign: "center",
@@ -914,7 +916,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </div>
       )}
       {/* AI Review Modal */}
-      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} onClose={() => setAiModal(null)} onReanalyze={(model) => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); setToast("Đang phân tích lại..."); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", { model: model || aiModel }).then(result => { if (result?.ai_review) { const updatedScript = (!r.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : r.script; setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review, script: updatedScript }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) }} />}
+      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} isSuper={isSuper} onClose={() => setAiModal(null)} onReanalyze={isSuper ? (model) => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); setToast("Đang phân tích lại..."); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", { model: model || aiModel }).then(result => { if (result?.ai_review) { const updatedScript = (!r.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : r.script; setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review, script: updatedScript }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) } : undefined} />}
     </div>
   )
 }
@@ -1305,7 +1307,7 @@ const AI_MODELS = [
   { value: "gemini-2.5-flash",       label: "Gemini 2.5 Flash", tier: "flash" },
 ]
 
-function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: VideoRow; result: any; aiModel?: string; onClose: () => void; onReanalyze?: (model?: string) => void }) {
+function AiReviewModal({ row, result, aiModel, isSuper, onClose, onReanalyze }: { row: VideoRow; result: any; aiModel?: string; isSuper?: boolean; onClose: () => void; onReanalyze?: (model?: string) => void }) {
   const [selectedModel, setSelectedModel] = React.useState(aiModel || "gemini-3.1-pro-preview")
   const score = result?.diem_ban_hang ?? row.aiScore
   const scoreColor = score >= 8 ? "#166534" : score >= 6 ? "#713F12" : "#991B1B"
@@ -1317,7 +1319,7 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
         <div style={{ background: "#1877F2", color: "#fff", padding: "16px 20px", borderRadius: "14px 14px 0 0", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Phân tích AI — {row.sp}</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>{row.adName} · {row.loaiVideo}</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>{row.vdCode && <span style={{ fontFamily: "monospace", marginRight: 6 }}>{row.vdCode}</span>}{row.nguoiLam && <span style={{ marginRight: 6 }}>· {row.nguoiLam}</span>}{row.loaiVideo}</div>
           </div>
           {score != null && (
             <div style={{ background: scoreBg, color: scoreColor, borderRadius: 20, padding: "4px 14px", fontWeight: 800, fontSize: 18 }}>★ {score}</div>
