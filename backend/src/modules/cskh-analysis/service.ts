@@ -1,5 +1,6 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { Pool } from "pg"
+import { logAiUsage } from "../../lib/ai-usage.js"
 
 // Singleton pg pool dùng chung — tránh tạo connection mới mỗi lần gọi
 let _pool: Pool | null = null
@@ -119,6 +120,15 @@ async function callQwen(contexts: object[]): Promise<any[]> {
   }
 
   const data = await res.json() as any
+  if (data.usage?.prompt_tokens || data.usage?.completion_tokens) {
+    logAiUsage({
+      feature: "cskh_analysis",
+      model: MODEL,
+      provider: "openrouter",
+      usage: { prompt_tokens: data.usage.prompt_tokens ?? 0, completion_tokens: data.usage.completion_tokens ?? 0 },
+      context: { batch_size: contexts.length },
+    })
+  }
   const content = data.choices?.[0]?.message?.content ?? "{}"
   const parsed = JSON.parse(content)
   return Array.isArray(parsed.results) ? parsed.results : []

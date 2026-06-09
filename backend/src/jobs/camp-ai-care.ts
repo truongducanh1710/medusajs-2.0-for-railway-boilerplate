@@ -2,6 +2,7 @@ import { MedusaContainer } from "@medusajs/framework"
 import OpenAI from "openai"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
+import { logAiUsage } from "../lib/ai-usage.js"
 
 const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-pro"
 const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "google/gemini-3.5-flash"
@@ -577,6 +578,16 @@ Bắt đầu ngay.`,
       messages.push(msg)
       totalPromptTokens += res.usage?.prompt_tokens ?? 0
       totalCompletionTokens += res.usage?.completion_tokens ?? 0
+      if (res.usage?.prompt_tokens || res.usage?.completion_tokens) {
+        logAiUsage({
+          feature: "camp_ai_agent",
+          run_id: runId,
+          model: activeModel,
+          provider: DEEPSEEK_DIRECT_MODELS.has(activeModel) ? "deepseek" : "openrouter",
+          usage: { prompt_tokens: res.usage.prompt_tokens ?? 0, completion_tokens: res.usage.completion_tokens ?? 0 },
+          context: { mkt: opts?.mkt ?? null, iteration: i + 1 },
+        })
+      }
 
       if (!msg.tool_calls?.length) {
         await heartbeat({ last_action: `Iter ${i + 1}: agent kết thúc`, tokens_used: totalPromptTokens + totalCompletionTokens })
@@ -652,6 +663,16 @@ Bắt đầu ngay.`,
 
       const evalContent = evalRes.choices[0].message.content ?? "{}"
       logger?.info?.(`[CampAI Evaluator] Raw (${evalContent.length} chars): ${evalContent.slice(0, 500)}`)
+      if (evalRes.usage?.prompt_tokens || evalRes.usage?.completion_tokens) {
+        logAiUsage({
+          feature: "camp_ai_evaluator",
+          run_id: runId,
+          model: activeEvaluatorModel,
+          provider: DEEPSEEK_DIRECT_MODELS.has(activeEvaluatorModel) ? "deepseek" : "openrouter",
+          usage: { prompt_tokens: evalRes.usage.prompt_tokens ?? 0, completion_tokens: evalRes.usage.completion_tokens ?? 0 },
+          context: { recs_count: recsForEval.length },
+        })
+      }
 
       let parsed: any = {}
       try {
