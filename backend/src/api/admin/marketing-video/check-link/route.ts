@@ -75,10 +75,12 @@ async function checkLarkFile(url: string): Promise<{ ok: boolean; error?: string
   if (!r) return { ok: false, error: "Không kết nối được Lark API" }
 
   if (data?.code === 0) return { ok: true }
-  if (data?.code === 99991663 || data?.code === 99991661 || r.status === 404) {
+  // Log để debug — xóa sau khi xác định được lỗi
+  console.log("[lark-check] http=" + r.status + " code=" + data?.code + " msg=" + data?.msg)
+  if (data?.code === 99991663 || data?.code === 99991661) {
     return { ok: false, error: "Không tìm thấy file Lark — kiểm tra lại link" }
   }
-  // Permission error hoặc lỗi khác → cho qua (bot không có quyền check không có nghĩa file không tồn tại)
+  // HTTP 404 hoặc permission error hoặc lỗi khác → cho qua
   return { ok: true }
 }
 
