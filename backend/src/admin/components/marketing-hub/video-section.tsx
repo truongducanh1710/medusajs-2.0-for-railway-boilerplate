@@ -150,6 +150,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [analyzingId, setAnalyzingId] = useState<string | null>(null)
   const [aiModal, setAiModal] = useState<{ row: VideoRow; result: any } | null>(null)
+  const [aiModel, setAiModel] = useState<string>("gemini-3.1-pro-preview")
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
   const defaultNguoi = (!isSuper && mktCode) ? mktCode : "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
@@ -223,13 +224,13 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     catch (e: any) { setToast("Lỗi: " + e.message) }
   }
 
-  const analyzeVideo = async (row: VideoRow) => {
+  const analyzeVideo = async (row: VideoRow, model?: string) => {
     if (analyzingId) return
-    if (row.aiReview) { setAiModal({ row, result: row.aiReview }); return }
+    if (row.aiReview && !model) { setAiModal({ row, result: row.aiReview }); return }
     setAnalyzingId(row.id)
-    setToast("Đang upload + phân tích AI (~20s)...")
+    setToast("Đang phân tích AI (~20-40s)...")
     try {
-      const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", {})
+      const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: model || aiModel })
       if (result?.ai_review) {
         setAiModal({ row: { ...row, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review })
         reload()
@@ -356,6 +357,24 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         )}
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
         <button onClick={resetColWidths} title="Reset độ rộng cột về mặc định" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "5px 8px", fontSize: 11, color: "#9CA3AF", cursor: "pointer" }}>⇔</button>
+        <select
+          value={aiModel}
+          onChange={e => setAiModel(e.target.value)}
+          title="Model AI dùng để phân tích video"
+          style={{ fontSize: 11, border: "1px solid #E5E7EB", borderRadius: 6, padding: "4px 6px", color: "#374151", background: "#F9FAFB", cursor: "pointer", maxWidth: 160 }}
+        >
+          <optgroup label="★ Chất lượng cao">
+            <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ($2/M)</option>
+            <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          </optgroup>
+          <optgroup label="⚡ Nhanh / Tiết kiệm">
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash ($1.5/M)</option>
+            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite ($0.25/M)</option>
+            <option value="gemini-3-flash-preview">Gemini 3 Flash ($0.5/M)</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+          </optgroup>
+        </select>
         <button onClick={adding ? cancelAdd : openAdd} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: adding ? "#FEE2E2" : "#1877F2", border: adding ? "1px solid #FECACA" : "none", borderRadius: 6, cursor: "pointer", color: adding ? "#DC2626" : "#fff", fontSize: 12, fontWeight: 600, padding: "5px 12px", whiteSpace: "nowrap" }}>
           {adding ? "✕ Hủy" : "＋ Thêm dòng"}
         </button>
@@ -765,7 +784,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </div>
       )}
       {/* AI Review Modal */}
-      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} onClose={() => setAiModal(null)} onReanalyze={() => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", {}).then(result => { if (result?.ai_review) { setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) }} />}
+      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} onClose={() => setAiModal(null)} onReanalyze={(model) => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); setToast("Đang phân tích lại..."); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", { model: model || aiModel }).then(result => { if (result?.ai_review) { setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) }} />}
     </div>
   )
 }
@@ -1146,7 +1165,18 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
   )
 }
 
-function AiReviewModal({ row, result, onClose, onReanalyze }: { row: VideoRow; result: any; onClose: () => void; onReanalyze?: () => void }) {
+const AI_MODELS = [
+  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "pro" },
+  { value: "gemini-3-pro-preview",   label: "Gemini 3 Pro",   tier: "pro" },
+  { value: "gemini-2.5-pro",         label: "Gemini 2.5 Pro", tier: "pro" },
+  { value: "gemini-3.5-flash",       label: "Gemini 3.5 Flash", tier: "flash" },
+  { value: "gemini-3.1-flash-lite",  label: "Gemini 3.1 Flash Lite", tier: "flash" },
+  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash", tier: "flash" },
+  { value: "gemini-2.5-flash",       label: "Gemini 2.5 Flash", tier: "flash" },
+]
+
+function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: VideoRow; result: any; aiModel?: string; onClose: () => void; onReanalyze?: (model?: string) => void }) {
+  const [selectedModel, setSelectedModel] = React.useState(aiModel || "gemini-3.1-pro-preview")
   const score = result?.diem_ban_hang ?? row.aiScore
   const scoreColor = score >= 8 ? "#166534" : score >= 6 ? "#713F12" : "#991B1B"
   const scoreBg = score >= 8 ? "#DCFCE7" : score >= 6 ? "#FEF9C3" : "#FEE2E2"
@@ -1163,7 +1193,12 @@ function AiReviewModal({ row, result, onClose, onReanalyze }: { row: VideoRow; r
             <div style={{ background: scoreBg, color: scoreColor, borderRadius: 20, padding: "4px 14px", fontWeight: 800, fontSize: 18 }}>★ {score}</div>
           )}
           {onReanalyze && (
-            <button onClick={() => { onClose(); onReanalyze() }} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 8, padding: "4px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>🔄 Phân tích lại</button>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} style={{ fontSize: 11, borderRadius: 6, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.15)", color: "#fff", padding: "3px 6px", cursor: "pointer" }}>
+                {AI_MODELS.map(m => <option key={m.value} value={m.value} style={{ color: "#111", background: "#fff" }}>{m.label}</option>)}
+              </select>
+              <button onClick={() => { onClose(); onReanalyze(selectedModel) }} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 8, padding: "4px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>🔄 Phân tích lại</button>
+            </div>
           )}
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 16, cursor: "pointer" }}>✕</button>
         </div>

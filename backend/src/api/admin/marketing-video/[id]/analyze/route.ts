@@ -4,8 +4,13 @@ import * as https from "https"
 import * as http from "http"
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ""
-const GEMINI_MODEL = "gemini-3.1-pro-preview"
+const GEMINI_MODEL_DEFAULT = "gemini-3.1-pro-preview"
 const GEMINI_BASE = "generativelanguage.googleapis.com"
+
+const ALLOWED_MODELS = new Set([
+  "gemini-3.1-pro-preview", "gemini-3-pro-preview", "gemini-2.5-pro",
+  "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash",
+])
 
 function extractDriveFileId(link: string): string | null {
   const m = link.match(/\/d\/([a-zA-Z0-9_-]+)/)
@@ -159,7 +164,7 @@ async function deleteGeminiFile(fileUri: string): Promise<void> {
   })
 }
 
-async function callGemini(fileUri: string, prompt: string): Promise<string> {
+async function callGemini(fileUri: string, prompt: string, model = GEMINI_MODEL_DEFAULT): Promise<string> {
   const body = Buffer.from(JSON.stringify({
     contents: [{
       parts: [
@@ -173,7 +178,7 @@ async function callGemini(fileUri: string, prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: GEMINI_BASE,
-      path: `/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      path: `/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
       method: "POST",
       headers: {
         "Content-Type": "application/json; charset=utf-8",
@@ -226,6 +231,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (!GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
 
+  const requestedModel = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : GEMINI_MODEL_DEFAULT
+
   let fileUri = ""
   try {
     // 1. Upload video Drive → Gemini Files API (stream, không lưu disk)
@@ -276,7 +283,7 @@ Trả về JSON THUẦN (không markdown, không code block):
 
 Viết toàn bộ bằng tiếng Việt có dấu đầy đủ.`
 
-    const rawContent = await callGemini(fileUri, prompt)
+    const rawContent = await callGemini(fileUri, prompt, requestedModel)
 
     let aiReview: any
     try {
