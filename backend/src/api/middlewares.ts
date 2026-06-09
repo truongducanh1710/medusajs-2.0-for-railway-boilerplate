@@ -96,6 +96,7 @@ export default defineMiddlewares({
     { matcher: "/admin/webcake-leads*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/webcake-leads*", method: ["PATCH"], middlewares: [requirePerm("page.don-hang.edit")] },
     { matcher: "/admin/pancake-sync/fb-accounts*", middlewares: [requirePerm("page.bao-cao.fb-accounts")] },
+    { matcher: "/admin/sql-query*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-backfill*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-status*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
