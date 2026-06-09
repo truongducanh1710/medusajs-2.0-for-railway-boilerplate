@@ -259,6 +259,70 @@ export async function getAdsetsPixelMap(accId: string): Promise<Array<{
   return all
 }
 
+/** Lấy thông tin 1 ad từ FB: creative, adset, campaign. */
+export async function getFbAdInfo(adId: string): Promise<{
+  ad_id: string; ad_name: string
+  creative: { id: string; object_story_id?: string; video_id?: string; image_hash?: string; name?: string }
+  adset: { id: string; name: string; campaign_id: string }
+  campaign: { id: string; name: string; objective: string }
+}> {
+  const d = await callFb("GET", `/${adId}?fields=id,name,creative{id,name,object_story_id,video_id,image_hash},adset{id,name,campaign_id},campaign{id,name,objective}`)
+  return {
+    ad_id: d.id,
+    ad_name: d.name,
+    creative: d.creative || {},
+    adset: d.adset || {},
+    campaign: d.campaign || {},
+  }
+}
+
+/** Tạo unpublished (dark) post trên page để dùng làm creative cho ads.
+ * Trả object_story_id = page_id + "_" + post_id. */
+export async function createUnpublishedPost(opts: {
+  pageId: string; pageToken: string; message: string
+  videoId?: string; imageUrl?: string; link?: string; name?: string; description?: string
+}): Promise<{ post_id: string; object_story_id: string }> {
+  const body: Record<string, any> = {
+    message: opts.message,
+    published: false,
+  }
+  if (opts.videoId) {
+    // Video dark post — qua /{page-id}/videos
+    const v = await fetch(`https://graph.facebook.com/v18.0/${opts.pageId}/videos`, {
+      method: "POST",
+      body: (() => {
+        const f = new URLSearchParams()
+        f.append("access_token", opts.pageToken)
+        f.append("description", opts.message)
+        f.append("video_id", opts.videoId)
+        f.append("published", "false")
+        return f
+      })(),
+    }).then(r => r.json()) as any
+    if (v?.error) throw new Error(`FB dark video: ${v.error.message}`)
+    return { post_id: v.id, object_story_id: `${opts.pageId}_${v.id}` }
+  }
+  if (opts.link) {
+    body.link = opts.link
+    if (opts.name) body.name = opts.name
+    if (opts.description) body.description = opts.description
+  }
+  if (opts.imageUrl) body.url = opts.imageUrl
+  const endpoint = opts.imageUrl ? `/${opts.pageId}/photos` : `/${opts.pageId}/feed`
+  const r = await fetch(`https://graph.facebook.com/v18.0${endpoint}`, {
+    method: "POST",
+    body: (() => {
+      const f = new URLSearchParams()
+      f.append("access_token", opts.pageToken)
+      for (const [k, v] of Object.entries(body)) f.append(k, String(v))
+      return f
+    })(),
+  }).then(r => r.json()) as any
+  if (r?.error) throw new Error(`FB dark post: ${r.error.message}`)
+  const pid = r.post_id || r.id
+  return { post_id: pid, object_story_id: `${opts.pageId}_${pid}` }
+}
+
 export type AuthInfo = { email: string; isSuper: boolean; isAdmin: boolean; fbPageIds: string[] | null; mktCode: string | null }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {

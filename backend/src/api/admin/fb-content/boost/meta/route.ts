@@ -54,7 +54,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         mkt_name: dbMap[a.id]?.mkt_name || "",
       }))
 
-    return res.json({ accounts })
+    // Trả thêm danh sách pages (cho mode Dark post)
+    const pool = (await import("../../_lib")).getPool()
+    const { rows: pages } = await pool.query(
+      `SELECT page_id, page_name FROM fb_page_token ORDER BY page_name`
+    ).catch(() => ({ rows: [] }))
+
+    return res.json({ accounts, pages })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

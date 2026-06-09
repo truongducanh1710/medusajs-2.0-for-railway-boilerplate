@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, ensureTables, callFb } from "../_lib"
+import { getPool, getAuthInfo, ensureTables, callFb, getFbAdInfo, createUnpublishedPost, getPageTokens } from "../_lib"
 
 // ── Naming helpers (mirror src/admin/lib/camp-naming.ts) ────────────────────
 const UTM_STATIC =
@@ -8,6 +8,23 @@ const OFFLINE_DATASET_ID = "941188901527786" // PX CHUNG VIETNAM
 
 const todayDM = (d = new Date()) => `${d.getDate()}/${d.getMonth() + 1}`
 const buildAdName = (vd: string, postId: string) => `${vd} - ${postId}`
+
+/**
+ * GET /admin/fb-content/boost?ad_id=xxx
+ * Preview thông tin ad nguồn (mode from_ad_id).
+ */
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const auth = await getAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+    const adId = (req.query as any).ad_id
+    if (!adId) return res.status(400).json({ error: "Thiếu ad_id" })
+    const info = await getFbAdInfo(adId)
+    return res.json(info)
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+}
 
 /**
  * POST /admin/fb-content/boost
@@ -22,11 +39,191 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const b = req.body as any
     const mode: string = b.mode || "existing_adset"
-    if (!b.post_id) return res.status(400).json({ error: "Thiếu post_id" })
     if (!b.ad_account_id) return res.status(400).json({ error: "Thiếu ad_account_id" })
 
     const pool = getPool()
     await ensureTables(pool)
+    const adAcc: string = b.ad_account_id
+
+    // ── MODE C: từ FB Ad ID cũ ────────────────────────────────────────────
+    if (mode === "from_ad_id") {
+      if (!b.source_ad_id) return res.status(400).json({ error: "Thiếu source_ad_id" })
+
+      const adInfo = await getFbAdInfo(b.source_ad_id)
+      const srcCreative = adInfo.creative
+      if (!srcCreative?.id) return res.status(400).json({ error: "Không lấy được creative từ ad nguồn" })
+
+      // Clone creative (reuse object_story_id hoặc video_id)
+      const creativeBody: Record<string, any> = {
+        name: `${adInfo.ad_name} - clone`,
+        url_tags: UTM_STATIC,
+      }
+      if (srcCreative.object_story_id) {
+        creativeBody.object_story_id = srcCreative.object_story_id
+      } else if (srcCreative.video_id) {
+        creativeBody.object_story_id = srcCreative.object_story_id || ""
+      }
+      const creative = await callFb("POST", `/${adAcc}/adcreatives`, creativeBody)
+
+      // Nếu chọn adset có sẵn → thêm ad luôn
+      if (b.adset_id) {
+        const ad = await callFb("POST", `/${adAcc}/ads`, {
+          name: b.ad_name || adInfo.ad_name,
+          adset_id: b.adset_id,
+          creative: { creative_id: creative.id },
+          status: "PAUSED",
+        })
+        return res.json({
+          mode, ad_id: ad.id, adset_id: b.adset_id, creative_id: creative.id,
+          source_ad: { id: adInfo.ad_id, name: adInfo.ad_name, campaign: adInfo.campaign.name },
+          adsmanager_url: `https://business.facebook.com/adsmanager/manage/ads?act=${adAcc.replace("act_", "")}`,
+        })
+      }
+
+      // Nếu tạo camp mới từ ad cũ — dùng campaign_name client gửi hoặc tự sinh từ camp nguồn
+      const campaignName: string = b.campaign_name?.trim() || `${adInfo.campaign.name} - clone ${todayDM()}`
+      const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
+        name: campaignName,
+        objective: adInfo.campaign.objective || "OUTCOME_SALES",
+        status: "PAUSED",
+        special_ad_categories: [],
+      })
+      const targeting: any = {
+        geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
+        age_min: Number(b.age_min) || 25,
+        locales: [27],
+        targeting_automation: { advantage_audience: 1 },
+      }
+      if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
+        targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
+      const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
+      if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+      const adset = await callFb("POST", `/${adAcc}/adsets`, {
+        name: b.adset_name || adInfo.adset.name || "Ad Set",
+        campaign_id: campaign.id,
+        daily_budget: Number(b.daily_budget) || 500000,
+        billing_event: "IMPRESSIONS",
+        optimization_goal: "OFFSITE_CONVERSIONS",
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        promoted_object: promotedObject,
+        targeting,
+        status: "PAUSED",
+      })
+      const ad = await callFb("POST", `/${adAcc}/ads`, {
+        name: b.ad_name || adInfo.ad_name,
+        adset_id: adset.id,
+        creative: { creative_id: creative.id },
+        status: "PAUSED",
+      })
+      return res.json({
+        mode, campaign_id: campaign.id, campaign_name: campaignName,
+        adset_id: adset.id, ad_id: ad.id, creative_id: creative.id,
+        source_ad: { id: adInfo.ad_id, name: adInfo.ad_name },
+        adsmanager_url: `https://business.facebook.com/adsmanager/manage/campaigns?act=${adAcc.replace("act_", "")}`,
+      })
+    }
+
+    // ── MODE D: video/ảnh chưa đăng → dark post → camp ───────────────────
+    if (mode === "unpublished_post") {
+      if (!b.page_id) return res.status(400).json({ error: "Thiếu page_id" })
+      if (!b.message) return res.status(400).json({ error: "Thiếu message" })
+
+      const pageTokens = await getPageTokens(pool)
+      const pageToken = pageTokens.find(t => t.page_id === b.page_id)?.access_token
+      if (!pageToken) return res.status(400).json({ error: "Không tìm thấy page token cho page này" })
+
+      const { post_id, object_story_id } = await createUnpublishedPost({
+        pageId: b.page_id,
+        pageToken,
+        message: b.message,
+        videoId: b.video_id,
+        imageUrl: b.image_url,
+        link: b.link,
+        name: b.link_name,
+        description: b.link_description,
+      })
+
+      const vdCode: string = b.vd_code || "VD"
+      const adName = buildAdName(vdCode, post_id)
+
+      // Nếu vào adset có sẵn → chỉ tạo creative + ad
+      if (b.adset_id) {
+        const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
+          name: `${vdCode} creative`,
+          object_story_id,
+          url_tags: UTM_STATIC,
+        })
+        const ad = await callFb("POST", `/${adAcc}/ads`, {
+          name: adName,
+          adset_id: b.adset_id,
+          creative: { creative_id: creative.id },
+          status: "PAUSED",
+        })
+        return res.json({
+          mode, ad_id: ad.id, adset_id: b.adset_id, creative_id: creative.id,
+          dark_post_id: post_id, object_story_id,
+          adsmanager_url: `https://business.facebook.com/adsmanager/manage/ads?act=${adAcc.replace("act_", "")}`,
+        })
+      }
+
+      // Tạo camp mới hoàn chỉnh
+      const dailyBudget = Number(b.daily_budget) || 500000
+      const campaignName: string = b.campaign_name?.trim() || (() => {
+        const sku = (b.sku_code || "PHVVN").toUpperCase()
+        const mkt = (auth.mktCode || "MKT").toUpperCase()
+        const sp = (b.product_name || "SP").toUpperCase()
+        const ads = b.ads_code || "ADS"
+        const audience = (b.audience || "30ALL").trim()
+        return `${sku}_${todayDM()}_${mkt}_${sp}_${ads}_${audience}_${vdCode}`
+      })()
+      const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
+        name: campaignName,
+        objective: "OUTCOME_SALES",
+        status: "PAUSED",
+        special_ad_categories: [],
+      })
+      const targeting: any = {
+        geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
+        age_min: Number(b.age_min) || 25,
+        locales: [27],
+        targeting_automation: { advantage_audience: 1 },
+      }
+      if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
+        targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
+      const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
+      if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+      const adset = await callFb("POST", `/${adAcc}/adsets`, {
+        name: vdCode,
+        campaign_id: campaign.id,
+        daily_budget: dailyBudget,
+        billing_event: "IMPRESSIONS",
+        optimization_goal: "OFFSITE_CONVERSIONS",
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        promoted_object: promotedObject,
+        targeting,
+        status: "PAUSED",
+      })
+      const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
+        name: `${vdCode} creative`,
+        object_story_id,
+        url_tags: UTM_STATIC,
+      })
+      const ad = await callFb("POST", `/${adAcc}/ads`, {
+        name: adName,
+        adset_id: adset.id,
+        creative: { creative_id: creative.id },
+        status: "PAUSED",
+      })
+      return res.json({
+        mode, campaign_id: campaign.id, campaign_name: campaignName,
+        adset_id: adset.id, ad_id: ad.id, creative_id: creative.id,
+        dark_post_id: post_id, object_story_id,
+        adsmanager_url: `https://business.facebook.com/adsmanager/manage/campaigns?act=${adAcc.replace("act_", "")}`,
+      })
+    }
+
+    // ── MODE A/B: cần post_id từ bài đã đăng ─────────────────────────────
+    if (!b.post_id) return res.status(400).json({ error: "Thiếu post_id" })
 
     // Lấy post + video info
     const { rows: [post] } = await pool.query(
@@ -41,7 +238,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const objectStoryId = `${post.page_id}_${post.post_id}`
     const vdCode = post.vd_code || "VD"
-    const adAcc = b.ad_account_id
     const adName = buildAdName(vdCode, post.post_id)
 
     // ── MODE A: thêm Ad vào adset có sẵn ──────────────────────────────────

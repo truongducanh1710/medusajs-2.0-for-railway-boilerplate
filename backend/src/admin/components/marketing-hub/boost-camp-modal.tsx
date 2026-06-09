@@ -3,7 +3,7 @@ import { apiJson } from "../../lib/api-client"
 import { SKU_LIST, toCampCode, matchSkuByName, parseAdsCode, buildCampaignName } from "../../lib/camp-naming"
 
 export type BoostTarget = {
-  postId: string          // fb_scheduled_post.id (UUID DB)
+  postId?: string         // fb_scheduled_post.id (UUID DB) — không bắt buộc với mode C/D
   pageName?: string
   vdCode?: string
   productName?: string
@@ -15,6 +15,7 @@ type Audience = { id: string; name: string; subtype: string }
 type Pixel = { id: string; name: string }
 type Adset = { id: string; name: string; status: string }
 type Campaign = { id: string; name: string; status: string; adsets: Adset[] }
+type Page = { page_id: string; page_name: string }
 
 const CTA_OPTS = [
   { v: "SHOP_NOW", l: "Mua ngay" },
@@ -23,18 +24,20 @@ const CTA_OPTS = [
   { v: "ORDER_NOW", l: "Đặt hàng ngay" },
 ]
 
+type Mode = "existing_adset" | "new_campaign" | "from_ad_id" | "unpublished_post"
+
 export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarget; onClose: () => void; onDone?: () => void }) {
-  const [mode, setMode] = useState<"existing_adset" | "new_campaign">("existing_adset")
+  const [mode, setMode] = useState<Mode>(target.postId ? "existing_adset" : "from_ad_id")
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accId, setAccId] = useState("")
   const [meta, setMeta] = useState<{ audiences: Audience[]; pixels: Pixel[]; campaigns: Campaign[] }>({ audiences: [], pixels: [], campaigns: [] })
   const [loadingMeta, setLoadingMeta] = useState(false)
 
-  // Mode A
+  // Mode A — vào adset có sẵn
   const [campId, setCampId] = useState("")
   const [adsetId, setAdsetId] = useState("")
 
-  // Mode B
+  // Mode B — camp mới từ bài đã đăng
   const [skuCode, setSkuCode] = useState(matchSkuByName(target.productName || ""))
   const [audience, setAudience] = useState("30ALL")
   const [budget, setBudget] = useState(500000)
@@ -45,20 +48,51 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [funnel, setFunnel] = useState<"" | "top" | "middle" | "bottom">("")
 
+  // Mode C — từ ad ID cũ
+  const [sourceAdId, setSourceAdId] = useState("")
+  const [sourceAdInfo, setSourceAdInfo] = useState<any>(null)
+  const [loadingAdInfo, setLoadingAdInfo] = useState(false)
+  const [adIdMode, setAdIdMode] = useState<"existing_adset" | "new_campaign">("existing_adset")
+
+  // Mode D — dark post (video/ảnh chưa đăng)
+  const [pages, setPages] = useState<Page[]>([])
+  const [darkPageId, setDarkPageId] = useState("")
+  const [darkMessage, setDarkMessage] = useState("")
+  const [darkVideoId, setDarkVideoId] = useState("")
+  const [darkImageUrl, setDarkImageUrl] = useState("")
+  const [darkLink, setDarkLink] = useState("")
+  const [darkVdCode, setDarkVdCode] = useState(target.vdCode || "")
+  const [darkAdsetMode, setDarkAdsetMode] = useState<"existing_adset" | "new_campaign">("new_campaign")
+
   const [submitting, setSubmitting] = useState(false)
   const [progress, setProgress] = useState<string[]>([])
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Load accounts
+  // Load accounts + pages
   useEffect(() => {
     apiJson("/admin/fb-content/boost/meta")
       .then(d => {
         setAccounts(d.accounts || [])
         if ((d.accounts || []).length === 1) setAccId(d.accounts[0].id)
+        if (d.pages?.length) setPages(d.pages)
       })
       .catch(e => setError("Lỗi tải ad accounts: " + e.message))
   }, [])
+
+  // Preview ad nguồn (mode C) khi nhập ad ID
+  useEffect(() => {
+    const id = sourceAdId.trim()
+    if (!id || id.length < 10) { setSourceAdInfo(null); return }
+    const t = setTimeout(() => {
+      setLoadingAdInfo(true)
+      apiJson(`/admin/fb-content/boost?ad_id=${id}`)
+        .then(d => setSourceAdInfo(d))
+        .catch(e => setSourceAdInfo({ error: e.message }))
+        .finally(() => setLoadingAdInfo(false))
+    }, 600)
+    return () => clearTimeout(t)
+  }, [sourceAdId])
 
   // Load meta khi chọn account
   useEffect(() => {
@@ -114,19 +148,26 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
     }
   }
 
-  const canSubmit = accId && (
-    mode === "existing_adset" ? adsetId : (budget >= 50000)
-  )
+  const canSubmit = accId && (() => {
+    if (mode === "existing_adset") return !!adsetId
+    if (mode === "new_campaign") return budget >= 50000
+    if (mode === "from_ad_id") return !!sourceAdId && !sourceAdInfo?.error && (adIdMode === "existing_adset" ? !!adsetId : budget >= 50000)
+    if (mode === "unpublished_post") return !!darkPageId && !!darkMessage && (darkAdsetMode === "existing_adset" ? !!adsetId : budget >= 50000)
+    return false
+  })()
 
   const submit = async () => {
     if (!canSubmit || submitting) return
     setSubmitting(true); setError(null); setProgress([]); setResult(null)
     try {
-      const body: any = { mode, post_id: target.postId, ad_account_id: accId }
+      const body: any = { mode, ad_account_id: accId }
+
       if (mode === "existing_adset") {
+        body.post_id = target.postId
         body.adset_id = adsetId
         setProgress(["Tạo Creative…"])
-      } else {
+      } else if (mode === "new_campaign") {
+        body.post_id = target.postId
         Object.assign(body, {
           campaign_name: campNamePreview,
           sku_code: skuCode, ads_code: adsCode, audience,
@@ -135,7 +176,45 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
           cta_url: ctaUrl, cta_type: ctaType, age_min: ageMin,
         })
         setProgress(["Tạo Campaign…"])
+      } else if (mode === "from_ad_id") {
+        body.source_ad_id = sourceAdId.trim()
+        if (adIdMode === "existing_adset") {
+          body.adset_id = adsetId
+          setProgress(["Clone creative từ ad cũ…"])
+        } else {
+          Object.assign(body, {
+            campaign_name: campNamePreview,
+            daily_budget: budget, pixel_id: pixelId,
+            excluded_audience_ids: [...excluded],
+            age_min: ageMin,
+          })
+          setProgress(["Clone creative + tạo camp mới…"])
+        }
+      } else if (mode === "unpublished_post") {
+        Object.assign(body, {
+          page_id: darkPageId,
+          message: darkMessage,
+          vd_code: darkVdCode,
+          video_id: darkVideoId || undefined,
+          image_url: darkImageUrl || undefined,
+          link: darkLink || undefined,
+        })
+        if (darkAdsetMode === "existing_adset") {
+          body.adset_id = adsetId
+          setProgress(["Tạo dark post…", "Tạo Creative…"])
+        } else {
+          Object.assign(body, {
+            campaign_name: campNamePreview,
+            sku_code: skuCode, ads_code: adsCode, audience,
+            daily_budget: budget, pixel_id: pixelId,
+            excluded_audience_ids: [...excluded],
+            age_min: ageMin,
+            product_name: target.productName,
+          })
+          setProgress(["Tạo dark post…", "Tạo Campaign…"])
+        }
       }
+
       const d = await apiJson("/admin/fb-content/boost", "POST", body)
       setProgress(p => [...p, "Hoàn tất ✓"])
       setResult(d)
@@ -188,9 +267,15 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {/* Mode tabs */}
-              <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 2, gap: 2 }}>
-                {([["existing_adset", "⭐ Vào Camp có sẵn"], ["new_campaign", "Tạo Camp mới"]] as const).map(([m, l]) => (
-                  <button key={m} onClick={() => setMode(m)} style={{ flex: 1, background: mode === m ? "#FFFFFF" : "transparent", border: "none", borderRadius: 6, padding: "7px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: mode === m ? "#111827" : "#6B7280", boxShadow: mode === m ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>{l}</button>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", background: "#F3F4F6", borderRadius: 8, padding: 2, gap: 2 }}>
+                {([
+                  ["existing_adset",  "⭐ Camp cũ",   !!target.postId],
+                  ["new_campaign",    "✨ Camp mới",   !!target.postId],
+                  ["from_ad_id",      "🔁 Ad cũ",     true],
+                  ["unpublished_post","🌑 Dark post",  true],
+                ] as [Mode, string, boolean][]).map(([m, l, enabled]) => (
+                  <button key={m} onClick={() => enabled && setMode(m as Mode)} title={!enabled ? "Cần chọn video đã đăng FB" : undefined}
+                    style={{ background: mode === m ? "#FFFFFF" : "transparent", border: "none", borderRadius: 6, padding: "7px 4px", fontSize: 11, fontWeight: 600, cursor: enabled ? "pointer" : "not-allowed", color: mode === m ? "#111827" : enabled ? "#6B7280" : "#D1D5DB", boxShadow: mode === m ? "0 1px 3px rgba(0,0,0,0.1)" : "none", whiteSpace: "nowrap" }}>{l}</button>
                 ))}
               </div>
 
@@ -324,7 +409,209 @@ export function BoostCampModal({ target, onClose, onDone }: { target: BoostTarge
                 </>
               )}
 
-              {error && <div style={{ fontSize: 12, color: "#DC2626", background: "#FEE2E2", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 12px" }}>⚠️ {error}</div>}
+              {/* ── MODE C: Từ Ad ID cũ ── */}
+              {mode === "from_ad_id" && (
+                <>
+                  <div>
+                    <label style={lbl}>FB Ad ID nguồn</label>
+                    <input value={sourceAdId} onChange={e => setSourceAdId(e.target.value)} placeholder="123456789012345" style={inp} />
+                    {loadingAdInfo && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>Đang tải thông tin ad…</div>}
+                    {sourceAdInfo && !sourceAdInfo.error && (
+                      <div style={{ marginTop: 6, fontSize: 11, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6, padding: "6px 10px", lineHeight: 1.6 }}>
+                        <b>{sourceAdInfo.ad_name}</b><br />
+                        Camp: {sourceAdInfo.campaign?.name}<br />
+                        Adset: {sourceAdInfo.adset?.name}
+                      </div>
+                    )}
+                    {sourceAdInfo?.error && <div style={{ fontSize: 11, color: "#DC2626", marginTop: 4 }}>⚠️ {sourceAdInfo.error}</div>}
+                  </div>
+
+                  {/* Ad Account */}
+                  <div>
+                    <label style={lbl}>Tài khoản quảng cáo đích</label>
+                    <select value={accId} onChange={e => setAccId(e.target.value)} style={inp}>
+                      <option value="">— Chọn ad account —</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name}{a.account_status !== 1 ? " (tắt)" : ""}</option>)}
+                    </select>
+                  </div>
+
+                  {accId && !loadingMeta && (
+                    <>
+                      <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 2, gap: 2 }}>
+                        {([["existing_adset", "⭐ Vào adset có sẵn"], ["new_campaign", "Tạo camp mới"]] as const).map(([m, l]) => (
+                          <button key={m} onClick={() => setAdIdMode(m)} style={{ flex: 1, background: adIdMode === m ? "#FFFFFF" : "transparent", border: "none", borderRadius: 6, padding: "7px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: adIdMode === m ? "#111827" : "#6B7280", boxShadow: adIdMode === m ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>{l}</button>
+                        ))}
+                      </div>
+
+                      {adIdMode === "existing_adset" && (
+                        <>
+                          <div>
+                            <label style={lbl}>Campaign</label>
+                            <select value={campId} onChange={e => { setCampId(e.target.value); setAdsetId("") }} style={inp}>
+                              <option value="">— Chọn campaign —</option>
+                              {meta.campaigns.map(c => <option key={c.id} value={c.id}>[{c.status === "ACTIVE" ? "▶" : "⏸"}] {c.name}</option>)}
+                            </select>
+                          </div>
+                          {campId && (
+                            <div>
+                              <label style={lbl}>Ad Set</label>
+                              <select value={adsetId} onChange={e => setAdsetId(e.target.value)} style={inp}>
+                                <option value="">— Chọn ad set —</option>
+                                {(meta.campaigns.find(c => c.id === campId)?.adsets || []).map(a => <option key={a.id} value={a.id}>[{a.status === "ACTIVE" ? "▶" : "⏸"}] {a.name}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {adIdMode === "new_campaign" && (
+                        <>
+                          <div>
+                            <label style={lbl}>Tên Campaign (tùy chỉnh)</label>
+                            <input placeholder={`${sourceAdInfo?.campaign?.name || "PHVVN"} - clone`} style={inp} id="cAdIdName" />
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                            <div><label style={lbl}>Ngân sách/ngày (đ)</label><input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} style={inp} /></div>
+                            <div><label style={lbl}>Tuổi tối thiểu</label><input type="number" value={ageMin} onChange={e => setAgeMin(Number(e.target.value))} style={inp} /></div>
+                          </div>
+                          <div>
+                            <label style={lbl}>Pixel</label>
+                            <select value={pixelId} onChange={e => setPixelId(e.target.value)} style={inp}>
+                              <option value="">— Chọn pixel —</option>
+                              {meta.pixels.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          {meta.audiences.length > 0 && (
+                            <div>
+                              <label style={lbl}>Loại trừ đối tượng ({excluded.size} chọn)</label>
+                              <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff" }}>
+                                {meta.audiences.map(a => (
+                                  <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", borderBottom: "1px solid #F3F4F6", cursor: "pointer", fontSize: 12 }}>
+                                    <input type="checkbox" checked={excluded.has(a.id)} onChange={() => toggleExcl(a.id)} />
+                                    <span style={{ flex: 1 }}>{a.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                  <div style={{ fontSize: 12, color: "#6B7280", background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px" }}>
+                    Creative được clone từ ad nguồn. Ad mới tạo <b>PAUSED</b>.
+                  </div>
+                </>
+              )}
+
+              {/* ── MODE D: Dark post (video/ảnh chưa đăng) ── */}
+              {mode === "unpublished_post" && (
+                <>
+                  <div>
+                    <label style={lbl}>Facebook Page</label>
+                    <select value={darkPageId} onChange={e => setDarkPageId(e.target.value)} style={inp}>
+                      <option value="">— Chọn page —</option>
+                      {pages.map((p: any) => <option key={p.page_id} value={p.page_id}>{p.page_name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Nội dung bài (caption)</label>
+                    <textarea value={darkMessage} onChange={e => setDarkMessage(e.target.value)} rows={3} placeholder="Nội dung quảng cáo…" style={{ ...inp, resize: "vertical" }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={lbl}>Video ID (nếu dùng video)</label>
+                      <input value={darkVideoId} onChange={e => setDarkVideoId(e.target.value)} placeholder="FB Video ID" style={inp} />
+                    </div>
+                    <div>
+                      <label style={lbl}>VD Code</label>
+                      <input value={darkVdCode} onChange={e => setDarkVdCode(e.target.value)} placeholder="VD1001" style={inp} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={lbl}>URL ảnh (nếu dùng ảnh, không dùng video)</label>
+                    <input value={darkImageUrl} onChange={e => setDarkImageUrl(e.target.value)} placeholder="https://..." style={inp} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Link trang đích (tùy chọn)</label>
+                    <input value={darkLink} onChange={e => setDarkLink(e.target.value)} placeholder="https://giadungphanviet.shop/..." style={inp} />
+                  </div>
+
+                  {/* Ad Account */}
+                  <div>
+                    <label style={lbl}>Tài khoản quảng cáo</label>
+                    <select value={accId} onChange={e => setAccId(e.target.value)} style={inp}>
+                      <option value="">— Chọn ad account —</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name}{a.account_status !== 1 ? " (tắt)" : ""}</option>)}
+                    </select>
+                  </div>
+
+                  {accId && !loadingMeta && (
+                    <>
+                      <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 8, padding: 2, gap: 2 }}>
+                        {([["existing_adset", "⭐ Vào adset có sẵn"], ["new_campaign", "Tạo camp mới"]] as const).map(([m, l]) => (
+                          <button key={m} onClick={() => setDarkAdsetMode(m)} style={{ flex: 1, background: darkAdsetMode === m ? "#FFFFFF" : "transparent", border: "none", borderRadius: 6, padding: "7px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: darkAdsetMode === m ? "#111827" : "#6B7280", boxShadow: darkAdsetMode === m ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>{l}</button>
+                        ))}
+                      </div>
+
+                      {darkAdsetMode === "existing_adset" && (
+                        <>
+                          <div>
+                            <label style={lbl}>Campaign</label>
+                            <select value={campId} onChange={e => { setCampId(e.target.value); setAdsetId("") }} style={inp}>
+                              <option value="">— Chọn campaign —</option>
+                              {meta.campaigns.map(c => <option key={c.id} value={c.id}>[{c.status === "ACTIVE" ? "▶" : "⏸"}] {c.name}</option>)}
+                            </select>
+                          </div>
+                          {campId && (
+                            <div>
+                              <label style={lbl}>Ad Set</label>
+                              <select value={adsetId} onChange={e => setAdsetId(e.target.value)} style={inp}>
+                                <option value="">— Chọn ad set —</option>
+                                {(meta.campaigns.find(c => c.id === campId)?.adsets || []).map(a => <option key={a.id} value={a.id}>[{a.status === "ACTIVE" ? "▶" : "⏸"}] {a.name}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {darkAdsetMode === "new_campaign" && (
+                        <>
+                          <div>
+                            <label style={lbl}>Tầng phễu</label>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {([["top","❄️ Lạnh"],["middle","🔥 Ấm"],["bottom","💎 Nóng"]] as const).map(([f,label]) => (
+                                <button key={f} type="button" onClick={() => applyFunnel(f)} style={{ flex: 1, background: funnel === f ? "#1877F2" : "#F3F4F6", color: funnel === f ? "#fff" : "#4B5563", border: "none", borderRadius: 8, padding: "7px 6px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                            <div><label style={lbl}>Mã SP</label>
+                              <select value={skuCode} onChange={e => setSkuCode(e.target.value)} style={inp}>
+                                <option value="">— Chọn —</option>
+                                {SKU_LIST.map(s => <option key={s.pos} value={toCampCode(s.pos)}>{toCampCode(s.pos)} · {s.name}</option>)}
+                              </select>
+                            </div>
+                            <div><label style={lbl}>Ngân sách/ngày (đ)</label><input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} style={inp} /></div>
+                          </div>
+                          <div>
+                            <label style={lbl}>Pixel</label>
+                            <select value={pixelId} onChange={e => setPixelId(e.target.value)} style={inp}>
+                              <option value="">— Chọn pixel —</option>
+                              {meta.pixels.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                  <div style={{ fontSize: 12, color: "#6B7280", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "8px 12px" }}>
+                    🌑 Dark post: bài đăng ẩn (không hiện trên trang), chỉ dùng cho quảng cáo. Ad tạo <b>PAUSED</b>.
+                  </div>
+                </>
+              )}
+
+              {error &&<div style={{ fontSize: 12, color: "#DC2626", background: "#FEE2E2", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 12px" }}>⚠️ {error}</div>}
 
               {progress.length > 0 && (
                 <div style={{ fontSize: 12, color: "#1877F2", background: "#EFF6FF", borderRadius: 8, padding: "8px 12px" }}>
