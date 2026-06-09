@@ -674,81 +674,79 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 </tr>
                 )
               })}
-              {filtered.length === 0 && !adding && (
-                <tr><td colSpan={13} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
-              )}
-              {/* ── Inline quick-add row ── */}
+              {/* ── Inline quick-add row — hiện TRÊN CÙNG ── */}
               {adding && (
-                <tr style={{ background: "#F0F6FF", borderTop: "2px solid #93C5FD" }} onKeyDown={handleKeyDown}>
-                  <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>✦</td>
-                  <td style={{ padding: "8px 12px", color: "#93C5FD", fontSize: 11, fontFamily: "monospace" }}>mới</td>
-                  <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 12 }}>hôm nay</td>
-                  <td style={{ padding: "8px 12px" }}>
+                <tr style={{ background: "#EFF6FF", borderBottom: "2px solid #93C5FD" }} onKeyDown={handleKeyDown}>
+                  <td style={{ padding: "10px 12px", color: "#9CA3AF", fontSize: 12, textAlign: "center" }}>✦</td>
+                  <td style={{ padding: "10px 12px", color: "#93C5FD", fontSize: 11, fontFamily: "monospace" }}>mới</td>
+                  <td style={{ padding: "10px 12px", color: "#9CA3AF", fontSize: 12 }}>hôm nay</td>
+                  <td style={{ padding: "10px 12px" }}>
                     <span style={{ background: "#DBEAFE", color: "#1e40af", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>Team</span>
                   </td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <select value={draft.nguoiLam} onChange={e => setDraft(p => ({ ...p, nguoiLam: e.target.value }))} style={cellInp}>
+                  <td style={{ padding: "10px 12px" }}>
+                    <select value={draft.nguoiLam} onChange={e => setDraft(p => ({ ...p, nguoiLam: e.target.value }))} style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }}>
                       {mktUsers.length === 0 && <option value="">Đang tải…</option>}
                       {mktUsers.map(u => (
                         <option key={u.email} value={u.name}>{u.name}{u.mkt_code ? ` · ${u.mkt_code}` : ""}</option>
                       ))}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={cellInp}>
+                  <td style={{ padding: "10px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }}>
                       {spList.length === 0 && <option value="">Đang tải…</option>}
                       {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <select value={draft.loaiVideo} onChange={e => setDraft(p => ({ ...p, loaiVideo: e.target.value }))} style={cellInp}>
+                  <td style={{ padding: "10px 12px" }}>
+                    <select value={draft.loaiVideo} onChange={e => setDraft(p => ({ ...p, loaiVideo: e.target.value }))} style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }}>
                       {LOAI_LIST.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <td style={{ padding: "10px 12px" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <input
                         value={draft.link}
                         onChange={e => { setDraft(p => ({ ...p, link: e.target.value })); setLinkCheckState({ checking: false, error: null, ok: false }) }}
-                        placeholder="Drive link…"
-                        style={{ ...cellInp, borderColor: linkCheckState.error ? "#FCA5A5" : linkCheckState.ok ? "#86EFAC" : undefined }}
+                        placeholder="Dán link Drive/Lark vào đây…"
+                        style={{ ...cellInp, fontSize: 13, padding: "6px 8px", borderColor: linkCheckState.error ? "#FCA5A5" : linkCheckState.ok ? "#86EFAC" : undefined }}
                       />
                       {linkCheckState.checking && <span style={{ fontSize: 10, color: "#6B7280" }}>⏳ Đang kiểm tra link…</span>}
                       {linkCheckState.error && <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 600 }}>⚠ {linkCheckState.error}</span>}
                       {linkCheckState.ok && <span style={{ fontSize: 10, color: "#16A34A", fontWeight: 600 }}>✓ Link hợp lệ</span>}
                     </div>
                   </td>
-                  <td style={{ padding: "8px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
-                  <td style={{ padding: "8px 12px" }}>
+                  <td style={{ padding: "10px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
+                  <td style={{ padding: "10px 12px" }}>
                     <StatusPill status="Cần làm" />
                   </td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <input value={draft.ghiChu} onChange={e => setDraft(p => ({ ...p, ghiChu: e.target.value }))} placeholder="Ghi chú (tuỳ chọn)…" style={cellInp} />
-                  </td>
-                  {/* Ad Name — tự sinh sau khi lưu */}
-                  <td style={{ padding: "8px 12px" }}>
+                  <td style={{ padding: "10px 12px" }}>
                     <span style={{ color: "#9CA3AF", fontSize: 11, fontStyle: "italic" }}>tự sinh…</span>
                   </td>
-                  {/* Lời thoại */}
-                  <td style={{ padding: "8px 12px" }}>
+                  <td style={{ padding: "10px 12px" }}>
                     <span style={{ color: "#9CA3AF", fontSize: 11, fontStyle: "italic" }}>thêm sau…</span>
                   </td>
-                  <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "10px 12px" }}>
+                    <input value={draft.ghiChu} onChange={e => setDraft(p => ({ ...p, ghiChu: e.target.value }))} placeholder="Ghi chú…" style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }} />
+                  </td>
+                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 5 }}>
-                      <button onClick={saveRow} disabled={saving} style={{ background: saving ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
-                        {saving ? "…" : "✓"}
+                      <button onClick={saveRow} disabled={saving} style={{ background: saving ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
+                        {saving ? "…" : "✓ Lưu"}
                       </button>
-                      <button onClick={cancelAdd} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
+                      <button onClick={cancelAdd} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 13, cursor: "pointer" }}>✕</button>
                     </div>
                   </td>
                 </tr>
               )}
+              {filtered.length === 0 && !adding && (
+                <tr><td colSpan={15} style={{ padding: "30px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có dữ liệu</td></tr>
+              )}
             </tbody>
           </table>
         </div>
-        {adding && <div style={{ padding: "6px 12px", borderTop: "1px solid #E5E7EB", background: "#F0F1F5" }}>
-          <span style={{ color: "#93C5FD", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>
+        {adding && <div style={{ padding: "5px 14px", borderTop: "1px solid #E5E7EB", background: "#EFF6FF" }}>
+          <span style={{ color: "#60A5FA", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>
         </div>}
       </div>
 
