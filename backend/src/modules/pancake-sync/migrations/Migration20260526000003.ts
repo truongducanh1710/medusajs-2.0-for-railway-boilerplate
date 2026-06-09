@@ -133,7 +133,8 @@ export class Migration20260526000003 extends Migration {
           WHEN COALESCE(do2.cod_amount, 0) > 0
           THEN ROUND(mac.spend::numeric / do2.cod_amount * 100, 1)
         END AS care_pct
-      FROM mkt_ads_cost mac, max_d
+      FROM mkt_ads_cost mac
+      CROSS JOIN max_d
       LEFT JOIN daily_orders do2
         ON do2.campaign_name_key = mac.campaign_name AND do2.date = mac.date
       WHERE mac.deleted_at IS NULL

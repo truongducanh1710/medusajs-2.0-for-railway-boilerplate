@@ -126,7 +126,7 @@ export class Migration20260526200000 extends Migration {
         END AS agreement
       FROM agent_camp_recommendation r
       LEFT JOIN LATERAL (
-        SELECT action FROM camp_action_log
+        SELECT action, created_at FROM camp_action_log
         WHERE campaign_id = r.campaign_id
           AND source = 'manual'
           AND created_at BETWEEN r.created_at AND r.created_at + interval '4 hours'
