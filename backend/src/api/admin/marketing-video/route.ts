@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
-import { getPool, getAuthInfo, ensureTables, nextVdCode, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
+import { getPool, getAuthInfo, ensureTables, nextVdCode, pushNotification, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 
 const VIDEO_TYPE_CODE: Record<string, string> = {
   "Video AI": "VIDEOAI",
@@ -161,6 +161,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         auth.email,
       ]
     )
+    // Push notification vào panel admin
+    const sp = row.product ? ` — ${row.product}` : ""
+    await pushNotification(req, {
+      title: `🎬 Video mới: ${row.vd_code}${sp}`,
+      description: `Người làm: ${row.maker} · Loại: ${row.video_type} · Trạng thái: ${STATUS_KEY_TO_VI[row.status] || row.status}`,
+    })
+
     return res.json({ row: toUiRow(row) })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
