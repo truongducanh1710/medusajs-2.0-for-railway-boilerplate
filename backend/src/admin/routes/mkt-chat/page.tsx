@@ -325,7 +325,7 @@ export default function MktChatPage() {
   useEffect(() => {
     loadChannels()
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
-    apiFetch("/admin/permissions/me").then(r => r.json()).then(d => setCurrentUserId(d.user?.email || ""))
+    apiFetch("/admin/permissions/me").then(r => r.json()).then(d => setCurrentUserId(d.email || ""))
   }, [loadChannels])
 
   // Load messages when channel changes (dựa vào id để tránh refetch thừa khi object đổi tham chiếu)
