@@ -4,6 +4,7 @@ import { useCurrentPermissions } from "../../lib/use-permissions"
 import { useResizableColumns, ResizeHandle, type ColumnDef } from "../../lib/resizable-columns"
 
 const BANG_TAB_COLS = [
+  { id: "sel",      label: "",            default: 36,  min: 36  },
   { id: "stt",      label: "#",           default: 36,  min: 36  },
   { id: "vd",       label: "VD",          default: 72,  min: 50  },
   { id: "ngay",     label: "Ngày",        default: 84,  min: 60  },
@@ -149,6 +150,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [analyzingId, setAnalyzingId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; done: string[]; failed: string[] } | null>(null)
   const [aiModal, setAiModal] = useState<{ row: VideoRow; result: any } | null>(null)
   const [aiModel, setAiModel] = useState<string>("gemini-3.1-pro-preview")
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
@@ -240,6 +243,48 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
       }
     } catch (e: any) { setToast("Lỗi phân tích: " + e.message) }
     finally { setAnalyzingId(null) }
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    const ids = filtered.filter(r => r.link).map(r => r.id)
+    if (ids.every(id => selectedIds.has(id))) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(ids))
+    }
+  }
+
+  const batchAnalyze = async () => {
+    const targets = filtered.filter(r => r.link && selectedIds.has(r.id))
+    if (!targets.length) return
+    if (!confirm(`Phân tích ${targets.length} video bằng AI? (~${targets.length * 35}s)`)) return
+    setBatchProgress({ current: 0, total: targets.length, done: [], failed: [] })
+    setSelectedIds(new Set())
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i]
+      setBatchProgress(p => p ? { ...p, current: i + 1 } : null)
+      try {
+        const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: aiModel })
+        if (result?.ai_review) {
+          setBatchProgress(p => p ? { ...p, done: [...p.done, row.vdCode] } : null)
+        } else {
+          setBatchProgress(p => p ? { ...p, failed: [...p.failed, row.vdCode] } : null)
+        }
+      } catch {
+        setBatchProgress(p => p ? { ...p, failed: [...p.failed, row.vdCode] } : null)
+      }
+      if (i < targets.length - 1) await new Promise(r => setTimeout(r, 2000))
+    }
+    reload()
+    setTimeout(() => setBatchProgress(null), 5000)
   }
 
   const startEdit = (row: VideoRow) => {
@@ -357,6 +402,15 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           </button>
         )}
         <span style={{ color: "#9CA3AF", fontSize: 12, marginLeft: "auto" }}>{filtered.length} / {rows.length} dòng</span>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={batchAnalyze}
+            disabled={!!batchProgress}
+            style={{ background: "#7C3AED", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", opacity: batchProgress ? 0.6 : 1 }}
+          >
+            🔍 Phân tích {selectedIds.size} video
+          </button>
+        )}
         <button onClick={resetColWidths} title="Reset độ rộng cột về mặc định" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "5px 8px", fontSize: 11, color: "#9CA3AF", cursor: "pointer" }}>⇔</button>
         <select
           value={aiModel}
@@ -381,6 +435,21 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </button>
       </div>
 
+      {batchProgress && (
+        <div style={{ background: "#EDE9FE", border: "1px solid #DDD6FE", borderRadius: 10, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#5B21B6", marginBottom: 6 }}>
+              Đang phân tích {batchProgress.current}/{batchProgress.total} video...
+              {batchProgress.done.length > 0 && <span style={{ color: "#16A34A", marginLeft: 8 }}>✓ {batchProgress.done.join(", ")}</span>}
+              {batchProgress.failed.length > 0 && <span style={{ color: "#DC2626", marginLeft: 8 }}>✗ {batchProgress.failed.join(", ")}</span>}
+            </div>
+            <div style={{ background: "#DDD6FE", borderRadius: 4, height: 6 }}>
+              <div style={{ background: "#7C3AED", borderRadius: 4, height: 6, width: `${(batchProgress.current / batchProgress.total) * 100}%`, transition: "width 0.5s ease" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", minHeight: "calc(100vh - 280px)" }}>
         <div style={{ overflowX: "auto", flex: 1 }}>
           <table style={{ width: totalWidth, minWidth: totalWidth, borderCollapse: "collapse", tableLayout: "fixed", height: "100%" }}>
@@ -391,8 +460,16 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               <tr style={{ background: "#F0F1F5" }}>
                 {BANG_TAB_COLS.map(c => (
                   <th key={c.id} style={{ position: "relative", padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>
-                    {c.label}
-                    {c.id !== "actions" && <ResizeHandle onMouseDown={onResizeMouseDown(c.id)} />}
+                    {c.id === "sel" ? (
+                      <input
+                        type="checkbox"
+                        title="Chọn tất cả"
+                        style={{ cursor: "pointer", accentColor: "#7C3AED" }}
+                        checked={filtered.filter(r => r.link).length > 0 && filtered.filter(r => r.link).every(r => selectedIds.has(r.id))}
+                        onChange={toggleSelectAll}
+                      />
+                    ) : c.label}
+                    {c.id !== "actions" && c.id !== "sel" && <ResizeHandle onMouseDown={onResizeMouseDown(c.id)} />}
                   </th>
                 ))}
               </tr>
@@ -403,7 +480,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 const ed = editDraft!
                 const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
                 return (
-                <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: rowBg, outline: isEditing ? "2px solid #93C5FD" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
+                <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
+                  <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} style={{ padding: "9px 12px", textAlign: "center" }}>
+                    {row.link && (
+                      <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={e => e.stopPropagation()} style={{ cursor: "pointer", accentColor: "#7C3AED" }} />
+                    )}
+                  </td>
                   <td style={{ padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
                   <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
                   {/* Ngày */}
