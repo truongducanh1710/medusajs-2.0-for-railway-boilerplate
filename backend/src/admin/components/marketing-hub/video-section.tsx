@@ -522,6 +522,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     </select>
                   </td>
                   <td style={{ padding: "10px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
+                  <td style={{ padding: "10px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
                   <td style={{ padding: "10px 12px" }}>
                     <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }}>
                       {spList.length === 0 && <option value="">Đang tải…</option>}
