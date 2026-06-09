@@ -152,6 +152,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [analyzingId, setAnalyzingId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; done: string[]; failed: string[] } | null>(null)
+  const [linkCheckState, setLinkCheckState] = useState<{ checking: boolean; error: string | null; ok: boolean }>({ checking: false, error: null, ok: false })
   const [aiModal, setAiModal] = useState<{ row: VideoRow; result: any } | null>(null)
   const [aiModel, setAiModel] = useState<string>("gemini-3.1-pro-preview")
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
@@ -199,15 +200,38 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     setAdding(true)
   }
 
-  const cancelAdd = () => setAdding(false)
+  const cancelAdd = () => { setAdding(false); setLinkCheckState({ checking: false, error: null, ok: false }) }
+
+  const checkLink = async (link: string): Promise<boolean> => {
+    if (!link || (!link.includes("drive.google") && !link.includes("drive.usercontent") && !link.includes("lark") && !link.includes("feishu"))) return true
+    setLinkCheckState({ checking: true, error: null, ok: false })
+    try {
+      const r = await apiFetch(`/admin/marketing-video/check-link?url=${encodeURIComponent(link)}`).then(r => r.json())
+      if (r.ok) {
+        setLinkCheckState({ checking: false, error: null, ok: true })
+        return true
+      } else {
+        setLinkCheckState({ checking: false, error: r.error || "Link không hợp lệ", ok: false })
+        return false
+      }
+    } catch {
+      setLinkCheckState({ checking: false, error: null, ok: false })
+      return true // network fail → cho qua, không block
+    }
+  }
 
   const saveRow = async () => {
     if (saving) return
+    if (draft.link) {
+      const valid = await checkLink(draft.link)
+      if (!valid) return
+    }
     setSaving(true)
     try {
       const spEntry = spList.find(s => s.name.toLowerCase() === draft.sp.toLowerCase())
       const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm", productCode: spEntry?.code || "" })
       setAdding(false)
+      setLinkCheckState({ checking: false, error: null, ok: false })
       const id = res?.row?.id || res?.id || null
       if (id) { setNewRowId(id); setTimeout(() => setNewRowId(null), 2000) }
       setToast("Đã thêm: " + draft.sp)
@@ -297,10 +321,15 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const saveEdit = async (id: string) => {
     if (!editDraft) return
+    if (editDraft.link) {
+      const valid = await checkLink(editDraft.link)
+      if (!valid) return
+    }
     try {
       const spEntry = spList.find(s => s.name.toLowerCase() === editDraft.sp.toLowerCase())
       const payload = { ...editDraft, ...(spEntry?.code ? { productCode: spEntry.code } : {}) }
       await apiJson(`/admin/marketing-video/${id}`, "PATCH", payload)
+      setLinkCheckState({ checking: false, error: null, ok: false })
       setToast("Đã lưu"); cancelEdit(); reload()
     } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
@@ -533,7 +562,17 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   {/* Link */}
                   <td style={{ padding: "9px 12px" }}>
                     {isEditing
-                      ? <input value={ed.link} onChange={e => setEditDraft(p => ({ ...p!, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
+                      ? <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <input
+                            value={ed.link}
+                            onChange={e => { setEditDraft(p => ({ ...p!, link: e.target.value })); setLinkCheckState({ checking: false, error: null, ok: false }) }}
+                            placeholder="Drive link…"
+                            style={{ ...cellInp, borderColor: linkCheckState.error ? "#FCA5A5" : linkCheckState.ok ? "#86EFAC" : undefined }}
+                          />
+                          {linkCheckState.checking && <span style={{ fontSize: 10, color: "#6B7280" }}>⏳ Đang kiểm tra link…</span>}
+                          {linkCheckState.error && <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 600 }}>⚠ {linkCheckState.error}</span>}
+                          {linkCheckState.ok && <span style={{ fontSize: 10, color: "#16A34A", fontWeight: 600 }}>✓ Link hợp lệ</span>}
+                        </div>
                       : row.link ? <a href={row.link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>↗ Drive</a> : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
                   </td>
                   {/* Bài FB */}
@@ -668,7 +707,17 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     </select>
                   </td>
                   <td style={{ padding: "8px 12px" }}>
-                    <input value={draft.link} onChange={e => setDraft(p => ({ ...p, link: e.target.value }))} placeholder="Drive link…" style={cellInp} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      <input
+                        value={draft.link}
+                        onChange={e => { setDraft(p => ({ ...p, link: e.target.value })); setLinkCheckState({ checking: false, error: null, ok: false }) }}
+                        placeholder="Drive link…"
+                        style={{ ...cellInp, borderColor: linkCheckState.error ? "#FCA5A5" : linkCheckState.ok ? "#86EFAC" : undefined }}
+                      />
+                      {linkCheckState.checking && <span style={{ fontSize: 10, color: "#6B7280" }}>⏳ Đang kiểm tra link…</span>}
+                      {linkCheckState.error && <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 600 }}>⚠ {linkCheckState.error}</span>}
+                      {linkCheckState.ok && <span style={{ fontSize: 10, color: "#16A34A", fontWeight: 600 }}>✓ Link hợp lệ</span>}
+                    </div>
                   </td>
                   <td style={{ padding: "8px 12px" }}><span style={{ color: "#D1D5DB", fontSize: 11 }}>—</span></td>
                   <td style={{ padding: "8px 12px" }}>
