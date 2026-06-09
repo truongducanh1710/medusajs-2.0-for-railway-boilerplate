@@ -228,6 +228,7 @@ const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
   success:   { label: "Đã đăng",  c: "#059669", bg: "#DCFCE7" },
   published: { label: "Đã đăng",  c: "#059669", bg: "#DCFCE7" },
   scheduled: { label: "Lên lịch", c: "#D97706", bg: "#FEF3C7" },
+  cancelled: { label: "Đã hủy",   c: "#6B7280", bg: "#F3F4F6" },
   failed:    { label: "Lỗi",      c: "#DC2626", bg: "#FEE2E2" },
   pending:   { label: "Chờ",      c: "#6B7280", bg: "#F3F4F6" },
   running:   { label: "Đang xử lý", c: "#2563EB", bg: "#DBEAFE" },
@@ -239,7 +240,7 @@ const postDisplayDate = (p: any) => new Date(p.published_at || p.scheduled_for |
 const DOW = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
 const MEDIA_COLOR: Record<string, string> = { video: "#8B5CF6", photo: "#0EA5E9", text: "#1877F2" }
 
-function CalendarView({ posts }: { posts: any[] }) {
+function CalendarView({ posts, onCancel, cancellingId }: { posts: any[]; onCancel?: (id: string) => void; cancellingId?: string | null }) {
   const today = new Date()
   const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selected, setSelected] = useState<string | null>(null)
@@ -348,6 +349,14 @@ function CalendarView({ posts }: { posts: any[] }) {
                     <a href={`https://www.facebook.com/${p.post_id}`}
                       target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
                   )}
+                  {p.status === "scheduled" && onCancel && (
+                    <button
+                      onClick={() => onCancel(p.id)}
+                      disabled={cancellingId === p.id}
+                      style={{ marginTop: 4, background: cancellingId === p.id ? "#F3F4F6" : "#FEF2F2", color: cancellingId === p.id ? "#9CA3AF" : "#DC2626", border: "1px solid #FECACA", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 600, cursor: cancellingId === p.id ? "wait" : "pointer" }}>
+                      {cancellingId === p.id ? "Đang hủy…" : "✕ Hủy lịch"}
+                    </button>
+                  )}
                 </div>
               )
             })}
@@ -366,8 +375,22 @@ function LichDangTab() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar")
   const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
   const { mktCode, has, isSuper } = useCurrentPermissions()
   const canBoost = isSuper || has("page.fb-content.post")
+
+  const handleCancel = async (postId: string) => {
+    if (!confirm("Hủy bài lên lịch này?")) return
+    setCancellingId(postId)
+    try {
+      await apiJson(`/admin/fb-content/post/${postId}`, "DELETE")
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: "cancelled" } : p))
+    } catch (e: any) {
+      alert("Lỗi hủy bài: " + (e.message || "unknown"))
+    } finally {
+      setCancellingId(null)
+    }
+  }
 
   const load = () => {
     setLoading(true)
@@ -413,6 +436,7 @@ function LichDangTab() {
           <option value="all">Tất cả trạng thái</option>
           <option value="published">Đã đăng</option>
           <option value="scheduled">Lên lịch</option>
+          <option value="cancelled">Đã hủy</option>
           <option value="failed">Lỗi</option>
         </select>
         {viewMode === "list" && <>
@@ -425,7 +449,7 @@ function LichDangTab() {
 
       {loading && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
 
-      {!loading && viewMode === "calendar" && <CalendarView posts={posts} />}
+      {!loading && viewMode === "calendar" && <CalendarView posts={posts} onCancel={handleCancel} cancellingId={cancellingId} />}
 
       {!loading && viewMode === "list" && posts.length === 0 && (
         <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có bài nào</div>
@@ -473,6 +497,14 @@ function LichDangTab() {
                         ? <span style={{ fontSize: 11, color: "#059669", fontWeight: 600, whiteSpace: "nowrap" }}>✓ Đã lên camp</span>
                         : <button onClick={() => setBoostTarget({ postId: p.id, pageName: p.page_name, vdCode: p.vd_code, productName: p.product || "", mktCode })}
                             style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>🚀 Lên Camp</button>
+                    )}
+                    {p.status === "scheduled" && (
+                      <button
+                        onClick={() => handleCancel(p.id)}
+                        disabled={cancellingId === p.id}
+                        style={{ background: cancellingId === p.id ? "#F3F4F6" : "#FEF2F2", color: cancellingId === p.id ? "#9CA3AF" : "#DC2626", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: cancellingId === p.id ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+                        {cancellingId === p.id ? "Đang hủy…" : "✕ Hủy"}
+                      </button>
                     )}
                   </div>
                 </div>
