@@ -93,6 +93,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       "total",
       "shipping_fee",
       "cod_amount",
+      "items",
       "items_count",
       "tracking_code",
       "currency",
