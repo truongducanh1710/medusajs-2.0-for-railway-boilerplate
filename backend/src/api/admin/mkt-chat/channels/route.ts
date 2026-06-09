@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { getPool } from "../../../../lib/db"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -45,13 +46,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           Array.isArray(c.members) && c.members.some((m: any) => m.user_id === email)
         )
 
-    // Add unread count (messages after last_read — simplified: just count recent)
+    // Lấy last_read_at của user cho tất cả channels một lần
+    const channelIds = channels.map((c: any) => c.id)
+    let lastReadMap: Record<string, string> = {}
+    if (channelIds.length > 0) {
+      const readRows = await getPool().query(
+        `SELECT channel_id, last_read_at FROM mkt_channel_read WHERE user_email = $1 AND channel_id = ANY($2)`,
+        [email, channelIds]
+      )
+      for (const row of readRows.rows) lastReadMap[row.channel_id] = row.last_read_at
+    }
+
+    // Đếm unread per channel (messages sau last_read_at, không đếm tin AI)
+    let unreadMap: Record<string, number> = {}
+    for (const channelId of channelIds) {
+      const lastRead = lastReadMap[channelId]
+      const res2 = await getPool().query(
+        `SELECT COUNT(*)::int AS cnt FROM mkt_message
+         WHERE channel_id = $1 AND deleted_at IS NULL AND author_id != 'ai'
+         ${lastRead ? `AND created_at > $2` : ""}`,
+        lastRead ? [channelId, lastRead] : [channelId]
+      )
+      unreadMap[channelId] = res2.rows[0]?.cnt ?? 0
+    }
+
     const enriched = channels.map((c: any) => ({
       id: c.id,
       name: c.name,
       description: c.description,
       member_count: Array.isArray(c.members) ? c.members.length : 0,
       member_ids: Array.isArray(c.members) ? c.members.map((m: any) => m.user_id) : [],
+      unread_count: unreadMap[c.id] ?? 0,
       created_at: c.created_at,
     }))
 

@@ -40,10 +40,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await svc.createMktMessages({
       channel_id: channelId,
       author_id: uid,
-      content: `📋 Task mới: "${title}"`,
+      content: `📋 Task mới: "${title}" → ${assignee_id}`,
       task_id: task.id,
       msg_type: "task_created",
       metadata: { task_title: title, created_by_name: creatorName, assignee_id },
+      reactions: {},
+      mentions: [],
     })
 
     res.json({ task })

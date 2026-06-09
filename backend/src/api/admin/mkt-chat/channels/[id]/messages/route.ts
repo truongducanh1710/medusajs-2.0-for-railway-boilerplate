@@ -6,7 +6,6 @@ function actorId(req: MedusaRequest): string | null {
   return auth?.actor_type === "user" ? auth.actor_id : null
 }
 
-// Identity key = email (đồng bộ toàn feature mkt-chat)
 async function actorEmail(req: MedusaRequest): Promise<string | null> {
   const uid = actorId(req)
   if (!uid) return null
@@ -15,11 +14,32 @@ async function actorEmail(req: MedusaRequest): Promise<string | null> {
   return user?.email ?? null
 }
 
+function isMember(channel: any, email: string): boolean {
+  return Array.isArray(channel.members) && channel.members.some((m: any) => m.user_id === email)
+}
+
+// Parse @mention: "@tên" hoặc "@email" trong nội dung, trả list email matches
+function parseMentions(content: string, memberEmails: string[], nameByEmail: Record<string, string>): string[] {
+  const mentioned = new Set<string>()
+  // Tìm tất cả @word patterns
+  const matches = content.match(/@[\w.@-]+/g) || []
+  for (const m of matches) {
+    const token = m.slice(1).toLowerCase()
+    if (token === "ai") continue
+    for (const email of memberEmails) {
+      if (email.toLowerCase().includes(token)) { mentioned.add(email); break }
+      const name = nameByEmail[email]?.toLowerCase() ?? ""
+      if (name && name.includes(token)) { mentioned.add(email); break }
+    }
+  }
+  return [...mentioned]
+}
+
 // GET /admin/mkt-chat/channels/:id/messages
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const uid = actorId(req)
-    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    const email = await actorEmail(req)
+    if (!email) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
@@ -27,6 +47,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
+
+    // 403: chỉ member mới đọc được
+    const superEmail = process.env.SUPER_ADMIN_EMAIL
+    if (email !== superEmail && !isMember(channel, email)) {
+      return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
+    }
 
     const filter: any = { channel_id: id, deleted_at: null }
     if (before) filter.created_at = { $lt: new Date(before) }
@@ -36,7 +62,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       take: Math.min(Number(limit), 100),
     })
 
-    // Resolve author names — author_id lưu bằng email nên map theo email
+    // Resolve author names
     const userModule = req.scope.resolve(Modules.USER)
     const allUsers = await userModule.listUsers({}, { select: ["email", "first_name", "last_name"] })
     const nameByEmail: Record<string, string> = {}
@@ -44,9 +70,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       nameByEmail[u.email] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
     }
 
+    // Resolve reply_to snippet
+    const replyIds = [...new Set(messages.map((m: any) => m.reply_to_id).filter(Boolean))]
+    const replyMap: Record<string, any> = {}
+    if (replyIds.length > 0) {
+      const replies = await svc.listMktMessages({ id: { $in: replyIds } }, { select: ["id", "content", "author_id", "msg_type"] })
+      for (const r of replies) {
+        replyMap[r.id] = {
+          id: r.id,
+          content: r.content.slice(0, 80),
+          author_name: r.author_id === "ai" ? "AI Assistant" : (nameByEmail[r.author_id] || r.author_id),
+        }
+      }
+    }
+
     const enriched = messages.reverse().map((m: any) => ({
       ...m,
       author_name: m.author_id === "ai" ? "AI Assistant" : (nameByEmail[m.author_id] || m.author_id),
+      reply_to: m.reply_to_id ? replyMap[m.reply_to_id] : null,
     }))
 
     res.json({ messages: enriched })
@@ -63,13 +104,30 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
-    const { content } = req.body as any
+    const { content, reply_to_id } = req.body as any
     if (!content?.trim()) return res.status(400).json({ error: "Nội dung không được rỗng" })
 
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
 
-    // Check @ai command
+    // 403: chỉ member mới gửi được
+    const superEmail = process.env.SUPER_ADMIN_EMAIL
+    if (email !== superEmail && !isMember(channel, email)) {
+      return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
+    }
+
+    // Resolve names để parse mention
+    const userModule = req.scope.resolve(Modules.USER)
+    const allUsers = await userModule.listUsers({}, { select: ["email", "first_name", "last_name"] })
+    const nameByEmail: Record<string, string> = {}
+    for (const u of allUsers) {
+      nameByEmail[u.email] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+    }
+    const memberEmails: string[] = Array.isArray(channel.members)
+      ? channel.members.map((m: any) => m.user_id)
+      : []
+
+    const mentions = parseMentions(content.trim(), memberEmails, nameByEmail)
     const isAiCommand = content.trim().toLowerCase().startsWith("@ai ")
     const question = isAiCommand ? content.trim().slice(4).trim() : ""
 
@@ -78,9 +136,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       author_id: email,
       content: content.trim(),
       msg_type: "text",
+      reply_to_id: reply_to_id || null,
+      reactions: {},
+      mentions,
     })
 
-    // Handle @ai async - post response as separate message
+    // Notify mentioned users async
+    if (mentions.length > 0) {
+      notifyMentions(svc, id, channel.name, email, nameByEmail[email] || email, content.trim(), mentions)
+        .catch(console.error)
+    }
+
+    // Notify all other members of new message (unread tracking)
+    notifyMembers(svc, id, channel.name, email, content.trim(), memberEmails)
+      .catch(console.error)
+
+    // Handle @ai
     if (isAiCommand && question) {
       if (process.env.ANTHROPIC_API_KEY) {
         handleAiResponse(svc, id, question).catch(console.error)
@@ -90,6 +161,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           author_id: "ai",
           content: "⚠️ Tính năng @ai chưa bật (thiếu ANTHROPIC_API_KEY).",
           msg_type: "ai_response",
+          reactions: {},
+          mentions: [],
         })
       }
     }
@@ -100,9 +173,44 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 }
 
+// Gửi system notification cho members khi có tin mới (dùng Medusa notification module nếu có)
+async function notifyMembers(
+  svc: any, channelId: string, channelName: string,
+  senderEmail: string, preview: string, memberEmails: string[]
+) {
+  // Lưu vào bảng admin_notification (nếu project có) — best-effort
+  try {
+    const others = memberEmails.filter(e => e !== senderEmail)
+    for (const email of others) {
+      await svc.createMktMessages({
+        channel_id: "__notify__",
+        author_id: "system",
+        content: JSON.stringify({ type: "new_message", channel_id: channelId, channel_name: channelName, sender: senderEmail, preview: preview.slice(0, 60), recipient: email }),
+        msg_type: "system_notify",
+        reactions: {},
+        mentions: [],
+      }).catch(() => {})
+    }
+  } catch {}
+}
+
+async function notifyMentions(
+  svc: any, channelId: string, channelName: string,
+  senderEmail: string, senderName: string, content: string, mentions: string[]
+) {
+  // Post system message với mention info để frontend badge
+  await svc.createMktMessages({
+    channel_id: channelId,
+    author_id: "system",
+    content: `${senderName} đã nhắc đến: ${mentions.join(", ")}`,
+    msg_type: "mention",
+    mentions,
+    reactions: {},
+  }).catch(console.error)
+}
+
 async function handleAiResponse(svc: any, channelId: string, question: string) {
   try {
-    // Get task context for this channel
     const tasks = await svc.listMktTasks({ channel_id: channelId, deleted_at: null })
     const taskSummary = tasks.map((t: any) =>
       `- ${t.title} [${t.type}] → ${t.assignee_id} | ${t.status}${t.deadline ? ` | deadline: ${t.deadline}` : ""}${t.rating ? ` | ★${t.rating}` : ""}`
@@ -124,19 +232,15 @@ async function handleAiResponse(svc: any, channelId: string, question: string) {
     })
     const data = await response.json() as any
     const aiText = data.content?.[0]?.text || "Không thể xử lý câu hỏi này."
-
     await svc.createMktMessages({
-      channel_id: channelId,
-      author_id: "ai",
-      content: aiText,
-      msg_type: "ai_response",
+      channel_id: channelId, author_id: "ai", content: aiText,
+      msg_type: "ai_response", reactions: {}, mentions: [],
     })
-  } catch (e) {
+  } catch {
     await svc.createMktMessages({
-      channel_id: channelId,
-      author_id: "ai",
+      channel_id: channelId, author_id: "ai",
       content: "⚠️ AI không thể trả lời lúc này.",
-      msg_type: "ai_response",
+      msg_type: "ai_response", reactions: {}, mentions: [],
     })
   }
 }

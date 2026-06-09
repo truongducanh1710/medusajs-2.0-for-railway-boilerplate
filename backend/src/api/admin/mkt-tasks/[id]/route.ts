@@ -6,6 +6,14 @@ function actorId(req: MedusaRequest): string | null {
   return auth?.actor_type === "user" ? auth.actor_id : null
 }
 
+async function actorEmail(req: MedusaRequest): Promise<string | null> {
+  const uid = actorId(req)
+  if (!uid) return null
+  const userModule = req.scope.resolve(Modules.USER)
+  const user = await userModule.retrieveUser(uid, { select: ["email"] })
+  return user?.email ?? null
+}
+
 async function isManager(req: MedusaRequest): Promise<boolean> {
   const uid = actorId(req)
   if (!uid) return false
@@ -44,8 +52,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // PATCH /admin/mkt-tasks/:id
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const uid = actorId(req)
-    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    const email = await actorEmail(req)
+    if (!email) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
@@ -54,7 +62,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
 
     const manager = await isManager(req)
-    if (!manager && task.assignee_id !== uid) {
+    // assignee_id là email (đồng bộ với mkt-chat identity)
+    if (!manager && task.assignee_id !== email) {
       return res.status(403).json({ error: "Không có quyền" })
     }
 
@@ -62,14 +71,12 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const update: Record<string, any> = {}
 
     if (manager) {
-      // Manager có thể sửa tất cả fields
       if (body.title !== undefined) update.title = body.title
       if (body.notes !== undefined) update.notes = body.notes
       if (body.deadline !== undefined) update.deadline = body.deadline ? new Date(body.deadline) : null
       if (body.assignee_id !== undefined) update.assignee_id = body.assignee_id
       if (body.channel_id !== undefined) update.channel_id = body.channel_id
     }
-    // Cả manager và MKT đều có thể đổi status
     if (body.status !== undefined) {
       const valid = ["todo", "in_progress", "done", "cancelled"]
       if (!valid.includes(body.status)) return res.status(400).json({ error: "Status không hợp lệ" })
@@ -80,16 +87,23 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     const updated = await svc.updateMktTasks({ id }, update)
 
-    // Post system message if status changed to done and channel_id exists
-    if (body.status === "done" && task.channel_id) {
+    // Post system message vào channel khi status thay đổi
+    if (body.status !== undefined && task.channel_id && body.status !== task.status) {
+      const statusLabel: Record<string, string> = {
+        in_progress: "🚀 Đang làm",
+        done: "✅ Hoàn thành",
+        cancelled: "❌ Đã huỷ",
+        todo: "⏳ Để làm",
+      }
       await svc.createMktMessages({
         channel_id: task.channel_id,
-        author_id: uid,
-        content: `✅ Task hoàn thành: "${task.title}"`,
+        author_id: email,
+        content: `${statusLabel[body.status] ?? body.status}: "${task.title}"`,
         task_id: id,
-        msg_type: "task_done",
-        metadata: { task_title: task.title },
-      })
+        msg_type: `task_${body.status}`,
+        reactions: {},
+        mentions: [],
+      }).catch(console.error)
     }
 
     res.json({ task: updated })
