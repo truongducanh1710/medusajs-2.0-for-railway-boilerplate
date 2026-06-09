@@ -56,28 +56,29 @@ async function checkLarkFile(url: string): Promise<{ ok: boolean; error?: string
   if (!fileToken) return { ok: false, error: "Không nhận ra định dạng link Lark — cần dạng .../file/XXXXX" }
 
   const token = await getLarkToken()
-  if (!token) return { ok: true } // Chưa cấu hình Lark app → cho qua
+  if (!token) return { ok: true, warn: "Chưa cấu hình Lark app — không thể xác minh, link được chấp nhận" }
 
-  // Dùng Lark API lấy metadata file (nhẹ, không download)
-  const r = await fetch(`https://open.larksuite.com/open-apis/drive/v1/files/${encodeURIComponent(fileToken)}`, {
+  // Thử drive/v2/files trước (file upload thường), fallback sang drive/v1/files (docs/sheets)
+  let r = await fetch(`https://open.larksuite.com/open-apis/drive/v2/files/${encodeURIComponent(fileToken)}`, {
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => null)
 
+  // Nếu v2 không hỗ trợ loại file này, thử v1
+  let data: any = r ? await r.json().catch(() => null) : null
+  if (data?.code === 1061045 || data?.code === 1061001) {
+    r = await fetch(`https://open.larksuite.com/open-apis/drive/v1/files/${encodeURIComponent(fileToken)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => null)
+    data = r ? await r.json().catch(() => null) : null
+  }
+
   if (!r) return { ok: false, error: "Không kết nối được Lark API" }
 
-  const data: any = await r.json().catch(() => null)
-
   if (data?.code === 0) return { ok: true }
-  if (data?.code === 99991663 || data?.code === 99991661) {
-    return { ok: false, error: "File Lark không tồn tại hoặc đã bị xóa — kiểm tra lại link" }
-  }
-  if (data?.code === 99991401) {
-    return { ok: false, error: "App Lark chưa được cấp quyền truy cập file này — cần share cho app hoặc dùng link public" }
-  }
-  if (r.status === 404) {
+  if (data?.code === 99991663 || data?.code === 99991661 || r.status === 404) {
     return { ok: false, error: "Không tìm thấy file Lark — kiểm tra lại link" }
   }
-  // Lark trả lỗi khác → vẫn cho qua (không block)
+  // Permission error hoặc lỗi khác → cho qua (bot không có quyền check không có nghĩa file không tồn tại)
   return { ok: true }
 }
 
