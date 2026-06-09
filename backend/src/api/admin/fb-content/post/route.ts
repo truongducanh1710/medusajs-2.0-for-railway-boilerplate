@@ -82,21 +82,41 @@ async function runPublishJob(
   const okCount = progress.filter(p => p.status === "success").length
   const failCount = progress.filter(p => p.status !== "success").length
   const isScheduled = !!payload.scheduledTime
+
+  const mktName = payload.email.split("@")[0]
+  const scheduleStr = payload.scheduledTime
+    ? new Date(payload.scheduledTime * 1000).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })
+    : null
+  const preview = payload.message ? `"${payload.message.slice(0, 80)}${payload.message.length > 80 ? "…" : ""}"` : ""
+  const pageLines = progress.map(p => `  ${p.status === "success" ? "✓" : "✗"} ${p.page_name}${p.status !== "success" ? `: ${p.error || "lỗi"}` : ""}`).join("\n")
+
   if (allOk) {
-    await pushNotif(notifSvc,
-      isScheduled ? `📅 Đã lên lịch ${okCount} trang` : `✅ Đã đăng thành công ${okCount} trang`,
-      progress.map(p => `${p.page_name}: ${p.status === "success" ? "✓" : "✗ " + (p.error || "")}`).join("\n")
-    )
+    const title = isScheduled
+      ? `📅 Lên lịch ${okCount} trang · ${scheduleStr}`
+      : `✅ Đã đăng ${okCount} trang`
+    const desc = [
+      `👤 ${mktName}${isScheduled ? ` · 🕐 ${scheduleStr}` : ""}`,
+      preview,
+      pageLines,
+    ].filter(Boolean).join("\n")
+    await pushNotif(notifSvc, title, desc)
   } else if (anyOk) {
-    await pushNotif(notifSvc,
-      `⚠️ Đăng xong: ${okCount} thành công, ${failCount} thất bại`,
-      progress.map(p => `${p.page_name}: ${p.status === "success" ? "✓" : "✗ " + (p.error || "")}`).join("\n")
-    )
+    const title = isScheduled
+      ? `⚠️ Lên lịch: ${okCount} thành công, ${failCount} thất bại`
+      : `⚠️ Đăng xong: ${okCount} thành công, ${failCount} thất bại`
+    const desc = [
+      `👤 ${mktName}${scheduleStr ? ` · 🕐 ${scheduleStr}` : ""}`,
+      preview,
+      pageLines,
+    ].filter(Boolean).join("\n")
+    await pushNotif(notifSvc, title, desc)
   } else {
-    await pushNotif(notifSvc,
-      `❌ Đăng thất bại tất cả ${failCount} trang`,
-      progress.map(p => `${p.page_name}: ${p.error || "lỗi không xác định"}`).join("\n")
-    )
+    const desc = [
+      `👤 ${mktName}${scheduleStr ? ` · 🕐 ${scheduleStr}` : ""}`,
+      preview,
+      pageLines,
+    ].filter(Boolean).join("\n")
+    await pushNotif(notifSvc, `❌ Thất bại tất cả ${failCount} trang`, desc)
   }
 }
 
