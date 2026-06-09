@@ -1,4 +1,20 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Pool } from "pg"
+
+let _pool: Pool | null = null
+function getPool(): Pool {
+  if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  return _pool
+}
+async function sql(query: string, params?: any[]): Promise<any[]> {
+  const client = await getPool().connect()
+  try {
+    const result = await client.query(query, params ?? [])
+    return result.rows
+  } finally {
+    client.release()
+  }
+}
 
 /**
  * GET /admin/pancake-sync/report/mkt?from=2026-05-01&to=2026-05-31&group_by=day
@@ -46,16 +62,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Load handover rules — áp dụng khi tính attribution theo ngày
     let handoverRules: { from_code: string; to_code: string; effective_from: string }[] = []
     try {
-      await cskhService.sql(`CREATE TABLE IF NOT EXISTS mkt_handover (
-        id SERIAL PRIMARY KEY, from_code TEXT NOT NULL, to_code TEXT NOT NULL,
-        effective_from DATE NOT NULL, note TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT now(), deleted_at TIMESTAMPTZ
-      )`)
-      handoverRules = await cskhService.sql(
+      handoverRules = await sql(
         `SELECT from_code, to_code, effective_from::text FROM mkt_handover WHERE deleted_at IS NULL`
       )
     } catch { /* ignore nếu bảng chưa tồn tại */ }
 
-    const rows = await cskhService.sql(`
+    const rows = await sql(`
       SELECT
         COALESCE(r.date, c.date) AS date,
         COALESCE(r.mkt_name, c.mkt_name) AS mkt_name,
