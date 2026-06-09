@@ -132,9 +132,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // Merge rows cùng date + mkt_name (xảy ra khi handover tạo ra duplicate)
+    const mergedMap: Record<string, any> = {}
+    for (const row of rows) {
+      const key = `${row.date}__${row.mkt_name}`
+      if (!mergedMap[key]) {
+        mergedMap[key] = { ...row }
+      } else {
+        const m = mergedMap[key]
+        m.total_orders += row.total_orders
+        m.delivered += row.delivered
+        m.new_orders += row.new_orders
+        m.confirmed += row.confirmed
+        m.cancelled += row.cancelled
+        m.pending += row.pending
+        m.revenue_total = Number(m.revenue_total) + Number(row.revenue_total)
+        m.revenue_delivered = Number(m.revenue_delivered) + Number(row.revenue_delivered)
+        m.cod_total = Number(m.cod_total) + Number(row.cod_total)
+        m.ads_cost = Number(m.ads_cost) + Number(row.ads_cost)
+        m.care_pct = m.revenue_total > 0 ? Math.round(m.ads_cost / m.revenue_total * 10000) / 100 : null
+      }
+    }
+    const mergedRows = Object.values(mergedMap)
+
     // Build summary per MKT
     const summary: Record<string, any> = {}
-    for (const row of rows) {
+    for (const row of mergedRows) {
       const m = row.mkt_name
       if (!summary[m]) {
         summary[m] = { total_orders: 0, delivered: 0, new_orders: 0, confirmed: 0, cancelled: 0, revenue_total: 0, revenue_delivered: 0, ads_cost: 0 }
@@ -157,7 +180,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         : null
     }
 
-    return res.json({ rows, summary, from, to, group_by })
+    return res.json({ rows: mergedRows, summary, from, to, group_by })
   } catch (err: any) {
     console.error("[report/mkt]", err.message)
     return res.status(500).json({ error: err.message })
