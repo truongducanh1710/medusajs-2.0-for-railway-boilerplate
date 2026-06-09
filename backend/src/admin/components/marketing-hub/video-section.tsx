@@ -1213,6 +1213,14 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
             </div>
           )}
 
+          {/* Nhận xét quản lý */}
+          {result?.nhan_xet_quanly && (
+            <div style={{ background: "#1C1917", borderRadius: 10, padding: "14px 16px", marginBottom: 16, border: "1px solid #44403C" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#FCD34D", marginBottom: 6 }}>💼 NHẬN XÉT QUẢN LÝ ADS</div>
+              <div style={{ fontSize: 13, color: "#E7E5E4", lineHeight: 1.8 }}>{result.nhan_xet_quanly}</div>
+            </div>
+          )}
+
           {/* Lời thoại đầy đủ */}
           {result?.loi_thoai && (
             <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
@@ -1313,7 +1321,8 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
                     {c.mo_ta_hinh && <div style={{ fontSize: 12, color: "#374151", marginBottom: 2 }}>🎬 {c.mo_ta_hinh}</div>}
                     {c.text_overlay && <div style={{ fontSize: 12, color: "#7C3AED", marginBottom: 2 }}>📝 {c.text_overlay}</div>}
                     {c.am_thanh && <div style={{ fontSize: 12, color: "#0891B2", marginBottom: 2 }}>🔊 {c.am_thanh}</div>}
-                    {(c.hieu_qua || c.danh_gia) && <div style={{ fontSize: 11, color: "#059669", marginTop: 4, fontStyle: "italic" }}>→ {c.hieu_qua || c.danh_gia}</div>}
+                    {(c.hieu_qua_ban_hang || c.hieu_qua || c.danh_gia) && <div style={{ fontSize: 11, color: "#059669", marginTop: 4, fontStyle: "italic" }}>→ {c.hieu_qua_ban_hang || c.hieu_qua || c.danh_gia}</div>}
+                    {c.diem_yeu_canh && <div style={{ fontSize: 11, color: "#DC2626", marginTop: 3, background: "#FFF1F2", borderRadius: 4, padding: "3px 6px" }}>⚠ {c.diem_yeu_canh}</div>}
                   </div>
                 ))}
               </div>
@@ -1342,13 +1351,103 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
             )}
           </div>
 
+          {/* Giải thích điểm theo từng tiêu chí */}
+          {result?.ly_giai_diem && (
+            <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>📋 GIẢI THÍCH CHI TIẾT TỪNG ĐIỂM</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {[
+                  { key: "hook", label: "🪝 Hook", score: result.diem_chi_tiet?.hook, max: 2 },
+                  { key: "demo", label: "🛍 Demo", score: result.diem_chi_tiet?.demo, max: 3 },
+                  { key: "loi_thoai", label: "🗣 Lời thoại", score: result.diem_chi_tiet?.loi_thoai, max: 2 },
+                  { key: "cta", label: "📣 CTA", score: result.diem_chi_tiet?.cta, max: 1 },
+                  { key: "chat_luong", label: "🎬 Chất lượng", score: result.diem_chi_tiet?.chat_luong, max: 2 },
+                ].filter(({ key }) => result.ly_giai_diem[key]).map(({ key, label, score, max }) => (
+                  <div key={key} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #E5E7EB" }}>
+                    <div style={{ minWidth: 80, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 2 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280" }}>{label}</div>
+                      {score != null && <div style={{ fontSize: 15, fontWeight: 800, color: score/max >= 0.8 ? "#166534" : score/max >= 0.5 ? "#713F12" : "#991B1B" }}>{score}/{max}</div>}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.7, flex: 1 }}>{result.ly_giai_diem[key]}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Phân tích tâm lý mua hàng */}
+          {result?.phan_tich_tam_ly && (
+            <div style={{ background: "#FAF5FF", border: "1px solid #E9D5FF", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#7C3AED", marginBottom: 8 }}>🧠 PHÂN TÍCH TÂM LÝ MUA HÀNG</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {result.phan_tich_tam_ly.trigger_chinh && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>TRIGGER CHÍNH</div>
+                    <div style={{ fontSize: 12, background: "#7C3AED", color: "#fff", borderRadius: 20, padding: "3px 10px", display: "inline-block", fontWeight: 600 }}>{result.phan_tich_tam_ly.trigger_chinh}</div>
+                  </div>
+                )}
+                {result.phan_tich_tam_ly.diem_thoat_du_doan && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>DỰ ĐOÁN ĐIỂM THOÁT</div>
+                    <div style={{ fontSize: 12, color: "#DC2626", fontWeight: 600 }}>⚠ {result.phan_tich_tam_ly.diem_thoat_du_doan}</div>
+                  </div>
+                )}
+                {result.phan_tich_tam_ly.trigger_hieu_qua && (
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>ĐANG HOẠT ĐỘNG TỐT</div>
+                    <div style={{ fontSize: 12, color: "#166534" }}>✓ {result.phan_tich_tam_ly.trigger_hieu_qua}</div>
+                  </div>
+                )}
+                {result.phan_tich_tam_ly.trigger_thieu && (
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>NÊN THÊM VÀO</div>
+                    <div style={{ fontSize: 12, color: "#92400E" }}>+ {result.phan_tich_tam_ly.trigger_thieu}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Khuyến nghị */}
           {result?.khuyen_nghi?.length > 0 && (
-            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 16px" }}>
+            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#1D4ED8", marginBottom: 6 }}>💡 KHUYẾN NGHỊ</div>
               {result.khuyen_nghi.map((k: string, i: number) => (
                 <div key={i} style={{ fontSize: 13, color: "#1E40AF", marginBottom: 4 }}>• {k}</div>
               ))}
+            </div>
+          )}
+
+          {/* Đề xuất viết lại */}
+          {result?.viet_lai_de_xuat && (result.viet_lai_de_xuat.hook_moi || result.viet_lai_de_xuat.cta_moi || result.viet_lai_de_xuat.canh_nen_them) && (
+            <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#065F46", marginBottom: 8 }}>✏️ ĐỀ XUẤT VIẾT LẠI</div>
+              {result.viet_lai_de_xuat.hook_moi && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>HOOK MỚI (3s đầu)</div>
+                  <div style={{ fontSize: 13, color: "#065F46", fontStyle: "italic", background: "#fff", borderRadius: 6, padding: "6px 10px", border: "1px solid #A7F3D0" }}>"{result.viet_lai_de_xuat.hook_moi}"</div>
+                </div>
+              )}
+              {result.viet_lai_de_xuat.cta_moi && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>CTA MỚI</div>
+                  <div style={{ fontSize: 13, color: "#065F46", fontStyle: "italic", background: "#fff", borderRadius: 6, padding: "6px 10px", border: "1px solid #A7F3D0" }}>"{result.viet_lai_de_xuat.cta_moi}"</div>
+                </div>
+              )}
+              {result.viet_lai_de_xuat.canh_nen_them && (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#6B7280", marginBottom: 3 }}>CẢNH NÊN THÊM</div>
+                  <div style={{ fontSize: 12, color: "#374151" }}>+ {result.viet_lai_de_xuat.canh_nen_them}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Kết luận quản lý */}
+          {result?.ket_luan_quanly && (
+            <div style={{ background: "#1C1917", borderRadius: 10, padding: "14px 16px", border: "1px solid #44403C" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#FCD34D", marginBottom: 6 }}>🎯 KẾT LUẬN — CÓ NÊN CHẠY ADS KHÔNG?</div>
+              <div style={{ fontSize: 13, color: "#E7E5E4", lineHeight: 1.8 }}>{result.ket_luan_quanly}</div>
             </div>
           )}
         </div>

@@ -243,44 +243,66 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await waitFileActive(fileUri)
 
     // 3. Gọi Gemini phân tích
-    const prompt = `Bạn là chuyên gia phân tích video quảng cáo bán hàng trên mạng xã hội (TikTok, Facebook Reels) cho thị trường Việt Nam, chuyên ngành đồ gia dụng.
+    const prompt = `Bạn là quản lý Ads Performance với 10 năm kinh nghiệm chạy quảng cáo Facebook/TikTok cho thị trường Việt Nam, chuyên ngành đồ gia dụng. Bạn KHÓ TÍNH, không chấp nhận video trung bình — mục tiêu duy nhất là video phải khiến người xem DỪNG LẠI, MUỐN MUA và BẤM ĐẶT HÀNG NGAY.
+
+Bạn đã review hàng nghìn video ads, biết chính xác giây nào người xem thoát, câu nào tạo desire, hình ảnh nào trigger mua hàng.
 
 ## THÔNG TIN VIDEO
 - Sản phẩm: ${row.product || "Không rõ"} (mã: ${row.product_code || "N/A"})
-- Loại video: ${row.video_type || "Không rõ"} ${row.video_type === "Real" ? "(người thật review/demo)" : row.video_type === "Video AI" ? "(AI tạo hình ảnh)" : ""}
-${row.script ? `- Script gốc:\n"""\n${row.script}\n"""` : "- Script: không có (tự transcribe từ audio)"}
+- Loại video: ${row.video_type || "Không rõ"} ${row.video_type === "Real" ? "(người thật review/demo — UGC)" : row.video_type === "Video AI" ? "(AI generated — cần chú ý tính chân thực)" : ""}
+${row.script ? `- Script gốc:\n"""\n${row.script}\n"""` : "- Script: không có sẵn (tự transcribe từ audio)"}
 
-## NHIỆM VỤ
-Xem TOÀN BỘ video từ đầu đến cuối. Thực hiện đồng thời:
-1. **Transcribe** chính xác 100% lời thoại/voiceover (tiếng Việt có dấu đầy đủ)
-2. **Phân tích từng cảnh** theo mốc thời gian thực tế trong video
-3. **Phát hiện lỗi** kỹ thuật và nội dung
-4. **Chấm điểm** theo rubric bên dưới
+## NHIỆM VỤ — xem TOÀN BỘ video từ đầu đến cuối:
+1. **Transcribe** 100% lời thoại/voiceover — tiếng Việt có dấu, giữ nguyên cách nói
+2. **Phân tích từng cảnh** với góc nhìn ads performance: giây nào người xem thoát, giây nào bị thu hút
+3. **Chấm điểm khắt khe** theo rubric — điểm 7+ phải thực sự xứng đáng, không cho điểm đẹp
+4. **Phán xét thẳng thắn** từng điểm yếu — cụ thể đến từng giây, từng câu, từng hình ảnh
 
-## RUBRIC CHẤM ĐIỂM (diem_ban_hang 0-10)
-- Hook 3s đầu có bắt mắt/gây tò mò không? (2đ)
-- Demo sản phẩm có thuyết phục, rõ tính năng không? (3đ)
-- Lời thoại tự nhiên, đáng tin, không đọc script cứng không? (2đ)
-- CTA rõ ràng, tạo urgency không? (1đ)
-- Chất lượng hình ảnh/âm thanh tổng thể? (2đ)
+## RUBRIC CHẤM ĐIỂM (diem_ban_hang 0-10, khắt khe):
+- **Hook 0-3s**: Có khiến người đang scroll DỪNG lại không? Hình ảnh/câu đầu có gây tò mò, shock, hoặc đánh đúng nỗi đau không? (2đ — chỉ 2đ nếu stop-scroll rate dự kiến >40%)
+- **Demo sản phẩm**: Tính năng được thể hiện có THUYẾT PHỤC không? Người xem có hình dung được lợi ích thực tế không? Có "aha moment" không? (3đ)
+- **Lời thoại & cảm xúc**: Giọng nói tự nhiên hay đọc script? Có tạo được DESIRE — người xem muốn có sản phẩm này không? Có trust không? (2đ)
+- **CTA & Urgency**: Có lý do để bấm MUA NGAY không? Offer có hấp dẫn không? Urgency có thật không? (1đ)
+- **Chất lượng kỹ thuật**: Hình ảnh sắc nét, ánh sáng tốt, âm thanh rõ, edit mượt không? (2đ)
 
-## OUTPUT — JSON THUẦN, không markdown, không giải thích thêm:
+## YÊU CẦU PHÂN TÍCH SÂU:
+- Với mỗi điểm yếu: chỉ rõ tại sao nó gây hại cho conversion, và viết lại cụ thể nên sửa thành gì
+- Phân tích tâm lý người mua: video này tác động vào trigger mua hàng nào (FOMO, social proof, pain relief, aspirational, value...)
+- Dự đoán "điểm thoát" — giây nào người xem có khả năng cao thoát ra và tại sao
+- So sánh với benchmark UGC review tốt trên thị trường VN
+
+## OUTPUT — JSON THUẦN, không markdown, không giải thích ngoài JSON:
 {
-  "tong_quan": "1-2 câu mô tả style và nội dung chính",
+  "tong_quan": "2-3 câu nhận xét tổng thể thẳng thắn — style, angle, điểm mạnh/yếu lớn nhất",
+  "nhan_xet_quanly": "đoạn nhận xét 4-6 câu từ góc độ quản lý ads: video này có chạy được không, tại sao, cần sửa gì trước khi boost budget",
   "diem_ban_hang": 7.5,
   "diem_chi_tiet": { "hook": 1.5, "demo": 2.5, "loi_thoai": 1.5, "cta": 0.5, "chat_luong": 1.5 },
-  "loi_thoai": "TOÀN BỘ lời thoại transcript chính xác, giữ nguyên cách nói tự nhiên",
+  "ly_giai_diem": {
+    "hook": "giải thích cụ thể tại sao cho điểm này — hook có làm người xem dừng không, câu/hình đầu tiên là gì, đủ mạnh chưa",
+    "demo": "tính năng nào được demo tốt, tính năng nào chưa rõ, có 'aha moment' không",
+    "loi_thoai": "giọng có tự nhiên không, câu nào đọc script lộ, câu nào tạo được emotion/desire",
+    "cta": "offer cụ thể là gì, urgency có thật không, có lý do mua ngay không",
+    "chat_luong": "ánh sáng, góc quay, edit, subtitle — cái gì ổn, cái gì cần fix"
+  },
+  "loi_thoai": "TOÀN BỘ transcript chính xác từng câu, giữ nguyên cách nói tự nhiên, không tóm tắt",
+  "phan_tich_tam_ly": {
+    "trigger_chinh": "trigger mua hàng chính video đang dùng: pain_relief|fomo|social_proof|aspirational|value_deal|curiosity",
+    "trigger_hieu_qua": "trigger nào đang hoạt động tốt và tại sao",
+    "trigger_thieu": "trigger nào nên thêm vào để tăng conversion",
+    "diem_thoat_du_doan": "timestamp dự đoán người xem thoát nhiều nhất và lý do tâm lý"
+  },
   "tung_canh": [
     {
       "stt": 1,
       "timestamp": "0s-4s",
       "loai_canh": "hook|problem|demo|social_proof|cta|outro|other",
-      "loi_thoai_canh": "lời thoại tại đoạn này — trích nguyên văn từ transcript",
-      "mo_ta_hinh": "mô tả cụ thể: góc quay, chủ thể, hành động, background, ánh sáng",
-      "text_overlay": "text/subtitle hiển thị trên màn hình (nếu không có để trống)",
-      "am_thanh": "nhạc nền/hiệu ứng âm thanh đặc biệt nếu có (ASMR, tiếng xèo, nhạc trend...)",
-      "loi_ky_thuat": "lỗi kỹ thuật nếu thấy: mờ, rung, cắt đột ngột, subtitle sai, font lỗi... (để trống nếu ok)",
-      "hieu_qua": "nhận xét ngắn về hiệu quả bán hàng của cảnh này"
+      "loi_thoai_canh": "lời thoại nguyên văn tại cảnh này",
+      "mo_ta_hinh": "góc quay, chủ thể, hành động, background, ánh sáng — cụ thể",
+      "text_overlay": "text/subtitle trên màn hình (để trống nếu không có)",
+      "am_thanh": "nhạc nền/hiệu ứng âm thanh đặc biệt",
+      "hieu_qua_ban_hang": "cảnh này tác động gì đến người xem — tạo emotion gì, có giữ chân không",
+      "diem_yeu_canh": "điểm yếu cụ thể của cảnh này nếu có (để trống nếu tốt)",
+      "loi_ky_thuat": "lỗi kỹ thuật nếu có: mờ, rung, cắt đột ngột, subtitle sai... (để trống nếu ok)"
     }
   ],
   "phan_tich_bo_cuc": {
@@ -289,17 +311,28 @@ Xem TOÀN BỘ video từ đầu đến cuối. Thực hiện đồng thời:
     "co_demo_ro": true,
     "co_social_proof": false,
     "cta_ro_rang": true,
-    "nhan_xet": "nhận xét tổng về bố cục narrative flow"
+    "nhan_xet": "nhận xét về narrative flow — bố cục có dẫn dắt người xem đến hành động mua không"
   },
-  "am_thanh_tong_the": "đánh giá nhạc nền, voiceover, hiệu ứng âm thanh",
-  "danh_gia_visual": "đánh giá màu sắc, ánh sáng, góc quay, font chữ overlay",
+  "am_thanh_tong_the": "nhận xét chi tiết: nhạc có phù hợp mood không, voiceover có truyền cảm không, có âm thanh nào distract không",
+  "danh_gia_visual": "nhận xét chi tiết: màu sắc, ánh sáng, góc quay, font subtitle, edit rhythm",
   "goc_do_trien_khai": "angle chính: storytelling|demo|ugc|asmr|comparison|lifestyle|education",
-  "loi_video": ["mảng lỗi cần sửa — cụ thể và actionable"],
-  "diem_manh": ["điểm mạnh nổi bật — cụ thể"],
-  "khuyen_nghi": ["gợi ý cải thiện cụ thể, ưu tiên impact cao trước"]
+  "loi_video": [
+    "LỖI 1: [tên lỗi] — tại sao ảnh hưởng conversion — sửa thành: [hướng dẫn cụ thể]",
+    "LỖI 2: ..."
+  ],
+  "diem_manh": [
+    "ĐIỂM MẠNH 1: [cụ thể] — tại sao hiệu quả với người mua VN",
+    "ĐIỂM MẠNH 2: ..."
+  ],
+  "viet_lai_de_xuat": {
+    "hook_moi": "viết lại câu hook 3s đầu mạnh hơn — cụ thể, có thể dùng ngay",
+    "cta_moi": "viết lại CTA cuối mạnh hơn, có urgency thật",
+    "canh_nen_them": "mô tả 1-2 cảnh nên thêm vào để tăng desire hoặc trust"
+  },
+  "ket_luan_quanly": "kết luận 2-3 câu: video này CÓ NÊN chạy ads không, ngân sách test bao nhiêu là hợp lý, ưu tiên sửa gì TRƯỚC KHI boost"
 }
 
-Viết toàn bộ tiếng Việt có dấu. Phân tích trung thực, không khen chung chung.`
+Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùng từ "khá tốt", "ổn", "được" — phải cụ thể.`
 
     const rawContent = await callGemini(fileUri, prompt, requestedModel)
 
