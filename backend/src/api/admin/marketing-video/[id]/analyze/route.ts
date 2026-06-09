@@ -231,6 +231,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (!GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
 
+  const body = req.body as any
   const requestedModel = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : GEMINI_MODEL_DEFAULT
 
   let fileUri = ""
