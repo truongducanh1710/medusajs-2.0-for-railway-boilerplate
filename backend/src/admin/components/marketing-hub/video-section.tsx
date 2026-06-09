@@ -232,7 +232,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     try {
       const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: model || aiModel })
       if (result?.ai_review) {
-        setAiModal({ row: { ...row, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review })
+        const updatedScript = (!row.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : row.script
+        setAiModal({ row: { ...row, aiScore: result.ai_score, aiReview: result.ai_review, script: updatedScript }, result: result.ai_review })
         reload()
       } else {
         setToast("Phân tích thất bại: " + (result?.error || "không có kết quả"))
@@ -784,7 +785,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </div>
       )}
       {/* AI Review Modal */}
-      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} onClose={() => setAiModal(null)} onReanalyze={(model) => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); setToast("Đang phân tích lại..."); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", { model: model || aiModel }).then(result => { if (result?.ai_review) { setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) }} />}
+      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} onClose={() => setAiModal(null)} onReanalyze={(model) => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); setToast("Đang phân tích lại..."); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", { model: model || aiModel }).then(result => { if (result?.ai_review) { const updatedScript = (!r.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : r.script; setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review, script: updatedScript }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) }} />}
     </div>
   )
 }
@@ -1209,6 +1210,14 @@ function AiReviewModal({ row, result, aiModel, onClose, onReanalyze }: { row: Vi
             <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>TỔNG QUAN</div>
               <div style={{ fontSize: 13, color: "#111827", lineHeight: 1.6 }}>{result.tong_quan}</div>
+            </div>
+          )}
+
+          {/* Lời thoại đầy đủ */}
+          {result?.loi_thoai && (
+            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1D4ED8", marginBottom: 6 }}>🗣 LỜI THOẠI ĐẦY ĐỦ (TRANSCRIPT)</div>
+              <div style={{ fontSize: 13, color: "#1e3a5f", lineHeight: 1.8, whiteSpace: "pre-wrap", fontStyle: "italic" }}>{result.loi_thoai}</div>
             </div>
           )}
 
