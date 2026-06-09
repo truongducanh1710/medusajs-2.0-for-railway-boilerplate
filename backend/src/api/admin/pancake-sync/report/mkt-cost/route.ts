@@ -37,9 +37,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const {
       from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
       to = new Date().toISOString().slice(0, 10),
+      mkt_code,
+      account_id,
     } = req.query as Record<string, string>
 
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
+    const params: any[] = [from, to]
+    const filters: string[] = []
+    if (mkt_code) {
+      params.push(mkt_code)
+      filters.push(`mkt_name = $${params.length}`)
+    }
+    if (account_id) {
+      params.push(account_id.startsWith("act_") ? account_id : `act_${account_id}`)
+      filters.push(`ad_account_id = $${params.length}`)
+    }
 
     const rows = await cskhService.sql(`
       SELECT
@@ -53,9 +65,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE deleted_at IS NULL
         AND date >= $1::date
         AND date <= $2::date
+        ${filters.length ? "AND " + filters.join(" AND ") : ""}
       GROUP BY date, mkt_name
       ORDER BY date DESC, spend DESC
-    `, [from, to])
+    `, params)
 
     const summary: Record<string, any> = {}
     for (const row of rows) {

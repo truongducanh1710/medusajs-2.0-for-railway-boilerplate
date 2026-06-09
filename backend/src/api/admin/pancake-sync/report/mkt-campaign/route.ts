@@ -9,7 +9,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const today = new Date().toISOString().slice(0, 10)
     const q = req.query as Record<string, string>
-    const mkt = q.mkt ?? ""
+    const mkt = q.mkt ?? q.mkt_code ?? ""
+    const accountId = q.account_id
 
     // Range mode khi có from+to (hoặc chỉ from), single-day khi chỉ có date
     const isRange = !!(q.from || q.to)
@@ -19,8 +20,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
 
     const params: any[] = [fromDate, toDate]
-    const mktFilter = mkt ? `AND mkt_name = $3` : ""
+    const filters: string[] = []
     if (mkt) params.push(mkt)
+    if (mkt) filters.push(`mkt_name = $${params.length}`)
+    if (accountId) {
+      params.push(accountId.startsWith("act_") ? accountId : `act_${accountId}`)
+      filters.push(`ad_account_id = $${params.length}`)
+    }
 
     const rows = await cskhService.sql(`
       WITH ads AS (
@@ -41,7 +47,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         WHERE deleted_at IS NULL
           AND date >= $1::date
           AND date <= $2::date
-          ${mktFilter}
+          ${filters.length ? "AND " + filters.join(" AND ") : ""}
         GROUP BY campaign_id, campaign_name, mkt_name
       )
       SELECT
