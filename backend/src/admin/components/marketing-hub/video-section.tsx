@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { useResizableColumns, ResizeHandle, type ColumnDef } from "../../lib/resizable-columns"
