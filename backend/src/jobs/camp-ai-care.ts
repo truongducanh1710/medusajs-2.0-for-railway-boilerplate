@@ -2,7 +2,7 @@ import { MedusaContainer } from "@medusajs/framework"
 import OpenAI from "openai"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
-import { logAiUsage } from "../lib/ai-usage.js"
+import { logAiUsage } from "../lib/ai-usage"
 
 const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-pro"
 const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "google/gemini-3.5-flash"
