@@ -4086,7 +4086,7 @@ export default function BaoCaoMktPage() {
           if (!handoverForm.from_code || !handoverForm.to_code || !handoverForm.effective_from) return alert("Điền đủ Từ code, Sang code, Từ ngày")
           setHandoverSaving(true)
           try {
-            await apiFetch("/admin/pancake-sync/report/mkt-handover", { method: "POST", body: JSON.stringify(handoverForm) })
+            await apiFetch("/admin/pancake-sync/report/mkt-handover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(handoverForm) })
             const r = await apiFetch("/admin/pancake-sync/report/mkt-handover").then(res => res.json())
             setHandoverRules(r.rules ?? [])
             setHandoverForm({ from_code: "", to_code: "", effective_from: "", note: "" })
