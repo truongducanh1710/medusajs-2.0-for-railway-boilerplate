@@ -23,7 +23,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     let members: any[] = Array.isArray(channel.members) ? [...channel.members] : []
 
     if (Array.isArray(remove)) {
-      members = members.filter((m: any) => !remove.includes(m.user_id))
+      // Không bao giờ bỏ người tạo (admin) khỏi channel
+      members = members.filter((m: any) => !remove.includes(m.user_id) || m.user_id === channel.created_by)
     }
     if (Array.isArray(add)) {
       const existing = new Set(members.map((m: any) => m.user_id))

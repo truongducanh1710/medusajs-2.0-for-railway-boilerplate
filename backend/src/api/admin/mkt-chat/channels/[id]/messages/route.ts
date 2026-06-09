@@ -6,6 +6,15 @@ function actorId(req: MedusaRequest): string | null {
   return auth?.actor_type === "user" ? auth.actor_id : null
 }
 
+// Identity key = email (đồng bộ toàn feature mkt-chat)
+async function actorEmail(req: MedusaRequest): Promise<string | null> {
+  const uid = actorId(req)
+  if (!uid) return null
+  const userModule = req.scope.resolve(Modules.USER)
+  const user = await userModule.retrieveUser(uid, { select: ["email"] })
+  return user?.email ?? null
+}
+
 // GET /admin/mkt-chat/channels/:id/messages
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -27,17 +36,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       take: Math.min(Number(limit), 100),
     })
 
-    // Resolve author names
+    // Resolve author names — author_id lưu bằng email nên map theo email
     const userModule = req.scope.resolve(Modules.USER)
-    const allUsers = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name"] })
-    const userMap: Record<string, string> = {}
+    const allUsers = await userModule.listUsers({}, { select: ["email", "first_name", "last_name"] })
+    const nameByEmail: Record<string, string> = {}
     for (const u of allUsers) {
-      userMap[u.id] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+      nameByEmail[u.email] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
     }
 
     const enriched = messages.reverse().map((m: any) => ({
       ...m,
-      author_name: m.author_id === "ai" ? "AI Assistant" : (userMap[m.author_id] || m.author_id),
+      author_name: m.author_id === "ai" ? "AI Assistant" : (nameByEmail[m.author_id] || m.author_id),
     }))
 
     res.json({ messages: enriched })
@@ -49,8 +58,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // POST /admin/mkt-chat/channels/:id/messages
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const uid = actorId(req)
-    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    const email = await actorEmail(req)
+    if (!email) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
@@ -66,14 +75,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const message = await svc.createMktMessages({
       channel_id: id,
-      author_id: uid,
+      author_id: email,
       content: content.trim(),
       msg_type: "text",
     })
 
     // Handle @ai async - post response as separate message
-    if (isAiCommand && question && process.env.ANTHROPIC_API_KEY) {
-      handleAiResponse(svc, id, question).catch(console.error)
+    if (isAiCommand && question) {
+      if (process.env.ANTHROPIC_API_KEY) {
+        handleAiResponse(svc, id, question).catch(console.error)
+      } else {
+        await svc.createMktMessages({
+          channel_id: id,
+          author_id: "ai",
+          content: "⚠️ Tính năng @ai chưa bật (thiếu ANTHROPIC_API_KEY).",
+          msg_type: "ai_response",
+        })
+      }
     }
 
     res.json({ message })

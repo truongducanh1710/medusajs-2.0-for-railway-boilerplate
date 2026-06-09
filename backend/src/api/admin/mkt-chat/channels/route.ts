@@ -6,6 +6,15 @@ function actorId(req: MedusaRequest): string | null {
   return auth?.actor_type === "user" ? auth.actor_id : null
 }
 
+// Identity key trong toàn feature mkt-chat = email (đồng bộ với mkt-tasks & permissions/mkt-users)
+async function actorEmail(req: MedusaRequest): Promise<string | null> {
+  const uid = actorId(req)
+  if (!uid) return null
+  const userModule = req.scope.resolve(Modules.USER)
+  const user = await userModule.retrieveUser(uid, { select: ["email"] })
+  return user?.email ?? null
+}
+
 async function isManager(req: MedusaRequest): Promise<boolean> {
   const uid = actorId(req)
   if (!uid) return false
@@ -21,19 +30,19 @@ async function isManager(req: MedusaRequest): Promise<boolean> {
 // GET /admin/mkt-chat/channels - list channels user is member of
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const uid = actorId(req)
-    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    const email = await actorEmail(req)
+    if (!email) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const manager = await isManager(req)
 
     const allChannels = await svc.listMktChannels({ deleted_at: null })
 
-    // Filter channels: manager sees all, MKT sees only those they're member of
+    // Filter channels: manager sees all, MKT sees only those they're member of (key = email)
     const channels = manager
       ? allChannels
       : allChannels.filter((c: any) =>
-          Array.isArray(c.members) && c.members.some((m: any) => m.user_id === uid)
+          Array.isArray(c.members) && c.members.some((m: any) => m.user_id === email)
         )
 
     // Add unread count (messages after last_read — simplified: just count recent)
@@ -42,6 +51,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       name: c.name,
       description: c.description,
       member_count: Array.isArray(c.members) ? c.members.length : 0,
+      member_ids: Array.isArray(c.members) ? c.members.map((m: any) => m.user_id) : [],
       created_at: c.created_at,
     }))
 
@@ -54,8 +64,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // POST /admin/mkt-chat/channels - tạo channel (manager only)
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const uid = actorId(req)
-    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    const email = await actorEmail(req)
+    if (!email) return res.status(401).json({ error: "Unauthenticated" })
     if (!(await isManager(req))) return res.status(403).json({ error: "Chỉ manager mới được tạo channel" })
 
     const { name, description, member_ids } = req.body as any
@@ -63,17 +73,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const svc = req.scope.resolve("mktTaskModule") as any
 
+    // member_ids từ frontend là email. Creator cũng dùng email để đồng nhất key.
+    const memberEmails = Array.isArray(member_ids) ? member_ids.filter((e: string) => e && e !== email) : []
     const members = [
-      { user_id: uid, role: "admin", joined_at: new Date().toISOString() },
-      ...(Array.isArray(member_ids) ? member_ids.map((id: string) => ({
-        user_id: id, role: "member", joined_at: new Date().toISOString()
-      })) : []),
+      { user_id: email, role: "admin", joined_at: new Date().toISOString() },
+      ...memberEmails.map((m: string) => ({
+        user_id: m, role: "member", joined_at: new Date().toISOString()
+      })),
     ]
 
     const channel = await svc.createMktChannels({
       name: name.trim(),
       description: description || null,
-      created_by: uid,
+      created_by: email,
       members,
     })
 

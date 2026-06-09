@@ -5,7 +5,7 @@ import { useCurrentPermissions } from "../../lib/use-permissions"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Channel = { id: string; name: string; description: string | null; member_count: number }
+type Channel = { id: string; name: string; description: string | null; member_count: number; member_ids?: string[] }
 type Message = {
   id: string
   channel_id: string
@@ -169,6 +169,68 @@ function CreateChannelModal({ onClose, onCreated, users }: {
   )
 }
 
+// ─── Manage Members Modal ─────────────────────────────────────────────────────
+
+function ManageMembersModal({ channel, users, onClose, onSaved }: {
+  channel: Channel
+  users: MktUser[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  // Bỏ admin (creator) khỏi danh sách chỉnh — luôn giữ. Pre-check theo member_ids hiện tại (email).
+  const initial = new Set(channel.member_ids || [])
+  const [selected, setSelected] = useState<Set<string>>(new Set(initial))
+  const [saving, setSaving] = useState(false)
+
+  const toggle = (email: string) => {
+    setSelected(s => {
+      const n = new Set(s)
+      n.has(email) ? n.delete(email) : n.add(email)
+      return n
+    })
+  }
+
+  const submit = async () => {
+    setSaving(true)
+    const add = [...selected].filter(e => !initial.has(e))
+    const remove = [...initial].filter(e => !selected.has(e))
+    await apiFetch(`/admin/mkt-chat/channels/${channel.id}/members`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ add, remove }),
+    })
+    setSaving(false)
+    onSaved(); onClose()
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 420, maxWidth: "95vw" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Thành viên #{channel.name}</div>
+        <div style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 16 }}>Tích chọn để thêm / bỏ thành viên</div>
+        <div style={{ border: "1px solid #E5E7EB", borderRadius: 6, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
+          {users.map(u => (
+            <div key={u.email} onClick={() => toggle(u.email)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #F3F4F6", background: selected.has(u.email) ? "#EFF6FF" : "#fff" }}>
+              <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${selected.has(u.email) ? "#3B82F6" : "#D1D5DB"}`, background: selected.has(u.email) ? "#3B82F6" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {selected.has(u.email) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+              </div>
+              <span style={{ fontSize: 13 }}>{u.name}</span>
+            </div>
+          ))}
+          {users.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "#9CA3AF" }}>Không có thành viên</div>}
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <button onClick={onClose} style={{ padding: "8px 16px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", fontSize: 13, cursor: "pointer" }}>Hủy</button>
+          <button onClick={submit} disabled={saving} style={{ padding: "8px 16px", border: "none", borderRadius: 6, background: "#3B82F6", color: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+            {saving ? "Đang lưu..." : "Lưu"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Create Task from Chat Modal ──────────────────────────────────────────────
 
 function CreateTaskFromChatModal({ channelId, users, onClose, onCreated }: {
@@ -246,14 +308,18 @@ export default function MktChatPage() {
   const [loading, setLoading] = useState(false)
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showCreateTask, setShowCreateTask] = useState(false)
+  const [showManageMembers, setShowManageMembers] = useState(false)
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])
   const [currentUserId, setCurrentUserId] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const sseRef = useRef<EventSource | null>(null)
 
-  // Load channels
+  // Load channels (đồng thời sync lại activeChannel nếu nó còn trong list)
   const loadChannels = useCallback(() => {
-    apiFetch("/admin/mkt-chat/channels").then(r => r.json()).then(d => setChannels(d.channels || []))
+    apiFetch("/admin/mkt-chat/channels").then(r => r.json()).then(d => {
+      const list: Channel[] = d.channels || []
+      setChannels(list)
+      setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || prev) : prev)
+    })
   }, [])
 
   useEffect(() => {
@@ -262,7 +328,7 @@ export default function MktChatPage() {
     apiFetch("/admin/permissions/me").then(r => r.json()).then(d => setCurrentUserId(d.user?.email || ""))
   }, [loadChannels])
 
-  // Load messages when channel changes
+  // Load messages when channel changes (dựa vào id để tránh refetch thừa khi object đổi tham chiếu)
   useEffect(() => {
     if (!activeChannel) return
     setLoading(true)
@@ -270,33 +336,28 @@ export default function MktChatPage() {
       .then(r => r.json())
       .then(d => setMessages(d.messages || []))
       .finally(() => setLoading(false))
-  }, [activeChannel])
+  }, [activeChannel?.id])
 
-  // SSE for real-time messages
+  // Real-time messages via polling (EventSource không gửi được auth header nên không dùng SSE)
   useEffect(() => {
     if (!activeChannel) return
-    if (sseRef.current) sseRef.current.close()
-
-    // Use apiFetch base URL pattern — get token from cookie
-    const url = `/admin/mkt-chat/channels/${activeChannel.id}/stream`
-    // Simple polling fallback since SSE needs auth headers
+    const channelId = activeChannel.id
     const poll = setInterval(() => {
-      if (!activeChannel) return
-      const last = messages[messages.length - 1]
-      const params = last ? `?before_id=${last.id}` : ""
-      apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages?limit=10`)
+      apiFetch(`/admin/mkt-chat/channels/${channelId}/messages?limit=30`)
         .then(r => r.json())
         .then(d => {
           const newMsgs: Message[] = d.messages || []
           setMessages(prev => {
-            const ids = new Set(prev.map(m => m.id))
-            const fresh = newMsgs.filter(m => !ids.has(m.id))
-            return fresh.length > 0 ? [...prev, ...fresh] : prev
+            // Bỏ optimistic placeholder; giữ nguyên tin cũ đã load, chỉ thêm tin thật mới
+            const real = prev.filter(m => !m.id.startsWith("opt-"))
+            const realIds = new Set(real.map(m => m.id))
+            const fresh = newMsgs.filter(m => !realIds.has(m.id))
+            if (fresh.length === 0 && real.length === prev.length) return prev
+            return [...real, ...fresh]
           })
         })
         .catch(() => {})
     }, 3000)
-
     return () => { clearInterval(poll) }
   }, [activeChannel?.id])
 
@@ -387,7 +448,14 @@ export default function MktChatPage() {
               <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}># {activeChannel.name}</span>
               {activeChannel.description && <span style={{ fontSize: 12, color: "#9CA3AF", marginLeft: 8 }}>{activeChannel.description}</span>}
             </div>
-            <div style={{ fontSize: 12, color: "#9CA3AF" }}>{activeChannel.member_count} thành viên</div>
+            {isManager ? (
+              <button
+                onClick={() => setShowManageMembers(true)}
+                style={{ fontSize: 12, color: "#3B82F6", background: "none", border: "none", cursor: "pointer" }}
+              >{activeChannel.member_count} thành viên · Quản lý</button>
+            ) : (
+              <div style={{ fontSize: 12, color: "#9CA3AF" }}>{activeChannel.member_count} thành viên</div>
+            )}
           </div>
 
           {/* Messages */}
@@ -459,6 +527,14 @@ export default function MktChatPage() {
             apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`)
               .then(r => r.json()).then(d => setMessages(d.messages || []))
           }}
+        />
+      )}
+      {showManageMembers && activeChannel && (
+        <ManageMembersModal
+          channel={activeChannel}
+          users={mktUsers}
+          onClose={() => setShowManageMembers(false)}
+          onSaved={loadChannels}
         />
       )}
     </div>
