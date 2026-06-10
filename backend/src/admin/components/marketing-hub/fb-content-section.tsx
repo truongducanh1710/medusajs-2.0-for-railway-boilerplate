@@ -28,6 +28,7 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
   // Khôi phục draft từ localStorage nếu không có prefill
   const savedDraft = (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null") } catch { return null } })()
   const [content, setContent] = useState(prefill?.sp ? `Video: ${prefill.sp}\n` : (savedDraft?.content || ""))
+  const [title, setTitle] = useState(savedDraft?.title || "")
   const [driveLink, setDriveLink] = useState(prefill?.driveUrl || savedDraft?.driveLink || "")
   const [postType, setPostType] = useState<"text" | "video" | "anh">(savedDraft?.postType || "video")
   const [schedule, setSchedule] = useState<"now" | "schedule">("now")
@@ -45,12 +46,12 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
   // Autosave draft vào localStorage — debounce 1s tránh ghi mỗi keystroke
   useEffect(() => {
     if (posting) return
-    if (!content && !driveLink) { localStorage.removeItem(DRAFT_KEY); return }
+    if (!content && !driveLink && !title) { localStorage.removeItem(DRAFT_KEY); return }
     const t = setTimeout(() => {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ content, driveLink, postType }))
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ content, title, driveLink, postType }))
     }, 1000)
     return () => clearTimeout(t)
-  }, [content, driveLink, postType, posting])
+  }, [content, title, driveLink, postType, posting])
 
   // Warn khi thoát trang nếu có nội dung chưa đăng
   useEffect(() => {
@@ -64,7 +65,7 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
     return () => window.removeEventListener("beforeunload", handler)
   }, [content, driveLink, posting])
 
-  const clearDraft = () => { localStorage.removeItem(DRAFT_KEY); setHasDraft(false) }
+  const clearDraft = () => { localStorage.removeItem(DRAFT_KEY); setHasDraft(false); setTitle("") }
 
   useEffect(() => {
     apiJson("/admin/fb-content").then(d => {
@@ -101,6 +102,7 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
         drive_url: driveLink, media_type: postType === "anh" ? "photo" : postType,
         video_id: prefill?.videoId,
       }
+      if (title.trim()) body.title = title.trim()
       if (schedule === "schedule") body.scheduled_for = new Date(schedTime).toISOString()
       const d = await apiJson("/admin/fb-content/post", "POST", body)
       if (d?.jobId) { clearDraft(); pollJob(d.jobId) }
@@ -128,6 +130,12 @@ function DangBaiTab({ prefill }: { prefill: { videoId?: string; driveUrl?: strin
             <textarea value={content} onChange={e => setContent(e.target.value)} rows={6} placeholder="Nhập nội dung bài đăng…" style={{ ...inpCls, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
             <div style={{ color: "#9CA3AF", fontSize: 11, textAlign: "right", marginTop: 4 }}>{content.length} ký tự</div>
           </div>
+          {postType === "video" && (
+            <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
+              <div style={{ color: "#4B5563", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>TIÊU ĐỀ VIDEO <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(tuỳ chọn)</span></div>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="VD: MUA 1 TẶNG 4 - CHẢO VÀNG TITAN CHỐNG DÍNH" style={inpCls} />
+            </div>
+          )}
           <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)" }}>
             <div style={{ color: "#4B5563", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>LINK GOOGLE DRIVE</div>
             <input value={driveLink} onChange={e => setDriveLink(e.target.value)} placeholder="https://drive.google.com/file/…" style={inpCls} />
