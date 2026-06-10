@@ -488,7 +488,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
                 {BANG_TAB_COLS.map(c => (
-                  <th key={c.id} style={{ position: "relative", padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>
+                  <th key={c.id} style={{ position: c.id === "actions" ? "sticky" : "relative", right: c.id === "actions" ? 0 : undefined, zIndex: c.id === "actions" ? 10 : undefined, background: c.id === "actions" ? "#F0F1F5" : undefined, borderLeft: c.id === "actions" ? "1px solid #E5E7EB" : undefined, padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>
                     {c.id === "sel" ? (
                       <input
                         type="checkbox"
@@ -560,7 +560,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "10px 12px" }}>
                     <input value={draft.ghiChu} onChange={e => setDraft(p => ({ ...p, ghiChu: e.target.value }))} placeholder="Ghi chú…" style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }} />
                   </td>
-                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                  <td style={{ position: "sticky", right: 0, background: "#EFF6FF", borderLeft: "1px solid #93C5FD", padding: "10px 12px", whiteSpace: "nowrap", zIndex: 5 }}>
                     <div style={{ display: "flex", gap: 5 }}>
                       <button onClick={saveRow} disabled={saving} style={{ background: saving ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer" }}>
                         {saving ? "…" : "✓ Lưu"}
@@ -693,7 +693,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       : <span className="line-clamp-1" style={{ color: "#4B5563", fontSize: 12 }}>{row.ghiChu || "—"}</span>}
                   </td>
                   {/* Actions */}
-                  <td onClick={e => e.stopPropagation()} style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
+                  <td onClick={e => e.stopPropagation()} style={{ position: "sticky", right: 0, background: selectedIds.has(row.id) ? "#F5F3FF" : (newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : "#FFFFFF"), borderLeft: "1px solid #E5E7EB", padding: "9px 12px", whiteSpace: "nowrap", zIndex: 5 }}>
                     {isEditing ? (
                       <div style={{ display: "flex", gap: 5 }}>
                         <button onClick={() => saveEdit(row.id)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ Lưu</button>
