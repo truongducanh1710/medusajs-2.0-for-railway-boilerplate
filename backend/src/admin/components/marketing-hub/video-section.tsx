@@ -148,7 +148,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null)
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; done: string[]; failed: string[] } | null>(null)
   const [linkCheckState, setLinkCheckState] = useState<{ checking: boolean; error: string | null; ok: boolean }>({ checking: false, error: null, ok: false })
@@ -251,9 +251,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   }
 
   const analyzeVideo = async (row: VideoRow, model?: string) => {
-    if (analyzingId) return
+    if (analyzingIds.has(row.id)) return
     if (row.aiReview && !model) { setAiModal({ row, result: row.aiReview }); return }
-    setAnalyzingId(row.id)
+    setAnalyzingIds(prev => new Set(prev).add(row.id))
     setToast("Đang phân tích AI (~20-40s)...")
     try {
       const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: model || aiModel })
@@ -265,7 +265,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         setToast("Phân tích thất bại: " + (result?.error || "không có kết quả"))
       }
     } catch (e: any) { setToast("Lỗi phân tích: " + e.message) }
-    finally { setAnalyzingId(null) }
+    finally { setAnalyzingIds(prev => { const n = new Set(prev); n.delete(row.id); return n }) }
   }
 
   const toggleSelect = (id: string) => {
@@ -720,18 +720,18 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                           <button
                             onClick={e => { e.stopPropagation(); if (isSuper || row.aiReview) analyzeVideo(row) }}
                             title={row.aiReview ? "Xem phân tích AI" : (isSuper ? "Phân tích video AI" : "")}
-                            disabled={analyzingId === row.id || (!isSuper && !row.aiReview)}
+                            disabled={analyzingIds.has(row.id) || (!isSuper && !row.aiReview)}
                             style={{
                               background: row.aiScore != null ? (row.aiScore >= 8 ? "#DCFCE7" : row.aiScore >= 6 ? "#FEF9C3" : "#FEE2E2") : "none",
                               border: `1px solid ${row.aiScore != null ? (row.aiScore >= 8 ? "#86EFAC" : row.aiScore >= 6 ? "#FDE047" : "#FCA5A5") : "#E5E7EB"}`,
                               borderRadius: 6, padding: "3px 7px", fontSize: 12,
-                              cursor: analyzingId === row.id ? "wait" : (row.aiReview || isSuper) ? "pointer" : "default",
+                              cursor: analyzingIds.has(row.id) ? "wait" : (row.aiReview || isSuper) ? "pointer" : "default",
                               color: row.aiScore != null ? (row.aiScore >= 8 ? "#166534" : row.aiScore >= 6 ? "#713F12" : "#991B1B") : "#6B7280",
                               fontWeight: row.aiScore != null ? 700 : 400,
                               minWidth: 36, textAlign: "center",
                             }}
                           >
-                            {analyzingId === row.id ? "⏳" : row.aiScore != null ? `★${row.aiScore}` : "🔍"}
+                            {analyzingIds.has(row.id) ? "⏳" : row.aiScore != null ? `★${row.aiScore}` : "🔍"}
                           </button>
                         )}
                         <button onClick={e => { e.stopPropagation(); startEdit(row) }} title="Chỉnh sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>✏️</button>
