@@ -638,7 +638,19 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                           {linkCheckState.error && <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 600 }}>⚠ {linkCheckState.error}</span>}
                           {linkCheckState.ok && <span style={{ fontSize: 10, color: "#16A34A", fontWeight: 600 }}>✓ Link hợp lệ</span>}
                         </div>
-                      : row.link ? <a href={row.link} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>↗ Drive</a> : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
+                      : row.link ? (() => {
+                          const isLark = row.link.includes("larksuite") || row.link.includes("feishu") || row.link.includes("lark.suite")
+                          return (
+                            <a href={row.link} target="_blank" rel="noopener noreferrer"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 500, textDecoration: "none",
+                                color: isLark ? "#2E6FD8" : "#1877F2",
+                                background: isLark ? "#EEF4FF" : "#EFF6FF",
+                                border: `1px solid ${isLark ? "#BFDBFE" : "#DBEAFE"}`,
+                                borderRadius: 6, padding: "2px 6px" }}>
+                              {isLark ? "🪶" : "📁"} {isLark ? "Lark" : "Drive"}
+                            </a>
+                          )
+                        })() : <span style={{ color: "#9CA3AF", fontSize: 12 }}>—</span>}
                   </td>
                   {/* Bài FB */}
                   <td style={{ padding: "9px 12px" }}>
