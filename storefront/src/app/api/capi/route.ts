@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${resolvedPixelId}/events?access_token=${resolvedToken}`,
+      `https://graph.facebook.com/v21.0/${resolvedPixelId}/events?access_token=${resolvedToken}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
