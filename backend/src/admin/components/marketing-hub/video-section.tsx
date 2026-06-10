@@ -55,6 +55,7 @@ type VideoRow = {
   deadline?: string | null
   aiScore?: number | null
   aiReview?: any
+  starred?: boolean
 }
 
 // ============================================================================
@@ -156,7 +157,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [aiModel, setAiModel] = useState<string>("gemini-3.1-pro-preview")
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
   const defaultNguoi = "all"
-  const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "" })
+  const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "", starOnly: false })
   const [toast, setToast] = useState<string | null>(null)
   const [fbLinkModal, setFbLinkModal] = useState<{ row: VideoRow } | null>(null)
   const [fbLinkDraft, setFbLinkDraft] = useState<{ page_name: string; post_url: string }>({ page_name: "", post_url: "" })
@@ -248,6 +249,15 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     setStatusDropId(null)
     try { await apiJson(`/admin/marketing-video/${id}`, "PATCH", { trangThai: s }); reload() }
     catch (e: any) { setToast("Lỗi: " + e.message) }
+  }
+
+  const toggleStar = async (row: VideoRow, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const newVal = !row.starred
+    try {
+      await apiJson(`/admin/marketing-video/${row.id}`, "PATCH", { starred: newVal })
+      reload()
+    } catch (err: any) { setToast("Lỗi: " + err.message) }
   }
 
   const analyzeVideo = async (row: VideoRow, model?: string) => {
@@ -391,6 +401,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     if (filters.sp !== "all" && r.sp !== filters.sp) return false
     if (filters.tts !== "all" && r.trangThai !== filters.tts) return false
     if (filters.q && !r.sp.toLowerCase().includes(filters.q.toLowerCase()) && !(r.ghiChu || "").toLowerCase().includes(filters.q.toLowerCase())) return false
+    if (filters.starOnly && !r.starred) return false
     return true
   })
 
@@ -421,6 +432,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           <option value="all">Trạng thái</option>
           {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <button
+          onClick={() => setFilters(p => ({ ...p, starOnly: !p.starOnly }))}
+          title="Chỉ hiện video win (★)"
+          style={{ background: filters.starOnly ? "#FEF9C3" : "#F3F4F6", color: filters.starOnly ? "#92400E" : "#6B7280", border: `1px solid ${filters.starOnly ? "#FDE047" : "#E5E7EB"}`, borderRadius: 8, padding: "5px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+          ★ {filters.starOnly ? "Win" : "Win"}
+        </button>
         {/* MKT user: toggle xem của mình / xem tổng */}
         {!isSuper && mktCode && (
           <button
@@ -717,6 +734,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       </div>
                     ) : (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <button
+                          onClick={e => toggleStar(row, e)}
+                          title={row.starred ? "Bỏ đánh dấu win" : "Đánh dấu video win"}
+                          style={{ background: row.starred ? "#FEF9C3" : "none", color: row.starred ? "#92400E" : "#D1D5DB", border: `1px solid ${row.starred ? "#FDE047" : "#E5E7EB"}`, borderRadius: 6, padding: "3px 7px", fontSize: 13, fontWeight: 700, cursor: "pointer", lineHeight: 1 }}>
+                          ★
+                        </button>
                         {row.link && (
                           <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
                         )}

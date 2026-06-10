@@ -34,6 +34,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     // fb_post_links: [{page_id, page_name, post_url, posted_at}]
     if (b.fbPostLinks !== undefined) set("fb_post_links", JSON.stringify(b.fbPostLinks))
     if (b.deadline !== undefined) set("deadline", b.deadline || null)
+    if (b.starred !== undefined) set("starred", !!b.starred)
     if (b.ai_score !== undefined) set("ai_score", b.ai_score)
     if (b.ai_review !== undefined) set("ai_review", JSON.stringify(b.ai_review))
 
