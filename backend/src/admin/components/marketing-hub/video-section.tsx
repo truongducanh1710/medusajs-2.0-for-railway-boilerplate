@@ -486,8 +486,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             </colgroup>
             <thead>
               <tr style={{ background: "#F0F1F5" }}>
-                {BANG_TAB_COLS.map(c => (
-                  <th key={c.id} style={{ position: c.id === "actions" ? "sticky" : "relative", right: c.id === "actions" ? 0 : undefined, zIndex: c.id === "actions" ? 10 : undefined, background: c.id === "actions" ? "#F0F1F5" : undefined, borderLeft: c.id === "actions" ? "1px solid #E5E7EB" : undefined, padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>
+                {BANG_TAB_COLS.map(c => {
+                  const stickyLeft: Record<string, number> = { sel: 0, stt: colWidths["sel"], vd: colWidths["sel"] + colWidths["stt"] }
+                  const isLeftSticky = c.id in stickyLeft
+                  const isRightSticky = c.id === "actions"
+                  return (
+                  <th key={c.id} style={{ position: isLeftSticky || isRightSticky ? "sticky" : "relative", left: isLeftSticky ? stickyLeft[c.id] : undefined, right: isRightSticky ? 0 : undefined, zIndex: isLeftSticky ? 11 : isRightSticky ? 10 : undefined, background: "#F0F1F5", borderLeft: isRightSticky ? "1px solid #E5E7EB" : undefined, borderRight: isLeftSticky && c.id === "vd" ? "1px solid #E5E7EB" : undefined, padding: "9px 12px", textAlign: "left", color: "#9CA3AF", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>
                     {c.id === "sel" ? (
                       <input
                         type="checkbox"
@@ -499,7 +503,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     ) : c.label}
                     {c.id !== "actions" && c.id !== "sel" && <ResizeHandle onMouseDown={onResizeMouseDown(c.id)} />}
                   </th>
-                ))}
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
@@ -575,13 +580,13 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
                 return (
                 <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
-                  <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} style={{ padding: "9px 12px", textAlign: "center" }}>
+                  <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} className="sticky-left" style={{ position: "sticky", left: 0, zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", textAlign: "center" }}>
                     {row.link && (
                       <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={e => e.stopPropagation()} style={{ cursor: "pointer", accentColor: "#7C3AED" }} />
                     )}
                   </td>
-                  <td style={{ padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
-                  <td style={{ padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
+                  <td className="sticky-left" style={{ position: "sticky", left: colWidths["sel"], zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
+                  <td className="sticky-left" style={{ position: "sticky", left: colWidths["sel"] + colWidths["stt"], zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", borderRight: "1px solid #E5E7EB", padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
                   {/* Ngày */}
                   {/* Ngày tạo — cố định, không cho sửa */}
                   <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
@@ -1293,6 +1298,10 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
 
   return (
     <div>
+      <style>{`
+        tr.hover-bg:hover td.sticky-left { background: #F9FAFB !important; }
+        tr.hover-bg[style*="F5F3FF"]:hover td.sticky-left { background: #EDE9FE !important; }
+      `}</style>
       <div style={{ display: "flex", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF", paddingLeft: 20 }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "11px 16px", color: tab === t.id ? "#1877F2" : "#4B5563", background: "none", border: "none", borderBottom: tab === t.id ? "2px solid #1877F2" : "2px solid transparent", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{t.label}</button>
