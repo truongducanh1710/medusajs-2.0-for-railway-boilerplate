@@ -342,6 +342,71 @@ type Props = {
   content: string
 }
 
+const COUNTDOWN_JS = `
+(function(){
+  function initCountdowns(){
+    document.querySelectorAll('.pvb-cd').forEach(function(el){
+      if(el.getAttribute('data-cd-init'))return;
+      el.setAttribute('data-cd-init','1');
+
+      // Đọc target time từ data-end hoặc data-hours (số giờ từ bây giờ)
+      var endTime;
+      var dataEnd=el.getAttribute('data-end');
+      var dataHours=el.getAttribute('data-hours');
+      var dataMins=el.getAttribute('data-minutes');
+
+      if(dataEnd){
+        endTime=new Date(dataEnd).getTime();
+      } else if(dataHours){
+        endTime=Date.now()+parseFloat(dataHours)*3600000;
+      } else if(dataMins){
+        endTime=Date.now()+parseFloat(dataMins)*60000;
+      } else {
+        // Default: đếm ngược đến 00:00 của ngày hôm sau (reset mỗi ngày)
+        var now=new Date();
+        var tomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,0);
+        endTime=tomorrow.getTime();
+      }
+
+      // Tìm các ô hiển thị — hỗ trợ cả class .num và data-unit
+      var hEl=el.querySelector('[data-unit="h"] .num, .pvb-cd-h, .cd-h');
+      var mEl=el.querySelector('[data-unit="m"] .num, .pvb-cd-m, .cd-m');
+      var sEl=el.querySelector('[data-unit="s"] .num, .pvb-cd-s, .cd-s');
+
+      // Fallback: lấy theo thứ tự các .num
+      if(!hEl||!mEl||!sEl){
+        var nums=el.querySelectorAll('.num');
+        if(nums.length>=3){hEl=nums[0];mEl=nums[1];sEl=nums[2];}
+        else if(nums.length===2){mEl=nums[0];sEl=nums[1];}
+      }
+
+      function pad(n){return String(Math.max(0,n)).padStart(2,'0');}
+
+      function tick(){
+        var diff=Math.max(0,endTime-Date.now());
+        var totalSecs=Math.floor(diff/1000);
+        var h=Math.floor(totalSecs/3600);
+        var m=Math.floor((totalSecs%3600)/60);
+        var s=totalSecs%60;
+        if(hEl)hEl.textContent=pad(h);
+        if(mEl)mEl.textContent=pad(m);
+        if(sEl)sEl.textContent=pad(s);
+        if(diff<=0)clearInterval(timer);
+      }
+
+      tick();
+      var timer=setInterval(tick,1000);
+    });
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',initCountdowns);
+  } else {
+    setTimeout(initCountdowns,50);
+  }
+})();
+`
+
 const TIKTOK_GALLERY_JS = `
 (function(){
   /* ── CLOSE popup ── */
@@ -511,6 +576,7 @@ export default function ProductPageContent({ content }: Props) {
   }
 
   const hasTikTokGallery = html.includes('pvb-tkg')
+  const hasCountdown = html.includes('pvb-cd')
 
   return (
     <>
@@ -519,6 +585,9 @@ export default function ProductPageContent({ content }: Props) {
         className="product-page-content"
         dangerouslySetInnerHTML={{ __html: html }}
       />
+      {hasCountdown && (
+        <Script id="pvb-cd-fns" strategy="afterInteractive">{COUNTDOWN_JS}</Script>
+      )}
       {hasTikTokGallery && (
         <Script id="pvb-tkg-fns" strategy="afterInteractive">{TIKTOK_GALLERY_JS}</Script>
       )}
