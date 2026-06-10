@@ -145,7 +145,6 @@ type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string;
 type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string; script: string }
 
 function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
-  const [statusDropId, setStatusDropId] = useState<string | null>(null)
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -654,19 +653,19 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     )}
                   </td>
                   {/* Trạng thái */}
-                  <td style={{ padding: "9px 12px" }}>
-                    <div style={{ position: "relative", display: "inline-block" }} onClick={e => e.stopPropagation()}>
-                      <StatusPill status={row.trangThai} onClick={() => setStatusDropId(statusDropId === row.id ? null : row.id)} />
-                      {statusDropId === row.id && (
-                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 500, background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", padding: "4px 0", minWidth: 130 }}>
-                          {ALL_STATUSES.map(s => (
-                            <button key={s} onClick={() => updateStatus(row.id, s)} className="hover-bg" style={{ display: "flex", alignItems: "center", padding: "6px 10px", width: "100%", background: "none", border: "none", cursor: "pointer" }}>
-                              <StatusPill status={s} />
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                  <td style={{ padding: "9px 12px" }} onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const v = STATUS_VARS[row.trangThai] || STATUS_VARS["Cần làm"]
+                      return (
+                        <select
+                          value={row.trangThai}
+                          onChange={e => updateStatus(row.id, e.target.value)}
+                          style={{ color: v.c, background: v.bg, border: "none", borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 500, cursor: "pointer", outline: "none", appearance: "auto" }}
+                        >
+                          {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      )
+                    })()}
                   </td>
                   {/* Ad Name */}
                   <td style={{ padding: "9px 12px", maxWidth: 0 }}>
