@@ -213,7 +213,7 @@ export default function BundleSelector({ product, region }: Props) {
           ...(giftsToSave.length > 0 ? { gifts: JSON.stringify(giftsToSave) } : {}),
         },
       })
-      router.push(`/${countryCode}/checkout`)
+      window.location.href = `/${countryCode}/checkout`
     } catch (e) {
       console.error("[BundleSelector] addToCart failed", e)
       setAdding(false)
