@@ -511,17 +511,8 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
               <span className="text-lg font-black text-orange-500">{fmtVND(subtotal)}</span>
             </div>
             <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} className="block w-full bg-orange-500 text-white font-black text-base py-3.5 rounded-lg text-center hover:bg-orange-600 transition-colors no-underline">
-              Tiến hành thanh toán
+              Hoàn tất đơn hàng
             </LocalizedClientLink>
-            <div className="flex justify-center items-center gap-3 mt-3 flex-wrap">
-              <span className="text-lg opacity-70">💵 COD</span>
-              <span className="text-lg opacity-70">💳 Momo</span>
-              <span className="text-lg opacity-70">🏦 VNPay</span>
-              <span className="text-lg opacity-70">💳 Visa</span>
-              <span className="text-lg opacity-70">🍎 Pay</span>
-              <span className="text-lg opacity-70">🇬 Pay</span>
-              <span className="text-lg opacity-70">💳 MC</span>
-            </div>
             <button onClick={() => setOpen(false)} className="block w-full bg-none border-none cursor-pointer text-center text-sm text-gray-500 py-1 hover:text-gray-700">
               Tiếp tục mua hàng
             </button>
