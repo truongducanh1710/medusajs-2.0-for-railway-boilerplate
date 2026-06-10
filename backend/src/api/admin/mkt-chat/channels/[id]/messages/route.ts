@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { getPool } from "../../../../../../lib/db"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -90,7 +91,34 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       reply_to: m.reply_to_id ? replyMap[m.reply_to_id] : null,
     }))
 
-    res.json({ messages: enriched })
+    // Presence: online = có hoạt động (last-read upsert) trong 2 phút; typing = typing_at trong 6s
+    let online: string[] = []
+    let typing: string[] = []
+    try {
+      const memberEmails: string[] = Array.isArray(channel.members)
+        ? channel.members.map((m: any) => m.user_id)
+        : []
+      if (memberEmails.length > 0) {
+        const pres = await getPool().query(
+          `SELECT user_email,
+                  MAX(updated_at) AS seen_at,
+                  MAX(typing_at) FILTER (WHERE channel_id = $1) AS typing_at
+           FROM mkt_channel_read
+           WHERE user_email = ANY($2)
+           GROUP BY user_email`,
+          [id, memberEmails]
+        )
+        const now = Date.now()
+        for (const row of pres.rows) {
+          if (row.seen_at && now - new Date(row.seen_at).getTime() < 120_000) online.push(row.user_email)
+          if (row.typing_at && now - new Date(row.typing_at).getTime() < 6_000 && row.user_email !== email) {
+            typing.push(nameByEmail[row.user_email] || row.user_email)
+          }
+        }
+      }
+    } catch { /* presence là best-effort, không chặn messages */ }
+
+    res.json({ messages: enriched, presence: { online, typing } })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
@@ -104,8 +132,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
-    const { content, reply_to_id } = req.body as any
+    const { content, reply_to_id, msg_type } = req.body as any
     if (!content?.trim()) return res.status(400).json({ error: "Nội dung không được rỗng" })
+    // Chỉ cho phép 2 loại từ client; mọi giá trị khác fallback về text
+    const messageType = msg_type === "internal_note" ? "internal_note" : "text"
 
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
@@ -128,14 +158,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       : []
 
     const mentions = parseMentions(content.trim(), memberEmails, nameByEmail)
-    const isAiCommand = content.trim().toLowerCase().startsWith("@ai ")
+    // @ai không chạy trong internal note
+    const isAiCommand = messageType === "text" && content.trim().toLowerCase().startsWith("@ai ")
     const question = isAiCommand ? content.trim().slice(4).trim() : ""
 
     const message = await svc.createMktMessages({
       channel_id: id,
       author_id: email,
       content: content.trim(),
-      msg_type: "text",
+      msg_type: messageType,
       reply_to_id: reply_to_id || null,
       reactions: {},
       mentions,

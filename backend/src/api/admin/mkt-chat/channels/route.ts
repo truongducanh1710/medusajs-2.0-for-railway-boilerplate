@@ -70,17 +70,60 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       unreadMap[channelId] = res2.rows[0]?.cnt ?? 0
     }
 
-    const enriched = channels.map((c: any) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-      member_count: Array.isArray(c.members) ? c.members.length : 0,
-      member_ids: Array.isArray(c.members) ? c.members.map((m: any) => m.user_id) : [],
-      unread_count: unreadMap[c.id] ?? 0,
-      created_at: c.created_at,
-    }))
+    // Last message per channel (sidebar snippet) — 1 query DISTINCT ON
+    const lastMsgMap: Record<string, any> = {}
+    if (channelIds.length > 0) {
+      try {
+        const lastRows = await getPool().query(
+          `SELECT DISTINCT ON (channel_id) channel_id, content, author_id, msg_type, created_at
+           FROM mkt_message
+           WHERE channel_id = ANY($1) AND deleted_at IS NULL
+             AND msg_type IN ('text', 'internal_note', 'image', 'file', 'ai_response')
+           ORDER BY channel_id, created_at DESC`,
+          [channelIds]
+        )
+        for (const row of lastRows.rows) lastMsgMap[row.channel_id] = row
+      } catch { /* best-effort */ }
+    }
 
-    res.json({ channels: enriched })
+    // Presence toàn cục: user có hoạt động trong 2 phút (last-read heartbeat)
+    let onlineEmails: string[] = []
+    try {
+      const onlineRows = await getPool().query(
+        `SELECT user_email FROM mkt_channel_read
+         GROUP BY user_email
+         HAVING MAX(updated_at) > now() - interval '2 minutes'`
+      )
+      onlineEmails = onlineRows.rows.map((r: any) => r.user_email)
+    } catch { /* best-effort */ }
+
+    const enriched = channels.map((c: any) => {
+      const last = lastMsgMap[c.id]
+      return {
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        member_count: Array.isArray(c.members) ? c.members.length : 0,
+        member_ids: Array.isArray(c.members) ? c.members.map((m: any) => m.user_id) : [],
+        unread_count: unreadMap[c.id] ?? 0,
+        created_at: c.created_at,
+        last_message: last ? {
+          content: last.msg_type === "image" ? "🖼 Hình ảnh" : last.msg_type === "file" ? "📎 File" : String(last.content || "").slice(0, 60),
+          author_id: last.author_id,
+          msg_type: last.msg_type,
+          created_at: last.created_at,
+        } : null,
+      }
+    })
+
+    // Sort: hoạt động gần nhất lên đầu
+    enriched.sort((a: any, b: any) => {
+      const ta = a.last_message ? new Date(a.last_message.created_at).getTime() : new Date(a.created_at).getTime()
+      const tb = b.last_message ? new Date(b.last_message.created_at).getTime() : new Date(b.created_at).getTime()
+      return tb - ta
+    })
+
+    res.json({ channels: enriched, online_emails: onlineEmails })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }

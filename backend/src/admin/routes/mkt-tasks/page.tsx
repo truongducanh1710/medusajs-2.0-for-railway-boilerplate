@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
@@ -14,6 +14,8 @@ type Task = {
   created_by: string
   deadline: string | null
   status: "todo" | "in_progress" | "done" | "cancelled"
+  priority: "high" | "medium" | "low"
+  tags: string[]
   notes: string | null
   comments: { author_id: string; text: string; created_at: string }[]
   rating: number | null
@@ -23,8 +25,14 @@ type Task = {
 }
 
 type MktUser = { id?: string; email: string; name: string }
+type ViewMode = "list" | "board" | "calendar" | "stats"
+type GroupBy = "assignee" | "type" | "week"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function cn(...parts: (string | false | null | undefined)[]) {
+  return parts.filter(Boolean).join(" ")
+}
 
 function fmt(d: string | null) {
   if (!d) return "—"
@@ -51,120 +59,244 @@ function resolveAuthorName(authorId: string, users: MktUser[], currentUserEmail:
   if (authorId === currentUserEmail) return "Bạn"
   const u = users.find(u => u.email === authorId || u.id === authorId)
   if (u) return u.name
-  // fallback: show partial email
   return authorId.includes("@") ? authorId.split("@")[0] : authorId.slice(0, 10)
 }
 
-// ─── Badges ──────────────────────────────────────────────────────────────────
-
-const STATUS_MAP: Record<string, { label: string; color: string; icon: string }> = {
-  todo:        { label: "Chờ làm",     color: "#6B7280", icon: "☐" },
-  in_progress: { label: "Đang làm",    color: "#3B82F6", icon: "◉" },
-  done:        { label: "Hoàn thành",  color: "#10B981", icon: "✓" },
-  cancelled:   { label: "Đã hủy",      color: "#EF4444", icon: "✕" },
+function getWeekKey(d: Date): string {
+  const onejan = new Date(d.getFullYear(), 0, 1)
+  const week = Math.ceil(((d.getTime() - onejan.getTime()) / 86400000 + onejan.getDay() + 1) / 7)
+  return `${d.getFullYear()}-W${String(week).padStart(2, "0")}`
 }
 
-const TYPE_MAP: Record<string, { label: string; color: string; icon: string }> = {
-  ads_camp:     { label: "Chạy Ads",  color: "#8B5CF6", icon: "📢" },
-  content_post: { label: "Nội dung",  color: "#F59E0B", icon: "✍️" },
+const AVATAR_COLORS = [
+  "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+  "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300",
+]
+function avatarClass(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
+}
+
+// ─── Maps ────────────────────────────────────────────────────────────────────
+
+const STATUS_MAP: Record<string, { label: string; icon: string; dot: string; chip: string }> = {
+  todo:        { label: "Chờ làm",    icon: "☐", dot: "bg-gray-400",    chip: "bg-ui-bg-component text-ui-fg-subtle" },
+  in_progress: { label: "Đang làm",   icon: "◉", dot: "bg-blue-500",    chip: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
+  done:        { label: "Hoàn thành", icon: "✓", dot: "bg-emerald-500", chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
+  cancelled:   { label: "Đã hủy",     icon: "✕", dot: "bg-rose-400",    chip: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
+}
+const STATUS_CYCLE: Record<string, string> = { todo: "in_progress", in_progress: "done", done: "todo" }
+
+const TYPE_MAP: Record<string, { label: string; icon: string; chip: string }> = {
+  ads_camp:     { label: "Chạy Ads", icon: "📢", chip: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
+  content_post: { label: "Nội dung", icon: "✍️", chip: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
+}
+
+const PRIORITY_MAP: Record<string, { label: string; icon: string; weight: number; bar: string; chip: string }> = {
+  high:   { label: "Cao",   icon: "▲", weight: 0, bar: "bg-rose-300 dark:bg-rose-500/60",  chip: "bg-rose-50 text-rose-600 ring-1 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/30" },
+  medium: { label: "Vừa",   icon: "▪", weight: 1, bar: "bg-amber-300 dark:bg-amber-500/60", chip: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30" },
+  low:    { label: "Thấp",  icon: "▾", weight: 2, bar: "bg-transparent",                    chip: "bg-ui-bg-component text-ui-fg-muted ring-1 ring-ui-border-base" },
+}
+
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const pw = (PRIORITY_MAP[a.priority]?.weight ?? 1) - (PRIORITY_MAP[b.priority]?.weight ?? 1)
+    if (pw !== 0) return pw
+    const da = a.deadline ? new Date(a.deadline).getTime() : Infinity
+    const db = b.deadline ? new Date(b.deadline).getTime() : Infinity
+    if (da !== db) return da - db
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
+}
+
+// ─── Page-level styles (keyframes — Tailwind config không mở rộng được) ─────
+
+function PageStyles() {
+  return (
+    <style>{`
+      @keyframes mktFadeUp { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+      @keyframes mktPop { 0% { transform: scale(.5) } 60% { transform: scale(1.18) } 100% { transform: scale(1) } }
+      @keyframes mktSlideInRight { from { transform: translateX(100%) } to { transform: none } }
+      @keyframes mktFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes mktFlashNew { 0% { background-color: rgb(16 185 129 / 0.14) } 100% { background-color: transparent } }
+      @keyframes mktToastIn { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+      .mkt-anim-fadeup { animation: mktFadeUp .18s ease-out }
+      .mkt-anim-pop { animation: mktPop .22s cubic-bezier(.34,1.56,.64,1) }
+      .mkt-anim-drawer { animation: mktSlideInRight .25s cubic-bezier(.21,1.02,.73,1) }
+      .mkt-anim-overlay { animation: mktFadeIn .2s ease-out }
+      .mkt-anim-flashnew { animation: mktFlashNew .9s ease-out }
+      .mkt-anim-toast { animation: mktToastIn .22s cubic-bezier(.21,1.02,.73,1) }
+      @media (prefers-reduced-motion: reduce) {
+        .mkt-anim-fadeup, .mkt-anim-pop, .mkt-anim-drawer, .mkt-anim-overlay, .mkt-anim-flashnew, .mkt-anim-toast { animation: none }
+      }
+    `}</style>
+  )
+}
+
+// ─── Small components ────────────────────────────────────────────────────────
+
+function Avatar({ name, className }: { name: string; className?: string }) {
+  return (
+    <span className={cn("inline-flex shrink-0 items-center justify-center rounded-full text-[10px] font-bold uppercase", avatarClass(name), className || "size-5")}>
+      {(name || "?").charAt(0)}
+    </span>
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const s = STATUS_MAP[status] || { label: status, color: "#6B7280", icon: "" }
+  const s = STATUS_MAP[status] || STATUS_MAP.todo
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
-      background: s.color + "18", color: s.color,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold", s.chip)}>
+      <span className={cn("size-1.5 rounded-full", s.dot)} />
       {s.label}
     </span>
   )
 }
 
-function TypeBadge({ type }: { type: string }) {
-  const t = TYPE_MAP[type] || { label: type, color: "#6B7280", icon: "" }
+function TypeChip({ type }: { type: string }) {
+  const t = TYPE_MAP[type] || { label: type, icon: "", chip: "bg-ui-bg-component text-ui-fg-subtle" }
+  return <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap", t.chip)}>{t.icon} {t.label}</span>
+}
+
+function PriorityChip({ level, size }: { level: string; size?: "sm" }) {
+  const p = PRIORITY_MAP[level] || PRIORITY_MAP.medium
   return (
-    <span style={{
-      padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-      background: t.color + "20", color: t.color,
-    }}>{t.icon} {t.label}</span>
+    <span className={cn("inline-flex items-center gap-1 rounded-md font-semibold whitespace-nowrap", p.chip, size === "sm" ? "px-1 py-px text-[10px]" : "px-1.5 py-0.5 text-[11px]")}>
+      {p.icon} {p.label}
+    </span>
   )
+}
+
+function TagChip({ tag, onRemove }: { tag: string; onRemove?: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-md bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/30">
+      #{tag}
+      {onRemove && (
+        <button onClick={e => { e.stopPropagation(); onRemove() }} className="ml-0.5 text-sky-400 transition-colors hover:text-sky-700 dark:hover:text-sky-200">×</button>
+      )}
+    </span>
+  )
+}
+
+function DeadlineChip({ task }: { task: Task }) {
+  const days = daysUntil(task.deadline)
+  const overdue = isOverdue(task)
+  if (!task.deadline) return <span className="text-xs text-ui-fg-disabled">—</span>
+
+  let cls = "bg-ui-bg-component text-ui-fg-subtle"
+  let label = fmt(task.deadline)
+  if (task.status === "done" || task.status === "cancelled") {
+    cls = "bg-ui-bg-component text-ui-fg-disabled"
+  } else if (overdue) {
+    cls = "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"
+    label = `${fmt(task.deadline)} ⚠`
+  } else if (days !== null && days <= 2) {
+    cls = "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+  }
+  return <span className={cn("inline-block rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums whitespace-nowrap", cls)}>{label}</span>
 }
 
 function Stars({ value, onChange }: { value: number | null; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0)
   return (
-    <span style={{ display: "inline-flex", gap: 2 }}>
+    <span className="inline-flex gap-px">
       {[1, 2, 3, 4, 5].map(i => (
         <span key={i}
-          onClick={onChange ? () => onChange(i) : undefined}
+          onClick={onChange ? (e) => { e.stopPropagation(); onChange(i) } : undefined}
           onMouseEnter={onChange ? () => setHover(i) : undefined}
           onMouseLeave={onChange ? () => setHover(0) : undefined}
-          style={{
-            fontSize: 16, cursor: onChange ? "pointer" : "default",
-            color: (hover || value || 0) >= i ? "#F59E0B" : "#D1D5DB",
-            transition: "color 0.1s",
-          }}>★</span>
+          className={cn("text-base leading-none transition-colors duration-100",
+            onChange && "cursor-pointer",
+            (hover || value || 0) >= i ? "text-amber-400" : "text-ui-fg-disabled")}
+          style={onChange && hover >= i ? { transitionDelay: `${i * 20}ms` } : undefined}
+        >★</span>
       ))}
     </span>
   )
 }
 
-// ─── Deadline chip ────────────────────────────────────────────────────────────
-
-function DeadlineChip({ task }: { task: Task }) {
-  const days = daysUntil(task.deadline)
-  const overdue = isOverdue(task)
-
-  if (!task.deadline) return <span style={{ fontSize: 12, color: "#D1D5DB" }}>—</span>
-
-  let bg = "#F3F4F6", color = "#6B7280", label = fmt(task.deadline)
-  if (task.status === "done" || task.status === "cancelled") {
-    bg = "#F3F4F6"; color = "#9CA3AF"
-  } else if (overdue) {
-    bg = "#FEE2E2"; color = "#DC2626"; label = fmt(task.deadline) + " ⚠"
-  } else if (days !== null && days <= 2) {
-    bg = "#FEF3C7"; color = "#D97706"
-  }
-
-  return (
-    <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: bg, color }}>
-      {label}
-    </span>
-  )
-}
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
-
 function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t) }, [])
   return (
-    <div style={{
-      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-      background: type === "success" ? "#10B981" : "#EF4444",
-      color: "#fff", padding: "10px 18px", borderRadius: 8,
-      fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-      animation: "fadeIn 0.2s ease",
-    }}>
-      {type === "success" ? "✓ " : "✕ "}{msg}
+    <div className={cn("mkt-anim-toast fixed bottom-6 right-6 z-[9999] flex items-center gap-2 rounded-lg px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg",
+      type === "success" ? "bg-emerald-600" : "bg-rose-600")}>
+      <span>{type === "success" ? "✓" : "✕"}</span>{msg}
     </div>
   )
 }
 
-// ─── Confirm Dialog ───────────────────────────────────────────────────────────
-
 function ConfirmDialog({ msg, onConfirm, onCancel }: { msg: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 10, padding: 24, width: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}>
-        <div style={{ fontSize: 14, color: "#374151", marginBottom: 20, lineHeight: 1.5 }}>{msg}</div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={onCancel} style={{ padding: "7px 14px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", fontSize: 13, cursor: "pointer" }}>Hủy</button>
-          <button onClick={onConfirm} style={{ padding: "7px 14px", border: "none", borderRadius: 6, background: "#EF4444", color: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Xác nhận</button>
+    <div className="mkt-anim-overlay fixed inset-0 z-[500] flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div className="mkt-anim-fadeup w-[360px] rounded-xl bg-ui-bg-base p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="mb-5 text-sm leading-relaxed text-ui-fg-base">{msg}</div>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel}
+            className="rounded-lg border border-ui-border-base bg-ui-bg-base px-3.5 py-1.5 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover focus-visible:ring-2 focus-visible:ring-blue-500/40 outline-none">
+            Hủy
+          </button>
+          <button onClick={onConfirm}
+            className="rounded-lg bg-rose-600 px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-rose-700 active:scale-95 focus-visible:ring-2 focus-visible:ring-rose-500/40 outline-none">
+            Xác nhận
+          </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Input style chung
+const INPUT_CLS = "w-full rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-2 text-[13px] text-ui-fg-base outline-none transition-shadow placeholder:text-ui-fg-muted focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+const LABEL_CLS = "mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ui-fg-muted"
+
+// ─── Tags editor ─────────────────────────────────────────────────────────────
+
+function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const [input, setInput] = useState("")
+  const add = () => {
+    const t = input.trim().replace(/^#/, "").toLowerCase()
+    if (t && !tags.includes(t) && tags.length < 10) onChange([...tags, t])
+    setInput("")
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 transition-shadow focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20">
+      {tags.map(t => <TagChip key={t} tag={t} onRemove={() => onChange(tags.filter(x => x !== t))} />)}
+      <input
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add() }
+          if (e.key === "Backspace" && !input && tags.length > 0) onChange(tags.slice(0, -1))
+        }}
+        onBlur={add}
+        placeholder={tags.length === 0 ? "Thêm tag, Enter để xác nhận..." : ""}
+        className="min-w-[80px] flex-1 bg-transparent text-xs text-ui-fg-base outline-none placeholder:text-ui-fg-muted"
+      />
+    </div>
+  )
+}
+
+// ─── Priority selector ───────────────────────────────────────────────────────
+
+function PrioritySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex gap-1.5">
+      {(["high", "medium", "low"] as const).map(p => (
+        <button key={p} type="button" onClick={() => onChange(p)}
+          className={cn("flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-all active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+            value === p
+              ? p === "high" ? "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300"
+                : p === "medium" ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+                : "border-ui-border-strong bg-ui-bg-component text-ui-fg-subtle"
+              : "border-ui-border-base bg-ui-bg-base text-ui-fg-muted hover:bg-ui-bg-base-hover")}>
+          {PRIORITY_MAP[p].icon} {PRIORITY_MAP[p].label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -180,7 +312,7 @@ function TaskDrawer({
   isManager: boolean
   currentUserEmail: string
   mktUsers: MktUser[]
-  onUpdate: (reload?: boolean) => void
+  onUpdate: (patch?: Partial<Task> & { id: string }) => void
   onDelete: (id: string) => void
   onToast: (msg: string, type: "success" | "error") => void
 }) {
@@ -192,13 +324,25 @@ function TaskDrawer({
   const [saving, setSaving] = useState(false)
   const [commentSaving, setCommentSaving] = useState(false)
   const [editMode, setEditMode] = useState(false)
-  const [editForm, setEditForm] = useState({ title: initialTask.title, deadline: initialTask.deadline?.slice(0, 10) || "", assignee_id: initialTask.assignee_id, type: initialTask.type })
+  const [editForm, setEditForm] = useState({
+    title: initialTask.title,
+    deadline: initialTask.deadline?.slice(0, 10) || "",
+    assignee_id: initialTask.assignee_id,
+    type: initialTask.type,
+  })
   const [confirmDelete, setConfirmDelete] = useState(false)
   const commentsEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     commentsEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [comments])
+
+  // Esc để đóng
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", h)
+    return () => window.removeEventListener("keydown", h)
+  }, [onClose])
 
   const patchTask = async (update: Record<string, any>) => {
     const r = await apiFetch(`/admin/mkt-tasks/${task.id}`, {
@@ -208,7 +352,7 @@ function TaskDrawer({
     }).then(r => r.json())
     if (r.task) {
       setTask(t => ({ ...t, ...update }))
-      onUpdate(false)
+      onUpdate({ id: task.id, ...update })
       return true
     }
     onToast(r.error || "Lỗi cập nhật", "error")
@@ -229,14 +373,21 @@ function TaskDrawer({
 
   const saveEdit = async () => {
     setSaving(true)
-    const ok = await patchTask({
+    const update: Record<string, any> = {
       title: editForm.title,
       deadline: editForm.deadline || null,
       assignee_id: editForm.assignee_id,
       type: editForm.type,
-    })
+    }
+    const ok = await patchTask(update)
+    if (ok) {
+      const assigneeName = mktUsers.find(u => u.email === editForm.assignee_id)?.name || editForm.assignee_id
+      setTask(t => ({ ...t, assignee_name: assigneeName }))
+      onUpdate({ id: task.id, assignee_name: assigneeName } as any)
+      setEditMode(false)
+      onToast("Đã cập nhật task", "success")
+    }
     setSaving(false)
-    if (ok) { setEditMode(false); onToast("Đã cập nhật task", "success") }
   }
 
   const sendComment = async () => {
@@ -258,7 +409,7 @@ function TaskDrawer({
 
   const rateTask = async (rating: number) => {
     const ok = await patchTask({ rating })
-    if (ok) { setTask(t => ({ ...t, rating })); onToast("Đã đánh giá", "success") }
+    if (ok) onToast("Đã đánh giá", "success")
   }
 
   const handleDelete = async () => {
@@ -272,113 +423,121 @@ function TaskDrawer({
     ? ["todo", "in_progress", "done", "cancelled"]
     : ["todo", "in_progress", "done"]
 
-  const inp: React.CSSProperties = { width: "100%", border: "1px solid #E5E7EB", borderRadius: 6, padding: "7px 10px", fontSize: 13, boxSizing: "border-box", background: "#fff" }
+  const statusBtnCls = (s: string) => {
+    const active = task.status === s
+    const base = "rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-all active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+    if (!active) return cn(base, "border-ui-border-base bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")
+    switch (s) {
+      case "in_progress": return cn(base, "border-blue-500 bg-blue-600 text-white shadow-sm shadow-blue-500/30")
+      case "done": return cn(base, "border-emerald-500 bg-emerald-600 text-white shadow-sm shadow-emerald-500/30")
+      case "cancelled": return cn(base, "border-rose-400 bg-rose-500 text-white shadow-sm shadow-rose-500/30")
+      default: return cn(base, "border-gray-400 bg-gray-500 text-white")
+    }
+  }
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 99 }} />
-      <div style={{
-        position: "fixed", top: 0, right: 0, width: 440, height: "100vh",
-        background: "#fff", borderLeft: "1px solid #E5E7EB",
-        boxShadow: "-8px 0 32px rgba(0,0,0,0.1)",
-        zIndex: 100, display: "flex", flexDirection: "column",
-      }}>
+      <div onClick={onClose} className="mkt-anim-overlay fixed inset-0 z-[99] bg-black/25" />
+      <div className="mkt-anim-drawer fixed right-0 top-0 z-[100] flex h-screen w-[460px] max-w-[95vw] flex-col border-l border-ui-border-base bg-ui-bg-base shadow-2xl">
         {/* Header */}
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid #F3F4F6", background: "#FAFAFA" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                <TypeBadge type={task.type} />
+        <div className="border-b border-ui-border-base bg-ui-bg-subtle px-5 py-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                <PriorityChip level={task.priority} />
+                <TypeChip type={task.type} />
                 <StatusBadge status={task.status} />
                 {isOverdue(task) && (
-                  <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#FEE2E2", color: "#DC2626" }}>
-                    ⚠ Quá hạn
-                  </span>
+                  <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-bold text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">⚠ Quá hạn</span>
                 )}
               </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", lineHeight: 1.4, wordBreak: "break-word" }}>
-                {task.title}
-              </div>
+              <h2 className="break-words text-[15px] font-bold leading-snug text-ui-fg-base">{task.title}</h2>
+              {task.tags.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">{task.tags.map(t => <TagChip key={t} tag={t} />)}</div>
+              )}
             </div>
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <div className="flex shrink-0 gap-1">
               {isManager && (
                 <button onClick={() => setEditMode(e => !e)} title="Sửa task"
-                  style={{ padding: "5px 10px", border: "1px solid #E5E7EB", borderRadius: 6, background: editMode ? "#EFF6FF" : "#fff", color: editMode ? "#3B82F6" : "#6B7280", fontSize: 12, cursor: "pointer" }}>
+                  className={cn("rounded-lg border px-2.5 py-1 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                    editMode ? "border-blue-300 bg-blue-50 text-blue-600 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
                   ✏️
                 </button>
               )}
               {isManager && (
                 <button onClick={() => setConfirmDelete(true)} title="Xóa task"
-                  style={{ padding: "5px 10px", border: "1px solid #FEE2E2", borderRadius: 6, background: "#fff", color: "#EF4444", fontSize: 12, cursor: "pointer" }}>
+                  className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/30 dark:hover:bg-rose-500/10 outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40">
                   🗑
                 </button>
               )}
               <button onClick={onClose}
-                style={{ padding: "5px 10px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", color: "#9CA3AF", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>
+                className="rounded-lg border border-ui-border-base px-2.5 py-1 text-base leading-none text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
                 ×
               </button>
             </div>
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="flex-1 overflow-y-auto">
+          <div className="flex flex-col gap-5 px-5 py-4">
 
             {/* Edit form */}
             {editMode && isManager && (
-              <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#1D4ED8", marginBottom: 2 }}>CHỈNH SỬA TASK</div>
+              <div className="mkt-anim-fadeup flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 dark:border-blue-500/30 dark:bg-blue-500/5">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Chỉnh sửa task</div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 3 }}>Tiêu đề</label>
-                  <input style={inp} value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+                  <label className={LABEL_CLS}>Tiêu đề</label>
+                  <input className={INPUT_CLS} value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 3 }}>Loại</label>
-                    <select style={inp} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as any }))}>
+                    <label className={LABEL_CLS}>Loại</label>
+                    <select className={INPUT_CLS} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as any }))}>
                       <option value="ads_camp">Chạy Ads</option>
                       <option value="content_post">Nội dung</option>
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 3 }}>Deadline</label>
-                    <input type="date" style={inp} value={editForm.deadline} onChange={e => setEditForm(f => ({ ...f, deadline: e.target.value }))} />
+                    <label className={LABEL_CLS}>Deadline</label>
+                    <input type="date" className={INPUT_CLS} value={editForm.deadline} onChange={e => setEditForm(f => ({ ...f, deadline: e.target.value }))} />
                   </div>
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 3 }}>Giao cho</label>
-                  <select style={inp} value={editForm.assignee_id} onChange={e => setEditForm(f => ({ ...f, assignee_id: e.target.value }))}>
+                  <label className={LABEL_CLS}>Giao cho</label>
+                  <select className={INPUT_CLS} value={editForm.assignee_id} onChange={e => setEditForm(f => ({ ...f, assignee_id: e.target.value }))}>
                     {mktUsers.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div className="flex gap-2">
                   <button onClick={saveEdit} disabled={saving}
-                    style={{ flex: 1, padding: "7px", border: "none", borderRadius: 6, background: "#2563EB", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    className="flex-1 rounded-lg bg-blue-600 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
                     {saving ? "Đang lưu..." : "Lưu thay đổi"}
                   </button>
                   <button onClick={() => setEditMode(false)}
-                    style={{ padding: "7px 14px", border: "1px solid #BFDBFE", borderRadius: 6, background: "#fff", color: "#6B7280", fontSize: 12, cursor: "pointer" }}>
+                    className="rounded-lg border border-ui-border-base bg-ui-bg-base px-3.5 py-1.5 text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">
                     Hủy
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Meta info */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div style={{ background: "#F9FAFB", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>NGƯỜI NHẬN</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>👤 {task.assignee_name}</div>
+            {/* Meta */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-lg bg-ui-bg-subtle px-3 py-2.5">
+                <div className={LABEL_CLS}>Người nhận</div>
+                <div className="flex items-center gap-1.5 text-[13px] font-bold text-ui-fg-base">
+                  <Avatar name={task.assignee_name} /> {task.assignee_name}
+                </div>
               </div>
-              <div style={{ background: "#F9FAFB", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>DEADLINE</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: isOverdue(task) ? "#DC2626" : "#374151" }}>
+              <div className="rounded-lg bg-ui-bg-subtle px-3 py-2.5">
+                <div className={LABEL_CLS}>Deadline</div>
+                <div className={cn("text-[13px] font-bold", isOverdue(task) ? "text-rose-600 dark:text-rose-400" : "text-ui-fg-base")}>
                   📅 {fmtFull(task.deadline)}
                   {(() => {
                     const d = daysUntil(task.deadline)
                     if (d === null || task.status === "done" || task.status === "cancelled") return null
-                    if (d < 0) return <span style={{ fontSize: 11, color: "#DC2626", marginLeft: 4 }}>({Math.abs(d)}d trễ)</span>
-                    if (d <= 2) return <span style={{ fontSize: 11, color: "#D97706", marginLeft: 4 }}>({d}d còn)</span>
+                    if (d < 0) return <span className="ml-1 text-[11px] text-rose-500">({Math.abs(d)}d trễ)</span>
+                    if (d <= 2) return <span className="ml-1 text-[11px] text-amber-600 dark:text-amber-400">({d}d còn)</span>
                     return null
                   })()}
                 </div>
@@ -387,49 +546,49 @@ function TaskDrawer({
 
             {/* Status */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.05em", marginBottom: 8 }}>TRẠNG THÁI</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div className={LABEL_CLS}>Trạng thái</div>
+              <div className="flex flex-wrap gap-1.5">
                 {STATUSES.map(s => (
-                  <button key={s} onClick={() => updateStatus(s)}
-                    style={{
-                      padding: "6px 14px", borderRadius: 8, border: "1.5px solid",
-                      fontSize: 12, fontWeight: 600, cursor: "pointer",
-                      background: task.status === s ? STATUS_MAP[s].color : "#fff",
-                      color: task.status === s ? "#fff" : STATUS_MAP[s].color,
-                      borderColor: STATUS_MAP[s].color,
-                      transition: "all 0.15s",
-                      boxShadow: task.status === s ? `0 2px 8px ${STATUS_MAP[s].color}40` : "none",
-                    }}>
+                  <button key={s} onClick={() => updateStatus(s)} className={statusBtnCls(s)}>
                     {STATUS_MAP[s].icon} {STATUS_MAP[s].label}
                   </button>
                 ))}
               </div>
             </div>
 
+            {/* Priority + Tags (manager) */}
+            {isManager && (
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <div className={LABEL_CLS}>Độ ưu tiên</div>
+                  <PrioritySelect value={task.priority} onChange={p => patchTask({ priority: p })} />
+                </div>
+                <div>
+                  <div className={LABEL_CLS}>Tags</div>
+                  <TagsEditor tags={task.tags} onChange={tags => patchTask({ tags })} />
+                </div>
+              </div>
+            )}
+
             {/* Notes */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.05em", marginBottom: 8 }}>GHI CHÚ / YÊU CẦU</div>
+              <div className={LABEL_CLS}>Ghi chú / Yêu cầu</div>
               <textarea
                 value={notes}
                 onChange={e => { setNotes(e.target.value); setNotesDirty(true) }}
                 disabled={!isManager}
                 rows={3}
-                style={{
-                  width: "100%", border: `1px solid ${notesDirty ? "#3B82F6" : "#E5E7EB"}`, borderRadius: 6,
-                  padding: "8px 10px", fontSize: 13, resize: "vertical",
-                  background: isManager ? "#fff" : "#F9FAFB", color: "#374151",
-                  boxSizing: "border-box", transition: "border-color 0.2s",
-                }}
+                className={cn(INPUT_CLS, "resize-y", notesDirty && "border-blue-400", !isManager && "bg-ui-bg-subtle")}
                 placeholder={isManager ? "Thêm mô tả, yêu cầu chi tiết..." : "(Chưa có ghi chú)"}
               />
               {isManager && notesDirty && (
-                <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <div className="mkt-anim-fadeup mt-1.5 flex gap-1.5">
                   <button onClick={saveNotes} disabled={saving}
-                    style={{ padding: "5px 14px", borderRadius: 6, border: "none", background: "#3B82F6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    className="rounded-lg bg-blue-600 px-3.5 py-1 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
                     {saving ? "Đang lưu..." : "Lưu ghi chú"}
                   </button>
                   <button onClick={() => { setNotes(initialTask.notes || ""); setNotesDirty(false) }}
-                    style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #E5E7EB", background: "#fff", color: "#6B7280", fontSize: 12, cursor: "pointer" }}>
+                    className="rounded-lg border border-ui-border-base px-3 py-1 text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">
                     Hủy
                   </button>
                 </div>
@@ -439,95 +598,71 @@ function TaskDrawer({
             {/* Rating */}
             {(isManager && task.status === "done") && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.05em", marginBottom: 8 }}>ĐÁNH GIÁ CHẤT LƯỢNG</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className={LABEL_CLS}>Đánh giá chất lượng</div>
+                <div className="flex items-center gap-2.5">
                   <Stars value={task.rating} onChange={rateTask} />
-                  {task.rating ? (
-                    <span style={{ fontSize: 12, color: "#F59E0B", fontWeight: 700 }}>{task.rating}/5</span>
-                  ) : (
-                    <span style={{ fontSize: 12, color: "#D1D5DB" }}>Chưa đánh giá</span>
-                  )}
+                  {task.rating
+                    ? <span className="text-xs font-bold text-amber-500">{task.rating}/5</span>
+                    : <span className="text-xs text-ui-fg-disabled">Chưa đánh giá</span>}
                 </div>
               </div>
             )}
             {(!isManager && task.rating) && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.05em", marginBottom: 8 }}>ĐÁNH GIÁ</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className={LABEL_CLS}>Đánh giá</div>
+                <div className="flex items-center gap-2">
                   <Stars value={task.rating} />
-                  <span style={{ fontSize: 12, color: "#F59E0B", fontWeight: 700 }}>{task.rating}/5</span>
+                  <span className="text-xs font-bold text-amber-500">{task.rating}/5</span>
                 </div>
               </div>
             )}
 
             {/* Comments */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.05em", marginBottom: 8 }}>
-                TRAO ĐỔI ({comments.length})
-              </div>
-              <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10, paddingRight: 2 }}>
+              <div className={LABEL_CLS}>Trao đổi ({comments.length})</div>
+              <div className="mb-2.5 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1">
                 {comments.length === 0 && (
-                  <div style={{ fontSize: 12, color: "#D1D5DB", textAlign: "center", padding: "12px 0" }}>
-                    💬 Chưa có trao đổi nào
-                  </div>
+                  <div className="py-3 text-center text-xs text-ui-fg-disabled">💬 Chưa có trao đổi nào</div>
                 )}
                 {comments.map((c, i) => {
                   const isMe = c.author_id === currentUserEmail
                   return (
-                    <div key={i} style={{
-                      display: "flex", flexDirection: "column",
-                      alignItems: isMe ? "flex-end" : "flex-start",
-                    }}>
-                      <div style={{
-                        maxWidth: "85%", background: isMe ? "#EFF6FF" : "#F9FAFB",
-                        border: `1px solid ${isMe ? "#BFDBFE" : "#F3F4F6"}`,
-                        borderRadius: isMe ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                        padding: "8px 12px",
-                      }}>
-                        <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 3 }}>
-                          <strong style={{ color: isMe ? "#1D4ED8" : "#374151" }}>
+                    <div key={i} className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
+                      <div className={cn("max-w-[85%] border px-3 py-2",
+                        isMe
+                          ? "rounded-xl rounded-br-sm border-blue-200 bg-blue-50 dark:border-blue-500/30 dark:bg-blue-500/10"
+                          : "rounded-xl rounded-bl-sm border-ui-border-base bg-ui-bg-subtle")}>
+                        <div className="mb-0.5 text-[11px] text-ui-fg-muted">
+                          <strong className={isMe ? "text-blue-700 dark:text-blue-300" : "text-ui-fg-base"}>
                             {resolveAuthorName(c.author_id, mktUsers, currentUserEmail)}
                           </strong>
                           {" · "}{new Date(c.created_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
                         </div>
-                        <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.4 }}>{c.text}</div>
+                        <div className="text-[13px] leading-relaxed text-ui-fg-base">{c.text}</div>
                       </div>
                     </div>
                   )
                 })}
                 <div ref={commentsEndRef} />
               </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+              <div className="flex items-end gap-1.5">
                 <textarea
                   value={comment}
                   onChange={e => setComment(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendComment() } }}
                   rows={2}
                   placeholder="Nhắn tin... (Enter gửi, Shift+Enter xuống dòng)"
-                  style={{
-                    flex: 1, border: "1px solid #E5E7EB", borderRadius: 8,
-                    padding: "8px 10px", fontSize: 13, resize: "none",
-                    transition: "border-color 0.2s",
-                  }}
-                  onFocus={e => e.target.style.borderColor = "#3B82F6"}
-                  onBlur={e => e.target.style.borderColor = "#E5E7EB"}
+                  className={cn(INPUT_CLS, "resize-none")}
                 />
                 <button onClick={sendComment} disabled={commentSaving || !comment.trim()}
-                  style={{
-                    padding: "8px 14px", borderRadius: 8, border: "none",
-                    background: comment.trim() ? "#3B82F6" : "#E5E7EB",
-                    color: comment.trim() ? "#fff" : "#9CA3AF",
-                    fontSize: 13, cursor: comment.trim() ? "pointer" : "default",
-                    fontWeight: 600, transition: "all 0.15s",
-                    alignSelf: "flex-end",
-                  }}>
+                  className={cn("self-end rounded-lg px-3.5 py-2 text-[13px] font-semibold transition active:scale-95",
+                    comment.trim() ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-ui-bg-component text-ui-fg-disabled")}>
                   {commentSaving ? "..." : "↑"}
                 </button>
               </div>
             </div>
 
-            {/* Created */}
-            <div style={{ fontSize: 11, color: "#D1D5DB", paddingTop: 4 }}>
+            <div className="pt-1 text-[11px] text-ui-fg-disabled">
               Tạo lúc {new Date(task.created_at).toLocaleString("vi-VN")}
             </div>
           </div>
@@ -545,14 +680,23 @@ function TaskDrawer({
   )
 }
 
-// ─── Create Task Modal ────────────────────────────────────────────────────────
+// ─── Create Task Modal (full form — cho task phức tạp) ──────────────────────
 
-function CreateTaskModal({ onClose, onCreated, users }: {
+function CreateTaskModal({ onClose, onCreated, users, defaults }: {
   onClose: () => void
   onCreated: () => void
   users: MktUser[]
+  defaults?: Partial<{ assignee_id: string; type: string; deadline: string }>
 }) {
-  const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "", notes: "" })
+  const [form, setForm] = useState({
+    title: "",
+    type: defaults?.type || "ads_camp",
+    assignee_id: defaults?.assignee_id || "",
+    deadline: defaults?.deadline || "",
+    notes: "",
+    priority: "medium",
+    tags: [] as string[],
+  })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
@@ -569,53 +713,61 @@ function CreateTaskModal({ onClose, onCreated, users }: {
     else setErr(r.error || "Lỗi tạo task")
   }
 
-  const inp: React.CSSProperties = { width: "100%", border: "1px solid #E5E7EB", borderRadius: 6, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }
-  const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 4 }
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 500, maxWidth: "95vw", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: "#111827" }}>📋 Tạo task mới</div>
+    <div className="mkt-anim-overlay fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="mkt-anim-fadeup w-[520px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-5 text-base font-extrabold text-ui-fg-base">📋 Tạo task mới</h2>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="flex flex-col gap-3.5">
           <div>
-            <label style={lbl}>Tiêu đề <span style={{ color: "#EF4444" }}>*</span></label>
-            <input style={inp} placeholder="VD: Camp chuyển đổi tháng 6" value={form.title}
+            <label className={LABEL_CLS}>Tiêu đề <span className="text-rose-500">*</span></label>
+            <input className={INPUT_CLS} placeholder="VD: Camp chuyển đổi tháng 6" value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               onKeyDown={e => e.key === "Enter" && submit()} autoFocus />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label style={lbl}>Loại task <span style={{ color: "#EF4444" }}>*</span></label>
-              <select style={inp} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+              <label className={LABEL_CLS}>Loại task <span className="text-rose-500">*</span></label>
+              <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
                 <option value="ads_camp">📢 Chạy Ads / Camp</option>
                 <option value="content_post">✍️ Nội dung / Bài đăng</option>
               </select>
             </div>
             <div>
-              <label style={lbl}>Deadline</label>
-              <input type="date" style={inp} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+              <label className={LABEL_CLS}>Deadline</label>
+              <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
             </div>
           </div>
           <div>
-            <label style={lbl}>Giao cho <span style={{ color: "#EF4444" }}>*</span></label>
-            <select style={inp} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
+            <label className={LABEL_CLS}>Giao cho <span className="text-rose-500">*</span></label>
+            <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
               <option value="">-- Chọn thành viên --</option>
               {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={lbl}>Ghi chú / Yêu cầu</label>
-            <textarea rows={3} style={{ ...inp, resize: "vertical" }} placeholder="Mô tả chi tiết công việc..."
+            <label className={LABEL_CLS}>Độ ưu tiên</label>
+            <PrioritySelect value={form.priority} onChange={p => setForm(f => ({ ...f, priority: p }))} />
+          </div>
+          <div>
+            <label className={LABEL_CLS}>Tags</label>
+            <TagsEditor tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} />
+          </div>
+          <div>
+            <label className={LABEL_CLS}>Ghi chú / Yêu cầu</label>
+            <textarea rows={3} className={cn(INPUT_CLS, "resize-y")} placeholder="Mô tả chi tiết công việc..."
               value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
-          {err && <div style={{ color: "#EF4444", fontSize: 12, background: "#FEF2F2", padding: "8px 12px", borderRadius: 6 }}>{err}</div>}
+          {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">{err}</div>}
         </div>
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
-          <button onClick={onClose} style={{ padding: "9px 18px", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff", fontSize: 13, cursor: "pointer" }}>Hủy</button>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose}
+            className="rounded-lg border border-ui-border-base bg-ui-bg-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">
+            Hủy
+          </button>
           <button onClick={submit} disabled={saving}
-            style={{ padding: "9px 20px", border: "none", borderRadius: 8, background: "#3B82F6", color: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+            className="rounded-lg bg-blue-600 px-5 py-2 text-[13px] font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
             {saving ? "Đang tạo..." : "✓ Tạo task"}
           </button>
         </div>
@@ -624,65 +776,136 @@ function CreateTaskModal({ onClose, onCreated, users }: {
   )
 }
 
-// ─── Task Row ─────────────────────────────────────────────────────────────────
+// ─── Inline create (List group + Board column) ──────────────────────────────
 
-function TaskRow({ task, onClick }: { task: Task; onClick: () => void }) {
-  const overdue = isOverdue(task)
-  const days = daysUntil(task.deadline)
+function InlineCreate({ placeholder, needAssignee, users, onCreate, compact }: {
+  placeholder: string
+  needAssignee?: boolean              // group không xác định được assignee → hiện select
+  users: MktUser[]
+  onCreate: (title: string, assigneeId: string | null) => Promise<boolean>
+  compact?: boolean                   // dạng card trong board
+}) {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState("")
+  const [assignee, setAssignee] = useState("")
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const submit = async () => {
+    if (!title.trim() || busy) return
+    if (needAssignee && !assignee) return
+    setBusy(true)
+    const ok = await onCreate(title.trim(), needAssignee ? assignee : null)
+    setBusy(false)
+    if (ok) {
+      setTitle("")
+      inputRef.current?.focus()      // giữ focus để tạo tiếp task kế (chuẩn Linear)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button onClick={() => setEditing(true)}
+        className={cn("group flex w-full items-center gap-1.5 text-left text-[13px] text-ui-fg-muted transition-colors hover:text-blue-600 dark:hover:text-blue-400 outline-none focus-visible:text-blue-600",
+          compact ? "rounded-lg border border-dashed border-ui-border-base px-3 py-2 hover:border-blue-300 hover:bg-blue-500/5" : "px-4 py-2")}>
+        <span className="text-base leading-none transition-transform group-hover:scale-110">+</span> {placeholder}
+      </button>
+    )
+  }
+
   return (
-    <div onClick={onClick} style={{
-      display: "grid", gridTemplateColumns: "1fr 100px 110px 90px 120px 80px",
-      alignItems: "center", padding: "11px 14px", cursor: "pointer",
-      borderBottom: "1px solid #F3F4F6", gap: 8,
-      background: overdue ? "#FFFBF5" : "#fff",
-      transition: "background 0.1s",
-    }}
-      onMouseEnter={e => (e.currentTarget.style.background = overdue ? "#FEF3C7" : "#F9FAFB")}
-      onMouseLeave={e => (e.currentTarget.style.background = overdue ? "#FFFBF5" : "#fff")}
-    >
-      {/* Title */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
-        <span style={{ fontSize: 13, flexShrink: 0, color: STATUS_MAP[task.status]?.color || "#9CA3AF" }}>
+    <div className={cn("mkt-anim-fadeup flex items-center gap-1.5", compact ? "rounded-lg border border-blue-300 bg-ui-bg-base p-2 shadow-sm dark:border-blue-500/40" : "px-4 py-1.5")}>
+      <input
+        ref={inputRef} autoFocus value={title}
+        onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter") submit()
+          if (e.key === "Escape") { setEditing(false); setTitle("") }
+        }}
+        placeholder="Tiêu đề · Enter tạo · Esc hủy"
+        className="h-8 min-w-0 flex-1 rounded-lg border border-blue-300 bg-ui-bg-field px-2.5 text-[13px] text-ui-fg-base outline-none ring-2 ring-blue-500/15 placeholder:text-ui-fg-muted dark:border-blue-500/40"
+      />
+      {needAssignee && (
+        <select value={assignee} onChange={e => setAssignee(e.target.value)}
+          className="h-8 max-w-[120px] rounded-lg border border-ui-border-base bg-ui-bg-field px-1.5 text-xs text-ui-fg-base outline-none">
+          <option value="">Giao cho...</option>
+          {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+        </select>
+      )}
+      <button onClick={() => { setEditing(false); setTitle("") }}
+        className="grid size-8 shrink-0 place-items-center rounded-lg text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover">×</button>
+    </div>
+  )
+}
+
+// ─── List view ───────────────────────────────────────────────────────────────
+
+function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash }: {
+  task: Task
+  onClick: () => void
+  onQuickStatus: () => void
+  canQuickStatus: boolean
+  flash?: boolean
+}) {
+  const overdue = isOverdue(task)
+  const p = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
+  return (
+    <div onClick={onClick}
+      className={cn("relative grid cursor-pointer grid-cols-[1fr_92px_120px_84px_110px_84px] items-center gap-2 border-b border-ui-border-base px-4 py-2.5 transition-colors",
+        flash && "mkt-anim-flashnew",
+        overdue ? "bg-amber-500/5 hover:bg-amber-500/10" : "hover:bg-ui-bg-base-hover")}>
+      {/* Priority bar */}
+      <span className={cn("absolute inset-y-0 left-0 w-[3px]", p.bar)} />
+
+      {/* Title + status icon + tags */}
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          onClick={e => { e.stopPropagation(); if (canQuickStatus) onQuickStatus() }}
+          title={canQuickStatus ? `Chuyển sang "${STATUS_MAP[STATUS_CYCLE[task.status] || "todo"]?.label}"` : undefined}
+          className={cn("grid size-5 shrink-0 place-items-center rounded text-[13px] leading-none transition-transform outline-none",
+            canQuickStatus && "hover:scale-125 focus-visible:ring-2 focus-visible:ring-blue-500/40",
+            task.status === "done" ? "text-emerald-500" : task.status === "in_progress" ? "text-blue-500" : task.status === "cancelled" ? "text-rose-400" : "text-ui-fg-muted")}>
           {STATUS_MAP[task.status]?.icon || "☐"}
+        </button>
+        <span className={cn("truncate text-[13px] font-medium",
+          task.status === "cancelled" ? "text-ui-fg-muted line-through" : task.status === "done" ? "text-ui-fg-subtle" : "text-ui-fg-base")}>
+          {task.title}
         </span>
-        <span style={{
-          fontSize: 13, fontWeight: 500, color: task.status === "cancelled" ? "#9CA3AF" : "#111827",
-          textDecoration: task.status === "cancelled" ? "line-through" : undefined,
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>{task.title}</span>
-        {task.comments?.length > 0 && (
-          <span style={{ fontSize: 11, color: "#9CA3AF", flexShrink: 0 }}>💬{task.comments.length}</span>
+        {task.tags.slice(0, 3).map(t => <TagChip key={t} tag={t} />)}
+        {(task.comments?.length || 0) > 0 && (
+          <span className="shrink-0 text-[11px] text-ui-fg-muted">💬{task.comments.length}</span>
         )}
       </div>
 
-      {/* Type */}
-      <div><TypeBadge type={task.type} /></div>
+      <div><TypeChip type={task.type} /></div>
 
-      {/* Assignee */}
-      <div style={{ fontSize: 12, color: "#6B7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {task.assignee_name}
+      <div className="flex min-w-0 items-center gap-1.5 text-xs text-ui-fg-subtle">
+        <Avatar name={task.assignee_name} />
+        <span className="truncate">{task.assignee_name}</span>
       </div>
 
-      {/* Deadline */}
       <div><DeadlineChip task={task} /></div>
-
-      {/* Status */}
       <div><StatusBadge status={task.status} /></div>
-
-      {/* Rating */}
       <div>
-        {task.rating ? <Stars value={task.rating} /> : <span style={{ color: "#E5E7EB", fontSize: 13 }}>☆☆☆☆☆</span>}
+        {task.rating
+          ? <Stars value={task.rating} />
+          : <span className="text-[13px] text-ui-fg-disabled">☆☆☆☆☆</span>}
       </div>
     </div>
   )
 }
 
-// ─── Grouped Section ──────────────────────────────────────────────────────────
-
-function GroupedSection({ label, tasks, onTaskClick }: {
+function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, isManager, users, onInlineCreate, inlineDefaults, flashId }: {
   label: string
   tasks: Task[]
   onTaskClick: (t: Task) => void
+  onQuickStatus: (t: Task) => void
+  canQuick: (t: Task) => boolean
+  isManager: boolean
+  users: MktUser[]
+  onInlineCreate: (title: string, assigneeId: string | null) => Promise<boolean>
+  inlineDefaults: { assignee_id?: string; needAssignee: boolean }
+  flashId: string | null
 }) {
   const [open, setOpen] = useState(true)
   const done = tasks.filter(t => t.status === "done").length
@@ -690,45 +913,336 @@ function GroupedSection({ label, tasks, onTaskClick }: {
   const pct = tasks.length > 0 ? Math.round(done / tasks.length * 100) : 0
 
   return (
-    <div style={{ marginBottom: 10, borderRadius: 8, overflow: "hidden", border: "1px solid #E5E7EB" }}>
-      <div onClick={() => setOpen(o => !o)} style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-        background: "#F9FAFB", cursor: "pointer",
-        borderBottom: open ? "1px solid #E5E7EB" : "none",
-      }}>
-        <span style={{ fontSize: 11, color: "#9CA3AF", width: 12 }}>{open ? "▼" : "▶"}</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#374151", flex: 1 }}>{label}</span>
+    <div className="mb-3 overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base">
+      <button onClick={() => setOpen(o => !o)}
+        className={cn("flex w-full items-center gap-2.5 bg-ui-bg-subtle px-4 py-2.5 text-left transition-colors hover:bg-ui-bg-subtle-hover", open && "border-b border-ui-border-base")}>
+        <span className={cn("text-[10px] text-ui-fg-muted transition-transform duration-200", open && "rotate-90")}>▶</span>
+        <span className="flex-1 text-[13px] font-bold text-ui-fg-base">{label}</span>
         {overdue > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 600, color: "#DC2626", background: "#FEE2E2", padding: "1px 7px", borderRadius: 10 }}>
-            ⚠ {overdue} quá hạn
-          </span>
+          <span className="rounded-full bg-rose-50 px-2 py-px text-[11px] font-semibold text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">⚠ {overdue} quá hạn</span>
         )}
-        <span style={{ fontSize: 11, color: "#9CA3AF" }}>{done}/{tasks.length}</span>
-        {/* Progress bar */}
-        <div style={{ width: 60, height: 4, background: "#E5E7EB", borderRadius: 2, overflow: "hidden" }}>
-          <div style={{ width: `${pct}%`, height: "100%", background: pct === 100 ? "#10B981" : "#3B82F6", transition: "width 0.3s" }} />
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? "#10B981" : "#6B7280", minWidth: 30 }}>{pct}%</span>
-      </div>
+        <span className="text-[11px] tabular-nums text-ui-fg-muted">{done}/{tasks.length}</span>
+        <span className="h-1 w-16 overflow-hidden rounded-full bg-ui-bg-component">
+          <span className={cn("block h-full rounded-full transition-all duration-300", pct === 100 ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${pct}%` }} />
+        </span>
+        <span className={cn("min-w-[32px] text-right text-[11px] font-bold tabular-nums", pct === 100 ? "text-emerald-600 dark:text-emerald-400" : "text-ui-fg-subtle")}>{pct}%</span>
+      </button>
       {open && (
         <div>
-          {/* Column headers */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr 100px 110px 90px 120px 80px",
-            padding: "5px 14px", gap: 8,
-            fontSize: 10, fontWeight: 700, color: "#C4C9D4", letterSpacing: "0.06em",
-            borderBottom: "1px solid #F3F4F6",
-          }}>
-            <div>TIÊU ĐỀ</div><div>LOẠI</div><div>NGƯỜI NHẬN</div><div>DEADLINE</div><div>TRẠNG THÁI</div><div>ĐÁNH GIÁ</div>
+          <div className="grid grid-cols-[1fr_92px_120px_84px_110px_84px] gap-2 border-b border-ui-border-base px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ui-fg-disabled">
+            <div className="pl-7">Tiêu đề</div><div>Loại</div><div>Người nhận</div><div>Deadline</div><div>Trạng thái</div><div>Đánh giá</div>
           </div>
-          {tasks.map(t => <TaskRow key={t.id} task={t} onClick={() => onTaskClick(t)} />)}
+          {tasks.map(t => (
+            <TaskRow key={t.id} task={t}
+              onClick={() => onTaskClick(t)}
+              onQuickStatus={() => onQuickStatus(t)}
+              canQuickStatus={canQuick(t) && t.status !== "cancelled"}
+              flash={flashId === t.id}
+            />
+          ))}
+          {isManager && (
+            <InlineCreate
+              placeholder={`Thêm task${inlineDefaults.needAssignee ? "" : ` cho ${label}`}...`}
+              needAssignee={inlineDefaults.needAssignee}
+              users={users}
+              onCreate={onInlineCreate}
+            />
+          )}
         </div>
       )}
     </div>
   )
 }
 
-// ─── Stats Tab ────────────────────────────────────────────────────────────────
+// ─── Board view (Kanban) ─────────────────────────────────────────────────────
+
+const BOARD_COLUMNS: { status: Task["status"]; label: string; dot: string }[] = [
+  { status: "todo",        label: "Chờ làm",    dot: "bg-gray-400" },
+  { status: "in_progress", label: "Đang làm",   dot: "bg-blue-500" },
+  { status: "done",        label: "Hoàn thành", dot: "bg-emerald-500" },
+  { status: "cancelled",   label: "Đã hủy",     dot: "bg-rose-400" },
+]
+
+function TaskCard({ task, onClick, draggable, onDragStart, onDragEnd, dragging }: {
+  task: Task
+  onClick: () => void
+  draggable: boolean
+  onDragStart: () => void
+  onDragEnd: () => void
+  dragging: boolean
+}) {
+  return (
+    <article
+      draggable={draggable}
+      onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", task.id); onDragStart() }}
+      onDragEnd={onDragEnd}
+      onClick={onClick}
+      className={cn("group cursor-pointer rounded-lg border border-ui-border-base bg-ui-bg-base p-3 shadow-sm transition-all duration-150",
+        "hover:-translate-y-0.5 hover:border-ui-border-strong hover:shadow-md",
+        draggable && "active:cursor-grabbing",
+        dragging && "rotate-2 opacity-50")}>
+      <div className="mb-2 flex flex-wrap gap-1">
+        <PriorityChip level={task.priority} size="sm" />
+        <TypeChip type={task.type} />
+        {task.tags.slice(0, 2).map(t => <TagChip key={t} tag={t} />)}
+      </div>
+      <h4 className={cn("text-[13px] font-medium leading-snug line-clamp-2",
+        task.status === "cancelled" ? "text-ui-fg-muted line-through" : "text-ui-fg-base")}>{task.title}</h4>
+      <div className="mt-2.5 flex items-center justify-between">
+        <DeadlineChip task={task} />
+        <div className="flex items-center gap-1.5 text-[11px] text-ui-fg-muted">
+          {(task.comments?.length || 0) > 0 && <span>💬{task.comments.length}</span>}
+          {task.rating ? <span className="text-amber-400">★{task.rating}</span> : null}
+          <Avatar name={task.assignee_name} />
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function BoardView({ tasks, onTaskClick, onMove, canMove, isManager, users, onInlineCreate, flashId }: {
+  tasks: Task[]
+  onTaskClick: (t: Task) => void
+  onMove: (taskId: string, status: Task["status"]) => void
+  canMove: (t: Task) => boolean
+  isManager: boolean
+  users: MktUser[]
+  onInlineCreate: (title: string, assigneeId: string | null, status: Task["status"]) => Promise<boolean>
+  flashId: string | null
+}) {
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+
+  return (
+    <div className="grid auto-cols-[280px] grid-flow-col gap-3.5 overflow-x-auto pb-4 xl:auto-cols-fr">
+      {BOARD_COLUMNS.map(col => {
+        const colTasks = sortTasks(tasks.filter(t => t.status === col.status))
+        return (
+          <section key={col.status}
+            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropTarget(col.status) }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget(null) }}
+            onDrop={e => {
+              e.preventDefault()
+              const id = e.dataTransfer.getData("text/plain") || draggingId
+              if (id) onMove(id, col.status)
+              setDropTarget(null); setDraggingId(null)
+            }}
+            className={cn("flex max-h-[calc(100vh-240px)] flex-col rounded-xl bg-ui-bg-subtle p-2 transition-all duration-150",
+              dropTarget === col.status && draggingId && "bg-blue-500/5 ring-2 ring-blue-400/50")}>
+            <header className="flex items-center gap-2 px-2 py-1.5">
+              <span className={cn("size-2 rounded-full", col.dot)} />
+              <span className="text-[13px] font-bold text-ui-fg-base">{col.label}</span>
+              <span className="rounded-full bg-ui-bg-component px-1.5 text-[11px] font-semibold tabular-nums text-ui-fg-muted">{colTasks.length}</span>
+            </header>
+            <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-0.5">
+              {colTasks.map(t => (
+                <div key={t.id} className={flashId === t.id ? "mkt-anim-flashnew rounded-lg" : undefined}>
+                  <TaskCard task={t}
+                    onClick={() => onTaskClick(t)}
+                    draggable={canMove(t)}
+                    onDragStart={() => setDraggingId(t.id)}
+                    onDragEnd={() => { setDraggingId(null); setDropTarget(null) }}
+                    dragging={draggingId === t.id}
+                  />
+                </div>
+              ))}
+              {isManager && (col.status === "todo" || col.status === "in_progress") && (
+                <InlineCreate compact placeholder="Thêm task..." needAssignee users={users}
+                  onCreate={(title, assignee) => onInlineCreate(title, assignee, col.status)} />
+              )}
+              {colTasks.length === 0 && !isManager && (
+                <div className="py-8 text-center text-xs text-ui-fg-disabled">Trống</div>
+              )}
+            </div>
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Calendar view ───────────────────────────────────────────────────────────
+
+function CalendarView({ tasks, onTaskClick, onMoveDeadline, canMove, isManager, users, onQuickCreate }: {
+  tasks: Task[]
+  onTaskClick: (t: Task) => void
+  onMoveDeadline: (taskId: string, date: string) => void
+  canMove: boolean
+  isManager: boolean
+  users: MktUser[]
+  onQuickCreate: (title: string, assigneeId: string, deadline: string) => Promise<boolean>
+}) {
+  const today = new Date()
+  const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropDay, setDropDay] = useState<string | null>(null)
+  const [createDay, setCreateDay] = useState<string | null>(null)
+  const [createTitle, setCreateTitle] = useState("")
+  const [createAssignee, setCreateAssignee] = useState("")
+  const [expandDay, setExpandDay] = useState<string | null>(null)
+
+  // Build grid: tuần bắt đầu Thứ 2
+  const firstDow = (month.getDay() + 6) % 7
+  const start = new Date(month); start.setDate(1 - firstDow)
+  const cells: Date[] = Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start); d.setDate(start.getDate() + i); return d
+  })
+  const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  const todayKey = dayKey(today)
+
+  const tasksByDay = useMemo(() => {
+    const map: Record<string, Task[]> = {}
+    for (const t of tasks) {
+      if (!t.deadline) continue
+      const k = dayKey(new Date(t.deadline))
+      if (!map[k]) map[k] = []
+      map[k].push(t)
+    }
+    for (const k of Object.keys(map)) map[k] = sortTasks(map[k])
+    return map
+  }, [tasks])
+
+  const noDeadline = tasks.filter(t => !t.deadline && t.status !== "done" && t.status !== "cancelled")
+
+  const pillCls = (t: Task) => cn(
+    "block w-full truncate rounded-md px-1.5 py-0.5 text-left text-[11px] font-medium leading-tight transition-all hover:brightness-95 dark:hover:brightness-125",
+    draggingId === t.id && "opacity-40",
+    t.status === "done" ? "bg-ui-bg-component text-ui-fg-muted line-through"
+      : t.status === "cancelled" ? "bg-ui-bg-component text-ui-fg-disabled line-through"
+      : isOverdue(t) ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+      : t.priority === "high" ? "bg-rose-50 text-rose-600 ring-1 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20"
+      : t.priority === "medium" ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20"
+      : "bg-ui-bg-component text-ui-fg-subtle"
+  )
+
+  const submitQuickCreate = async () => {
+    if (!createTitle.trim() || !createAssignee || !createDay) return
+    const ok = await onQuickCreate(createTitle.trim(), createAssignee, createDay)
+    if (ok) { setCreateDay(null); setCreateTitle("") }
+  }
+
+  return (
+    <div>
+      {/* Month nav */}
+      <div className="mb-3 flex items-center gap-2">
+        <button onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+          className="grid size-8 place-items-center rounded-lg border border-ui-border-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover active:scale-95">‹</button>
+        <span className="min-w-[140px] text-center text-sm font-bold capitalize text-ui-fg-base">
+          Tháng {month.getMonth() + 1}/{month.getFullYear()}
+        </span>
+        <button onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+          className="grid size-8 place-items-center rounded-lg border border-ui-border-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover active:scale-95">›</button>
+        <button onClick={() => setMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
+          className="rounded-lg border border-ui-border-base px-3 py-1.5 text-xs font-medium text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">Hôm nay</button>
+        {canMove && <span className="ml-auto text-[11px] text-ui-fg-muted">💡 Kéo task sang ngày khác để đổi deadline</span>}
+      </div>
+
+      {/* No-deadline strip */}
+      {noDeadline.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-dashed border-ui-border-base bg-ui-bg-subtle px-3 py-2">
+          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-ui-fg-muted">Chưa đặt deadline ({noDeadline.length})</span>
+          {noDeadline.slice(0, 8).map(t => (
+            <button key={t.id}
+              draggable={canMove}
+              onDragStart={e => { e.dataTransfer.setData("text/plain", t.id); setDraggingId(t.id) }}
+              onDragEnd={() => { setDraggingId(null); setDropDay(null) }}
+              onClick={() => onTaskClick(t)}
+              className={cn(pillCls(t), "w-auto max-w-[180px]", canMove && "cursor-grab active:cursor-grabbing")}>
+              {t.title}
+            </button>
+          ))}
+          {noDeadline.length > 8 && <span className="text-[11px] text-ui-fg-muted">+{noDeadline.length - 8} khác</span>}
+        </div>
+      )}
+
+      {/* Grid */}
+      <div className="overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base">
+        <div className="grid grid-cols-7 border-b border-ui-border-base bg-ui-bg-subtle">
+          {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map(d => (
+            <div key={d} className="px-2 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-ui-fg-muted">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {cells.map((d, i) => {
+            const k = dayKey(d)
+            const inMonth = d.getMonth() === month.getMonth()
+            const dayTasks = tasksByDay[k] || []
+            const isToday = k === todayKey
+            const expanded = expandDay === k
+            const shown = expanded ? dayTasks : dayTasks.slice(0, 3)
+            return (
+              <div key={i}
+                onDragOver={e => { if (draggingId) { e.preventDefault(); setDropDay(k) } }}
+                onDragLeave={() => setDropDay(prev => prev === k ? null : prev)}
+                onDrop={e => {
+                  e.preventDefault()
+                  const id = e.dataTransfer.getData("text/plain") || draggingId
+                  if (id) onMoveDeadline(id, k)
+                  setDropDay(null); setDraggingId(null)
+                }}
+                onDoubleClick={() => { if (isManager && inMonth) { setCreateDay(k); setCreateTitle(""); setCreateAssignee("") } }}
+                className={cn("group/day relative min-h-[92px] border-b border-r border-ui-border-base p-1 transition-colors [&:nth-child(7n)]:border-r-0",
+                  !inMonth && "bg-ui-bg-subtle/60",
+                  dropDay === k && draggingId && "bg-blue-500/10 ring-2 ring-inset ring-blue-400/50")}>
+                <div className="mb-1 flex items-center justify-between px-0.5">
+                  <span className={cn("grid size-5 place-items-center rounded-full text-[11px] font-semibold tabular-nums",
+                    isToday ? "bg-blue-600 text-white" : inMonth ? "text-ui-fg-subtle" : "text-ui-fg-disabled")}>
+                    {d.getDate()}
+                  </span>
+                  {isManager && inMonth && (
+                    <button onClick={() => { setCreateDay(k); setCreateTitle(""); setCreateAssignee("") }}
+                      className="grid size-4 place-items-center rounded text-[11px] text-ui-fg-disabled opacity-0 transition-opacity hover:bg-ui-bg-component hover:text-blue-600 group-hover/day:opacity-100">+</button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {shown.map(t => (
+                    <button key={t.id}
+                      draggable={canMove}
+                      onDragStart={e => { e.dataTransfer.setData("text/plain", t.id); setDraggingId(t.id) }}
+                      onDragEnd={() => { setDraggingId(null); setDropDay(null) }}
+                      onClick={() => onTaskClick(t)}
+                      title={`${t.title} — ${t.assignee_name}`}
+                      className={cn(pillCls(t), canMove && "cursor-grab active:cursor-grabbing")}>
+                      {t.title}
+                    </button>
+                  ))}
+                  {dayTasks.length > 3 && (
+                    <button onClick={() => setExpandDay(expanded ? null : k)}
+                      className="px-1 text-left text-[10px] font-medium text-ui-fg-muted transition-colors hover:text-blue-600">
+                      {expanded ? "Thu gọn ▲" : `+${dayTasks.length - 3} khác`}
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick create popover */}
+                {createDay === k && (
+                  <div className="mkt-anim-fadeup absolute left-1 top-7 z-20 w-56 rounded-xl border border-ui-border-base bg-ui-bg-base p-2.5 shadow-xl">
+                    <div className="mb-1.5 text-[11px] font-bold text-ui-fg-subtle">Task mới · {fmt(k)}</div>
+                    <input autoFocus value={createTitle} onChange={e => setCreateTitle(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") submitQuickCreate(); if (e.key === "Escape") setCreateDay(null) }}
+                      placeholder="Tiêu đề..." className={cn(INPUT_CLS, "mb-1.5 py-1.5")} />
+                    <select value={createAssignee} onChange={e => setCreateAssignee(e.target.value)} className={cn(INPUT_CLS, "mb-2 py-1.5")}>
+                      <option value="">Giao cho...</option>
+                      {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+                    </select>
+                    <div className="flex gap-1.5">
+                      <button onClick={submitQuickCreate} disabled={!createTitle.trim() || !createAssignee}
+                        className="flex-1 rounded-lg bg-blue-600 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-40">Tạo</button>
+                      <button onClick={() => setCreateDay(null)}
+                        className="rounded-lg border border-ui-border-base px-2.5 text-xs text-ui-fg-subtle hover:bg-ui-bg-base-hover">Hủy</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Stats view ──────────────────────────────────────────────────────────────
 
 function StatsTab() {
   const [stats, setStats] = useState<any[]>([])
@@ -738,13 +1252,9 @@ function StatsTab() {
     apiFetch("/admin/mkt-tasks/stats").then(r => r.json()).then(d => setStats(d.stats || [])).finally(() => setLoading(false))
   }, [])
 
-  const th: React.CSSProperties = { padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }
-  const td: React.CSSProperties = { padding: "11px 14px", fontSize: 13, borderBottom: "1px solid #F3F4F6" }
-
   if (loading) return (
-    <div style={{ padding: 48, textAlign: "center", color: "#9CA3AF" }}>
-      <div style={{ fontSize: 24, marginBottom: 8 }}>⏳</div>
-      Đang tải báo cáo...
+    <div className="py-12 text-center text-ui-fg-muted">
+      <div className="mb-2 text-2xl">⏳</div>Đang tải báo cáo...
     </div>
   )
 
@@ -752,254 +1262,436 @@ function StatsTab() {
   const totalTasks = stats.reduce((s, m) => s + m.total, 0)
   const overallRate = totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0
 
+  const th = "px-3.5 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-ui-fg-muted bg-ui-bg-subtle border-b border-ui-border-base"
+  const td = "px-3.5 py-2.5 text-[13px] border-b border-ui-border-base text-ui-fg-base"
+
   return (
-    <div>
-      {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+    <div className="mkt-anim-fadeup">
+      <div className="mb-5 grid grid-cols-3 gap-3">
         {[
-          { label: "Tổng task", value: totalTasks, color: "#6B7280", icon: "📋" },
-          { label: "Hoàn thành", value: totalDone, color: "#10B981", icon: "✅" },
-          { label: "Tỷ lệ hoàn thành", value: `${overallRate}%`, color: overallRate >= 70 ? "#10B981" : "#F59E0B", icon: "📊" },
+          { label: "Tổng task", value: totalTasks, cls: "text-ui-fg-base", icon: "📋" },
+          { label: "Hoàn thành", value: totalDone, cls: "text-emerald-600 dark:text-emerald-400", icon: "✅" },
+          { label: "Tỷ lệ hoàn thành", value: `${overallRate}%`, cls: overallRate >= 70 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400", icon: "📊" },
         ].map(c => (
-          <div key={c.label} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontSize: 20 }}>{c.icon}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: c.color, marginTop: 4 }}>{c.value}</div>
-            <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>{c.label}</div>
+          <div key={c.label} className="rounded-xl border border-ui-border-base bg-ui-bg-base px-4 py-3.5">
+            <div className="text-xl">{c.icon}</div>
+            <div className={cn("mt-1 text-2xl font-extrabold tabular-nums", c.cls)}>{c.value}</div>
+            <div className="mt-0.5 text-xs text-ui-fg-muted">{c.label}</div>
           </div>
         ))}
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, overflow: "hidden", border: "1px solid #E5E7EB" }}>
-        <thead>
-          <tr>
-            <th style={th}>Thành viên</th>
-            <th style={{ ...th, textAlign: "center" }}>Tổng</th>
-            <th style={{ ...th, textAlign: "center" }}>Đang làm</th>
-            <th style={{ ...th, textAlign: "center" }}>Hoàn thành</th>
-            <th style={{ ...th, textAlign: "center" }}>Quá hạn</th>
-            <th style={{ ...th, textAlign: "center" }}>Đúng hạn</th>
-            <th style={{ ...th, textAlign: "center" }}>Đánh giá TB</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stats.map((s: any) => (
-            <tr key={s.assignee_id}>
-              <td style={td}>
-                <div style={{ fontWeight: 700, color: "#111827" }}>{s.assignee_name}</div>
-                {/* Mini progress bar */}
-                <div style={{ width: "100%", height: 3, background: "#F3F4F6", borderRadius: 2, marginTop: 4, overflow: "hidden" }}>
-                  <div style={{ width: `${s.done_rate}%`, height: "100%", background: s.done_rate >= 70 ? "#10B981" : "#3B82F6" }} />
-                </div>
-              </td>
-              <td style={{ ...td, textAlign: "center", fontWeight: 600 }}>{s.total}</td>
-              <td style={{ ...td, textAlign: "center" }}><span style={{ color: "#3B82F6", fontWeight: 700 }}>{s.in_progress}</span></td>
-              <td style={{ ...td, textAlign: "center" }}>
-                <span style={{ color: "#10B981", fontWeight: 700 }}>{s.done}</span>
-                <span style={{ color: "#9CA3AF", fontSize: 11 }}> ({s.done_rate}%)</span>
-              </td>
-              <td style={{ ...td, textAlign: "center" }}>
-                {(s.in_progress_overdue || 0) > 0
-                  ? <span style={{ color: "#DC2626", fontWeight: 700 }}>{s.in_progress_overdue}</span>
-                  : <span style={{ color: "#D1D5DB" }}>—</span>}
-              </td>
-              <td style={{ ...td, textAlign: "center" }}>
-                <span style={{ color: s.on_time_rate >= 80 ? "#10B981" : "#F59E0B", fontWeight: 700 }}>{s.on_time_rate}%</span>
-              </td>
-              <td style={{ ...td, textAlign: "center" }}>
-                {s.avg_rating
-                  ? <><Stars value={Math.round(s.avg_rating)} /><span style={{ fontSize: 11, color: "#9CA3AF", marginLeft: 4 }}>{s.avg_rating}</span></>
-                  : <span style={{ color: "#D1D5DB" }}>—</span>}
-              </td>
+      <div className="overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className={th}>Thành viên</th>
+              <th className={cn(th, "text-center")}>Tổng</th>
+              <th className={cn(th, "text-center")}>Đang làm</th>
+              <th className={cn(th, "text-center")}>Hoàn thành</th>
+              <th className={cn(th, "text-center")}>Quá hạn</th>
+              <th className={cn(th, "text-center")}>Đúng hạn</th>
+              <th className={cn(th, "text-center")}>Đánh giá TB</th>
             </tr>
-          ))}
-          {stats.length === 0 && (
-            <tr><td colSpan={7} style={{ ...td, textAlign: "center", color: "#9CA3AF", padding: 32 }}>Chưa có dữ liệu thống kê</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {stats.map((s: any) => (
+              <tr key={s.assignee_id} className="transition-colors hover:bg-ui-bg-base-hover">
+                <td className={td}>
+                  <div className="flex items-center gap-2 font-bold">
+                    <Avatar name={s.assignee_name} className="size-6 text-[11px]" />{s.assignee_name}
+                  </div>
+                  <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-ui-bg-component">
+                    <div className={cn("h-full transition-all duration-500", s.done_rate >= 70 ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${s.done_rate}%` }} />
+                  </div>
+                </td>
+                <td className={cn(td, "text-center font-semibold tabular-nums")}>{s.total}</td>
+                <td className={cn(td, "text-center")}><span className="font-bold text-blue-600 dark:text-blue-400">{s.in_progress}</span></td>
+                <td className={cn(td, "text-center")}>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">{s.done}</span>
+                  <span className="text-[11px] text-ui-fg-muted"> ({s.done_rate}%)</span>
+                </td>
+                <td className={cn(td, "text-center")}>
+                  {(s.in_progress_overdue || 0) > 0
+                    ? <span className="font-bold text-rose-600 dark:text-rose-400">{s.in_progress_overdue}</span>
+                    : <span className="text-ui-fg-disabled">—</span>}
+                </td>
+                <td className={cn(td, "text-center")}>
+                  <span className={cn("font-bold", s.on_time_rate >= 80 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>{s.on_time_rate}%</span>
+                </td>
+                <td className={cn(td, "text-center")}>
+                  {s.avg_rating
+                    ? <span className="inline-flex items-center gap-1"><Stars value={Math.round(s.avg_rating)} /><span className="text-[11px] text-ui-fg-muted">{s.avg_rating}</span></span>
+                    : <span className="text-ui-fg-disabled">—</span>}
+                </td>
+              </tr>
+            ))}
+            {stats.length === 0 && (
+              <tr><td colSpan={7} className={cn(td, "py-8 text-center text-ui-fg-muted")}>Chưa có dữ liệu thống kê</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const VIEW_STORAGE_KEY = "mkt-tasks:view"
+
 export default function MktTasksPage() {
-  const { has, isSuper } = useCurrentPermissions()
+  const { has, isSuper, email: currentUserEmail } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-tasks.manage")
 
-  const [tab, setTab] = useState<"tasks" | "stats">("tasks")
-  const [groupBy, setGroupBy] = useState<"assignee" | "type" | "week">("assignee")
+  const [view, setView] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY)
+    return (saved === "list" || saved === "board" || saved === "calendar") ? saved : "list"
+  })
+  const [groupBy, setGroupBy] = useState<GroupBy>("assignee")
   const [filterStatus, setFilterStatus] = useState("all")
   const [filterType, setFilterType] = useState("")
+  const [filterPriority, setFilterPriority] = useState("")
+  const [filterTag, setFilterTag] = useState("")
   const [search, setSearch] = useState("")
-  const [groups, setGroups] = useState<Record<string, Task[]>>({})
+  const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])
-  const [currentUserEmail, setCurrentUserEmail] = useState("")
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
+  const [flashId, setFlashId] = useState<string | null>(null)
 
   const showToast = (msg: string, type: "success" | "error") => setToast({ msg, type })
+  const setViewPersist = (v: ViewMode) => {
+    setView(v)
+    if (v !== "stats") localStorage.setItem(VIEW_STORAGE_KEY, v)
+  }
 
+  // Fetch flat — mọi grouping/filter phụ làm client-side để 1 fetch phục vụ cả 3 view
   const load = useCallback(() => {
     setLoading(true)
-    const params = new URLSearchParams({ group_by: groupBy })
-    if (filterStatus !== "all") params.set("status", filterStatus)
-    if (filterType) params.set("type", filterType)
-    apiFetch(`/admin/mkt-tasks?${params}`).then(r => r.json()).then(d => {
-      if (d.grouped) setGroups(d.groups)
-      else setGroups({ "Tất cả": d.tasks || [] })
+    apiFetch("/admin/mkt-tasks").then(r => r.json()).then(d => {
+      setTasks(d.tasks || [])
     }).finally(() => setLoading(false))
-  }, [groupBy, filterStatus, filterType])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
-    apiFetch("/admin/permissions/me").then(r => r.json()).then(d => setCurrentUserEmail(d.user?.email || ""))
   }, [])
 
-  // Apply search filter client-side
-  const filteredGroups = search.trim()
-    ? Object.fromEntries(
-        Object.entries(groups).map(([k, tasks]) => [
-          k,
-          tasks.filter(t => t.title.toLowerCase().includes(search.toLowerCase()) || t.assignee_name.toLowerCase().includes(search.toLowerCase()))
-        ]).filter(([, tasks]) => tasks.length > 0)
-      )
-    : groups
+  // Deep-link ?task=ID (từ chat context panel)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const taskId = params.get("task")
+    if (!taskId) return
+    apiFetch(`/admin/mkt-tasks/${taskId}`).then(r => r.json()).then(d => {
+      if (d.task) {
+        const assignee = d.task.assignee_id
+        setSelectedTask({
+          tags: [], comments: [], priority: "medium",
+          ...d.task,
+          assignee_name: d.task.assignee_name || assignee,
+        })
+      }
+    }).catch(() => {})
+    // Xoá param khỏi URL (không dùng react-router-dom — Vite không resolve được)
+    history.replaceState(null, "", window.location.pathname)
+  }, [])
 
-  const totalTasks = Object.values(groups).flat().length
-  const overdueCount = Object.values(groups).flat().filter(isOverdue).length
+  // Normalize: đảm bảo tags/comments luôn là mảng
+  const normalized = useMemo(() => tasks.map(t => ({
+    ...t,
+    tags: Array.isArray(t.tags) ? t.tags : [],
+    comments: Array.isArray(t.comments) ? t.comments : [],
+    priority: t.priority || "medium",
+  })), [tasks])
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "7px 16px", borderRadius: 6, border: "none",
-    background: active ? "#3B82F6" : "transparent",
-    color: active ? "#fff" : "#6B7280",
-    fontSize: 13, fontWeight: 600, cursor: "pointer",
-    transition: "all 0.15s",
-  })
+  // Apply filters client-side
+  const filtered = useMemo(() => {
+    let list = normalized
+    if (filterStatus !== "all") list = list.filter(t => t.status === filterStatus)
+    if (filterType) list = list.filter(t => t.type === filterType)
+    if (filterPriority) list = list.filter(t => t.priority === filterPriority)
+    if (filterTag) list = list.filter(t => t.tags.includes(filterTag))
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(t => t.title.toLowerCase().includes(q) || t.assignee_name.toLowerCase().includes(q) || t.tags.some(tag => tag.includes(q)))
+    }
+    return list
+  }, [normalized, filterStatus, filterType, filterPriority, filterTag, search])
 
-  const chipStyle = (active: boolean, color?: string): React.CSSProperties => ({
-    padding: "4px 12px", borderRadius: 12,
-    border: `1.5px solid ${active ? (color || "#3B82F6") : "#E5E7EB"}`,
-    background: active ? (color || "#3B82F6") + "15" : "#fff",
-    color: active ? (color || "#3B82F6") : "#6B7280",
-    fontSize: 12, fontWeight: 600, cursor: "pointer",
-    transition: "all 0.15s",
-  })
+  const allTags = useMemo(() => {
+    const s = new Set<string>()
+    for (const t of normalized) for (const tag of t.tags) s.add(tag)
+    return [...s].sort()
+  }, [normalized])
+
+  // Group (list view)
+  const groups = useMemo(() => {
+    const map: Record<string, { tasks: Task[]; assigneeId?: string }> = {}
+    for (const t of filtered) {
+      let key: string
+      if (groupBy === "assignee") key = t.assignee_name
+      else if (groupBy === "type") key = TYPE_MAP[t.type]?.label || t.type
+      else key = t.deadline ? getWeekKey(new Date(t.deadline)) : "Không có deadline"
+      if (!map[key]) map[key] = { tasks: [], assigneeId: groupBy === "assignee" ? t.assignee_id : undefined }
+      map[key].tasks.push(t)
+    }
+    for (const k of Object.keys(map)) map[k].tasks = sortTasks(map[k].tasks)
+    return map
+  }, [filtered, groupBy])
+
+  const totalTasks = filtered.length
+  const overdueCount = filtered.filter(isOverdue).length
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
+
+  const applyLocalPatch = (id: string, patch: Partial<Task>) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
+  }
+
+  const quickStatus = async (t: Task) => {
+    const next = STATUS_CYCLE[t.status]
+    if (!next) return
+    applyLocalPatch(t.id, { status: next as Task["status"] })  // optimistic
+    const r = await apiFetch(`/admin/mkt-tasks/${t.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: next }),
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.task) {
+      applyLocalPatch(t.id, { status: t.status })  // revert
+      showToast(r?.error || "Lỗi cập nhật trạng thái", "error")
+    }
+  }
+
+  const moveTask = async (taskId: string, status: Task["status"]) => {
+    const t = tasks.find(x => x.id === taskId)
+    if (!t || t.status === status) return
+    const prev = t.status
+    applyLocalPatch(taskId, { status })
+    const r = await apiFetch(`/admin/mkt-tasks/${taskId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.task) {
+      applyLocalPatch(taskId, { status: prev })
+      showToast(r?.error || "Không thể di chuyển task", "error")
+    }
+  }
+
+  const moveDeadline = async (taskId: string, date: string) => {
+    const t = tasks.find(x => x.id === taskId)
+    if (!t) return
+    const prev = t.deadline
+    applyLocalPatch(taskId, { deadline: new Date(date + "T00:00:00").toISOString() })
+    const r = await apiFetch(`/admin/mkt-tasks/${taskId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deadline: date }),
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.task) {
+      applyLocalPatch(taskId, { deadline: prev })
+      showToast(r?.error || "Không thể đổi deadline (chỉ manager)", "error")
+    }
+  }
+
+  const createTask = async (payload: Record<string, any>): Promise<boolean> => {
+    const r = await apiFetch("/admin/mkt-tasks", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(r => r.json()).catch(() => null)
+    if (r?.task) {
+      const assigneeName = mktUsers.find(u => u.email === r.task.assignee_id)?.name || r.task.assignee_id
+      const newTask: Task = { tags: [], comments: [], priority: "medium", ...r.task, assignee_name: assigneeName }
+      setTasks(prev => [newTask, ...prev])
+      setFlashId(r.task.id)
+      setTimeout(() => setFlashId(null), 1000)
+      return true
+    }
+    showToast(r?.error || "Lỗi tạo task", "error")
+    return false
+  }
+
+  const canQuick = (t: Task) => isManager || t.assignee_id === currentUserEmail
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const viewBtn = (v: ViewMode, icon: string, label: string) => (
+    <button key={v} onClick={() => setViewPersist(v)}
+      className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-semibold transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+        view === v ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+      <span>{icon}</span>{label}
+    </button>
+  )
+
+  const chipCls = (active: boolean, activeCls?: string) => cn(
+    "rounded-full border px-3 py-1 text-xs font-semibold transition-all active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+    active
+      ? activeCls || "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300"
+      : "border-ui-border-base bg-ui-bg-base text-ui-fg-muted hover:bg-ui-bg-base-hover hover:text-ui-fg-subtle")
+
+  const selectCls = "rounded-lg border border-ui-border-base bg-ui-bg-field px-2.5 py-1.5 text-xs text-ui-fg-subtle outline-none transition-shadow focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 
   return (
-    <div style={{ padding: 24, maxWidth: 1140, margin: "0 auto" }}>
+    <div className="mx-auto max-w-[1280px] px-6 py-6">
+      <PageStyles />
+
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: "#111827" }}>📋 Giao Việc MKT</h1>
-          <div style={{ fontSize: 13, color: "#9CA3AF", marginTop: 3, display: "flex", gap: 10 }}>
+          <h1 className="m-0 text-xl font-extrabold text-ui-fg-base">📋 Giao Việc MKT</h1>
+          <div className="mt-1 flex gap-2.5 text-[13px] text-ui-fg-muted">
             <span>{totalTasks} task</span>
-            {overdueCount > 0 && <span style={{ color: "#DC2626", fontWeight: 600 }}>⚠ {overdueCount} quá hạn</span>}
+            {overdueCount > 0 && <span className="font-semibold text-rose-600 dark:text-rose-400">⚠ {overdueCount} quá hạn</span>}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View switcher */}
+          <div className="flex gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
+            {viewBtn("list", "≡", "List")}
+            {viewBtn("board", "▦", "Board")}
+            {viewBtn("calendar", "📅", "Lịch")}
+            {isManager && viewBtn("stats", "📊", "Báo cáo")}
+          </div>
           {isManager && (
-            <button style={{
-              padding: "8px 18px", border: "none", borderRadius: 8,
-              background: "#3B82F6", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(59,130,246,0.35)",
-            }} onClick={() => setShowCreate(true)}>
+            <button onClick={() => setShowCreate(true)}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm shadow-blue-500/30 transition hover:bg-blue-700 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
               + Tạo task
             </button>
-          )}
-          {isManager && (
-            <div style={{ display: "flex", gap: 2, background: "#F3F4F6", borderRadius: 8, padding: 3 }}>
-              {(["tasks", "stats"] as const).map(t => (
-                <button key={t} onClick={() => setTab(t)} style={tabStyle(tab === t)}>
-                  {t === "tasks" ? "📋 Danh sách" : "📊 Báo cáo"}
-                </button>
-              ))}
-            </div>
           )}
         </div>
       </div>
 
-      {tab === "stats" ? <StatsTab /> : (
+      {view === "stats" ? <StatsTab /> : (
         <>
           {/* Toolbar */}
-          <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+          <div className="mb-4 flex flex-wrap items-center gap-2.5">
             {/* Search */}
-            <div style={{ position: "relative", flex: "1 1 180px", maxWidth: 280 }}>
-              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9CA3AF", fontSize: 14 }}>🔍</span>
+            <div className="relative max-w-[260px] flex-[1_1_170px]">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-ui-fg-muted">🔍</span>
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Tìm task..."
-                style={{
-                  width: "100%", border: "1px solid #E5E7EB", borderRadius: 8,
-                  padding: "7px 10px 7px 30px", fontSize: 13,
-                  boxSizing: "border-box", outline: "none",
-                }}
+                placeholder="Tìm task, người, #tag..."
+                className={cn(INPUT_CLS, "py-1.5 pl-8", search && "pr-7")}
               />
               {search && (
-                <button onClick={() => setSearch("")} style={{
-                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                  background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 14,
-                }}>×</button>
+                <button onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-ui-fg-muted transition-colors hover:text-ui-fg-base">×</button>
               )}
             </div>
 
-            {/* Group-by (manager only) */}
-            {isManager && (
-              <div style={{ display: "flex", gap: 2, background: "#F3F4F6", borderRadius: 8, padding: 3 }}>
-                {[
-                  { v: "assignee", l: "Theo người" },
-                  { v: "type",     l: "Theo loại" },
-                  { v: "week",     l: "Theo tuần" },
-                ].map(({ v, l }) => (
-                  <button key={v} onClick={() => setGroupBy(v as any)} style={tabStyle(groupBy === v)}>{l}</button>
+            {/* Group-by (list only) */}
+            {view === "list" && isManager && (
+              <div className="flex gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
+                {([["assignee", "Theo người"], ["type", "Theo loại"], ["week", "Theo tuần"]] as [GroupBy, string][]).map(([v, l]) => (
+                  <button key={v} onClick={() => setGroupBy(v)}
+                    className={cn("rounded-md px-3 py-1 text-xs font-semibold transition-all",
+                      groupBy === v ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+                    {l}
+                  </button>
                 ))}
               </div>
             )}
 
-            {/* Status filter */}
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {[
-                { v: "all",         l: "Tất cả",      c: undefined },
-                { v: "todo",        l: "Chờ làm",      c: "#6B7280" },
-                { v: "in_progress", l: "Đang làm",     c: "#3B82F6" },
-                { v: "done",        l: "Hoàn thành",   c: "#10B981" },
-                { v: "cancelled",   l: "Đã hủy",       c: "#EF4444" },
-              ].map(({ v, l, c }) => (
-                <button key={v} onClick={() => setFilterStatus(v)} style={chipStyle(filterStatus === v, c)}>{l}</button>
-              ))}
-            </div>
+            {/* Status chips */}
+            {view !== "board" && (
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { v: "all", l: "Tất cả" },
+                  { v: "todo", l: "Chờ làm" },
+                  { v: "in_progress", l: "Đang làm" },
+                  { v: "done", l: "Hoàn thành" },
+                  { v: "cancelled", l: "Đã hủy" },
+                ].map(({ v, l }) => (
+                  <button key={v} onClick={() => setFilterStatus(v)} className={chipCls(filterStatus === v)}>{l}</button>
+                ))}
+              </div>
+            )}
 
-            {/* Type filter */}
-            <select
-              value={filterType}
-              onChange={e => setFilterType(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: 12, color: "#6B7280", cursor: "pointer" }}
-            >
+            {/* Priority */}
+            <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} className={selectCls}>
+              <option value="">Mọi ưu tiên</option>
+              <option value="high">▲ Cao</option>
+              <option value="medium">▪ Vừa</option>
+              <option value="low">▾ Thấp</option>
+            </select>
+
+            {/* Type */}
+            <select value={filterType} onChange={e => setFilterType(e.target.value)} className={selectCls}>
               <option value="">Mọi loại</option>
               <option value="ads_camp">📢 Chạy Ads</option>
               <option value="content_post">✍️ Nội dung</option>
             </select>
+
+            {/* Tag */}
+            {allTags.length > 0 && (
+              <select value={filterTag} onChange={e => setFilterTag(e.target.value)} className={selectCls}>
+                <option value="">Mọi tag</option>
+                {allTags.map(t => <option key={t} value={t}>#{t}</option>)}
+              </select>
+            )}
+
+            {(filterStatus !== "all" || filterType || filterPriority || filterTag || search) && (
+              <button onClick={() => { setFilterStatus("all"); setFilterType(""); setFilterPriority(""); setFilterTag(""); setSearch("") }}
+                className="text-xs font-medium text-ui-fg-muted underline-offset-2 transition-colors hover:text-ui-fg-base hover:underline">
+                Xóa lọc
+              </button>
+            )}
           </div>
 
-          {/* Task list */}
+          {/* Content */}
           {loading ? (
-            <div style={{ textAlign: "center", padding: 60, color: "#9CA3AF" }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
-              Đang tải...
+            <div className="py-14 text-center text-ui-fg-muted">
+              <div className="mb-2 text-2xl">⏳</div>Đang tải...
             </div>
-          ) : Object.entries(filteredGroups).length === 0 ? (
-            <div style={{ textAlign: "center", padding: 60, color: "#9CA3AF" }}>
-              <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
+          ) : filtered.length === 0 ? (
+            <div className="py-14 text-center text-ui-fg-muted">
+              <div className="mb-2.5 text-3xl">📭</div>
               {search ? `Không tìm thấy task nào với "${search}"` : "Không có task nào"}
             </div>
+          ) : view === "board" ? (
+            <BoardView
+              tasks={filtered}
+              onTaskClick={setSelectedTask}
+              onMove={moveTask}
+              canMove={canQuick}
+              isManager={isManager}
+              users={mktUsers}
+              onInlineCreate={(title, assignee, status) =>
+                createTask({ title, type: "ads_camp", assignee_id: assignee, status, priority: "medium" })}
+              flashId={flashId}
+            />
+          ) : view === "calendar" ? (
+            <CalendarView
+              tasks={filtered}
+              onTaskClick={setSelectedTask}
+              onMoveDeadline={moveDeadline}
+              canMove={isManager}
+              isManager={isManager}
+              users={mktUsers}
+              onQuickCreate={(title, assignee, deadline) =>
+                createTask({ title, type: "ads_camp", assignee_id: assignee, deadline, priority: "medium" })}
+            />
           ) : (
-            Object.entries(filteredGroups).map(([label, tasks]) => (
-              <GroupedSection key={label} label={label} tasks={tasks} onTaskClick={setSelectedTask} />
+            Object.entries(groups).map(([label, g]) => (
+              <GroupedSection key={label} label={label} tasks={g.tasks}
+                onTaskClick={setSelectedTask}
+                onQuickStatus={quickStatus}
+                canQuick={canQuick}
+                isManager={isManager}
+                users={mktUsers}
+                inlineDefaults={{ assignee_id: g.assigneeId, needAssignee: !g.assigneeId }}
+                onInlineCreate={(title, assignee) => createTask({
+                  title,
+                  type: groupBy === "type" ? (Object.keys(TYPE_MAP).find(k => TYPE_MAP[k].label === label) || "ads_camp") : "ads_camp",
+                  assignee_id: g.assigneeId || assignee,
+                  priority: "medium",
+                })}
+                flashId={flashId}
+              />
             ))
           )}
         </>
@@ -1020,8 +1712,8 @@ export default function MktTasksPage() {
           isManager={isManager}
           currentUserEmail={currentUserEmail}
           mktUsers={mktUsers}
-          onUpdate={(reload = true) => { if (reload) load() }}
-          onDelete={() => { load() }}
+          onUpdate={(patch) => { if (patch) applyLocalPatch(patch.id, patch) }}
+          onDelete={(id) => setTasks(prev => prev.filter(t => t.id !== id))}
           onToast={showToast}
         />
       )}

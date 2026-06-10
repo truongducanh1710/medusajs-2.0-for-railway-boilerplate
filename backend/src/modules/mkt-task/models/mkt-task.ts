@@ -8,6 +8,8 @@ const MktTask = model.define("mkt_task", {
   created_by: model.text(),
   deadline: model.dateTime().nullable(),
   status: model.text().default("todo"), // todo | in_progress | done | cancelled
+  priority: model.text().default("medium"), // high | medium | low
+  tags: model.json(),
   notes: model.text().nullable(),
   comments: model.json(),
   rating: model.number().nullable(),

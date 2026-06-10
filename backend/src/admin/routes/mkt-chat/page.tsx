@@ -1,14 +1,16 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type LastMessage = { content: string; author_id: string; msg_type: string; created_at: string }
 type Channel = {
   id: string; name: string; description: string | null
   member_count: number; member_ids?: string[]
   unread_count: number; created_at: string
+  last_message?: LastMessage | null
 }
 type ReplySnippet = { id: string; content: string; author_name: string }
 type Message = {
@@ -21,8 +23,18 @@ type Message = {
   created_at: string
 }
 type MktUser = { email: string; name: string }
+type Template = { id: string; label: string; content: string; created_by: string }
+type LinkedTask = {
+  id: string; title: string; status: string; priority?: string
+  assignee_name: string; deadline: string | null
+}
+type ChatFile = { id: string; file_url: string; file_type: string | null; file_name: string | null; author_id: string; created_at: string }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function cn(...parts: (string | false | null | undefined)[]) {
+  return parts.filter(Boolean).join(" ")
+}
 
 function fmtTime(d: string) {
   const dt = new Date(d)
@@ -33,129 +45,81 @@ function fmtDate(d: string) {
   if (dt.toDateString() === new Date().toDateString()) return "Hôm nay"
   return `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`
 }
+function fmtSnippetTime(d: string) {
+  const dt = new Date(d)
+  if (dt.toDateString() === new Date().toDateString()) return fmtTime(d)
+  return fmtDate(d)
+}
+
+// XSS-safe: escape HTML trước, sau đó mới highlight @mention
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+function renderMentions(text: string): string {
+  return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="font-semibold text-blue-600 dark:text-blue-400">${m}</span>`)
+}
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🔥"]
 
-// ─── Message Bubble ───────────────────────────────────────────────────────────
+const AVATAR_COLORS = [
+  "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+  "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300",
+]
+function avatarClass(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
+}
 
-function MessageBubble({ msg, isMine, currentUserEmail, isManager, onTaskClick, onReply, onReact, onPin }: {
-  msg: Message; isMine: boolean; currentUserEmail: string; isManager: boolean
-  onTaskClick?: (taskId: string) => void
-  onReply: (msg: Message) => void
-  onReact: (msgId: string, emoji: string) => void
-  onPin: (msgId: string) => void
-}) {
-  const [showActions, setShowActions] = useState(false)
-  const isSystem = !["text", "ai_response", "image", "file"].includes(msg.msg_type)
-  const isAI = msg.msg_type === "ai_response"
-  const isImage = msg.msg_type === "image"
-  const isFile = msg.msg_type === "file"
+const TASK_STATUS: Record<string, { label: string; chip: string }> = {
+  todo:        { label: "Chờ làm",    chip: "bg-ui-bg-component text-ui-fg-subtle" },
+  in_progress: { label: "Đang làm",   chip: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
+  done:        { label: "Hoàn thành", chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
+  cancelled:   { label: "Đã hủy",     chip: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
+}
 
-  if (isSystem) {
-    return (
-      <div style={{ textAlign: "center", margin: "4px 0" }}>
-        <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 10, background: msg.is_pinned ? "#FEF3C7" : "#F3F4F6", fontSize: 12, color: "#6B7280" }}>
-          {msg.is_pinned && "📌 "}
-          {msg.content}
-          {msg.task_id && onTaskClick && (
-            <button onClick={() => onTaskClick(msg.task_id!)}
-              style={{ marginLeft: 6, fontSize: 11, color: "#3B82F6", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
-              Xem →
-            </button>
-          )}
-        </span>
-      </div>
-    )
-  }
+const INPUT_CLS = "w-full rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-2 text-[13px] text-ui-fg-base outline-none transition-shadow placeholder:text-ui-fg-muted focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+const LABEL_CLS = "mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ui-fg-muted"
 
-  if (isAI) {
-    return (
-      <div style={{ margin: "6px 0 10px 0", display: "flex", gap: 8 }}>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#8B5CF6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#fff", flexShrink: 0 }}>🤖</div>
-        <div>
-          <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 3 }}>AI · {fmtTime(msg.created_at)}</div>
-          <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: "0 10px 10px 10px", padding: "8px 12px", fontSize: 13, color: "#374151", maxWidth: 340, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-            {msg.content}
-          </div>
-          <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
-        </div>
-      </div>
-    )
-  }
-
-  const bubbleBg = isMine ? "#3B82F6" : "#F3F4F6"
-  const bubbleColor = isMine ? "#fff" : "#111827"
-  const borderRadius = isMine ? "10px 0 10px 10px" : "0 10px 10px 10px"
-
+function PageStyles() {
   return (
-    <div
-      style={{ margin: "2px 0", display: "flex", flexDirection: isMine ? "row-reverse" : "row", gap: 8 }}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
-    >
-      {!isMine && (
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#6B7280", flexShrink: 0, fontWeight: 700, marginTop: 16 }}>
-          {(msg.author_name || "?").charAt(0).toUpperCase()}
-        </div>
-      )}
-
-      <div style={{ maxWidth: 360 }}>
-        {!isMine && <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 2 }}>{msg.author_name}</div>}
-
-        {/* Reply preview */}
-        {msg.reply_to && (
-          <div style={{ background: isMine ? "rgba(255,255,255,0.2)" : "#E9ECEF", borderLeft: "3px solid #9CA3AF", padding: "3px 8px", borderRadius: "4px 4px 0 0", fontSize: 11, color: isMine ? "rgba(255,255,255,0.8)" : "#6B7280", maxWidth: "100%" }}>
-            <span style={{ fontWeight: 600 }}>{msg.reply_to.author_name}</span>: {msg.reply_to.content}
-          </div>
-        )}
-
-        {/* Content */}
-        <div style={{ background: bubbleBg, color: bubbleColor, borderRadius, padding: "8px 12px", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", position: "relative" }}>
-          {msg.is_pinned && <span style={{ fontSize: 10, marginRight: 4 }}>📌</span>}
-          {isImage && msg.file_url ? (
-            <a href={msg.file_url} target="_blank" rel="noreferrer">
-              <img src={msg.file_url} alt={msg.file_name || "ảnh"} style={{ maxWidth: 240, maxHeight: 200, borderRadius: 6, display: "block" }} />
-            </a>
-          ) : isFile && msg.file_url ? (
-            <a href={msg.file_url} target="_blank" rel="noreferrer" style={{ color: isMine ? "#fff" : "#3B82F6", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
-              <span>📎</span>
-              <span style={{ textDecoration: "underline" }}>{msg.file_name || "File"}</span>
-            </a>
-          ) : (
-            <span dangerouslySetInnerHTML={{ __html: renderMentions(msg.content) }} />
-          )}
-        </div>
-
-        <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 2, textAlign: isMine ? "right" : "left" }}>{fmtTime(msg.created_at)}</div>
-
-        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
-      </div>
-
-      {/* Hover actions */}
-      {showActions && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start", marginTop: 14, opacity: showActions ? 1 : 0, transition: "opacity 0.1s" }}>
-          {QUICK_EMOJIS.slice(0, 3).map(e => (
-            <button key={e} onClick={() => onReact(msg.id, e)}
-              style={{ padding: "2px 4px", fontSize: 13, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 6, cursor: "pointer", lineHeight: 1 }}>{e}</button>
-          ))}
-          <button onClick={() => onReply(msg)}
-            title="Trả lời"
-            style={{ padding: "2px 6px", fontSize: 11, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 6, cursor: "pointer", color: "#6B7280" }}>↩</button>
-          {isManager && (
-            <button onClick={() => onPin(msg.id)}
-              title={msg.is_pinned ? "Bỏ ghim" : "Ghim"}
-              style={{ padding: "2px 6px", fontSize: 11, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 6, cursor: "pointer", color: "#6B7280" }}>
-              {msg.is_pinned ? "📌" : "📍"}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+    <style>{`
+      @keyframes chatMsgIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+      @keyframes chatPop { 0% { transform: scale(.5) } 60% { transform: scale(1.2) } 100% { transform: scale(1) } }
+      @keyframes chatFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes chatFadeUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+      @keyframes chatSlideRight { from { transform: translateX(40px); opacity: 0 } to { transform: none; opacity: 1 } }
+      @keyframes chatBounce { 0%, 80%, 100% { transform: translateY(0) } 40% { transform: translateY(-4px) } }
+      @keyframes chatHighlight { 0% { background-color: rgb(250 204 21 / 0.25) } 100% { background-color: transparent } }
+      .chat-anim-msgin { animation: chatMsgIn .16s ease-out }
+      .chat-anim-pop { animation: chatPop .2s cubic-bezier(.34,1.56,.64,1) }
+      .chat-anim-fadein { animation: chatFadeIn .18s ease-out }
+      .chat-anim-fadeup { animation: chatFadeUp .18s ease-out }
+      .chat-anim-panel { animation: chatSlideRight .2s ease-out }
+      .chat-anim-highlight { animation: chatHighlight 1.4s ease-out }
+      .chat-typing-dot { animation: chatBounce 1.2s infinite ease-in-out }
+      @media (prefers-reduced-motion: reduce) {
+        .chat-anim-msgin, .chat-anim-pop, .chat-anim-fadein, .chat-anim-fadeup, .chat-anim-panel, .chat-anim-highlight, .chat-typing-dot { animation: none }
+      }
+    `}</style>
   )
 }
 
-function renderMentions(text: string): string {
-  return text.replace(/@[\w.@-]+/g, match => `<span style="color:#3B82F6;font-weight:600">${match}</span>`)
+// ─── Small components ────────────────────────────────────────────────────────
+
+function Avatar({ name, online, className }: { name: string; online?: boolean; className?: string }) {
+  return (
+    <span className={cn("relative inline-flex shrink-0 items-center justify-center rounded-full font-bold uppercase", avatarClass(name), className || "size-7 text-[11px]")}>
+      {(name || "?").charAt(0)}
+      {online !== undefined && (
+        <span className={cn("absolute -bottom-px -right-px size-2 rounded-full ring-2 ring-ui-bg-base", online ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+      )}
+    </span>
+  )
 }
 
 function ReactionBar({ reactions, msgId, currentEmail, onReact }: {
@@ -165,149 +129,151 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact }: {
   const entries = Object.entries(reactions || {}).filter(([, users]) => users.length > 0)
   if (entries.length === 0) return null
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 3 }}>
-      {entries.map(([emoji, users]) => (
-        <button key={emoji} onClick={() => onReact(msgId, emoji)}
-          style={{
-            padding: "1px 6px", fontSize: 12, borderRadius: 10, cursor: "pointer", lineHeight: 1.5,
-            background: users.includes(currentEmail) ? "#DBEAFE" : "#F3F4F6",
-            border: `1px solid ${users.includes(currentEmail) ? "#93C5FD" : "#E5E7EB"}`,
-            color: "#374151",
-          }}>
-          {emoji} {users.length}
-        </button>
-      ))}
+    <div className="mt-1 flex flex-wrap gap-1">
+      {entries.map(([emoji, users]) => {
+        const mine = users.includes(currentEmail)
+        return (
+          <button key={emoji} onClick={() => onReact(msgId, emoji)}
+            className={cn("chat-anim-pop rounded-full border px-1.5 py-px text-xs leading-relaxed transition-all active:scale-90",
+              mine
+                ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300"
+                : "border-ui-border-base bg-ui-bg-component text-ui-fg-subtle hover:border-ui-border-strong")}>
+            {emoji} {users.length}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-// ─── Modals ───────────────────────────────────────────────────────────────────
+// ─── Message Bubble ───────────────────────────────────────────────────────────
 
-function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void; onCreated: () => void; users: MktUser[] }) {
-  const [name, setName] = useState(""); const [desc, setDesc] = useState(""); const [memberEmails, setMemberEmails] = useState<string[]>([]); const [saving, setSaving] = useState(false)
-  const toggle = (email: string) => setMemberEmails(m => m.includes(email) ? m.filter(e => e !== email) : [...m, email])
-  const submit = async () => {
-    if (!name.trim()) return
-    setSaving(true)
-    await apiFetch("/admin/mkt-chat/channels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, description: desc, member_ids: memberEmails }) })
-    setSaving(false); onCreated(); onClose()
+function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin }: {
+  msg: Message; isMine: boolean; currentUserEmail: string; isManager: boolean
+  isOptimistic: boolean
+  onTaskClick?: (taskId: string) => void
+  onReply: (msg: Message) => void
+  onReact: (msgId: string, emoji: string) => void
+  onPin: (msgId: string) => void
+}) {
+  const isNote = msg.msg_type === "internal_note"
+  const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
+  const isAI = msg.msg_type === "ai_response"
+  const isImage = msg.msg_type === "image"
+  const isFile = msg.msg_type === "file"
+
+  if (isSystem) {
+    return (
+      <div className="my-1 text-center">
+        <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-component")}>
+          {msg.is_pinned && "📌 "}
+          {msg.content}
+          {msg.task_id && onTaskClick && (
+            <button onClick={() => onTaskClick(msg.task_id!)}
+              className="ml-1.5 text-[11px] text-blue-600 underline underline-offset-2 transition-colors hover:text-blue-700 dark:text-blue-400">
+              Xem →
+            </button>
+          )}
+        </span>
+      </div>
+    )
   }
-  const inp: React.CSSProperties = { width: "100%", border: "1px solid #E5E7EB", borderRadius: 6, padding: "7px 10px", fontSize: 13, boxSizing: "border-box" }
-  const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 4 }
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 420, maxWidth: "95vw" }}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Tạo group chat mới</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div><label style={lbl}>Tên group *</label><input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder="VD: Team MKT T6..." /></div>
-          <div><label style={lbl}>Mô tả</label><input style={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Mục đích của group..." /></div>
-          <div>
-            <label style={lbl}>Thêm thành viên</label>
-            <div style={{ border: "1px solid #E5E7EB", borderRadius: 6, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
-              {users.map(u => (
-                <div key={u.email} onClick={() => toggle(u.email)}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #F3F4F6", background: memberEmails.includes(u.email) ? "#EFF6FF" : "#fff" }}>
-                  <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${memberEmails.includes(u.email) ? "#3B82F6" : "#D1D5DB"}`, background: memberEmails.includes(u.email) ? "#3B82F6" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {memberEmails.includes(u.email) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
-                  </div>
-                  <span style={{ fontSize: 13 }}>{u.name}</span>
-                </div>
-              ))}
-              {users.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "#9CA3AF" }}>Không có thành viên</div>}
-            </div>
+
+  // Internal note: full-width, nền vàng, chỉ member thấy (đánh dấu rõ)
+  if (isNote) {
+    return (
+      <div className="chat-anim-msgin my-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/30 dark:bg-amber-500/10">
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+          🔒 Note nội bộ · {msg.author_name} · {fmtTime(msg.created_at)}
+        </div>
+        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base"
+          dangerouslySetInnerHTML={{ __html: renderMentions(msg.content) }} />
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
+      </div>
+    )
+  }
+
+  if (isAI) {
+    return (
+      <div className="chat-anim-msgin my-2 flex gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-violet-500 text-xs text-white">🤖</span>
+        <div className="min-w-0">
+          <div className="mb-0.5 text-[11px] text-ui-fg-muted">AI · {fmtTime(msg.created_at)}</div>
+          <div className="max-w-[400px] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10">
+            {msg.content}
           </div>
+          <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
         </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-          <button onClick={onClose} style={{ padding: "8px 16px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", fontSize: 13, cursor: "pointer" }}>Hủy</button>
-          <button onClick={submit} disabled={saving || !name.trim()} style={{ padding: "8px 16px", border: "none", borderRadius: 6, background: "#3B82F6", color: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
-            {saving ? "Đang tạo..." : "Tạo group"}
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn("group/msg relative my-0.5 flex gap-2", isMine && "flex-row-reverse")}>
+      {!isMine && <Avatar name={msg.author_name} className="mt-4 size-7 text-[11px]" />}
+
+      <div className="max-w-[400px] min-w-0">
+        {!isMine && <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name}</div>}
+
+        {msg.reply_to && (
+          <div className={cn("rounded-t-lg border-l-2 px-2 py-1 text-[11px]",
+            isMine
+              ? "border-blue-300 bg-blue-500/10 text-ui-fg-subtle"
+              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted")}>
+            <span className="font-semibold">{msg.reply_to.author_name}</span>: {msg.reply_to.content}
+          </div>
+        )}
+
+        <div className={cn("relative whitespace-pre-wrap px-3 py-2 text-[13px] leading-relaxed transition-opacity",
+          isOptimistic && "opacity-60",
+          msg.reply_to ? "rounded-b-xl" : "rounded-xl",
+          isMine
+            ? cn("bg-blue-600 text-white", !msg.reply_to && "rounded-tr-sm")
+            : cn("bg-ui-bg-component text-ui-fg-base", !msg.reply_to && "rounded-tl-sm"))}>
+          {msg.is_pinned && <span className="mr-1 text-[10px]">📌</span>}
+          {isImage && msg.file_url ? (
+            <a href={msg.file_url} target="_blank" rel="noreferrer">
+              <img src={msg.file_url} alt={msg.file_name || "ảnh"} className="block max-h-[200px] max-w-[260px] rounded-lg" />
+            </a>
+          ) : isFile && msg.file_url ? (
+            <a href={msg.file_url} target="_blank" rel="noreferrer"
+              className={cn("flex items-center gap-1.5 no-underline", isMine ? "text-white" : "text-blue-600 dark:text-blue-400")}>
+              <span>📎</span><span className="underline underline-offset-2">{msg.file_name || "File"}</span>
+            </a>
+          ) : (
+            <span dangerouslySetInnerHTML={{ __html: isMine ? escapeHtml(msg.content).replace(/@[\w.@-]+/g, m => `<span class="font-bold underline underline-offset-2">${m}</span>`) : renderMentions(msg.content) }} />
+          )}
+        </div>
+
+        <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>
+          {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
+        </div>
+
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
+      </div>
+
+      {/* Hover actions — thanh ngang phía trên bubble (kiểu Slack) */}
+      <div className={cn("absolute -top-2.5 z-10 hidden items-center gap-px rounded-lg border border-ui-border-base bg-ui-bg-base p-0.5 shadow-md group-hover/msg:flex",
+        isMine ? "left-2" : "right-2")}>
+        {QUICK_EMOJIS.slice(0, 4).map(e => (
+          <button key={e} onClick={() => onReact(msg.id, e)}
+            className="grid size-6 place-items-center rounded-md text-[13px] transition-transform hover:scale-125 hover:bg-ui-bg-base-hover">{e}</button>
+        ))}
+        <span className="mx-0.5 h-4 w-px bg-ui-border-base" />
+        <button onClick={() => onReply(msg)} title="Trả lời"
+          className="grid size-6 place-items-center rounded-md text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">↩</button>
+        {isManager && (
+          <button onClick={() => onPin(msg.id)} title={msg.is_pinned ? "Bỏ ghim" : "Ghim"}
+            className="grid size-6 place-items-center rounded-md text-xs transition-colors hover:bg-ui-bg-base-hover">
+            {msg.is_pinned ? "📌" : "📍"}
           </button>
-        </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ManageMembersModal({ channel, users, onClose, onSaved }: { channel: Channel; users: MktUser[]; onClose: () => void; onSaved: () => void }) {
-  const initial = new Set(channel.member_ids || [])
-  const [selected, setSelected] = useState<Set<string>>(new Set(initial))
-  const [saving, setSaving] = useState(false)
-  const toggle = (email: string) => setSelected(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
-  const submit = async () => {
-    setSaving(true)
-    const add = [...selected].filter(e => !initial.has(e))
-    const remove = [...initial].filter(e => !selected.has(e))
-    await apiFetch(`/admin/mkt-chat/channels/${channel.id}/members`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ add, remove }) })
-    setSaving(false); onSaved(); onClose()
-  }
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 420, maxWidth: "95vw" }}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Thành viên #{channel.name}</div>
-        <div style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 16 }}>Tích để thêm / bỏ thành viên</div>
-        <div style={{ border: "1px solid #E5E7EB", borderRadius: 6, overflow: "hidden", maxHeight: 300, overflowY: "auto" }}>
-          {users.map(u => (
-            <div key={u.email} onClick={() => toggle(u.email)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #F3F4F6", background: selected.has(u.email) ? "#EFF6FF" : "#fff" }}>
-              <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${selected.has(u.email) ? "#3B82F6" : "#D1D5DB"}`, background: selected.has(u.email) ? "#3B82F6" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {selected.has(u.email) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
-              </div>
-              <span style={{ fontSize: 13 }}>{u.name}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-          <button onClick={onClose} style={{ padding: "8px 16px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", fontSize: 13, cursor: "pointer" }}>Hủy</button>
-          <button onClick={submit} disabled={saving} style={{ padding: "8px 16px", border: "none", borderRadius: 6, background: "#3B82F6", color: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
-            {saving ? "Đang lưu..." : "Lưu"}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
-  const [saving, setSaving] = useState(false)
-  const submit = async () => {
-    if (!form.title.trim() || !form.assignee_id) return
-    setSaving(true)
-    await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) })
-    setSaving(false); onCreated(); onClose()
-  }
-  const inp: React.CSSProperties = { width: "100%", border: "1px solid #E5E7EB", borderRadius: 6, padding: "6px 10px", fontSize: 13, boxSizing: "border-box" }
-  const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#6B7280", display: "block", marginBottom: 3 }
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 12, padding: 20, width: 380, maxWidth: "95vw" }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>📋 Tạo task từ chat</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div><label style={lbl}>Tiêu đề *</label><input style={inp} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Tiêu đề task..." /></div>
-          <div><label style={lbl}>Loại</label>
-            <select style={inp} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-              <option value="ads_camp">Chạy Ads / Camp</option>
-              <option value="content_post">Nội dung / Bài FB</option>
-            </select>
-          </div>
-          <div><label style={lbl}>Giao cho *</label>
-            <select style={inp} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
-              <option value="">-- Chọn --</option>
-              {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
-            </select>
-          </div>
-          <div><label style={lbl}>Deadline</label><input type="date" style={inp} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-          <button onClick={onClose} style={{ padding: "6px 14px", border: "1px solid #E5E7EB", borderRadius: 6, background: "#fff", fontSize: 12, cursor: "pointer" }}>Hủy</button>
-          <button onClick={submit} disabled={saving} style={{ padding: "6px 14px", border: "none", borderRadius: 6, background: "#3B82F6", color: "#fff", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
-            {saving ? "Đang tạo..." : "Tạo task"}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+// ─── Pinned bar ───────────────────────────────────────────────────────────────
 
 function PinnedBar({ channelId, onJump }: { channelId: string; onJump: (msgId: string) => void }) {
   const [pinned, setPinned] = useState<Message[]>([])
@@ -320,21 +286,23 @@ function PinnedBar({ channelId, onJump }: { channelId: string; onJump: (msgId: s
 
   if (pinned.length === 0) return null
   return (
-    <div style={{ borderBottom: "1px solid #FEF3C7", background: "#FFFBEB", padding: "6px 16px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 12, color: "#92400E", fontWeight: 600 }}>📌 {pinned.length} tin nhắn được ghim</span>
-        <button onClick={() => setOpen(o => !o)} style={{ fontSize: 11, color: "#92400E", background: "none", border: "none", cursor: "pointer" }}>
+    <div className="border-b border-amber-200/60 bg-amber-50/70 px-4 py-1.5 dark:border-amber-500/20 dark:bg-amber-500/5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">📌 {pinned.length} tin nhắn được ghim</span>
+        <button onClick={() => setOpen(o => !o)}
+          className="text-[11px] text-amber-700 transition-colors hover:text-amber-900 dark:text-amber-400">
           {open ? "Thu gọn ▲" : "Xem ▼"}
         </button>
       </div>
       {open && (
-        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="chat-anim-fadeup mt-1.5 flex flex-col gap-1">
           {pinned.map(m => (
-            <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "#78350F", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div key={m.id} className="flex items-center gap-2">
+              <span className="flex-1 truncate text-[11px] text-amber-900 dark:text-amber-300">
                 <b>{m.author_name}:</b> {m.content.slice(0, 60)}
               </span>
-              <button onClick={() => { setOpen(false); onJump(m.id) }} style={{ fontSize: 11, color: "#3B82F6", background: "none", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>Đến →</button>
+              <button onClick={() => { setOpen(false); onJump(m.id) }}
+                className="whitespace-nowrap text-[11px] text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400">Đến →</button>
             </div>
           ))}
         </div>
@@ -343,7 +311,9 @@ function PinnedBar({ channelId, onJump }: { channelId: string; onJump: (msgId: s
   )
 }
 
-function SearchPanel({ channelId, currentEmail, onClose }: { channelId: string; currentEmail: string; onClose: () => void }) {
+// ─── Search panel ─────────────────────────────────────────────────────────────
+
+function SearchPanel({ channelId, onClose, onJump }: { channelId: string; onClose: () => void; onJump: (msgId: string) => void }) {
   const [q, setQ] = useState("")
   const [results, setResults] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
@@ -359,58 +329,474 @@ function SearchPanel({ channelId, currentEmail, onClose }: { channelId: string; 
   }, [q, channelId])
 
   return (
-    <div style={{ position: "absolute", top: 0, right: 0, width: 340, height: "100%", background: "#fff", borderLeft: "1px solid #E5E7EB", display: "flex", flexDirection: "column", zIndex: 10 }}>
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", gap: 8, alignItems: "center" }}>
-        <input
-          autoFocus value={q} onChange={e => setQ(e.target.value)}
-          placeholder="Tìm trong channel..."
-          style={{ flex: 1, border: "1px solid #E5E7EB", borderRadius: 6, padding: "6px 10px", fontSize: 13 }}
-        />
-        <button onClick={onClose} style={{ fontSize: 16, background: "none", border: "none", cursor: "pointer", color: "#9CA3AF" }}>✕</button>
+    <div className="chat-anim-panel absolute inset-y-0 right-0 z-10 flex w-[340px] flex-col border-l border-ui-border-base bg-ui-bg-base">
+      <div className="flex items-center gap-2 border-b border-ui-border-base px-4 py-3">
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm trong channel..."
+          className={cn(INPUT_CLS, "py-1.5")} />
+        <button onClick={onClose} className="text-base text-ui-fg-muted transition-colors hover:text-ui-fg-base">✕</button>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-        {loading && <div style={{ fontSize: 12, color: "#9CA3AF", textAlign: "center", padding: 16 }}>Đang tìm...</div>}
-        {!loading && results.length === 0 && q.trim() && <div style={{ fontSize: 12, color: "#9CA3AF", textAlign: "center", padding: 16 }}>Không tìm thấy</div>}
+      <div className="flex-1 overflow-y-auto p-3">
+        {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tìm...</div>}
+        {!loading && results.length === 0 && q.trim() && <div className="py-4 text-center text-xs text-ui-fg-muted">Không tìm thấy</div>}
         {results.map(m => (
-          <div key={m.id} style={{ padding: "8px 10px", borderRadius: 8, marginBottom: 4, background: "#F9FAFB", border: "1px solid #F3F4F6" }}>
-            <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 3 }}>{m.author_name} · {fmtDate(m.created_at)} {fmtTime(m.created_at)}</div>
-            <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.4, whiteSpace: "pre-wrap" }}
-              dangerouslySetInnerHTML={{ __html: m.content.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), s => `<mark style="background:#FEF3C7">${s}</mark>`) }}
+          <button key={m.id} onClick={() => onJump(m.id)}
+            className="mb-1.5 block w-full rounded-lg border border-ui-border-base bg-ui-bg-subtle px-2.5 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-500/5">
+            <div className="mb-0.5 text-[11px] text-ui-fg-muted">{m.author_name} · {fmtDate(m.created_at)} {fmtTime(m.created_at)}</div>
+            <div className="whitespace-pre-wrap text-[13px] leading-snug text-ui-fg-base"
+              dangerouslySetInnerHTML={{
+                __html: escapeHtml(m.content).replace(
+                  new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+                  s => `<mark class="rounded-sm bg-amber-200 dark:bg-amber-500/40">${s}</mark>`
+                ),
+              }}
             />
-          </div>
+          </button>
         ))}
       </div>
     </div>
   )
 }
 
+// ─── Quick Reply (templates) ─────────────────────────────────────────────────
+
+function TemplatePicker({ templates, query, activeIndex, onSelect, onClose }: {
+  templates: Template[]; query: string; activeIndex: number
+  onSelect: (t: Template) => void; onClose: () => void
+}) {
+  const filtered = templates.filter(t =>
+    !query || t.label.toLowerCase().includes(query.toLowerCase()) || t.content.toLowerCase().includes(query.toLowerCase())
+  ).slice(0, 6)
+
+  if (filtered.length === 0) return null
+  return (
+    <div className="chat-anim-fadeup absolute bottom-full left-0 z-50 mb-2 w-[380px] max-w-[90%] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-xl">
+      <div className="flex items-center justify-between border-b border-ui-border-base bg-ui-bg-subtle px-3 py-1.5">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-ui-fg-muted">⚡ Mẫu tin nhắn</span>
+        <button onClick={onClose} className="text-xs text-ui-fg-muted hover:text-ui-fg-base">✕</button>
+      </div>
+      {filtered.map((t, i) => (
+        <button key={t.id} onClick={() => onSelect(t)}
+          className={cn("block w-full px-3 py-2 text-left transition-colors",
+            i === activeIndex ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+          <div className="text-xs font-bold text-ui-fg-base">/{t.label}</div>
+          <div className="truncate text-xs text-ui-fg-muted">{t.content}</div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TemplatesModal({ templates, isManager, onClose, onChanged }: {
+  templates: Template[]; isManager: boolean; onClose: () => void; onChanged: () => void
+}) {
+  const [label, setLabel] = useState("")
+  const [content, setContent] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState("")
+
+  const create = async () => {
+    if (!label.trim() || !content.trim()) return
+    setSaving(true); setErr("")
+    try {
+      const r = await apiFetch("/admin/mkt-chat/templates", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: label.trim().replace(/\s+/g, "-").toLowerCase(), content: content.trim() }),
+      }).then(r => r.json())
+      if (r.template) { setLabel(""); setContent(""); onChanged() }
+      else setErr(r.error || "Lỗi tạo mẫu")
+    } finally { setSaving(false) }
+  }
+
+  const remove = async (id: string) => {
+    await apiFetch(`/admin/mkt-chat/templates/${id}`, { method: "DELETE" })
+    onChanged()
+  }
+
+  return (
+    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="chat-anim-fadeup flex max-h-[80vh] w-[480px] max-w-[95vw] flex-col rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-1 text-base font-extrabold text-ui-fg-base">⚡ Mẫu tin nhắn nhanh</h2>
+        <p className="mb-4 text-xs text-ui-fg-muted">Gõ <b>/</b> trong ô chat để chèn mẫu. {isManager ? "Bạn có thể thêm/xóa mẫu cho cả team." : "Liên hệ manager để thêm mẫu mới."}</p>
+
+        <div className="flex-1 overflow-y-auto">
+          {templates.length === 0 && <div className="py-6 text-center text-xs text-ui-fg-muted">Chưa có mẫu nào</div>}
+          {templates.map(t => (
+            <div key={t.id} className="mb-1.5 flex items-start gap-2 rounded-lg border border-ui-border-base bg-ui-bg-subtle px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-ui-fg-base">/{t.label}</div>
+                <div className="whitespace-pre-wrap text-xs leading-relaxed text-ui-fg-subtle">{t.content}</div>
+              </div>
+              {isManager && (
+                <button onClick={() => remove(t.id)} title="Xóa mẫu"
+                  className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-rose-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10">🗑</button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {isManager && (
+          <div className="mt-3 flex flex-col gap-2 border-t border-ui-border-base pt-3">
+            <input className={INPUT_CLS} placeholder="Tên mẫu (vd: chao-khach)" value={label} onChange={e => setLabel(e.target.value)} />
+            <textarea className={cn(INPUT_CLS, "resize-y")} rows={2} placeholder="Nội dung mẫu..." value={content} onChange={e => setContent(e.target.value)} />
+            {err && <div className="text-xs text-rose-500">{err}</div>}
+            <button onClick={create} disabled={saving || !label.trim() || !content.trim()}
+              className="self-end rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-40">
+              {saving ? "Đang lưu..." : "+ Thêm mẫu"}
+            </button>
+          </div>
+        )}
+
+        <button onClick={onClose}
+          className="mt-3 self-end rounded-lg border border-ui-border-base px-4 py-1.5 text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">
+          Đóng
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modals (channel / members / task) ───────────────────────────────────────
+
+function UserCheckList({ users, selected, onToggle }: { users: MktUser[]; selected: Set<string>; onToggle: (email: string) => void }) {
+  return (
+    <div className="max-h-[240px] overflow-y-auto rounded-lg border border-ui-border-base">
+      {users.map(u => {
+        const checked = selected.has(u.email)
+        return (
+          <button key={u.email} onClick={() => onToggle(u.email)}
+            className={cn("flex w-full items-center gap-2.5 border-b border-ui-border-base px-3 py-2 text-left transition-colors last:border-b-0",
+              checked ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+            <span className={cn("grid size-4 shrink-0 place-items-center rounded border-2 text-[10px] text-white transition-colors",
+              checked ? "border-blue-600 bg-blue-600" : "border-ui-border-strong bg-ui-bg-base")}>
+              {checked && "✓"}
+            </span>
+            <Avatar name={u.name} className="size-6 text-[10px]" />
+            <span className="text-[13px] text-ui-fg-base">{u.name}</span>
+          </button>
+        )
+      })}
+      {users.length === 0 && <div className="p-3 text-xs text-ui-fg-muted">Không có thành viên</div>}
+    </div>
+  )
+}
+
+function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void; onCreated: () => void; users: MktUser[] }) {
+  const [name, setName] = useState("")
+  const [desc, setDesc] = useState("")
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
+
+  const toggle = (email: string) => setSelected(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
+  const submit = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    await apiFetch("/admin/mkt-chat/channels", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description: desc, member_ids: [...selected] }),
+    })
+    setSaving(false); onCreated(); onClose()
+  }
+
+  return (
+    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-4 text-base font-extrabold text-ui-fg-base">Tạo group chat mới</h2>
+        <div className="flex flex-col gap-3">
+          <div><label className={LABEL_CLS}>Tên group *</label>
+            <input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="VD: Team MKT T6..." autoFocus /></div>
+          <div><label className={LABEL_CLS}>Mô tả</label>
+            <input className={INPUT_CLS} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Mục đích của group..." /></div>
+          <div><label className={LABEL_CLS}>Thêm thành viên</label>
+            <UserCheckList users={users} selected={selected} onToggle={toggle} /></div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+          <button onClick={submit} disabled={saving || !name.trim()}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
+            {saving ? "Đang tạo..." : "Tạo group"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ManageMembersModal({ channel, users, onClose, onSaved }: { channel: Channel; users: MktUser[]; onClose: () => void; onSaved: () => void }) {
+  const initial = useMemo(() => new Set(channel.member_ids || []), [channel])
+  const [selected, setSelected] = useState<Set<string>>(new Set(initial))
+  const [saving, setSaving] = useState(false)
+
+  const toggle = (email: string) => setSelected(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
+  const submit = async () => {
+    setSaving(true)
+    const add = [...selected].filter(e => !initial.has(e))
+    const remove = [...initial].filter(e => !selected.has(e))
+    await apiFetch(`/admin/mkt-chat/channels/${channel.id}/members`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ add, remove }),
+    })
+    setSaving(false); onSaved(); onClose()
+  }
+
+  return (
+    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-1 text-base font-extrabold text-ui-fg-base">Thành viên #{channel.name}</h2>
+        <p className="mb-4 text-xs text-ui-fg-muted">Tích để thêm / bỏ thành viên</p>
+        <UserCheckList users={users} selected={selected} onToggle={toggle} />
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+          <button onClick={submit} disabled={saving}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
+            {saving ? "Đang lưu..." : "Lưu"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!form.title.trim() || !form.assignee_id) return
+    setSaving(true)
+    await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    })
+    setSaving(false); onCreated(); onClose()
+  }
+
+  return (
+    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="chat-anim-fadeup w-[400px] max-w-[95vw] rounded-xl bg-ui-bg-base p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-4 text-sm font-extrabold text-ui-fg-base">📋 Tạo task từ chat</h2>
+        <div className="flex flex-col gap-2.5">
+          <div><label className={LABEL_CLS}>Tiêu đề *</label>
+            <input className={INPUT_CLS} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Tiêu đề task..." autoFocus /></div>
+          <div><label className={LABEL_CLS}>Loại</label>
+            <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+              <option value="ads_camp">Chạy Ads / Camp</option>
+              <option value="content_post">Nội dung / Bài FB</option>
+            </select></div>
+          <div><label className={LABEL_CLS}>Giao cho *</label>
+            <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
+              <option value="">-- Chọn --</option>
+              {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+            </select></div>
+          <div><label className={LABEL_CLS}>Deadline</label>
+            <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-3.5 py-1.5 text-xs text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+          <button onClick={submit} disabled={saving || !form.title.trim() || !form.assignee_id}
+            className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-40">
+            {saving ? "Đang tạo..." : "Tạo task"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Context Panel (cột 3) ───────────────────────────────────────────────────
+
+function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMembers, onCreateTask, onClose }: {
+  channel: Channel
+  mktUsers: MktUser[]
+  onlineEmails: string[]
+  isManager: boolean
+  onManageMembers: () => void
+  onCreateTask: () => void
+  onClose: () => void
+}) {
+  const [tab, setTab] = useState<"info" | "tasks" | "files">("info")
+  const [tasks, setTasks] = useState<LinkedTask[]>([])
+  const [files, setFiles] = useState<ChatFile[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (tab === "tasks") {
+      setLoading(true)
+      apiFetch(`/admin/mkt-tasks?channel_id=${channel.id}`)
+        .then(r => r.json()).then(d => setTasks(d.tasks || [])).finally(() => setLoading(false))
+    } else if (tab === "files") {
+      setLoading(true)
+      apiFetch(`/admin/mkt-chat/channels/${channel.id}/files`)
+        .then(r => r.json()).then(d => setFiles(d.files || [])).finally(() => setLoading(false))
+    }
+  }, [tab, channel.id])
+
+  const members = (channel.member_ids || []).map(email => ({
+    email,
+    name: mktUsers.find(u => u.email === email)?.name || email.split("@")[0],
+    online: onlineEmails.includes(email),
+  })).sort((a, b) => Number(b.online) - Number(a.online))
+
+  const tabBtn = (t: typeof tab, label: string) => (
+    <button key={t} onClick={() => setTab(t)}
+      className={cn("flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-all",
+        tab === t ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+      {label}
+    </button>
+  )
+
+  return (
+    <aside className="chat-anim-panel flex w-[300px] shrink-0 flex-col border-l border-ui-border-base bg-ui-bg-subtle">
+      <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2.5">
+        <span className="text-[13px] font-bold text-ui-fg-base">Chi tiết</span>
+        <button onClick={onClose} className="grid size-6 place-items-center rounded-md text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">✕</button>
+      </div>
+
+      <div className="m-2 flex gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
+        {tabBtn("info", "ℹ️ Info")}
+        {tabBtn("tasks", "📋 Task")}
+        {tabBtn("files", "📎 Files")}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {tab === "info" && (
+          <div className="flex flex-col gap-4">
+            {channel.description && (
+              <div>
+                <div className={LABEL_CLS}>Mô tả</div>
+                <p className="text-[13px] leading-relaxed text-ui-fg-subtle">{channel.description}</p>
+              </div>
+            )}
+            <div>
+              <div className="flex items-center justify-between">
+                <div className={LABEL_CLS}>Thành viên ({members.length})</div>
+                {isManager && (
+                  <button onClick={onManageMembers}
+                    className="text-[11px] font-medium text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400">Quản lý</button>
+                )}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {members.map(m => (
+                  <div key={m.email} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-ui-bg-base-hover">
+                    <Avatar name={m.name} online={m.online} className="size-7 text-[11px]" />
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-medium text-ui-fg-base">{m.name}</div>
+                      <div className="text-[10px] text-ui-fg-muted">{m.online ? "🟢 Đang hoạt động" : "Ngoại tuyến"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="text-[11px] text-ui-fg-disabled">
+              Tạo ngày {new Date(channel.created_at).toLocaleDateString("vi-VN")}
+            </div>
+          </div>
+        )}
+
+        {tab === "tasks" && (
+          <div className="flex flex-col gap-2">
+            {isManager && (
+              <button onClick={onCreateTask}
+                className="rounded-lg border border-dashed border-ui-border-base px-3 py-2 text-xs font-medium text-ui-fg-muted transition-colors hover:border-blue-300 hover:bg-blue-500/5 hover:text-blue-600">
+                + Tạo task từ channel này
+              </button>
+            )}
+            {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tải...</div>}
+            {!loading && tasks.length === 0 && <div className="py-4 text-center text-xs text-ui-fg-muted">Chưa có task nào liên kết</div>}
+            {tasks.map(t => {
+              const st = TASK_STATUS[t.status] || TASK_STATUS.todo
+              return (
+                <button key={t.id}
+                  onClick={() => { window.location.href = `/app/mkt-tasks?task=${t.id}` }}
+                  className="rounded-lg border border-ui-border-base bg-ui-bg-base p-2.5 text-left shadow-sm transition-all hover:-translate-y-px hover:border-ui-border-strong hover:shadow-md">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <span className={cn("rounded-full px-1.5 py-px text-[10px] font-semibold", st.chip)}>{st.label}</span>
+                    {t.priority === "high" && <span className="text-[10px] font-semibold text-rose-500">▲ Cao</span>}
+                  </div>
+                  <div className="text-[13px] font-medium leading-snug text-ui-fg-base line-clamp-2">{t.title}</div>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-ui-fg-muted">
+                    <span>👤 {t.assignee_name}</span>
+                    {t.deadline && <span>📅 {fmtDate(t.deadline)}</span>}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {tab === "files" && (
+          <div>
+            {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tải...</div>}
+            {!loading && files.length === 0 && <div className="py-4 text-center text-xs text-ui-fg-muted">Chưa có file nào</div>}
+            {/* Ảnh dạng lưới */}
+            <div className="mb-2 grid grid-cols-3 gap-1.5">
+              {files.filter(f => f.file_type?.startsWith("image")).map(f => (
+                <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer"
+                  className="block aspect-square overflow-hidden rounded-lg border border-ui-border-base transition-transform hover:scale-105">
+                  <img src={f.file_url} alt={f.file_name || ""} className="size-full object-cover" />
+                </a>
+              ))}
+            </div>
+            {/* File khác dạng list */}
+            <div className="flex flex-col gap-1">
+              {files.filter(f => !f.file_type?.startsWith("image")).map(f => (
+                <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-2 rounded-lg border border-ui-border-base bg-ui-bg-base px-2.5 py-2 transition-colors hover:border-blue-300 hover:bg-blue-500/5">
+                  <span className="text-base">📎</span>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-medium text-ui-fg-base">{f.file_name || "File"}</div>
+                    <div className="text-[10px] text-ui-fg-muted">{fmtDate(f.created_at)}</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const PANEL_STORAGE_KEY = "mkt-chat:panel"
+
 export default function MktChatPage() {
-  const { has, isSuper, email: myEmail } = useCurrentPermissions()
+  const { has, isSuper, email: currentUserId } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-chat.manage")
 
   const [channels, setChannels] = useState<Channel[]>([])
+  const [onlineEmails, setOnlineEmails] = useState<string[]>([])
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [typingNames, setTypingNames] = useState<string[]>([])
   const [input, setInput] = useState("")
+  const [composerMode, setComposerMode] = useState<"message" | "note">("message")
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(false)
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])
-  const [currentUserId, setCurrentUserId] = useState("")
+  const [templates, setTemplates] = useState<Template[]>([])
+
+  const [sidebarTab, setSidebarTab] = useState<"all" | "unread">("all")
+  const [channelSearch, setChannelSearch] = useState("")
+  const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_STORAGE_KEY) !== "0")
 
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showManageMembers, setShowManageMembers] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [newMsgCount, setNewMsgCount] = useState(0)
 
+  const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const atBottomRef = useRef(true)
+  const lastTypingPingRef = useRef(0)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -420,31 +806,51 @@ export default function MktChatPage() {
     u.name.toLowerCase().includes(mentionQuery.toLowerCase()) || u.email.toLowerCase().includes(mentionQuery.toLowerCase())
   ).slice(0, 5)
 
+  // Template picker (slash command)
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateIndex, setTemplateIndex] = useState(0)
+  const templateQuery = input.startsWith("/") ? input.slice(1) : ""
+  const templateSuggestions = templates.filter(t =>
+    !templateQuery || t.label.toLowerCase().includes(templateQuery.toLowerCase()) || t.content.toLowerCase().includes(templateQuery.toLowerCase())
+  ).slice(0, 6)
+
+  // ── Data loading ───────────────────────────────────────────────────────────
+
   const loadChannels = useCallback(() => {
     apiFetch("/admin/mkt-chat/channels").then(r => r.json()).then(d => {
       const list: Channel[] = d.channels || []
       setChannels(list)
+      setOnlineEmails(d.online_emails || [])
       setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || prev) : prev)
     })
   }, [])
 
+  const loadTemplates = useCallback(() => {
+    apiFetch("/admin/mkt-chat/templates").then(r => r.json()).then(d => setTemplates(d.templates || [])).catch(() => {})
+  }, [])
+
   useEffect(() => {
     loadChannels()
+    loadTemplates()
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
-    apiFetch("/admin/permissions/me").then(r => r.json()).then(d => setCurrentUserId(d.email || ""))
-  }, [loadChannels])
+  }, [loadChannels, loadTemplates])
 
   // Load messages khi đổi channel
   useEffect(() => {
     if (!activeChannel) return
     setLoading(true)
+    setNewMsgCount(0)
+    atBottomRef.current = true
     apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`)
-      .then(r => r.json()).then(d => setMessages(d.messages || [])).finally(() => setLoading(false))
-    // Mark as read
+      .then(r => r.json()).then(d => {
+        setMessages(d.messages || [])
+        setTypingNames(d.presence?.typing || [])
+        requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView())
+      }).finally(() => setLoading(false))
     apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/last-read`, { method: "PATCH" }).catch(() => {})
   }, [activeChannel?.id])
 
-  // Polling
+  // Polling 4s: messages + presence + heartbeat
   useEffect(() => {
     if (!activeChannel) return
     const channelId = activeChannel.id
@@ -452,38 +858,72 @@ export default function MktChatPage() {
       apiFetch(`/admin/mkt-chat/channels/${channelId}/messages?limit=30`)
         .then(r => r.json()).then(d => {
           const newMsgs: Message[] = d.messages || []
+          setTypingNames(d.presence?.typing || [])
           setMessages(prev => {
             const real = prev.filter(m => !m.id.startsWith("opt-"))
+            const polledById: Record<string, Message> = {}
+            for (const m of newMsgs) polledById[m.id] = m
+            // Cập nhật reactions/pin của tin đã có + thêm tin mới
+            const updated = real.map(m => polledById[m.id] ? { ...m, reactions: polledById[m.id].reactions, is_pinned: polledById[m.id].is_pinned } : m)
             const realIds = new Set(real.map(m => m.id))
             const fresh = newMsgs.filter(m => !realIds.has(m.id))
-            if (fresh.length === 0 && real.length === prev.length) return prev
-            // Mark read after receiving new msgs
-            apiFetch(`/admin/mkt-chat/channels/${channelId}/last-read`, { method: "PATCH" }).catch(() => {})
-            return [...real, ...fresh]
+            if (fresh.length > 0) {
+              const freshOthers = fresh.filter(m => m.author_id !== currentUserId && m.msg_type !== "system_notify")
+              if (!atBottomRef.current && freshOthers.length > 0) {
+                setNewMsgCount(c => c + freshOthers.length)
+              }
+            }
+            if (fresh.length === 0 && updated.every((m, i) => m === real[i]) && real.length === prev.length) return prev
+            return [...updated, ...fresh]
           })
         }).catch(() => {})
-      // Refresh unread counts on sidebar
+      // Heartbeat: mark-read + presence
+      apiFetch(`/admin/mkt-chat/channels/${channelId}/last-read`, { method: "PATCH" }).catch(() => {})
       loadChannels()
     }, 4000)
     return () => clearInterval(poll)
-  }, [activeChannel?.id, loadChannels])
+  }, [activeChannel?.id, loadChannels, currentUserId])
 
-  // Auto-scroll
+  // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    if (atBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+      setNewMsgCount(0)
+    }
   }, [messages])
+
+  const handleScroll = () => {
+    const el = messagesBoxRef.current
+    if (!el) return
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80
+    atBottomRef.current = atBottom
+    if (atBottom) setNewMsgCount(0)
+  }
+
+  const scrollToBottom = () => {
+    atBottomRef.current = true
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    setNewMsgCount(0)
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────────
 
   const sendMessage = async () => {
     if (!input.trim() || !activeChannel || sending) return
     const text = input.trim()
+    const mode = composerMode
+    const currentReply = replyTo
     setInput("")
     setReplyTo(null)
     setMentionOpen(false)
+    setTemplateOpen(false)
     setSending(true)
+    atBottomRef.current = true
     const optimistic: Message = {
       id: `opt-${Date.now()}`, channel_id: activeChannel.id, author_id: currentUserId,
-      author_name: "Bạn", content: text, task_id: null, msg_type: "text", metadata: null,
-      reply_to_id: replyTo?.id || null, reply_to: replyTo ? { id: replyTo.id, content: replyTo.content.slice(0, 80), author_name: replyTo.author_name } : null,
+      author_name: "Bạn", content: text, task_id: null, msg_type: mode === "note" ? "internal_note" : "text", metadata: null,
+      reply_to_id: currentReply?.id || null,
+      reply_to: currentReply ? { id: currentReply.id, content: currentReply.content.slice(0, 80), author_name: currentReply.author_name } : null,
       file_url: null, file_type: null, file_name: null, file_expires_at: null,
       reactions: {}, is_pinned: false, mentions: [],
       created_at: new Date().toISOString(),
@@ -492,13 +932,31 @@ export default function MktChatPage() {
     await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text, reply_to_id: replyTo?.id || null }),
+      body: JSON.stringify({ content: text, reply_to_id: currentReply?.id || null, msg_type: mode === "note" ? "internal_note" : "text" }),
     })
     setSending(false)
+    textareaRef.current?.focus()
+  }
+
+  const pingTyping = () => {
+    if (!activeChannel) return
+    const now = Date.now()
+    if (now - lastTypingPingRef.current < 2500) return
+    lastTypingPingRef.current = now
+    apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/typing`, { method: "POST" }).catch(() => {})
   }
 
   const handleInputChange = (val: string) => {
     setInput(val)
+    if (val.trim()) pingTyping()
+
+    // Slash template: chỉ khi "/" đứng đầu
+    if (val.startsWith("/")) {
+      setTemplateOpen(true); setTemplateIndex(0); setMentionOpen(false)
+      return
+    }
+    setTemplateOpen(false)
+
     // Detect @mention
     const atIdx = val.lastIndexOf("@")
     if (atIdx >= 0 && atIdx === val.length - 1) {
@@ -512,12 +970,24 @@ export default function MktChatPage() {
 
   const insertMention = (user: MktUser) => {
     const atIdx = input.lastIndexOf("@")
-    const newInput = input.slice(0, atIdx) + `@${user.name} `
-    setInput(newInput); setMentionOpen(false)
+    setInput(input.slice(0, atIdx) + `@${user.name} `)
+    setMentionOpen(false)
+    textareaRef.current?.focus()
+  }
+
+  const insertTemplate = (t: Template) => {
+    setInput(t.content)
+    setTemplateOpen(false)
     textareaRef.current?.focus()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (templateOpen && templateSuggestions.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setTemplateIndex(i => Math.min(i + 1, templateSuggestions.length - 1)); return }
+      if (e.key === "ArrowUp") { e.preventDefault(); setTemplateIndex(i => Math.max(i - 1, 0)); return }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertTemplate(templateSuggestions[templateIndex]); return }
+      if (e.key === "Escape") { setTemplateOpen(false); return }
+    }
     if (mentionOpen) {
       if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, mentionSuggestions.length - 1)) }
       else if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)) }
@@ -533,6 +1003,9 @@ export default function MktChatPage() {
     setUploadingFile(true)
     const fd = new FormData(); fd.append("file", file)
     await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/upload`, { method: "POST", body: fd })
+    // Refresh ngay để thấy file
+    const d = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).catch(() => null)
+    if (d?.messages) { atBottomRef.current = true; setMessages(d.messages) }
     setUploadingFile(false)
   }
 
@@ -554,110 +1027,197 @@ export default function MktChatPage() {
   }
 
   const jumpToMessage = (msgId: string) => {
+    setShowSearch(false)
     const el = messageRefs.current[msgId]
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" })
-      el.style.background = "#FEF9C3"
-      setTimeout(() => { if (el) el.style.background = "" }, 1500)
+      el.classList.remove("chat-anim-highlight")
+      void el.offsetWidth // restart animation
+      el.classList.add("chat-anim-highlight")
     }
   }
 
-  const groupedByDate = messages.reduce((acc, m) => {
-    if (m.msg_type === "system_notify") return acc // ẩn notify nội bộ
+  const togglePanel = () => {
+    setPanelOpen(p => {
+      localStorage.setItem(PANEL_STORAGE_KEY, p ? "0" : "1")
+      return !p
+    })
+  }
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const visibleChannels = useMemo(() => {
+    let list = channels
+    if (sidebarTab === "unread") list = list.filter(c => c.unread_count > 0)
+    if (channelSearch.trim()) {
+      const q = channelSearch.toLowerCase()
+      list = list.filter(c => c.name.toLowerCase().includes(q))
+    }
+    return list
+  }, [channels, sidebarTab, channelSearch])
+
+  const groupedByDate = useMemo(() => messages.reduce((acc, m) => {
+    if (m.msg_type === "system_notify") return acc
     const d = fmtDate(m.created_at)
     if (!acc[d]) acc[d] = []
     acc[d].push(m)
     return acc
-  }, {} as Record<string, Message[]>)
+  }, {} as Record<string, Message[]>), [messages])
+
+  const onlineMemberCount = activeChannel
+    ? (activeChannel.member_ids || []).filter(e => onlineEmails.includes(e)).length
+    : 0
+
+  const totalUnread = channels.reduce((s, c) => s + c.unread_count, 0)
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: "flex", height: "calc(100vh - 64px)", background: "#fff", position: "relative" }}>
-      {/* Sidebar */}
-      <div style={{ width: 240, flexShrink: 0, borderRight: "1px solid #E5E7EB", display: "flex", flexDirection: "column", background: "#F9FAFB" }}>
-        <div style={{ padding: "14px 16px 8px", borderBottom: "1px solid #E5E7EB" }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "#111827" }}>💬 Chat MKT</div>
+    <div className="relative flex h-[calc(100vh-64px)] bg-ui-bg-base">
+      <PageStyles />
+
+      {/* ── Cột 1: Sidebar ── */}
+      <aside className="flex w-[260px] shrink-0 flex-col border-r border-ui-border-base bg-ui-bg-subtle">
+        <div className="px-3 pb-1 pt-3">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
+            {totalUnread > 0 && (
+              <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
+            )}
+          </div>
+          <input
+            value={channelSearch}
+            onChange={e => setChannelSearch(e.target.value)}
+            placeholder="Tìm group..."
+            className={cn(INPUT_CLS, "h-8 py-0 text-xs")}
+          />
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-          {channels.length === 0 && <div style={{ padding: "12px 8px", fontSize: 12, color: "#9CA3AF" }}>Chưa có group nào</div>}
-          {channels.map(c => (
-            <div key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false) }}
-              style={{ padding: "10px 12px", borderRadius: 8, cursor: "pointer", marginBottom: 2, background: activeChannel?.id === c.id ? "#EFF6FF" : "transparent", border: activeChannel?.id === c.id ? "1px solid #BFDBFE" : "1px solid transparent", position: "relative" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span># {c.name}</span>
-                {c.unread_count > 0 && (
-                  <span style={{ background: "#EF4444", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 10, padding: "1px 6px", minWidth: 18, textAlign: "center" }}>
-                    {c.unread_count > 99 ? "99+" : c.unread_count}
-                  </span>
-                )}
-              </div>
-              {c.description && <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{c.description}</div>}
-              <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 2 }}>{c.member_count} thành viên</div>
-            </div>
+
+        {/* Filter tabs */}
+        <div className="mx-3 my-2 grid grid-cols-2 gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
+          {([["all", "Tất cả"], ["unread", "Chưa đọc"]] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setSidebarTab(v)}
+              className={cn("h-7 rounded-md text-xs font-semibold transition-all",
+                sidebarTab === v ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+              {l}
+            </button>
           ))}
         </div>
+
+        {/* Channels */}
+        <div className="flex-1 overflow-y-auto px-2 pb-2">
+          {visibleChannels.length === 0 && (
+            <div className="px-2 py-3 text-xs text-ui-fg-muted">
+              {sidebarTab === "unread" ? "Không có tin chưa đọc 🎉" : channelSearch ? "Không tìm thấy group" : "Chưa có group nào"}
+            </div>
+          )}
+          {visibleChannels.map(c => {
+            const isActive = activeChannel?.id === c.id
+            const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
+            const last = c.last_message
+            return (
+              <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false) }}
+                className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                  isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+                <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase", avatarClass(c.name))}>
+                  {c.name.charAt(0)}
+                  <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline justify-between gap-1">
+                    <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>{c.name}</span>
+                    {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
+                  </span>
+                  <span className="flex items-center justify-between gap-1">
+                    <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
+                      {last
+                        ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "🔒 " : ""}${last.content}`
+                        : c.description || `${c.member_count} thành viên`}
+                    </span>
+                    {c.unread_count > 0 && (
+                      <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
+                        {c.unread_count > 99 ? "99+" : c.unread_count}
+                      </span>
+                    )}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
         {isManager && (
-          <div style={{ padding: 8, borderTop: "1px solid #E5E7EB" }}>
+          <div className="border-t border-ui-border-base p-2">
             <button onClick={() => setShowCreateChannel(true)}
-              style={{ width: "100%", padding: "8px 0", border: "1px dashed #D1D5DB", borderRadius: 8, background: "transparent", fontSize: 12, color: "#6B7280", cursor: "pointer" }}>
+              className="w-full rounded-lg border border-dashed border-ui-border-strong py-2 text-xs font-medium text-ui-fg-muted transition-colors hover:border-blue-300 hover:bg-blue-500/5 hover:text-blue-600">
               + Tạo group
             </button>
           </div>
         )}
-      </div>
+      </aside>
 
-      {/* Chat area */}
+      {/* ── Cột 2: Chat area ── */}
       {!activeChannel ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, color: "#9CA3AF" }}>
-          <div style={{ fontSize: 40 }}>💬</div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Chọn một group để bắt đầu</div>
+        <main className="flex flex-1 flex-col items-center justify-center gap-3 text-ui-fg-muted">
+          <div className="text-4xl">💬</div>
+          <div className="text-base font-semibold">Chọn một group để bắt đầu</div>
           {isManager && channels.length === 0 && (
-            <button onClick={() => setShowCreateChannel(true)} style={{ padding: "8px 16px", border: "none", borderRadius: 6, background: "#3B82F6", color: "#fff", fontSize: 13, cursor: "pointer" }}>
+            <button onClick={() => setShowCreateChannel(true)}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95">
               Tạo group đầu tiên
             </button>
           )}
-        </div>
+        </main>
       ) : (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
+        <main className="relative flex min-w-0 flex-1 flex-col">
           {/* Header */}
-          <div style={{ padding: "10px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-            <div>
-              <span style={{ fontSize: 14, fontWeight: 700 }}># {activeChannel.name}</span>
-              {activeChannel.description && <span style={{ fontSize: 12, color: "#9CA3AF", marginLeft: 8 }}>{activeChannel.description}</span>}
+          <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-4 py-2.5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-bold text-ui-fg-base"># {activeChannel.name}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-ui-fg-muted">
+                <span>{activeChannel.member_count} thành viên</span>
+                {onlineMemberCount > 0 && (
+                  <>
+                    <span>·</span>
+                    <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <span className="size-1.5 rounded-full bg-emerald-500" />{onlineMemberCount} online
+                    </span>
+                  </>
+                )}
+                {activeChannel.description && <><span>·</span><span className="truncate">{activeChannel.description}</span></>}
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <button onClick={() => setShowSearch(s => !s)}
-                title="Tìm kiếm"
-                style={{ padding: "4px 10px", border: "1px solid #E5E7EB", borderRadius: 6, background: showSearch ? "#EFF6FF" : "#fff", fontSize: 12, cursor: "pointer", color: "#374151" }}>🔍</button>
-              {isManager ? (
-                <button onClick={() => setShowManageMembers(true)}
-                  style={{ fontSize: 12, color: "#3B82F6", background: "none", border: "none", cursor: "pointer" }}>
-                  {activeChannel.member_count} thành viên · Quản lý
-                </button>
-              ) : (
-                <span style={{ fontSize: 12, color: "#9CA3AF" }}>{activeChannel.member_count} thành viên</span>
-              )}
+            <div className="flex shrink-0 items-center gap-1">
+              <button onClick={() => setShowSearch(s => !s)} title="Tìm kiếm"
+                className={cn("grid size-8 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                  showSearch ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>🔍</button>
+              <button onClick={togglePanel} title={panelOpen ? "Ẩn chi tiết" : "Hiện chi tiết"}
+                className={cn("grid size-8 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                  panelOpen ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>ℹ️</button>
             </div>
           </div>
 
-          {/* Pinned bar */}
           <PinnedBar channelId={activeChannel.id} onJump={jumpToMessage} />
 
           {/* Messages */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
-            {loading && <div style={{ textAlign: "center", color: "#9CA3AF", fontSize: 13, padding: 20 }}>Đang tải...</div>}
+          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
+            {loading && <div className="py-5 text-center text-[13px] text-ui-fg-muted">Đang tải...</div>}
             {Object.entries(groupedByDate).map(([date, msgs]) => (
               <div key={date}>
-                <div style={{ textAlign: "center", margin: "10px 0 6px" }}>
-                  <span style={{ background: "#F3F4F6", padding: "2px 10px", borderRadius: 10, fontSize: 11, color: "#9CA3AF" }}>{date}</span>
+                <div className="my-2.5 text-center">
+                  <span className="rounded-full bg-ui-bg-component px-2.5 py-0.5 text-[11px] text-ui-fg-muted">{date}</span>
                 </div>
                 {msgs.map(m => (
-                  <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} style={{ transition: "background 0.3s" }}>
+                  <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} className="rounded-lg">
                     <MessageBubble
                       msg={m}
                       isMine={m.author_id === currentUserId}
                       currentUserEmail={currentUserId}
                       isManager={isManager}
-                      onTaskClick={() => { window.location.href = "/app/mkt-tasks" }}
+                      isOptimistic={m.id.startsWith("opt-")}
+                      onTaskClick={(taskId) => { window.location.href = `/app/mkt-tasks?task=${taskId}` }}
                       onReply={setReplyTo}
                       onReact={handleReact}
                       onPin={handlePin}
@@ -667,93 +1227,159 @@ export default function MktChatPage() {
               </div>
             ))}
             {messages.filter(m => m.msg_type !== "system_notify").length === 0 && !loading && (
-              <div style={{ textAlign: "center", color: "#9CA3AF", fontSize: 13, marginTop: 40 }}>
+              <div className="mt-10 text-center text-[13px] text-ui-fg-muted">
                 Chưa có tin nhắn nào.<br />
-                <span style={{ fontSize: 11, display: "block", marginTop: 6 }}>💡 Gõ <b>@tên</b> để tag đồng đội · <b>@ai [câu hỏi]</b> để hỏi AI</span>
+                <span className="mt-1.5 block text-[11px]">💡 Gõ <b>@tên</b> để tag · <b>@ai [câu hỏi]</b> hỏi AI · <b>/</b> chèn mẫu tin</span>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input area */}
-          <div style={{ padding: "10px 16px", borderTop: "1px solid #E5E7EB", flexShrink: 0 }}>
-            {/* Reply preview */}
-            {replyTo && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F3F4F6", borderRadius: 6, padding: "4px 10px", marginBottom: 6, fontSize: 12, color: "#6B7280" }}>
-                <span>↩ Trả lời <b>{replyTo.author_name}</b>: {replyTo.content.slice(0, 50)}</span>
-                <button onClick={() => setReplyTo(null)} style={{ marginLeft: "auto", fontSize: 14, background: "none", border: "none", cursor: "pointer", color: "#9CA3AF" }}>✕</button>
-              </div>
-            )}
+          {/* New messages pill */}
+          {newMsgCount > 0 && (
+            <div className="pointer-events-none absolute bottom-[130px] left-0 right-0 flex justify-center">
+              <button onClick={scrollToBottom}
+                className="chat-anim-fadeup pointer-events-auto rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-blue-700 active:scale-95">
+                ↓ {newMsgCount} tin mới
+              </button>
+            </div>
+          )}
 
+          {/* Typing indicator */}
+          {typingNames.length > 0 && (
+            <div className="flex items-center gap-1.5 px-4 pb-1 text-[11px] text-ui-fg-muted">
+              <span className="inline-flex gap-0.5">
+                <span className="chat-typing-dot size-1 rounded-full bg-ui-fg-muted" />
+                <span className="chat-typing-dot size-1 rounded-full bg-ui-fg-muted" style={{ animationDelay: "150ms" }} />
+                <span className="chat-typing-dot size-1 rounded-full bg-ui-fg-muted" style={{ animationDelay: "300ms" }} />
+              </span>
+              {typingNames.slice(0, 2).join(", ")} đang gõ...
+            </div>
+          )}
+
+          {/* Composer */}
+          <div className="relative shrink-0 border-t border-ui-border-base p-3">
             {/* Mention autocomplete */}
             {mentionOpen && mentionSuggestions.length > 0 && (
-              <div style={{ position: "absolute", bottom: 90, left: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 50, minWidth: 220 }}>
+              <div className="chat-anim-fadeup absolute bottom-full left-3 z-50 mb-1 min-w-[230px] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-xl">
                 {mentionSuggestions.map((u, i) => (
-                  <div key={u.email} onClick={() => insertMention(u)}
-                    style={{ padding: "8px 12px", cursor: "pointer", background: i === mentionIndex ? "#EFF6FF" : "#fff", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#6B7280" }}>
-                      {u.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{u.name}</div>
-                      <div style={{ fontSize: 11, color: "#9CA3AF" }}>{u.email}</div>
-                    </div>
-                  </div>
+                  <button key={u.email} onClick={() => insertMention(u)}
+                    className={cn("flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
+                      i === mentionIndex ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+                    <Avatar name={u.name} className="size-6 text-[10px]" />
+                    <span>
+                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.name}</span>
+                      <span className="block text-[11px] text-ui-fg-muted">{u.email}</span>
+                    </span>
+                  </button>
                 ))}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              {/* File upload */}
-              <input ref={fileInputRef} type="file" accept="image/*,.pdf,video/mp4" style={{ display: "none" }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = "" }} />
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}
-                title="Gửi ảnh/file"
-                style={{ padding: "8px 10px", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff", fontSize: 16, cursor: "pointer", flexShrink: 0 }}>
-                {uploadingFile ? "⏳" : "📎"}
-              </button>
-
-              {/* Emoji quick pick */}
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <button onClick={() => setShowEmojiPicker(o => !o)}
-                  style={{ padding: "8px 10px", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff", fontSize: 16, cursor: "pointer" }}>😊</button>
-                {showEmojiPicker && (
-                  <div style={{ position: "absolute", bottom: 42, left: 0, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, padding: 8, display: "flex", gap: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 50 }}>
-                    {QUICK_EMOJIS.map(e => (
-                      <button key={e} onClick={() => { setInput(i => i + e); setShowEmojiPicker(false); textareaRef.current?.focus() }}
-                        style={{ fontSize: 20, background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6 }}>{e}</button>
-                    ))}
-                  </div>
-                )}
+            {/* Template picker */}
+            {templateOpen && (
+              <div className="relative">
+                <TemplatePicker templates={templates} query={templateQuery} activeIndex={templateIndex}
+                  onSelect={insertTemplate} onClose={() => setTemplateOpen(false)} />
               </div>
+            )}
 
-              {isManager && (
-                <button onClick={() => setShowCreateTask(true)} title="Tạo task"
-                  style={{ padding: "8px 10px", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff", fontSize: 16, cursor: "pointer", flexShrink: 0 }}>📋</button>
+            {/* Mode toggle */}
+            <div className="mb-1.5 flex items-center gap-1">
+              <button onClick={() => setComposerMode("message")}
+                className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all",
+                  composerMode === "message" ? "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+                💬 Tin nhắn
+              </button>
+              <button onClick={() => setComposerMode("note")}
+                className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all",
+                  composerMode === "note" ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+                🔒 Note nội bộ
+              </button>
+              {composerMode === "note" && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400">— note đánh dấu trao đổi nội bộ, nền vàng nổi bật</span>
               )}
+            </div>
 
+            {/* Reply preview */}
+            {replyTo && (
+              <div className="chat-anim-fadeup mb-1.5 flex items-center gap-2 rounded-lg bg-ui-bg-component px-2.5 py-1.5 text-xs text-ui-fg-subtle">
+                <span className="truncate">↩ Trả lời <b>{replyTo.author_name}</b>: {replyTo.content.slice(0, 60)}</span>
+                <button onClick={() => setReplyTo(null)} className="ml-auto shrink-0 text-sm text-ui-fg-muted transition-colors hover:text-ui-fg-base">✕</button>
+              </div>
+            )}
+
+            {/* Input khung — toolbar bên trong (chuẩn Slack) */}
+            <div className={cn("rounded-xl border transition-all focus-within:ring-2",
+              composerMode === "note"
+                ? "border-amber-300 bg-amber-50/50 focus-within:ring-amber-500/20 dark:border-amber-500/40 dark:bg-amber-500/5"
+                : "border-ui-border-base bg-ui-bg-field focus-within:border-blue-400 focus-within:ring-blue-500/20")}>
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={2}
-                placeholder={`Gửi tin nhắn... (Shift+Enter xuống dòng)\n@tên để tag · @ai để hỏi AI`}
-                style={{ flex: 1, border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 12px", fontSize: 13, resize: "none", lineHeight: 1.5 }}
+                placeholder={composerMode === "note"
+                  ? "Note nội bộ — chỉ thành viên channel thấy..."
+                  : "Nhắn tin... · @tên để tag · @ai hỏi AI · / chèn mẫu"}
+                className="max-h-36 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed text-ui-fg-base outline-none placeholder:text-ui-fg-muted"
               />
-              <button onClick={sendMessage} disabled={sending || !input.trim()}
-                style={{ padding: "8px 16px", border: "none", borderRadius: 8, background: "#3B82F6", color: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
-                Gửi
-              </button>
+              <div className="flex items-center gap-0.5 px-2 pb-1.5">
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf,video/mp4" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = "" }} />
+                <button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile} title="Gửi ảnh/file"
+                  className="grid size-7 place-items-center rounded-lg text-sm text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-50">
+                  {uploadingFile ? "⏳" : "📎"}
+                </button>
+                <div className="relative">
+                  <button onClick={() => setShowEmojiPicker(o => !o)} title="Emoji"
+                    className="grid size-7 place-items-center rounded-lg text-sm text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">😊</button>
+                  {showEmojiPicker && (
+                    <div className="chat-anim-fadeup absolute bottom-9 left-0 z-50 flex gap-1 rounded-xl border border-ui-border-base bg-ui-bg-base p-1.5 shadow-xl">
+                      {QUICK_EMOJIS.map(e => (
+                        <button key={e} onClick={() => { setInput(i => i + e); setShowEmojiPicker(false); textareaRef.current?.focus() }}
+                          className="grid size-8 place-items-center rounded-lg text-lg transition-transform hover:scale-125 hover:bg-ui-bg-base-hover">{e}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { setShowTemplatesModal(true) }} title="Mẫu tin nhắn (/)"
+                  className="grid size-7 place-items-center rounded-lg text-sm text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">⚡</button>
+                {isManager && (
+                  <button onClick={() => setShowCreateTask(true)} title="Tạo task"
+                    className="grid size-7 place-items-center rounded-lg text-sm text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">📋</button>
+                )}
+                <div className="flex-1" />
+                <button onClick={sendMessage} disabled={sending || !input.trim()}
+                  className={cn("grid size-8 place-items-center rounded-lg text-sm font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                    input.trim() && !sending
+                      ? composerMode === "note" ? "bg-amber-500 text-white hover:bg-amber-600 active:scale-90" : "bg-blue-600 text-white hover:bg-blue-700 active:scale-90"
+                      : "bg-ui-bg-component text-ui-fg-disabled")}>
+                  ➤
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Search panel */}
-          {showSearch && <SearchPanel channelId={activeChannel.id} currentEmail={currentUserId} onClose={() => setShowSearch(false)} />}
-        </div>
+          {showSearch && <SearchPanel channelId={activeChannel.id} onClose={() => setShowSearch(false)} onJump={jumpToMessage} />}
+        </main>
       )}
 
-      {/* Modals */}
+      {/* ── Cột 3: Context Panel ── */}
+      {activeChannel && panelOpen && (
+        <ContextPanel
+          channel={activeChannel}
+          mktUsers={mktUsers}
+          onlineEmails={onlineEmails}
+          isManager={isManager}
+          onManageMembers={() => setShowManageMembers(true)}
+          onCreateTask={() => setShowCreateTask(true)}
+          onClose={togglePanel}
+        />
+      )}
+
+      {/* ── Modals ── */}
       {showCreateChannel && <CreateChannelModal onClose={() => setShowCreateChannel(false)} onCreated={loadChannels} users={mktUsers} />}
       {showCreateTask && activeChannel && (
         <CreateTaskModal channelId={activeChannel.id} users={mktUsers}
@@ -765,6 +1391,10 @@ export default function MktChatPage() {
         <ManageMembersModal channel={activeChannel} users={mktUsers}
           onClose={() => setShowManageMembers(false)} onSaved={loadChannels}
         />
+      )}
+      {showTemplatesModal && (
+        <TemplatesModal templates={templates} isManager={isManager}
+          onClose={() => setShowTemplatesModal(false)} onChanged={loadTemplates} />
       )}
     </div>
   )

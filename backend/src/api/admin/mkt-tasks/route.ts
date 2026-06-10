@@ -25,7 +25,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (!uid) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
-    const { status, type, assignee_id, group_by } = req.query as any
+    const { status, type, assignee_id, group_by, priority, tag, channel_id } = req.query as any
 
     const manager = await isManager(req)
 
@@ -35,11 +35,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     else if (assignee_id) filter.assignee_id = assignee_id
     if (status && status !== "all") filter.status = status
     if (type) filter.type = type
+    if (priority) filter.priority = priority
+    if (channel_id) filter.channel_id = channel_id
 
-    const tasks = await svc.listMktTasks(filter, {
-      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "rating", "channel_id", "created_at", "updated_at"],
+    let tasks = await svc.listMktTasks(filter, {
+      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at"],
       order: { created_at: "DESC" },
     })
+
+    // Tag filter (jsonb array — lọc trong JS để khỏi phụ thuộc operator)
+    if (tag) {
+      tasks = tasks.filter((t: any) => Array.isArray(t.tags) && t.tags.includes(tag))
+    }
 
     // Resolve assignee names
     const userModule = req.scope.resolve(Modules.USER)
@@ -96,10 +103,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!uid) return res.status(401).json({ error: "Unauthenticated" })
     if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
 
-    const { title, type, assignee_id, deadline, notes, channel_id } = req.body as any
+    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status } = req.body as any
     if (!title || !type || !assignee_id) {
       return res.status(400).json({ error: "Thiếu title, type hoặc assignee_id" })
     }
+    const validPriority = ["high", "medium", "low"].includes(priority) ? priority : "medium"
+    const validStatus = ["todo", "in_progress"].includes(status) ? status : "todo"
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const task = await svc.createMktTasks({
@@ -108,7 +117,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       deadline: deadline ? new Date(deadline) : undefined,
       notes: notes || null,
       channel_id: channel_id || null,
-      status: "todo",
+      status: validStatus,
+      priority: validPriority,
+      tags: Array.isArray(tags) ? tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10) : [],
     })
 
     // Post system message to channel if provided

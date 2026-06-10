@@ -76,6 +76,14 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       if (body.deadline !== undefined) update.deadline = body.deadline ? new Date(body.deadline) : null
       if (body.assignee_id !== undefined) update.assignee_id = body.assignee_id
       if (body.channel_id !== undefined) update.channel_id = body.channel_id
+      if (body.priority !== undefined) {
+        if (!["high", "medium", "low"].includes(body.priority)) return res.status(400).json({ error: "Priority không hợp lệ" })
+        update.priority = body.priority
+      }
+      if (body.tags !== undefined) {
+        if (!Array.isArray(body.tags)) return res.status(400).json({ error: "Tags phải là mảng" })
+        update.tags = body.tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10)
+      }
     }
     if (body.status !== undefined) {
       const valid = ["todo", "in_progress", "done", "cancelled"]
