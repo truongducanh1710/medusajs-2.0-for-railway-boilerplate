@@ -201,9 +201,6 @@ export default function BundleSelector({ product, region }: Props) {
       const giftsToSave = selectedOpt.gifts || []
       // quantity = số thật khách chọn, bundle_price = tổng giá bundle
       // bundle_options lưu lại để cart-drawer tính lại giá khi +/-
-      // Báo cho cart dropdown biết đang navigate thẳng checkout, không mở drawer
-      window.dispatchEvent(new CustomEvent("pvb-navigating-to-checkout"))
-
       await addToCart({
         variantId: variant.id,
         quantity: selected,

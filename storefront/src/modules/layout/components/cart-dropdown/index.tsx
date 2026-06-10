@@ -31,17 +31,8 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
   const [applyingPromo, setApplyingPromo] = useState(false)
   // localItems: optimistic state để cập nhật UI ngay mà không trigger server rerender
   const [localItems, setLocalItems] = useState<HttpTypes.StoreCartLineItem[] | null>(null)
-  const itemRef = useRef(0)
-  const suppressOpenRef = useRef(false)
   const pathname = usePathname()
   const router = useRouter()
-
-  // Lắng nghe event từ BundleSelector khi đang navigate thẳng checkout
-  useEffect(() => {
-    const handler = () => { suppressOpenRef.current = true }
-    window.addEventListener("pvb-navigating-to-checkout", handler)
-    return () => window.removeEventListener("pvb-navigating-to-checkout", handler)
-  }, [])
 
   // Sync localItems khi cart prop thay đổi (sau delete, promoCode, v.v.)
   useEffect(() => {
@@ -68,12 +59,6 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
   const savings = originalTotal - subtotal
   const freeshipThreshold = 500000
 
-  useEffect(() => {
-    if (itemRef.current !== totalItems && !pathname.includes("/checkout")) {
-      if (totalItems > itemRef.current && !suppressOpenRef.current) setOpen(true)
-    }
-    itemRef.current = totalItems
-  }, [totalItems, pathname])
 
   const handleDelete = async (id: string) => {
     setUpdating(id)
