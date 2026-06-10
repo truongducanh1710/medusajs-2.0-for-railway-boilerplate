@@ -932,7 +932,7 @@ return parsed
                 <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "cod" ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
                   <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
                   <div className="flex-1">
-                    <p className="font-bold text-sm text-gray-900">Thu tiền khi nhận hàng (COD)</p>
+                    <p className="font-bold text-sm text-gray-900">THANH TOÁN KHI NHẬN HÀNG</p>
                     <p className="text-xs text-gray-500">Kiểm tra hàng trước, thanh toán sau</p>
                   </div>
                   <span className="text-2xl">💵</span>
