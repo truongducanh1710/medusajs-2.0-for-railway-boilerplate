@@ -28,7 +28,7 @@ function parseScheduled(iso?: string): number | null {
 async function runPublishJob(
   pool: any, jobId: string, notifSvc: any,
   pages: Array<{ page_id: string; page_name: string; access_token: string }>,
-  payload: { message: string; driveUrl?: string; mediaType: "text" | "video" | "photo"; scheduledTime: number | null; videoId?: string; email: string }
+  payload: { message: string; driveUrl?: string; mediaType: "text" | "video" | "photo"; scheduledTime: number | null; videoId?: string; email: string; title?: string }
 ) {
   const progress: any[] = []
   let done = 0
@@ -42,6 +42,7 @@ async function runPublishJob(
           pageId: page.page_id, pageToken: page.access_token,
           message: payload.message, driveUrl: payload.driveUrl,
           mediaType: payload.mediaType, scheduledTime: payload.scheduledTime ?? undefined,
+          title: payload.title,
         })
         entry = { page_id: page.page_id, page_name: page.page_name, status: "success", post_id }
         await pool.query(
@@ -163,7 +164,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // chạy nền — không await
     runPublishJob(pool, job.id, notifSvc, selected, {
       message, driveUrl: b.drive_url, mediaType: (b.media_type ?? "text"),
-      scheduledTime, videoId: b.video_id, email: auth.email,
+      scheduledTime, videoId: b.video_id, email: auth.email, title: b.title,
     }).catch(async (e) => {
       try { await pool.query(`UPDATE fb_publish_job SET status='failed', finished_at=now() WHERE id=$1`, [job.id]) } catch {}
       try { await pushNotif(notifSvc, "❌ Job đăng FB bị lỗi nghiêm trọng", e?.message?.slice(0, 150)) } catch {}

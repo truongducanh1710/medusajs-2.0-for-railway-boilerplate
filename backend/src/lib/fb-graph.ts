@@ -107,8 +107,9 @@ async function publishPhotoBinary(pageId: string, pageToken: string, message: st
 }
 
 /** Đăng video qua file_url (FB tự tải từ Drive direct URL). */
-async function publishVideoByUrl(pageId: string, pageToken: string, message: string, fileUrl: string, scheduledTime?: number): Promise<string> {
+async function publishVideoByUrl(pageId: string, pageToken: string, message: string, fileUrl: string, scheduledTime?: number, title?: string): Promise<string> {
   const body: Record<string, any> = { description: message, file_url: fileUrl, access_token: pageToken }
+  if (title) body.title = title
   if (scheduledTime) { body.published = false; body.scheduled_publish_time = scheduledTime }
   const res = await fetch(`${VIDEO_BASE}/${pageId}/videos`, {
     method: "POST",
@@ -123,7 +124,7 @@ async function publishVideoByUrl(pageId: string, pageToken: string, message: str
 }
 
 /** Upload video dùng FB Resumable Upload (chunked) — đúng cách cho file >10MB. */
-async function publishVideoResumable(pageId: string, pageToken: string, message: string, driveDirectUrl: string, scheduledTime?: number): Promise<string> {
+async function publishVideoResumable(pageId: string, pageToken: string, message: string, driveDirectUrl: string, scheduledTime?: number, title?: string): Promise<string> {
   let tmpPath: string | null = null
   try {
     tmpPath = await downloadToTmp(driveDirectUrl)
@@ -170,6 +171,7 @@ async function publishVideoResumable(pageId: string, pageToken: string, message:
     finishForm.append("access_token", pageToken)
     finishForm.append("upload_session_id", uploadSessionId)
     finishForm.append("description", message)
+    if (title) finishForm.append("title", title)
     if (scheduledTime) { finishForm.append("published", "false"); finishForm.append("scheduled_publish_time", String(scheduledTime)) }
     const finishRes = await fetch(`${VIDEO_BASE}/${pageId}/videos`, { method: "POST", body: finishForm })
     const finishText = await finishRes.text()
@@ -219,12 +221,13 @@ export async function publishPost(opts: {
   driveUrl?: string
   mediaType: "text" | "video" | "photo"
   scheduledTime?: number
+  title?: string
 }): Promise<{ post_id: string; video_id?: string }> {
-  const { pageId, pageToken, message, driveUrl, mediaType, scheduledTime } = opts
+  const { pageId, pageToken, message, driveUrl, mediaType, scheduledTime, title } = opts
 
   if (mediaType === "video") {
     if (driveUrl && isLarkFileUrl(driveUrl)) {
-      const videoId = await publishVideoResumable(pageId, pageToken, message, driveUrl, scheduledTime)
+      const videoId = await publishVideoResumable(pageId, pageToken, message, driveUrl, scheduledTime, title)
       const realPostId = await getPostIdFromVideo(pageId, pageToken, videoId)
       return { post_id: realPostId || videoId, video_id: videoId }
     }
@@ -233,10 +236,10 @@ export async function publishPost(opts: {
     if (!direct) throw new FbError("Link Google Drive không hợp lệ", 0)
     let videoId: string
     try {
-      videoId = await publishVideoByUrl(pageId, pageToken, message, direct, scheduledTime)
+      videoId = await publishVideoByUrl(pageId, pageToken, message, direct, scheduledTime, title)
     } catch {
       // fallback: resumable upload (chunked) — đúng cho file lớn
-      videoId = await publishVideoResumable(pageId, pageToken, message, direct, scheduledTime)
+      videoId = await publishVideoResumable(pageId, pageToken, message, direct, scheduledTime, title)
     }
     // Lấy post_id thật của reel/video (cho share link + boost ad)
     const realPostId = await getPostIdFromVideo(pageId, pageToken, videoId)
