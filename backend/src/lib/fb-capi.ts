@@ -32,6 +32,8 @@ export interface CAPIEvent {
   fbclid?: string
   fbp?: string
   fbc?: string
+  client_ip_address?: string
+  client_user_agent?: string
   value?: number
   currency?: string
   order_id?: string
@@ -57,6 +59,8 @@ export async function sendCAPIEvent(event: CAPIEvent): Promise<void> {
   // FB cookie
   if (event.fbp) userData.fbp = event.fbp
   if (event.fbc) userData.fbc = event.fbc
+  if (event.client_ip_address) userData.client_ip_address = event.client_ip_address
+  if (event.client_user_agent) userData.client_user_agent = event.client_user_agent
   if (event.fbclid && !event.fbc) {
     userData.fbc = `fb.1.${event.event_time * 1000}.${event.fbclid}`
   }
@@ -73,6 +77,7 @@ export async function sendCAPIEvent(event: CAPIEvent): Promise<void> {
         currency: event.currency ?? "VND",
         value: event.value ?? 0,
         order_id: event.order_id ?? event.event_id,
+        ...(event.order_id ? { external_id: event.order_id } : {}),
         ...(event.content_ids ? { content_ids: event.content_ids, content_type: "product" } : {}),
       },
     }],
@@ -112,6 +117,8 @@ export async function sendPurchaseEvent(params: {
   fbclid?: string
   fbp?: string
   fbc?: string
+  client_ip_address?: string
+  client_user_agent?: string
   value: number
   productPixelId?: string
   productCapiToken?: string
@@ -139,6 +146,8 @@ export async function sendPurchaseEvent(params: {
     fbclid: params.fbclid,
     fbp: params.fbp,
     fbc: params.fbc,
+    client_ip_address: params.client_ip_address,
+    client_user_agent: params.client_user_agent,
     value: params.value,
     currency: "VND",
     order_id: params.orderId,

@@ -34,13 +34,19 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
     hasData = true
   }
 
-  // Capture _fbp cookie của FB pixel (nếu có)
+  // Capture _fbp và _fbc cookie của FB pixel (nếu có)
   if (typeof document !== "undefined") {
     const fbpMatch = document.cookie.split("; ").find(r => r.startsWith("_fbp="))
     if (fbpMatch) data.fbp = fbpMatch.split("=")[1]
+
+    // Đọc _fbc trực tiếp nếu chưa có từ fbclid trên URL
+    if (!data.fbc) {
+      const fbcMatch = document.cookie.split("; ").find(r => r.startsWith("_fbc="))
+      if (fbcMatch) data.fbc = fbcMatch.split("=")[1]
+    }
   }
 
-  if (!hasData) return
+  if (!hasData && !data.fbp && !data.fbc) return
 
   const expires = new Date()
   expires.setDate(expires.getDate() + 7)
@@ -54,14 +60,22 @@ export function getUtmFromCookie(): UtmData {
     .split("; ")
     .find((row) => row.startsWith(`${UTM_COOKIE}=`))
 
-  // Luôn refresh fbp từ cookie FB mới nhất
-  const fbpMatch = document.cookie.split("; ").find(r => r.startsWith("_fbp="))
+  // Luôn refresh fbp + fbc từ cookie FB mới nhất
+  const cookies = document.cookie.split("; ")
+  const fbpMatch = cookies.find(r => r.startsWith("_fbp="))
+  const fbcMatch = cookies.find(r => r.startsWith("_fbc="))
 
-  if (!match) return fbpMatch ? { fbp: fbpMatch.split("=")[1] } : {}
+  if (!match) {
+    const fallback: UtmData = {}
+    if (fbpMatch) fallback.fbp = fbpMatch.split("=")[1]
+    if (fbcMatch) fallback.fbc = fbcMatch.split("=")[1]
+    return fallback
+  }
 
   try {
     const data = JSON.parse(decodeURIComponent(match.split("=").slice(1).join("=")))
     if (fbpMatch) data.fbp = fbpMatch.split("=")[1]
+    if (fbcMatch && !data.fbc) data.fbc = fbcMatch.split("=")[1]
     return data
   } catch {
     return {}

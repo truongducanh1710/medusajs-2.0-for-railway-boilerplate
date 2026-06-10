@@ -235,6 +235,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               fbclid: meta.fbclid,
               fbp: meta.fbp,
               fbc: meta.fbc,
+              client_user_agent: meta.client_user_agent,
               value: total,
               productPixelId,
               productCapiToken,

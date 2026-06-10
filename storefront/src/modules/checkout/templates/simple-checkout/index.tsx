@@ -563,6 +563,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           ward: form.ward || "",
           ...(payment === "sepay" ? { sepay_discount: SEPAY_DISCOUNT } : {}),
           ...getUtmFromCookie(),
+          client_user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
         }
       })
       console.info("[SimpleCheckout] cart updated", {
