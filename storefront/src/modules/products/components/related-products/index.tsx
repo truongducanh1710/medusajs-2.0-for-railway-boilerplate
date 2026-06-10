@@ -8,12 +8,8 @@ type RelatedProductsProps = {
   countryCode: string
 }
 
-type StoreProductParamsWithTags = HttpTypes.StoreProductParams & {
-  tags?: string[]
-}
-
 type StoreProductWithTags = HttpTypes.StoreProduct & {
-  tags?: { value: string }[]
+  tags?: { id: string; value: string }[]
 }
 
 export default async function RelatedProducts({
@@ -35,11 +31,13 @@ export default async function RelatedProducts({
     queryParams.collection_id = [(product as any).collection_id]
   }
 
+  // Filter related products by shared tags. Medusa's store API only accepts
+  // `tag_id` (array of tag IDs) — passing `tags` (values) returns a 400 and
+  // crashes the page, so map to IDs and only set the param when tags exist.
   const productWithTags = product as StoreProductWithTags
-  if (productWithTags.tags) {
-    queryParams.tags = productWithTags.tags
-      .map((t) => t.value)
-      .filter(Boolean) as string[]
+  const tagIds = productWithTags.tags?.map((t) => t.id).filter(Boolean) ?? []
+  if (tagIds.length) {
+    queryParams.tag_id = tagIds
   }
 
   const products = await getProductsList({
