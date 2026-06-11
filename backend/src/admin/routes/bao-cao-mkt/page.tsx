@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { CreateCampPicker } from "../../components/marketing-hub/create-camp-picker"
@@ -48,7 +48,47 @@ export default function BaoCaoMktPage() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
   })
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming" | "pixelmap" | "handover">("mkt")
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming" | "pixelmap" | "handover">(() => {
+    try {
+      const saved = localStorage.getItem("bao-cao-mkt-tab")
+      const valid = ["mkt", "camp", "spProduct", "jobs", "rules", "fbaccounts", "ai", "naming", "pixelmap", "handover"]
+      return (valid.includes(saved!) ? saved : "mkt") as any
+    } catch { return "mkt" }
+  })
+  // Camp column widths (resizable)
+  const CAMP_COL_DEFAULTS: Record<string, number> = {
+    campaign: 160, status: 90, mkt: 80, budget: 100, spend: 100,
+    impr: 80, clicks: 70, cpm: 100, cpc: 90, ctr: 70, cod: 120, don: 90, care: 80, action: 50,
+  }
+  const [campColWidths, setCampColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("bao-cao-mkt-col-widths") || "{}")
+      return { ...CAMP_COL_DEFAULTS, ...saved }
+    } catch { return { ...CAMP_COL_DEFAULTS } }
+  })
+  const resizingCol = useRef<{ col: string; startX: number; startW: number } | null>(null)
+  const onColResizeStart = useCallback((col: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizingCol.current = { col, startX: e.clientX, startW: campColWidths[col] ?? CAMP_COL_DEFAULTS[col] ?? 100 }
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingCol.current) return
+      const delta = ev.clientX - resizingCol.current.startX
+      const newW = Math.max(50, resizingCol.current.startW + delta)
+      setCampColWidths(prev => {
+        const next = { ...prev, [resizingCol.current!.col]: newW }
+        try { localStorage.setItem("bao-cao-mkt-col-widths", JSON.stringify(next)) } catch {}
+        return next
+      })
+    }
+    const onUp = () => {
+      resizingCol.current = null
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+  }, [campColWidths])
   const [handoverRules, setHandoverRules] = useState<any[]>([])
   const [handoverLoading, setHandoverLoading] = useState(false)
   const [handoverForm, setHandoverForm] = useState({ from_code: "", to_code: "", effective_from: "", note: "" })
@@ -787,7 +827,7 @@ export default function BaoCaoMktPage() {
           ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
           ...(isSuper ? [["handover", "🔄 Bàn giao MKT"]] : []),
         ] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key as any)} style={{
+          <button key={key} onClick={() => { setActiveTab(key as any); try { localStorage.setItem("bao-cao-mkt-tab", key) } catch {} }} style={{
             background: "none", border: "none", cursor: "pointer",
             padding: "8px 20px", fontSize: 14, fontWeight: activeTab === key ? 700 : 400,
             color: activeTab === key ? t.blue : t.textMuted,
@@ -992,12 +1032,22 @@ export default function BaoCaoMktPage() {
               if (ctr >= 3) return t.amber
               return t.red
             }
-            const mkSortTh = (col: string, label: string, align: "left" | "center" | "right" = "right") => (
-              <th onClick={() => { if (sortCol === col) setSortDir(d => d === "desc" ? "asc" : "desc"); else { setSortCol(col); setSortDir("desc") } }}
-                style={{ padding: "10px 12px", textAlign: align, fontWeight: 600, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
-                {label} <span style={{ fontSize: 10, opacity: sortCol === col ? 1 : 0.4 }}>{sortCol === col ? (sortDir === "desc" ? "▼" : "▲") : "↕"}</span>
-              </th>
+            const rHandle = (col: string) => (
+              <span
+                onMouseDown={(e) => onColResizeStart(col, e)}
+                style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "col-resize", userSelect: "none", zIndex: 3 }}
+              />
             )
+            const mkSortTh = (col: string, wKey: string, label: string, align: "left" | "center" | "right" = "right") => {
+              const w = campColWidths[wKey] ?? 100
+              return (
+                <th onClick={() => { if (sortCol === col) setSortDir(d => d === "desc" ? "asc" : "desc"); else { setSortCol(col); setSortDir("desc") } }}
+                  style={{ padding: "10px 12px", textAlign: align, fontWeight: 600, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", position: "relative", minWidth: w, width: w, maxWidth: w }}>
+                  {label} <span style={{ fontSize: 10, opacity: sortCol === col ? 1 : 0.4 }}>{sortCol === col ? (sortDir === "desc" ? "▼" : "▲") : "↕"}</span>
+                  {rHandle(wKey)}
+                </th>
+              )
+            }
             return (
           <>
           {sortedCamps.length === 0 && !campLoading ? (
@@ -1011,20 +1061,24 @@ export default function BaoCaoMktPage() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 920 }}>
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 160, width: 160 }}>Campaign</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "sticky", left: 160, zIndex: 2, background: dark ? t.card : "#fff", whiteSpace: "nowrap", cursor: "pointer", minWidth: 90, width: 90 }} onClick={() => { if (sortCol === "effective_status") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol("effective_status"); setSortDir("asc") } }}>Status {sortCol === "effective_status" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
-                    {mkSortTh("mkt_name", "MKT", "center")}
-                    {mkSortTh("daily_budget", "Budget")}
-                    {mkSortTh("spend", "Spend")}
-                    {mkSortTh("impressions", "Impr")}
-                    {mkSortTh("clicks", "Clicks")}
-                    {mkSortTh("cpm", "CPM")}
-                    {mkSortTh("cpc", "CPC")}
-                    {mkSortTh("ctr", "CTR%")}
-                    {mkSortTh("cod_total", "COD")}
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>Đơn</th>
-                    {mkSortTh("care_pct", "% Care")}
-                    {canControl && <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>⏰</th>}
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: campColWidths.campaign, width: campColWidths.campaign, maxWidth: campColWidths.campaign, position: "sticky" as any }}>
+                      Campaign{rHandle("campaign")}
+                    </th>
+                    <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "sticky", left: campColWidths.campaign, zIndex: 2, background: dark ? t.card : "#fff", whiteSpace: "nowrap", cursor: "pointer", minWidth: campColWidths.status, width: campColWidths.status, maxWidth: campColWidths.status, position: "sticky" as any }} onClick={() => { if (sortCol === "effective_status") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol("effective_status"); setSortDir("asc") } }}>
+                      Status {sortCol === "effective_status" ? (sortDir === "asc" ? "↑" : "↓") : ""}{rHandle("status")}
+                    </th>
+                    {mkSortTh("mkt_name", "mkt", "MKT", "center")}
+                    {mkSortTh("daily_budget", "budget", "Budget")}
+                    {mkSortTh("spend", "spend", "Spend")}
+                    {mkSortTh("impressions", "impr", "Impr")}
+                    {mkSortTh("clicks", "clicks", "Clicks")}
+                    {mkSortTh("cpm", "cpm", "CPM")}
+                    {mkSortTh("cpc", "cpc", "CPC")}
+                    {mkSortTh("ctr", "ctr", "CTR%")}
+                    {mkSortTh("cod_total", "cod", "COD")}
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, position: "relative", minWidth: campColWidths.don, width: campColWidths.don }}>Đơn{rHandle("don")}</th>
+                    {mkSortTh("care_pct", "care", "% Care")}
+                    {canControl && <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "relative", minWidth: campColWidths.action, width: campColWidths.action }}>⏰{rHandle("action")}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1041,7 +1095,7 @@ export default function BaoCaoMktPage() {
                         onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
-                        <td style={{ padding: "10px 12px", color: t.text, minWidth: 160, width: 160, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}
+                        <td style={{ padding: "10px 12px", color: t.text, minWidth: campColWidths.campaign, width: campColWidths.campaign, maxWidth: campColWidths.campaign, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}
                           title={`Click để copy: ${row.campaign_name}`}
                           onClick={(e) => {
                             if (window.matchMedia("(pointer: coarse)").matches && canControl) {
@@ -1062,7 +1116,7 @@ export default function BaoCaoMktPage() {
                             <span style={{ marginLeft: 4, fontSize: 10, color: t.textMuted }}>⋯</span>
                           )}
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "center", position: "sticky", left: 160, zIndex: 1, background: dark ? t.card : "#fff", minWidth: 90, width: 90 }}>
+                        <td style={{ padding: "10px 12px", textAlign: "center", position: "sticky", left: campColWidths.campaign, zIndex: 1, background: dark ? t.card : "#fff", minWidth: campColWidths.status, width: campColWidths.status }}>
                           {(() => {
                             const st = row.effective_status as string | null
                             if (!st) return <span style={{ color: t.textMuted, fontSize: 11 }}>—</span>
