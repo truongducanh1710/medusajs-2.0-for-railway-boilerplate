@@ -143,6 +143,50 @@ function MiniBarChart({ data }: { data: { label: string; value: number; color?: 
   )
 }
 
+function PersonDayLineChart({ days, persons, getValue, fmtDay }: { days: string[]; persons: string[]; getValue: (day: string, person: string) => number; fmtDay: (d: string) => string }) {
+  const padL = 40, padR = 28, padT = 28, padB = 34
+  const W = Math.max(640, padL + padR + days.length * 64)
+  const H = 280
+  const maxV = Math.max(1, ...persons.map(p => Math.max(0, ...days.map(d => getValue(d, p)))))
+  const xAt = (i: number) => days.length <= 1 ? padL + (W - padL - padR) / 2 : padL + (i * (W - padL - padR)) / (days.length - 1)
+  const yAt = (v: number) => padT + (1 - v / maxV) * (H - padT - padB)
+  const tickStep = Math.max(1, Math.ceil(maxV / 4))
+  const ticks: number[] = []
+  for (let t = 0; t <= maxV; t += tickStep) ticks.push(t)
+  const labelEvery = Math.max(1, Math.ceil(days.length / 12))
+  return (
+    <div style={{ overflowX: "auto", padding: "8px 10px 4px" }}>
+      <svg width={W} height={H} style={{ display: "block" }}>
+        {ticks.map(t => (
+          <g key={t}>
+            <line x1={padL} x2={W - padR} y1={yAt(t)} y2={yAt(t)} stroke="#F3F4F6" />
+            <text x={padL - 8} y={yAt(t) + 4} fontSize={10} fill="#9CA3AF" textAnchor="end">{t}</text>
+          </g>
+        ))}
+        <line x1={padL} x2={W - padR} y1={yAt(0)} y2={yAt(0)} stroke="#E5E7EB" />
+        {days.map((d, i) => (i % labelEvery === 0 || i === days.length - 1) ? (
+          <text key={d} x={xAt(i)} y={H - padB + 18} fontSize={10} fill="#6B7280" textAnchor="middle">{fmtDay(d)}</text>
+        ) : null)}
+        {persons.map(p => {
+          const color = personBadgeColor(p).text
+          const pts = days.map((d, i) => ({ x: xAt(i), y: yAt(getValue(d, p)), v: getValue(d, p) }))
+          return (
+            <g key={p}>
+              <polyline points={pts.map(pt => `${pt.x},${pt.y}`).join(" ")} fill="none" stroke={color} strokeWidth={2} />
+              {pts.map((pt, i) => (
+                <g key={i}>
+                  <circle cx={pt.x} cy={pt.y} r={3.5} fill={color} />
+                  {pt.v > 0 && <text x={pt.x} y={pt.y - 8} fontSize={10} fontWeight={700} fill={color} textAnchor="middle">{pt.v}</text>}
+                </g>
+              ))}
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 function Toast({ msg, onDone }: { msg: string; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 2500); return () => clearTimeout(t) }, [])
   return (
@@ -1120,6 +1164,7 @@ function BaoCaoTab() {
   const [dateFrom, setDateFrom] = useState("2026-06-01")
   const [dateTo, setDateTo] = useState("2026-06-30")
   const [data, setData] = useState<any>(null)
+  const [dayView, setDayView] = useState<"chart" | "table">("chart")
 
   const load = () => {
     apiJson(`/admin/marketing-video/report?from=${dateFrom}&to=${dateTo}`).then(setData).catch(() => {})
@@ -1153,9 +1198,17 @@ function BaoCaoTab() {
   const personTotals: Record<string, number> = {}
   for (const r of byPersonDay) personTotals[r.label] = (personTotals[r.label] || 0) + r.value
   const matrixTotal = dayPersons.reduce((s, p) => s + (personTotals[p] || 0), 0)
+  // Cho biểu đồ đường: ngày tăng dần trái → phải
+  const chartDays = dayMatrix.map(([day]) => day).slice().reverse()
+  const dayCountMap = new Map(dayMatrix.map(([day, counts]) => [day, counts]))
+  const getDayValue = (day: string, person: string) => dayCountMap.get(day)?.[person] || 0
   const fmtDay = (d: string) => {
     const dt = new Date(d + "T00:00:00")
     return isNaN(dt.getTime()) ? d : dt.toLocaleDateString("vi-VN", { weekday: "short", day: "2-digit", month: "2-digit" })
+  }
+  const fmtDayShort = (d: string) => {
+    const dt = new Date(d + "T00:00:00")
+    return isNaN(dt.getTime()) ? d : dt.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })
   }
   const thStyle: React.CSSProperties = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: "center", whiteSpace: "nowrap", borderBottom: "1px solid #E5E7EB" }
   const tdStyle: React.CSSProperties = { padding: "8px 12px", fontSize: 13, textAlign: "center", borderBottom: "1px solid #F3F4F6" }
@@ -1192,13 +1245,33 @@ function BaoCaoTab() {
         ))}
       </div>
 
-      {/* Bảng số video theo ngày của từng người */}
+      {/* Số video theo ngày của từng người — biểu đồ đường / bảng */}
       <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", overflow: "hidden" }}>
-        <div style={{ padding: "16px 18px", borderBottom: "1px solid #E5E7EB", color: "#111827", fontWeight: 600, fontSize: 13 }}>
-          📆 Số video theo ngày / người
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "#111827", fontWeight: 600, fontSize: 13 }}>📆 Số video theo ngày / người</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", flex: 1 }}>
+            {dayPersons.map(p => {
+              const bc = personBadgeColor(p)
+              return (
+                <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: bc.bg, color: bc.text, borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: bc.text }} />
+                  {p}
+                </span>
+              )
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {([["chart", "📈 Đường"], ["table", "📋 Bảng"]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setDayView(v)} style={{ background: dayView === v ? "#1877F2" : "#FFFFFF", color: dayView === v ? "#fff" : "#4B5563", border: `1px solid ${dayView === v ? "#1877F2" : "#E5E7EB"}`, borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {dayMatrix.length === 0 ? (
           <div style={{ color: "#9CA3AF", fontSize: 12, padding: "24px 0", textAlign: "center" }}>Chưa có dữ liệu</div>
+        ) : dayView === "chart" ? (
+          <PersonDayLineChart days={chartDays} persons={dayPersons} getValue={getDayValue} fmtDay={fmtDayShort} />
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
