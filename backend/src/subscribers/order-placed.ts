@@ -1,5 +1,5 @@
 import { Modules } from '@medusajs/framework/utils'
-import { INotificationModuleService, IOrderModuleService, IProductModuleService } from '@medusajs/framework/types'
+import { INotificationModuleService, IOrderModuleService, IProductModuleService, IStoreModuleService } from '@medusajs/framework/types'
 import { SubscriberArgs, SubscriberConfig } from '@medusajs/medusa'
 import { EmailTemplates } from '../modules/email-notifications/templates'
 import { pushOrderToPancake } from '../lib/pancake'
@@ -12,6 +12,7 @@ export default async function orderPlacedHandler({
   const notificationModuleService: INotificationModuleService = container.resolve(Modules.NOTIFICATION)
   const orderModuleService: IOrderModuleService = container.resolve(Modules.ORDER)
   const productService: IProductModuleService = container.resolve(Modules.PRODUCT)
+  const storeService: IStoreModuleService = container.resolve(Modules.STORE)
 
   const order = await orderModuleService.retrieveOrder(data.id, {
     select: ['id', 'email', 'currency_code', 'total', 'subtotal', 'shipping_total', 'discount_total', 'tax_total', 'metadata', 'created_at'] as any,
@@ -75,6 +76,17 @@ export default async function orderPlacedHandler({
       : undefined
 
     const productMeta = (order as any)._firstProductMeta ?? {}
+
+    // Lấy pixel + token PX_CHUNG từ store metadata
+    let storePixelId: string | undefined
+    let storeCapiToken: string | undefined
+    try {
+      const stores = await (storeService as any).listStores({}, { select: ["id", "metadata"] })
+      const storeMeta = stores?.[0]?.metadata ?? {}
+      storePixelId = storeMeta.fb_pixel_id
+      storeCapiToken = storeMeta.fb_capi_token
+    } catch {}
+
     await sendCompleteRegistrationEvent({
       orderId: order.id,
       phone: shippingAddress?.phone,
@@ -88,15 +100,17 @@ export default async function orderPlacedHandler({
       client_user_agent: meta.client_user_agent,
       value: total,
       contentIds,
+      storePixelId,
+      storeCapiToken,
       productPixelId: productMeta.fb_pixel_id,
       productCapiToken: productMeta.fb_capi_token,
       utmCampaign: meta.utm_campaign,
       utmContent: meta.utm_content,
       utmSource: meta.utm_source,
       utmMedium: meta.utm_medium,
-      campaignId: meta.fb_campaign_id,
-      adsetId: meta.fb_adset_id,
-      adId: meta.fb_ad_id,
+      campaignId: meta.campaign_id ?? meta.utm_campaign ?? meta.utm_id ?? meta.fb_campaign_id,
+      adsetId: meta.adset_id ?? meta.utm_term ?? meta.fb_adset_id,
+      adId: meta.ad_id ?? meta.fb_ad_id,
     })
   } catch (capiErr: any) {
     console.error('[FB CAPI] CompleteRegistration error in order-placed:', capiErr.message)

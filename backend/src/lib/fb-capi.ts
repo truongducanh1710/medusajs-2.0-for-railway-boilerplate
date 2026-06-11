@@ -3,7 +3,7 @@ import { createHash } from "crypto"
 const FB_API_VERSION = "v21.0"
 const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
 
-// Pixel chung toàn store — nhận Purchase từ mọi sản phẩm
+// Fallback env var — dùng khi store metadata chưa load được
 const PX_CHUNG = process.env.FB_PIXEL_ID ?? "4200470043598330"
 const PX_CHUNG_TOKEN = process.env.FB_CAPI_ACCESS_TOKEN ?? FB_ACCESS_TOKEN
 
@@ -121,6 +121,8 @@ export async function sendCompleteRegistrationEvent(params: {
   client_user_agent?: string
   value: number
   contentIds?: string[]
+  storePixelId?: string      // lấy từ store metadata fb_pixel_id
+  storeCapiToken?: string    // lấy từ store metadata fb_capi_token
   productPixelId?: string
   productCapiToken?: string
   utmCampaign?: string
@@ -194,11 +196,14 @@ export async function sendCompleteRegistrationEvent(params: {
     }
   }
 
-  // 1. Pixel chung
-  await sendToPixel(PX_CHUNG, PX_CHUNG_TOKEN)
+  const pxChung = params.storePixelId || PX_CHUNG_FALLBACK
+  const pxChungToken = params.storeCapiToken || PX_CHUNG_TOKEN_FALLBACK
+
+  // 1. Pixel chung (từ store metadata, fallback env var)
+  await sendToPixel(pxChung, pxChungToken)
 
   // 2. Pixel riêng sản phẩm (nếu khác pixel chung và có token)
-  if (params.productPixelId && params.productCapiToken && params.productPixelId !== PX_CHUNG) {
+  if (params.productPixelId && params.productCapiToken && params.productPixelId !== pxChung) {
     await sendToPixel(params.productPixelId, params.productCapiToken)
   }
 }
@@ -213,7 +218,7 @@ export async function sendPurchaseEvent(params: {
   orderId: string
   phone?: string
   email?: string
-  customerName?: string  // full name — tự split thành first/last
+  customerName?: string
   city?: string
   fbclid?: string
   fbp?: string
@@ -221,6 +226,8 @@ export async function sendPurchaseEvent(params: {
   client_ip_address?: string
   client_user_agent?: string
   value: number
+  storePixelId?: string
+  storeCapiToken?: string
   productPixelId?: string
   productCapiToken?: string
   contentIds?: string[]
@@ -255,19 +262,14 @@ export async function sendPurchaseEvent(params: {
     content_ids: params.contentIds,
   }
 
-  // 1. Bắn về pixel chung
-  await sendCAPIEvent({
-    ...baseEvent,
-    pixel_id: PX_CHUNG,
-    access_token: PX_CHUNG_TOKEN,
-  })
+  const pxChung = params.storePixelId || PX_CHUNG
+  const pxChungToken = params.storeCapiToken || PX_CHUNG_TOKEN
 
-  // 2. Bắn về pixel riêng sản phẩm (nếu khác pixel chung và có token)
-  if (params.productPixelId && params.productCapiToken && params.productPixelId !== PX_CHUNG) {
-    await sendCAPIEvent({
-      ...baseEvent,
-      pixel_id: params.productPixelId,
-      access_token: params.productCapiToken,
-    })
+  // 1. Pixel chung (từ store metadata, fallback env var)
+  await sendCAPIEvent({ ...baseEvent, pixel_id: pxChung, access_token: pxChungToken })
+
+  // 2. Pixel riêng sản phẩm (nếu khác pixel chung và có token)
+  if (params.productPixelId && params.productCapiToken && params.productPixelId !== pxChung) {
+    await sendCAPIEvent({ ...baseEvent, pixel_id: params.productPixelId, access_token: params.productCapiToken })
   }
 }

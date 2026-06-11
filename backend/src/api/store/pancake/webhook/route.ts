@@ -219,6 +219,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             )
             const meta = medusaOrder?.metadata ?? {}
 
+            // Lấy pixel + token từ store metadata (PX_CHUNG)
+            let storePixelId: string | undefined
+            let storeCapiToken: string | undefined
+            try {
+              const storeService = req.scope.resolve(Modules.STORE) as any
+              const stores = await storeService.listStores({}, { select: ["id", "metadata"] })
+              const storeMeta = stores?.[0]?.metadata ?? {}
+              storePixelId = storeMeta.fb_pixel_id
+              storeCapiToken = storeMeta.fb_capi_token
+            } catch {}
+
             // Lấy pixel + token riêng từ sản phẩm đầu tiên trong đơn
             const firstItem = medusaOrder?.items?.[0]
             const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
@@ -237,6 +248,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               fbc: meta.fbc,
               client_user_agent: meta.client_user_agent,
               value: total,
+              storePixelId,
+              storeCapiToken,
               productPixelId,
               productCapiToken,
               contentIds,
