@@ -42,15 +42,21 @@ const STATUS_VARS: Record<string, { c: string; bg: string }> = {
 }
 const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Xong", "Đã đăng", "Lỗi"]
 const PERSON_COLORS: Record<string, string> = { "Hậu": "#1877F2", "Khải": "#10B981", "Quân": "#F59E0B" }
-const PERSON_BG_PALETTES = [
-  "#FFF7ED", "#F0FDF4", "#EFF6FF", "#FDF4FF",
-  "#FFFBEB", "#F0F9FF", "#FFF1F2", "#F5F3FF",
+const PERSON_BADGE_COLORS = [
+  { bg: "#DBEAFE", text: "#1D4ED8" },
+  { bg: "#D1FAE5", text: "#065F46" },
+  { bg: "#FDE68A", text: "#92400E" },
+  { bg: "#EDE9FE", text: "#5B21B6" },
+  { bg: "#FCE7F3", text: "#9D174D" },
+  { bg: "#CFFAFE", text: "#155E75" },
+  { bg: "#FEE2E2", text: "#991B1B" },
+  { bg: "#D1FAE5", text: "#064E3B" },
 ]
-function personRowBg(name: string): string {
-  if (!name) return "#FFFFFF"
+function personBadgeColor(name: string): { bg: string; text: string } {
+  if (!name) return { bg: "#F3F4F6", text: "#374151" }
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  return PERSON_BG_PALETTES[hash % PERSON_BG_PALETTES.length]
+  return PERSON_BADGE_COLORS[hash % PERSON_BADGE_COLORS.length]
 }
 const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B981", "Review": "#F59E0B" }
 
@@ -604,8 +610,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               {filtered.map((row, idx) => {
                 const isEditing = editRowId === row.id
                 const ed = editDraft!
-                const personBg = personRowBg(row.nguoiLam)
-                const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : personBg
+                const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
                 return (
                 <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
                   <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} className="sticky-left" style={{ position: "sticky", left: 0, zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", textAlign: "center" }}>
@@ -629,11 +634,13 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       ? <select value={ed.nguoiLam} onChange={e => setEditDraft(p => ({ ...p!, nguoiLam: e.target.value }))} style={cellInp}>
                           {mktUsers.map(u => <option key={u.email} value={u.name}>{u.name}{u.mkt_code ? ` · ${u.mkt_code}` : ""}</option>)}
                         </select>
-                      : <div onClick={isSuper ? () => setMakerPopup({ row }) : undefined} style={{ display: "flex", alignItems: "center", gap: 7, cursor: isSuper ? "pointer" : "default" }}>
-                          <Avatar name={row.nguoiLam} size={22} />
-                          <span style={{ color: "#111827", fontSize: 13, fontWeight: 500 }}>{row.nguoiLam}</span>
-                          {isSuper && <span style={{ color: "#D1D5DB", fontSize: 10 }}>✎</span>}
-                        </div>}
+                      : (() => { const bc = personBadgeColor(row.nguoiLam); return (
+                        <div onClick={isSuper ? () => setMakerPopup({ row }) : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: isSuper ? "pointer" : "default", background: bc.bg, color: bc.text, borderRadius: 20, padding: "3px 10px 3px 4px", fontWeight: 600, fontSize: 12 }}>
+                          <Avatar name={row.nguoiLam} size={20} />
+                          <span>{row.nguoiLam}</span>
+                          {isSuper && <span style={{ opacity: 0.5, fontSize: 10 }}>✎</span>}
+                        </div>
+                      )})()}
                   </td>
                   {/* Deadline */}
                   <td style={{ padding: "9px 12px" }}>
