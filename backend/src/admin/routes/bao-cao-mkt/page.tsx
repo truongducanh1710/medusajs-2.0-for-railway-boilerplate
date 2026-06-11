@@ -21,7 +21,7 @@ function carePctColor(pct: number | null): string {
   return "#dc2626"
 }
 
-const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "DUPD", "LINHMT", "NGUYEN MAI"]
+const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "LINHMT", "ANHTD", "TDH", "DUPD", "NGUYEN MAI"]
 
 function todayVN(): string {
   return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
