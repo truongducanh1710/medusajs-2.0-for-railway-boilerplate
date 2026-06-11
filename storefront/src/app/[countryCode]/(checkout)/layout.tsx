@@ -1,7 +1,6 @@
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import { LocaleProvider } from "@lib/locale-context"
 import { getCopy, localeFromCountryCode } from "@lib/i18n"
-import MedusaCTA from "@modules/layout/components/medusa-cta"
 import BackButton from "@modules/checkout/components/back-button"
 import FacebookPixel from "@components/FacebookPixel"
 import { getStoreMetadata } from "@lib/data/store"
@@ -38,9 +37,6 @@ export default async function CheckoutLayout({
         </div>
         <div className="relative" data-testid="checkout-container">
           {children}
-        </div>
-        <div className="py-4 w-full flex items-center justify-center">
-          <MedusaCTA locale={locale} />
         </div>
       </div>
     </LocaleProvider>
