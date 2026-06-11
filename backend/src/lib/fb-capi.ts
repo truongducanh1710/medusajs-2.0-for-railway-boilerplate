@@ -196,8 +196,8 @@ export async function sendCompleteRegistrationEvent(params: {
     }
   }
 
-  const pxChung = params.storePixelId || PX_CHUNG_FALLBACK
-  const pxChungToken = params.storeCapiToken || PX_CHUNG_TOKEN_FALLBACK
+  const pxChung = params.storePixelId || PX_CHUNG
+  const pxChungToken = params.storeCapiToken || PX_CHUNG_TOKEN
 
   // 1. Pixel chung (từ store metadata, fallback env var)
   await sendToPixel(pxChung, pxChungToken)

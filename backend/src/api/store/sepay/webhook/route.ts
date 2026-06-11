@@ -79,7 +79,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // Tìm và cập nhật order trong Medusa
     try {
       const orderService = req.scope.resolve("orderModuleService") as any
-      const orders = await orderService.listOrders({ display_id: orderCode })
+      // relations cần cho CAPI: items (content_ids + pixel SP), shipping_address (phone/name/city)
+      const orders = await orderService.listOrders(
+        { display_id: orderCode },
+        { relations: ["items", "shipping_address"] }
+      )
 
       if (!orders || orders.length === 0) {
         console.log(`[SePay Webhook] Không tìm thấy đơn hàng: ${orderCode}`)
@@ -179,9 +183,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           utmContent: meta.utm_content,
           utmSource: meta.utm_source,
           utmMedium: meta.utm_medium,
-          campaignId: meta.fb_campaign_id,
-          adsetId: meta.fb_adset_id,
-          adId: meta.fb_ad_id,
+          campaignId: meta.campaign_id ?? meta.utm_campaign ?? meta.utm_id ?? meta.fb_campaign_id,
+          adsetId: meta.adset_id ?? meta.utm_term ?? meta.fb_adset_id,
+          adId: meta.ad_id ?? meta.fb_ad_id,
         })
 
         // Purchase — bắn ngay khi thanh toán xong, không đợi giao hàng

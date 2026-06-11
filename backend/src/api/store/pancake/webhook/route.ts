@@ -219,41 +219,49 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             )
             const meta = medusaOrder?.metadata ?? {}
 
-            // Lấy pixel + token từ store metadata (PX_CHUNG)
-            let storePixelId: string | undefined
-            let storeCapiToken: string | undefined
-            try {
-              const storeService = req.scope.resolve(Modules.STORE) as any
-              const stores = await storeService.listStores({}, { select: ["id", "metadata"] })
-              const storeMeta = stores?.[0]?.metadata ?? {}
-              storePixelId = storeMeta.fb_pixel_id
-              storeCapiToken = storeMeta.fb_capi_token
-            } catch {}
+            // Đơn đã thanh toán SePay → Purchase đã bắn lúc thanh toán, không bắn lại.
+            // FB chỉ dedup trong 48h, giao hàng thường sau vài ngày nên phải tự guard.
+            if (meta.payment_status === "paid") {
+              console.log(`[Pancake Webhook] Skip Purchase CAPI — order ${medusaOrder?.id} đã bắn lúc thanh toán SePay`)
+            } else {
+              // Lấy pixel + token từ store metadata (PX_CHUNG)
+              let storePixelId: string | undefined
+              let storeCapiToken: string | undefined
+              try {
+                const storeService = req.scope.resolve(Modules.STORE) as any
+                const stores = await storeService.listStores({}, { select: ["id", "metadata"] })
+                const storeMeta = stores?.[0]?.metadata ?? {}
+                storePixelId = storeMeta.fb_pixel_id
+                storeCapiToken = storeMeta.fb_capi_token
+              } catch {}
 
-            // Lấy pixel + token riêng từ sản phẩm đầu tiên trong đơn
-            const firstItem = medusaOrder?.items?.[0]
-            const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
-            const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
+              // Lấy pixel + token riêng từ sản phẩm đầu tiên trong đơn
+              const firstItem = medusaOrder?.items?.[0]
+              const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
+              const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
 
-            // content_ids cho catalog matching
-            const contentIds = medusaOrder?.items?.map((i: any) => i.variant_id || i.id).filter(Boolean)
+              // content_ids cho catalog matching
+              const contentIds = medusaOrder?.items?.map((i: any) => i.variant_id || i.id).filter(Boolean)
 
-            await sendPurchaseEvent({
-              orderId: pancakeOrderId,
-              phone,
-              customerName,
-              city,
-              fbclid: meta.fbclid,
-              fbp: meta.fbp,
-              fbc: meta.fbc,
-              client_user_agent: meta.client_user_agent,
-              value: total,
-              storePixelId,
-              storeCapiToken,
-              productPixelId,
-              productCapiToken,
-              contentIds,
-            })
+              await sendPurchaseEvent({
+                // event_id thống nhất theo Medusa order id (dedup với mọi nguồn khác);
+                // đơn POS không có trên web thì mới dùng pancake id
+                orderId: medusaOrder?.id ?? pancakeOrderId,
+                phone,
+                customerName,
+                city,
+                fbclid: meta.fbclid,
+                fbp: meta.fbp,
+                fbc: meta.fbc,
+                client_user_agent: meta.client_user_agent,
+                value: total,
+                storePixelId,
+                storeCapiToken,
+                productPixelId,
+                productCapiToken,
+                contentIds,
+              })
+            }
           } catch (capiErr: any) {
             console.warn("[Pancake Webhook] CAPI error:", capiErr.message)
           }
