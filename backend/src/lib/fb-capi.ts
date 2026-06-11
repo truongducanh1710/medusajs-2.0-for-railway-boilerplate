@@ -102,13 +102,11 @@ export async function sendCAPIEvent(event: CAPIEvent): Promise<void> {
   }
 }
 
-// Pixel sản phẩm chuyển đổi — nhận CompleteRegistration khi order created
-const PX_PRODUCT = process.env.FB_PIXEL_PRODUCT ?? "943650651603498"
-const PX_PRODUCT_TOKEN = process.env.FB_CAPI_PRODUCT_TOKEN ?? FB_ACCESS_TOKEN
-
 /**
  * Bắn CompleteRegistration ngay khi order được tạo (server-side, không phụ thuộc trang thank-you).
- * Dùng pixel sản phẩm 943650651603498 để Ads Manager ghi nhận "Lượt hoàn tất đăng ký".
+ * Bắn về 2 pixel:
+ *   1. PX_CHUNG (pixel chung toàn store)
+ *   2. Pixel riêng sản phẩm (nếu có, lấy từ product.metadata.fb_pixel_id)
  */
 export async function sendCompleteRegistrationEvent(params: {
   orderId: string
@@ -123,6 +121,8 @@ export async function sendCompleteRegistrationEvent(params: {
   client_user_agent?: string
   value: number
   contentIds?: string[]
+  productPixelId?: string
+  productCapiToken?: string
   utmCampaign?: string
   utmContent?: string
   utmSource?: string
@@ -138,30 +138,6 @@ export async function sendCompleteRegistrationEvent(params: {
   const firstName = nameParts[0]
   const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : undefined
 
-  const baseEvent: CAPIEvent = {
-    pixel_id: PX_PRODUCT,
-    access_token: PX_PRODUCT_TOKEN,
-    event_name: "CompleteRegistration",
-    event_time: eventTime,
-    event_id: eventId,
-    event_source_url: "https://phanviet.vn",
-    phone: params.phone,
-    email: params.email,
-    first_name: firstName,
-    last_name: lastName,
-    city: params.city,
-    fbclid: params.fbclid,
-    fbp: params.fbp,
-    fbc: params.fbc,
-    client_ip_address: params.client_ip_address,
-    client_user_agent: params.client_user_agent,
-    value: params.value,
-    currency: "VND",
-    order_id: params.orderId,
-    content_ids: params.contentIds,
-  }
-
-  // Gắn UTM vào custom_data để FB match đúng camp
   const customDataExtras: Record<string, any> = {}
   if (params.utmCampaign) customDataExtras.utm_campaign = params.utmCampaign
   if (params.utmContent) customDataExtras.utm_content = params.utmContent
@@ -171,54 +147,59 @@ export async function sendCompleteRegistrationEvent(params: {
   if (params.adsetId) customDataExtras.adset_id = params.adsetId
   if (params.adId) customDataExtras.ad_id = params.adId
 
-  // Patch custom_data after sendCAPIEvent builds it — inject via override in payload
-  const url = `https://graph.facebook.com/${FB_API_VERSION}/${PX_PRODUCT}/events?access_token=${PX_PRODUCT_TOKEN}`
-  const userData: Record<string, string> = {}
-  if (params.phone) userData.ph = sha256(params.phone.replace(/\D/g, ""))
-  if (params.email) { const h = hashOptional(params.email); if (h) userData.em = h }
-  if (firstName) { const h = hashOptional(firstName); if (h) userData.fn = h }
-  if (lastName) { const h = hashOptional(lastName); if (h) userData.ln = h }
-  if (params.city) { const h = hashOptional(params.city); if (h) userData.ct = h }
-  userData.country = sha256("vn")
-  if (params.fbp) userData.fbp = params.fbp
-  if (params.fbc) userData.fbc = params.fbc
-  if (params.fbclid && !params.fbc) userData.fbc = `fb.1.${eventTime * 1000}.${params.fbclid}`
-  if (params.client_ip_address) userData.client_ip_address = params.client_ip_address
-  if (params.client_user_agent) userData.client_user_agent = params.client_user_agent
+  const sendToPixel = async (pixelId: string, accessToken: string) => {
+    const userData: Record<string, string> = {}
+    if (params.phone) userData.ph = sha256(params.phone.replace(/\D/g, ""))
+    if (params.email) { const h = hashOptional(params.email); if (h) userData.em = h }
+    if (firstName) { const h = hashOptional(firstName); if (h) userData.fn = h }
+    if (lastName) { const h = hashOptional(lastName); if (h) userData.ln = h }
+    if (params.city) { const h = hashOptional(params.city); if (h) userData.ct = h }
+    userData.country = sha256("vn")
+    if (params.fbp) userData.fbp = params.fbp
+    if (params.fbc) userData.fbc = params.fbc
+    if (params.fbclid && !params.fbc) userData.fbc = `fb.1.${eventTime * 1000}.${params.fbclid}`
+    if (params.client_ip_address) userData.client_ip_address = params.client_ip_address
+    if (params.client_user_agent) userData.client_user_agent = params.client_user_agent
 
-  const payload = {
-    data: [{
-      event_name: "CompleteRegistration",
-      event_time: eventTime,
-      event_id: eventId,
-      event_source_url: "https://phanviet.vn",
-      action_source: "website",
-      user_data: userData,
-      custom_data: {
-        currency: "VND",
-        value: params.value,
-        order_id: params.orderId,
-        external_id: params.orderId,
-        ...(params.contentIds ? { content_ids: params.contentIds, content_type: "product" } : {}),
-        ...customDataExtras,
-      },
-    }],
+    const payload = {
+      data: [{
+        event_name: "CompleteRegistration",
+        event_time: eventTime,
+        event_id: eventId,
+        event_source_url: "https://phanviet.vn",
+        action_source: "website",
+        user_data: userData,
+        custom_data: {
+          currency: "VND",
+          value: params.value,
+          order_id: params.orderId,
+          external_id: params.orderId,
+          ...(params.contentIds ? { content_ids: params.contentIds, content_type: "product" } : {}),
+          ...customDataExtras,
+        },
+      }],
+    }
+
+    const url = `https://graph.facebook.com/${FB_API_VERSION}/${pixelId}/events?access_token=${accessToken}`
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      const json = await res.json() as any
+      if (json.error) {
+        console.error(`[FB CAPI] CompleteRegistration error pixel=${pixelId}: ${json.error.message}`)
+      } else {
+        console.log(`[FB CAPI] ✓ CompleteRegistration → pixel ${pixelId} | order=${params.orderId} | received=${json.events_received}`)
+      }
+    } catch (err: any) {
+      console.error(`[FB CAPI] CompleteRegistration fetch error pixel=${pixelId}:`, err.message)
+    }
   }
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-    const json = await res.json() as any
-    if (json.error) {
-      console.error(`[FB CAPI] CompleteRegistration error: ${json.error.message}`)
-    } else {
-      console.log(`[FB CAPI] ✓ CompleteRegistration → pixel ${PX_PRODUCT} | order=${params.orderId} | received=${json.events_received}`)
-    }
-  } catch (err: any) {
-    console.error("[FB CAPI] CompleteRegistration fetch error:", err.message)
+  // 1. Pixel chung
+  await sendToPixel(PX_CHUNG, PX_CHUNG_TOKEN)
+
+  // 2. Pixel riêng sản phẩm (nếu khác pixel chung và có token)
+  if (params.productPixelId && params.productCapiToken && params.productPixelId !== PX_CHUNG) {
+    await sendToPixel(params.productPixelId, params.productCapiToken)
   }
 }
 

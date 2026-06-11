@@ -23,12 +23,23 @@ export default async function orderPlacedHandler({
   const variantIds = (order.items || []).map((item: any) => item.variant_id).filter(Boolean)
   if (variantIds.length > 0) {
     try {
-      const variants = await productService.listProductVariants({ id: variantIds }, { select: ['id', 'sku'] })
-      const skuMap = new Map(variants.map((v: any) => [v.id, v.sku]))
+      const variants = await productService.listProductVariants({ id: variantIds }, { select: ['id', 'sku', 'product_id'] })
+      const variantMap = new Map(variants.map((v: any) => [v.id, v]))
       for (const item of order.items as any[]) {
-        if (item.variant_id && skuMap.has(item.variant_id)) {
-          item.variant = { sku: skuMap.get(item.variant_id) }
+        if (item.variant_id && variantMap.has(item.variant_id)) {
+          const v = variantMap.get(item.variant_id)
+          item.variant = { sku: v.sku, product_id: v.product_id }
         }
+      }
+      // Load product metadata cho item đầu tiên (để lấy fb_pixel_id)
+      const firstProductId = (order.items as any[])[0]?.variant?.product_id
+      if (firstProductId) {
+        try {
+          const products = await productService.listProducts({ id: [firstProductId] }, { select: ['id', 'metadata'] })
+          if (products[0]) {
+            (order as any)._firstProductMeta = products[0].metadata ?? {}
+          }
+        } catch {}
       }
     } catch (e: any) {
       console.error('[Pancake] Failed to enrich variant SKUs:', e.message)
@@ -63,6 +74,7 @@ export default async function orderPlacedHandler({
       ? `${shippingAddress.first_name} ${shippingAddress.last_name ?? ""}`.trim()
       : undefined
 
+    const productMeta = (order as any)._firstProductMeta ?? {}
     await sendCompleteRegistrationEvent({
       orderId: order.id,
       phone: shippingAddress?.phone,
@@ -76,6 +88,8 @@ export default async function orderPlacedHandler({
       client_user_agent: meta.client_user_agent,
       value: total,
       contentIds,
+      productPixelId: productMeta.fb_pixel_id,
+      productCapiToken: productMeta.fb_capi_token,
       utmCampaign: meta.utm_campaign,
       utmContent: meta.utm_content,
       utmSource: meta.utm_source,
