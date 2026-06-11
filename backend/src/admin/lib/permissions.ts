@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   "page.marketing-video.edit": "Tạo/sửa dòng nguyên liệu video",
   "page.fb-content.view": "Xem Facebook Content Manager (đăng bài/lịch/viral)",
   "page.fb-content.post": "Đăng bài / lên lịch Facebook",
+  "page.fb-content.boost": "Lên camp Facebook Ads từ video nguyên liệu",
   "page.fb-content.stats": "Xem tổng hợp bài viết + insights Facebook",
   "page.chat.view": "Xem inbox Facebook trong Medusa",
   "page.chat.reply": "Tra loi khach trong inbox Facebook",
@@ -44,7 +45,7 @@ export type PermissionKey = keyof typeof PERMISSIONS
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
   manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage"],
-  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view"],
+  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage"],
