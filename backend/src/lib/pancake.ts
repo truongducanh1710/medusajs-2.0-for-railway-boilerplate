@@ -121,12 +121,16 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     DUPD:    "ef25c657-e2f4-4e5c-854e-5b29268da253", // BICHNTN alias — update nếu có UUID riêng
   }
 
-  // Extract MKT code từ utm_campaign: "22/5_XUANLT_THÙNG GẠO_..." → "XUANLT"
-  // utm_source thường là "fb" nên không dùng được
+  // Extract MKT code từ utm_campaign: "{PRODUCT}_{DD/M}_{MKTCODE}_..." → "MKTCODE"
+  // Format: PHVVN026CV_12/6_ANHTD_CHAO VANG → parts[2] = "ANHTD"
+  // Date token DD/M hoặc D/M phải có mặt ở parts[1]
   function extractMktCode(campaign: string | undefined): string | undefined {
     if (!campaign) return undefined
-    if (!/^\d{1,2}\/\d{1,2}_/.test(campaign)) return undefined
-    return campaign.split("_")[1]?.trim() || undefined
+    const parts = campaign.split("_")
+    // Tìm index của date token (DD/M hoặc D/M)
+    const dateIdx = parts.findIndex(p => /^\d{1,2}\/\d{1,2}$/.test(p))
+    if (dateIdx < 0) return undefined
+    return parts[dateIdx + 1]?.trim() || undefined
   }
 
   let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)

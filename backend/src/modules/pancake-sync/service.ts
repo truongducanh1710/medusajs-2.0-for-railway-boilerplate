@@ -151,17 +151,22 @@ function detectSource(order: any): string {
 
 // ---- Mapping ----
 
+// Format: {PRODUCT}_{DD/M}_{MKTCODE}_... — tìm date token rồi lấy phần tử kế tiếp
+function extractMktFromUtm(utm: string | null | undefined): string {
+  if (!utm) return ""
+  const parts = utm.split("_")
+  const dateIdx = parts.findIndex(p => /^\d{1,2}\/\d{1,2}$/.test(p))
+  if (dateIdx < 0) return ""
+  return parts[dateIdx + 1]?.trim() ?? ""
+}
+
 function extractMktFromUtmCampaign(campaign: string | null | undefined): string {
-  if (!campaign) return ""
-  if (!/^\d{1,2}\/\d{1,2}_/.test(campaign)) return ""
-  return campaign.split("_")[1] ?? ""
+  return extractMktFromUtm(campaign)
 }
 
 // UTM mới: utm_source = tên camp (thay vì utm_campaign)
 function extractMktFromUtmSource(source: string | null | undefined): string {
-  if (!source) return ""
-  if (!/^\d{1,2}\/\d{1,2}_/.test(source)) return ""
-  return source.split("_")[1] ?? ""
+  return extractMktFromUtm(source)
 }
 
 // Extract FB campaign ID từ utm_id trong order_link hoặc p_utm_id
