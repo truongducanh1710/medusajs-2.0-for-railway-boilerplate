@@ -60,10 +60,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `
 
     // Load handover rules — áp dụng khi tính attribution theo ngày
-    let handoverRules: { from_code: string; to_code: string; effective_from: string }[] = []
+    let handoverRules: { from_code: string; to_code: string; effective_from: string; effective_to: string | null }[] = []
     try {
       handoverRules = await sql(
-        `SELECT from_code, to_code, effective_from::text FROM mkt_handover WHERE deleted_at IS NULL`
+        `SELECT from_code, to_code, effective_from::text, effective_to::text FROM mkt_handover WHERE deleted_at IS NULL`
       )
     } catch { /* ignore nếu bảng chưa tồn tại */ }
 
@@ -125,7 +125,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Apply handover rules: nếu date >= effective_from thì đổi mkt_name
     for (const row of rows) {
       for (const rule of handoverRules) {
-        if (row.mkt_name === rule.from_code && row.date >= rule.effective_from) {
+        if (
+          row.mkt_name === rule.from_code &&
+          row.date >= rule.effective_from &&
+          (!rule.effective_to || row.date <= rule.effective_to)
+        ) {
           row.mkt_name = rule.to_code
           break
         }

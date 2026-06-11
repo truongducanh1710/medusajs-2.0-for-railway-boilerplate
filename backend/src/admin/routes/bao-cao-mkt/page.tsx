@@ -91,7 +91,7 @@ export default function BaoCaoMktPage() {
   }, [campColWidths])
   const [handoverRules, setHandoverRules] = useState<any[]>([])
   const [handoverLoading, setHandoverLoading] = useState(false)
-  const [handoverForm, setHandoverForm] = useState({ from_code: "", to_code: "", effective_from: "", note: "" })
+  const [handoverForm, setHandoverForm] = useState({ from_code: "", to_code: "", effective_from: "", effective_to: "", note: "" })
   const [handoverSaving, setHandoverSaving] = useState(false)
   // Tab Rules
   const [rules, setRules] = useState<any[]>([])
@@ -697,6 +697,11 @@ export default function BaoCaoMktPage() {
       setMktOrder([...new Set(codes)])
     }).catch(() => {})
   }, [])
+
+  // Set default MKT filter to current user's mktCode on first load
+  useEffect(() => {
+    if (mktCode && !isSuper) setCampMktFilter(mktCode)
+  }, [mktCode, isSuper])
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
@@ -4152,7 +4157,7 @@ export default function BaoCaoMktPage() {
             await apiFetch("/admin/pancake-sync/report/mkt-handover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(handoverForm) })
             const r = await apiFetch("/admin/pancake-sync/report/mkt-handover").then(res => res.json())
             setHandoverRules(r.rules ?? [])
-            setHandoverForm({ from_code: "", to_code: "", effective_from: "", note: "" })
+            setHandoverForm({ from_code: "", to_code: "", effective_from: "", effective_to: "", note: "" })
           } catch (e: any) { alert(e.message) }
           finally { setHandoverSaving(false) }
         }
@@ -4190,6 +4195,11 @@ export default function BaoCaoMktPage() {
                   <input type="date" style={inputS} value={handoverForm.effective_from}
                     onChange={e => setHandoverForm(f => ({ ...f, effective_from: e.target.value }))} />
                 </div>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Đến ngày (để trống = không giới hạn)</div>
+                  <input type="date" style={inputS} value={handoverForm.effective_to}
+                    onChange={e => setHandoverForm(f => ({ ...f, effective_to: e.target.value }))} />
+                </div>
                 <div style={{ flex: 2, minWidth: 160 }}>
                   <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Ghi chú</div>
                   <input style={inputS} placeholder="VD: Xuân nghỉ việc, Kiên care tiếp" value={handoverForm.note}
@@ -4216,6 +4226,7 @@ export default function BaoCaoMktPage() {
                       <th style={thS}>Từ code</th>
                       <th style={thS}>Sang code</th>
                       <th style={thS}>Từ ngày</th>
+                      <th style={thS}>Đến ngày</th>
                       <th style={thS}>Ghi chú</th>
                       <th style={thS}>Tạo lúc</th>
                       <th style={thS}></th>
@@ -4227,6 +4238,7 @@ export default function BaoCaoMktPage() {
                         <td style={tdS}><code style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.from_code}</code></td>
                         <td style={tdS}><code style={{ background: "#d1fae5", color: "#065f46", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.to_code}</code></td>
                         <td style={tdS}>{r.effective_from?.slice(0, 10)}</td>
+                        <td style={tdS}>{r.effective_to ? r.effective_to.slice(0, 10) : <span style={{ color: t.textMuted }}>—</span>}</td>
                         <td style={{ ...tdS, color: t.textMuted }}>{r.note || "—"}</td>
                         <td style={{ ...tdS, color: t.textMuted, fontSize: 11 }}>{r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : ""}</td>
                         <td style={tdS}>

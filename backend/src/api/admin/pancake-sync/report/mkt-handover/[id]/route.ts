@@ -17,6 +17,20 @@ async function sql(query: string, params?: any[]): Promise<any[]> {
   }
 }
 
+export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const { id } = req.params
+    const { effective_to } = req.body as any
+    const [row] = await sql(
+      `UPDATE mkt_handover SET effective_to = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
+      [effective_to || null, id]
+    )
+    return res.json({ rule: row })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+}
+
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { id } = req.params

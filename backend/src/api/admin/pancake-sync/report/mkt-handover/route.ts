@@ -24,18 +24,21 @@ async function ensureTable() {
       from_code   TEXT NOT NULL,
       to_code     TEXT NOT NULL,
       effective_from DATE NOT NULL,
+      effective_to   DATE,
       note        TEXT DEFAULT '',
       created_at  TIMESTAMPTZ DEFAULT now(),
       deleted_at  TIMESTAMPTZ
     )
   `)
+  // migrate: thêm cột nếu bảng cũ chưa có
+  await sql(`ALTER TABLE mkt_handover ADD COLUMN IF NOT EXISTS effective_to DATE`)
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     await ensureTable()
     const rows = await sql(
-      `SELECT id, from_code, to_code, effective_from, note, created_at
+      `SELECT id, from_code, to_code, effective_from, effective_to, note, created_at
        FROM mkt_handover WHERE deleted_at IS NULL ORDER BY effective_from DESC`
     )
     return res.json({ rules: rows })
@@ -46,15 +49,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from_code, to_code, effective_from, note = "" } = req.body as any
+    const { from_code, to_code, effective_from, effective_to = null, note = "" } = req.body as any
     if (!from_code || !to_code || !effective_from) {
       return res.status(400).json({ error: "Thiếu from_code, to_code hoặc effective_from" })
     }
     await ensureTable()
     const [row] = await sql(
-      `INSERT INTO mkt_handover (from_code, to_code, effective_from, note)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [from_code.toUpperCase(), to_code.toUpperCase(), effective_from, note]
+      `INSERT INTO mkt_handover (from_code, to_code, effective_from, effective_to, note)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [from_code.toUpperCase(), to_code.toUpperCase(), effective_from, effective_to || null, note]
     )
     return res.json({ rule: row })
   } catch (err: any) {
