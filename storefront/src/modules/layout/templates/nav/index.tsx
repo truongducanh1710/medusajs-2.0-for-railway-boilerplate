@@ -24,8 +24,12 @@ export default async function Nav({
   const logoSrc = storeMeta.store_logo || "/logo-vietmate.png.png"
 
   return (
-    <AutoHideHeader>
-      <PromoBanner />
+    <div className="fixed top-0 inset-x-0 z-50">
+      {/* Promo banner luôn hiện khi cuộn */}
+      <div className="relative z-10">
+        <PromoBanner />
+      </div>
+      <AutoHideHeader>
       <header className="bg-slate-50/90 backdrop-blur-md border-b border-slate-200/50">
         <nav className="flex justify-between items-center h-16 sm:h-20 px-4 sm:px-6 md:px-12 max-w-[1920px] mx-auto">
           {/* Mobile: hamburger left */}
@@ -101,6 +105,7 @@ export default async function Nav({
           </div>
         </nav>
       </header>
-    </AutoHideHeader>
+      </AutoHideHeader>
+    </div>
   )
 }

@@ -39,8 +39,9 @@ export default function AutoHideHeader({
   }, [])
 
   return (
+    // Trượt lên sau lưng PromoBanner (banner có z cao hơn + nền đặc che lại)
     <div
-      className={`fixed top-0 inset-x-0 z-50 transition-transform duration-300 ${
+      className={`relative z-0 transition-transform duration-300 ${
         hidden ? "-translate-y-full" : "translate-y-0"
       }`}
     >
