@@ -154,7 +154,7 @@ export default function BundleSelector({ product, region }: Props) {
   }, [selected, activeVariantIdx, selectedOpt?.price])
 
   const handleAdd = async () => {
-    if (!variant?.id) return
+    if (!variant?.id || adding) return
     setAdding(true)
 
     // Fire pixel immediately (non-blocking)
@@ -219,6 +219,19 @@ export default function BundleSelector({ product, region }: Props) {
       setAdding(false)
     }
   }
+
+  // StickyBuyBar kích hoạt đặt hàng qua event — đăng ký lại mỗi render
+  // để handleAdd luôn thấy gói đang chọn mới nhất
+  useEffect(() => {
+    const handler = () => { handleAdd() }
+    window.addEventListener("pvb-order-now", handler)
+    return () => window.removeEventListener("pvb-order-now", handler)
+  })
+
+  // Phát trạng thái loading cho StickyBuyBar mirror
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("pvb-order-state", { detail: { adding } }))
+  }, [adding])
 
   return (
     <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
