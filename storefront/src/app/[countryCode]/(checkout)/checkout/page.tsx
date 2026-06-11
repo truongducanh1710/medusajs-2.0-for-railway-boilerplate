@@ -31,6 +31,9 @@ export default async function Checkout({
     .filter(Boolean) as string[]
   const numItems = (cart.items ?? []).reduce((sum, i) => sum + (i.quantity ?? 0), 0)
 
+  // Quick-buy flow: cart holds a single product — use its own pixel if set
+  const firstProductMeta = (cart.items?.[0] as any)?.variant?.product?.metadata ?? {}
+
   return (
     <>
       <CheckoutTracker
@@ -38,6 +41,8 @@ export default async function Checkout({
         value={cart.total ?? 0}
         currency={(cart.currency_code ?? "vnd").toUpperCase()}
         numItems={numItems}
+        productPixelId={firstProductMeta.fb_pixel_id}
+        productCapiToken={firstProductMeta.fb_capi_token}
       />
       <SimpleCheckout cart={cart} shippingOptions={shippingOptions} />
     </>
