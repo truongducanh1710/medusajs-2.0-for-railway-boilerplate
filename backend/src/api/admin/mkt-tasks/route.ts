@@ -120,6 +120,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       status: validStatus,
       priority: validPriority,
       tags: Array.isArray(tags) ? tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10) : [],
+      comments: [],
     })
 
     // Post system message to channel if provided
