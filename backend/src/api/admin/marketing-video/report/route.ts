@@ -20,12 +20,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const pool = getPool()
 
-    const [byPerson, byType, byProduct, byStatus, totalRow] = await Promise.all([
+    const [byPerson, byType, byProduct, byStatus, totalRow, byPersonDay] = await Promise.all([
       pool.query(`SELECT maker AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY maker ORDER BY value DESC`, params),
       pool.query(`SELECT video_type AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY video_type ORDER BY value DESC`, params),
       pool.query(`SELECT product AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY product ORDER BY value DESC LIMIT 8`, params),
       pool.query(`SELECT status AS key, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY status`, params),
       pool.query(`SELECT COUNT(*)::int AS total FROM mkt_video ${where}`, params),
+      pool.query(`SELECT COALESCE(post_date, created_at::date)::text AS day, maker AS label, COUNT(*)::int AS value FROM mkt_video ${where} GROUP BY 1, 2 ORDER BY 1 DESC`, params),
     ])
 
     const statusMap: Record<string, number> = {}
@@ -37,6 +38,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       byType: byType.rows.filter((r: any) => r.label),
       byProduct: byProduct.rows.filter((r: any) => r.label),
       byStatus: statusMap,
+      byPersonDay: byPersonDay.rows.filter((r: any) => r.label),
     })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })

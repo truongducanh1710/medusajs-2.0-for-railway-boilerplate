@@ -1139,6 +1139,27 @@ function BaoCaoTab() {
   const typeColored = (data?.byType || []).map((d: any, i: number) => ({ ...d, color: ["#1877F2", "#10B981", "#F59E0B"][i % 3] }))
   const prodColored = (data?.byProduct || []).map((d: any, i: number) => ({ ...d, color: ["#1877F2", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#06B6D4"][i % 6] }))
 
+  // Matrix ngày × người: rows = ngày (mới nhất trước), cols = người (theo tổng video giảm dần)
+  const byPersonDay: { day: string; label: string; value: number }[] = data?.byPersonDay || []
+  const dayPersons: string[] = (data?.byPerson || []).map((d: any) => d.label).filter(Boolean)
+  const dayMatrix = (() => {
+    const map = new Map<string, Record<string, number>>()
+    for (const r of byPersonDay) {
+      if (!map.has(r.day)) map.set(r.day, {})
+      map.get(r.day)![r.label] = r.value
+    }
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]))
+  })()
+  const personTotals: Record<string, number> = {}
+  for (const r of byPersonDay) personTotals[r.label] = (personTotals[r.label] || 0) + r.value
+  const matrixTotal = dayPersons.reduce((s, p) => s + (personTotals[p] || 0), 0)
+  const fmtDay = (d: string) => {
+    const dt = new Date(d + "T00:00:00")
+    return isNaN(dt.getTime()) ? d : dt.toLocaleDateString("vi-VN", { weekday: "short", day: "2-digit", month: "2-digit" })
+  }
+  const thStyle: React.CSSProperties = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: "center", whiteSpace: "nowrap", borderBottom: "1px solid #E5E7EB" }
+  const tdStyle: React.CSSProperties = { padding: "8px 12px", fontSize: 13, textAlign: "center", borderBottom: "1px solid #F3F4F6" }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1169,6 +1190,57 @@ function BaoCaoTab() {
             {data.length ? <MiniBarChart data={data} /> : <div style={{ color: "#9CA3AF", fontSize: 12, padding: "20px 0", textAlign: "center" }}>Chưa có dữ liệu</div>}
           </div>
         ))}
+      </div>
+
+      {/* Bảng số video theo ngày của từng người */}
+      <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", overflow: "hidden" }}>
+        <div style={{ padding: "16px 18px", borderBottom: "1px solid #E5E7EB", color: "#111827", fontWeight: 600, fontSize: 13 }}>
+          📆 Số video theo ngày / người
+        </div>
+        {dayMatrix.length === 0 ? (
+          <div style={{ color: "#9CA3AF", fontSize: 12, padding: "24px 0", textAlign: "center" }}>Chưa có dữ liệu</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr style={{ background: "#F9FAFB" }}>
+                  <th style={{ ...thStyle, textAlign: "left", position: "sticky", left: 0, background: "#F9FAFB" }}>Ngày</th>
+                  {dayPersons.map(p => {
+                    const bc = personBadgeColor(p)
+                    return (
+                      <th key={p} style={thStyle}>
+                        <span style={{ background: bc.bg, color: bc.text, borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>{p}</span>
+                      </th>
+                    )
+                  })}
+                  <th style={thStyle}>Tổng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dayMatrix.map(([day, counts]) => {
+                  const rowTotal = dayPersons.reduce((s, p) => s + (counts[p] || 0), 0)
+                  return (
+                    <tr key={day} className="hover-bg">
+                      <td style={{ ...tdStyle, textAlign: "left", color: "#111827", fontWeight: 600, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#FFFFFF" }}>{fmtDay(day)}</td>
+                      {dayPersons.map(p => {
+                        const v = counts[p] || 0
+                        return <td key={p} style={{ ...tdStyle, color: v ? "#111827" : "#D1D5DB", fontWeight: v ? 600 : 400 }}>{v || "–"}</td>
+                      })}
+                      <td style={{ ...tdStyle, color: "#1877F2", fontWeight: 800 }}>{rowTotal}</td>
+                    </tr>
+                  )
+                })}
+                <tr style={{ background: "#F9FAFB" }}>
+                  <td style={{ ...tdStyle, textAlign: "left", color: "#111827", fontWeight: 800, borderBottom: "none", position: "sticky", left: 0, background: "#F9FAFB" }}>Tổng</td>
+                  {dayPersons.map(p => (
+                    <td key={p} style={{ ...tdStyle, color: "#111827", fontWeight: 800, borderBottom: "none" }}>{personTotals[p] || 0}</td>
+                  ))}
+                  <td style={{ ...tdStyle, color: "#1877F2", fontWeight: 800, borderBottom: "none" }}>{matrixTotal}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
