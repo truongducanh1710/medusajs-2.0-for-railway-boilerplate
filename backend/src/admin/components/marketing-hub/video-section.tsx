@@ -42,14 +42,15 @@ const STATUS_VARS: Record<string, { c: string; bg: string }> = {
 }
 const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Xong", "Đã đăng", "Lỗi"]
 const PERSON_COLORS: Record<string, string> = { "Hậu": "#1877F2", "Khải": "#10B981", "Quân": "#F59E0B" }
-const PERSON_ROW_BG: Record<string, string> = {
-  "Đào Nam":     "#FFF7ED",
-  "Trương Anh":  "#F0FDF4",
-  "Xuân":        "#EFF6FF",
-  "Kiên":        "#FDF4FF",
-  "Hậu":         "#EFF6FF",
-  "Khải":        "#F0FDF4",
-  "Quân":        "#FFFBEB",
+const PERSON_BG_PALETTES = [
+  "#FFF7ED", "#F0FDF4", "#EFF6FF", "#FDF4FF",
+  "#FFFBEB", "#F0F9FF", "#FFF1F2", "#F5F3FF",
+]
+function personRowBg(name: string): string {
+  if (!name) return "#FFFFFF"
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+  return PERSON_BG_PALETTES[hash % PERSON_BG_PALETTES.length]
 }
 const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B981", "Review": "#F59E0B" }
 
@@ -603,7 +604,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               {filtered.map((row, idx) => {
                 const isEditing = editRowId === row.id
                 const ed = editDraft!
-                const personBg = PERSON_ROW_BG[row.nguoiLam] ?? undefined
+                const personBg = personRowBg(row.nguoiLam)
                 const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : personBg
                 return (
                 <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
