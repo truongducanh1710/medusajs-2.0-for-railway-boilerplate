@@ -42,6 +42,15 @@ const STATUS_VARS: Record<string, { c: string; bg: string }> = {
 }
 const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Xong", "Đã đăng", "Lỗi"]
 const PERSON_COLORS: Record<string, string> = { "Hậu": "#1877F2", "Khải": "#10B981", "Quân": "#F59E0B" }
+const PERSON_ROW_BG: Record<string, string> = {
+  "Đào Nam":     "#FFF7ED",
+  "Trương Anh":  "#F0FDF4",
+  "Xuân":        "#EFF6FF",
+  "Kiên":        "#FDF4FF",
+  "Hậu":         "#EFF6FF",
+  "Khải":        "#F0FDF4",
+  "Quân":        "#FFFBEB",
+}
 const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B981", "Review": "#F59E0B" }
 
 type FbPostLink = { page_id: string; page_name: string; post_url: string; posted_at: string }
@@ -594,7 +603,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
               {filtered.map((row, idx) => {
                 const isEditing = editRowId === row.id
                 const ed = editDraft!
-                const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
+                const personBg = PERSON_ROW_BG[row.nguoiLam] ?? undefined
+                const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : personBg
                 return (
                 <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
                   <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} className="sticky-left" style={{ position: "sticky", left: 0, zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", textAlign: "center" }}>
