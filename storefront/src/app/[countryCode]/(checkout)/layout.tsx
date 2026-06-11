@@ -3,6 +3,8 @@ import { LocaleProvider } from "@lib/locale-context"
 import { getCopy, localeFromCountryCode } from "@lib/i18n"
 import MedusaCTA from "@modules/layout/components/medusa-cta"
 import BackButton from "@modules/checkout/components/back-button"
+import FacebookPixel from "@components/FacebookPixel"
+import { getStoreMetadata } from "@lib/data/store"
 
 export default async function CheckoutLayout({
   children,
@@ -14,9 +16,12 @@ export default async function CheckoutLayout({
   const { countryCode } = await params
   const locale = localeFromCountryCode(countryCode)
   const checkoutCopy = getCopy(locale) as any
+  const storeMeta = await getStoreMetadata()
+  const storePixelId = storeMeta.fb_pixel_id || ""
 
   return (
     <LocaleProvider locale={locale}>
+      <FacebookPixel storePixelId={storePixelId} />
       <div className="w-full bg-white relative small:min-h-screen">
         <div className="h-16 bg-white border-b ">
           <nav className="flex h-full items-center content-container justify-between">
