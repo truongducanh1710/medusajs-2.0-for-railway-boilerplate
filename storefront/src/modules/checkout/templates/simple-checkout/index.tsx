@@ -712,8 +712,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           </div>
         </div>
 
-        {/* Countdown banner */}
-        <div className={`px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
+        {/* Countdown banner — sticky để giữ urgency khi cuộn, header phía trên cuộn mất */}
+        <div className={`sticky top-0 z-40 px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
           {countdown.expired
             ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
             : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
@@ -923,6 +923,33 @@ return parsed
 
           {/* FORM + PAYMENT — 1 cột, đơn giản */}
           <div className="flex-1 space-y-4">
+            {/* Payment method — đặt trước form để khách chọn nhanh */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="font-black text-base text-gray-900 mb-4">💳 Phương thức thanh toán</h2>
+              <div className="space-y-3">
+                <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "cod" ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
+                  <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
+                  <div className="flex-1">
+                    <p className="font-bold text-sm text-gray-900">THANH TOÁN KHI NHẬN HÀNG</p>
+                    <p className="text-xs text-gray-500">Kiểm tra hàng trước, thanh toán sau</p>
+                  </div>
+                  <span className="text-2xl">💵</span>
+                </label>
+
+                <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
+                  <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-gray-900">Chuyển khoản QR</p>
+                      <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">GIẢM {formatVND(SEPAY_DISCOUNT)}</span>
+                    </div>
+                    <p className="text-xs text-gray-500">Quét mã QR — mọi ngân hàng đều được</p>
+                  </div>
+                  <span className="text-2xl">📱</span>
+                </label>
+              </div>
+            </div>
+
             {/* Shipping info */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
               <h2 className="font-black text-base text-gray-900 mb-4">🚚 Thông tin giao hàng</h2>
@@ -966,33 +993,6 @@ return parsed
                   rows={2}
                   className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-400 transition-colors resize-none"
                 />
-              </div>
-            </div>
-
-            {/* Payment method */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <h2 className="font-black text-base text-gray-900 mb-4">💳 Phương thức thanh toán</h2>
-              <div className="space-y-3">
-                <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "cod" ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
-                  <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
-                  <div className="flex-1">
-                    <p className="font-bold text-sm text-gray-900">THANH TOÁN KHI NHẬN HÀNG</p>
-                    <p className="text-xs text-gray-500">Kiểm tra hàng trước, thanh toán sau</p>
-                  </div>
-                  <span className="text-2xl">💵</span>
-                </label>
-
-                <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
-                  <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-sm text-gray-900">Chuyển khoản QR</p>
-                      <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">GIẢM {formatVND(SEPAY_DISCOUNT)}</span>
-                    </div>
-                    <p className="text-xs text-gray-500">Quét mã QR — mọi ngân hàng đều được</p>
-                  </div>
-                  <span className="text-2xl">📱</span>
-                </label>
               </div>
             </div>
 
