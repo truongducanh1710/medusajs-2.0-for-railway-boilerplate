@@ -3,6 +3,7 @@ import { INotificationModuleService, IOrderModuleService, IProductModuleService 
 import { SubscriberArgs, SubscriberConfig } from '@medusajs/medusa'
 import { EmailTemplates } from '../modules/email-notifications/templates'
 import { pushOrderToPancake } from '../lib/pancake'
+import { sendCompleteRegistrationEvent } from '../lib/fb-capi'
 
 export default async function orderPlacedHandler({
   event: { data },
@@ -51,6 +52,40 @@ export default async function orderPlacedHandler({
     })
   } catch (error) {
     console.error('Error sending order confirmation notification:', error)
+  }
+
+  // Bắn CompleteRegistration ngay khi order created — không đợi trang thank-you hay Pancake webhook
+  try {
+    const meta = (order.metadata ?? {}) as Record<string, any>
+    const total = Number((order as any).total ?? 0)
+    const contentIds = (order.items as any[]).map((i: any) => i.variant_id || i.id).filter(Boolean)
+    const fullName = shippingAddress?.first_name
+      ? `${shippingAddress.first_name} ${shippingAddress.last_name ?? ""}`.trim()
+      : undefined
+
+    await sendCompleteRegistrationEvent({
+      orderId: order.id,
+      phone: shippingAddress?.phone,
+      email: order.email,
+      customerName: fullName,
+      city: shippingAddress?.city,
+      fbclid: meta.fbclid,
+      fbp: meta.fbp,
+      fbc: meta.fbc,
+      client_ip_address: meta.client_ip_address,
+      client_user_agent: meta.client_user_agent,
+      value: total,
+      contentIds,
+      utmCampaign: meta.utm_campaign,
+      utmContent: meta.utm_content,
+      utmSource: meta.utm_source,
+      utmMedium: meta.utm_medium,
+      campaignId: meta.fb_campaign_id,
+      adsetId: meta.fb_adset_id,
+      adId: meta.fb_ad_id,
+    })
+  } catch (capiErr: any) {
+    console.error('[FB CAPI] CompleteRegistration error in order-placed:', capiErr.message)
   }
 
   try {
