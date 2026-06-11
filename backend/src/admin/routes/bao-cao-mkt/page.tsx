@@ -4238,7 +4238,23 @@ export default function BaoCaoMktPage() {
                         <td style={tdS}><code style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.from_code}</code></td>
                         <td style={tdS}><code style={{ background: "#d1fae5", color: "#065f46", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>{r.to_code}</code></td>
                         <td style={tdS}>{r.effective_from?.slice(0, 10)}</td>
-                        <td style={tdS}>{r.effective_to ? r.effective_to.slice(0, 10) : <span style={{ color: t.textMuted }}>—</span>}</td>
+                        <td style={tdS}>
+                          <input
+                            type="date"
+                            defaultValue={r.effective_to ? r.effective_to.slice(0, 10) : ""}
+                            style={{ fontSize: 12, padding: "2px 6px", borderRadius: 4, border: `1px solid ${t.border}`, background: t.card, color: t.text, width: 120 }}
+                            onBlur={async e => {
+                              const val = e.target.value || null
+                              await apiFetch(`/admin/pancake-sync/report/mkt-handover/${r.id}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ effective_to: val }),
+                              })
+                              const res = await apiFetch("/admin/pancake-sync/report/mkt-handover").then(x => x.json())
+                              setHandoverRules(res.rules ?? [])
+                            }}
+                          />
+                        </td>
                         <td style={{ ...tdS, color: t.textMuted }}>{r.note || "—"}</td>
                         <td style={{ ...tdS, color: t.textMuted, fontSize: 11 }}>{r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : ""}</td>
                         <td style={tdS}>
