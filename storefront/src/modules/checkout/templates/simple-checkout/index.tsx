@@ -486,8 +486,10 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 
-  const handleApplyPromo = async () => {
-    if (!promoCode.trim()) return
+  const handleApplyPromo = async (codeOverride?: string) => {
+    const code = (codeOverride ?? promoCode).trim().toUpperCase()
+    if (!code) return
+    setPromoCode(code)
     setPromoLoading(true)
     setPromoError("")
     try {
@@ -495,7 +497,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       const res = await fetch(`${backendUrl}/store/carts/${cart.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
-        body: JSON.stringify({ promo_codes: [promoCode.trim().toUpperCase()] }),
+        body: JSON.stringify({ promo_codes: [code] }),
       })
       if (!res.ok) throw new Error("invalid")
       const data = await res.json()
@@ -696,10 +698,15 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       )}
 
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 py-4">
+        {/* Header — 1 hàng gọn: back + logo + bước hiện tại */}
+        <div className="bg-white border-b border-gray-200 px-4 py-2.5">
           <div className="max-w-5xl mx-auto flex items-center gap-3">
-            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-9 object-contain" />
+            <button
+              onClick={() => router.back()}
+              aria-label="Quay lại"
+              className="text-gray-500 text-xl leading-none p-1 -ml-1"
+            >‹</button>
+            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-7 object-contain" />
             <span className="text-gray-300">|</span>
             <span className="text-gray-500 text-sm">Đặt hàng</span>
           </div>
@@ -708,8 +715,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         {/* Countdown banner */}
         <div className={`px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
           {countdown.expired
-            ? "⚠️ Hết thời gian giữ đơn — hãy đặt hàng ngay!"
-            : <>⏳ Đơn hàng được giữ trong <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span> — Hoàn tất ngay kẻo mất!</>
+            ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
+            : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
           }
         </div>
 
@@ -751,13 +758,36 @@ return parsed
                         ) : (
                           <p className="font-bold text-sm text-gray-900 line-clamp-2">{item.title}</p>
                         )}
-                        <p className="font-black text-orange-500 text-sm mt-1">
-                          {formatVND(
-                            (item.metadata as any)?.bundle_price != null
-                              ? Number((item.metadata as any).bundle_price)
-                              : item.unit_price * item.quantity
-                          )}
-                        </p>
+                        {(() => {
+                          const meta = item.metadata as any
+                          const price = meta?.bundle_price != null
+                            ? Number(meta.bundle_price)
+                            : item.unit_price * item.quantity
+                          // Giá gốc: lấy originalPrice của option khớp đúng qty đang chọn
+                          const original = (() => {
+                            try {
+                              const opts = JSON.parse(meta?.bundle_options || "[]")
+                              const q = Number(meta?.bundle_qty ?? item.quantity)
+                              const exact = opts.find((o: any) => o.qty === q)
+                              return exact?.originalPrice && exact.originalPrice > price
+                                ? Number(exact.originalPrice)
+                                : null
+                            } catch { return null }
+                          })()
+                          return (
+                            <div className="flex items-baseline gap-2 mt-1 flex-wrap">
+                              <p className="font-black text-orange-500 text-sm">{formatVND(price)}</p>
+                              {original && (
+                                <>
+                                  <p className="text-xs text-gray-400 line-through">{formatVND(original)}</p>
+                                  <span className="bg-red-50 text-red-500 text-[10px] font-black px-1.5 py-0.5 rounded">
+                                    -{Math.round((1 - price / original) * 100)}%
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })()}
                         <div className="flex items-center gap-2 mt-2">
                           <button
                             onClick={() => {
@@ -826,7 +856,7 @@ return parsed
                         className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-orange-400 uppercase placeholder:normal-case"
                       />
                       <button
-                        onClick={handleApplyPromo}
+                        onClick={() => handleApplyPromo()}
                         disabled={promoLoading || !promoCode.trim()}
                         className="bg-gray-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-40 hover:bg-gray-700 transition-colors whitespace-nowrap"
                       >
@@ -834,7 +864,20 @@ return parsed
                       </button>
                     </div>
                     {promoError && <p className="text-red-500 text-xs mt-1.5">{promoError}</p>}
-                    <p className="text-xs text-blue-600 font-semibold mt-1.5">💡 Lần đầu mua? Dùng mã <strong>LANHDAU5</strong> giảm 5%</p>
+                    {/* Chip áp mã 1 chạm — không bắt khách gõ tay */}
+                    <button
+                      onClick={() => handleApplyPromo("LANHDAU5")}
+                      disabled={promoLoading}
+                      className="mt-2 w-full flex items-center gap-2 bg-blue-50 border border-dashed border-blue-300 rounded-xl px-3 py-2.5 text-left active:bg-blue-100 transition-colors disabled:opacity-60"
+                    >
+                      <span className="text-lg flex-shrink-0">💡</span>
+                      <span className="text-xs text-blue-700 font-semibold flex-1">
+                        Lần đầu mua? Mã <strong className="font-black">LANHDAU5</strong> giảm 5%
+                      </span>
+                      <span className="text-xs font-black text-white bg-blue-600 px-2.5 py-1 rounded-lg flex-shrink-0">
+                        {promoLoading ? "..." : "Áp ngay"}
+                      </span>
+                    </button>
                   </div>
                 )}
               </div>
