@@ -96,8 +96,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           SUM(CASE WHEN status NOT IN (3, 6, 7, -1, -2) THEN 1 ELSE 0 END)::int AS pending,
           SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END)::int AS new_orders,
           SUM(CASE WHEN status IN (1, 2, 4, 5, 9, 11) THEN 1 ELSE 0 END)::int AS confirmed,
-          SUM(CASE WHEN status NOT IN (-2, 7) THEN cod_amount ELSE 0 END)::bigint AS revenue_total,
-          SUM(CASE WHEN status = 3 THEN cod_amount ELSE 0 END)::bigint AS revenue_delivered,
+          SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_total,
+          SUM(CASE WHEN status = 3 THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_delivered,
           SUM(CASE WHEN status NOT IN (-2, 7) THEN cod_amount ELSE 0 END)::bigint AS cod_total
         FROM pancake_order
         WHERE deleted_at IS NULL
