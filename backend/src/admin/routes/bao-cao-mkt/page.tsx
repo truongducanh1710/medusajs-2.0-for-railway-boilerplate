@@ -21,7 +21,6 @@ function carePctColor(pct: number | null): string {
   return "#dc2626"
 }
 
-const MKT_ORDER = ["KIENLB", "ANHNT", "XUANLT", "NAMDV", "LINHMT", "ANHTD", "TDH", "DUPD", "NGUYEN MAI"]
 
 function todayVN(): string {
   return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
@@ -44,6 +43,7 @@ export default function BaoCaoMktPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
+  const [mktOrder, setMktOrder] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
@@ -301,8 +301,8 @@ export default function BaoCaoMktPage() {
         return Number(s.ads_cost || 0) > 0 || Number(s.revenue_total || 0) > 0
       })
       const sorted = [
-        ...MKT_ORDER.filter(m => activeNames.includes(m)),
-        ...activeNames.filter(m => !MKT_ORDER.includes(m) && m !== "KHÁC"),
+        ...mktOrder.filter(m => activeNames.includes(m)),
+        ...activeNames.filter(m => !mktOrder.includes(m) && m !== "KHÁC"),
         ...(activeNames.includes("KHÁC") ? ["KHÁC"] : []),
       ]
       setMktNames(sorted)
@@ -689,6 +689,15 @@ export default function BaoCaoMktPage() {
     await fetchFbAccounts()
   }, [fbEditName, fbEditMkt, fbEditNote, fbEditAllowed, fetchFbAccounts])
 
+  useEffect(() => {
+    apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(data => {
+      const codes = (data.users ?? [])
+        .map((u: any) => u.mkt_code)
+        .filter((c: any) => c && typeof c === "string") as string[]
+      setMktOrder([...new Set(codes)])
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
   useEffect(() => { if (activeTab === "spProduct") fetchSpData() }, [activeTab, fetchSpData])
@@ -934,7 +943,7 @@ export default function BaoCaoMktPage() {
             <select value={campMktFilter} onChange={e => setCampMktFilter(e.target.value)}
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
               <option value="">Tất cả MKT</option>
-              {[...MKT_ORDER, ...mktNames.filter(m => !MKT_ORDER.includes(m) && m !== "KHÁC")].map(m => (
+              {[...mktOrder, ...mktNames.filter(m => !mktOrder.includes(m) && m !== "KHÁC")].map(m => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
@@ -1612,7 +1621,7 @@ export default function BaoCaoMktPage() {
                     <select value={schedMkt} onChange={e => { setSchedMkt(e.target.value); setSchedOffset(0) }}
                       style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, color: t.inputText }}>
                       <option value="">Tất cả MKT</option>
-                      {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                      {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   )}
                   <button onClick={fetchSchedules} disabled={schedLoading}
@@ -1694,7 +1703,7 @@ export default function BaoCaoMktPage() {
                     <select value={actLogsMkt} onChange={e => { setActLogsMkt(e.target.value); setActLogsOffset(0) }}
                       style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "7px 12px", fontSize: 13, color: t.inputText }}>
                       <option value="">Tất cả MKT</option>
-                      {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                      {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   )}
                   <select value={actLogsAction} onChange={e => { setActLogsAction(e.target.value); setActLogsOffset(0) }}
@@ -1795,7 +1804,7 @@ export default function BaoCaoMktPage() {
                     <select value={fbHistMkt} onChange={e => { setFbHistMkt(e.target.value); setFbHistOffset(0) }}
                       style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
                       <option value="">Tất cả MKT</option>
-                      {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                      {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   )}
                   <select value={fbHistActorType} onChange={e => { setFbHistActorType(e.target.value); setFbHistOffset(0) }}
@@ -1919,7 +1928,7 @@ export default function BaoCaoMktPage() {
                   <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>MKT phụ trách</div>
                   <select style={{ ...inputS, cursor: "pointer" }} value={fbNewMkt} onChange={e => setFbNewMkt(e.target.value)}>
                     <option value="">-- Tự động --</option>
-                    {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                    {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1981,7 +1990,7 @@ export default function BaoCaoMktPage() {
                             {isEditing
                               ? <select style={{ ...inputS, width: "auto", cursor: "pointer" }} value={fbEditMkt} onChange={e => setFbEditMkt(e.target.value)}>
                                   <option value="">Tự động</option>
-                                  {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                                  {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                               : <span style={{ color: acc.mkt_name ? t.purple : t.textMuted, fontWeight: acc.mkt_name ? 600 : 400 }}>{acc.mkt_name || "Tự động"}</span>}
                           </td>
@@ -1989,7 +1998,7 @@ export default function BaoCaoMktPage() {
                           <td style={tdS}>
                             {isEditing ? (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 5, maxWidth: 220 }}>
-                                {MKT_ORDER.map(m => {
+                                {mktOrder.map(m => {
                                   const on = fbEditAllowed.includes(m)
                                   return (
                                     <button key={m} type="button"
@@ -2092,7 +2101,7 @@ export default function BaoCaoMktPage() {
               <select value={pixelFilterMkt} onChange={e => setPixelFilterMkt(e.target.value)}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
                 <option value="">Tất cả MKT</option>
-                {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
               <select value={pixelFilterPixel} onChange={e => setPixelFilterPixel(e.target.value)}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13, maxWidth: 260 }}>
@@ -2275,7 +2284,7 @@ export default function BaoCaoMktPage() {
               <select value={aiFilterMkt} onChange={e => { setAiFilterMkt(e.target.value); setAiOffset(0) }}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
                 <option value="">Tất cả MKT</option>
-                {MKT_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                {mktOrder.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
               <button onClick={fetchAiRecs} disabled={aiLoading}
                 style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 6, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: t.text, opacity: aiLoading ? 0.6 : 1 }}>
