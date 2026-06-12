@@ -146,6 +146,7 @@ type Filters = {
   date_from: string
   date_to: string
   source: string
+  source_exclude: boolean
   sale: string
   marketer: string
   care: string
@@ -163,6 +164,7 @@ const DEFAULT_FILTERS: Filters = {
   date_from: "",
   date_to: "",
   source: "all",
+  source_exclude: false,
   sale: "all",
   marketer: "all",
   care: "all",
@@ -182,7 +184,7 @@ function filtersToParams(f: Filters): URLSearchParams {
   const p = new URLSearchParams()
   if (f.date_from) p.set("date_from", f.date_from)
   if (f.date_to)   p.set("date_to", f.date_to)
-  if (f.source && f.source !== "all") p.set("source", f.source)
+  if (f.source && f.source !== "all") { p.set("source", f.source); if (f.source_exclude) p.set("source_exclude", "1") }
   if (f.sale && f.sale !== "all")     p.set("sale", f.sale)
   if (f.marketer && f.marketer !== "all") p.set("marketer", f.marketer)
   if (f.care && f.care !== "all") p.set("care", f.care)
@@ -202,6 +204,7 @@ function paramsToFilters(p: URLSearchParams): Filters {
     date_from: p.get("date_from") || "",
     date_to:   p.get("date_to") || "",
     source:    p.get("source") || "all",
+    source_exclude: p.get("source_exclude") === "1",
     sale:      p.get("sale") || "all",
     marketer:  p.get("marketer") || "all",
     care:      p.get("care") || "all",
@@ -261,7 +264,7 @@ const DonHangPage = () => {
       const params = new URLSearchParams()
       if (filters.date_from) params.set("from", `${filters.date_from}T00:00:00+07:00`)
       if (filters.date_to)   params.set("to",   `${filters.date_to}T23:59:59+07:00`)
-      if (filters.source && filters.source !== "all")       params.set("source",   filters.source)
+      if (filters.source && filters.source !== "all")       { params.set("source", filters.source); if (filters.source_exclude) params.set("source_exclude", "1") }
       if (filters.marketer && filters.marketer !== "all")   params.set("marketer", filters.marketer)
       if (filters.sale && filters.sale !== "all")           params.set("sale",     filters.sale)
       if (filters.care && filters.care !== "all")           params.set("care",     filters.care)
@@ -285,7 +288,7 @@ const DonHangPage = () => {
     params.set("offset", String(filters.offset))
     if (filters.date_from) params.set("from", `${filters.date_from}T00:00:00+07:00`)
     if (filters.date_to)   params.set("to",   `${filters.date_to}T23:59:59+07:00`)
-    if (filters.source !== "all")   params.set("source", filters.source)
+    if (filters.source !== "all")   { params.set("source", filters.source); if (filters.source_exclude) params.set("source_exclude", "1") }
     if (filters.sale !== "all")     params.set("sale", filters.sale)
     if (filters.marketer !== "all") params.set("marketer", filters.marketer)
     if (filters.care !== "all")     params.set("care", filters.care)
@@ -394,7 +397,7 @@ const DonHangPage = () => {
         : `${filters.date_from || "..."} → ${filters.date_to || "..."}`
       list.push({ label: `📅 ${lbl}`, onRemove: () => update({ date_from: "", date_to: "" }) })
     }
-    if (filters.source !== "all") list.push({ label: `Nguồn: ${filters.source}`, onRemove: () => update({ source: "all" }) })
+    if (filters.source !== "all") list.push({ label: `${filters.source_exclude ? "Trừ " : ""}Nguồn: ${filters.source}`, onRemove: () => update({ source: "all", source_exclude: false }) })
     if (filters.sale !== "all")   list.push({ label: `Sale: ${filters.sale}`,    onRemove: () => update({ sale: "all" }) })
     if (filters.marketer !== "all") list.push({ label: `Marketer: ${filters.marketer}`, onRemove: () => update({ marketer: "all" }) })
     if (filters.care !== "all")     list.push({ label: `CSKH: ${filters.care}`, onRemove: () => update({ care: "all" }) })
@@ -458,10 +461,18 @@ const DonHangPage = () => {
 
         <span className="text-gray-300 mx-1">|</span>
 
-        <select value={filters.source} onChange={(e) => update({ source: e.target.value })}
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
-          {SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="flex items-center gap-1">
+          <select value={filters.source} onChange={(e) => update({ source: e.target.value, source_exclude: filters.source_exclude && e.target.value !== "all" ? filters.source_exclude : false })}
+                  className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+            {SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          {filters.source !== "all" && (
+            <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none whitespace-nowrap">
+              <input type="checkbox" checked={filters.source_exclude} onChange={(e) => update({ source_exclude: e.target.checked })} className="accent-red-500" />
+              Loại trừ
+            </label>
+          )}
+        </div>
 
         <select value={filters.sale} onChange={(e) => update({ sale: e.target.value })}
                 className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">

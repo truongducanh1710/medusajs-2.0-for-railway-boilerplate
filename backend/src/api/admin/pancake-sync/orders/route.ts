@@ -37,6 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       from,
       to,
       source,
+      source_exclude,
       status,
       sale,
       marketer,
@@ -59,7 +60,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (to)   filters.pancake_created_at = { ...filters.pancake_created_at, $lte: new Date(to) }
 
     // Source
-    if (source && source !== "all") filters.source = source
+    if (source && source !== "all") {
+      filters.source = source_exclude === "1" ? { $ne: source } : source
+    }
 
     // Status — hỗ trợ CSV "0,1,2" hoặc 1 giá trị
     if (status !== undefined && status !== "" && status !== "all") {
@@ -132,7 +135,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           let p = 1
           if (from)   { conditions.push(`pancake_created_at >= $${p++}`); aggParams.push(new Date(from)) }
           if (to)     { conditions.push(`pancake_created_at <= $${p++}`); aggParams.push(new Date(to)) }
-          if (source && source !== "all") { conditions.push(`source = $${p++}`); aggParams.push(source) }
+          if (source && source !== "all") { conditions.push(`source ${source_exclude === "1" ? "!=" : "="} $${p++}`); aggParams.push(source) }
           if (sale && sale !== "all")     { conditions.push(`sale_name = $${p++}`); aggParams.push(sale) }
           if (marketer && marketer !== "all") { conditions.push(`marketer_name = $${p++}`); aggParams.push(marketer) }
           if (care && care !== "all")     { conditions.push(`care_name = $${p++}`); aggParams.push(care) }
