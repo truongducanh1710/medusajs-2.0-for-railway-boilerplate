@@ -23,20 +23,55 @@ const SanPhamEditPage = () => {
       .finally(() => setLoading(false))
   }, [id])
 
-  const handleSaveDraft = async (content: string) => {
-    await apiFetch(`/admin/product-content`, {
+  // API /admin/product-content nhận { productId, metadata } — cùng format với
+  // product-content-widget (page_content_draft = nháp, page_content = live)
+  const saveContent = async (metadata: Record<string, any>) => {
+    const res = await apiFetch(`/admin/product-content`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: id, content, publish: false }),
+      body: JSON.stringify({ productId: id, metadata }),
     })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || `Lưu thất bại (${res.status})`)
+    }
+  }
+
+  const handleSaveDraft = async (content: string) => {
+    await saveContent({ page_content_draft: content })
   }
 
   const handlePublish = async (content: string) => {
-    await apiFetch(`/admin/product-content`, {
+    // Đẩy bản live hiện tại vào version history trước khi ghi đè (giống widget)
+    const fresh = await apiFetch(`/admin/products/${id}?fields=id,metadata`)
+      .then((r) => r.json())
+      .catch(() => null)
+    const meta = fresh?.product?.metadata || {}
+    let versions: any[] = []
+    try { versions = JSON.parse(meta.page_content_versions || "[]") } catch {}
+    if (meta.page_content?.trim()) {
+      versions.unshift({
+        id: `v_${Date.now()}`,
+        savedAt: new Date().toISOString(),
+        savedBy: "san-pham-edit",
+        savedByAvatar: "S",
+        label: `Xuất bản ${versions.length + 1}`,
+        content: meta.page_content,
+        size: meta.page_content.length,
+      })
+      if (versions.length > 5) versions.splice(5)
+    }
+    await saveContent({
+      page_content: content,
+      page_content_draft: null,
+      page_content_versions: JSON.stringify(versions),
+    })
+    // Revalidate để storefront cập nhật
+    await apiFetch(`/admin/revalidate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productId: id, content, publish: true }),
-    })
+      body: JSON.stringify({ tags: ["products"] }),
+    }).catch(() => {})
   }
 
   if (loading) {
