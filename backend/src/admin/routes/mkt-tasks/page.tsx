@@ -479,7 +479,7 @@ function TaskDrawer({
   return (
     <>
       <div onClick={onClose} className="mkt-anim-overlay fixed inset-0 z-[99] bg-black/25" />
-      <div className="mkt-anim-drawer fixed right-0 top-0 z-[100] flex h-screen w-[460px] max-w-[95vw] flex-col border-l border-ui-border-base bg-ui-bg-base shadow-2xl">
+      <div className="mkt-anim-drawer fixed right-0 top-0 z-[100] flex h-screen w-[600px] max-w-[60vw] flex-col border-l border-ui-border-base bg-ui-bg-base shadow-2xl">
         {/* Header */}
         <div className="border-b border-ui-border-base bg-ui-bg-subtle px-5 py-4">
           <div className="flex items-start justify-between gap-2">
