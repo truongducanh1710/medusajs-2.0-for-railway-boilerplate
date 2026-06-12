@@ -1,4 +1,20 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Pool } from "pg"
+
+let _pool: Pool | null = null
+function getPool(): Pool {
+  if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  return _pool
+}
+async function sql(query: string, params?: any[]): Promise<any[]> {
+  const client = await getPool().connect()
+  try {
+    const result = await client.query(query, params ?? [])
+    return result.rows
+  } finally {
+    client.release()
+  }
+}
 
 const SORT_WHITELIST = new Set([
   "pancake_created_at",
@@ -106,15 +122,48 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       "created_at",
     ]
 
-    const [orders, [, count]] = await Promise.all([
+    const [orders, [, count], aggRows] = await Promise.all([
       syncService.listPancakeOrders(filters, { take, skip, select: fields, order }),
       syncService.listAndCountPancakeOrders(filters, { take, skip, select: ["id"] }),
+      (async () => {
+        try {
+          const conditions: string[] = []
+          const aggParams: any[] = []
+          let p = 1
+          if (from)   { conditions.push(`pancake_created_at >= $${p++}`); aggParams.push(new Date(from)) }
+          if (to)     { conditions.push(`pancake_created_at <= $${p++}`); aggParams.push(new Date(to)) }
+          if (source && source !== "all") { conditions.push(`source = $${p++}`); aggParams.push(source) }
+          if (sale && sale !== "all")     { conditions.push(`sale_name = $${p++}`); aggParams.push(sale) }
+          if (marketer && marketer !== "all") { conditions.push(`marketer_name = $${p++}`); aggParams.push(marketer) }
+          if (care && care !== "all")     { conditions.push(`care_name = $${p++}`); aggParams.push(care) }
+          if (province && province !== "all") { conditions.push(`province = $${p++}`); aggParams.push(province) }
+          if (min_total) { conditions.push(`total >= $${p++}`); aggParams.push(Number(min_total)) }
+          if (max_total) { conditions.push(`total <= $${p++}`); aggParams.push(Number(max_total)) }
+          if (status !== undefined && status !== "" && status !== "all") {
+            const parts = status.split(",").map((s) => Number(s.trim())).filter((n) => !isNaN(n))
+            if (parts.length === 1) { conditions.push(`status = $${p++}`); aggParams.push(parts[0]) }
+            else if (parts.length > 1) { conditions.push(`status = ANY($${p++}::int[])`); aggParams.push(parts) }
+          }
+          if (q && q.trim()) {
+            const term = `%${q.trim()}%`
+            conditions.push(`(customer_phone ILIKE $${p} OR customer_name ILIKE $${p} OR id ILIKE $${p} OR tracking_code ILIKE $${p})`)
+            aggParams.push(term); p++
+          }
+          const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+          const rows = await sql(
+            `SELECT SUM(total)::bigint AS total_sum, SUM(cod_amount)::bigint AS cod_sum FROM pancake_order ${where}`,
+            aggParams
+          )
+          return rows[0] ?? null
+        } catch { return null }
+      })(),
     ])
 
     return res.json({
       orders,
       count,
       hasMore: skip + take < count,
+      totals: aggRows,
     })
   } catch (err: any) {
     console.error("[PancakeSync Orders API] Error:", err.message)

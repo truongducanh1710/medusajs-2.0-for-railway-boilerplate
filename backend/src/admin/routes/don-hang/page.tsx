@@ -228,6 +228,7 @@ const DonHangPage = () => {
 
   const [orders, setOrders] = useState<any[]>([])
   const [total, setTotal] = useState(0)
+  const [totals, setTotals] = useState<{ total_sum: number; cod_sum: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [medusaStatuses, setMedusaStatuses] = useState<Record<string, any>>({})
   const [facets, setFacets] = useState<{
@@ -303,6 +304,7 @@ const DonHangPage = () => {
         const list = data.orders || []
         setOrders(list)
         setTotal(data.count || 0)
+        setTotals(data.totals || null)
         const medusaIds = list.map((o: any) => o.medusa_order_id).filter(Boolean) as string[]
         if (medusaIds.length > 0) fetchMedusaStatuses(medusaIds)
         else setMedusaStatuses({})
@@ -596,6 +598,21 @@ const DonHangPage = () => {
               <button onClick={b.onRemove} className="hover:bg-blue-200 rounded-full w-4 h-4 flex items-center justify-center">×</button>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* ===== Tổng tiền bộ lọc ===== */}
+      {!loading && totals && (
+        <div className="flex items-center gap-4 mb-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+          <span className="text-gray-500">Tổng ({total.toLocaleString("vi-VN")} đơn):</span>
+          <span className="font-semibold text-gray-800">
+            {Number(totals.total_sum || 0).toLocaleString("vi-VN")}đ
+          </span>
+          <span className="text-gray-400">|</span>
+          <span className="text-gray-500">COD:</span>
+          <span className="font-semibold text-gray-800">
+            {Number(totals.cod_sum || 0).toLocaleString("vi-VN")}đ
+          </span>
         </div>
       )}
 
