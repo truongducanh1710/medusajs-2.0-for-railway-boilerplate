@@ -9,6 +9,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const allTasks = await svc.listMktTasks({ deleted_at: null })
 
+    // Resolve names — map theo cả user id lẫn email (assignee_id lưu là email)
+    const allUsers = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name"] })
+    const userMap: Record<string, string> = {}
+    for (const u of allUsers) {
+      const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+      userMap[u.id] = name
+      if (u.email) userMap[u.email] = name
+    }
+
+    // Templates: dùng cho khối "Tổng hợp việc lặp", KHÔNG tính vào per-member
+    const templates = allTasks.filter((t: any) => t.is_template)
+    // Instance + one-off: dùng cho per-member aggregation
+    const realTasks = allTasks.filter((t: any) => !t.is_template)
+
     // Per-member aggregation
     const memberMap: Record<string, {
       assignee_id: string
@@ -17,15 +31,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       in_progress: number
       cancelled: number
       todo: number
+      missed: number
       done_on_time: number
       ratings: number[]
     }> = {}
 
-    for (const t of allTasks) {
+    for (const t of realTasks) {
       if (!memberMap[t.assignee_id]) {
         memberMap[t.assignee_id] = {
           assignee_id: t.assignee_id,
-          total: 0, done: 0, in_progress: 0, cancelled: 0, todo: 0,
+          total: 0, done: 0, in_progress: 0, cancelled: 0, todo: 0, missed: 0,
           done_on_time: 0, ratings: [],
         }
       }
@@ -39,13 +54,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (t.status === "in_progress") m.in_progress++
       if (t.status === "cancelled") m.cancelled++
       if (t.status === "todo") m.todo++
-    }
-
-    // Resolve names
-    const allUsers = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name"] })
-    const userMap: Record<string, string> = {}
-    for (const u of allUsers) {
-      userMap[u.id] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+      if (t.status === "missed") m.missed++
     }
 
     const stats = Object.values(memberMap).map(m => ({
@@ -56,14 +65,53 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       in_progress: m.in_progress,
       todo: m.todo,
       cancelled: m.cancelled,
+      missed: m.missed,
       done_rate: m.total > 0 ? Math.round(m.done / m.total * 100) : 0,
+      // Tỉ lệ kỳ làm đúng hạn cho việc lặp: done / (done + missed)
+      period_done_rate: (m.done + m.missed) > 0 ? Math.round(m.done / (m.done + m.missed) * 100) : null,
       on_time_rate: m.done > 0 ? Math.round(m.done_on_time / m.done * 100) : 0,
       avg_rating: m.ratings.length > 0
         ? Math.round(m.ratings.reduce((a, b) => a + b, 0) / m.ratings.length * 10) / 10
         : null,
     }))
 
-    res.json({ stats })
+    // ── Tổng hợp việc lặp: mỗi template kèm danh sách kỳ (instance) ──────────
+    const instancesByTemplate: Record<string, any[]> = {}
+    for (const t of realTasks) {
+      if (!t.template_id) continue
+      if (!instancesByTemplate[t.template_id]) instancesByTemplate[t.template_id] = []
+      instancesByTemplate[t.template_id].push(t)
+    }
+
+    const recurring = templates.map((tpl: any) => {
+      const periods = (instancesByTemplate[tpl.id] || [])
+        .map((i: any) => ({
+          id: i.id,
+          period_key: i.period_key,
+          status: i.status,
+          result: i.result || null,
+          deadline: i.deadline,
+        }))
+        .sort((a: any, b: any) => String(b.period_key).localeCompare(String(a.period_key)))
+      const doneN = periods.filter((p: any) => p.status === "done").length
+      const missedN = periods.filter((p: any) => p.status === "missed").length
+      return {
+        template_id: tpl.id,
+        title: tpl.title,
+        type: tpl.type,
+        frequency: tpl.frequency,
+        output: tpl.output || null,
+        assignee_id: tpl.assignee_id,
+        assignee_name: userMap[tpl.assignee_id] || tpl.assignee_id,
+        done: doneN,
+        missed: missedN,
+        total_periods: periods.length,
+        period_done_rate: (doneN + missedN) > 0 ? Math.round(doneN / (doneN + missedN) * 100) : null,
+        periods,
+      }
+    })
+
+    res.json({ stats, recurring })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }

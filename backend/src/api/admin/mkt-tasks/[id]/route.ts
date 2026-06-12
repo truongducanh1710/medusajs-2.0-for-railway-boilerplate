@@ -76,6 +76,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       if (body.deadline !== undefined) update.deadline = body.deadline ? new Date(body.deadline) : null
       if (body.assignee_id !== undefined) update.assignee_id = body.assignee_id
       if (body.channel_id !== undefined) update.channel_id = body.channel_id
+      if (body.output !== undefined) update.output = body.output || null
+      if (body.frequency !== undefined) {
+        if (!["once", "daily", "weekly", "monthly"].includes(body.frequency)) return res.status(400).json({ error: "Frequency không hợp lệ" })
+        update.frequency = body.frequency
+      }
       if (body.priority !== undefined) {
         if (!["high", "medium", "low"].includes(body.priority)) return res.status(400).json({ error: "Priority không hợp lệ" })
         update.priority = body.priority
@@ -86,9 +91,14 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       }
     }
     if (body.status !== undefined) {
-      const valid = ["todo", "in_progress", "done", "cancelled"]
+      // missed do cron set; manager có thể chuyển missed → todo/done khi làm bù.
+      const valid = ["todo", "in_progress", "done", "cancelled", "missed"]
       if (!valid.includes(body.status)) return res.status(400).json({ error: "Status không hợp lệ" })
       update.status = body.status
+    }
+    // Kết quả thực tế: assignee (và manager) điền được khi làm/đóng task của mình
+    if (body.result !== undefined) {
+      update.result = body.result || null
     }
 
     if (Object.keys(update).length === 0) return res.status(400).json({ error: "Không có field nào để cập nhật" })

@@ -1,5 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import {
+  Frequency,
+  vnDate,
+  periodKeyFor,
+  periodDeadline,
+  spawnInstanceForPeriod,
+} from "../../../modules/mkt-task/recurring-helpers"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -39,7 +46,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (channel_id) filter.channel_id = channel_id
 
     let tasks = await svc.listMktTasks(filter, {
-      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at"],
+      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key"],
       order: { created_at: "DESC" },
     })
 
@@ -103,25 +110,40 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!uid) return res.status(401).json({ error: "Unauthenticated" })
     if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
 
-    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status } = req.body as any
+    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status, output, frequency } = req.body as any
     if (!title || !type || !assignee_id) {
       return res.status(400).json({ error: "Thiếu title, type hoặc assignee_id" })
     }
     const validPriority = ["high", "medium", "low"].includes(priority) ? priority : "medium"
     const validStatus = ["todo", "in_progress"].includes(status) ? status : "todo"
+    const validFrequency: Frequency = ["once", "daily", "weekly", "monthly"].includes(frequency) ? frequency : "once"
+    const isRecurring = validFrequency !== "once"
+    const cleanTags = Array.isArray(tags) ? tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10) : []
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const task = await svc.createMktTasks({
       title, type, assignee_id,
       created_by: uid,
-      deadline: deadline ? new Date(deadline) : undefined,
+      // Template không cần deadline thực — instance mới mang deadline cuối kỳ
+      deadline: isRecurring ? null : (deadline ? new Date(deadline) : undefined),
       notes: notes || null,
       channel_id: channel_id || null,
       status: validStatus,
       priority: validPriority,
-      tags: Array.isArray(tags) ? tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10) : [],
+      tags: cleanTags,
       comments: [],
+      output: output || null,
+      frequency: validFrequency,
+      is_template: isRecurring,
     })
+
+    // Recurring → sinh ngay instance kỳ hiện tại để nhân sự thấy việc luôn
+    if (isRecurring) {
+      const vn = vnDate()
+      const periodKey = periodKeyFor(validFrequency, vn)
+      const instDeadline = periodDeadline(validFrequency, vn)
+      await spawnInstanceForPeriod(svc, task, periodKey, instDeadline).catch(() => {})
+    }
 
     // Post system message to channel if provided
     if (channel_id) {
@@ -131,9 +153,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await svc.createMktMessages({
         channel_id,
         author_id: uid,
-        content: `📋 Task mới: "${title}" → ${assignee_id}`,
+        content: isRecurring
+          ? `🔁 Việc lặp mới: "${title}" (${validFrequency}) → ${assignee_id}`
+          : `📋 Task mới: "${title}" → ${assignee_id}`,
         task_id: task.id,
-        msg_type: "task_created",
+        msg_type: isRecurring ? "recurring_created" : "task_created",
         metadata: { task_title: title, created_by_name: creatorName, assignee_id },
       })
     }

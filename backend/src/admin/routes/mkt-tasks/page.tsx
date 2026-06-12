@@ -13,7 +13,7 @@ type Task = {
   assignee_name: string
   created_by: string
   deadline: string | null
-  status: "todo" | "in_progress" | "done" | "cancelled"
+  status: "todo" | "in_progress" | "done" | "cancelled" | "missed"
   priority: "high" | "medium" | "low"
   tags: string[]
   notes: string | null
@@ -22,6 +22,13 @@ type Task = {
   channel_id: string | null
   created_at: string
   updated_at: string
+  // Recurring
+  output?: string | null
+  result?: string | null
+  frequency?: "once" | "daily" | "weekly" | "monthly"
+  is_template?: boolean
+  template_id?: string | null
+  period_key?: string | null
 }
 
 type MktUser = { id?: string; email: string; name: string }
@@ -89,8 +96,16 @@ const STATUS_MAP: Record<string, { label: string; icon: string; dot: string; chi
   in_progress: { label: "Đang làm",   icon: "◉", dot: "bg-blue-500",    chip: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
   done:        { label: "Hoàn thành", icon: "✓", dot: "bg-emerald-500", chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
   cancelled:   { label: "Đã hủy",     icon: "✕", dot: "bg-rose-400",    chip: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
+  missed:      { label: "Bỏ lỡ",      icon: "⨯", dot: "bg-rose-500",    chip: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" },
 }
 const STATUS_CYCLE: Record<string, string> = { todo: "in_progress", in_progress: "done", done: "todo" }
+
+const FREQUENCY_MAP: Record<string, { label: string; short: string }> = {
+  once:    { label: "1 lần",      short: "1 lần" },
+  daily:   { label: "Hằng ngày",  short: "Ngày" },
+  weekly:  { label: "Hằng tuần",  short: "Tuần" },
+  monthly: { label: "Hằng tháng", short: "Tháng" },
+}
 
 const TYPE_MAP: Record<string, { label: string; icon: string; chip: string }> = {
   ads_camp:     { label: "Chạy Ads", icon: "📢", chip: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
@@ -161,6 +176,17 @@ function StatusBadge({ status }: { status: string }) {
 function TypeChip({ type }: { type: string }) {
   const t = TYPE_MAP[type] || { label: type, icon: "", chip: "bg-ui-bg-component text-ui-fg-subtle" }
   return <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap", t.chip)}>{t.icon} {t.label}</span>
+}
+
+function FrequencyChip({ freq, size }: { freq: string; size?: "sm" }) {
+  const f = FREQUENCY_MAP[freq]
+  if (!f || freq === "once") return null
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md font-semibold whitespace-nowrap bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/30",
+      size === "sm" ? "px-1 py-px text-[10px]" : "px-1.5 py-0.5 text-[11px]")}>
+      🔁 {f.short}
+    </span>
+  )
 }
 
 function PriorityChip({ level, size }: { level: string; size?: "sm" }) {
@@ -319,6 +345,9 @@ function TaskDrawer({
   const [task, setTask] = useState(initialTask)
   const [notes, setNotes] = useState(initialTask.notes || "")
   const [notesDirty, setNotesDirty] = useState(false)
+  const [result, setResult] = useState(initialTask.result || "")
+  const [resultDirty, setResultDirty] = useState(false)
+  const [savingResult, setSavingResult] = useState(false)
   const [comment, setComment] = useState("")
   const [comments, setComments] = useState(initialTask.comments || [])
   const [saving, setSaving] = useState(false)
@@ -369,6 +398,13 @@ function TaskDrawer({
     const ok = await patchTask({ notes })
     setSaving(false)
     if (ok) { setNotesDirty(false); onToast("Đã lưu ghi chú", "success") }
+  }
+
+  const saveResult = async () => {
+    setSavingResult(true)
+    const ok = await patchTask({ result })
+    setSavingResult(false)
+    if (ok) { setResultDirty(false); onToast("Đã lưu kết quả", "success") }
   }
 
   const saveEdit = async () => {
@@ -446,7 +482,11 @@ function TaskDrawer({
               <div className="mb-2 flex flex-wrap gap-1.5">
                 <PriorityChip level={task.priority} />
                 <TypeChip type={task.type} />
-                <StatusBadge status={task.status} />
+                {task.is_template && task.frequency && <FrequencyChip freq={task.frequency} />}
+                {!task.is_template && <StatusBadge status={task.status} />}
+                {task.template_id && task.period_key && (
+                  <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">🔁 kỳ {task.period_key}</span>
+                )}
                 {isOverdue(task) && (
                   <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-bold text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">⚠ Quá hạn</span>
                 )}
@@ -570,6 +610,24 @@ function TaskDrawer({
               </div>
             )}
 
+            {/* Output cần có */}
+            <div>
+              <div className={LABEL_CLS}>🎯 Output cần có</div>
+              {isManager ? (
+                <input
+                  value={task.output || ""}
+                  onChange={e => setTask(t => ({ ...t, output: e.target.value }))}
+                  onBlur={e => { if (e.target.value !== (initialTask.output || "")) patchTask({ output: e.target.value || null }) }}
+                  className={INPUT_CLS}
+                  placeholder="Tiêu chí hoàn thành (VD: gửi báo cáo trước 10h30)"
+                />
+              ) : (
+                <div className={cn("rounded-lg bg-ui-bg-subtle px-3 py-2 text-[13px]", task.output ? "text-ui-fg-base" : "text-ui-fg-disabled")}>
+                  {task.output || "(Chưa đặt tiêu chí)"}
+                </div>
+              )}
+            </div>
+
             {/* Notes */}
             <div>
               <div className={LABEL_CLS}>Ghi chú / Yêu cầu</div>
@@ -594,6 +652,36 @@ function TaskDrawer({
                 </div>
               )}
             </div>
+
+            {/* Kết quả thực tế — assignee/manager điền (không hiện cho template) */}
+            {!task.is_template && (
+              <div>
+                <div className={LABEL_CLS}>
+                  ✅ Kết quả thực tế
+                  {task.status !== "done" && <span className="ml-1 font-normal normal-case text-ui-fg-disabled">(điền khi hoàn thành)</span>}
+                </div>
+                <textarea
+                  value={result}
+                  onChange={e => { setResult(e.target.value); setResultDirty(true) }}
+                  rows={2}
+                  className={cn(INPUT_CLS, "resize-y", resultDirty && "border-emerald-400",
+                    task.status === "done" && !result && "border-amber-300")}
+                  placeholder="Đã làm gì? VD: Tăng budget SP1 lên 4tr, ROAS 2.8, loại 2 creative CTR thấp"
+                />
+                {resultDirty && (
+                  <div className="mkt-anim-fadeup mt-1.5 flex gap-1.5">
+                    <button onClick={saveResult} disabled={savingResult}
+                      className="rounded-lg bg-emerald-600 px-3.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-700 active:scale-95 disabled:opacity-50">
+                      {savingResult ? "Đang lưu..." : "Lưu kết quả"}
+                    </button>
+                    <button onClick={() => { setResult(initialTask.result || ""); setResultDirty(false) }}
+                      className="rounded-lg border border-ui-border-base px-3 py-1 text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">
+                      Hủy
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Rating */}
             {(isManager && task.status === "done") && (
@@ -696,7 +784,10 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
     notes: "",
     priority: "medium",
     tags: [] as string[],
+    frequency: "once",
+    output: "",
   })
+  const isRecurring = form.frequency !== "once"
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
@@ -734,16 +825,37 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
               </select>
             </div>
             <div>
+              <label className={LABEL_CLS}>Tần suất</label>
+              <select className={INPUT_CLS} value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}>
+                <option value="once">1 lần</option>
+                <option value="daily">🔁 Hằng ngày</option>
+                <option value="weekly">🔁 Hằng tuần</option>
+                <option value="monthly">🔁 Hằng tháng</option>
+              </select>
+            </div>
+          </div>
+          {!isRecurring && (
+            <div>
               <label className={LABEL_CLS}>Deadline</label>
               <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
             </div>
-          </div>
+          )}
+          {isRecurring && (
+            <div className="rounded-lg bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-500/5 dark:text-indigo-300">
+              🔁 Việc lặp — hệ thống tự sinh đầu việc mỗi {FREQUENCY_MAP[form.frequency]?.label.toLowerCase()} cho người nhận. Kỳ chưa làm xong khi qua kỳ mới sẽ tự đánh dấu "Bỏ lỡ".
+            </div>
+          )}
           <div>
             <label className={LABEL_CLS}>Giao cho <span className="text-rose-500">*</span></label>
             <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
               <option value="">-- Chọn thành viên --</option>
               {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
             </select>
+          </div>
+          <div>
+            <label className={LABEL_CLS}>Output cần có</label>
+            <input className={INPUT_CLS} placeholder="VD: Quyết định budget ghi văn bản, gửi team trước 10h30"
+              value={form.output} onChange={e => setForm(f => ({ ...f, output: e.target.value }))} />
           </div>
           <div>
             <label className={LABEL_CLS}>Độ ưu tiên</label>
@@ -768,7 +880,7 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
           </button>
           <button onClick={submit} disabled={saving}
             className="rounded-lg bg-blue-600 px-5 py-2 text-[13px] font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
-            {saving ? "Đang tạo..." : "✓ Tạo task"}
+            {saving ? "Đang tạo..." : isRecurring ? "🔁 Tạo việc lặp" : "✓ Tạo task"}
           </button>
         </div>
       </div>
@@ -840,12 +952,13 @@ function InlineCreate({ placeholder, needAssignee, users, onCreate, compact }: {
 
 // ─── List view ───────────────────────────────────────────────────────────────
 
-function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash }: {
+function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash, periodLabel }: {
   task: Task
   onClick: () => void
   onQuickStatus: () => void
   canQuickStatus: boolean
   flash?: boolean
+  periodLabel?: string
 }) {
   const overdue = isOverdue(task)
   const p = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
@@ -867,9 +980,12 @@ function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash }: {
             task.status === "done" ? "text-emerald-500" : task.status === "in_progress" ? "text-blue-500" : task.status === "cancelled" ? "text-rose-400" : "text-ui-fg-muted")}>
           {STATUS_MAP[task.status]?.icon || "☐"}
         </button>
+        {periodLabel && (
+          <span className="shrink-0 rounded bg-indigo-50 px-1 py-px text-[10px] font-semibold tabular-nums text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">{periodLabel}</span>
+        )}
         <span className={cn("truncate text-[13px] font-medium",
-          task.status === "cancelled" ? "text-ui-fg-muted line-through" : task.status === "done" ? "text-ui-fg-subtle" : "text-ui-fg-base")}>
-          {task.title}
+          (task.status === "cancelled" || task.status === "missed") ? "text-ui-fg-muted line-through" : task.status === "done" ? "text-ui-fg-subtle" : "text-ui-fg-base")}>
+          {periodLabel ? (task.result && task.status === "done" ? task.result : task.title) : task.title}
         </span>
         {task.tags.slice(0, 3).map(t => <TagChip key={t} tag={t} />)}
         {(task.comments?.length || 0) > 0 && (
@@ -895,6 +1011,99 @@ function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash }: {
   )
 }
 
+// Tách 1 list phẳng thành template (kèm instance con) + task lẻ
+function splitRecurring(tasks: Task[]): { templates: { template: Task; instances: Task[] }[]; flat: Task[] } {
+  const templates = tasks.filter(t => t.is_template)
+  const byTemplate: Record<string, Task[]> = {}
+  const flat: Task[] = []
+  for (const t of tasks) {
+    if (t.is_template) continue
+    if (t.template_id) {
+      if (!byTemplate[t.template_id]) byTemplate[t.template_id] = []
+      byTemplate[t.template_id].push(t)
+    } else {
+      flat.push(t)
+    }
+  }
+  // instance mồ côi (template bị xoá nhưng đã filter ra) vẫn hiện ở flat
+  for (const tid of Object.keys(byTemplate)) {
+    if (!templates.find(t => t.id === tid)) flat.push(...byTemplate[tid])
+  }
+  return {
+    templates: templates.map(template => ({
+      template,
+      instances: (byTemplate[template.id] || []).sort((a, b) =>
+        String(b.period_key || "").localeCompare(String(a.period_key || ""))),
+    })),
+    flat,
+  }
+}
+
+// Hàng "mẹ" cho việc lặp — gấp được, expand ra từng kỳ (instance)
+function RecurringGroupRow({ template, instances, onTaskClick, onQuickStatus, canQuick, flashId }: {
+  template: Task
+  instances: Task[]
+  onTaskClick: (t: Task) => void
+  onQuickStatus: (t: Task) => void
+  canQuick: (t: Task) => boolean
+  flashId: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const done = instances.filter(t => t.status === "done").length
+  const missed = instances.filter(t => t.status === "missed").length
+  const denom = done + missed
+  const pct = denom > 0 ? Math.round(done / denom * 100) : 0
+
+  return (
+    <div className="border-b border-ui-border-base">
+      <div className="relative grid cursor-pointer grid-cols-[1fr_92px_120px_84px_110px_84px] items-center gap-2 bg-indigo-500/5 px-4 py-2.5 transition-colors hover:bg-indigo-500/10"
+        onClick={() => setOpen(o => !o)}>
+        <span className="absolute inset-y-0 left-0 w-[3px] bg-indigo-400" />
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn("text-[10px] text-ui-fg-muted transition-transform duration-200", open && "rotate-90")}>▶</span>
+          <span className="shrink-0 text-sm">🔁</span>
+          <span className="truncate text-[13px] font-bold text-ui-fg-base">{template.title}</span>
+          <button onClick={e => { e.stopPropagation(); onTaskClick(template) }}
+            title="Sửa việc lặp"
+            className="shrink-0 rounded px-1 text-[11px] text-ui-fg-muted transition-colors hover:text-indigo-600">✏️</button>
+        </div>
+        <div><TypeChip type={template.type} /></div>
+        <div className="flex min-w-0 items-center gap-1.5 text-xs text-ui-fg-subtle">
+          <Avatar name={template.assignee_name} /><span className="truncate">{template.assignee_name}</span>
+        </div>
+        <div><FrequencyChip freq={template.frequency || "once"} /></div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-1 w-12 overflow-hidden rounded-full bg-ui-bg-component">
+            <span className={cn("block h-full rounded-full", pct === 100 ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${pct}%` }} />
+          </span>
+          <span className="text-[11px] tabular-nums text-ui-fg-muted">{done}/{denom || 0}</span>
+        </div>
+        <div className="text-[11px] tabular-nums text-ui-fg-muted">
+          {missed > 0 && <span className="font-bold text-rose-600 dark:text-rose-400">⨯{missed}</span>}
+        </div>
+      </div>
+      {open && (
+        <div className="bg-ui-bg-subtle/40">
+          {instances.length === 0 && (
+            <div className="px-4 py-3 pl-12 text-xs text-ui-fg-disabled">Chưa có kỳ nào được sinh</div>
+          )}
+          {instances.map(t => (
+            <div key={t.id} className="pl-7">
+              <TaskRow task={t}
+                onClick={() => onTaskClick(t)}
+                onQuickStatus={() => onQuickStatus(t)}
+                canQuickStatus={canQuick(t) && t.status !== "cancelled" && t.status !== "missed"}
+                flash={flashId === t.id}
+                periodLabel={t.period_key || undefined}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, isManager, users, onInlineCreate, inlineDefaults, flashId }: {
   label: string
   tasks: Task[]
@@ -908,9 +1117,12 @@ function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, is
   flashId: string | null
 }) {
   const [open, setOpen] = useState(true)
-  const done = tasks.filter(t => t.status === "done").length
-  const overdue = tasks.filter(t => isOverdue(t)).length
-  const pct = tasks.length > 0 ? Math.round(done / tasks.length * 100) : 0
+  const { templates, flat } = useMemo(() => splitRecurring(tasks), [tasks])
+  // Tiến độ header tính trên task không-template (instance + lẻ)
+  const countable = tasks.filter(t => !t.is_template)
+  const done = countable.filter(t => t.status === "done").length
+  const overdue = countable.filter(t => isOverdue(t)).length
+  const pct = countable.length > 0 ? Math.round(done / countable.length * 100) : 0
 
   return (
     <div className="mb-3 overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base">
@@ -921,7 +1133,7 @@ function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, is
         {overdue > 0 && (
           <span className="rounded-full bg-rose-50 px-2 py-px text-[11px] font-semibold text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">⚠ {overdue} quá hạn</span>
         )}
-        <span className="text-[11px] tabular-nums text-ui-fg-muted">{done}/{tasks.length}</span>
+        <span className="text-[11px] tabular-nums text-ui-fg-muted">{done}/{countable.length}</span>
         <span className="h-1 w-16 overflow-hidden rounded-full bg-ui-bg-component">
           <span className={cn("block h-full rounded-full transition-all duration-300", pct === 100 ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${pct}%` }} />
         </span>
@@ -932,11 +1144,15 @@ function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, is
           <div className="grid grid-cols-[1fr_92px_120px_84px_110px_84px] gap-2 border-b border-ui-border-base px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ui-fg-disabled">
             <div className="pl-7">Tiêu đề</div><div>Loại</div><div>Người nhận</div><div>Deadline</div><div>Trạng thái</div><div>Đánh giá</div>
           </div>
-          {tasks.map(t => (
+          {templates.map(({ template, instances }) => (
+            <RecurringGroupRow key={template.id} template={template} instances={instances}
+              onTaskClick={onTaskClick} onQuickStatus={onQuickStatus} canQuick={canQuick} flashId={flashId} />
+          ))}
+          {flat.map(t => (
             <TaskRow key={t.id} task={t}
               onClick={() => onTaskClick(t)}
               onQuickStatus={() => onQuickStatus(t)}
-              canQuickStatus={canQuick(t) && t.status !== "cancelled"}
+              canQuickStatus={canQuick(t) && t.status !== "cancelled" && t.status !== "missed"}
               flash={flashId === t.id}
             />
           ))}
@@ -1242,14 +1458,72 @@ function CalendarView({ tasks, onTaskClick, onMoveDeadline, canMove, isManager, 
   )
 }
 
+// ─── Recurring stats row (expandable periods) ────────────────────────────────
+
+function RecurringStatsRow({ r }: { r: any }) {
+  const [open, setOpen] = useState(false)
+  const freq = FREQUENCY_MAP[r.frequency as keyof typeof FREQUENCY_MAP] ?? FREQUENCY_MAP.once
+  const rate = r.period_done_rate
+  return (
+    <>
+      <tr
+        className="cursor-pointer transition-colors hover:bg-ui-bg-base-hover"
+        onClick={() => setOpen(o => !o)}
+      >
+        <td className={td}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-indigo-500">🔁</span>
+            <span className="font-medium">{r.title}</span>
+            {r.output && <span className="ml-1 max-w-[160px] truncate text-[11px] text-ui-fg-muted" title={r.output}>→ {r.output}</span>}
+          </div>
+        </td>
+        <td className={td}><span className="text-sm">{r.assignee_name}</span></td>
+        <td className={cn(td, "text-center")}><FrequencyChip frequency={r.frequency} /></td>
+        <td className={cn(td, "text-center font-semibold tabular-nums")}>{r.total_periods}</td>
+        <td className={cn(td, "text-center")}>
+          <span className="font-bold text-emerald-600 dark:text-emerald-400">{r.done}</span>
+        </td>
+        <td className={cn(td, "text-center")}>
+          {r.missed > 0
+            ? <span className="font-bold text-rose-600 dark:text-rose-400">{r.missed}</span>
+            : <span className="text-ui-fg-disabled">—</span>}
+        </td>
+        <td className={cn(td, "text-center")}>
+          {rate != null
+            ? <span className={cn("font-bold", rate >= 80 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>{rate}%</span>
+            : <span className="text-ui-fg-disabled">—</span>}
+        </td>
+      </tr>
+      {open && r.periods.map((p: any) => (
+        <tr key={p.id} className="bg-ui-bg-subtle">
+          <td colSpan={2} className={cn(td, "pl-8 text-sm text-ui-fg-muted")}>
+            <span className="mr-2 rounded bg-ui-bg-component px-1.5 py-0.5 font-mono text-[11px]">{p.period_key}</span>
+            {p.result && <span className="truncate italic">{p.result}</span>}
+          </td>
+          <td className={cn(td, "text-center")} colSpan={2}>
+            {p.deadline && <span className="text-[11px] text-ui-fg-muted">{new Date(p.deadline).toLocaleDateString("vi-VN")}</span>}
+          </td>
+          <td colSpan={3} className={cn(td, "text-center")}>
+            <StatusBadge status={p.status} />
+          </td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
 // ─── Stats view ──────────────────────────────────────────────────────────────
 
 function StatsTab() {
   const [stats, setStats] = useState<any[]>([])
+  const [recurring, setRecurring] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch("/admin/mkt-tasks/stats").then(r => r.json()).then(d => setStats(d.stats || [])).finally(() => setLoading(false))
+    apiFetch("/admin/mkt-tasks/stats").then(r => r.json()).then(d => {
+      setStats(d.stats || [])
+      setRecurring(d.recurring || [])
+    }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return (
@@ -1289,6 +1563,7 @@ function StatsTab() {
               <th className={cn(th, "text-center")}>Tổng</th>
               <th className={cn(th, "text-center")}>Đang làm</th>
               <th className={cn(th, "text-center")}>Hoàn thành</th>
+              <th className={cn(th, "text-center")}>Bỏ lỡ</th>
               <th className={cn(th, "text-center")}>Quá hạn</th>
               <th className={cn(th, "text-center")}>Đúng hạn</th>
               <th className={cn(th, "text-center")}>Đánh giá TB</th>
@@ -1312,6 +1587,11 @@ function StatsTab() {
                   <span className="text-[11px] text-ui-fg-muted"> ({s.done_rate}%)</span>
                 </td>
                 <td className={cn(td, "text-center")}>
+                  {(s.missed || 0) > 0
+                    ? <span className="font-bold text-rose-600 dark:text-rose-400">{s.missed}</span>
+                    : <span className="text-ui-fg-disabled">—</span>}
+                </td>
+                <td className={cn(td, "text-center")}>
                   {(s.in_progress_overdue || 0) > 0
                     ? <span className="font-bold text-rose-600 dark:text-rose-400">{s.in_progress_overdue}</span>
                     : <span className="text-ui-fg-disabled">—</span>}
@@ -1327,11 +1607,38 @@ function StatsTab() {
               </tr>
             ))}
             {stats.length === 0 && (
-              <tr><td colSpan={7} className={cn(td, "py-8 text-center text-ui-fg-muted")}>Chưa có dữ liệu thống kê</td></tr>
+              <tr><td colSpan={8} className={cn(td, "py-8 text-center text-ui-fg-muted")}>Chưa có dữ liệu thống kê</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* ── Tổng hợp việc lặp ───────────────────────────────────────── */}
+      {recurring.length > 0 && (
+        <div className="mt-6">
+          <h3 className="mb-3 text-sm font-semibold text-ui-fg-base">Tổng hợp việc lặp 🔁</h3>
+          <div className="overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className={th}>Đầu việc</th>
+                  <th className={th}>Người nhận</th>
+                  <th className={cn(th, "text-center")}>Tần suất</th>
+                  <th className={cn(th, "text-center")}>Tổng kỳ</th>
+                  <th className={cn(th, "text-center")}>Done</th>
+                  <th className={cn(th, "text-center")}>Miss</th>
+                  <th className={cn(th, "text-center")}>Tỉ lệ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recurring.map((r: any) => (
+                  <RecurringStatsRow key={r.template_id} r={r} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1412,9 +1719,10 @@ export default function MktTasksPage() {
   // Apply filters client-side
   const filtered = useMemo(() => {
     let list = normalized
-    if (filterStatus !== "all") list = list.filter(t => t.status === filterStatus)
+    // Template là "container" — không lọc theo status (chúng luôn status todo). Status filter chỉ áp cho instance/task lẻ.
+    if (filterStatus !== "all") list = list.filter(t => t.is_template || t.status === filterStatus)
     if (filterType) list = list.filter(t => t.type === filterType)
-    if (filterPriority) list = list.filter(t => t.priority === filterPriority)
+    if (filterPriority) list = list.filter(t => t.is_template || t.priority === filterPriority)
     if (filterTag) list = list.filter(t => t.tags.includes(filterTag))
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -1422,6 +1730,9 @@ export default function MktTasksPage() {
     }
     return list
   }, [normalized, filterStatus, filterType, filterPriority, filterTag, search])
+
+  // Board/Calendar chỉ hiện instance + task lẻ (template không có deadline/cột trạng thái)
+  const boardCalTasks = useMemo(() => filtered.filter(t => !t.is_template), [filtered])
 
   const allTags = useMemo(() => {
     const s = new Set<string>()
@@ -1444,8 +1755,8 @@ export default function MktTasksPage() {
     return map
   }, [filtered, groupBy])
 
-  const totalTasks = filtered.length
-  const overdueCount = filtered.filter(isOverdue).length
+  const totalTasks = boardCalTasks.length
+  const overdueCount = boardCalTasks.filter(isOverdue).length
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -1604,6 +1915,7 @@ export default function MktTasksPage() {
                   { v: "todo", l: "Chờ làm" },
                   { v: "in_progress", l: "Đang làm" },
                   { v: "done", l: "Hoàn thành" },
+                  { v: "missed", l: "Bỏ lỡ" },
                   { v: "cancelled", l: "Đã hủy" },
                 ].map(({ v, l }) => (
                   <button key={v} onClick={() => setFilterStatus(v)} className={chipCls(filterStatus === v)}>{l}</button>
@@ -1654,7 +1966,7 @@ export default function MktTasksPage() {
             </div>
           ) : view === "board" ? (
             <BoardView
-              tasks={filtered}
+              tasks={boardCalTasks}
               onTaskClick={setSelectedTask}
               onMove={moveTask}
               canMove={canQuick}
@@ -1666,7 +1978,7 @@ export default function MktTasksPage() {
             />
           ) : view === "calendar" ? (
             <CalendarView
-              tasks={filtered}
+              tasks={boardCalTasks}
               onTaskClick={setSelectedTask}
               onMoveDeadline={moveDeadline}
               canMove={isManager}
