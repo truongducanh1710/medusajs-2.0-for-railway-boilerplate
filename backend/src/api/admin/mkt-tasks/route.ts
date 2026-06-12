@@ -46,7 +46,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (channel_id) filter.channel_id = channel_id
 
     let tasks = await svc.listMktTasks(filter, {
-      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key"],
+      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist"],
       order: { created_at: "DESC" },
     })
 
@@ -110,7 +110,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!uid) return res.status(401).json({ error: "Unauthenticated" })
     if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
 
-    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status, output, frequency } = req.body as any
+    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status, output, frequency, checklist } = req.body as any
     if (!title || !type || !assignee_id) {
       return res.status(400).json({ error: "Thiếu title, type hoặc assignee_id" })
     }
@@ -135,6 +135,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       output: output || null,
       frequency: validFrequency,
       is_template: isRecurring,
+      checklist: sanitizeChecklist(checklist),
     })
 
     // Recurring → sinh ngay instance kỳ hiện tại để nhân sự thấy việc luôn
@@ -166,6 +167,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
+}
+
+// Checklist [{ id, text, done }] — bỏ item rỗng, giới hạn 30 mục / 500 ký tự
+function sanitizeChecklist(raw: any): { id: string; text: string; done: boolean }[] | null {
+  if (!Array.isArray(raw)) return null
+  return raw
+    .filter((i: any) => i && typeof i.text === "string" && i.text.trim())
+    .slice(0, 30)
+    .map((i: any) => ({
+      id: typeof i.id === "string" && i.id ? i.id : Math.random().toString(36).slice(2, 10),
+      text: i.text.trim().slice(0, 500),
+      done: !!i.done,
+    }))
 }
 
 function getWeek(d: Date): number {

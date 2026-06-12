@@ -100,6 +100,10 @@ export async function spawnInstanceForPeriod(
     comments: [],
     output: template.output || null,
     result: null,
+    // Mỗi kỳ nhận bản copy checklist của template, reset chưa tick
+    checklist: Array.isArray(template.checklist)
+      ? template.checklist.map((i: any) => ({ ...i, done: false }))
+      : null,
     frequency: "once",          // instance là việc 1 lần cụ thể
     is_template: false,
     template_id: template.id,

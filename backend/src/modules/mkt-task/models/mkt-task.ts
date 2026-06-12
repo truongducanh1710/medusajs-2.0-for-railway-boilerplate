@@ -21,6 +21,7 @@ const MktTask = model.define("mkt_task", {
   is_template: model.boolean().default(false), // true = task mẫu lặp
   template_id: model.text().nullable(),     // instance → trỏ về template sinh ra nó
   period_key: model.text().nullable(),      // "2026-06-12" | "2026-W24" | "2026-06" — chống sinh trùng
+  checklist: model.json().nullable(),       // [{ id, text, done }] — assignee tự quản sub-steps
 })
 
 export default MktTask

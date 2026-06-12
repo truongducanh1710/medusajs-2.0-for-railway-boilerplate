@@ -5,6 +5,8 @@ import { useCurrentPermissions } from "../../lib/use-permissions"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type ChecklistItem = { id: string; text: string; done: boolean }
+
 type Task = {
   id: string
   title: string
@@ -29,6 +31,7 @@ type Task = {
   is_template?: boolean
   template_id?: string | null
   period_key?: string | null
+  checklist?: ChecklistItem[] | null
 }
 
 type MktUser = { id?: string; email: string; name: string }
@@ -360,6 +363,11 @@ function TaskDrawer({
     type: initialTask.type,
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [tab, setTab] = useState<"detail" | "work">("detail")
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(
+    Array.isArray(initialTask.checklist) ? initialTask.checklist : []
+  )
+  const [newItem, setNewItem] = useState("")
   const commentsEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -392,6 +400,28 @@ function TaskDrawer({
     const ok = await patchTask({ status: s })
     if (ok) onToast(`Đã chuyển sang "${STATUS_MAP[s]?.label}"`, "success")
   }
+
+  // Checklist: lưu ngay khi tick/thêm/xoá (optimistic, revert nếu fail)
+  const saveChecklist = async (next: ChecklistItem[]) => {
+    const prev = checklist
+    setChecklist(next)
+    const ok = await patchTask({ checklist: next })
+    if (!ok) setChecklist(prev)
+  }
+  const addChecklistItem = () => {
+    const text = newItem.trim()
+    if (!text || checklist.length >= 30) return
+    setNewItem("")
+    saveChecklist([...checklist, {
+      id: (globalThis.crypto as any)?.randomUUID?.() || Math.random().toString(36).slice(2, 10),
+      text,
+      done: false,
+    }])
+  }
+  const toggleChecklistItem = (id: string) =>
+    saveChecklist(checklist.map(i => i.id === id ? { ...i, done: !i.done } : i))
+  const removeChecklistItem = (id: string) =>
+    saveChecklist(checklist.filter(i => i.id !== id))
 
   const saveNotes = async () => {
     setSaving(true)
@@ -479,7 +509,7 @@ function TaskDrawer({
   return (
     <>
       <div onClick={onClose} className="mkt-anim-overlay fixed inset-0 z-[99] bg-black/25" />
-      <div className="mkt-anim-drawer fixed right-0 top-0 z-[100] flex h-screen w-[600px] max-w-[60vw] flex-col border-l border-ui-border-base bg-ui-bg-base shadow-2xl">
+      <div className="mkt-anim-drawer fixed right-0 top-0 z-[100] flex h-screen w-[920px] max-w-[90vw] flex-col border-l border-ui-border-base bg-ui-bg-base shadow-2xl">
         {/* Header */}
         <div className="border-b border-ui-border-base bg-ui-bg-subtle px-5 py-4">
           <div className="flex items-start justify-between gap-2">
@@ -523,9 +553,34 @@ function TaskDrawer({
           </div>
         </div>
 
+        {/* Tabs: Chi tiết (đề bài) | Checklist & Kết quả (bài làm) */}
+        <div className="flex border-b border-ui-border-base bg-ui-bg-subtle px-5">
+          {([
+            ["detail", "📋 Chi tiết"],
+            ["work", "☑️ Checklist & Kết quả"],
+          ] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={cn("-mb-px border-b-2 px-4 py-2.5 text-[13px] font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                tab === key
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-ui-fg-muted hover:text-ui-fg-subtle")}>
+              {label}
+              {key === "work" && checklist.length > 0 && (
+                <span className={cn("ml-1.5 rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums",
+                  checklist.every(i => i.done)
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                    : "bg-ui-bg-component text-ui-fg-subtle")}>
+                  {checklist.filter(i => i.done).length}/{checklist.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col gap-5 px-5 py-4">
 
+            {tab === "detail" && (<>
             {/* Edit form */}
             {editMode && isManager && (
               <div className="mkt-anim-fadeup flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 dark:border-blue-500/30 dark:bg-blue-500/5">
@@ -640,7 +695,7 @@ function TaskDrawer({
                 value={notes}
                 onChange={e => { setNotes(e.target.value); setNotesDirty(true) }}
                 disabled={!isManager}
-                rows={3}
+                rows={4}
                 className={cn(INPUT_CLS, "resize-y", notesDirty && "border-blue-400", !isManager && "bg-ui-bg-subtle")}
                 placeholder={isManager ? "Thêm mô tả, yêu cầu chi tiết..." : "(Chưa có ghi chú)"}
               />
@@ -657,6 +712,58 @@ function TaskDrawer({
                 </div>
               )}
             </div>
+            </>)}
+
+            {tab === "work" && (<>
+            {/* Checklist — assignee tự quản sub-steps, lưu ngay khi thao tác */}
+            <div>
+              <div className={LABEL_CLS}>
+                ☑️ Checklist
+                {checklist.length > 0 && (
+                  <span className="ml-1.5 font-bold normal-case tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {checklist.filter(i => i.done).length}/{checklist.length}
+                  </span>
+                )}
+              </div>
+              {checklist.length > 0 && (
+                <div className="mb-2 h-1 overflow-hidden rounded-full bg-ui-bg-component">
+                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                    style={{ width: `${Math.round(checklist.filter(i => i.done).length / checklist.length * 100)}%` }} />
+                </div>
+              )}
+              <div className="flex flex-col gap-0.5">
+                {checklist.map(item => (
+                  <div key={item.id}
+                    className="group flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-ui-bg-subtle">
+                    <input type="checkbox" checked={item.done}
+                      onChange={() => toggleChecklistItem(item.id)}
+                      className="mt-0.5 size-4 shrink-0 cursor-pointer accent-emerald-600" />
+                    <span className={cn("min-w-0 flex-1 break-words text-[13px] leading-snug",
+                      item.done ? "text-ui-fg-muted line-through" : "text-ui-fg-base")}>
+                      {item.text}
+                    </span>
+                    <button onClick={() => removeChecklistItem(item.id)} title="Xóa mục"
+                      className="shrink-0 rounded px-1 text-xs text-ui-fg-disabled opacity-0 transition-opacity hover:text-rose-500 group-hover:opacity-100">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {checklist.length < 30 && (
+                <div className="mt-1.5 flex gap-1.5">
+                  <input value={newItem}
+                    onChange={e => setNewItem(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addChecklistItem() } }}
+                    placeholder="+ Thêm bước... (Enter để thêm)"
+                    className={INPUT_CLS} />
+                  <button onClick={addChecklistItem} disabled={!newItem.trim()}
+                    className={cn("shrink-0 rounded-lg px-3.5 text-[13px] font-semibold transition active:scale-95",
+                      newItem.trim() ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-ui-bg-component text-ui-fg-disabled")}>
+                    +
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Kết quả thực tế — assignee/manager điền (không hiện cho template) */}
             {!task.is_template && (
@@ -668,7 +775,7 @@ function TaskDrawer({
                 <textarea
                   value={result}
                   onChange={e => { setResult(e.target.value); setResultDirty(true) }}
-                  rows={2}
+                  rows={8}
                   className={cn(INPUT_CLS, "resize-y", resultDirty && "border-emerald-400",
                     task.status === "done" && !result && "border-amber-300")}
                   placeholder="Đã làm gì? VD: Tăng budget SP1 lên 4tr, ROAS 2.8, loại 2 creative CTR thấp"
@@ -709,7 +816,9 @@ function TaskDrawer({
                 </div>
               </div>
             )}
+            </>)}
 
+            {tab === "detail" && (<>
             {/* Comments */}
             <div>
               <div className={LABEL_CLS}>Trao đổi ({comments.length})</div>
@@ -758,6 +867,7 @@ function TaskDrawer({
             <div className="pt-1 text-[11px] text-ui-fg-disabled">
               Tạo lúc {new Date(task.created_at).toLocaleString("vi-VN")}
             </div>
+            </>)}
           </div>
         </div>
       </div>
@@ -993,6 +1103,11 @@ function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash, periodLa
           {periodLabel ? (task.result && task.status === "done" ? task.result : task.title) : task.title}
         </span>
         {task.tags.slice(0, 3).map(t => <TagChip key={t} tag={t} />)}
+        {(task.checklist?.length || 0) > 0 && (
+          <span className="shrink-0 text-[11px] tabular-nums text-ui-fg-muted">
+            ☑{task.checklist!.filter(i => i.done).length}/{task.checklist!.length}
+          </span>
+        )}
         {(task.comments?.length || 0) > 0 && (
           <span className="shrink-0 text-[11px] text-ui-fg-muted">💬{task.comments.length}</span>
         )}
@@ -1212,6 +1327,9 @@ function TaskCard({ task, onClick, draggable, onDragStart, onDragEnd, dragging }
       <div className="mt-2.5 flex items-center justify-between">
         <DeadlineChip task={task} />
         <div className="flex items-center gap-1.5 text-[11px] text-ui-fg-muted">
+          {(task.checklist?.length || 0) > 0 && (
+            <span className="tabular-nums">☑{task.checklist!.filter(i => i.done).length}/{task.checklist!.length}</span>
+          )}
           {(task.comments?.length || 0) > 0 && <span>💬{task.comments.length}</span>}
           {task.rating ? <span className="text-amber-400">★{task.rating}</span> : null}
           <Avatar name={task.assignee_name} />
@@ -1467,7 +1585,8 @@ function CalendarView({ tasks, onTaskClick, onMoveDeadline, canMove, isManager, 
 
 function RecurringStatsRow({ r }: { r: any }) {
   const [open, setOpen] = useState(false)
-  const freq = FREQUENCY_MAP[r.frequency as keyof typeof FREQUENCY_MAP] ?? FREQUENCY_MAP.once
+  // Cùng style cell với bảng StatsView (td bên đó là biến local, ngoài scope ở đây)
+  const td = "px-3.5 py-2.5 text-[13px] border-b border-ui-border-base text-ui-fg-base"
   const rate = r.period_done_rate
   return (
     <>
@@ -1483,7 +1602,7 @@ function RecurringStatsRow({ r }: { r: any }) {
           </div>
         </td>
         <td className={td}><span className="text-sm">{r.assignee_name}</span></td>
-        <td className={cn(td, "text-center")}><FrequencyChip frequency={r.frequency} /></td>
+        <td className={cn(td, "text-center")}><FrequencyChip freq={r.frequency} /></td>
         <td className={cn(td, "text-center font-semibold tabular-nums")}>{r.total_periods}</td>
         <td className={cn(td, "text-center")}>
           <span className="font-bold text-emerald-600 dark:text-emerald-400">{r.done}</span>

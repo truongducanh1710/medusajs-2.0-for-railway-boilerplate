@@ -100,6 +100,23 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (body.result !== undefined) {
       update.result = body.result || null
     }
+    // Checklist: assignee và manager đều tự quản sub-steps
+    if (body.checklist !== undefined) {
+      if (body.checklist !== null && !Array.isArray(body.checklist)) {
+        return res.status(400).json({ error: "Checklist phải là mảng" })
+      }
+      if (Array.isArray(body.checklist) && body.checklist.length > 30) {
+        return res.status(400).json({ error: "Checklist tối đa 30 mục" })
+      }
+      update.checklist = body.checklist === null ? null : body.checklist
+        .filter((i: any) => i && typeof i.text === "string" && i.text.trim())
+        .slice(0, 30)
+        .map((i: any) => ({
+          id: typeof i.id === "string" && i.id ? i.id : Math.random().toString(36).slice(2, 10),
+          text: i.text.trim().slice(0, 500),
+          done: !!i.done,
+        }))
+    }
 
     if (Object.keys(update).length === 0) return res.status(400).json({ error: "Không có field nào để cập nhật" })
 
