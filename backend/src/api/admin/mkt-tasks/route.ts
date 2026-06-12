@@ -37,7 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const manager = await isManager(req)
 
     // Build filter
-    const filter: Record<string, any> = { deleted_at: null }
+    const filter: Record<string, any> = {}
     if (!manager) filter.assignee_id = uid  // MKT only sees own tasks
     else if (assignee_id) filter.assignee_id = assignee_id
     if (status && status !== "all") filter.status = status

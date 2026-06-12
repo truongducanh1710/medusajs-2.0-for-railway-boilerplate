@@ -35,7 +35,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
 
-    const [task] = await svc.listMktTasks({ id, deleted_at: null })
+    const [task] = await svc.listMktTasks({ id })
     if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
 
     const manager = await isManager(req)
@@ -58,7 +58,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
 
-    const [task] = await svc.listMktTasks({ id, deleted_at: null })
+    const [task] = await svc.listMktTasks({ id })
     if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
 
     const manager = await isManager(req)
@@ -140,7 +140,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
 
-    await svc.updateMktTasks({ id }, { deleted_at: new Date() })
+    await svc.deleteMktTasks(id)
     res.json({ success: true })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
