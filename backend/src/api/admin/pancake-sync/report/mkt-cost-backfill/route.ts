@@ -1,19 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { extractMkt } from "../../../../../lib/mkt-code"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const DELAY_MS = 300
-
-function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
-  for (const sep of ["_", "-"]) {
-    const parts = cleaned.split(sep)
-    for (let i = 1; i < parts.length; i++) {
-      const t = parts[i].trim()
-      if (/^[A-Z]{3,8}$/.test(t)) return t
-    }
-  }
-  return "KHÁC"
-}
 
 async function fetchJson(url: string): Promise<any> {
   const res = await fetch(url)

@@ -1,27 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { extractMkt } from "../../../../../lib/mkt-code"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
-
-/**
- * Extract MKT code từ campaign name.
- * Hỗ trợ 2 format delimiter: _ và -
- * Format: DD/MM_MKTCODE_SẢN PHẨM_... hoặc DD/MM-MKTCODE-SẢN PHẨM-...
- * Bỏ prefix: TEST_, MESS_, TEST_MESS_
- */
-function extractMkt(campaignName: string): string {
-  // Bỏ prefix TEST_ / MESS_ lặp lại
-  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
-  // Thử split theo _ trước, nếu không ra thì thử -
-  for (const sep of ["_", "-"]) {
-    const parts = cleaned.split(sep)
-    for (let i = 1; i < parts.length; i++) {
-      const t = parts[i].trim()
-      if (/^[A-Z]{3,8}$/.test(t)) return t
-    }
-  }
-  return "KHÁC"
-}
 
 async function fetchJson(url: string): Promise<any> {
   const res = await fetch(url)

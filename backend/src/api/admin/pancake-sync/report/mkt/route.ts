@@ -40,13 +40,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         WHEN 'NAM DV'     THEN 'NAMDV'
         WHEN 'PHẠM DU'    THEN 'DUPD'
         WHEN 'NGUYỄN MAI' THEN 'NGUYEN MAI'
+        WHEN 'TRUONGAN'   THEN 'ANHTD'
         WHEN ''           THEN NULL
         ELSE UPPER(TRIM(NULLIF(TRIM(raw->'marketer'->>'name'), '')))
       END
     `
 
     // Fallback UTM nếu marketer name null
-    const mktWithFallback = `
+    const mktRaw = `
       COALESCE(
         ${mktExpr},
         CASE
@@ -57,6 +58,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           ELSE 'KHÁC'
         END
       )
+    `
+
+    // Alias camp-name code → tên Pancake (giữ đồng bộ với MKT_ALIASES trong lib/mkt-code.ts)
+    const mktWithFallback = `
+      CASE WHEN ${mktRaw} = 'TRUONGAN' THEN 'ANHTD' ELSE ${mktRaw} END
     `
 
     // Load handover rules — áp dụng khi tính attribution theo ngày

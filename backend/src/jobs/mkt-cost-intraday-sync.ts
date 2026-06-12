@@ -1,4 +1,5 @@
 import { MedusaContainer } from "@medusajs/framework"
+import { extractMkt } from "../lib/mkt-code"
 
 const FB_API_BASE = "https://graph.facebook.com/v18.0"
 
@@ -7,18 +8,6 @@ function todayVN(): string {
   const now = new Date()
   now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + 420) // +420 = +7h
   return now.toISOString().slice(0, 10)
-}
-
-function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
-  for (const sep of ["_", "-"]) {
-    const parts = cleaned.split(sep)
-    for (let i = 1; i < parts.length; i++) {
-      const t = parts[i].trim()
-      if (/^[A-Z]{3,8}$/.test(t)) return t
-    }
-  }
-  return "KHÁC"
 }
 
 async function fetchJson(url: string): Promise<any> {

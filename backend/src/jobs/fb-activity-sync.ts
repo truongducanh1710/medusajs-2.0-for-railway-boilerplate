@@ -1,19 +1,8 @@
 import { MedusaContainer } from "@medusajs/framework"
+import { extractMkt } from "../lib/mkt-code"
 
 const FB_API_BASE = "https://graph.facebook.com/v18.0"
 const KEEP_EVENTS = new Set(["update_campaign_run_status", "update_campaign_budget"])
-
-function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
-  for (const sep of ["_", "-"]) {
-    const parts = cleaned.split(sep)
-    for (let i = 1; i < parts.length; i++) {
-      const t = parts[i].trim()
-      if (/^[A-Z]{3,8}$/.test(t)) return t
-    }
-  }
-  return "KHÁC"
-}
 
 function actorType(actorName: string): string {
   if (!actorName || actorName === "Meta") return "meta"
