@@ -263,7 +263,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const cancelAdd = () => { setAdding(false); setLinkCheckState({ checking: false, error: null, ok: false }) }
 
   const checkLink = async (link: string): Promise<boolean> => {
-    if (!link || (!link.includes("drive.google") && !link.includes("drive.usercontent") && !link.includes("lark") && !link.includes("feishu"))) return true
+    const isLarkLink = link.includes("lark") || link.includes("feishu")
+    if (isLarkLink) {
+      setLinkCheckState({ checking: false, error: "Link Lark không được hỗ trợ — vui lòng dùng Google Drive", ok: false })
+      return false
+    }
+    if (!link || (!link.includes("drive.google") && !link.includes("drive.usercontent"))) return true
     setLinkCheckState({ checking: true, error: null, ok: false })
     try {
       const r = await apiFetch(`/admin/marketing-video/check-link?url=${encodeURIComponent(link)}`).then(r => r.json())
@@ -620,7 +625,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                       <input
                         value={draft.link}
                         onChange={e => { setDraft(p => ({ ...p, link: e.target.value })); setLinkCheckState({ checking: false, error: null, ok: false }) }}
-                        placeholder="Dán link Drive/Lark vào đây…"
+                        placeholder="Dán link Google Drive vào đây…"
                         style={{ ...cellInp, fontSize: 13, padding: "6px 8px", borderColor: linkCheckState.error ? "#FCA5A5" : linkCheckState.ok ? "#86EFAC" : undefined }}
                       />
                       {linkCheckState.checking && <span style={{ fontSize: 10, color: "#6B7280" }}>⏳ Đang kiểm tra link…</span>}
