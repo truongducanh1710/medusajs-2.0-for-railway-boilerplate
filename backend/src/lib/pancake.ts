@@ -92,11 +92,11 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     const bq = (item.metadata?.bundle_qty as number) || item.quantity || 1
     return sum + (bp > 0 ? bp : (item.unit_price || 0) * bq)
   }, 0)
-  // Storefront làm tròn lên mã giảm theo bậc 1.000đ và lưu vào metadata — ưu tiên số đó
-  // để khách trả đúng số đã thấy ở checkout (order.summary.discount_total là số lẻ chưa làm tròn)
-  const rawDiscount = order.summary?.discount_total ?? 0
+  // Ưu tiên promo_discount_rounded (đã làm tròn lên 1.000đ, khớp với số khách thấy ở checkout)
+  // Fallback về order.discount_total (Medusa tính, số lẻ) nếu metadata không có
+  const rawDiscount = order.discount_total ?? order.summary?.discount_total ?? 0
   const roundedDiscount = Number(order.metadata?.promo_discount_rounded ?? 0)
-  const totalDiscount = roundedDiscount > rawDiscount ? roundedDiscount : rawDiscount
+  const totalDiscount = roundedDiscount > 0 ? roundedDiscount : rawDiscount
   const sepayDiscount = isSepay ? ((order.metadata?.sepay_discount as number) ?? 0) : 0
   const totalPrice = bundleTotal > 0
     ? bundleTotal - totalDiscount - sepayDiscount
