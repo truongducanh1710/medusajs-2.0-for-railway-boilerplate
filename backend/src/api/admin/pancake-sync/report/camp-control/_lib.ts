@@ -18,7 +18,7 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
   const mktCode = ((user.metadata as any)?.mkt_code as string | undefined) ?? null
   const rawCodes = (user.metadata as any)?.mkt_codes
-  const mktCodes: string[] = Array.isArray(rawCodes) ? rawCodes : (mktCode ? [mktCode] : [])
+  const mktCodes: string[] = (Array.isArray(rawCodes) && rawCodes.length > 0) ? rawCodes : (mktCode ? [mktCode] : [])
   return { email: user.email || "", isSuper, mktCode, mktCodes }
 }
 
