@@ -3,12 +3,10 @@
 import { useEffect, useRef } from "react"
 import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
 
-// Fires AddToCart when customer lands on checkout page.
-// (Order flow skips the cart — product page goes straight to checkout,
-// so checkout entry is the AddToCart signal.)
-// Dual-fire: browser fbq + CAPI via /api/capi with same eventID (FB dedups).
-// Also fires to the product's own pixel when it has one (quick-buy flow
-// means the cart holds a single product).
+// Fires AddToCart + InitiateCheckout when customer lands on checkout page.
+// AddToCart: single source of truth (bundle-selector no longer fires it).
+// InitiateCheckout: signals funnel entry for Meta optimisation.
+// Both dual-fire: browser fbq + CAPI via /api/capi with same eventID (FB dedups).
 export default function CheckoutTracker({
   contentIds,
   value,
@@ -39,7 +37,6 @@ export default function CheckoutTracker({
         window.fbq?.("init", productPixelId)
       }
 
-      const eventId = generateEventId()
       const customData = {
         content_ids: contentIds,
         content_type: "product",
@@ -48,27 +45,21 @@ export default function CheckoutTracker({
         num_items: numItems,
       }
 
+      const atcId = generateEventId()
+      const icId = generateEventId()
+
       // Browser — goes to every inited pixel (store + product)
-      window.fbq?.("track", "AddToCart", customData, { eventID: eventId })
+      window.fbq?.("track", "AddToCart", customData, { eventID: atcId })
+      window.fbq?.("track", "InitiateCheckout", customData, { eventID: icId })
 
-      // CAPI — store pixel (token resolved server-side from store metadata)
-      sendCAPIViaRoute({
-        eventName: "AddToCart",
-        eventId,
-        eventSourceUrl: window.location.href,
-        customData,
-      })
+      // CAPI — store pixel
+      sendCAPIViaRoute({ eventName: "AddToCart", eventId: atcId, eventSourceUrl: window.location.href, customData })
+      sendCAPIViaRoute({ eventName: "InitiateCheckout", eventId: icId, eventSourceUrl: window.location.href, customData })
 
-      // CAPI — product's own pixel (only when it has its own token)
+      // CAPI — product's own pixel
       if (productPixelId && productCapiToken) {
-        sendCAPIViaRoute({
-          eventName: "AddToCart",
-          eventId,
-          eventSourceUrl: window.location.href,
-          pixelId: productPixelId,
-          capiToken: productCapiToken,
-          customData,
-        })
+        sendCAPIViaRoute({ eventName: "AddToCart", eventId: atcId, eventSourceUrl: window.location.href, pixelId: productPixelId, capiToken: productCapiToken, customData })
+        sendCAPIViaRoute({ eventName: "InitiateCheckout", eventId: icId, eventSourceUrl: window.location.href, pixelId: productPixelId, capiToken: productCapiToken, customData })
       }
     }
 

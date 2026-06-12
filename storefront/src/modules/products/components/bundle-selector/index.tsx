@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { HttpTypes } from "@medusajs/types"
 import { addToCart } from "@lib/data/cart"
 import { useParams, useRouter } from "next/navigation"
-import { generateEventId } from "@lib/pixel"
 
 type GiftItem = {
   image?: string
@@ -157,17 +156,8 @@ export default function BundleSelector({ product, region }: Props) {
     if (!variant?.id || adding) return
     setAdding(true)
 
-    // Fire pixel immediately (non-blocking)
-    if (typeof window !== "undefined" && window.fbq) {
-      window.fbq("track", "AddToCart", {
-        content_ids: [variant.id],
-        content_name: product.title,
-        content_type: "product",
-        value: selectedOpt.price / 100,
-        currency: "VND",
-        num_items: selected,
-      }, { eventID: generateEventId() })
-    }
+    // AddToCart fires on /checkout via CheckoutTracker (single source of truth).
+    // InitiateCheckout fires there too. No pixel here to avoid double-counting.
 
     try {
       const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
