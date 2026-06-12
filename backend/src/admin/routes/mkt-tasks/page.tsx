@@ -449,7 +449,12 @@ function TaskDrawer({
   }
 
   const handleDelete = async () => {
-    await apiFetch(`/admin/mkt-tasks/${task.id}`, { method: "DELETE" })
+    const res = await apiFetch(`/admin/mkt-tasks/${task.id}`, { method: "DELETE" })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      onToast(err?.error || "Xóa thất bại", "error")
+      return
+    }
     onDelete(task.id)
     onClose()
     onToast("Đã xóa task", "success")
