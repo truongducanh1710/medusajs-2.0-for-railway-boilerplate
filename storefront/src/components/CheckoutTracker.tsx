@@ -45,7 +45,10 @@ export default function CheckoutTracker({
         num_items: numItems,
       }
 
-      const atcId = generateEventId()
+      // Reuse the eventID bundle-selector stored so Meta deduplicates the two ATC signals.
+      // Fall back to a new ID if user navigated directly to /checkout.
+      const atcId = sessionStorage.getItem("atc_event_id") || generateEventId()
+      sessionStorage.removeItem("atc_event_id")
       const icId = generateEventId()
 
       // Browser — goes to every inited pixel (store + product)

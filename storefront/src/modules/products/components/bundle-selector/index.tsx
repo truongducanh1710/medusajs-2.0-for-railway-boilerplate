@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { HttpTypes } from "@medusajs/types"
 import { addToCart } from "@lib/data/cart"
+import { generateEventId } from "@lib/pixel"
 import { useParams, useRouter } from "next/navigation"
 
 type GiftItem = {
@@ -156,8 +157,20 @@ export default function BundleSelector({ product, region }: Props) {
     if (!variant?.id || adding) return
     setAdding(true)
 
-    // AddToCart fires on /checkout via CheckoutTracker (single source of truth).
-    // InitiateCheckout fires there too. No pixel here to avoid double-counting.
+    // Fire ATC immediately so Meta captures intent even if /checkout redirect fails.
+    // Store the eventID in sessionStorage so CheckoutTracker reuses the same ID → Meta dedup.
+    const atcEventId = generateEventId()
+    sessionStorage.setItem("atc_event_id", atcEventId)
+    if (typeof window !== "undefined" && window.fbq) {
+      window.fbq("track", "AddToCart", {
+        content_ids: [variant.id],
+        content_name: product.title,
+        content_type: "product",
+        value: selectedOpt.price / 100,
+        currency: "VND",
+        num_items: selected,
+      }, { eventID: atcEventId })
+    }
 
     try {
       const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
