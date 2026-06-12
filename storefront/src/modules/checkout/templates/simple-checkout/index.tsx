@@ -61,6 +61,14 @@ function formatVND(n: number) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ"
 }
 
+function roundDiscountUp(amount: number, step = 1000) {
+  if (amount <= 0) {
+    return 0
+  }
+
+  return Math.ceil(amount / step) * step
+}
+
 function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   orderCode: string
   amount: number
@@ -479,7 +487,9 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     const bundlePrice = (item.metadata as any)?.bundle_price
     return sum + (bundlePrice != null ? Number(bundlePrice) : item.unit_price * item.quantity)
   }, 0)
-  const promoDiscount = liveDiscount ?? (cart as any).discount_total ?? 0
+  const rawPromoDiscount = liveDiscount ?? (cart as any).discount_total ?? 0
+  const promoDiscount = Math.min(subtotal, roundDiscountUp(rawPromoDiscount))
+  const promoDiscountRoundingAdjustment = Math.max(0, promoDiscount - rawPromoDiscount)
   // Không tính tax/shipping — khách chỉ trả tiền hàng sau giảm giá
   const cartTotal = Math.max(0, subtotal - promoDiscount)
   const sepayTotal = Math.max(1000, cartTotal - SEPAY_DISCOUNT)
@@ -563,6 +573,13 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           payment_method: payment,
           province: form.province || "",
           ward: form.ward || "",
+          ...(promoDiscountRoundingAdjustment > 0
+            ? {
+                promo_discount_raw: rawPromoDiscount,
+                promo_discount_rounded: promoDiscount,
+                promo_discount_rounding_adjustment: promoDiscountRoundingAdjustment,
+              }
+            : {}),
           ...(payment === "sepay" ? { sepay_discount: SEPAY_DISCOUNT } : {}),
           ...getUtmFromCookie(),
           client_user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,

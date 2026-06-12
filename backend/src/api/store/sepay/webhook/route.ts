@@ -92,10 +92,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
       const order = orders[0]
 
-      // Kiểm tra số tiền khớp (cho phép sai lệch 1000đ do làm tròn)
+      // Kiểm tra số tiền khớp (cho phép sai lệch 2000đ: 1000đ làm tròn cũ + tối đa 999đ
+      // do storefront làm tròn lên mã giảm theo bậc 1.000đ)
       const orderTotal = order.total || 0
       const diff = Math.abs(transferAmount - orderTotal)
-      if (diff > 1000) {
+      if (diff > 2000) {
         console.log(`[SePay Webhook] Số tiền không khớp: nhận ${transferAmount}, cần ${orderTotal}`)
         return res.json({ success: true, message: "Amount mismatch" })
       }
