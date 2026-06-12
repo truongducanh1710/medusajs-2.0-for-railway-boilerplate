@@ -345,6 +345,9 @@ function TaskDrawer({
   onDelete: (id: string) => void
   onToast: (msg: string, type: "success" | "error") => void
 }) {
+  const isAssignee = initialTask.assignee_id === currentUserEmail
+  const canWork = isManager || isAssignee  // status + checklist + result + comment
+
   const [task, setTask] = useState(initialTask)
   const [notes, setNotes] = useState(initialTask.notes || "")
   const [notesDirty, setNotesDirty] = useState(false)
@@ -649,7 +652,8 @@ function TaskDrawer({
               <div className={LABEL_CLS}>Trạng thái</div>
               <div className="flex flex-wrap gap-1.5">
                 {STATUSES.map(s => (
-                  <button key={s} onClick={() => updateStatus(s)} className={statusBtnCls(s)}>
+                  <button key={s} onClick={() => canWork && updateStatus(s)} disabled={!canWork} className={statusBtnCls(s)}
+                    title={!canWork ? "Bạn không phải người nhận task này" : undefined}>
                     {STATUS_MAP[s].icon} {STATUS_MAP[s].label}
                   </button>
                 ))}
@@ -735,21 +739,23 @@ function TaskDrawer({
                 {checklist.map(item => (
                   <div key={item.id}
                     className="group flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-ui-bg-subtle">
-                    <input type="checkbox" checked={item.done}
+                    <input type="checkbox" checked={item.done} disabled={!canWork}
                       onChange={() => toggleChecklistItem(item.id)}
-                      className="mt-0.5 size-4 shrink-0 cursor-pointer accent-emerald-600" />
+                      className="mt-0.5 size-4 shrink-0 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed" />
                     <span className={cn("min-w-0 flex-1 break-words text-[13px] leading-snug",
                       item.done ? "text-ui-fg-muted line-through" : "text-ui-fg-base")}>
                       {item.text}
                     </span>
+                    {canWork && (
                     <button onClick={() => removeChecklistItem(item.id)} title="Xóa mục"
                       className="shrink-0 rounded px-1 text-xs text-ui-fg-disabled opacity-0 transition-opacity hover:text-rose-500 group-hover:opacity-100">
                       ✕
                     </button>
+                    )}
                   </div>
                 ))}
               </div>
-              {checklist.length < 30 && (
+              {canWork && checklist.length < 30 && (
                 <div className="mt-1.5 flex gap-1.5">
                   <input value={newItem}
                     onChange={e => setNewItem(e.target.value)}
@@ -774,13 +780,15 @@ function TaskDrawer({
                 </div>
                 <textarea
                   value={result}
-                  onChange={e => { setResult(e.target.value); setResultDirty(true) }}
+                  onChange={e => { if (canWork) { setResult(e.target.value); setResultDirty(true) } }}
+                  disabled={!canWork}
                   rows={8}
                   className={cn(INPUT_CLS, "resize-y", resultDirty && "border-emerald-400",
-                    task.status === "done" && !result && "border-amber-300")}
-                  placeholder="Đã làm gì? VD: Tăng budget SP1 lên 4tr, ROAS 2.8, loại 2 creative CTR thấp"
+                    task.status === "done" && !result && "border-amber-300",
+                    !canWork && "bg-ui-bg-subtle")}
+                  placeholder={canWork ? "Đã làm gì? VD: Tăng budget SP1 lên 4tr, ROAS 2.8, loại 2 creative CTR thấp" : "(Chưa có kết quả)"}
                 />
-                {resultDirty && (
+                {resultDirty && canWork && (
                   <div className="mkt-anim-fadeup mt-1.5 flex gap-1.5">
                     <button onClick={saveResult} disabled={savingResult}
                       className="rounded-lg bg-emerald-600 px-3.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-700 active:scale-95 disabled:opacity-50">
