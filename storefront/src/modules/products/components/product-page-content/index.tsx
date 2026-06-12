@@ -439,6 +439,7 @@ const TIKTOK_GALLERY_JS = `
     // Pause card previews để giảm tải
     document.querySelectorAll('.pvb-tkg .card video').forEach(function(cv){cv.pause();});
     v.src=src;
+    v.loop=true;
     pop.style.display='flex';
     // Force reflow rồi add class để trigger CSS transition
     pop.getBoundingClientRect();
