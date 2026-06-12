@@ -35,7 +35,7 @@ type Task = {
 }
 
 type MktUser = { id?: string; email: string; name: string }
-type ViewMode = "list" | "board" | "calendar" | "stats"
+type ViewMode = "list" | "board" | "calendar" | "stats" | "guide"
 type GroupBy = "assignee" | "type" | "week"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1636,6 +1636,177 @@ function RecurringStatsRow({ r }: { r: any }) {
   )
 }
 
+// ─── Hướng dẫn sử dụng ───────────────────────────────────────────────────────
+
+function HuongDanTab({ isManager }: { isManager: boolean }) {
+  const sec = "mb-5 rounded-xl border border-ui-border-base bg-ui-bg-base p-5"
+  const h2 = "mb-3 flex items-center gap-2 text-[15px] font-bold text-ui-fg-base"
+  const p = "text-[13px] leading-relaxed text-ui-fg-subtle"
+  const li = "flex items-start gap-2 text-[13px] text-ui-fg-subtle"
+  const badge = (color: string, text: string) =>
+    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-bold ${color}`}>{text}</span>
+
+  return (
+    <div className="mx-auto max-w-[860px] py-2">
+
+      {/* Tổng quan */}
+      <div className={sec}>
+        <div className={h2}>📋 Giao Việc MKT là gì?</div>
+        <p className={p}>
+          Công cụ quản lý công việc nội bộ cho team Marketing của Phan Việt.
+          Manager giao việc → MKT nhận, cập nhật tiến độ, điền kết quả → Manager đánh giá.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            ["≡ List", "Xem danh sách nhóm theo người / loại / tuần"],
+            ["▦ Board", "Kanban — kéo thả chuyển trạng thái"],
+            ["📅 Lịch", "Xem theo deadline, kéo sang ngày khác"],
+            ["📊 Báo cáo", "Thống kê hoàn thành, đúng hạn, đánh giá"],
+          ].map(([icon, desc]) => (
+            <div key={icon} className="rounded-lg bg-ui-bg-subtle px-3 py-2.5">
+              <div className="mb-1 font-bold text-ui-fg-base text-[13px]">{icon}</div>
+              <div className="text-[11px] text-ui-fg-muted">{desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Trạng thái */}
+      <div className={sec}>
+        <div className={h2}>🔄 Trạng thái task</div>
+        <div className="flex flex-col gap-2">
+          {[
+            ["⏳ Chờ làm", "bg-gray-100 text-gray-600 dark:bg-gray-500/10 dark:text-gray-300", "Mới được giao, chưa bắt đầu"],
+            ["🚀 Đang làm", "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300", "Đã nhận việc, đang thực hiện"],
+            ["✅ Hoàn thành", "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300", "Xong — nhớ điền Kết quả thực tế"],
+            ["❌ Đã hủy", "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300", "Không làm nữa (manager hủy)"],
+            ["🔴 Bỏ lỡ", "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300", "Qua deadline mà chưa xong — hệ thống tự set"],
+          ].map(([label, cls, desc]) => (
+            <div key={String(label)} className={li}>
+              <span className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-bold ${cls}`}>{label}</span>
+              <span className="mt-0.5">{desc}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-lg bg-ui-bg-subtle px-3 py-2 text-[12px] text-ui-fg-muted">
+          💡 Bấm vào icon trạng thái ở đầu dòng để chuyển nhanh (Chờ → Đang → Xong). Hoặc mở task, bấm nút trạng thái trong drawer.
+        </div>
+      </div>
+
+      {/* Luồng MKT */}
+      <div className={sec}>
+        <div className={h2}>👤 Luồng làm việc cho MKT</div>
+        <ol className="flex flex-col gap-3">
+          {[
+            ["Nhận task", "Bạn thấy task mới trong danh sách (mặc định nhóm theo người nhận). Click để xem chi tiết."],
+            ["Đọc đề bài", "Tab \"Chi tiết\": xem Output cần có, Ghi chú / Yêu cầu của manager, Deadline."],
+            ["Tự quản tiến độ", "Tab \"Checklist & Kết quả\": thêm các bước nhỏ, tick từng bước khi xong. Tự quản, không cần báo manager."],
+            ["Cập nhật trạng thái", "Bấm Đang làm khi bắt đầu, bấm Hoàn thành khi xong."],
+            ["Điền kết quả", "Sau khi xong, điền Kết quả thực tế (tab Checklist & Kết quả) — số liệu cụ thể, hành động đã làm."],
+            ["Trao đổi", "Dùng phần Trao đổi (tab Chi tiết) để nhắn tin với manager nếu cần làm rõ yêu cầu."],
+          ].map(([step, desc], i) => (
+            <li key={i} className={li}>
+              <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">{i + 1}</span>
+              <div>
+                <span className="font-semibold text-ui-fg-base">{step}: </span>
+                <span>{desc}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {/* Luồng Manager */}
+      {isManager && (
+        <div className={sec}>
+          <div className={h2}>🎯 Luồng làm việc cho Manager</div>
+          <ol className="flex flex-col gap-3">
+            {[
+              ["Tạo task", "Bấm + Tạo task → điền tiêu đề, loại, người nhận, deadline, output cần có. Có thể đặt task lặp (hằng ngày / tuần / tháng)."],
+              ["Theo dõi", "List / Board hiện trạng thái toàn team. Badge ☑3/5 cho biết checklist tiến độ. 💬 hiện số trao đổi."],
+              ["Giao tiếp", "Mở task → Trao đổi để nhắn tin trực tiếp. Hệ thống báo khi status thay đổi."],
+              ["Đánh giá", "Khi task Hoàn thành, tab Chi tiết hiện mục Đánh giá (⭐ 1–5 sao). Đánh giá giúp MKT biết chất lượng."],
+              ["Xem báo cáo", "Tab Báo cáo: tỉ lệ hoàn thành, đúng hạn, điểm trung bình theo từng người. Xem riêng task lặp."],
+            ].map(([step, desc], i) => (
+              <li key={i} className={li}>
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white">{i + 1}</span>
+                <div>
+                  <span className="font-semibold text-ui-fg-base">{step}: </span>
+                  <span>{desc}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {/* Checklist */}
+      <div className={sec}>
+        <div className={h2}>☑️ Checklist — tự quản bước làm</div>
+        <div className="flex flex-col gap-2">
+          {[
+            "Mở task → bấm tab Checklist & Kết quả",
+            "Gõ tên bước vào ô \"+Thêm bước...\" rồi nhấn Enter (hoặc nút +)",
+            "Tick checkbox khi hoàn thành bước đó — lưu ngay lập tức",
+            "Hover vào bước → bấm ✕ để xoá",
+            "Thanh progress bar và số 2/5 cập nhật theo thời gian thực",
+            "Tối đa 30 bước mỗi task",
+          ].map((t, i) => (
+            <div key={i} className={li}>
+              <span className="mt-0.5 text-emerald-500">✓</span>
+              <span>{t}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Task lặp */}
+      <div className={sec}>
+        <div className={h2}>🔁 Task lặp (Recurring)</div>
+        <p className={cn(p, "mb-3")}>
+          Task định kỳ tự động tạo mỗi kỳ (ngày / tuần / tháng). Manager tạo 1 lần, hệ thống sinh task thực tế cho từng kỳ.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {[
+            ["📆 Hằng ngày", "Sinh lúc 00:05 sáng mỗi ngày, deadline cuối ngày"],
+            ["📅 Hằng tuần", "Sinh thứ Hai, deadline Chủ nhật cùng tuần"],
+            ["🗓 Hằng tháng", "Sinh ngày 1, deadline cuối tháng"],
+          ].map(([label, desc]) => (
+            <div key={String(label)} className="rounded-lg bg-ui-bg-subtle px-3 py-2.5">
+              <div className="mb-1 font-bold text-ui-fg-base text-[13px]">{label}</div>
+              <div className="text-[11px] text-ui-fg-muted">{desc}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+          ⚠ Task lặp hiển thị nhãn <strong>🔁 kỳ YYYY-MM-DD</strong> để phân biệt với task thường. Badge <strong>Tuần / Ngày</strong> là task mẫu (template).
+        </div>
+      </div>
+
+      {/* Tips */}
+      <div className={sec}>
+        <div className={h2}>💡 Mẹo nhanh</div>
+        <div className="flex flex-col gap-2">
+          {[
+            ["Esc", "Đóng drawer task đang mở"],
+            ["Click icon trạng thái", "Chuyển nhanh Chờ → Đang → Xong không cần mở drawer"],
+            ["Enter trong ô checklist", "Thêm bước mới nhanh hơn bấm nút +"],
+            ["Shift+Enter trong Trao đổi", "Xuống dòng (Enter đơn = gửi tin)"],
+            ["Tag #", "Gõ tag để phân nhóm nội dung (VD: #SP1, #CAMP_T6). Filter theo tag ở toolbar."],
+            ["Tìm kiếm", "Ô 🔍 tìm theo tiêu đề, người nhận, tag — tìm realtime không cần nhấn Enter"],
+          ].map(([key, desc]) => (
+            <div key={String(key)} className={li}>
+              <span className="mt-0.5 shrink-0 rounded bg-ui-bg-component px-1.5 py-0.5 font-mono text-[11px] text-ui-fg-subtle">{key}</span>
+              <span>{desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
 // ─── Stats view ──────────────────────────────────────────────────────────────
 
 function StatsTab() {
@@ -1989,6 +2160,7 @@ export default function MktTasksPage() {
             {viewBtn("board", "▦", "Board")}
             {viewBtn("calendar", "📅", "Lịch")}
             {isManager && viewBtn("stats", "📊", "Báo cáo")}
+            {viewBtn("guide", "❓", "Hướng dẫn")}
           </div>
           {isManager && (
             <button onClick={() => setShowCreate(true)}
@@ -1999,7 +2171,7 @@ export default function MktTasksPage() {
         </div>
       </div>
 
-      {view === "stats" ? <StatsTab /> : (
+      {view === "guide" ? <HuongDanTab isManager={isManager} /> : view === "stats" ? <StatsTab /> : (
         <>
           {/* Toolbar */}
           <div className="mb-4 flex flex-wrap items-center gap-2.5">
