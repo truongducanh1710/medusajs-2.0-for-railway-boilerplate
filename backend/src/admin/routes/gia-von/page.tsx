@@ -569,8 +569,13 @@ function tdS(w: number): React.CSSProperties {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function GiaVonPage() {
-  const { has } = useCurrentPermissions()
+  const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
+
+  // Chờ permissions load xong mới render — tránh flash "read-only" rồi switch sang "editable"
+  if (loading) {
+    return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
+  }
 
   return (
     <div style={{ padding: "20px 24px", maxWidth: "100%", height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
@@ -578,6 +583,7 @@ export default function GiaVonPage() {
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: "#111827" }}>Bảng giá vốn</h1>
         <p style={{ fontSize: 12, color: "#9ca3af", margin: "3px 0 0" }}>
           Double-click ô để sửa · Double-click tên cột để đổi tên · Paste từ Excel/GG Sheets trực tiếp
+          {canManage ? "" : " · (chỉ xem)"}
         </p>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>

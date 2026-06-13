@@ -18,7 +18,7 @@ export function useCurrentPermissions() {
   const [loading, setLoading] = useState(!cache)
 
   useEffect(() => {
-    if (cache && Date.now() - cache.loadedAt < 60_000) return
+    if (cache && Date.now() - cache.loadedAt < 30_000) return
     fetch("/admin/permissions/me", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
