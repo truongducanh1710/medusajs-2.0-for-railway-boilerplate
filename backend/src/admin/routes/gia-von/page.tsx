@@ -3,1620 +3,568 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
-// ---- Helpers ----
-function fmtVND(n: number | string) {
-  const num = typeof n === "string" ? parseFloat(n) : n
-  if (!num || isNaN(num)) return "—"
-  return new Intl.NumberFormat("vi-VN").format(Math.round(num)) + "đ"
-}
-function fmtDate(s: string | null | undefined) {
-  if (!s) return "—"
-  return s.slice(0, 10)
-}
-function num(v: any): number {
-  const n = parseFloat(String(v).replace(/[^0-9.-]/g, ""))
-  return isNaN(n) ? 0 : n
-}
-function calcRow(r: RowDraft) {
-  const qty = num(r.qty)
-  const price_unit = num(r.price_unit)
-  const amount = qty * price_unit
-  const total = amount + num(r.local_fee_tq) + num(r.ship_fee_ovs) + num(r.local_fee_vn) + num(r.vat_fee) + num(r.other_fee)
-  const final_price = qty > 0 ? total / qty : 0
-  return { amount, total, final_price }
-}
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-// ---- Types ----
-interface RowDraft {
-  _id: string            // client-only key
-  product_id: string
-  product_title: string
-  row_type: "main" | "accessory"   // chính | phụ kiện cho SP chính
-  lot_date: string
-  received_date: string
-  qty: string
-  price_unit: string
-  local_fee_tq: string
-  ship_fee_ovs: string
-  local_fee_vn: string
-  vat_fee: string
-  other_fee: string
-  source: string
-  status: string
-  note: string
-  _saving?: boolean
-  _saved?: boolean
-  _error?: string
-}
-
-let _uid = 0
-function newRow(): RowDraft {
-  return {
-    _id: String(++_uid),
-    product_id: "", product_title: "",
-    row_type: "main",
-    lot_date: "", received_date: "",
-    qty: "", price_unit: "",
-    local_fee_tq: "0", ship_fee_ovs: "0", local_fee_vn: "0",
-    vat_fee: "0", other_fee: "0",
-    source: "TQ", status: "received", note: "",
-  }
-}
-
-// ---- Product autocomplete cell ----
-function ProdCell({ value, productId, isAccessory, onChange }: {
-  value: string
-  productId: string
-  isAccessory?: boolean
-  onChange: (id: string, title: string) => void
-}) {
-  const [q, setQ] = useState(value)
-  const [hits, setHits] = useState<any[]>([])
-  const [open, setOpen] = useState(false)
-  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
-  const timer = useRef<any>(null)
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Close on outside click
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", onDown)
-    return () => document.removeEventListener("mousedown", onDown)
-  }, [])
-
-  // sync if parent changes
-  useEffect(() => { if (value !== q) setQ(value) }, [value])
-
-  function search(text: string) {
-    setQ(text)
-    clearTimeout(timer.current)
-    if (text.length < 2) { setHits([]); setOpen(false); return }
-    timer.current = setTimeout(async () => {
-      try {
-        const d = await apiJson(`/admin/products?q=${encodeURIComponent(text)}&limit=8`, "GET")
-        setHits(d.products ?? [])
-        if (d.products?.length > 0 && inputRef.current) {
-          const rect = inputRef.current.getBoundingClientRect()
-          setDropPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 260) })
-          setOpen(true)
-        }
-      } catch { setHits([]) }
-    }, 250)
-  }
-
-  // Reset về tên đã chọn nếu blur mà không pick từ dropdown
-  function handleBlur() {
-    setTimeout(() => {
-      if (!open) setQ(value)
-    }, 200)
-  }
-
-  return (
-    <div ref={wrapRef} style={{ position: "relative", minWidth: 200 }}>
-      <input
-        ref={inputRef}
-        value={q}
-        onChange={e => search(e.target.value)}
-        onFocus={() => { if (q.length >= 2) search(q) }}
-        onBlur={handleBlur}
-        placeholder={isAccessory ? "🔩 Chọn SP chính để gắn phụ kiện..." : "🔍 Tìm & chọn sản phẩm POS..."}
-        style={{
-          ...cellInput(),
-          borderColor: productId ? (isAccessory ? "#f59e0b" : "#a78bfa") : "#e5e7eb",
-          background: productId ? (isAccessory ? "#fffbeb" : "#faf5ff") : "#fff",
-        }}
-      />
-      {productId && (
-        <div style={{ fontSize: 9, color: isAccessory ? "#d97706" : "#7c3aed", lineHeight: 1, marginTop: 1, paddingLeft: 2 }}>
-          {isAccessory ? "🔩" : "✓"} {productId.slice(-8)}
-        </div>
-      )}
-      {open && hits.length > 0 && dropPos && (
-        <div style={{
-          position: "fixed", top: dropPos.top, left: dropPos.left, minWidth: dropPos.width,
-          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8,
-          boxShadow: "0 8px 24px rgba(0,0,0,.15)", zIndex: 9999, maxHeight: 300, overflowY: "auto",
-          padding: "8px",
-        }}>
-          <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 6, paddingLeft: 2 }}>Chọn sản phẩm</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {hits.map((p: any, i: number) => {
-              const COLORS = [
-                { bg: "#fde68a", text: "#92400e" }, // vàng
-                { bg: "#bfdbfe", text: "#1e3a8a" }, // xanh dương
-                { bg: "#bbf7d0", text: "#14532d" }, // xanh lá
-                { bg: "#fecaca", text: "#7f1d1d" }, // đỏ
-                { bg: "#e9d5ff", text: "#4c1d95" }, // tím
-                { bg: "#fed7aa", text: "#7c2d12" }, // cam
-                { bg: "#cffafe", text: "#164e63" }, // cyan
-                { bg: "#fce7f3", text: "#831843" }, // hồng
-              ]
-              const c = COLORS[i % COLORS.length]
-              return (
-                <div key={p.id}
-                  onMouseDown={() => { onChange(p.id, p.title); setQ(p.title); setOpen(false) }}
-                  style={{
-                    background: c.bg, color: c.text,
-                    borderRadius: 20, padding: "5px 12px",
-                    fontSize: 11, fontWeight: 700, cursor: "pointer",
-                    letterSpacing: "0.03em", textTransform: "uppercase",
-                    border: `1.5px solid ${c.bg}`,
-                    transition: "filter 0.1s",
-                  }}
-                  onMouseOver={e => (e.currentTarget.style.filter = "brightness(0.92)")}
-                  onMouseOut={e => (e.currentTarget.style.filter = "none")}
-                >
-                  {p.title}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---- Shared cell styles ----
-function cellInput(extra?: React.CSSProperties): React.CSSProperties {
-  return {
-    width: "100%", border: "none", background: "transparent",
-    fontSize: 12, padding: "3px 4px", outline: "none",
-    fontFamily: "inherit", color: "#111827",
-    ...extra,
-  }
-}
-function tdStyle(w?: number, align?: "right" | "left", bg?: string): React.CSSProperties {
-  return {
-    padding: "0 2px", borderRight: "1px solid #e5e7eb", borderBottom: "1px solid #e5e7eb",
-    background: bg ?? "#fff", verticalAlign: "middle",
-    width: w ? w : undefined, minWidth: w ? w : 60,
-    textAlign: align ?? "left",
-  }
-}
-function thStyle(w?: number, align?: "right" | "left"): React.CSSProperties {
-  return {
-    padding: "6px 6px", borderRight: "1px solid #d1d5db", borderBottom: "2px solid #d1d5db",
-    background: "#f3f4f6", fontSize: 11, fontWeight: 700, color: "#374151",
-    whiteSpace: "nowrap", textAlign: align ?? "left",
-    width: w, minWidth: w ?? 50, position: "sticky", top: 0, zIndex: 10,
-  }
-}
-
-// Column definitions
-const COLS = [
-  { key: "product_title", label: "SẢN PHẨM", w: 200 },
-  { key: "lot_date",      label: "G.P DATE", w: 110, type: "date" },
-  { key: "received_date", label: "VỀ KHO VN", w: 110, type: "date" },
-  { key: "qty",           label: "QLY", w: 60, align: "right" as const },
-  { key: "price_unit",    label: "PRICE/UNIT", w: 100, align: "right" as const },
-  { key: "amount",        label: "AMOUNT", w: 110, align: "right" as const, computed: true },
-  { key: "local_fee_tq",  label: "LOCAL FEE TQ", w: 105, align: "right" as const },
-  { key: "ship_fee_ovs",  label: "SHIP FEE OVS", w: 105, align: "right" as const },
-  { key: "local_fee_vn",  label: "LOCAL FEE VN", w: 105, align: "right" as const },
-  { key: "vat_fee",       label: "PHÍ VAT", w: 90, align: "right" as const },
-  { key: "other_fee",     label: "PHÍ KHÁC", w: 90, align: "right" as const },
-  { key: "final_price",   label: "FINAL PRICE/unit", w: 130, align: "right" as const, computed: true, highlight: true },
-  { key: "row_type",      label: "LOẠI", w: 110, type: "select", opts: ["main","accessory"] },
-  { key: "source",        label: "NGUỒN", w: 90, type: "select", opts: ["TQ","SHOPEE","Nội địa","Khác"] },
-  { key: "status",        label: "TRẠNG THÁI", w: 120, type: "select", opts: ["received","pending","cancelled"] },
-  { key: "note",          label: "GHI CHÚ", w: 180 },
-]
-
-// ---- Single editable row ----
-function SheetRow({
-  row, idx, onChange, onDelete, onSave,
-}: {
-  row: RowDraft
-  idx: number
-  onChange: (id: string, field: string, val: string) => void
-  onDelete: (id: string) => void
-  onSave: (id: string) => void
-}) {
-  const { amount, final_price } = calcRow(row)
-  const rowBg = row._saved ? "#f0fdf4" : row._error ? "#fef2f2" : idx % 2 === 0 ? "#fff" : "#fafafa"
-
-  function cell(key: string) {
-    const col = COLS.find(c => c.key === key)!
-    if (col.computed) return null
-    if (key === "product_title") {
-      return (
-        <td key={key} style={tdStyle(col.w, col.align, rowBg)}>
-          <ProdCell
-            value={row.product_title}
-            productId={row.product_id}
-            isAccessory={row.row_type === "accessory"}
-            onChange={(id, title) => { onChange(row._id, "product_id", id); onChange(row._id, "product_title", title) }}
-          />
-        </td>
-      )
-    }
-    if (col.type === "select") {
-      const isType = key === "row_type"
-      const val = (row as any)[key]
-      const selectBg = isType
-        ? (val === "accessory" ? "#fef3c7" : "#f0fdf4")
-        : rowBg
-      function labelOf(o: string) {
-        if (o === "received") return "Đã nhận"
-        if (o === "pending") return "Đang về"
-        if (o === "cancelled") return "Hủy"
-        if (o === "main") return "🏷 Sản phẩm chính"
-        if (o === "accessory") return "🔩 Phụ kiện SP chính"
-        return o
-      }
-      return (
-        <td key={key} style={tdStyle(col.w, col.align, selectBg)}>
-          <select value={val}
-            onChange={e => onChange(row._id, key, e.target.value)}
-            style={{ ...cellInput(), cursor: "pointer", background: selectBg, fontWeight: isType ? 600 : 400 }}>
-            {col.opts!.map(o => <option key={o} value={o}>{labelOf(o)}</option>)}
-          </select>
-        </td>
-      )
-    }
-    return (
-      <td key={key} style={tdStyle(col.w, col.align, rowBg)}>
-        <input
-          type={col.type === "date" ? "date" : "text"}
-          value={(row as any)[key]}
-          onChange={e => onChange(row._id, key, e.target.value)}
-          onKeyDown={e => e.key === "Enter" && onSave(row._id)}
-          style={cellInput(col.align === "right" ? { textAlign: "right" } : undefined)}
-          placeholder={col.type === "date" ? "yyyy-mm-dd" : ""}
-        />
-      </td>
-    )
-  }
-
-  return (
-    <tr>
-      {/* Row number */}
-      <td style={{ ...tdStyle(32), textAlign: "center", color: "#9ca3af", fontSize: 11, background: rowBg, paddingLeft: 4 }}>
-        {row._saving ? "⏳" : row._saved ? "✓" : row._error ? "✗" : idx + 1}
-      </td>
-
-      {COLS.map(col => {
-        if (col.computed) {
-          const val = col.key === "amount" ? amount : final_price
-          return (
-            <td key={col.key} style={{ ...tdStyle(col.w, col.align, col.highlight ? (row._saved ? "#d1fae5" : "#ede9fe") : rowBg) }}>
-              <span style={{ fontSize: 12, fontWeight: col.highlight ? 700 : 400, color: col.highlight ? "#7c3aed" : "#374151", padding: "3px 4px", display: "block" }}>
-                {val > 0 ? new Intl.NumberFormat("vi-VN").format(Math.round(val)) : "—"}
-              </span>
-            </td>
-          )
-        }
-        return cell(col.key)
-      })}
-
-      {/* Actions */}
-      <td style={{ ...tdStyle(72), textAlign: "center", background: rowBg }}>
-        <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-          <button onClick={() => onSave(row._id)} disabled={row._saving}
-            title="Lưu dòng này"
-            style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 4, padding: "3px 8px", cursor: row._saving ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 600 }}>
-            {row._saving ? "…" : "Lưu"}
-          </button>
-          <button onClick={() => onDelete(row._id)}
-            title="Xóa dòng"
-            style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 4, padding: "3px 6px", cursor: "pointer", fontSize: 11 }}>
-            ✕
-          </button>
-        </div>
-        {row._error && <div style={{ fontSize: 9, color: "#dc2626", marginTop: 2 }}>{row._error}</div>}
-      </td>
-    </tr>
-  )
-}
-
-// ---- Backfill Banner ----
-function BackfillBanner({ onDone }: { onDone: () => void }) {
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
-
-  async function run() {
-    setLoading(true)
-    try {
-      const d = await apiJson("/admin/gia-von/backfill", "POST")
-      setResult(`✓ Đã tạo ${d.created} lô từ data CSV cũ`)
-      onDone()
-    } catch (err: any) {
-      setResult(`Lỗi: ${err.message}`)
-    }
-    setLoading(false)
-  }
-
-  if (result) return (
-    <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#15803d", fontWeight: 600 }}>
-      {result}
-    </div>
-  )
-
-  return (
-    <div style={{ background: "#fefce8", border: "1px solid #fde047", borderRadius: 8, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-      <span style={{ fontSize: 13, color: "#713f12" }}>⚠️ Chưa có lô nhập nào. Bạn đã import giá vốn từ CSV — bấm để tạo lô lịch sử từ data đó.</span>
-      <button onClick={run} disabled={loading}
-        style={{ background: "#ca8a04", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
-        {loading ? "Đang tạo…" : "🔄 Backfill lô từ CSV cũ"}
-      </button>
-    </div>
-  )
-}
-
-// ---- Editable Lot Row ----
-type LotEdit = {
+interface SheetColumn {
   id: string
-  product_id: string
-  product_title: string
-  parent_product_id: string
-  parent_product_title: string
-  pancake_display_id: string  // gán Pancake ID cho SP này
-  lot_date: string
-  received_date: string
-  qty: string
-  price_unit: string
-  local_fee_tq: string
-  ship_fee_ovs: string
-  local_fee_vn: string
-  vat_fee: string
-  other_fee: string
-  source: string
-  status: string
-  note: string
+  position: number
+  name: string
+  col_type: "text" | "number"
+  width: number
+}
+
+interface SheetRow {
+  id: string
+  position: number
+  data: Record<string, string>
   _dirty?: boolean
-  _saving?: boolean
-  _saved?: boolean
-  _error?: string
 }
 
-function lotToEdit(l: any): LotEdit {
-  return {
-    id: l.id,
-    product_id: l.product_id,
-    product_title: l.product_title ?? "",
-    parent_product_id: l.parent_product_id ?? "",
-    parent_product_title: l.parent_product_title ?? "",
-    pancake_display_id: l.pancake_display_id ?? "",
-    lot_date: fmtDate(l.lot_date),
-    received_date: fmtDate(l.received_date),
-    qty: String(l.qty ?? ""),
-    price_unit: String(l.price_unit ?? ""),
-    local_fee_tq: String(l.local_fee_tq ?? "0"),
-    ship_fee_ovs: String(l.ship_fee_ovs ?? "0"),
-    local_fee_vn: String(l.local_fee_vn ?? "0"),
-    vat_fee: String(l.vat_fee ?? "0"),
-    other_fee: String(l.other_fee ?? "0"),
-    source: l.source ?? "CSV",
-    status: l.status ?? "received",
-    note: l.note ?? "",
-  }
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmtNumber(v: string): string {
+  const n = parseFloat(v.replace(/[^0-9.-]/g, ""))
+  if (isNaN(n)) return v
+  return new Intl.NumberFormat("vi-VN").format(n)
 }
 
-const LOT_COLS = [
-  { key: "product_title",      label: "SẢN PHẨM",        w: 200 },
-  { key: "pancake_display_id", label: "PANCAKE ID",       w: 160 },
-  { key: "parent_product_id",  label: "GẮN VÀO SP",      w: 180 },
-  { key: "lot_date",      label: "G.P DATE",  w: 110, type: "date" },
-  { key: "received_date", label: "VỀ KHO",    w: 110, type: "date" },
-  { key: "qty",           label: "QLY",        w: 65,  align: "right" as const },
-  { key: "price_unit",    label: "PRICE/UNIT", w: 100, align: "right" as const },
-  { key: "_amount",       label: "AMOUNT",     w: 110, align: "right" as const, computed: true },
-  // Fee group — hiển thị/ẩn theo feeOpen
-  { key: "local_fee_tq",  label: "LOCAL FEE TQ", w: 105, align: "right" as const, feeCol: true },
-  { key: "ship_fee_ovs",  label: "SHIP OVS",   w: 95,  align: "right" as const, feeCol: true },
-  { key: "local_fee_vn",  label: "LOCAL VN",   w: 95,  align: "right" as const, feeCol: true },
-  { key: "vat_fee",       label: "VAT",        w: 80,  align: "right" as const, feeCol: true },
-  { key: "other_fee",     label: "PHÍ KHÁC",   w: 85,  align: "right" as const, feeCol: true },
-  { key: "_final",        label: "FINAL PRICE/unit", w: 130, align: "right" as const, computed: true, highlight: true },
-  { key: "source",        label: "NGUỒN",      w: 80,  type: "select", opts: ["TQ","SHOPEE","Nội địa","CSV","Khác"] },
-  { key: "note",          label: "GHI CHÚ",    w: 180 },
-]
+function parseViNum(s: string): string {
+  // Chuẩn hóa về dạng plain number string cho số vi-VN (1.234.567 → 1234567)
+  return s.replace(/\./g, "").replace(",", ".")
+}
 
-// Autocomplete tìm SP chính từ product_cost
-function InlineProductSelect({ value, title, allProducts, onSelect }: {
+// ─── Cell ─────────────────────────────────────────────────────────────────────
+
+function Cell({
+  value, colType, readOnly, onCommit, onNav, inputRef,
+}: {
   value: string
-  title: string
-  allProducts: { product_id: string; product_title: string }[]
-  onSelect: (id: string, name: string) => void
+  colType: "text" | "number"
+  readOnly: boolean
+  onCommit: (v: string) => void
+  onNav: (dir: "left" | "right" | "up" | "down" | "tab") => void
+  inputRef?: (el: HTMLInputElement | null) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState("")
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const ref = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", onDown)
-    return () => document.removeEventListener("mousedown", onDown)
-  }, [])
+  useEffect(() => { setDraft(value) }, [value])
 
-  const filtered = q.length >= 1
-    ? allProducts.filter(p => p.product_title.toLowerCase().includes(q.toLowerCase()))
-    : allProducts.slice(0, 40)
-
-  if (!open) {
-    return (
-      <div ref={wrapRef} onClick={() => { setOpen(true); setQ("") }}
-        style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, minWidth: 150 }}>
-        {value
-          ? <span style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title || value.slice(-12)}</span>
-          : <span style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic", flex: 1 }}>— chọn SP chính</span>
-        }
-        <span style={{ fontSize: 10, color: "#9ca3af", flexShrink: 0 }}>▾</span>
-      </div>
-    )
+  function startEdit() {
+    if (readOnly) return
+    setDraft(value)
+    setEditing(true)
+    setTimeout(() => ref.current?.select(), 0)
   }
 
-  return (
-    <div ref={wrapRef} style={{ position: "relative", minWidth: 160 }}>
-      <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-        placeholder="Tìm tên SP…"
-        style={{ width: "100%", border: "1px solid #a78bfa", borderRadius: 4, padding: "3px 6px", fontSize: 11, outline: "none", boxSizing: "border-box" }} />
-      <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 240, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, boxShadow: "0 6px 20px rgba(0,0,0,.12)", zIndex: 9999, maxHeight: 240, overflowY: "auto", marginTop: 2 }}>
-        {value && (
-          <div onMouseDown={() => { onSelect("", ""); setOpen(false) }}
-            style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, color: "#dc2626", borderBottom: "1px solid #f3f4f6" }}
-            onMouseOver={e => (e.currentTarget.style.background = "#fef2f2")}
-            onMouseOut={e => (e.currentTarget.style.background = "")}>
-            ✕ Bỏ gán
-          </div>
-        )}
-        {filtered.length === 0
-          ? <div style={{ padding: "8px 10px", color: "#9ca3af", fontSize: 11 }}>Không tìm thấy</div>
-          : filtered.map(p => (
-            <div key={p.product_id} onMouseDown={() => { onSelect(p.product_id, p.product_title); setOpen(false) }}
-              style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, borderBottom: "1px solid #f9fafb" }}
-              onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
-              onMouseOut={e => (e.currentTarget.style.background = "")}>
-              <span style={{ fontWeight: 600, color: "#7c3aed" }}>{p.product_title}</span>
-            </div>
-          ))
-        }
-      </div>
-    </div>
-  )
-}
-
-// Inline dropdown chọn Pancake ID dùng trong sheet (không cần save riêng — gọi onChange)
-function InlinePancakeSelect({ value, allIds, onChange }: {
-  value: string
-  allIds: { display_id: string; name: string }[]
-  onChange: (v: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState("")
-  const wrapRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", onDown)
-    return () => document.removeEventListener("mousedown", onDown)
-  }, [])
-
-  const filtered = q.length >= 1
-    ? allIds.filter(x => x.display_id.toLowerCase().includes(q.toLowerCase()) || x.name?.toLowerCase().includes(q.toLowerCase()))
-    : allIds.slice(0, 30)
-
-  if (!open) {
-    return (
-      <div ref={wrapRef} onClick={() => { setOpen(true); setQ("") }}
-        style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, minWidth: 130 }}>
-        {value
-          ? <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "#15803d" }}>{value}</span>
-          : <span style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic" }}>— chọn ID</span>
-        }
-        <span style={{ fontSize: 10, color: "#9ca3af" }}>▾</span>
-      </div>
-    )
+  function commit() {
+    setEditing(false)
+    if (draft !== value) onCommit(draft)
   }
 
-  return (
-    <div ref={wrapRef} style={{ position: "relative", minWidth: 150 }}>
-      <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-        placeholder="Tìm Pancake ID…"
-        style={{ width: "100%", border: "1px solid #a78bfa", borderRadius: 4, padding: "3px 6px", fontSize: 11, outline: "none", boxSizing: "border-box" }} />
-      <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 220, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, boxShadow: "0 6px 20px rgba(0,0,0,.12)", zIndex: 9999, maxHeight: 220, overflowY: "auto", marginTop: 2 }}>
-        {value && (
-          <div onMouseDown={() => { onChange(""); setOpen(false) }}
-            style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, color: "#dc2626", borderBottom: "1px solid #f3f4f6" }}
-            onMouseOver={e => (e.currentTarget.style.background = "#fef2f2")}
-            onMouseOut={e => (e.currentTarget.style.background = "")}>
-            ✕ Bỏ gán
-          </div>
-        )}
-        {filtered.length === 0
-          ? <div style={{ padding: "8px 10px", color: "#9ca3af", fontSize: 11 }}>Không tìm thấy</div>
-          : filtered.map(x => (
-            <div key={x.display_id} onMouseDown={() => { onChange(x.display_id); setOpen(false) }}
-              style={{ padding: "5px 9px", cursor: "pointer", fontSize: 11, borderBottom: "1px solid #f9fafb" }}
-              onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
-              onMouseOut={e => (e.currentTarget.style.background = "")}>
-              <span style={{ fontWeight: 700, color: "#7c3aed" }}>{x.display_id}</span>
-              {x.name && <span style={{ color: "#6b7280", marginLeft: 6, fontSize: 10 }}>{x.name.slice(0, 35)}</span>}
-            </div>
-          ))
-        }
-      </div>
-    </div>
-  )
-}
-
-function EditableLotRow({ row, onChange, onSave, onDelete, feeOpen, allPancakeIds, allProducts }: {
-  row: LotEdit
-  onChange: (id: string, f: string, v: string) => void
-  onSave: (id: string) => void
-  onDelete: (id: string) => void
-  feeOpen: boolean
-  allPancakeIds: { display_id: string; name: string }[]
-  allProducts: { product_id: string; product_title: string }[]
-}) {
-  const qty        = num(row.qty)
-  const price_unit = num(row.price_unit)
-  const amount     = qty * price_unit
-  const total      = amount + num(row.local_fee_tq) + num(row.ship_fee_ovs) + num(row.local_fee_vn) + num(row.vat_fee) + num(row.other_fee)
-  const final_p    = qty > 0 ? total / qty : 0
-  const bg = row._saved ? "#f0fdf4" : row._error ? "#fef2f2" : row._dirty ? "#fffbeb" : "#fff"
-
-  const inp = (key: string, align?: "right") => (
-    <td key={key} style={{ ...tdStyle(LOT_COLS.find(c=>c.key===key)?.w, align, bg), border: "1px solid #e5e7eb" }}>
-      <input value={(row as any)[key]} onChange={e => onChange(row.id, key, e.target.value)}
-        onKeyDown={e => e.key === "Enter" && onSave(row.id)}
-        style={{ ...cellInput(), textAlign: align ?? "left" }} />
-    </td>
-  )
-  const datInp = (key: string) => (
-    <td key={key} style={{ ...tdStyle(110, undefined, bg), border: "1px solid #e5e7eb" }}>
-      <input type="date" value={(row as any)[key]} onChange={e => onChange(row.id, key, e.target.value)}
-        onKeyDown={e => e.key === "Enter" && onSave(row.id)}
-        style={{ ...cellInput() }} />
-    </td>
-  )
-
-  const totalFees = num(row.local_fee_tq) + num(row.ship_fee_ovs) + num(row.local_fee_vn) + num(row.vat_fee) + num(row.other_fee)
+  const display = !editing && colType === "number" && value ? fmtNumber(value) : (editing ? draft : value)
 
   return (
-    <tr>
-      <td style={{ ...tdStyle(200, undefined, bg), border: "1px solid #e5e7eb", fontWeight: 600, fontSize: 11, padding: "4px 6px" }}>
-        <input value={row.product_title} onChange={e => onChange(row.id, "product_title", e.target.value)}
-          onKeyDown={e => e.key === "Enter" && onSave(row.id)}
-          style={{ ...cellInput(), fontWeight: 600 }} />
-      </td>
-      {/* PANCAKE ID — dùng inline dropdown giống PancakeIdCell */}
-      <td style={{ ...tdStyle(160, undefined, row.pancake_display_id ? "#f0fdf4" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
-        <InlinePancakeSelect
-          value={row.pancake_display_id}
-          allIds={allPancakeIds}
-          onChange={v => onChange(row.id, "pancake_display_id", v)}
-        />
-      </td>
-      <td style={{ ...tdStyle(180, undefined, row.parent_product_id ? "#faf5ff" : bg), border: "1px solid #e5e7eb", padding: "4px 6px" }}>
-        <InlineProductSelect
-          value={row.parent_product_id}
-          title={row.parent_product_title}
-          allProducts={allProducts}
-          onSelect={(pid, ptitle) => {
-            onChange(row.id, "parent_product_id", pid)
-            onChange(row.id, "parent_product_title", ptitle)
+    <div
+      style={{
+        width: "100%", height: "100%", position: "relative",
+        background: "transparent",
+      }}
+      onDoubleClick={startEdit}
+    >
+      {editing ? (
+        <input
+          ref={el => { (ref as any).current = el; inputRef?.(el) }}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === "Enter") { commit(); onNav("down") }
+            else if (e.key === "Escape") { setDraft(value); setEditing(false) }
+            else if (e.key === "Tab") { e.preventDefault(); commit(); onNav("tab") }
+            else if (e.key === "ArrowRight" && ref.current && ref.current.selectionStart === draft.length) { commit(); onNav("right") }
+            else if (e.key === "ArrowLeft" && ref.current && ref.current.selectionStart === 0) { commit(); onNav("left") }
+            else if (e.key === "ArrowUp") { commit(); onNav("up") }
+            else if (e.key === "ArrowDown") { commit(); onNav("down") }
+          }}
+          style={{
+            position: "absolute", inset: 0, width: "100%", height: "100%",
+            border: "2px solid #7c3aed", borderRadius: 2,
+            padding: "0 4px", fontSize: 12, fontFamily: "inherit",
+            outline: "none", background: "#fff", zIndex: 2,
+            textAlign: colType === "number" ? "right" : "left",
+            boxSizing: "border-box",
           }}
         />
-      </td>
-      {datInp("lot_date")}
-      {datInp("received_date")}
-      {inp("qty", "right")}
-      {inp("price_unit", "right")}
-      <td style={{ ...tdStyle(110, "right", "#f9fafb"), border: "1px solid #e5e7eb", fontSize: 11, color: "#6b7280" }}>
-        {new Intl.NumberFormat("vi-VN").format(Math.round(amount))}đ
-      </td>
-      {/* Fee columns — collapsed/expanded */}
-      {feeOpen ? (
-        <>
-          {inp("local_fee_tq", "right")}
-          {inp("ship_fee_ovs", "right")}
-          {inp("local_fee_vn", "right")}
-          {inp("vat_fee", "right")}
-          {inp("other_fee", "right")}
-        </>
       ) : (
-        <td style={{ ...tdStyle(90, "right", "#f9fafb"), border: "1px solid #e5e7eb", fontSize: 11, color: totalFees > 0 ? "#d97706" : "#d1d5db" }}>
-          {totalFees > 0 ? new Intl.NumberFormat("vi-VN").format(Math.round(totalFees)) + "đ" : "—"}
-        </td>
-      )}
-      <td style={{ ...tdStyle(130, "right", "#faf5ff"), border: "1px solid #e5e7eb", fontWeight: 800, color: "#7c3aed", fontSize: 12 }}>
-        {new Intl.NumberFormat("vi-VN").format(Math.round(final_p))}đ
-      </td>
-      <td style={{ ...tdStyle(80, undefined, bg), border: "1px solid #e5e7eb" }}>
-        <select value={row.source} onChange={e => onChange(row.id, "source", e.target.value)}
-          style={{ ...cellInput(), cursor: "pointer" }}>
-          {["TQ","SHOPEE","Nội địa","CSV","Khác"].map(o => <option key={o}>{o}</option>)}
-        </select>
-      </td>
-      {inp("note")}
-      <td style={{ ...tdStyle(80, "left", bg), border: "1px solid #e5e7eb", textAlign: "center" }}>
-        <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>
-          <button onClick={() => onSave(row.id)} disabled={row._saving || !row._dirty}
-            style={{ background: row._dirty ? "#7c3aed" : "#e5e7eb", color: row._dirty ? "#fff" : "#9ca3af", border: "none", borderRadius: 4, padding: "3px 7px", cursor: row._dirty ? "pointer" : "default", fontSize: 11, fontWeight: 600 }}>
-            {row._saving ? "…" : "Lưu"}
-          </button>
-          <button onClick={() => onDelete(row.id)}
-            style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 4, padding: "3px 5px", cursor: "pointer", fontSize: 11 }}>✕</button>
-        </div>
-        {row._error && <div style={{ fontSize: 9, color: "#dc2626", marginTop: 1 }}>{row._error}</div>}
-        {row._saved && <div style={{ fontSize: 9, color: "#16a34a" }}>✓ Đã lưu</div>}
-      </td>
-    </tr>
-  )
-}
-
-// ---- Lot History List (editable sheet) ----
-function LotHistoryList({ refreshKey, onSaved, onTotalLoaded, feeOpen, onToggleFee, allPancakeIds, allProducts }: {
-  refreshKey: number; onSaved: () => void; onTotalLoaded?: (t: number) => void
-  feeOpen: boolean; onToggleFee: () => void
-  allPancakeIds: { display_id: string; name: string }[]
-  allProducts: { product_id: string; product_title: string }[]
-}) {
-  const [lots, setLots] = useState<LotEdit[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState("")
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const LIMIT = 30
-
-  function load(s = search, p = page) {
-    setLoading(true)
-    const q = s ? `&search=${encodeURIComponent(s)}` : ""
-    apiJson(`/admin/gia-von?limit=${LIMIT}&page=${p}${q}`, "GET")
-      .then(d => {
-        const t = Number(d.total ?? 0)
-        setLots((d.lots ?? []).map(lotToEdit)); setTotal(t); setLoading(false)
-        onTotalLoaded?.(t)
-      })
-      .catch(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [refreshKey])
-
-  function change(id: string, f: string, v: string) {
-    setLots(ls => ls.map(l => l.id === id ? { ...l, [f]: v, _dirty: true, _saved: false, _error: undefined } : l))
-  }
-
-  async function save(id: string) {
-    const l = lots.find(x => x.id === id)
-    if (!l) return
-    setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: true, _error: undefined } : x))
-    try {
-      await apiJson(`/admin/gia-von/${id}`, "PUT", {
-        product_title: l.product_title,
-        lot_date: l.lot_date,
-        received_date: l.received_date || null,
-        qty: num(l.qty), price_unit: num(l.price_unit),
-        local_fee_tq: num(l.local_fee_tq), ship_fee_ovs: num(l.ship_fee_ovs),
-        local_fee_vn: num(l.local_fee_vn), vat_fee: num(l.vat_fee), other_fee: num(l.other_fee),
-        source: l.source, note: l.note,
-        parent_product_id: l.parent_product_id || null,
-      })
-      // Đồng thời cập nhật pancake_display_id cho SP này
-      if (l.product_id) {
-        await apiJson("/admin/gia-von/summary", "PATCH", {
-          product_id: l.product_id,
-          pancake_display_id: l.pancake_display_id || null,
-        }).catch(() => {}) // không fail nếu lỗi unique (đã gán cho SP khác)
-      }
-      setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: false, _saved: true, _dirty: false } : x))
-      onSaved()
-    } catch (err: any) {
-      setLots(ls => ls.map(x => x.id === id ? { ...x, _saving: false, _error: err?.message ?? "Lỗi" } : x))
-    }
-  }
-
-  async function del(id: string) {
-    if (!confirm("Xóa lô này?")) return
-    try {
-      await apiJson(`/admin/gia-von/${id}`, "DELETE")
-      setLots(ls => ls.filter(x => x.id !== id))
-      setTotal(t => t - 1)
-      onSaved()
-    } catch (err: any) {
-      alert(err.message)
-    }
-  }
-
-  function search_(s: string) { setSearch(s); setPage(1); load(s, 1) }
-
-  return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "#374151" }}>📦 Lô đã nhập ({total})</div>
-        <input placeholder="Tìm theo tên sản phẩm…" value={search}
-          onChange={e => search_(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && load(search, 1)}
-          style={{ flex: 1, maxWidth: 280, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12 }} />
-        <button onClick={() => load(search, page)} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>↻</button>
-      </div>
-      {loading ? (
-        <div style={{ color: "#9ca3af", fontSize: 13, padding: "12px 0" }}>Đang tải…</div>
-      ) : lots.length === 0 ? (
-        <div style={{ color: "#9ca3af", fontSize: 13, padding: "12px 0" }}>Chưa có lô nào</div>
-      ) : (
-        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "60vh", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-          <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: feeOpen ? 1500 : 1150, fontSize: 12 }}>
-            <thead>
-              <tr>
-                {LOT_COLS.filter(c => feeOpen || !(c as any).feeCol).map(c => (
-                  <th key={c.key} style={thStyle(c.w, c.align)}>{c.label}</th>
-                ))}
-                {/* Fee toggle header cell */}
-                {!feeOpen && (
-                  <th style={thStyle(90, "right")}>
-                    <button onClick={onToggleFee}
-                      title="Mở chi tiết phí"
-                      style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "#92400e", whiteSpace: "nowrap" }}>
-                      + Phí ▾
-                    </button>
-                  </th>
-                )}
-                {feeOpen && (
-                  <th colSpan={5} style={{ ...thStyle(undefined, "right"), background: "#fffbeb", color: "#92400e" }}>
-                    <button onClick={onToggleFee}
-                      style={{ background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, fontWeight: 700, color: "#92400e" }}>
-                      ▴ Ẩn phí
-                    </button>
-                  </th>
-                )}
-                <th style={thStyle(80)}>TÁC VỤ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lots.map(l => (
-                <EditableLotRow key={l.id} row={l} onChange={change} onSave={save} onDelete={del} feeOpen={feeOpen} allPancakeIds={allPancakeIds} allProducts={allProducts} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {total > LIMIT && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8, fontSize: 12, color: "#6b7280", alignItems: "center" }}>
-          <button disabled={page <= 1} onClick={() => { const p = page-1; setPage(p); load(search,p) }}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page<=1?"not-allowed":"pointer", background:"#fff" }}>‹ Trước</button>
-          <span>Trang {page} / {Math.ceil(total/LIMIT)}</span>
-          <button disabled={page >= Math.ceil(total/LIMIT)} onClick={() => { const p = page+1; setPage(p); load(search,p) }}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 10px", cursor: page>=Math.ceil(total/LIMIT)?"not-allowed":"pointer", background:"#fff" }}>Sau ›</button>
+        <div
+          onClick={startEdit}
+          onFocus={startEdit}
+          tabIndex={readOnly ? -1 : 0}
+          onKeyDown={e => {
+            if (e.key === "Enter" || e.key === "F2") startEdit()
+            else if (e.key === "Tab") { e.preventDefault(); onNav("tab") }
+            else if (e.key === "ArrowRight") onNav("right")
+            else if (e.key === "ArrowLeft") onNav("left")
+            else if (e.key === "ArrowUp") onNav("up")
+            else if (e.key === "ArrowDown") onNav("down")
+            else if (!readOnly && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+              setDraft(e.key); setEditing(true)
+              setTimeout(() => { if (ref.current) { ref.current.value = e.key; ref.current.setSelectionRange(1,1) } }, 0)
+            }
+          }}
+          style={{
+            width: "100%", height: "100%",
+            padding: "0 4px", fontSize: 12,
+            display: "flex", alignItems: "center",
+            justifyContent: colType === "number" ? "flex-end" : "flex-start",
+            cursor: readOnly ? "default" : "text",
+            userSelect: "none",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        >
+          {display}
         </div>
       )}
     </div>
   )
 }
 
-// ---- Import Tab (spreadsheet style) ----
-function ImportTab({ onSaved }: { onSaved: () => void }) {
-  const [rows, setRows] = useState<RowDraft[]>([newRow(), newRow(), newRow()])
-  const [savingAll, setSavingAll] = useState(false)
-  const [historyKey, setHistoryKey] = useState(0)
-  const [historyTotal, setHistoryTotal] = useState<number | null>(null)  // null = chưa load
-  const [feeOpen, setFeeOpen] = useState(false)
-  const [allPancakeIds, setAllPancakeIds] = useState<{ display_id: string; name: string }[]>([])
-  const [allProducts, setAllProducts] = useState<{ product_id: string; product_title: string }[]>([])
-  const tableRef = useRef<HTMLDivElement>(null)
-  const csvFileRef = useRef<HTMLInputElement>(null)
+// ─── AddColumnModal ────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    apiJson("/admin/gia-von/summary?mode=pancake-ids", "GET")
-      .then(d => setAllPancakeIds(d.display_ids ?? []))
-      .catch(() => {})
-    apiJson("/admin/gia-von/summary", "GET")
-      .then(d => setAllProducts(d.products ?? []))
-      .catch(() => {})
-  }, [])
-
-  function handleCsvImport(file: File) {
-    const reader = new FileReader()
-    reader.onload = e => {
-      const text = e.target?.result as string
-      const allRows = parseCsvText(text)
-      if (!allRows.length) return
-      const hdrs = allRows[0]
-      const dataRows = allRows.slice(1).filter(r => r.some(c => c))
-      const m = autoDetectMapping(hdrs)
-      const colOf = (key: string) => m[key] ?? -1
-
-      // Inline mapping aliases (không dùng autoDetectMapping để tránh hoisting issue)
-      const ALIASES: Record<string, string[]> = {
-        "SẢN PHẨM":    ["sản phẩm", "product", "tên sp", "tên hàng", "sp"],
-        "QLY":          ["qly", "qty", "sl", "số lượng", "quantity"],
-        "PRICE/UNIT":   ["price/unit", "price unit", "đơn giá", "giá/unit"],
-        "LOCAL FEE TQ": ["local fee tq", "phí nội địa tq", "local_fee_tq"],
-        "SHIP FEE OVS": ["ship fee ovs", "oversea", "ship ovs", "total ship fee ovs"],
-        "LOCAL FEE VN": ["local fee vn", "phí nội địa vn", "local_fee_vn", "local fee\nvn"],
-        "PHÍ VAT":      ["phí vat", "vat", "phí xuất vat", "vat fee"],
-        "PHÍ KHÁC":     ["phí khác", "other", "other fee"],
-        "FINAL PRICE":  ["final price", "final price (vnd)", "giá vốn", "final_price"],
-        "G.P DATE":     ["g.p date", "gp date", "ngày gp", "lot_date"],
-        "VỀ KHO":       ["wareh in vn", "ngày về", "về kho vn", "received_date", "về kho"],
-        "GHI CHÚ":      ["ghi chú", "note", "trouble", "ghi chu"],
-      }
-      const idxMap: Record<string, number> = {}
-      hdrs.forEach((h, i) => {
-        const norm = h.toLowerCase().replace(/\s+/g, " ").replace(/[\n\r]/g, " ").trim()
-        for (const [key, aliases] of Object.entries(ALIASES)) {
-          if (idxMap[key] === undefined && aliases.some(a => norm.includes(a))) idxMap[key] = i
-        }
-      })
-      const get = (key: string, row: string[]) => {
-        const i = idxMap[key]
-        return (i !== undefined && i >= 0) ? (row[i]?.trim() ?? "") : ""
-      }
-
-      const newRows: RowDraft[] = dataRows.map(r => {
-        const name       = get("SẢN PHẨM", r)
-        const qty        = get("QLY", r)
-        const priceUnit  = get("PRICE/UNIT", r)
-        const finalPrice = get("FINAL PRICE", r)
-        const localFtq   = get("LOCAL FEE TQ", r) || "0"
-        const shipOvs    = get("SHIP FEE OVS", r) || "0"
-        const localFvn   = get("LOCAL FEE VN", r) || "0"
-        const vatFee     = get("PHÍ VAT", r) || "0"
-        const otherFee   = get("PHÍ KHÁC", r) || "0"
-        const lotDate    = get("G.P DATE", r)
-        const recDate    = get("VỀ KHO", r)
-        const note       = get("GHI CHÚ", r)
-        const effectivePrice = finalPrice || priceUnit
-        return {
-          ...newRow(),
-          product_title: name,
-          qty,
-          price_unit: effectivePrice,
-          local_fee_tq: localFtq,
-          ship_fee_ovs: shipOvs,
-          local_fee_vn: localFvn,
-          vat_fee: vatFee,
-          other_fee: otherFee,
-          lot_date: lotDate,
-          received_date: recDate,
-          note,
-        }
-      }).filter(r => r.product_title && r.qty)
-
-      if (!newRows.length) {
-        alert(`Không parse được dòng nào. Headers tìm thấy:\n${hdrs.slice(0, 10).join(" | ")}\n\nMapping: ${JSON.stringify(idxMap)}`)
-        return
-      }
-      setRows(rs => {
-        const filled = rs.filter(r => r.product_title || r.qty)
-        return [...filled, ...newRows]
-      })
-      setTimeout(() => tableRef.current?.scrollTo(0, 0), 50)
-    }
-    reader.readAsText(file, "utf-8")
-  }
-
-  function updateRow(id: string, field: string, val: string) {
-    setRows(rs => rs.map(r => r._id === id ? { ...r, [field]: val, _saved: false, _error: undefined } : r))
-  }
-
-  function deleteRow(id: string) {
-    setRows(rs => rs.length === 1 ? [newRow()] : rs.filter(r => r._id !== id))
-  }
-
-  function addRow() {
-    setRows(rs => [...rs, newRow()])
-    setTimeout(() => tableRef.current?.scrollTo(0, tableRef.current.scrollHeight), 50)
-  }
-
-  async function saveRow(id: string) {
-    const row = rows.find(r => r._id === id)
-    if (!row) return
-    if (!row.product_id) { setRows(rs => rs.map(r => r._id === id ? { ...r, _error: "Chưa chọn SP" } : r)); return }
-    if (!row.lot_date) { setRows(rs => rs.map(r => r._id === id ? { ...r, _error: "Thiếu ngày GP" } : r)); return }
-    if (!num(row.qty) || !num(row.price_unit)) { setRows(rs => rs.map(r => r._id === id ? { ...r, _error: "Thiếu SL/giá" } : r)); return }
-
-    setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: true, _error: undefined } : r))
-    try {
-      await apiJson("/admin/gia-von", "POST", {
-        product_id: row.product_id, product_title: row.product_title,
-        lot_date: row.lot_date, received_date: row.received_date || undefined,
-        qty: num(row.qty), price_unit: num(row.price_unit),
-        local_fee_tq: num(row.local_fee_tq), ship_fee_ovs: num(row.ship_fee_ovs),
-        local_fee_vn: num(row.local_fee_vn), vat_fee: num(row.vat_fee),
-        other_fee: num(row.other_fee),
-        source: row.source, status: row.status,
-        note: row.row_type === "accessory"
-          ? (row.note ? `[Phụ kiện] ${row.note}` : "[Phụ kiện]")
-          : row.note,
-      })
-      setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: false, _saved: true } : r))
-      setHistoryKey(k => k + 1)
-      onSaved()
-    } catch (err: any) {
-      setRows(rs => rs.map(r => r._id === id ? { ...r, _saving: false, _error: err?.message ?? "Lỗi" } : r))
-    }
-  }
-
-  async function saveAll() {
-    const pending = rows.filter(r => !r._saved && r.product_id && r.lot_date && num(r.qty) && num(r.price_unit))
-    if (!pending.length) return
-    setSavingAll(true)
-    for (const r of pending) await saveRow(r._id)
-    setSavingAll(false)
-  }
-
-  const savedCount = rows.filter(r => r._saved).length
-  const totalAmount = rows.reduce((s, r) => {
-    const { amount } = calcRow(r)
-    return s + (r._saved ? 0 : amount)  // chỉ tính dòng chưa lưu
-  }, 0)
+function AddColumnModal({ onAdd, onClose }: {
+  onAdd: (name: string, type: "text" | "number") => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState("")
+  const [type, setType] = useState<"text" | "number">("text")
 
   return (
-    <div>
-      {/* Lô đã nhập từ DB */}
-      <LotHistoryList
-        refreshKey={historyKey}
-        onSaved={() => { setHistoryKey(k => k+1); onSaved() }}
-        onTotalLoaded={t => setHistoryTotal(t)}
-        feeOpen={feeOpen}
-        onToggleFee={() => setFeeOpen(o => !o)}
-        allPancakeIds={allPancakeIds}
-        allProducts={allProducts}
-      />
-
-      <div style={{ borderTop: "2px dashed #e5e7eb", paddingTop: 16, marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "#374151", marginBottom: 10 }}>➕ Nhập lô mới</div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#fff", borderRadius: 10, padding: 24, width: 340, boxShadow: "0 8px 32px rgba(0,0,0,.18)" }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>Thêm cột mới</div>
+        <label style={{ display: "block", fontSize: 12, color: "#374151", marginBottom: 4 }}>Tên cột</label>
+        <input
+          autoFocus value={name} onChange={e => setName(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && name.trim() && onAdd(name.trim(), type)}
+          placeholder="Ví dụ: Phí kho..."
+          style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 6, padding: "7px 10px", fontSize: 13, marginBottom: 12, boxSizing: "border-box", outline: "none" }}
+        />
+        <label style={{ display: "block", fontSize: 12, color: "#374151", marginBottom: 4 }}>Loại dữ liệu</label>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          {(["text", "number"] as const).map(t => (
+            <button key={t} onClick={() => setType(t)}
+              style={{ flex: 1, padding: "7px 0", borderRadius: 6, border: `2px solid ${type === t ? "#7c3aed" : "#e5e7eb"}`, background: type === t ? "#ede9fe" : "#fff", color: type === t ? "#7c3aed" : "#374151", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
+              {t === "text" ? "📝 Văn bản" : "🔢 Số"}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => name.trim() && onAdd(name.trim(), type)}
+            disabled={!name.trim()}
+            style={{ flex: 1, background: "#7c3aed", color: "#fff", border: "none", borderRadius: 7, padding: "9px 0", fontWeight: 700, cursor: name.trim() ? "pointer" : "not-allowed", fontSize: 13 }}>
+            Thêm cột
+          </button>
+          <button onClick={onClose}
+            style={{ padding: "9px 16px", border: "1px solid #e5e7eb", borderRadius: 7, background: "#fff", cursor: "pointer", fontSize: 13 }}>
+            Hủy
+          </button>
+        </div>
       </div>
-      {historyTotal === 0 && (
-        <BackfillBanner onDone={() => setHistoryKey(k => k + 1)} />
-      )}
+    </div>
+  )
+}
 
-      {/* Hidden CSV file input */}
-      <input ref={csvFileRef} type="file" accept=".csv" style={{ display: "none" }}
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvImport(f); e.target.value = "" }} />
+// ─── Spreadsheet ──────────────────────────────────────────────────────────────
 
+function Spreadsheet({ canManage }: { canManage: boolean }) {
+  const [columns, setColumns] = useState<SheetColumn[]>([])
+  const [rows, setRows] = useState<SheetRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const [showAddCol, setShowAddCol] = useState(false)
+
+  // focusedCell: [rowIdx, colIdx] trong mảng hiển thị
+  const [focused, setFocused] = useState<[number, number] | null>(null)
+
+  const dirtyRef = useRef<Map<string, SheetRow>>(new Map()) // id → row
+  const saveTimerRef = useRef<any>(null)
+  const cellRefs = useRef<Map<string, HTMLInputElement>>(new Map()) // "ri,ci" → input
+
+  // Load
+  useEffect(() => {
+    setLoading(true)
+    apiJson("/admin/gia-von/sheet", "GET")
+      .then(d => {
+        setColumns(d.columns ?? [])
+        setRows(d.rows ?? [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  // Autosave debounce
+  function scheduleSave() {
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(flushSave, 800)
+  }
+
+  async function flushSave() {
+    if (dirtyRef.current.size === 0) return
+    const toSave = Array.from(dirtyRef.current.values()).map(r => ({ id: r.id, data: r.data }))
+    dirtyRef.current.clear()
+    setSaveState("saving")
+    try {
+      await apiJson("/admin/gia-von/sheet/rows", "PUT", { rows: toSave })
+      setSaveState("saved")
+      setTimeout(() => setSaveState("idle"), 2000)
+    } catch {
+      setSaveState("error")
+    }
+  }
+
+  function updateCell(rowId: string, colId: string, value: string) {
+    setRows(rs => rs.map(r => {
+      if (r.id !== rowId) return r
+      const updated = { ...r, data: { ...r.data, [colId]: value }, _dirty: true }
+      dirtyRef.current.set(rowId, updated)
+      return updated
+    }))
+    scheduleSave()
+  }
+
+  async function addRow(count = 1) {
+    try {
+      const d = await apiJson("/admin/gia-von/sheet/rows", "POST", { count })
+      setRows(rs => [...rs, ...(d.rows ?? [])])
+    } catch (e: any) {
+      alert("Lỗi thêm dòng: " + e.message)
+    }
+  }
+
+  async function deleteRow(id: string) {
+    if (!confirm("Xóa dòng này?")) return
+    try {
+      await apiJson(`/admin/gia-von/sheet/rows/${id}`, "DELETE")
+      setRows(rs => rs.filter(r => r.id !== id))
+    } catch (e: any) {
+      alert("Lỗi xóa: " + e.message)
+    }
+  }
+
+  async function addColumn(name: string, type: "text" | "number") {
+    setShowAddCol(false)
+    try {
+      const d = await apiJson("/admin/gia-von/sheet/columns", "POST", { name, col_type: type })
+      setColumns(cs => [...cs, d.column])
+    } catch (e: any) {
+      alert("Lỗi thêm cột: " + e.message)
+    }
+  }
+
+  async function deleteColumn(col: SheetColumn) {
+    if (!confirm(`Xóa cột "${col.name}"? Dữ liệu trong cột này sẽ mất.`)) return
+    try {
+      await apiJson(`/admin/gia-von/sheet/columns/${col.id}`, "DELETE")
+      setColumns(cs => cs.filter(c => c.id !== col.id))
+    } catch (e: any) {
+      alert("Lỗi xóa cột: " + e.message)
+    }
+  }
+
+  async function renameColumn(col: SheetColumn, newName: string) {
+    if (!newName.trim() || newName === col.name) return
+    try {
+      const d = await apiJson(`/admin/gia-von/sheet/columns/${col.id}`, "PUT", { name: newName.trim() })
+      setColumns(cs => cs.map(c => c.id === col.id ? d.column : c))
+    } catch (e: any) {
+      alert("Lỗi đổi tên: " + e.message)
+    }
+  }
+
+  // Paste handler (TSV từ Excel/GG Sheets)
+  async function handlePaste(e: React.ClipboardEvent, startRowIdx: number, startColIdx: number) {
+    if (!canManage) return
+    const text = e.clipboardData.getData("text/plain")
+    if (!text) return
+    e.preventDefault()
+
+    const pasteRows = text.split("\n").map(r => r.split("\t").map(c => c.replace(/\r$/, "")))
+    if (!pasteRows.length) return
+
+    // Tính số dòng cần thêm
+    const endRowIdx = startRowIdx + pasteRows.length - 1
+    const needed = endRowIdx - (rows.length - 1)
+
+    let allRows = rows
+    if (needed > 0) {
+      const d = await apiJson("/admin/gia-von/sheet/rows", "POST", { count: needed })
+      allRows = [...rows, ...(d.rows ?? [])]
+      setRows(allRows)
+    }
+
+    const updates: { id: string; data: Record<string, string> }[] = []
+    for (let ri = 0; ri < pasteRows.length; ri++) {
+      const rowIdx = startRowIdx + ri
+      if (rowIdx >= allRows.length) break
+      const row = allRows[rowIdx]
+      const newData = { ...row.data }
+      for (let ci = 0; ci < pasteRows[ri].length; ci++) {
+        const colIdx = startColIdx + ci
+        if (colIdx >= columns.length) break
+        newData[columns[colIdx].id] = pasteRows[ri][ci]
+      }
+      updates.push({ id: row.id, data: newData })
+    }
+
+    // Update state
+    setRows(rs => rs.map(r => {
+      const u = updates.find(u => u.id === r.id)
+      return u ? { ...r, data: u.data, _dirty: true } : r
+    }))
+
+    // Save
+    setSaveState("saving")
+    try {
+      await apiJson("/admin/gia-von/sheet/rows", "PUT", { rows: updates })
+      setSaveState("saved")
+      setTimeout(() => setSaveState("idle"), 2000)
+    } catch {
+      setSaveState("error")
+    }
+  }
+
+  function navigate(ri: number, ci: number, dir: "left" | "right" | "up" | "down" | "tab") {
+    let nri = ri, nci = ci
+    if (dir === "right" || dir === "tab") nci = Math.min(ci + 1, columns.length - 1)
+    else if (dir === "left") nci = Math.max(ci - 1, 0)
+    else if (dir === "down") nri = Math.min(ri + 1, rows.length - 1)
+    else if (dir === "up") nri = Math.max(ri - 1, 0)
+    setFocused([nri, nci])
+    const key = `${nri},${nci}`
+    setTimeout(() => cellRefs.current.get(key)?.focus(), 0)
+  }
+
+  if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>
+
+  const ROW_H = 28
+  const NUM_COL_W = 40
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
       {/* Toolbar */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        <button onClick={addRow}
-          style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-          + Thêm dòng
-        </button>
-        <button onClick={() => csvFileRef.current?.click()}
-          style={{ background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#92400e" }}>
-          📂 Import từ CSV
-        </button>
-        <button onClick={saveAll} disabled={savingAll}
-          style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 7, padding: "7px 18px", cursor: savingAll ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700 }}>
-          {savingAll ? "Đang lưu tất cả…" : "💾 Lưu tất cả"}
-        </button>
-        <button onClick={() => setRows([newRow(), newRow(), newRow()])}
-          style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, color: "#6b7280" }}>
-          Xóa sạch
-        </button>
-        <div style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280" }}>
-          {savedCount > 0 && <span style={{ color: "#16a34a", fontWeight: 600 }}>✓ {savedCount} dòng đã lưu &nbsp;</span>}
-          {rows.length - savedCount} dòng chưa lưu
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+        {canManage && (
+          <>
+            <button onClick={() => addRow(1)}
+              style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              + Thêm dòng
+            </button>
+            <button onClick={() => setShowAddCol(true)}
+              style={{ background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#7c3aed" }}>
+              + Thêm cột
+            </button>
+            <button onClick={() => addRow(10)}
+              style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 12px", cursor: "pointer", fontSize: 12, color: "#6b7280" }}>
+              +10 dòng
+            </button>
+          </>
+        )}
+        <div style={{ marginLeft: "auto", fontSize: 12, display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ color: "#9ca3af" }}>{rows.length} dòng · {columns.length} cột</span>
+          {saveState === "saving" && <span style={{ color: "#d97706" }}>⏳ Đang lưu…</span>}
+          {saveState === "saved" && <span style={{ color: "#16a34a" }}>✓ Đã lưu</span>}
+          {saveState === "error" && <span style={{ color: "#dc2626" }}>✗ Lỗi lưu</span>}
         </div>
       </div>
 
-      {/* Spreadsheet table */}
-      <div ref={tableRef} style={{ overflowX: "auto", overflowY: "auto", maxHeight: "60vh", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-        <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1400 }}>
+      {/* Sheet */}
+      <div style={{ flex: 1, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
+        <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: NUM_COL_W + columns.reduce((s, c) => s + c.width, 0) }}>
+          <colgroup>
+            <col style={{ width: NUM_COL_W }} />
+            {columns.map(c => <col key={c.id} style={{ width: c.width }} />)}
+            {canManage && <col style={{ width: 32 }} />}
+          </colgroup>
           <thead>
             <tr>
-              <th style={thStyle(32, "left")}>#</th>
-              {COLS.map(c => (
-                <th key={c.key} style={thStyle(c.w, c.align)}>
-                  {c.label}
-                </th>
+              {/* Row number header */}
+              <th style={thS(NUM_COL_W)}></th>
+
+              {columns.map((col) => (
+                <ColumnHeader key={col.id} col={col} canManage={canManage}
+                  onDelete={() => deleteColumn(col)}
+                  onRename={n => renameColumn(col, n)}
+                />
               ))}
-              <th style={thStyle(72, "left")}>TÁC VỤ</th>
+
+              {canManage && <th style={thS(32)}></th>}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <SheetRow
-                key={r._id}
-                row={r}
-                idx={i}
-                onChange={updateRow}
-                onDelete={deleteRow}
-                onSave={saveRow}
-              />
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length + 2} style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px 0" }}>
+                  Bảng trống — bấm "+ Thêm dòng" hoặc paste dữ liệu từ Excel/GG Sheets
+                </td>
+              </tr>
+            ) : rows.map((row, ri) => (
+              <tr key={row.id} style={{ height: ROW_H, background: ri % 2 === 0 ? "#fff" : "#fafafa" }}>
+                {/* Row number */}
+                <td style={{ ...tdS(NUM_COL_W), textAlign: "center", color: "#9ca3af", fontSize: 11, background: "#f9fafb", borderRight: "2px solid #e5e7eb", userSelect: "none" }}>
+                  {ri + 1}
+                </td>
+
+                {columns.map((col, ci) => (
+                  <td key={col.id}
+                    style={{ ...tdS(col.width), position: "relative", padding: 0 }}
+                    onPaste={focused?.[0] === ri && focused?.[1] === ci ? e => handlePaste(e, ri, ci) : undefined}
+                  >
+                    <Cell
+                      value={row.data[col.id] ?? ""}
+                      colType={col.col_type}
+                      readOnly={!canManage}
+                      onCommit={v => updateCell(row.id, col.id, v)}
+                      onNav={dir => navigate(ri, ci, dir)}
+                      inputRef={el => {
+                        const key = `${ri},${ci}`
+                        if (el) cellRefs.current.set(key, el)
+                        else cellRefs.current.delete(key)
+                      }}
+                    />
+                  </td>
+                ))}
+
+                {canManage && (
+                  <td style={{ ...tdS(32), textAlign: "center", padding: 0 }}>
+                    <button onClick={() => deleteRow(row.id)}
+                      title="Xóa dòng"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: 13, padding: "0 4px", lineHeight: 1 }}
+                      onMouseOver={e => (e.currentTarget.style.color = "#dc2626")}
+                      onMouseOut={e => (e.currentTarget.style.color = "#d1d5db")}
+                    >✕</button>
+                  </td>
+                )}
+              </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Footer hint */}
-      <div style={{ marginTop: 8, fontSize: 11, color: "#9ca3af" }}>
-        Nhấn <kbd style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: 3, border: "1px solid #d1d5db" }}>Enter</kbd> trong ô bất kỳ để lưu dòng đó. Cột <strong>AMOUNT</strong> và <strong>FINAL PRICE/unit</strong> tự tính.
-      </div>
+      {canManage && rows.length === 0 && (
+        <div style={{ marginTop: 8, fontSize: 12, color: "#9ca3af" }}>
+          Tip: Paste trực tiếp từ Excel / GG Sheets (Ctrl+V) vào bất kỳ ô nào để điền hàng loạt.
+        </div>
+      )}
+
+      {showAddCol && <AddColumnModal onAdd={addColumn} onClose={() => setShowAddCol(false)} />}
     </div>
   )
 }
 
-// ---- Lot History Modal ----
-function LotHistoryModal({ productId, productTitle, onClose }: { productId: string; productTitle: string; onClose: () => void }) {
-  const [lots, setLots] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+// ─── ColumnHeader (inline rename) ─────────────────────────────────────────────
 
-  useEffect(() => {
-    apiJson(`/admin/gia-von?product_id=${productId}&limit=50`, "GET")
-      .then(d => { setLots(d.lots ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [productId])
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 10, width: "min(1000px, 96vw)", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>Lịch sử lô — {productTitle}</div>
-          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 20, color: "#6b7280" }}>✕</button>
-        </div>
-        <div style={{ overflowY: "auto", padding: 16 }}>
-          {loading ? <div style={{ color: "#6b7280", padding: 24 }}>Đang tải…</div> : lots.length === 0 ? <div style={{ color: "#6b7280" }}>Chưa có lô</div> : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: "#f9fafb" }}>
-                    {["G.P DATE","VỀ KHO VN","QLY","PRICE/UNIT","AMOUNT","LOCAL FEE TQ","SHIP FEE OVS","LOCAL FEE VN","PHÍ VAT","FINAL PRICE/unit","NGUỒN","TRẠNG THÁI","GHI CHÚ"].map(h => (
-                      <th key={h} style={{ padding: "7px 8px", textAlign: "right", fontWeight: 700, fontSize: 11, color: "#374151", borderBottom: "2px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lots.map((l: any, i: number) => (
-                    <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
-                      <td style={{ padding: "6px 8px", whiteSpace: "nowrap", textAlign: "left" }}>{fmtDate(l.lot_date)}</td>
-                      <td style={{ padding: "6px 8px", whiteSpace: "nowrap", textAlign: "left" }}>{fmtDate(l.received_date)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{l.qty}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtVND(l.price_unit)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtVND(l.amount)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtVND(l.local_fee_tq)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtVND(l.ship_fee_ovs)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtVND(l.local_fee_vn)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtVND(l.vat_fee)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmtVND(l.final_price)}</td>
-                      <td style={{ padding: "6px 8px" }}>{l.source}</td>
-                      <td style={{ padding: "6px 8px" }}>
-                        <span style={{ background: l.status === "received" ? "#dcfce7" : l.status === "pending" ? "#fef9c3" : "#fee2e2", color: l.status === "received" ? "#16a34a" : "#ca8a04", borderRadius: 4, padding: "1px 6px", fontSize: 10, fontWeight: 600 }}>
-                          {l.status === "received" ? "Đã nhận" : l.status === "pending" ? "Đang về" : "Hủy"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "6px 8px", color: "#6b7280" }}>{l.note || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---- Pancake ID Cell (inline editable with dropdown) ----
-function PancakeIdCell({ productId, value, allIds, onSaved }: {
-  productId: string
-  value: string | null
-  allIds: { display_id: string; name: string }[]
-  onSaved: (newVal: string | null) => void
+function ColumnHeader({ col, canManage, onDelete, onRename }: {
+  col: SheetColumn
+  canManage: boolean
+  onDelete: () => void
+  onRename: (name: string) => void
 }) {
   const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(value ?? "")
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [q, setQ] = useState("")
+  const [draft, setDraft] = useState(col.name)
 
-  useEffect(() => { setVal(value ?? "") }, [value])
+  useEffect(() => setDraft(col.name), [col.name])
 
-  const filtered = q.length >= 1
-    ? allIds.filter(x => x.display_id.toLowerCase().includes(q.toLowerCase()) || x.name?.toLowerCase().includes(q.toLowerCase()))
-    : allIds.slice(0, 30)
-
-  async function save(newVal: string | null) {
-    setSaving(true); setError(null)
-    try {
-      await apiJson("/admin/gia-von/summary", "PATCH", { product_id: productId, pancake_display_id: newVal || null })
-      setVal(newVal ?? "")
-      onSaved(newVal)
-      setEditing(false)
-    } catch (err: any) {
-      setError(err.message)
-    }
-    setSaving(false)
-  }
-
-  if (!editing) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={() => { setEditing(true); setQ("") }}>
-        {val
-          ? <span style={{ background: "#ede9fe", color: "#7c3aed", borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 700 }}>{val}</span>
-          : <span style={{ color: "#d1d5db", fontSize: 11 }}>— gán ID</span>
-        }
-        <span style={{ fontSize: 10, color: "#9ca3af" }}>✎</span>
-      </div>
-    )
+  function commit() {
+    setEditing(false)
+    onRename(draft)
   }
 
   return (
-    <div style={{ position: "relative", minWidth: 200 }}>
-      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-          placeholder="Tìm display_id…"
-          style={{ flex: 1, border: "1px solid #a78bfa", borderRadius: 5, padding: "4px 8px", fontSize: 12, outline: "none" }} />
-        <button onClick={() => setEditing(false)}
-          style={{ background: "#f3f4f6", border: "none", borderRadius: 4, padding: "4px 7px", cursor: "pointer", fontSize: 12 }}>✕</button>
-      </div>
-      {error && <div style={{ color: "#dc2626", fontSize: 10, marginTop: 2 }}>{error}</div>}
-      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, boxShadow: "0 8px 24px rgba(0,0,0,.12)", zIndex: 9999, maxHeight: 260, overflowY: "auto", marginTop: 2 }}>
-        {val && (
-          <div onMouseDown={() => save(null)}
-            style={{ padding: "6px 10px", cursor: "pointer", fontSize: 11, color: "#dc2626", borderBottom: "1px solid #f3f4f6" }}
-            onMouseOver={e => (e.currentTarget.style.background = "#fef2f2")}
-            onMouseOut={e => (e.currentTarget.style.background = "")}>
-            ✕ Bỏ gán (xóa ID)
-          </div>
-        )}
-        {filtered.length === 0 && (
-          <div style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>Không tìm thấy</div>
-        )}
-        {filtered.map(x => (
-          <div key={x.display_id} onMouseDown={() => save(x.display_id)}
-            style={{ padding: "6px 10px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid #f9fafb" }}
-            onMouseOver={e => (e.currentTarget.style.background = "#f5f3ff")}
-            onMouseOut={e => (e.currentTarget.style.background = "")}>
-            <span style={{ fontWeight: 700, color: "#7c3aed" }}>{x.display_id}</span>
-            {x.name && <span style={{ color: "#6b7280", marginLeft: 6, fontSize: 11 }}>{x.name.slice(0, 40)}</span>}
-          </div>
-        ))}
-      </div>
-      {saving && <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 2 }}>Đang lưu…</div>}
-    </div>
-  )
-}
-
-// ---- Overview Tab ----
-function OverviewTab() {
-  const [products, setProducts] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState("")
-  const [modal, setModal] = useState<{ id: string; title: string } | null>(null)
-  const [allPancakeIds, setAllPancakeIds] = useState<{ display_id: string; name: string }[]>([])
-
-  function load(s = search) {
-    setLoading(true)
-    apiJson(`/admin/gia-von/summary?search=${encodeURIComponent(s)}`, "GET")
-      .then(d => { setProducts(d.products ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }
-
-  useEffect(() => {
-    load()
-    apiJson("/admin/gia-von/summary?mode=pancake-ids", "GET")
-      .then(d => setAllPancakeIds(d.display_ids ?? []))
-      .catch(() => {})
-  }, [])
-
-  const mappedCount = products.filter(p => p.pancake_display_id).length
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
-        <input type="text" placeholder="Tìm sản phẩm…" value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && load(search)}
-          style={{ flex: 1, border: "1px solid #d1d5db", borderRadius: 7, padding: "8px 12px", fontSize: 13 }} />
-        <button onClick={() => load(search)}
-          style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 7, padding: "8px 18px", cursor: "pointer", fontSize: 13 }}>Tìm</button>
-        <button onClick={() => load(search)}
-          style={{ background: "#f3f4f6", border: "none", borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>↻</button>
-        {products.length > 0 && (
-          <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>
-            <span style={{ color: mappedCount === products.length ? "#16a34a" : "#d97706", fontWeight: 700 }}>
-              {mappedCount}/{products.length}
-            </span> đã gán Pancake ID
-          </div>
-        )}
-      </div>
-
-      {loading ? (
-        <div style={{ color: "#6b7280", textAlign: "center", padding: 32 }}>Đang tải…</div>
-      ) : products.length === 0 ? (
-        <div style={{ color: "#6b7280", textAlign: "center", padding: 32 }}>Chưa có dữ liệu giá vốn</div>
-      ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: "#f9fafb" }}>
-                {["Sản phẩm","Giá vốn TB","Tồn kho","Số lô","Pancake ID",""].map((h, i) => (
-                  <th key={i} style={{ padding: "10px 12px", textAlign: i === 1 || i === 2 || i === 3 ? "right" : "left", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "2px solid #e5e7eb" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p: any, i: number) => (
-                <tr key={p.product_id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa", borderBottom: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ fontWeight: 600 }}>{p.product_title}</div>
-                  </td>
-                  <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#7c3aed", fontSize: 15 }}>{fmtVND(p.avg_cost)}</td>
-                  <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                    {p.stock_qty == null
-                      ? <span style={{ color: "#d1d5db" }}>—</span>
-                      : <span style={{
-                          fontWeight: p.stock_qty < 50 ? 700 : 400,
-                          color: p.stock_qty < 10 ? "#dc2626" : p.stock_qty < 50 ? "#d97706" : "#374151",
-                          background: p.stock_qty < 10 ? "#fef2f2" : p.stock_qty < 50 ? "#fffbeb" : "transparent",
-                          borderRadius: 4, padding: p.stock_qty < 50 ? "1px 6px" : undefined,
-                        }}>
-                          {p.stock_qty} {p.stock_qty < 50 ? "⚠" : ""}
-                        </span>
-                    }
-                  </td>
-                  <td style={{ padding: "10px 12px", textAlign: "right" }}>{p.total_lots}</td>
-                  <td style={{ padding: "10px 12px", minWidth: 200 }}>
-                    <PancakeIdCell
-                      productId={p.product_id}
-                      value={p.pancake_display_id}
-                      allIds={allPancakeIds}
-                      onSaved={newVal => setProducts(ps => ps.map(x => x.product_id === p.product_id ? { ...x, pancake_display_id: newVal } : x))}
-                    />
-                  </td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <button onClick={() => setModal({ id: p.product_id, title: p.product_title })}
-                      style={{ background: "#ede9fe", color: "#7c3aed", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                      Lịch sử
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {modal && <LotHistoryModal productId={modal.id} productTitle={modal.title} onClose={() => setModal(null)} />}
-    </div>
-  )
-}
-
-// ---- CSV Import Tab ----
-function parseCsvText(text: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = [], cell = "", inQ = false
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i], nx = text[i + 1]
-    if (ch === '"') { if (inQ && nx === '"') { cell += '"'; i++ } else inQ = !inQ }
-    else if (ch === ',' && !inQ) { row.push(cell.trim()); cell = '' }
-    else if (ch === '\n' && !inQ) { row.push(cell.trim()); rows.push(row); row = []; cell = '' }
-    else if (ch === '\r') { /* skip */ }
-    else cell += ch
-  }
-  if (cell || row.length) { row.push(cell.trim()); rows.push(row) }
-  return rows
-}
-
-function parseViNum(s: string): number {
-  if (!s) return 0
-  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'))
-  return isNaN(n) ? 0 : n
-}
-
-// Cột CSV mong muốn → index trong file upload
-const CSV_COL_OPTIONS = ["(bỏ qua)", "SẢN PHẨM", "QLY", "PRICE/UNIT", "LOCAL FEE TQ", "AMOUNT", "SHIP FEE OVS", "LOCAL FEE VN", "PHÍ VAT", "PHÍ KHÁC", "FINAL PRICE", "G.P DATE", "VỀ KHO", "TÌNH TRẠNG", "GHI CHÚ"]
-
-// Auto-detect cột dựa trên tên header trong CSV
-function autoDetectMapping(headers: string[]): Record<string, number> {
-  const MAP: Record<string, string[]> = {
-    "SẢN PHẨM":     ["sản phẩm", "product", "tên sp", "tên hàng", "sp"],
-    "QLY":           ["qly", "qty", "sl", "số lượng", "quantity"],
-    "PRICE/UNIT":    ["price/unit", "price unit", "đơn giá", "giá/unit"],
-    "LOCAL FEE TQ":  ["local fee tq", "phí nội địa tq", "local_fee_tq"],
-    "AMOUNT":        ["amount", "thành tiền", "amount (vnd)"],
-    "SHIP FEE OVS":  ["ship fee ovs", "oversea", "ship ovs", "total ship fee ovs"],
-    "LOCAL FEE VN":  ["local fee vn", "phí nội địa vn", "local_fee_vn", "local fee\nvn"],
-    "PHÍ VAT":       ["phí vat", "vat", "phí xuất vat", "vat fee"],
-    "PHÍ KHÁC":      ["phí khác", "other", "other fee"],
-    "FINAL PRICE":   ["final price", "final price (vnd)", "giá vốn", "final_price"],
-    "G.P DATE":      ["g.p date", "gp date", "ngày gp", "đề xuất", "lot_date"],
-    "VỀ KHO":        ["wareh in vn", "ngày về", "về kho vn", "received_date"],
-    "TÌNH TRẠNG":    ["trang thai", "tình trạng", "trạng thái", "trang thái"],
-    "GHI CHÚ":       ["ghi chú", "note", "trouble", "ghi chu"],
-  }
-  const result: Record<string, number> = {}
-  headers.forEach((h, i) => {
-    const norm = h.toLowerCase().replace(/\s+/g, ' ').replace(/[\n\r]/g, ' ').trim()
-    for (const [key, aliases] of Object.entries(MAP)) {
-      if (aliases.some(a => norm.includes(a)) && result[key] === undefined) {
-        result[key] = i
-      }
-    }
-  })
-  return result
-}
-
-function CsvImportTab({ onSaved }: { onSaved: () => void }) {
-  const [csvRows, setCsvRows] = useState<string[][]>([])
-  const [headers, setHeaders] = useState<string[]>([])
-  const [mapping, setMapping] = useState<Record<string, number>>({})  // fieldKey → colIndex
-  const [preview, setPreview] = useState<any[]>([])
-  const [importing, setImporting] = useState(false)
-  const [result, setResult] = useState<{ ok?: number; error?: string } | null>(null)
-  const [step, setStep] = useState<"upload" | "map" | "preview">("upload")
-  const fileRef = useRef<HTMLInputElement>(null)
-
-  function handleFile(file: File) {
-    const reader = new FileReader()
-    reader.onload = e => {
-      const text = e.target?.result as string
-      const rows = parseCsvText(text)
-      if (!rows.length) return
-      const hdrs = rows[0]
-      const dataRows = rows.slice(1).filter(r => r.some(c => c))
-      setHeaders(hdrs)
-      setCsvRows(dataRows)
-      const auto = autoDetectMapping(hdrs)
-      setMapping(auto)
-      setStep("map")
-      setResult(null)
-    }
-    reader.readAsText(file, "utf-8")
-  }
-
-  function buildPreview() {
-    const colOf = (key: string) => mapping[key] ?? -1
-    const rows = csvRows
-      .map(r => {
-        const name = r[colOf("SẢN PHẨM")]?.trim()
-        if (!name) return null
-        const qty        = parseViNum(r[colOf("QLY")] ?? "")
-        const finalPrice = parseViNum(r[colOf("FINAL PRICE")] ?? "")
-        const priceUnit  = parseViNum(r[colOf("PRICE/UNIT")] ?? "")
-        const localFtq   = parseViNum(r[colOf("LOCAL FEE TQ")] ?? "")
-        const shipOvs    = parseViNum(r[colOf("SHIP FEE OVS")] ?? "")
-        const localFvn   = parseViNum(r[colOf("LOCAL FEE VN")] ?? "")
-        const vatFee     = parseViNum(r[colOf("PHÍ VAT")] ?? "")
-        const otherFee   = parseViNum(r[colOf("PHÍ KHÁC")] ?? "")
-        const lotDate    = r[colOf("G.P DATE")]?.trim() || ""
-        const recDate    = r[colOf("VỀ KHO")]?.trim() || ""
-        const note       = r[colOf("GHI CHÚ")]?.trim() || ""
-        if (!qty || (!finalPrice && !priceUnit)) return null
-        // Tính final price nếu không có sẵn
-        const cost = finalPrice > 0 ? finalPrice
-          : qty > 0 ? (qty * priceUnit + localFtq + shipOvs + localFvn + vatFee + otherFee) / qty
-          : priceUnit
-        return { product_title: name, qty, cost: Math.round(cost), lot_date: lotDate, received_date: recDate, note }
-      })
-      .filter(Boolean) as any[]
-
-    // Merge by product name (weighted avg)
-    const merged = new Map<string, { totalCost: number; qty: number; lots: number; lot_date: string; note: string }>()
-    for (const r of rows) {
-      if (!merged.has(r.product_title)) merged.set(r.product_title, { totalCost: 0, qty: 0, lots: 0, lot_date: r.lot_date, note: r.note })
-      const m = merged.get(r.product_title)!
-      m.totalCost += r.qty * r.cost
-      m.qty += r.qty
-      m.lots++
-      if (r.lot_date) m.lot_date = r.lot_date
-    }
-    setPreview([...merged.entries()].map(([name, m]) => ({
-      product_title: name,
-      avg_cost: Math.round(m.totalCost / m.qty),
-      stock_qty: m.qty,
-      total_lots: m.lots,
-      lot_date: m.lot_date,
-    })))
-    setStep("preview")
-  }
-
-  async function doImport() {
-    if (!preview.length) return
-    setImporting(true)
-    setResult(null)
-    try {
-      const data = await apiJson("/admin/gia-von/bulk-cost", "POST", { rows: preview.map(r => ({
-        product_id: "cost_" + r.product_title.toLowerCase()
-          .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g,"a").replace(/[èéẹẻẽêềếệểễ]/g,"e")
-          .replace(/[ìíịỉĩ]/g,"i").replace(/[òóọỏõôồốộổỗơờớợởỡ]/g,"o")
-          .replace(/[ùúụủũưừứựửữ]/g,"u").replace(/[ỳýỵỷỹ]/g,"y").replace(/đ/g,"d")
-          .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,""),
-        product_title: r.product_title,
-        avg_cost: r.avg_cost,
-        stock_qty: r.stock_qty,
-        total_lots: r.total_lots,
-      })) })
-      setResult({ ok: data.upserted })
-      onSaved()
-    } catch (err: any) {
-      setResult({ error: err?.message ?? "Lỗi" })
-    }
-    setImporting(false)
-  }
-
-  const thS: React.CSSProperties = { padding: "7px 10px", background: "#f3f4f6", fontWeight: 700, fontSize: 11, color: "#374151", borderBottom: "2px solid #e5e7eb", whiteSpace: "nowrap", textAlign: "left" }
-  const tdS: React.CSSProperties = { padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f3f4f6" }
-
-  return (
-    <div>
-      {/* Step indicator */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
-        {(["upload","map","preview"] as const).map((s, i) => (
-          <span key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, background: step === s ? "#7c3aed" : (["upload","map","preview"].indexOf(step) > i ? "#d1fae5" : "#e5e7eb"), color: step === s ? "#fff" : (["upload","map","preview"].indexOf(step) > i ? "#16a34a" : "#6b7280") }}>{i+1}</span>
-            <span style={{ fontSize: 12, color: step === s ? "#7c3aed" : "#9ca3af", fontWeight: step === s ? 700 : 400 }}>{s === "upload" ? "Tải CSV" : s === "map" ? "Khớp cột" : "Xem trước & Import"}</span>
-            {i < 2 && <span style={{ color: "#d1d5db" }}>›</span>}
+    <th style={{ ...thS(col.width), position: "relative", userSelect: "none" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: col.col_type === "number" ? "flex-end" : "flex-start" }}>
+        {editing ? (
+          <input autoFocus value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(col.name); setEditing(false) } }}
+            style={{ flex: 1, border: "1px solid #a78bfa", borderRadius: 4, padding: "2px 5px", fontSize: 11, fontWeight: 700, outline: "none", minWidth: 0 }}
+          />
+        ) : (
+          <span
+            onDoubleClick={canManage ? () => setEditing(true) : undefined}
+            title={canManage ? "Double-click để đổi tên" : col.name}
+            style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: canManage ? "pointer" : "default" }}
+          >
+            {col.col_type === "number" ? <span style={{ color: "#9ca3af", marginRight: 3, fontSize: 9 }}>🔢</span> : null}
+            {col.name}
           </span>
-        ))}
+        )}
+        {canManage && !editing && (
+          <button onClick={onDelete}
+            title="Xóa cột"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: 11, padding: 0, lineHeight: 1, flexShrink: 0 }}
+            onMouseOver={e => (e.currentTarget.style.color = "#dc2626")}
+            onMouseOut={e => (e.currentTarget.style.color = "#d1d5db")}
+          >✕</button>
+        )}
       </div>
-
-      {/* Step 1: Upload */}
-      {step === "upload" && (
-        <div
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-          onClick={() => fileRef.current?.click()}
-          style={{ border: "2px dashed #c4b5fd", borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer", background: "#faf5ff", transition: "background 0.2s" }}
-          onMouseOver={e => (e.currentTarget.style.background = "#ede9fe")}
-          onMouseOut={e => (e.currentTarget.style.background = "#faf5ff")}
-        >
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📂</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#7c3aed", marginBottom: 6 }}>Kéo thả hoặc click để chọn file CSV</div>
-          <div style={{ fontSize: 12, color: "#9ca3af" }}>File CSV từ Google Sheets / Excel — UTF-8. Dòng đầu là header.</div>
-          <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-        </div>
-      )}
-
-      {/* Step 2: Map columns */}
-      {step === "map" && (
-        <div>
-          <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Khớp cột — {csvRows.length} dòng dữ liệu</div>
-            <button onClick={() => setStep("upload")} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>← Đổi file</button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 20 }}>
-            {CSV_COL_OPTIONS.filter(f => f !== "(bỏ qua)").map(field => (
-              <label key={field} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 8, background: mapping[field] !== undefined ? "#faf5ff" : "#fff" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", minWidth: 120 }}>{field}</span>
-                <select
-                  value={mapping[field] ?? ""}
-                  onChange={e => {
-                    const v = e.target.value
-                    setMapping(m => ({ ...m, [field]: v === "" ? undefined as any : Number(v) }))
-                  }}
-                  style={{ flex: 1, border: "1px solid #d1d5db", borderRadius: 5, padding: "4px 6px", fontSize: 11 }}
-                >
-                  <option value="">(bỏ qua)</option>
-                  {headers.map((h, i) => (
-                    <option key={i} value={i}>[{i+1}] {h.replace(/\n/g," ").slice(0,40)}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-          {/* Preview raw CSV (first 5 rows) */}
-          <details style={{ marginBottom: 16 }}>
-            <summary style={{ cursor: "pointer", fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Xem 5 dòng đầu CSV gốc</summary>
-            <div style={{ overflowX: "auto", fontSize: 11 }}>
-              <table style={{ borderCollapse: "collapse" }}>
-                <thead><tr>{headers.map((h,i) => <th key={i} style={{ ...thS, minWidth: 80 }}>[{i+1}] {h.replace(/\n/g," ").slice(0,20)}</th>)}</tr></thead>
-                <tbody>{csvRows.slice(0,5).map((r,ri) => <tr key={ri}>{r.map((c,ci) => <td key={ci} style={{ ...tdS, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c}</td>)}</tr>)}</tbody>
-              </table>
-            </div>
-          </details>
-          <button onClick={buildPreview}
-            style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
-            Xem trước →
-          </button>
-        </div>
-      )}
-
-      {/* Step 3: Preview & import */}
-      {step === "preview" && (
-        <div>
-          <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Xem trước — {preview.length} sản phẩm (đã gộp bình quân gia quyền)</div>
-            <button onClick={() => setStep("map")} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>← Sửa mapping</button>
-            <button onClick={doImport} disabled={importing}
-              style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "8px 22px", cursor: importing ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, marginLeft: "auto" }}>
-              {importing ? "Đang import…" : `✓ Import ${preview.length} sản phẩm`}
-            </button>
-          </div>
-          {result && (
-            <div style={{ marginBottom: 12, padding: "10px 16px", borderRadius: 8, background: result.ok ? "#dcfce7" : "#fee2e2", color: result.ok ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
-              {result.ok ? `✓ Đã import ${result.ok} sản phẩm vào product_cost` : `✗ Lỗi: ${result.error}`}
-            </div>
-          )}
-          <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr>
-                  {["#","Sản phẩm","Giá vốn TB","Tổng qty","Số lô","G.P DATE"].map((h, i) => (
-                    <th key={i} style={{ ...thS, textAlign: i > 1 ? "right" : "left" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((r, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                    <td style={{ ...tdS, color: "#9ca3af", width: 32 }}>{i+1}</td>
-                    <td style={{ ...tdS, fontWeight: 600 }}>{r.product_title}</td>
-                    <td style={{ ...tdS, textAlign: "right", fontWeight: 800, color: "#7c3aed" }}>{new Intl.NumberFormat("vi-VN").format(r.avg_cost)}đ</td>
-                    <td style={{ ...tdS, textAlign: "right" }}>{r.stock_qty}</td>
-                    <td style={{ ...tdS, textAlign: "right" }}>{r.total_lots}</td>
-                    <td style={{ ...tdS }}>{r.lot_date || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: "#9ca3af" }}>
-            Sản phẩm chưa có trong Medusa sẽ dùng tên làm ID tạm. Có thể khớp tay sau trong tab Tổng quan.
-          </div>
-        </div>
-      )}
-    </div>
+    </th>
   )
 }
 
-// ---- Main Page ----
+// ─── Shared styles ────────────────────────────────────────────────────────────
+
+function thS(w: number): React.CSSProperties {
+  return {
+    padding: "5px 6px",
+    borderRight: "1px solid #e5e7eb",
+    borderBottom: "2px solid #d1d5db",
+    background: "#f3f4f6",
+    fontSize: 11, fontWeight: 700, color: "#374151",
+    whiteSpace: "nowrap",
+    width: w, minWidth: w,
+    position: "sticky", top: 0, zIndex: 10,
+    boxSizing: "border-box",
+  }
+}
+
+function tdS(w: number): React.CSSProperties {
+  return {
+    borderRight: "1px solid #f3f4f6",
+    borderBottom: "1px solid #f3f4f6",
+    width: w, minWidth: w,
+    height: 28,
+    verticalAlign: "middle",
+    padding: 0,
+    boxSizing: "border-box",
+  }
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function GiaVonPage() {
   const { has } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
-  const [tab, setTab] = useState<"overview" | "import" | "csv">("overview")
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  const tabBtn = (active: boolean) => ({
-    padding: "8px 20px", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 13,
-    background: active ? "#7c3aed" : "transparent", color: active ? "#fff" : "#6b7280",
-  })
 
   return (
-    <div style={{ padding: 24, maxWidth: 1440, margin: "0 auto" }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: "#111827" }}>Giá vốn sản phẩm</h1>
-        <p style={{ fontSize: 13, color: "#6b7280", margin: "4px 0 0" }}>Lịch sử lô nhập & giá vốn bình quân gia quyền</p>
+    <div style={{ padding: "20px 24px", maxWidth: "100%", height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+      <div style={{ marginBottom: 14 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: "#111827" }}>Bảng giá vốn</h1>
+        <p style={{ fontSize: 12, color: "#9ca3af", margin: "3px 0 0" }}>
+          Double-click ô để sửa · Double-click tên cột để đổi tên · Paste từ Excel/GG Sheets trực tiếp
+        </p>
       </div>
-
-      <div style={{ display: "flex", gap: 4, background: "#f3f4f6", borderRadius: 10, padding: 4, width: "fit-content", marginBottom: 24 }}>
-        <button style={tabBtn(tab === "overview")} onClick={() => setTab("overview")}>📊 Tổng quan</button>
-        {canManage && <button style={tabBtn(tab === "import")} onClick={() => setTab("import")}>📋 Nhập lô hàng</button>}
-        {canManage && <button style={tabBtn(tab === "csv")} onClick={() => setTab("csv")}>📂 Import CSV</button>}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <Spreadsheet canManage={canManage} />
       </div>
-
-      {tab === "overview" && <OverviewTab key={refreshKey} />}
-      {tab === "import" && canManage && (
-        <ImportTab onSaved={() => setRefreshKey(k => k + 1)} />
-      )}
-      {tab === "csv" && canManage && (
-        <CsvImportTab onSaved={() => { setRefreshKey(k => k + 1) }} />
-      )}
     </div>
   )
 }
 
 export const config = defineRouteConfig({
   label: "Giá vốn",
-  icon: "currency-dollar",
 })
