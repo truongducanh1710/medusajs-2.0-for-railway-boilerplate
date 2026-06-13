@@ -477,6 +477,52 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     })
   }, [cart.id, countryCode, payment, shippingOptions?.length])
 
+  // Đơn nháp: khi khách có SĐT hợp lệ nhưng thoát trang mà chưa đặt hàng
+  useEffect(() => {
+    const PHONE_RE = /^(0|\+84)[0-9]{8,9}$/
+    let fired = false
+
+    const sendAbandon = () => {
+      if (fired) return
+      const phone = form.phone.replace(/\s/g, "")
+      if (!PHONE_RE.test(phone)) return
+      fired = true
+
+      const items = (localItems ?? cart.items ?? []).map((item: any) => ({
+        title: item.title,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        bundle_qty: item.metadata?.bundle_qty ?? item.quantity,
+        bundle_price: item.metadata?.bundle_price ?? null,
+      }))
+
+      const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "https://api.phanviet.vn"
+      const payload = JSON.stringify({
+        cartId: cart.id,
+        name: form.name,
+        phone,
+        street: form.street,
+        province: form.province,
+        ward: form.ward,
+        note: form.note,
+        items,
+      })
+
+      // sendBeacon đảm bảo gửi được kể cả khi tab đóng
+      navigator.sendBeacon(`${backendUrl}/store/checkout-abandon`, new Blob([payload], { type: "application/json" }))
+    }
+
+    const onVisibility = () => { if (document.visibilityState === "hidden") sendAbandon() }
+    const onUnload = () => sendAbandon()
+
+    document.addEventListener("visibilitychange", onVisibility)
+    window.addEventListener("beforeunload", onUnload)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener("beforeunload", onUnload)
+    }
+  }, [form, cart.id, cart.items, localItems])
+
   const sortedItems = [...(localItems ?? cart.items ?? [])].sort((a: any, b: any) =>
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
