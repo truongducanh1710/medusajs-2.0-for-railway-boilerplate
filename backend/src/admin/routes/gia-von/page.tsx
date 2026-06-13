@@ -36,12 +36,13 @@ function parseViNum(s: string): string {
 // ─── Cell ─────────────────────────────────────────────────────────────────────
 
 function Cell({
-  value, colType, readOnly, onCommit, onNav, inputRef,
+  value, colType, readOnly, onCommit, onFocus, onNav, inputRef,
 }: {
   value: string
   colType: "text" | "number"
   readOnly: boolean
   onCommit: (v: string) => void
+  onFocus: () => void
   onNav: (dir: "left" | "right" | "up" | "down" | "tab") => void
   inputRef?: (el: HTMLInputElement | null) => void
 }) {
@@ -53,6 +54,7 @@ function Cell({
 
   function startEdit() {
     if (readOnly) return
+    onFocus()
     setDraft(value)
     setEditing(true)
     setTimeout(() => ref.current?.select(), 0)
@@ -100,7 +102,7 @@ function Cell({
       ) : (
         <div
           onClick={startEdit}
-          onFocus={startEdit}
+          onFocus={() => { onFocus(); startEdit() }}
           tabIndex={readOnly ? -1 : 0}
           onKeyDown={e => {
             if (e.key === "Enter" || e.key === "F2") startEdit()
@@ -189,10 +191,18 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
   // focusedCell: [rowIdx, colIdx] trong mảng hiển thị
   const [focused, setFocused] = useState<[number, number] | null>(null)
+  const focusedRef = useRef<[number, number] | null>(null)
 
   const dirtyRef = useRef<Map<string, SheetRow>>(new Map()) // id → row
   const saveTimerRef = useRef<any>(null)
   const cellRefs = useRef<Map<string, HTMLInputElement>>(new Map()) // "ri,ci" → input
+  const rowsRef = useRef<SheetRow[]>([])
+  const colsRef = useRef<SheetColumn[]>([])
+
+  // Sync refs để paste handler luôn có data mới nhất
+  useEffect(() => { rowsRef.current = rows }, [rows])
+  useEffect(() => { colsRef.current = columns }, [columns])
+  useEffect(() => { focusedRef.current = focused }, [focused])
 
   // Load
   useEffect(() => {
@@ -205,6 +215,70 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       })
       .catch(() => setLoading(false))
   }, [])
+
+  // Global paste listener — bắt Ctrl+V dù input nào đang focus
+  useEffect(() => {
+    if (!canManage) return
+    async function onPaste(e: ClipboardEvent) {
+      // Chỉ xử lý khi có cell đang focused
+      const fc = focusedRef.current
+      if (!fc) return
+      const text = e.clipboardData?.getData("text/plain")
+      if (!text) return
+      e.preventDefault()
+
+      const [startRi, startCi] = fc
+      const currentRows = rowsRef.current
+      const currentCols = colsRef.current
+
+      const pasteRows = text
+        .split("\n")
+        .map(r => r.replace(/\r$/, "").split("\t"))
+      // Bỏ dòng cuối nếu rỗng (GG Sheets hay thêm \n cuối)
+      if (pasteRows.length > 1 && pasteRows[pasteRows.length - 1].every(c => !c)) {
+        pasteRows.pop()
+      }
+      if (!pasteRows.length) return
+
+      let allRows = currentRows
+      const needed = (startRi + pasteRows.length) - currentRows.length
+      if (needed > 0) {
+        const d = await apiJson("/admin/gia-von/sheet/rows", "POST", { count: needed })
+        allRows = [...currentRows, ...(d.rows ?? [])]
+        setRows(allRows)
+      }
+
+      const updates: { id: string; data: Record<string, string> }[] = []
+      for (let ri = 0; ri < pasteRows.length; ri++) {
+        const rowIdx = startRi + ri
+        if (rowIdx >= allRows.length) break
+        const row = allRows[rowIdx]
+        const newData = { ...row.data }
+        for (let ci = 0; ci < pasteRows[ri].length; ci++) {
+          const colIdx = startCi + ci
+          if (colIdx >= currentCols.length) break
+          newData[currentCols[colIdx].id] = pasteRows[ri][ci]
+        }
+        updates.push({ id: row.id, data: newData })
+      }
+
+      setRows(rs => rs.map(r => {
+        const u = updates.find(u => u.id === r.id)
+        return u ? { ...r, data: u.data } : r
+      }))
+
+      setSaveState("saving")
+      try {
+        await apiJson("/admin/gia-von/sheet/rows", "PUT", { rows: updates })
+        setSaveState("saved")
+        setTimeout(() => setSaveState("idle"), 2000)
+      } catch {
+        setSaveState("error")
+      }
+    }
+    document.addEventListener("paste", onPaste)
+    return () => document.removeEventListener("paste", onPaste)
+  }, [canManage])
 
   // Autosave debounce
   function scheduleSave() {
@@ -282,58 +356,6 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       setColumns(cs => cs.map(c => c.id === col.id ? d.column : c))
     } catch (e: any) {
       alert("Lỗi đổi tên: " + e.message)
-    }
-  }
-
-  // Paste handler (TSV từ Excel/GG Sheets)
-  async function handlePaste(e: React.ClipboardEvent, startRowIdx: number, startColIdx: number) {
-    if (!canManage) return
-    const text = e.clipboardData.getData("text/plain")
-    if (!text) return
-    e.preventDefault()
-
-    const pasteRows = text.split("\n").map(r => r.split("\t").map(c => c.replace(/\r$/, "")))
-    if (!pasteRows.length) return
-
-    // Tính số dòng cần thêm
-    const endRowIdx = startRowIdx + pasteRows.length - 1
-    const needed = endRowIdx - (rows.length - 1)
-
-    let allRows = rows
-    if (needed > 0) {
-      const d = await apiJson("/admin/gia-von/sheet/rows", "POST", { count: needed })
-      allRows = [...rows, ...(d.rows ?? [])]
-      setRows(allRows)
-    }
-
-    const updates: { id: string; data: Record<string, string> }[] = []
-    for (let ri = 0; ri < pasteRows.length; ri++) {
-      const rowIdx = startRowIdx + ri
-      if (rowIdx >= allRows.length) break
-      const row = allRows[rowIdx]
-      const newData = { ...row.data }
-      for (let ci = 0; ci < pasteRows[ri].length; ci++) {
-        const colIdx = startColIdx + ci
-        if (colIdx >= columns.length) break
-        newData[columns[colIdx].id] = pasteRows[ri][ci]
-      }
-      updates.push({ id: row.id, data: newData })
-    }
-
-    // Update state
-    setRows(rs => rs.map(r => {
-      const u = updates.find(u => u.id === r.id)
-      return u ? { ...r, data: u.data, _dirty: true } : r
-    }))
-
-    // Save
-    setSaveState("saving")
-    try {
-      await apiJson("/admin/gia-von/sheet/rows", "PUT", { rows: updates })
-      setSaveState("saved")
-      setTimeout(() => setSaveState("idle"), 2000)
-    } catch {
-      setSaveState("error")
     }
   }
 
@@ -421,13 +443,13 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                 {columns.map((col, ci) => (
                   <td key={col.id}
                     style={{ ...tdS(col.width), position: "relative", padding: 0 }}
-                    onPaste={focused?.[0] === ri && focused?.[1] === ci ? e => handlePaste(e, ri, ci) : undefined}
                   >
                     <Cell
                       value={row.data[col.id] ?? ""}
                       colType={col.col_type}
                       readOnly={!canManage}
                       onCommit={v => updateCell(row.id, col.id, v)}
+                      onFocus={() => setFocused([ri, ci])}
                       onNav={dir => navigate(ri, ci, dir)}
                       inputRef={el => {
                         const key = `${ri},${ci}`
