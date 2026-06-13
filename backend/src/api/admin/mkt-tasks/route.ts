@@ -151,11 +151,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await spawnInstanceForPeriod(svc, task, periodKey, instDeadline).catch(() => {})
     }
 
+    const userModule = req.scope.resolve(Modules.USER)
+    const creator = await userModule.retrieveUser(uid, { select: ["first_name", "last_name", "email"] })
+    const creatorName = [creator.first_name, creator.last_name].filter(Boolean).join(" ") || creator.email
+
     // Post system message to channel if provided
     if (channel_id) {
-      const userModule = req.scope.resolve(Modules.USER)
-      const creator = await userModule.retrieveUser(uid, { select: ["first_name", "last_name", "email"] })
-      const creatorName = [creator.first_name, creator.last_name].filter(Boolean).join(" ") || creator.email
       await svc.createMktMessages({
         channel_id,
         author_id: uid,
@@ -165,7 +166,36 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         task_id: task.id,
         msg_type: isRecurring ? "recurring_created" : "task_created",
         metadata: { task_title: title, created_by_name: creatorName, assignee_id },
-      })
+      }).catch(console.error)
+    }
+
+    // Gửi email thông báo cho assignee (nếu khác người tạo)
+    if (assignee_id && assignee_id !== creator.email) {
+      try {
+        const notifModule = req.scope.resolve(Modules.NOTIFICATION) as any
+        const BACKEND_URL = process.env.BACKEND_URL || "https://api.phanviet.vn"
+        const taskUrl = `${BACKEND_URL}/app/mkt-tasks?task=${task.id}`
+        const deadlineStr = task.deadline
+          ? new Date(task.deadline).toLocaleString("vi-VN", {
+              hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric",
+              timeZone: "Asia/Ho_Chi_Minh",
+            })
+          : "Chưa đặt"
+        await notifModule.createNotifications({
+          to: assignee_id,
+          channel: "email",
+          template: "task-reminder",
+          data: {
+            taskTitle: title,
+            assigneeName: assignee_id,
+            deadline: deadlineStr,
+            taskUrl,
+            type: "task_assigned",
+          },
+        })
+      } catch {
+        // Notification optional
+      }
     }
 
     res.json({ task })

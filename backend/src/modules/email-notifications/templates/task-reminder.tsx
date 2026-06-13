@@ -8,21 +8,22 @@ export interface TaskReminderEmailProps {
   assigneeName: string
   deadline: string
   taskUrl: string
-  type: 'deadline_2h' | 'pending_review' | 'review_done' | 'review_rejected'
+  type: 'task_assigned' | 'deadline_2h' | 'pending_review' | 'review_done' | 'review_rejected'
 }
 
 export const isTaskReminderData = (data: any): data is TaskReminderEmailProps =>
   typeof data.taskTitle === 'string' && typeof data.taskUrl === 'string'
 
-const MESSAGES: Record<TaskReminderEmailProps['type'], { subject: string; body: string; color: string }> = {
-  deadline_2h:      { subject: '⏰ Deadline còn 2 giờ', body: 'còn khoảng 2 giờ để hoàn thành task', color: '#f59e0b' },
-  pending_review:   { subject: '🔍 Task chờ duyệt',     body: 'đã gửi yêu cầu duyệt cho task',      color: '#8b5cf6' },
-  review_done:      { subject: '✅ Task đã được duyệt',  body: 'đã được duyệt',                       color: '#10b981' },
-  review_rejected:  { subject: '❌ Task bị từ chối',     body: 'đã bị từ chối',                       color: '#ef4444' },
+const MESSAGES: Record<TaskReminderEmailProps['type'], { subject: string; body: string }> = {
+  task_assigned:    { subject: '📋 Bạn có task mới',     body: 'được giao task mới' },
+  deadline_2h:      { subject: '⏰ Deadline còn 2 giờ',  body: 'còn khoảng 2 giờ để hoàn thành task' },
+  pending_review:   { subject: '🔍 Task chờ duyệt',      body: 'đã gửi yêu cầu duyệt cho task' },
+  review_done:      { subject: '✅ Task đã được duyệt',   body: 'đã được duyệt' },
+  review_rejected:  { subject: '❌ Task bị từ chối',      body: 'đã bị từ chối' },
 }
 
 export const TaskReminderEmail = ({ taskTitle, assigneeName, deadline, taskUrl, type }: TaskReminderEmailProps) => {
-  const msg = MESSAGES[type] || MESSAGES.deadline_2h
+  const msg = MESSAGES[type] || MESSAGES.task_assigned
   return (
     <Base preview={`${msg.subject}: ${taskTitle}`}>
       <Section className="mt-[32px] text-center">
