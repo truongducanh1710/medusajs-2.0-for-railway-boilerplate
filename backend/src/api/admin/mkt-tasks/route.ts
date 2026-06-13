@@ -38,7 +38,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Build filter
     const filter: Record<string, any> = {}
-    if (!manager) filter.assignee_id = uid  // MKT only sees own tasks
+    if (!manager) {
+      // assignee_id lưu email, không phải user ID
+      const userModule = req.scope.resolve(Modules.USER)
+      const user = await userModule.retrieveUser(uid, { select: ["email"] })
+      filter.assignee_id = user.email
+    }
     else if (assignee_id) filter.assignee_id = assignee_id
     if (status && status !== "all") filter.status = status
     if (type) filter.type = type
