@@ -33,7 +33,9 @@ async function updateMedusaOrderMetadata(
 ) {
   try {
     const orderService = scope.resolve(Modules.ORDER) as any
-    const orders = await orderService.listOrders({}, { take: 200, order: { created_at: "DESC" } })
+    // Medusa không filter được nested JSONB metadata qua listOrders, nên vẫn .find() in-memory.
+    // Nâng take lên 1000 (từ 200): COD giao 3-7 ngày, top-200 không đủ khi volume cao → miss order.
+    const orders = await orderService.listOrders({}, { take: 1000, order: { created_at: "DESC" } })
     const medusaOrder = orders.find(
       (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
     )
@@ -213,7 +215,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
             // Lấy fbclid/fbp + pixel riêng sản phẩm từ Medusa order metadata
             const orderService = req.scope.resolve(Modules.ORDER) as any
-            const medusaOrders = await orderService.listOrders({}, { take: 200, order: { created_at: "DESC" } })
+            // take:1000 (đơn COD giao 3-7 ngày, top-200 không đủ khi volume cao).
+            // relations items.variant.product: cần metadata pixel riêng SP cho CAPI (nếu thiếu → đơn COD chỉ về pixel chung).
+            const medusaOrders = await orderService.listOrders(
+              {},
+              {
+                take: 1000,
+                order: { created_at: "DESC" },
+                relations: ["items", "items.variant", "items.variant.product"],
+              }
+            )
             const medusaOrder = medusaOrders.find(
               (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
             )

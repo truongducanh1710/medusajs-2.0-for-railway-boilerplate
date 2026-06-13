@@ -41,7 +41,13 @@ export default async function OrderConfirmedPage({ params }: Props) {
   const firstItem = order.items?.[0] as any
   const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
   const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
-  const paymentMethod = (order as any).metadata?.payment_method ?? "cod"
+  // Sepay chỉ bắn Purchase ngay khi ĐÃ thanh toán thật (payment_status=paid do SePay webhook set).
+  // Sepay chọn nhưng chưa chuyển khoản → coi như COD: Purchase do Pancake webhook bắn lúc status=3.
+  // Tránh conversion ảo khi khách chọn Sepay rồi không trả tiền.
+  const rawPaymentMethod = (order as any).metadata?.payment_method ?? "cod"
+  const isSepayPaid =
+    rawPaymentMethod === "sepay" && (order as any).metadata?.payment_status === "paid"
+  const paymentMethod = isSepayPaid ? "sepay" : "cod"
 
   return (
     <>
