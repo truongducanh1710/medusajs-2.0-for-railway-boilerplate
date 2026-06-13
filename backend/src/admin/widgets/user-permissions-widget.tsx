@@ -76,7 +76,18 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
   },
 ]
 
+const ROLE_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "— Không có role (dùng permissions thủ công) —" },
+  { value: "admin", label: "Admin (toàn quyền)" },
+  { value: "marketing", label: "Marketing (video, camp, content, tasks)" },
+  { value: "manager", label: "Manager (đơn hàng, báo cáo, phân quyền)" },
+  { value: "sale", label: "Sale (đơn hàng, chat)" },
+  { value: "cskh", label: "CSKH (vận đơn, chat)" },
+  { value: "ketoan", label: "Kế toán (giá vốn)" },
+]
+
 const UserPermissionsWidget = ({ data }: { data: any }) => {
+  const [role, setRole] = useState<string>((data?.metadata?.role as string) ?? "")
   const [perms, setPerms] = useState<string[]>(
     Array.isArray(data?.metadata?.permissions) ? data.metadata.permissions : []
   )
@@ -89,6 +100,14 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [autoAdded, setAutoAdded] = useState<string[]>([])
+
+  // Permissions có hiệu lực thực sự (role + extra manual)
+  const effectivePerms = [
+    ...new Set([
+      ...(role && ROLE_PRESETS[role] ? (ROLE_PRESETS[role] as string[]) : []),
+      ...perms,
+    ])
+  ]
 
   const toggle = (p: string) =>
     setPerms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
@@ -116,6 +135,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
         body: JSON.stringify({
           metadata: {
             ...(data.metadata ?? {}),
+            role: role || null,
             permissions: finalPerms,
             mkt_code: mktCode.trim().toUpperCase() || null,
             mkt_codes: mktCodesRaw
@@ -149,6 +169,30 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
           <Btn onClick={() => applyPreset("sale")}>Sale</Btn>
           <Btn onClick={() => applyPreset("cskh")}>CSKH</Btn>
           <Btn onClick={() => setPerms([])}>Xóa hết</Btn>
+        </div>
+      </div>
+
+      {/* Role */}
+      <div className="flex items-start gap-3 pb-3 border-b">
+        <label className="text-sm font-medium whitespace-nowrap pt-1">Role:</label>
+        <div className="flex-1">
+          <select
+            value={role}
+            onChange={e => setRole(e.target.value)}
+            className="px-2 py-1 text-sm border rounded w-full max-w-sm"
+          >
+            {ROLE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {role && (
+            <p className="mt-1 text-xs text-blue-600">
+              ✓ User sẽ tự động có {(ROLE_PRESETS[role] as string[])?.length ?? 0} quyền từ role này (luôn cập nhật khi role preset thay đổi). Permissions thủ công bên dưới sẽ được cộng thêm.
+            </p>
+          )}
+          {!role && perms.length === 0 && (
+            <p className="mt-1 text-xs text-amber-600">⚠ Chưa có role và chưa có quyền thủ công — user sẽ thấy 403.</p>
+          )}
         </div>
       </div>
 
@@ -249,7 +293,8 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
           {saving ? "Đang lưu..." : "Lưu quyền"}
         </Btn>
         <span className="text-xs text-gray-400">
-          {perms.length}/{Object.keys(PERMISSIONS).length} quyền được cấp
+          {effectivePerms.length}/{Object.keys(PERMISSIONS).length} quyền có hiệu lực
+          {role && perms.length > 0 && ` (${(ROLE_PRESETS[role] as string[])?.length ?? 0} từ role + ${perms.length} thủ công)`}
         </span>
         {msg && (
           <span className={`text-xs font-medium ${msg.ok ? "text-green-600" : "text-red-600"}`}>

@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { resolveUserPerms } from "../../../middlewares"
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const auth = (req as any).auth_context
@@ -9,12 +10,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const userModule = req.scope.resolve(Modules.USER)
   const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-    ? (user.metadata as any).permissions
-    : []
+  const perms = resolveUserPerms(user.metadata)
   const mktCode = (user.metadata as any)?.mkt_code ?? null
-  // mkt_codes: danh sách code được quản lý (bao gồm cả code bàn giao từ người khác)
   const rawCodes = (user.metadata as any)?.mkt_codes
   const mktCodes: string[] = (Array.isArray(rawCodes) && rawCodes.length > 0) ? rawCodes : (mktCode ? [mktCode] : [])
-  res.json({ email: user.email, permissions: isSuper ? "*" : perms, is_super: isSuper, mkt_code: mktCode, mkt_codes: mktCodes })
+  const role: string = (user.metadata as any)?.role ?? ""
+  res.json({ email: user.email, permissions: isSuper ? "*" : perms, is_super: isSuper, mkt_code: mktCode, mkt_codes: mktCodes, role })
 }

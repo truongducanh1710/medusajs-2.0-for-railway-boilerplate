@@ -1,6 +1,15 @@
 import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { ROLE_PRESETS } from "../admin/lib/permissions"
+
+export function resolveUserPerms(metadata: any): string[] {
+  const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
+  const role: string = metadata?.role ?? ""
+  const fromRole: string[] = role && ROLE_PRESETS[role] ? (ROLE_PRESETS[role] as string[]) : []
+  // union: role permissions + any extra explicit permissions
+  return [...new Set([...fromRole, ...explicit])]
+}
 
 function requirePerm(...needed: string[]) {
   return async (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
@@ -14,9 +23,7 @@ function requirePerm(...needed: string[]) {
 
       if (user.email && user.email === process.env.SUPER_ADMIN_EMAIL) return next()
 
-      const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-        ? (user.metadata as any).permissions
-        : []
+      const perms = resolveUserPerms(user.metadata)
       if (!needed.every((p) => perms.includes(p))) {
         return res.status(403).json({ error: "Forbidden", required: needed, current: perms })
       }
