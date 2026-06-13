@@ -216,7 +216,9 @@ export default function BundleSelector({ product, region }: Props) {
           ...(giftsToSave.length > 0 ? { gifts: JSON.stringify(giftsToSave) } : {}),
         },
       })
-      window.location.href = `/${countryCode}/checkout`
+      // Client navigation thay full page reload — nhanh hơn rõ rệt.
+      // addToCart đã revalidateTag("cart") nên server component checkout fetch cart mới.
+      router.push(`/${countryCode}/checkout`)
     } catch (e) {
       console.error("[BundleSelector] addToCart failed", e)
       setAdding(false)
