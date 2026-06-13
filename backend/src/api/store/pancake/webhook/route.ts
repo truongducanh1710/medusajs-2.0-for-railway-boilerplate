@@ -215,19 +215,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
             // Lấy fbclid/fbp + pixel riêng sản phẩm từ Medusa order metadata
             const orderService = req.scope.resolve(Modules.ORDER) as any
-            // take:1000 (đơn COD giao 3-7 ngày, top-200 không đủ khi volume cao).
-            // relations items.variant.product: cần metadata pixel riêng SP cho CAPI (nếu thiếu → đơn COD chỉ về pixel chung).
+            // take:1000: COD giao 3-7 ngày, top-200 không đủ khi volume cao.
+            // Không thêm relations vào listOrders — Medusa v2 không support dot-notation nested
+            // relations (items.variant.product) và sẽ throw "targetMeta" error. Load shallow trước,
+            // rồi retrieveOrder riêng để lấy deep relations cho pixel SP.
             const medusaOrders = await orderService.listOrders(
               {},
-              {
-                take: 1000,
-                order: { created_at: "DESC" },
-                relations: ["items", "items.variant", "items.variant.product"],
-              }
+              { take: 1000, order: { created_at: "DESC" } }
             )
-            const medusaOrder = medusaOrders.find(
+            const medusaOrderShallow = medusaOrders.find(
               (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
             )
+            // Load deep relations chỉ khi tìm thấy order (1 query thay vì load tất cả 1000 đơn kèm relations)
+            const medusaOrder = medusaOrderShallow
+              ? await orderService.retrieveOrder(medusaOrderShallow.id, {
+                  relations: ["items", "items.variant", "items.variant.product"],
+                }).catch(() => medusaOrderShallow)
+              : undefined
             const meta = medusaOrder?.metadata ?? {}
 
             // Đơn đã thanh toán SePay → Purchase đã bắn lúc thanh toán, không bắn lại.
