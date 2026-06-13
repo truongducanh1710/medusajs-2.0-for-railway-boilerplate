@@ -58,7 +58,7 @@ function personBadgeColor(name: string): { bg: string; text: string } {
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
   return PERSON_BADGE_COLORS[hash % PERSON_BADGE_COLORS.length]
 }
-const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B981", "Review": "#F59E0B" }
+const VT_COLORS: Record<string, string> = { "Video AI": "#1877F2", "Real": "#10B981", "Review": "#F59E0B", "RAW": "#8B5CF6" }
 
 type FbPostLink = { page_id: string; page_name: string; post_url: string; posted_at: string }
 
@@ -199,7 +199,7 @@ function Toast({ msg, onDone }: { msg: string; onDone: () => void }) {
 // ============================================================================
 // Tab: Bảng
 // ============================================================================
-const LOAI_LIST = ["Video AI", "Real", "Review"]
+const LOAI_LIST = ["Video AI", "Real", "Review", "RAW"]
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
