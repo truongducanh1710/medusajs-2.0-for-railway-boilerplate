@@ -120,6 +120,25 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     if (Object.keys(update).length === 0) return res.status(400).json({ error: "Không có field nào để cập nhật" })
 
+    // Build activity log entries for meaningful changes
+    const STATUS_LABEL: Record<string, string> = {
+      todo: "Chờ làm", in_progress: "Đang làm", done: "Hoàn thành", cancelled: "Đã hủy", missed: "Bỏ lỡ",
+    }
+    const PRIORITY_LABEL: Record<string, string> = { high: "Cao", medium: "Vừa", low: "Thấp" }
+    const activityLogs: any[] = []
+    const now = new Date().toISOString()
+    if (body.status !== undefined && body.status !== task.status)
+      activityLogs.push({ author_id: email, text: `Chuyển trạng thái: ${STATUS_LABEL[task.status] ?? task.status} → ${STATUS_LABEL[body.status] ?? body.status}`, created_at: now, type: "system" })
+    if (body.priority !== undefined && body.priority !== task.priority)
+      activityLogs.push({ author_id: email, text: `Đổi độ ưu tiên: ${PRIORITY_LABEL[task.priority] ?? task.priority} → ${PRIORITY_LABEL[body.priority] ?? body.priority}`, created_at: now, type: "system" })
+    if (body.assignee_id !== undefined && body.assignee_id !== task.assignee_id)
+      activityLogs.push({ author_id: email, text: `Chuyển giao cho: ${body.assignee_id}`, created_at: now, type: "system" })
+    if (body.deadline !== undefined && body.deadline !== task.deadline?.slice(0, 10))
+      activityLogs.push({ author_id: email, text: body.deadline ? `Đặt deadline: ${body.deadline}` : "Xóa deadline", created_at: now, type: "system" })
+    if (activityLogs.length > 0) {
+      update.comments = [...(task.comments || []), ...activityLogs]
+    }
+
     const updated = await svc.updateMktTasks({ id: task.id, ...update })
 
     // Post system message vào channel khi status thay đổi

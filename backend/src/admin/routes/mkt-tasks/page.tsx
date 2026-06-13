@@ -835,7 +835,20 @@ function TaskDrawer({
                   <div className="py-3 text-center text-xs text-ui-fg-disabled">💬 Chưa có trao đổi nào</div>
                 )}
                 {comments.map((c, i) => {
+                  const isSystem = (c as any).type === "system"
                   const isMe = c.author_id === currentUserEmail
+                  if (isSystem) return (
+                    <div key={i} className="flex items-center gap-2 py-0.5">
+                      <div className="h-px flex-1 bg-ui-border-base" />
+                      <div className="flex items-center gap-1 rounded-full border border-ui-border-base bg-ui-bg-subtle px-2.5 py-0.5 text-[11px] text-ui-fg-muted">
+                        <span>⚡</span>
+                        <span className="font-medium text-ui-fg-subtle">{resolveAuthorName(c.author_id, mktUsers, currentUserEmail)}</span>
+                        <span>{c.text}</span>
+                        <span className="ml-1 opacity-60">{new Date(c.created_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
+                      </div>
+                      <div className="h-px flex-1 bg-ui-border-base" />
+                    </div>
+                  )
                   return (
                     <div key={i} className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
                       <div className={cn("max-w-[85%] border px-3 py-2",
