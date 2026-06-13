@@ -26,6 +26,49 @@ async function isManager(req: MedusaRequest): Promise<boolean> {
   return perms.includes("page.mkt-tasks.manage")
 }
 
+async function getManagerEmails(req: MedusaRequest): Promise<string[]> {
+  const superEmail = process.env.SUPER_ADMIN_EMAIL
+  const userModule = req.scope.resolve(Modules.USER)
+  const allUsers = await userModule.listUsers({}, { select: ["email", "metadata"] })
+  const managers = allUsers.filter((u: any) => {
+    if (u.email === superEmail) return true
+    const perms: string[] = Array.isArray(u.metadata?.permissions) ? u.metadata.permissions : []
+    return perms.includes("page.mkt-tasks.manage")
+  })
+  return managers.map((u: any) => u.email).filter(Boolean)
+}
+
+async function sendTaskEmail(req: MedusaRequest, opts: {
+  to: string | string[]
+  subject: string
+  body: string
+}) {
+  try {
+    const notifModule = req.scope.resolve(Modules.NOTIFICATION) as any
+    const toList = Array.isArray(opts.to) ? opts.to : [opts.to]
+    await Promise.all(toList.map((email: string) =>
+      notifModule.createNotifications({
+        to: email,
+        channel: "email",
+        template: "task-notification",
+        data: { subject: opts.subject, body: opts.body },
+      })
+    ))
+  } catch {
+    // Notification module optional — don't break if not configured
+  }
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  todo: "Chờ làm",
+  in_progress: "Đang làm",
+  pending_review: "Chờ duyệt",
+  done: "Hoàn thành",
+  cancelled: "Đã hủy",
+  missed: "Bỏ lỡ",
+}
+const PRIORITY_LABEL: Record<string, string> = { high: "Cao", medium: "Vừa", low: "Thấp" }
+
 // GET /admin/mkt-tasks/:id
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -62,7 +105,6 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
 
     const manager = await isManager(req)
-    // assignee_id là email (đồng bộ với mkt-chat identity)
     if (!manager && task.assignee_id !== email) {
       return res.status(403).json({ error: "Không có quyền" })
     }
@@ -90,17 +132,23 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         update.tags = body.tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10)
       }
     }
+
     if (body.status !== undefined) {
-      // missed do cron set; manager có thể chuyển missed → todo/done khi làm bù.
-      const valid = ["todo", "in_progress", "done", "cancelled", "missed"]
-      if (!valid.includes(body.status)) return res.status(400).json({ error: "Status không hợp lệ" })
+      const validAll = ["todo", "in_progress", "pending_review", "done", "cancelled", "missed"]
+      if (!validAll.includes(body.status)) return res.status(400).json({ error: "Status không hợp lệ" })
+      // pending_review chỉ cho task once; chỉ assignee mới được submit; manager duyệt/từ chối
+      if (body.status === "pending_review") {
+        if (task.frequency !== "once") return res.status(400).json({ error: "Chỉ task 1 lần mới cần duyệt" })
+        if (manager) return res.status(400).json({ error: "Manager không cần submit duyệt" })
+      }
+      if ((body.status === "done" || body.status === "cancelled") && task.status === "pending_review" && !manager) {
+        return res.status(403).json({ error: "Chỉ manager mới có thể duyệt hoặc từ chối" })
+      }
       update.status = body.status
     }
-    // Kết quả thực tế: assignee (và manager) điền được khi làm/đóng task của mình
-    if (body.result !== undefined) {
-      update.result = body.result || null
-    }
-    // Checklist: assignee và manager đều tự quản sub-steps
+
+    if (body.result !== undefined) update.result = body.result || null
+
     if (body.checklist !== undefined) {
       if (body.checklist !== null && !Array.isArray(body.checklist)) {
         return res.status(400).json({ error: "Checklist phải là mảng" })
@@ -120,11 +168,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     if (Object.keys(update).length === 0) return res.status(400).json({ error: "Không có field nào để cập nhật" })
 
-    // Build activity log entries for meaningful changes
-    const STATUS_LABEL: Record<string, string> = {
-      todo: "Chờ làm", in_progress: "Đang làm", done: "Hoàn thành", cancelled: "Đã hủy", missed: "Bỏ lỡ",
-    }
-    const PRIORITY_LABEL: Record<string, string> = { high: "Cao", medium: "Vừa", low: "Thấp" }
+    // Activity log
     const activityLogs: any[] = []
     const now = new Date().toISOString()
     if (body.status !== undefined && body.status !== task.status)
@@ -141,23 +185,44 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     const updated = await svc.updateMktTasks({ id: task.id, ...update })
 
-    // Post system message vào channel khi status thay đổi
-    if (body.status !== undefined && task.channel_id && body.status !== task.status) {
-      const statusLabel: Record<string, string> = {
-        in_progress: "🚀 Đang làm",
-        done: "✅ Hoàn thành",
-        cancelled: "❌ Đã huỷ",
-        todo: "⏳ Để làm",
+    // Email notifications for review flow
+    if (body.status !== undefined && body.status !== task.status) {
+      const taskUrl = `${process.env.BACKEND_URL || "https://api.phanviet.vn"}/app/mkt-tasks?task=${task.id}`
+
+      if (body.status === "pending_review") {
+        // Nhân sự submit → thông báo tất cả manager
+        const managerEmails = await getManagerEmails(req)
+        await sendTaskEmail(req, {
+          to: managerEmails,
+          subject: `[Chờ duyệt] ${task.title}`,
+          body: `${email} đã hoàn thành task "${task.title}" và gửi yêu cầu duyệt.\n\nXem task: ${taskUrl}`,
+        })
+      } else if ((body.status === "done" || body.status === "cancelled") && task.status === "pending_review") {
+        // Manager duyệt/từ chối → thông báo assignee
+        const verdict = body.status === "done" ? "✅ Đã duyệt" : "❌ Không duyệt"
+        await sendTaskEmail(req, {
+          to: task.assignee_id,
+          subject: `[${verdict}] ${task.title}`,
+          body: `${email} đã ${body.status === "done" ? "duyệt" : "từ chối"} task "${task.title}" của bạn.\n\nXem task: ${taskUrl}`,
+        })
       }
-      await svc.createMktMessages({
-        channel_id: task.channel_id,
-        author_id: email,
-        content: `${statusLabel[body.status] ?? body.status}: "${task.title}"`,
-        task_id: id,
-        msg_type: `task_${body.status}`,
-        reactions: {},
-        mentions: [],
-      }).catch(console.error)
+
+      // Post system message vào channel
+      if (task.channel_id) {
+        const statusIcon: Record<string, string> = {
+          in_progress: "🚀 Đang làm", pending_review: "🔍 Chờ duyệt",
+          done: "✅ Hoàn thành", cancelled: "❌ Đã huỷ", todo: "⏳ Để làm",
+        }
+        await svc.createMktMessages({
+          channel_id: task.channel_id,
+          author_id: email,
+          content: `${statusIcon[body.status] ?? body.status}: "${task.title}"`,
+          task_id: id,
+          msg_type: `task_${body.status}`,
+          reactions: {},
+          mentions: [],
+        }).catch(console.error)
+      }
     }
 
     res.json({ task: updated })

@@ -15,7 +15,7 @@ type Task = {
   assignee_name: string
   created_by: string
   deadline: string | null
-  status: "todo" | "in_progress" | "done" | "cancelled" | "missed"
+  status: "todo" | "in_progress" | "pending_review" | "done" | "cancelled" | "missed"
   priority: "high" | "medium" | "low"
   tags: string[]
   notes: string | null
@@ -56,7 +56,7 @@ function fmtFull(d: string | null) {
 }
 
 function isOverdue(t: Task) {
-  if (!t.deadline || t.status === "done" || t.status === "cancelled") return false
+  if (!t.deadline || t.status === "done" || t.status === "cancelled" || t.status === "pending_review") return false
   return new Date(t.deadline) < new Date()
 }
 
@@ -95,11 +95,12 @@ function avatarClass(name: string) {
 // ─── Maps ────────────────────────────────────────────────────────────────────
 
 const STATUS_MAP: Record<string, { label: string; icon: string; dot: string; chip: string }> = {
-  todo:        { label: "Chờ làm",    icon: "☐", dot: "bg-gray-400",    chip: "bg-ui-bg-component text-ui-fg-subtle" },
-  in_progress: { label: "Đang làm",   icon: "◉", dot: "bg-blue-500",    chip: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
-  done:        { label: "Hoàn thành", icon: "✓", dot: "bg-emerald-500", chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
-  cancelled:   { label: "Đã hủy",     icon: "✕", dot: "bg-rose-400",    chip: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
-  missed:      { label: "Bỏ lỡ",      icon: "⨯", dot: "bg-rose-500",    chip: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" },
+  todo:           { label: "Chờ làm",    icon: "☐", dot: "bg-gray-400",    chip: "bg-ui-bg-component text-ui-fg-subtle" },
+  in_progress:    { label: "Đang làm",   icon: "◉", dot: "bg-blue-500",    chip: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300" },
+  pending_review: { label: "Chờ duyệt",  icon: "⏳", dot: "bg-amber-400",  chip: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
+  done:           { label: "Hoàn thành", icon: "✓", dot: "bg-emerald-500", chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
+  cancelled:      { label: "Đã hủy",     icon: "✕", dot: "bg-rose-400",    chip: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" },
+  missed:         { label: "Bỏ lỡ",      icon: "⨯", dot: "bg-rose-500",    chip: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" },
 }
 const STATUS_CYCLE: Record<string, string> = { todo: "in_progress", in_progress: "done", done: "todo" }
 
@@ -493,19 +494,26 @@ function TaskDrawer({
     onToast("Đã xóa task", "success")
   }
 
-  const STATUSES = isManager
-    ? ["todo", "in_progress", "done", "cancelled"]
-    : ["todo", "in_progress", "done"]
+  // Task once: assignee thấy nút "Gửi duyệt" khi đang làm; manager thấy nút Duyệt/Từ chối khi pending_review
+  const isOnce = task.frequency === "once" && !task.is_template
+  const STATUSES: string[] = isManager
+    ? (task.status === "pending_review"
+        ? ["todo", "in_progress", "pending_review", "done", "cancelled"]
+        : ["todo", "in_progress", "done", "cancelled"])
+    : (isOnce
+        ? (task.status === "pending_review" ? ["pending_review"] : ["todo", "in_progress"])
+        : ["todo", "in_progress", "done"])
 
   const statusBtnCls = (s: string) => {
     const active = task.status === s
     const base = "rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-all active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
     if (!active) return cn(base, "border-ui-border-base bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")
     switch (s) {
-      case "in_progress": return cn(base, "border-blue-500 bg-blue-600 text-white shadow-sm shadow-blue-500/30")
-      case "done": return cn(base, "border-emerald-500 bg-emerald-600 text-white shadow-sm shadow-emerald-500/30")
-      case "cancelled": return cn(base, "border-rose-400 bg-rose-500 text-white shadow-sm shadow-rose-500/30")
-      default: return cn(base, "border-gray-400 bg-gray-500 text-white")
+      case "in_progress":    return cn(base, "border-blue-500 bg-blue-600 text-white shadow-sm shadow-blue-500/30")
+      case "pending_review": return cn(base, "border-amber-400 bg-amber-500 text-white shadow-sm shadow-amber-500/30")
+      case "done":           return cn(base, "border-emerald-500 bg-emerald-600 text-white shadow-sm shadow-emerald-500/30")
+      case "cancelled":      return cn(base, "border-rose-400 bg-rose-500 text-white shadow-sm shadow-rose-500/30")
+      default:               return cn(base, "border-gray-400 bg-gray-500 text-white")
     }
   }
 
@@ -658,6 +666,26 @@ function TaskDrawer({
                   </button>
                 ))}
               </div>
+              {/* Assignee: nút Gửi duyệt khi task once đang làm */}
+              {isOnce && !isManager && isAssignee && task.status === "in_progress" && (
+                <button onClick={() => updateStatus("pending_review")}
+                  className="mt-2 rounded-lg border border-amber-400 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 active:scale-95 dark:bg-amber-500/10 dark:text-amber-300">
+                  📤 Gửi duyệt
+                </button>
+              )}
+              {/* Manager: nút Duyệt / Từ chối khi pending_review */}
+              {isManager && task.status === "pending_review" && (
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => updateStatus("done")}
+                    className="rounded-lg border border-emerald-500 bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm shadow-emerald-500/30 transition hover:bg-emerald-700 active:scale-95">
+                    ✓ Duyệt
+                  </button>
+                  <button onClick={() => updateStatus("cancelled")}
+                    className="rounded-lg border border-rose-400 bg-rose-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm shadow-rose-500/30 transition hover:bg-rose-600 active:scale-95">
+                    ✕ Từ chối
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Priority + Tags (manager) */}
@@ -1314,10 +1342,11 @@ function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, is
 // ─── Board view (Kanban) ─────────────────────────────────────────────────────
 
 const BOARD_COLUMNS: { status: Task["status"]; label: string; dot: string }[] = [
-  { status: "todo",        label: "Chờ làm",    dot: "bg-gray-400" },
-  { status: "in_progress", label: "Đang làm",   dot: "bg-blue-500" },
-  { status: "done",        label: "Hoàn thành", dot: "bg-emerald-500" },
-  { status: "cancelled",   label: "Đã hủy",     dot: "bg-rose-400" },
+  { status: "todo",           label: "Chờ làm",    dot: "bg-gray-400" },
+  { status: "in_progress",    label: "Đang làm",   dot: "bg-blue-500" },
+  { status: "pending_review", label: "Chờ duyệt",  dot: "bg-amber-400" },
+  { status: "done",           label: "Hoàn thành", dot: "bg-emerald-500" },
+  { status: "cancelled",      label: "Đã hủy",     dot: "bg-rose-400" },
 ]
 
 function TaskCard({ task, onClick, draggable, onDragStart, onDragEnd, dragging }: {
@@ -2231,6 +2260,7 @@ export default function MktTasksPage() {
                   { v: "all", l: "Tất cả" },
                   { v: "todo", l: "Chờ làm" },
                   { v: "in_progress", l: "Đang làm" },
+                  { v: "pending_review", l: "Chờ duyệt" },
                   { v: "done", l: "Hoàn thành" },
                   { v: "missed", l: "Bỏ lỡ" },
                   { v: "cancelled", l: "Đã hủy" },
