@@ -52,7 +52,10 @@ function fmt(d: string | null) {
 
 function fmtFull(d: string | null) {
   if (!d) return "Chưa đặt"
-  return new Date(d).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
+  const dt = new Date(d)
+  const date = dt.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Asia/Ho_Chi_Minh" })
+  const time = dt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Ho_Chi_Minh" })
+  return `${date} ${time}`
 }
 
 function isOverdue(t: Task) {
@@ -506,7 +509,7 @@ function TaskDrawer({
         : ["todo", "in_progress", "done", "cancelled"])
     : (isOnce
         ? (task.status === "pending_review" ? ["pending_review"] : ["todo", "in_progress"])
-        : ["todo", "in_progress", "done"])
+        : ["todo", "in_progress", "pending_review", "done"])
 
   const statusBtnCls = (s: string) => {
     const active = task.status === s
