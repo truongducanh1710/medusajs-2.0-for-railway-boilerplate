@@ -52,8 +52,8 @@ export default function OrderCompletedTemplate({
 
   const shippingTotal = order.shipping_total ?? 0
   const taxTotal = order.tax_total ?? 0
-  const discountTotal = order.discount_total ?? 0
-  const bundleTotal = Math.max(0, bundleSubtotal - discountTotal) + shippingTotal + taxTotal
+  // bundle_price đã là giá sau discount — không trừ discountTotal thêm lần nữa
+  const bundleTotal = bundleSubtotal + shippingTotal + taxTotal
 
   const correctedTotals = {
     ...order,
