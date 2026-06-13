@@ -41,16 +41,19 @@ const STATUS_VARS: Record<string, { c: string; bg: string }> = {
   "Lỗi":       { c: "#DC2626",   bg: "#FEE2E2" },
 }
 const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Xong", "Đã đăng", "Lỗi"]
-const PERSON_COLORS: Record<string, string> = { "Hậu": "#1877F2", "Khải": "#10B981", "Quân": "#F59E0B" }
 const PERSON_BADGE_COLORS = [
-  { bg: "#DBEAFE", text: "#1D4ED8" },
-  { bg: "#D1FAE5", text: "#065F46" },
-  { bg: "#FDE68A", text: "#92400E" },
-  { bg: "#EDE9FE", text: "#5B21B6" },
-  { bg: "#FCE7F3", text: "#9D174D" },
-  { bg: "#CFFAFE", text: "#155E75" },
-  { bg: "#FEE2E2", text: "#991B1B" },
-  { bg: "#D1FAE5", text: "#064E3B" },
+  { bg: "#DBEAFE", text: "#1D4ED8" }, // blue
+  { bg: "#D1FAE5", text: "#047857" }, // green
+  { bg: "#FEF3C7", text: "#B45309" }, // amber
+  { bg: "#EDE9FE", text: "#6D28D9" }, // violet
+  { bg: "#FCE7F3", text: "#BE185D" }, // pink
+  { bg: "#CFFAFE", text: "#0E7490" }, // cyan
+  { bg: "#FEE2E2", text: "#B91C1C" }, // red
+  { bg: "#FFEDD5", text: "#C2410C" }, // orange
+  { bg: "#E0E7FF", text: "#4338CA" }, // indigo
+  { bg: "#CCFBF1", text: "#0F766E" }, // teal
+  { bg: "#F3E8FF", text: "#7E22CE" }, // purple
+  { bg: "#ECFCCB", text: "#4D7C0F" }, // lime
 ]
 function personBadgeColor(name: string): { bg: string; text: string } {
   if (!name) return { bg: "#F3F4F6", text: "#374151" }
@@ -88,7 +91,7 @@ function StatusPill({ status, onClick }: { status: string; onClick?: () => void 
 }
 
 function Avatar({ name, size = 28 }: { name: string; size?: number }) {
-  const bg = PERSON_COLORS[name] || "#6B7280"
+  const bg = personBadgeColor(name).text
   return (
     <div style={{ width: size, height: size, background: bg, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, flexShrink: 0, fontSize: size * 0.42 }}>
       {(name || "?")[0].toUpperCase()}
@@ -1185,7 +1188,7 @@ function BaoCaoTab() {
     { label: "Chờ duyệt", value: byStatus["Chờ duyệt"] || 0, color: "#D97706" },
     { label: "Lỗi", value: byStatus["Lỗi"] || 0, color: "#DC2626" },
   ]
-  const personColored = (data?.byPerson || []).map((d: any) => ({ ...d, color: PERSON_COLORS[d.label] || "#6B7280" }))
+  const personColored = (data?.byPerson || []).map((d: any) => ({ ...d, color: personBadgeColor(d.label).text }))
   const typeColored = (data?.byType || []).map((d: any, i: number) => ({ ...d, color: ["#1877F2", "#10B981", "#F59E0B"][i % 3] }))
   const prodColored = (data?.byProduct || []).map((d: any, i: number) => ({ ...d, color: ["#1877F2", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#06B6D4"][i % 6] }))
 
