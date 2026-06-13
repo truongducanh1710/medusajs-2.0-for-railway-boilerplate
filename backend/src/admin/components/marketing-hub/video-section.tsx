@@ -1006,16 +1006,31 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 </div>
               )}
               {/* FB Posts */}
-              {detailRow.fbPostLinks && detailRow.fbPostLinks.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 4 }}>BÀI ĐĂNG FB</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 600, marginBottom: 6 }}>BÀI ĐÃ ĐĂNG FB</div>
+                {detailRow.fbPostLinks && detailRow.fbPostLinks.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {detailRow.fbPostLinks.map((l, i) => (
-                      <a key={i} href={l.post_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#1877F2" }}>{l.page_name || l.post_url}</a>
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: "#F0F7FF", borderRadius: 8, padding: "8px 12px" }}>
+                        <span style={{ fontSize: 16, flexShrink: 0 }}>📘</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#1D4ED8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.page_name || "—"}</div>
+                          {l.posted_at && (
+                            <div style={{ fontSize: 11, color: "#6B7280", marginTop: 1 }}>
+                              {new Date(l.posted_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          )}
+                        </div>
+                        <a href={l.post_url} target="_blank" rel="noreferrer" style={{ flexShrink: 0, fontSize: 12, color: "#1877F2", fontWeight: 600, background: "#DBEAFE", borderRadius: 6, padding: "3px 10px", textDecoration: "none", whiteSpace: "nowrap" }}>
+                          Xem bài →
+                        </a>
+                      </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div style={{ fontSize: 12, color: "#9CA3AF", fontStyle: "italic" }}>Chưa có bài đăng nào</div>
+                )}
+              </div>
             </div>
             {/* Footer */}
             <div style={{ padding: "12px 20px", borderTop: "1px solid #E5E7EB", display: "flex", gap: 8, justifyContent: "flex-end" }}>

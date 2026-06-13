@@ -73,10 +73,27 @@ async function runPublishJob(
   const finalStatus = allOk ? "completed" : anyOk ? "completed" : "failed"
   await pool.query(`UPDATE fb_publish_job SET status = $1, finished_at = now() WHERE id = $2`, [finalStatus, jobId])
 
-  // Cập nhật trạng thái video
+  // Cập nhật trạng thái + fb_post_links cho video
   if (payload.videoId && anyOk) {
     const newStatus = payload.scheduledTime ? "scheduled" : "posted"
-    await pool.query(`UPDATE mkt_video SET status = $1, updated_at = now() WHERE id = $2`, [newStatus, payload.videoId])
+    // Build fb_post_links từ các page đăng thành công
+    const newLinks = progress
+      .filter(p => p.status === "success" && p.post_id)
+      .map(p => ({
+        page_id: p.page_id,
+        page_name: p.page_name,
+        post_url: `https://www.facebook.com/${p.post_id}`,
+        posted_at: new Date().toISOString(),
+      }))
+    // Merge với fb_post_links cũ (tránh duplicate theo post_url)
+    const { rows: [cur] } = await pool.query(`SELECT fb_post_links FROM mkt_video WHERE id = $1`, [payload.videoId])
+    const existing: any[] = Array.isArray(cur?.fb_post_links) ? cur.fb_post_links : []
+    const existingUrls = new Set(existing.map((l: any) => l.post_url))
+    const merged = [...existing, ...newLinks.filter(l => !existingUrls.has(l.post_url))]
+    await pool.query(
+      `UPDATE mkt_video SET status = $1, fb_post_links = $2, updated_at = now() WHERE id = $3`,
+      [newStatus, JSON.stringify(merged), payload.videoId]
+    )
   }
 
   // Push notification vào panel
