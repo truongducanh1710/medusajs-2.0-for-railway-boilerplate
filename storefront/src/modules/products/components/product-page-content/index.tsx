@@ -27,8 +27,10 @@ const MOBILE_OVERRIDE_CSS = `
 /* TikTok Gallery — ẩn admin panel trên storefront */
 .pvb-tkg .admin-panel { display: none !important; }
 
-/* Card entrance transition */
-.pvb-tkg .card { transition: opacity .4s ease, transform .4s ease, box-shadow .2s ease; }
+/* Card entrance — ẩn ban đầu, script thêm .tkg-visible để fade-in.
+   (Base CSS trong editor để opacity:1 nên editor luôn thấy card; storefront set lại đây.) */
+.pvb-tkg .card { opacity: 0; transform: translateY(20px); transition: opacity .4s ease, transform .4s ease, box-shadow .2s ease; }
+.pvb-tkg .card.tkg-visible { opacity: 1 !important; transform: translateY(0) !important; }
 .pvb-tkg .card:active { transform: scale(0.96) !important; }
 
 /* Mobile: horizontal scroll thay vì 3 cột nhỏ */

@@ -85,15 +85,16 @@ const blocks: BuilderBlock[] = [
         .pvb-tkg{padding:32px 16px;background:#fff}
         .pvb-tkg h2{font-size:clamp(18px,4vw,26px);font-weight:900;text-align:center;margin:0 0 16px}
         .pvb-tkg .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:700px;margin:0 auto}
-        /* Card entrance animation khi scroll vào */
-        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);cursor:pointer;transition:transform .2s ease,box-shadow .2s ease;opacity:0;transform:translateY(20px)}
+        /* Card — opacity:1 mặc định để hiện rõ trong editor. Storefront tự set opacity:0 + .tkg-visible cho entrance animation. */
+        .pvb-tkg .card{position:relative;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#010101 0%,#1a1a2e 50%,#010101 100%);cursor:pointer;transition:transform .2s ease,box-shadow .2s ease}
         .pvb-tkg .card.tkg-visible{opacity:1;transform:translateY(0)}
         .pvb-tkg .card:active{transform:scale(0.96)}
         .pvb-tkg .card video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-        /* Overlay chỉ hiện khi chưa có video — ẩn khi có video */
-        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);transition:opacity .3s}
+        /* Overlay (ô trống) — khung nét đứt + icon + nhãn. Ẩn khi có video. */
+        .pvb-tkg .card .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,0.25);border:2px dashed rgba(255,255,255,0.28);border-radius:12px;transition:opacity .3s}
         .pvb-tkg .card.has-video .overlay{display:none}
-        .pvb-tkg .card .tt-logo{width:40px;height:40px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px}
+        .pvb-tkg .card .tt-logo{width:44px;height:44px;background:#fff;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px}
+        .pvb-tkg .card .slot-label{font-size:12px;font-weight:700;color:rgba(255,255,255,0.85);letter-spacing:.02em}
         /* Play hint — hiện khi có video, mờ đi sau 1.5s */
         .pvb-tkg .card .play-hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.55);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;opacity:1;transition:opacity 1s;pointer-events:none}
         .pvb-tkg .card.hint-gone .play-hint{opacity:0}
@@ -107,33 +108,23 @@ const blocks: BuilderBlock[] = [
         .pvb-tkg-pop .tkg-close{position:absolute;top:12px;right:12px;width:36px;height:36px;background:rgba(0,0,0,0.6);border:none;color:#fff;font-size:20px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1}
         /* Drag handle */
         .pvb-tkg-pop .tkg-handle{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:40px;height:4px;background:rgba(255,255,255,0.4);border-radius:2px;z-index:10}
-        .pvb-tkg .admin-panel{margin-top:20px;padding:14px;background:#f9fafb;border-radius:10px;border:1px dashed #d1d5db}
-        .pvb-tkg .admin-panel p{font-size:11px;color:#6b7280;margin:0 0 10px;font-weight:600}
-        .pvb-tkg .tt-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
-        .pvb-tkg .tt-lbl{font-size:11px;color:#374151;white-space:nowrap;width:52px}
-        .pvb-tkg .tt-status{font-size:11px;color:#6b7280;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .pvb-tkg .tt-btn{padding:6px 10px;background:#111827;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
-        .pvb-tkg .tt-btn:disabled{opacity:.5;cursor:not-allowed}
         @media(min-width:768px){.pvb-tkg{padding:48px 24px}.pvb-tkg .grid{gap:12px}.pvb-tkg-pop .pop-inner{height:80vh;border-radius:20px;margin-bottom:20px}}
       </style>
       <section class="pvb-tkg">
         <h2>&#127925; Video thực tế từ khách hàng</h2>
         <div class="grid">
           <div class="card" data-src="" data-idx="0">
-            <div class="overlay"><div class="tt-logo">&#127925;</div></div>
+            <div class="overlay"><div class="tt-logo">&#127925;</div><div class="slot-label">&#212; video 1</div></div>
             <div class="play-hint">&#9654; Xem video</div>
           </div>
           <div class="card" data-src="" data-idx="1">
-            <div class="overlay"><div class="tt-logo">&#127925;</div></div>
+            <div class="overlay"><div class="tt-logo">&#127925;</div><div class="slot-label">&#212; video 2</div></div>
             <div class="play-hint">&#9654; Xem video</div>
           </div>
           <div class="card" data-src="" data-idx="2">
-            <div class="overlay"><div class="tt-logo">&#127925;</div></div>
+            <div class="overlay"><div class="tt-logo">&#127925;</div><div class="slot-label">&#212; video 3</div></div>
             <div class="play-hint">&#9654; Xem video</div>
           </div>
-        </div>
-        <div class="admin-panel">
-          <p>&#128249; Dùng panel <strong>&#8220;Upload video&#8221;</strong> bên phải để tải mp4 lên cho từng ô</p>
         </div>
       </section>
       <div class="pvb-tkg-pop" id="pvb-tkg-pop" style="display:none">
@@ -1380,18 +1371,48 @@ export default function ProductPageBuilder({
                 }
                 vid.addEventListener('seeked', capturePoster, { once: true })
                 vid.addEventListener('loadeddata', () => { try { vid!.currentTime = 0.1 } catch {} }, { once: true })
+                cardEl.classList.add('has-video')
                 const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
                 if (overlay) overlay.style.display = 'none'
               }
-              // Cập nhật status text trong admin-panel của canvas
-              const statusEl = doc.getElementById(`tkg-s${idx}`)
-              if (statusEl) statusEl.textContent = '✅ ' + filename
             }
           } catch {}
 
           console.log(`[pvbTkgSetVideoUrl] slot ${idx} → ${url}`)
         } catch (err) {
           console.warn('[pvbTkgSetVideoUrl] error:', err)
+        }
+      }
+
+      // Xóa video khỏi slot — clear model + canvas DOM + React state
+      ;(window as any).pvbTkgRemoveVideo = (idx: number) => {
+        try {
+          const tkgSections = editor.getWrapper().find('.pvb-tkg')
+          const selected = editor.getSelected()
+          const tkgSection = (selected && selected.getEl()?.closest?.('.pvb-tkg'))
+            ? (tkgSections.find((s: any) => s.getEl()?.contains?.(selected.getEl())) || tkgSections[0])
+            : tkgSections[0]
+          const cardComp = tkgSection?.find('.card')[idx]
+          if (cardComp) {
+            cardComp.addAttributes({ 'data-src': '', 'data-poster': '' })
+            cardComp.find('video').forEach((v: any) => v.remove())
+            const overlayComp = cardComp.find('.overlay')[0]
+            if (overlayComp) overlayComp.addStyle({ display: '' })
+          }
+          // Canvas DOM
+          const doc = editor.Canvas.getDocument()
+          const cardEl = doc?.querySelectorAll('.pvb-tkg .grid .card')[idx] as HTMLElement | undefined
+          if (cardEl) {
+            cardEl.setAttribute('data-src', '')
+            cardEl.removeAttribute('data-poster')
+            cardEl.classList.remove('has-video')
+            cardEl.querySelector('video')?.remove()
+            const overlay = cardEl.querySelector('.overlay') as HTMLElement | null
+            if (overlay) overlay.style.display = ''
+          }
+          setVideoSlots(prev => { const n = [...prev]; n[idx] = null; return n })
+        } catch (err) {
+          console.warn('[pvbTkgRemoveVideo] error:', err)
         }
       }
 
@@ -1439,7 +1460,7 @@ export default function ProductPageBuilder({
           }
           // Restore video preview từ data-src đã lưu (khi reload editor)
           const cards = doc.querySelectorAll('.pvb-tkg .grid .card')
-          cards.forEach((card: Element, i: number) => {
+          cards.forEach((card: Element) => {
             const src = (card as HTMLElement).getAttribute('data-src')
             if (!src) return
             let vid = card.querySelector('video') as HTMLVideoElement | null
@@ -1452,13 +1473,9 @@ export default function ProductPageBuilder({
               card.insertBefore(vid, card.firstChild)
             }
             if (vid.src !== src) { vid.src = src; vid.load() }
+            card.classList.add('has-video')
             const overlay = card.querySelector('.overlay') as HTMLElement | null
             if (overlay) overlay.style.display = 'none'
-            // Update admin-panel status
-            const statusEl = doc.getElementById(`tkg-s${i}`)
-            if (statusEl && statusEl.textContent === 'Chưa có video') {
-              statusEl.textContent = '✅ ' + src.split('/').pop()
-            }
           })
         } catch {}
       }
@@ -2122,29 +2139,69 @@ export default function ProductPageBuilder({
 
             {/* Video Gallery upload — ngoài selectedSection, luôn hiện khi page có pvb-tkg */}
             {showVideoPanel && (
-              <div style={{ padding: "10px 10px 6px", borderTop: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ padding: "10px 10px 8px", borderTop: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: 8 }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 2px 2px" }}>📹 Upload video gallery</p>
-                {[0, 1, 2].map(idx => (
-                  <button
-                    key={idx}
-                    disabled={videoUploading[idx]}
-                    onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, width: "100%",
-                      padding: "9px 10px", borderRadius: 8,
-                      border: videoSlots[idx] ? "1px solid #86efac" : "1px solid #e5e7eb",
-                      background: videoSlots[idx] ? "#dcfce7" : "#fff",
-                      color: videoUploading[idx] ? "#9ca3af" : videoSlots[idx] ? "#15803d" : "#374151",
-                      fontSize: 12, fontWeight: 700, cursor: videoUploading[idx] ? "not-allowed" : "pointer",
-                      opacity: videoUploading[idx] ? 0.7 : 1,
-                    }}
-                  >
-                    <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>
-                      {videoUploading[idx] ? "⏳" : videoSlots[idx] ? "✅" : "↑"}
-                    </span>
-                    {videoUploading[idx] ? "Đang tải..." : videoSlots[idx] ? `Video ${idx + 1} đã up` : `Tải video ${idx + 1}`}
-                  </button>
-                ))}
+                {[0, 1, 2].map(idx => {
+                  const url = videoSlots[idx]
+                  const uploading = videoUploading[idx]
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10,
+                        border: url ? "1px solid #86efac" : "1px dashed #d1d5db",
+                        background: url ? "#f0fdf4" : "#fff",
+                      }}
+                    >
+                      {/* Thumbnail 9:16 */}
+                      <div style={{
+                        width: 40, height: 56, borderRadius: 6, flexShrink: 0, overflow: "hidden",
+                        background: url ? "#000" : "#f3f4f6",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        border: "1px solid #e5e7eb",
+                      }}>
+                        {url ? (
+                          <video src={url} muted playsInline preload="metadata"
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <span style={{ fontSize: 16, opacity: 0.4 }}>🎵</span>
+                        )}
+                      </div>
+                      {/* Info + actions */}
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#374151" }}>Ô video {idx + 1}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: uploading ? "#9ca3af" : url ? "#15803d" : "#9ca3af" }}>
+                          {uploading ? "⏳ Đang tải..." : url ? "✅ Đã có video" : "Chưa có video"}
+                        </span>
+                        <div style={{ display: "flex", gap: 5, marginTop: 1 }}>
+                          <button
+                            disabled={uploading}
+                            onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
+                            style={{
+                              flex: 1, padding: "5px 6px", borderRadius: 6, border: "1px solid #d1d5db",
+                              background: "#fff", color: uploading ? "#9ca3af" : "#374151",
+                              fontSize: 11, fontWeight: 700, cursor: uploading ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {url ? "↻ Đổi" : "↑ Tải lên"}
+                          </button>
+                          {url && !uploading && (
+                            <button
+                              onClick={() => (window as any).pvbTkgRemoveVideo?.(idx)}
+                              style={{
+                                padding: "5px 8px", borderRadius: 6, border: "1px solid #fca5a5",
+                                background: "#fff1f2", color: "#dc2626",
+                                fontSize: 11, fontWeight: 700, cursor: "pointer",
+                              }}
+                            >
+                              🗑 Xóa
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
 
