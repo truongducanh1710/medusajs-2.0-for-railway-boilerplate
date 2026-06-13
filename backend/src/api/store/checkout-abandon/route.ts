@@ -2,6 +2,23 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from "../../../lib/constants"
 import { getPancakeProvinceId } from "../../../lib/pancake-address"
 
+// Chống bắn trùng: mỗi cartId/phone chỉ tạo 1 đơn nháp trong cửa sổ thời gian.
+// In-memory (per-instance) — đủ chặn các beacon liên tiếp từ cùng 1 client.
+const recentDrafts = new Map<string, number>()
+const DEDUPE_WINDOW_MS = 30 * 60 * 1000 // 30 phút
+
+function isDuplicate(key: string): boolean {
+  const now = Date.now()
+  // Dọn entry hết hạn
+  for (const [k, t] of recentDrafts) {
+    if (now - t > DEDUPE_WINDOW_MS) recentDrafts.delete(k)
+  }
+  const last = recentDrafts.get(key)
+  if (last && now - last < DEDUPE_WINDOW_MS) return true
+  recentDrafts.set(key, now)
+  return false
+}
+
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const { name, phone, street, province, ward, note, items, cartId } = req.body as any
 
@@ -11,6 +28,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (!PANCAKE_API_KEY || !PANCAKE_SHOP_ID) {
     return res.status(200).json({ ok: false, reason: "pancake not configured" })
+  }
+
+  // Dedupe theo cartId (ưu tiên) hoặc phone nếu không có cartId
+  const dedupeKey = cartId || `phone:${String(phone).replace(/\s/g, "")}`
+  if (isDuplicate(dedupeKey)) {
+    return res.status(200).json({ ok: true, deduped: true })
   }
 
   try {
@@ -85,6 +108,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!response.ok) {
       const text = await response.text()
       console.warn(`[checkout-abandon] Pancake error ${response.status}: ${text}`)
+      recentDrafts.delete(dedupeKey) // cho phép thử lại lần sau
       return res.status(200).json({ ok: false, reason: "pancake_error" })
     }
 
@@ -95,6 +119,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(200).json({ ok: true, pancake_id: pancakeId })
   } catch (err: any) {
     console.error("[checkout-abandon] Error:", err?.message)
+    recentDrafts.delete(dedupeKey) // cho phép thử lại lần sau
     return res.status(200).json({ ok: false, reason: err?.message })
   }
 }

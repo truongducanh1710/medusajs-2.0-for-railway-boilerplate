@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { HttpTypes } from "@medusajs/types"
 import {
   updateCart,
@@ -477,18 +477,35 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     })
   }, [cart.id, countryCode, payment, shippingOptions?.length])
 
-  // Đơn nháp: khi khách có SĐT hợp lệ nhưng thoát trang mà chưa đặt hàng
+  // Đơn nháp: khi khách có SĐT hợp lệ nhưng thoát trang mà chưa đặt hàng.
+  // Dùng ref để giữ snapshot mới nhất mà không phải đăng ký lại listener mỗi lần gõ.
+  const abandonStateRef = useRef({
+    form,
+    items: localItems ?? cart.items ?? [],
+    cartId: cart.id,
+    // Chặn bắn nháp khi: đã submit đặt hàng, đang xem QR SePay, hoặc đã bắn rồi
+    placed: false,
+    showingQR: false,
+    fired: false,
+  })
+  abandonStateRef.current.form = form
+  abandonStateRef.current.items = localItems ?? cart.items ?? []
+  abandonStateRef.current.cartId = cart.id
+  abandonStateRef.current.showingQR = showQR
+  // placed chỉ chuyển true một chiều (khi đặt hàng thành công) — không reset theo submitting
+
   useEffect(() => {
     const PHONE_RE = /^(0|\+84)[0-9]{8,9}$/
-    let fired = false
 
     const sendAbandon = () => {
-      if (fired) return
-      const phone = form.phone.replace(/\s/g, "")
+      const st = abandonStateRef.current
+      // Không bắn nếu đang đặt hàng / xem QR / đã bắn 1 lần cho phiên này
+      if (st.fired || st.placed || st.showingQR) return
+      const phone = st.form.phone.replace(/\s/g, "")
       if (!PHONE_RE.test(phone)) return
-      fired = true
+      st.fired = true
 
-      const items = (localItems ?? cart.items ?? []).map((item: any) => ({
+      const items = (st.items || []).map((item: any) => ({
         title: item.title,
         quantity: item.quantity,
         unit_price: item.unit_price,
@@ -498,30 +515,38 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
       const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "https://api.phanviet.vn"
       const payload = JSON.stringify({
-        cartId: cart.id,
-        name: form.name,
+        cartId: st.cartId,
+        name: st.form.name,
         phone,
-        street: form.street,
-        province: form.province,
-        ward: form.ward,
-        note: form.note,
+        street: st.form.street,
+        province: st.form.province,
+        ward: st.form.ward,
+        note: st.form.note,
         items,
       })
 
-      // sendBeacon đảm bảo gửi được kể cả khi tab đóng
-      navigator.sendBeacon(`${backendUrl}/store/checkout-abandon`, new Blob([payload], { type: "application/json" }))
+      // fetch + keepalive: gửi được kể cả khi tab đóng (như sendBeacon)
+      // nhưng cho phép gửi header x-publishable-api-key mà Medusa /store/* yêu cầu.
+      fetch(`${backendUrl}/store/checkout-abandon`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-publishable-api-key": PUB_KEY },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {})
     }
 
+    // Chỉ bắn khi tab thực sự bị ẩn (đóng/chuyển app) — không bắn ở beforeunload
+    // vì điều hướng nội bộ (bấm đặt hàng → /confirmed) cũng kích hoạt beforeunload.
+    const onPageHide = () => sendAbandon()
     const onVisibility = () => { if (document.visibilityState === "hidden") sendAbandon() }
-    const onUnload = () => sendAbandon()
 
     document.addEventListener("visibilitychange", onVisibility)
-    window.addEventListener("beforeunload", onUnload)
+    window.addEventListener("pagehide", onPageHide)
     return () => {
       document.removeEventListener("visibilitychange", onVisibility)
-      window.removeEventListener("beforeunload", onUnload)
+      window.removeEventListener("pagehide", onPageHide)
     }
-  }, [form, cart.id, cart.items, localItems])
+  }, [])
 
   const sortedItems = [...(localItems ?? cart.items ?? [])].sort((a: any, b: any) =>
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
@@ -699,6 +724,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       if (result?.type === "order") {
+        // Đặt hàng thành công → khóa đơn nháp để không bắn trùng khi rời trang
+        abandonStateRef.current.placed = true
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
       }
     } catch (err) {
@@ -737,6 +764,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       if (result?.type === "order") {
+        abandonStateRef.current.placed = true
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
       }
     } catch (err) {
