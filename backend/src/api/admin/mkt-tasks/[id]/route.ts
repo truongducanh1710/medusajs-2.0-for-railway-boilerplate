@@ -120,9 +120,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     if (Object.keys(update).length === 0) return res.status(400).json({ error: "Không có field nào để cập nhật" })
 
-    console.log("[mkt-tasks PATCH] id:", task.id, "update:", JSON.stringify(update))
-    const updated = await svc.updateMktTasks({ id: task.id }, update)
-    console.log("[mkt-tasks PATCH] updated:", JSON.stringify(updated))
+    const updated = await svc.updateMktTasks({ id: task.id, ...update })
 
     // Post system message vào channel khi status thay đổi
     if (body.status !== undefined && task.channel_id && body.status !== task.status) {

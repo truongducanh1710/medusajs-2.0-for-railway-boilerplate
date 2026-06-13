@@ -25,7 +25,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const newComment = { author_id: uid, text: text.trim(), created_at: new Date().toISOString() }
     const comments = [...(task.comments || []), newComment]
 
-    await svc.updateMktTasks({ id }, { comments })
+    await svc.updateMktTasks({ id, comments })
     res.json({ success: true, comment: newComment })
   } catch (e: any) {
     res.status(500).json({ error: e.message })

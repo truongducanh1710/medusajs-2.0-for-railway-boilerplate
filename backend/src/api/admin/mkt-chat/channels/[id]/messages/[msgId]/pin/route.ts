@@ -33,7 +33,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!msg) return res.status(404).json({ error: "Không tìm thấy tin nhắn" })
 
     const newPinned = !msg.is_pinned
-    await svc.updateMktMessages({ id: msgId }, { is_pinned: newPinned })
+    await svc.updateMktMessages({ id: msgId, is_pinned: newPinned })
 
     // Post system message
     const userModule = req.scope.resolve(Modules.USER)

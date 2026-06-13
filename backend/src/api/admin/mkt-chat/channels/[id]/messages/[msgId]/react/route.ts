@@ -38,7 +38,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       reactions[emoji].push(email)
     }
 
-    await svc.updateMktMessages({ id: msgId }, { reactions })
+    await svc.updateMktMessages({ id: msgId, reactions })
     res.json({ reactions })
   } catch (e: any) {
     res.status(500).json({ error: e.message })

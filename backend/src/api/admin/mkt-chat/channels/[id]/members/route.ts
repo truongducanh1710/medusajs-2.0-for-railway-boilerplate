@@ -35,7 +35,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
-    await svc.updateMktChannels({ id }, { members })
+    await svc.updateMktChannels({ id, members })
     res.json({ success: true, member_count: members.length })
   } catch (e: any) {
     res.status(500).json({ error: e.message })

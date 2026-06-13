@@ -35,7 +35,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (!task) return res.status(404).json({ error: "Không tìm thấy task" })
     if (task.status !== "done") return res.status(400).json({ error: "Chỉ đánh giá task đã hoàn thành" })
 
-    await svc.updateMktTasks({ id }, { rating: Number(rating) })
+    await svc.updateMktTasks({ id, rating: Number(rating) })
     res.json({ success: true })
   } catch (e: any) {
     res.status(500).json({ error: e.message })

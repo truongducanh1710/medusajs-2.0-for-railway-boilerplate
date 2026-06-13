@@ -40,7 +40,7 @@ export default async function mktTaskRecurring(container: MedusaContainer) {
       else if (/^\d{4}-\d{2}$/.test(pk)) currentKey = currentMonthlyKey
 
       if (isOlderPeriod(pk, currentKey)) {
-        await svc.updateMktTasks({ id: inst.id }, { status: "missed" })
+        await svc.updateMktTasks({ id: inst.id, status: "missed" })
         missed++
       }
     }
