@@ -59,12 +59,13 @@ export default function CheckoutTracker({
       }
     }
 
-    // Wait for fbq to be ready (FB script may not be loaded yet)
-    if (window.fbq) {
+    // Wait for FacebookPixel to init the store pixel before firing, so the
+    // product pixel inited here lands after the store pixel (correct order).
+    if (window.__fbqReady) {
       fire()
     } else {
-      const timer = setTimeout(fire, 1500)
-      return () => clearTimeout(timer)
+      window.addEventListener("fbq:ready", fire, { once: true })
+      return () => window.removeEventListener("fbq:ready", fire)
     }
   }, [])
 

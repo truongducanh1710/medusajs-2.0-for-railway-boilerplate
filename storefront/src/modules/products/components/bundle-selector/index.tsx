@@ -166,7 +166,7 @@ export default function BundleSelector({ product, region }: Props) {
         content_ids: [variant.id],
         content_name: product.title,
         content_type: "product",
-        value: selectedOpt.price / 100,
+        value: selectedOpt.price,
         currency: "VND",
         num_items: selected,
       }, { eventID: atcEventId })

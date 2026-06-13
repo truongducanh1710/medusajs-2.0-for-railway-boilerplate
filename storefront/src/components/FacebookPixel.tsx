@@ -8,6 +8,7 @@ declare global {
   interface Window {
     fbq?: (...args: any[]) => void
     _fbq?: any
+    __fbqReady?: boolean
   }
 }
 
@@ -75,9 +76,16 @@ export default function FacebookPixel({
     if (!allIds.length) return
 
     loadFbScript(allIds[0], () => {
+      // Init every pixel (store + product) BEFORE firing any event so all
+      // inited pixels receive PageView. Then broadcast readiness so trackers
+      // (ProductPixelTracker, CheckoutTracker) fire on a real signal instead
+      // of a guessed setTimeout.
       for (const id of allIds.slice(1)) {
         window.fbq?.("init", id)
       }
+
+      window.__fbqReady = true
+      window.dispatchEvent(new Event("fbq:ready"))
 
       if (!initialized.current) {
         initialized.current = true

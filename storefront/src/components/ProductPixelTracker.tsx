@@ -37,9 +37,16 @@ export default function ProductPixelTracker({
     if (typeof window === "undefined") return
 
     const fire = () => {
-      // Init per-product pixels (global already inited by FacebookPixel in layout)
+      // Init per-product pixels (store pixel already inited by FacebookPixel).
+      // fbq:ready guarantees the store pixel is up, so init order is correct.
       for (const id of pixelIds) {
         window.fbq?.("init", id)
+      }
+
+      // Give the product pixel its own PageView — it was not inited yet when
+      // FacebookPixel fired the store PageView on hard load.
+      for (const id of pixelIds) {
+        window.fbq?.("trackSingle", id, "PageView")
       }
 
       const eventId = generateEventId()
@@ -50,7 +57,7 @@ export default function ProductPixelTracker({
           content_ids: [productId],
           content_name: productTitle,
           content_type: "product",
-          value: price / 100,
+          value: price,
           currency,
         },
         { eventID: eventId }
@@ -65,7 +72,7 @@ export default function ProductPixelTracker({
           content_ids: [productId],
           content_name: productTitle,
           content_type: "product",
-          value: price / 100,
+          value: price,
           currency,
         },
       })
@@ -82,7 +89,7 @@ export default function ProductPixelTracker({
             content_ids: [productId],
             content_name: productTitle,
             content_type: "product",
-            value: price / 100,
+            value: price,
             currency,
           },
         })
@@ -93,12 +100,13 @@ export default function ProductPixelTracker({
       startTime.current = Date.now()
     }
 
-    // Wait for fbq to be ready (FB script may not be loaded yet)
-    if (window.fbq) {
+    // Wait for FacebookPixel to finish initing the store pixel, so init order
+    // is correct (store first, then product) and both pixels are live.
+    if (window.__fbqReady) {
       fire()
     } else {
-      const timer = setTimeout(fire, 1500)
-      return () => clearTimeout(timer)
+      window.addEventListener("fbq:ready", fire, { once: true })
+      return () => window.removeEventListener("fbq:ready", fire)
     }
   }, [productId])
 

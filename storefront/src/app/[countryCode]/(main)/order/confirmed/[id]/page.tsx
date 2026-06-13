@@ -38,7 +38,9 @@ export default async function OrderConfirmedPage({ params }: Props) {
   }
 
   const contentIds = order.items?.map((i) => i.variant_id || i.id) ?? []
-  const value = (order.total ?? 0) / 100
+  // order.total is already real VND (order-summary displays it via convertToLocale
+  // without /100), so send it as-is — no minor-unit conversion.
+  const value = order.total ?? 0
   const currency = order.currency_code?.toUpperCase() ?? "VND"
 
   // Lấy pixel riêng từ sản phẩm đầu tiên trong đơn
