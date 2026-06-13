@@ -210,7 +210,6 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
       // Telegram notifications
       const userModule = req.scope.resolve(Modules.USER)
-      const taskUrl = `${process.env.BACKEND_URL || "https://api.phanviet.vn"}/app/mkt-tasks?task=${task.id}`
 
       if (body.status === "pending_review") {
         // Assignee gửi duyệt → notify tất cả manager
