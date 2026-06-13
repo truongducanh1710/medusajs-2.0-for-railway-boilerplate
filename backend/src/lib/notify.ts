@@ -14,6 +14,51 @@ export async function notifyTelegram(text: string): Promise<void> {
   }
 }
 
+/** Gửi Telegram tới 1 chat_id cụ thể */
+export async function notifyTelegramChat(chatId: string, text: string): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN || !chatId) return
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    })
+  } catch (e: any) {
+    console.warn("[notify] Telegram chat error:", e.message)
+  }
+}
+
+/**
+ * Gửi Telegram tới một hoặc nhiều user theo email.
+ * Lookup tg_chat_id từ user.metadata — bỏ qua user chưa link bot.
+ */
+export async function notifyTelegramByEmail(
+  userModule: any,
+  emails: string | string[],
+  text: string
+): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return
+  const emailList = Array.isArray(emails) ? emails : [emails]
+  try {
+    const users = await userModule.listUsers(
+      { email: emailList.length === 1 ? emailList[0] : undefined },
+      { select: ["email", "metadata"] }
+    )
+    const targets = emailList.length > 1
+      ? users.filter((u: any) => emailList.includes(u.email))
+      : users
+    await Promise.all(
+      targets.map(async (u: any) => {
+        const chatId: string | undefined = (u.metadata as any)?.tg_chat_id
+        if (!chatId) return
+        await notifyTelegramChat(chatId, text)
+      })
+    )
+  } catch (e: any) {
+    console.warn("[notify] notifyTelegramByEmail error:", e.message)
+  }
+}
+
 export function formatRuleAlert(opts: {
   ruleName: string
   mktName: string

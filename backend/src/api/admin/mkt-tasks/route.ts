@@ -7,6 +7,7 @@ import {
   periodDeadline,
   spawnInstanceForPeriod,
 } from "../../../modules/mkt-task/recurring-helpers"
+import { notifyTelegramByEmail } from "../../../lib/notify"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -196,6 +197,29 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       } catch {
         // Notification optional
       }
+    }
+
+    // Telegram: thông báo cho assignee
+    if (assignee_id && assignee_id !== creator.email) {
+      const userModule = req.scope.resolve(Modules.USER)
+      const deadlineStr = task.deadline
+        ? new Date(task.deadline).toLocaleString("vi-VN", {
+            hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric",
+            timeZone: "Asia/Ho_Chi_Minh",
+          })
+        : "Chưa đặt"
+      const taskUrl = `${process.env.BACKEND_URL || "https://api.phanviet.vn"}/app/mkt-tasks?task=${task.id}`
+      const tgText = [
+        `📋 <b>Bạn có việc mới!</b>`,
+        ``,
+        `<b>${title}</b>`,
+        task.priority === "high" ? `🔴 Độ ưu tiên: <b>Cao</b>` : task.priority === "medium" ? `🟡 Độ ưu tiên: Vừa` : `🟢 Độ ưu tiên: Thấp`,
+        `📅 Deadline: ${deadlineStr}`,
+        `👤 Giao bởi: ${creatorName}`,
+        ``,
+        `🔗 <a href="${taskUrl}">Xem task</a>`,
+      ].filter(Boolean).join("\n")
+      notifyTelegramByEmail(userModule, assignee_id, tgText).catch(() => {})
     }
 
     res.json({ task })

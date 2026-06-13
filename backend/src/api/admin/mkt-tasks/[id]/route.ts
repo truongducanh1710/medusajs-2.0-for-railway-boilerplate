@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { notifyTelegramByEmail } from "../../../../lib/notify"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -205,6 +206,48 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
           subject: `[${verdict}] ${task.title}`,
           body: `${email} đã ${body.status === "done" ? "duyệt" : "từ chối"} task "${task.title}" của bạn.\n\nXem task: ${taskUrl}`,
         })
+      }
+
+      // Telegram notifications
+      const userModule = req.scope.resolve(Modules.USER)
+      const taskUrl = `${process.env.BACKEND_URL || "https://api.phanviet.vn"}/app/mkt-tasks?task=${task.id}`
+
+      if (body.status === "pending_review") {
+        // Assignee gửi duyệt → notify tất cả manager
+        const managerEmails = await getManagerEmails(req)
+        const tgText = [
+          `🔍 <b>Chờ duyệt!</b>`,
+          ``,
+          `<b>${task.title}</b>`,
+          `👤 Gửi bởi: ${email}`,
+          ``,
+          `🔗 <a href="${taskUrl}">Xem & duyệt</a>`,
+        ].join("\n")
+        notifyTelegramByEmail(userModule, managerEmails, tgText).catch(() => {})
+      } else if (body.status === "done" && task.status === "pending_review") {
+        // Manager duyệt → notify assignee
+        const tgText = [
+          `✅ <b>Task đã được duyệt!</b>`,
+          ``,
+          `<b>${task.title}</b>`,
+          `👤 Duyệt bởi: ${email}`,
+          ``,
+          `🔗 <a href="${taskUrl}">Xem task</a>`,
+        ].join("\n")
+        notifyTelegramByEmail(userModule, task.assignee_id, tgText).catch(() => {})
+      } else if (body.status === "cancelled" && task.status === "pending_review") {
+        // Manager từ chối → notify assignee
+        const tgText = [
+          `❌ <b>Task bị từ chối</b>`,
+          ``,
+          `<b>${task.title}</b>`,
+          `👤 Từ chối bởi: ${email}`,
+          ``,
+          `🔗 <a href="${taskUrl}">Xem task</a>`,
+        ].join("\n")
+        notifyTelegramByEmail(userModule, task.assignee_id, tgText).catch(() => {})
+      } else if (body.status === "in_progress" && task.status === "todo") {
+        // Bắt đầu làm — không cần notify
       }
 
       // Post system message vào channel
