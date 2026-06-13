@@ -133,10 +133,7 @@ const blocks: BuilderBlock[] = [
           </div>
         </div>
         <div class="admin-panel">
-          <p>&#128247; Tải video TikTok (mp4) lên cho từng ô</p>
-          <div class="tt-row"><span class="tt-lbl">Video 1</span><span class="tt-status" id="tkg-s0">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(0)">&#8679; Tải lên</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 2</span><span class="tt-status" id="tkg-s1">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(1)">&#8679; Tải lên</button></div>
-          <div class="tt-row"><span class="tt-lbl">Video 3</span><span class="tt-status" id="tkg-s2">Chưa có video</span><button class="tt-btn" onclick="window.parent.pvbTkgUpload(2)">&#8679; Tải lên</button></div>
+          <p>&#128249; Dùng panel <strong>&#8220;Upload video&#8221;</strong> bên phải để tải mp4 lên cho từng ô</p>
         </div>
       </section>
       <div class="pvb-tkg-pop" id="pvb-tkg-pop" style="display:none">
@@ -2063,33 +2060,6 @@ export default function ProductPageBuilder({
                 ))}
               </div>
 
-              {/* Video Gallery upload — right panel, React onClick trực tiếp (không qua iframe) */}
-              {selectedSection.pvbClass === "pvb-tkg" && (
-                <div style={{ padding: "0 10px 6px", display: "flex", flexDirection: "column", gap: 6 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 2px 2px" }}>📹 Upload video</p>
-                  {[0, 1, 2].map(idx => (
-                    <button
-                      key={idx}
-                      disabled={videoUploading[idx]}
-                      onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 8, width: "100%",
-                        padding: "9px 10px", borderRadius: 8,
-                        border: videoSlots[idx] ? "1px solid #86efac" : "1px solid #e5e7eb",
-                        background: videoSlots[idx] ? "#dcfce7" : "#fff",
-                        color: videoUploading[idx] ? "#9ca3af" : videoSlots[idx] ? "#15803d" : "#374151",
-                        fontSize: 12, fontWeight: 700, cursor: videoUploading[idx] ? "not-allowed" : "pointer",
-                        opacity: videoUploading[idx] ? 0.7 : 1,
-                      }}
-                    >
-                      <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>
-                        {videoUploading[idx] ? "⏳" : videoSlots[idx] ? "✅" : "↑"}
-                      </span>
-                      {videoUploading[idx] ? "Đang tải..." : videoSlots[idx] ? `Video ${idx + 1} đã up` : `Tải video ${idx + 1}`}
-                    </button>
-                  ))}
-                </div>
-              )}
 
               {/* Spec-specific row actions — always reliable via right panel */}
               {selectedSection.pvbClass === "pvb-spec" && (
@@ -2149,6 +2119,34 @@ export default function ProductPageBuilder({
                 <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", margin: "10px 14px 6px", letterSpacing: "0.08em" }}>Style</p>
               </div>
             </div>)}
+
+            {/* Video Gallery upload — ngoài selectedSection, luôn hiện khi page có pvb-tkg */}
+            {showVideoPanel && (
+              <div style={{ padding: "10px 10px 6px", borderTop: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: 6 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 2px 2px" }}>📹 Upload video gallery</p>
+                {[0, 1, 2].map(idx => (
+                  <button
+                    key={idx}
+                    disabled={videoUploading[idx]}
+                    onClick={() => { uploadingSlotRef.current = idx; videoInputRef.current?.click() }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "9px 10px", borderRadius: 8,
+                      border: videoSlots[idx] ? "1px solid #86efac" : "1px solid #e5e7eb",
+                      background: videoSlots[idx] ? "#dcfce7" : "#fff",
+                      color: videoUploading[idx] ? "#9ca3af" : videoSlots[idx] ? "#15803d" : "#374151",
+                      fontSize: 12, fontWeight: 700, cursor: videoUploading[idx] ? "not-allowed" : "pointer",
+                      opacity: videoUploading[idx] ? 0.7 : 1,
+                    }}
+                  >
+                    <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>
+                      {videoUploading[idx] ? "⏳" : videoSlots[idx] ? "✅" : "↑"}
+                    </span>
+                    {videoUploading[idx] ? "Đang tải..." : videoSlots[idx] ? `Video ${idx + 1} đã up` : `Tải video ${idx + 1}`}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* GrapesJS Style/Selector/Trait managers — always in DOM */}
             <div id="pvb-styles-panel" style={{ flex: 1, overflowY: "auto", minHeight: 0 }} />
