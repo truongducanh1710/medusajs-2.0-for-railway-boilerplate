@@ -363,6 +363,7 @@ function TaskDrawer({
   const [editForm, setEditForm] = useState({
     title: initialTask.title,
     deadline: initialTask.deadline?.slice(0, 10) || "",
+    deadlineTime: initialTask.deadline ? new Date(initialTask.deadline).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Ho_Chi_Minh" }) : "23:59",
     assignee_id: initialTask.assignee_id,
     type: initialTask.type,
   })
@@ -443,9 +444,12 @@ function TaskDrawer({
 
   const saveEdit = async () => {
     setSaving(true)
+    const deadlineVal = editForm.deadline
+      ? `${editForm.deadline}T${editForm.deadlineTime || "23:59"}:00+07:00`
+      : null
     const update: Record<string, any> = {
       title: editForm.title,
-      deadline: editForm.deadline || null,
+      deadline: deadlineVal,
       assignee_id: editForm.assignee_id,
       type: editForm.type,
     }
@@ -610,7 +614,10 @@ function TaskDrawer({
                   </div>
                   <div>
                     <label className={LABEL_CLS}>Deadline</label>
-                    <input type="date" className={INPUT_CLS} value={editForm.deadline} onChange={e => setEditForm(f => ({ ...f, deadline: e.target.value }))} />
+                    <div className="flex gap-1.5">
+                      <input type="date" className={cn(INPUT_CLS, "flex-1")} value={editForm.deadline} onChange={e => setEditForm(f => ({ ...f, deadline: e.target.value }))} />
+                      <input type="time" className={cn(INPUT_CLS, "w-[100px]")} value={editForm.deadlineTime} onChange={e => setEditForm(f => ({ ...f, deadlineTime: e.target.value }))} />
+                    </div>
                   </div>
                 </div>
                 <div>
@@ -945,6 +952,7 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
     type: defaults?.type || "ads_camp",
     assignee_id: defaults?.assignee_id || "",
     deadline: defaults?.deadline || "",
+    deadlineTime: "23:59",
     notes: "",
     priority: "medium",
     tags: [] as string[],
@@ -958,10 +966,15 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
   const submit = async () => {
     if (!form.title.trim() || !form.assignee_id) { setErr("Vui lòng nhập tiêu đề và chọn người nhận"); return }
     setSaving(true); setErr("")
+    const { deadlineTime, ...rest } = form
+    const payload = {
+      ...rest,
+      deadline: form.deadline ? `${form.deadline}T${deadlineTime || "23:59"}:00+07:00` : null,
+    }
     const r = await apiFetch("/admin/mkt-tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify(payload),
     }).then(r => r.json())
     setSaving(false)
     if (r.task) { onCreated(); onClose() }
@@ -1001,7 +1014,10 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
           {!isRecurring && (
             <div>
               <label className={LABEL_CLS}>Deadline</label>
-              <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+              <div className="flex gap-1.5">
+                <input type="date" className={cn(INPUT_CLS, "flex-1")} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+                <input type="time" className={cn(INPUT_CLS, "w-[100px]")} value={form.deadlineTime} onChange={e => setForm(f => ({ ...f, deadlineTime: e.target.value }))} />
+              </div>
             </div>
           )}
           {isRecurring && (
