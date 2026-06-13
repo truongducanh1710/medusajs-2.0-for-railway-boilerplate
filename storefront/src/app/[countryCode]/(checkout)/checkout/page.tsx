@@ -1,8 +1,7 @@
 import { Metadata } from "next"
-import { notFound, redirect } from "next/navigation"
-import { enrichLineItems, retrieveCart } from "@lib/data/cart"
+import { redirect } from "next/navigation"
+import { retrieveCart } from "@lib/data/cart"
 import { listCartShippingMethods } from "@lib/data/fulfillment"
-import { HttpTypes } from "@medusajs/types"
 import SimpleCheckout from "@modules/checkout/templates/simple-checkout"
 import CheckoutTracker from "@components/CheckoutTracker"
 
@@ -19,11 +18,8 @@ export default async function Checkout({
   const cart = await retrieveCart()
   if (!cart) redirect(`/${countryCode}`)
 
-  if (cart?.items?.length) {
-    const enrichedItems = await enrichLineItems(cart.items, cart.region_id!)
-    cart.items = enrichedItems as HttpTypes.StoreCartLineItem[]
-  }
-
+  // retrieveCart đã trả về items.variant.product.{thumbnail,images} — checkout chỉ
+  // dùng những field này, nên KHÔNG cần enrichLineItems (1 round-trip API thừa).
   const shippingOptions = await listCartShippingMethods(cart.id)
 
   const contentIds = (cart.items ?? [])

@@ -9,7 +9,12 @@ export const retrieveOrder = cache(async function (id: string) {
   return sdk.store.order
     .retrieve(
       id,
-      { fields: "*payment_collections.payments" },
+      {
+        // Lấy luôn thumbnail + metadata của line items trong 1 call để trang confirmed
+        // không phải gọi enrichLineItems (1 round-trip API thừa).
+        fields:
+          "*payment_collections.payments,*items,+items.thumbnail,+items.metadata,+items.product_id,+items.title,+items.quantity,+items.unit_price",
+      },
       { next: { tags: ["order"] }, ...getAuthHeaders() }
     )
     .then(({ order }) => order)

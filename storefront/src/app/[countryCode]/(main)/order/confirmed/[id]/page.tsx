@@ -2,7 +2,6 @@ import { Metadata } from "next"
 
 import OrderCompletedTemplate from "@modules/order/templates/order-completed-template"
 import { notFound } from "next/navigation"
-import { enrichLineItems } from "@lib/data/cart"
 import { retrieveOrder } from "@lib/data/orders"
 import { HttpTypes } from "@medusajs/types"
 import PurchaseTracker from "@components/PurchaseTracker"
@@ -12,18 +11,13 @@ type Props = {
 }
 
 async function getOrder(id: string) {
+  // retrieveOrder đã lấy items.{thumbnail,metadata,product_id,...} trong 1 call,
+  // nên không cần enrichLineItems (bỏ 1 round-trip API).
   const order = await retrieveOrder(id)
-
   if (!order) {
     return
   }
-
-  const enrichedItems = await enrichLineItems(order.items, order.region_id!)
-
-  return {
-    ...order,
-    items: enrichedItems,
-  } as unknown as HttpTypes.StoreOrder
+  return order as unknown as HttpTypes.StoreOrder
 }
 
 export const metadata: Metadata = {
