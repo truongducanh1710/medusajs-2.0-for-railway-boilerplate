@@ -13,17 +13,13 @@ async function sendTg(chatId: string | number, text: string) {
 }
 
 /**
- * POST /admin/mkt-tasks/telegram/link
- * Telegram bot webhook gọi vào đây khi user nhắn /link {email}
- * Body: { message: { chat: { id }, text } }  (Telegram Update object)
- *
- * Lưu tg_chat_id vào user.metadata — sau đó dùng để gửi noti cá nhân.
- *
- * Bảo mật: kiểm tra X-Telegram-Bot-Api-Secret-Token header (set trong setWebhook).
+ * POST /store/telegram/webhook
+ * Telegram bot webhook — nhận update khi user nhắn /link {email}
+ * Lưu tg_chat_id vào user.metadata để gửi noti cá nhân.
+ * Bảo mật: X-Telegram-Bot-Api-Secret-Token header.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    // Xác thực webhook secret
     const secret = process.env.TELEGRAM_WEBHOOK_SECRET ?? ""
     if (secret && req.headers["x-telegram-bot-api-secret-token"] !== secret) {
       return res.status(403).json({ ok: false })
@@ -31,12 +27,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const body = req.body as any
     const msg = body?.message
-    if (!msg) return res.json({ ok: true }) // ignore non-message updates
+    if (!msg) return res.json({ ok: true })
 
     const chatId = String(msg.chat?.id ?? "")
     const text: string = msg.text ?? ""
 
-    // /link email@example.com
     const match = text.match(/^\/link\s+(\S+@\S+\.\S+)/i)
     if (!match) {
       await sendTg(chatId, "Dùng lệnh: <code>/link email@phanviet.vn</code> để kết nối tài khoản của bạn.")
@@ -64,7 +59,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     )
     return res.json({ ok: true })
   } catch (e: any) {
-    console.error("[telegram/link]", e.message)
-    return res.json({ ok: true }) // always 200 for Telegram
+    console.error("[telegram/webhook]", e.message)
+    return res.json({ ok: true })
   }
 }
