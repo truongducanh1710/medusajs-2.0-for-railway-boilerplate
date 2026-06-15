@@ -471,14 +471,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     // 1. Upload video
     if (useMinmax) {
-      // MiniMax path: download về tmp rồi kiểm tra size
+      // MiniMax path: luôn download về tmp rồi upload Files API (Drive/Lark URL cần auth, MiniMax không tải được)
       larkTmpPath = await downloadToTmp(row.link)
-      const stat = await fs.promises.stat(larkTmpPath)
-      if (stat.size > MINIMAX_FILE_SIZE_LIMIT) {
-        // Lớn hơn 50MB → upload lên MiniMax Files API
-        minimaxFileId = await uploadToMinimax(larkTmpPath)
-      }
-      // Nếu nhỏ hơn 50MB dùng URL trực tiếp (xử lý ở callMinimax)
+      minimaxFileId = await uploadToMinimax(larkTmpPath)
     } else {
       // Gemini path (giữ nguyên)
       if (isLark) {
@@ -502,10 +497,8 @@ Trả về transcript thuần văn bản, không JSON.`
 
     const callModel = async (prompt: string) => {
       if (useMinmax) {
-        const videoSource = minimaxFileId
-          ? { fileId: minimaxFileId }
-          : { url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t` }
-        return callMinimax(videoSource, prompt)
+        if (!minimaxFileId) throw new Error("MiniMax file upload failed")
+        return callMinimax({ fileId: minimaxFileId }, prompt)
       }
       return callGemini(fileUri, prompt, requestedModel)
     }
