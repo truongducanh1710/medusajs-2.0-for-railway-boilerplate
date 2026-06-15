@@ -40,7 +40,7 @@ export default async function PageLayout({
         <TrackingBeacon />
       </Suspense>
       <Nav countryCode={countryCode} />
-      <main className="pt-24 sm:pt-28">
+      <main className="pt-20 sm:pt-28">
         {children}
       </main>
       <Footer countryCode={countryCode} />

@@ -31,7 +31,7 @@ export default async function Nav({
       </div>
       <AutoHideHeader>
       <header className="bg-slate-50/90 backdrop-blur-md border-b border-slate-200/50">
-        <nav className="flex justify-between items-center h-16 sm:h-20 px-4 sm:px-6 md:px-12 max-w-[1920px] mx-auto">
+        <nav className="flex justify-between items-center h-11 sm:h-20 px-4 sm:px-6 md:px-12 max-w-[1920px] mx-auto">
           {/* Mobile: hamburger left */}
           <div className="flex items-center md:hidden">
             <SideMenu regions={regions} />

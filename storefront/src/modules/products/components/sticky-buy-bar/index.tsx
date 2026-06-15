@@ -115,11 +115,12 @@ export default function StickyBuyBar({
     if (!anchor) return
     const observer = new IntersectionObserver(
       ([entry]) => {
-        const isVisible = !entry.isIntersecting
-        setVisible(isVisible)
+        // Chỉ hiện khi đã scroll QUA form (anchor nằm trên viewport), không hiện khi anchor chưa đến
+        const scrolledPast = !entry.isIntersecting && entry.boundingClientRect.top < 0
+        setVisible(scrolledPast)
         const barEl = document.querySelector("[data-sticky-bar]") as HTMLElement
         const barHeight = barEl ? barEl.offsetHeight : 64
-        window.dispatchEvent(new CustomEvent("sticky-bar-visible", { detail: isVisible ? barHeight : 0 }))
+        window.dispatchEvent(new CustomEvent("sticky-bar-visible", { detail: scrolledPast ? barHeight : 0 }))
       },
       { threshold: 0, rootMargin: "0px" }
     )

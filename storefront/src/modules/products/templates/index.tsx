@@ -385,9 +385,9 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
         productPixelId={productPixelId}
         productCapiToken={productCapiToken}
       />
-      {/* Breadcrumb */}
+      {/* Breadcrumb — ẩn trên mobile để tiết kiệm không gian */}
       <div className="bg-gray-50 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 py-2.5 text-xs text-gray-500 flex gap-1">
+        <div className="max-w-7xl mx-auto px-4 py-2.5 text-xs text-gray-500 hidden sm:flex gap-1">
           <LocalizedClientLink href="/" className="hover:text-orange-500">Trang chủ</LocalizedClientLink>
           <span>›</span>
           <LocalizedClientLink href="/store" className="hover:text-orange-500">Sản phẩm</LocalizedClientLink>
