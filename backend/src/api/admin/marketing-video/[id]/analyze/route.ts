@@ -317,8 +317,7 @@ async function uploadToMinimax(filePath: string): Promise<string> {
 async function callMinimax(fileId: string, prompt: string): Promise<string> {
   const body = Buffer.from(JSON.stringify({
     model: "MiniMax-M3",
-    max_tokens: 8192,
-    thinking: { type: "disabled" },
+    max_tokens: 40000,
     messages: [{
       role: "user",
       content: [
