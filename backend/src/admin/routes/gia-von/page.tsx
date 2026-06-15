@@ -523,7 +523,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                 </td>
 
                 {columns.map((col, ci) => {
-                  const isProductCol = col.name === "Sản phẩm"
+                  const isProductCol = col.position === 10
                   return (
                   <td key={col.id}
                     style={{ ...tdS(col.width), position: "relative", padding: 0 }}
