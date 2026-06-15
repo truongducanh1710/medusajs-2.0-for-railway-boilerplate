@@ -3,20 +3,17 @@
 import { useEffect, useState } from "react"
 
 export default function ViewerCount() {
-  const [count, setCount] = useState(0)
-  const [visible, setVisible] = useState(false)
+  const [count, setCount] = useState<number | null>(null)
 
   useEffect(() => {
-    // Start with a realistic number based on time of day
     const hour = new Date().getHours()
     const base = hour >= 8 && hour <= 22 ? 18 : 6
     const initial = base + Math.floor(Math.random() * 20)
     setCount(initial)
-    setVisible(true)
 
-    // Fluctuate ±1-2 every 8-15 seconds
     const tick = () => {
       setCount(c => {
+        if (c === null) return initial
         const delta = Math.random() > 0.5 ? 1 : -1
         return Math.max(base - 4, Math.min(base + 30, c + delta))
       })
@@ -26,10 +23,8 @@ export default function ViewerCount() {
     return () => clearInterval(interval)
   }, [])
 
-  if (!visible) return null
-
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex items-center gap-2 text-sm" style={{ visibility: count === null ? "hidden" : "visible" }}>
       <span
         style={{
           display: "inline-block",
@@ -43,7 +38,7 @@ export default function ViewerCount() {
         }}
       />
       <span className="text-gray-600">
-        <span className="font-bold text-gray-800">{count}</span> người đang xem sản phẩm này
+        <span className="font-bold text-gray-800">{count ?? 0}</span> người đang xem sản phẩm này
       </span>
     </div>
   )
