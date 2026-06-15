@@ -20,6 +20,14 @@ interface SheetRow {
   _dirty?: boolean
 }
 
+interface MktProduct {
+  id: string
+  name: string
+  code: string
+  pancake_id: string | null
+  active: boolean
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtNumber(v: string): string {
@@ -36,7 +44,7 @@ function parseViNum(s: string): string {
 // ─── Cell ─────────────────────────────────────────────────────────────────────
 
 function Cell({
-  value, colType, readOnly, onCommit, onFocus, onNav, inputRef,
+  value, colType, readOnly, onCommit, onFocus, onNav, inputRef, products, colId,
 }: {
   value: string
   colType: "text" | "number"
@@ -45,6 +53,8 @@ function Cell({
   onFocus: () => void
   onNav: (dir: "left" | "right" | "up" | "down" | "tab") => void
   inputRef?: (el: HTMLInputElement | null) => void
+  products?: MktProduct[]
+  colId?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -76,29 +86,39 @@ function Cell({
       onDoubleClick={startEdit}
     >
       {editing ? (
-        <input
-          ref={el => { (ref as any).current = el; inputRef?.(el) }}
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === "Enter") { commit(); onNav("down") }
-            else if (e.key === "Escape") { setDraft(value); setEditing(false) }
-            else if (e.key === "Tab") { e.preventDefault(); commit(); onNav("tab") }
-            else if (e.key === "ArrowRight" && ref.current && ref.current.selectionStart === draft.length) { commit(); onNav("right") }
-            else if (e.key === "ArrowLeft" && ref.current && ref.current.selectionStart === 0) { commit(); onNav("left") }
-            else if (e.key === "ArrowUp") { commit(); onNav("up") }
-            else if (e.key === "ArrowDown") { commit(); onNav("down") }
-          }}
-          style={{
-            position: "absolute", inset: 0, width: "100%", height: "100%",
-            border: "2px solid #7c3aed", borderRadius: 2,
-            padding: "0 4px", fontSize: 12, fontFamily: "inherit",
-            outline: "none", background: "#fff", zIndex: 2,
-            textAlign: colType === "number" ? "right" : "left",
-            boxSizing: "border-box",
-          }}
-        />
+        <>
+          <input
+            ref={el => { (ref as any).current = el; inputRef?.(el) }}
+            value={draft}
+            list={products && colId ? `mkt-products-${colId}` : undefined}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => {
+              if (e.key === "Enter") { commit(); onNav("down") }
+              else if (e.key === "Escape") { setDraft(value); setEditing(false) }
+              else if (e.key === "Tab") { e.preventDefault(); commit(); onNav("tab") }
+              else if (e.key === "ArrowRight" && ref.current && ref.current.selectionStart === draft.length) { commit(); onNav("right") }
+              else if (e.key === "ArrowLeft" && ref.current && ref.current.selectionStart === 0) { commit(); onNav("left") }
+              else if (e.key === "ArrowUp") { commit(); onNav("up") }
+              else if (e.key === "ArrowDown") { commit(); onNav("down") }
+            }}
+            style={{
+              position: "absolute", inset: 0, width: "100%", height: "100%",
+              border: "2px solid #7c3aed", borderRadius: 2,
+              padding: "0 4px", fontSize: 12, fontFamily: "inherit",
+              outline: "none", background: "#fff", zIndex: 2,
+              textAlign: colType === "number" ? "right" : "left",
+              boxSizing: "border-box",
+            }}
+          />
+          {products && colId && (
+            <datalist id={`mkt-products-${colId}`}>
+              {products.map(p => (
+                <option key={p.id} value={p.name}>{p.code} — {p.name}</option>
+              ))}
+            </datalist>
+          )}
+        </>
       ) : (
         <div
           onClick={startEdit}
@@ -188,6 +208,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   const [loading, setLoading] = useState(true)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [showAddCol, setShowAddCol] = useState(false)
+  const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
 
   // focusedCell: [rowIdx, colIdx] trong mảng hiển thị
   const [focused, setFocused] = useState<[number, number] | null>(null)
@@ -204,16 +225,18 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   useEffect(() => { colsRef.current = columns }, [columns])
   useEffect(() => { focusedRef.current = focused }, [focused])
 
-  // Load
+  // Load sheet + mkt_product list
   useEffect(() => {
     setLoading(true)
-    apiJson("/admin/gia-von/sheet", "GET")
-      .then(d => {
-        setColumns(d.columns ?? [])
-        setRows(d.rows ?? [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    Promise.all([
+      apiJson("/admin/gia-von/sheet", "GET"),
+      apiJson("/admin/marketing-video/products", "GET").catch(() => ({ products: [] })),
+    ]).then(([sheet, prod]) => {
+      setColumns(sheet.columns ?? [])
+      setRows(sheet.rows ?? [])
+      setMktProducts((prod.products ?? []).filter((p: MktProduct) => p.active !== false))
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [])
 
   // Global paste listener — bắt Ctrl+V dù input nào đang focus
@@ -440,7 +463,9 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                   {ri + 1}
                 </td>
 
-                {columns.map((col, ci) => (
+                {columns.map((col, ci) => {
+                  const isProductCol = col.name === "Sản phẩm"
+                  return (
                   <td key={col.id}
                     style={{ ...tdS(col.width), position: "relative", padding: 0 }}
                   >
@@ -456,9 +481,12 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                         if (el) cellRefs.current.set(key, el)
                         else cellRefs.current.delete(key)
                       }}
+                      products={isProductCol ? mktProducts : undefined}
+                      colId={isProductCol ? col.id : undefined}
                     />
                   </td>
-                ))}
+                  )
+                })}
 
                 {canManage && (
                   <td style={{ ...tdS(32), textAlign: "center", padding: 0 }}>
