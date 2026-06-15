@@ -230,7 +230,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     setLoading(true)
     Promise.all([
       apiJson("/admin/gia-von/sheet", "GET"),
-      apiJson("/admin/marketing-video/products", "GET").catch(() => ({ products: [] })),
+      apiJson("/admin/gia-von/products", "GET").catch(() => ({ products: [] })),
     ]).then(([sheet, prod]) => {
       setColumns(sheet.columns ?? [])
       setRows(sheet.rows ?? [])
