@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react"
 import { Container, Text } from "@medusajs/ui"
 import { useHits, useSearchBox } from "react-instantsearch-hooks-web"
 
@@ -6,7 +7,11 @@ import InteractiveLink from "@modules/common/components/interactive-link"
 const ShowAll = () => {
   const { hits } = useHits()
   const { query } = useSearchBox()
-  const width = typeof window !== "undefined" ? window.innerWidth : 0
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    setWidth(window.innerWidth)
+  }, [])
 
   if (query === "") return null
   if (hits.length > 0 && hits.length <= 6) return null
