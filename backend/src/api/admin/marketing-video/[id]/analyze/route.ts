@@ -314,25 +314,26 @@ async function uploadToMinimax(filePath: string): Promise<string> {
   })
 }
 
-async function callMinimax(videoSource: { url?: string; fileId?: string }, prompt: string): Promise<string> {
-  const videoContent = videoSource.fileId
-    ? { type: "video", source: { type: "file", file_id: videoSource.fileId } }
-    : { type: "video", source: { type: "url", url: videoSource.url } }
-
+async function callMinimax(fileId: string, prompt: string): Promise<string> {
   const body = Buffer.from(JSON.stringify({
     model: "MiniMax-M3",
     max_tokens: 8192,
-    messages: [{ role: "user", content: [videoContent, { type: "text", text: prompt }] }],
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "video_url", video_url: { url: `mm_file://${fileId}`, detail: "default" } },
+      ],
+    }],
   }), "utf-8")
 
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: MINIMAX_ANTHROPIC_BASE,
-      path: "/anthropic/v1/messages",
+      path: "/v1/chat/completions",
       method: "POST",
       headers: {
-        "x-api-key": MINIMAX_API_KEY,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${MINIMAX_API_KEY}`,
         "Content-Type": "application/json; charset=utf-8",
         "Content-Length": body.length,
       },
@@ -342,7 +343,7 @@ async function callMinimax(videoSource: { url?: string; fileId?: string }, promp
       res.on("end", () => {
         try {
           const r = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
-          const text = r?.content?.[0]?.text
+          const text = r?.choices?.[0]?.message?.content
           if (text) resolve(text)
           else reject(new Error(r?.error?.message || JSON.stringify(r)))
         } catch (e) { reject(e) }
@@ -498,7 +499,7 @@ Trả về transcript thuần văn bản, không JSON.`
     const callModel = async (prompt: string) => {
       if (useMinmax) {
         if (!minimaxFileId) throw new Error("MiniMax file upload failed")
-        return callMinimax({ fileId: minimaxFileId }, prompt)
+        return callMinimax(minimaxFileId, prompt)
       }
       return callGemini(fileUri, prompt, requestedModel)
     }
