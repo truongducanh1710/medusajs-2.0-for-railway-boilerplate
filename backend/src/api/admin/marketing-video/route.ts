@@ -41,6 +41,7 @@ function toUiRow(r: any) {
     deadline: r.deadline ? new Date(r.deadline).toISOString().slice(0, 10) : null,
     aiScore: r.ai_score ? parseFloat(r.ai_score) : null,
     aiReview: r.ai_review || null,
+    aiStatus: r.ai_status ?? null,
     starred: !!r.starred,
   }
 }

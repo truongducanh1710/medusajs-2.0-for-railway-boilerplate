@@ -2,6 +2,26 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo, STATUS_VI_TO_KEY, STATUS_KEY_TO_VI } from "../_lib"
 
 /**
+ * GET /admin/marketing-video/:id
+ * Dùng cho polling ai_status từ frontend.
+ */
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const auth = await getAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+    const id = (req.params as any).id
+    const { rows } = await getPool().query(
+      `SELECT id, ai_status, ai_score FROM mkt_video WHERE id = $1`, [id]
+    )
+    if (!rows.length) return res.status(404).json({ error: "Not found" })
+    const r = rows[0]
+    return res.json({ id: r.id, aiStatus: r.ai_status ?? null, aiScore: r.ai_score ? parseFloat(r.ai_score) : null })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+/**
  * PATCH /admin/marketing-video/:id
  * Sửa dòng — đổi status (kéo Kanban), link, note, người làm, SP...
  */

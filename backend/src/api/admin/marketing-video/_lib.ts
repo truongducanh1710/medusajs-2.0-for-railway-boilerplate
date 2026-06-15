@@ -83,6 +83,13 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS fb_post_links JSONB DEFAULT '[]'`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS deadline DATE`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS starred BOOLEAN DEFAULT false`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ai_status VARCHAR(20) DEFAULT NULL`)
+  // Reset stale jobs (Railway restart giữa chừng)
+  await pool.query(`
+    UPDATE mkt_video SET ai_status = 'error'
+    WHERE ai_status IN ('queued','uploading','transcribing','analyzing')
+      AND updated_at < now() - interval '10 minutes'
+  `)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS mkt_product (
       id          SERIAL PRIMARY KEY,

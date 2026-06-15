@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, pushNotification } from "../../_lib"
+import { Modules } from "@medusajs/framework/utils"
+import { getPool, getAuthInfo } from "../../_lib"
 import { isLarkFileUrl, downloadToTmp, cleanupTmp } from "../../../../../lib/fb-drive"
 import * as fs from "fs"
 import * as https from "https"
@@ -373,6 +374,16 @@ async function deleteMinimaFile(fileId: string): Promise<void> {
   })
 }
 
+async function notify(scope: any, title: string, description?: string): Promise<void> {
+  try {
+    const svc = scope.resolve(Modules.NOTIFICATION)
+    await (svc as any).createNotifications({
+      channel: "feed", template: "admin-ui", to: "admin",
+      data: { title, description: description ?? "" },
+    })
+  } catch {}
+}
+
 function parseJsonFromContent(content: string): any {
   const stripped = content.replace(/^```json\s*/m, "").replace(/\s*```\s*$/m, "").trim()
   const start = stripped.indexOf("{")
@@ -419,68 +430,39 @@ async function fetchProductContext(req: MedusaRequest, productCode: string, prod
   }
 }
 
-export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const auth = await getAuthInfo(req)
-  if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+const IN_PROGRESS = new Set(["queued", "uploading", "transcribing", "analyzing"])
 
-  const id = (req.params as any).id
-  const pool = getPool()
-
-  const { rows } = await pool.query(
-    `SELECT link, product, product_code, video_type, script, vd_code, maker FROM mkt_video WHERE id = $1`,
-    [id]
-  )
-  if (!rows.length) return res.status(404).json({ error: "Không tìm thấy video" })
-
-  const row = rows[0]
-  if (!row.link) return res.status(400).json({ error: "Video chưa có link Drive/Lark" })
-
+async function runAnalysis(
+  id: string,
+  row: any,
+  requestedModel: string,
+  spContextText: string,
+  benchmarkText: string,
+  scope: any,
+  pool: any
+): Promise<void> {
+  const useMinmax = isMinimaxModel(requestedModel)
   const isLark = isLarkFileUrl(row.link)
   const fileId = isLark ? null : extractDriveFileId(row.link)
-  if (!isLark && !fileId) return res.status(400).json({ error: "Không nhận ra link Google Drive hoặc Lark" })
-
-  const body = req.body as any
-  const requestedModel = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : GEMINI_MODEL_DEFAULT
-  const useMinmax = isMinimaxModel(requestedModel)
-
-  if (useMinmax && !MINIMAX_API_KEY) return res.status(500).json({ error: "Thiếu MINIMAX_API_KEY" })
-  if (!useMinmax && !GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
-
-  // Lấy context SP + benchmark song song
-  const [productCtx, benchmarkRows] = await Promise.all([
-    fetchProductContext(req, row.product_code, row.product),
-    pool.query(
-      `SELECT ai_score, ai_review->>'tong_quan' as tong_quan, vd_code FROM mkt_video
-       WHERE product = $1 AND id != $2 AND ai_score IS NOT NULL ORDER BY ai_score DESC LIMIT 3`,
-      [row.product, id]
-    ).then(r => r.rows).catch(() => [] as any[]),
-  ])
-
-  const benchmarkText = benchmarkRows.length
-    ? benchmarkRows.map((b: any) => `- ${b.vd_code}: ${b.ai_score}/10 — ${b.tong_quan || ""}`).join("\n")
-    : "Chưa có video nào của SP này được phân tích trước đó."
-
-  const spContextText = [
-    productCtx.gia_ban ? `- Giá bán: ${productCtx.gia_ban}` : "",
-    productCtx.chat_lieu ? `- Chất liệu: ${productCtx.chat_lieu}` : "",
-    productCtx.kich_thuoc ? `- Kích thước: ${productCtx.kich_thuoc}` : "",
-    productCtx.xuat_xu ? `- Xuất xứ: ${productCtx.xuat_xu}` : "",
-    productCtx.bao_hanh ? `- Bảo hành: ${productCtx.bao_hanh}` : "",
-    productCtx.mkt_description ? `- Mô tả marketing:\n${productCtx.mkt_description}` : "",
-    productCtx.sale_guide ? `- Sale guide (điểm bán hàng chính):\n${productCtx.sale_guide}` : "",
-  ].filter(Boolean).join("\n") || "Chưa có thông tin chi tiết SP."
+  const vdLabel = row.vd_code ? `[${row.vd_code}]` : `[${id.slice(0,6)}]`
+  const t0 = Date.now()
+  const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`
 
   let fileUri = ""
   let larkTmpPath: string | null = null
   let minimaxFileId: string | null = null
+
   try {
-    // 1. Upload video
+    // 1. Upload
+    console.log(`[analyze:${row.vd_code}] START model=${requestedModel} link=${(row.link || "").slice(0, 60)}`)
+    await pool.query(`UPDATE mkt_video SET ai_status='uploading', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang upload video...`)
+
+    const t1 = Date.now()
     if (useMinmax) {
-      // MiniMax path: luôn download về tmp rồi upload Files API (Drive/Lark URL cần auth, MiniMax không tải được)
       larkTmpPath = await downloadToTmp(row.link)
       minimaxFileId = await uploadToMinimax(larkTmpPath)
     } else {
-      // Gemini path (giữ nguyên)
       if (isLark) {
         larkTmpPath = await downloadToTmp(row.link)
         fileUri = await uploadLocalFileToGemini(larkTmpPath)
@@ -489,8 +471,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       await waitFileActive(fileUri)
     }
+    console.log(`[analyze:${row.vd_code}] upload done (${((Date.now() - t1) / 1000).toFixed(1)}s)`)
 
-    // 3a. BƯỚC 1: Transcribe toàn bộ lời thoại chính xác
+    // 2. Transcribe
+    await pool.query(`UPDATE mkt_video SET ai_status='transcribing', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang transcribe lời thoại...`)
+
     const transcribePrompt = `Xem toàn bộ video này từ đầu đến cuối.
 Nhiệm vụ DUY NHẤT: Transcribe chính xác 100% lời thoại/voiceover tiếng Việt.
 - Ghi đầy đủ từng câu, giữ nguyên cách nói tự nhiên, có dấu đầy đủ
@@ -508,9 +494,14 @@ Trả về transcript thuần văn bản, không JSON.`
       return callGemini(fileUri, prompt, requestedModel)
     }
 
+    const t2 = Date.now()
     const rawTranscript = await callModel(transcribePrompt)
+    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s)`)
 
-    // 3b. BƯỚC 2: Phân tích sâu với transcript đã có
+    // 3. Phân tích sâu
+    await pool.query(`UPDATE mkt_video SET ai_status='analyzing', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang phân tích sâu...`)
+
     const prompt = `Bạn là quản lý Ads Performance với 10 năm kinh nghiệm chạy quảng cáo Facebook/TikTok cho thị trường Việt Nam, chuyên ngành đồ gia dụng. Bạn KHÓ TÍNH, không chấp nhận video trung bình — mục tiêu duy nhất là video phải khiến người xem DỪNG LẠI, MUỐN MUA và BẤM ĐẶT HÀNG NGAY.
 
 Bạn đã review hàng nghìn video ads, biết chính xác giây nào người xem thoát, câu nào tạo desire, hình ảnh nào trigger mua hàng.
@@ -614,7 +605,9 @@ ${benchmarkText}
 
 Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùng từ "khá tốt", "ổn", "được" — phải cụ thể.`
 
+    const t3 = Date.now()
     const rawContent = await callModel(prompt)
+    console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s)`)
 
     let aiReview: any
     try {
@@ -623,46 +616,109 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
       aiReview = { tong_quan: rawContent, diem_ban_hang: null, parse_error: true }
     }
 
-    // Fallback: nếu AI không trả loi_thoai thì dùng rawTranscript từ bước 1
     if (!aiReview.loi_thoai && rawTranscript) {
       aiReview.loi_thoai = rawTranscript
     }
 
     const aiScore = typeof aiReview.diem_ban_hang === "number" ? aiReview.diem_ban_hang : null
-
-    // 4. Lưu DB — nếu chưa có script thì bổ sung lời thoại transcribe vào cột script
     const newScript = (!row.script && aiReview.loi_thoai) ? aiReview.loi_thoai : null
-    if (newScript) {
-      await pool.query(
-        `UPDATE mkt_video SET ai_score = $1, ai_review = $2, script = $3, updated_at = now() WHERE id = $4`,
-        [aiScore, JSON.stringify(aiReview), newScript, id]
-      )
-    } else {
-      await pool.query(
-        `UPDATE mkt_video SET ai_score = $1, ai_review = $2, updated_at = now() WHERE id = $3`,
-        [aiScore, JSON.stringify(aiReview), id]
-      )
-    }
 
-    const scoreLabel = aiScore != null ? ` · ★${aiScore}/10` : ""
-    const vdLabel = row.vd_code ? `[${row.vd_code}] ` : ""
-    const makerLabel = row.maker ? ` · ${row.maker}` : ""
-    await pushNotification(req, {
-      title: `✅ ${vdLabel}${row.product || "Video"}${scoreLabel}${makerLabel}`,
-      description: `${aiReview.tong_quan ? aiReview.tong_quan.slice(0, 150) + "…" : ""}\n→ Mở Marketing Hub để xem chi tiết`,
-    })
+    // 4. Lưu DB
+    await pool.query(
+      `UPDATE mkt_video SET ai_score=$1, ai_review=$2, script=COALESCE(NULLIF($3,''),script), ai_status='done', updated_at=now() WHERE id=$4`,
+      [aiScore, JSON.stringify(aiReview), newScript || "", id]
+    )
 
-    return res.json({ ok: true, ai_score: aiScore, ai_review: aiReview })
+    const scoreLabel = aiScore != null ? ` ★${aiScore}/10` : ""
+    console.log(`[analyze:${row.vd_code}] DONE${scoreLabel} total=${elapsed()}`)
+    await notify(scope,
+      `✅ ${vdLabel}${scoreLabel} — ${row.product || "Video"} · ${row.maker || ""}`,
+      aiReview.tong_quan ? aiReview.tong_quan.slice(0, 150) + "…" : ""
+    )
 
   } catch (err: any) {
-    await pushNotification(req, {
-      title: `❌ Phân tích thất bại: ${row?.vd_code || id}`,
-      description: err.message?.slice(0, 150),
-    }).catch(() => {})
-    return res.status(500).json({ error: err.message })
+    console.error(`[analyze:${row.vd_code}] ERROR (${elapsed()})`, err.message)
+    await pool.query(`UPDATE mkt_video SET ai_status='error', updated_at=now() WHERE id=$1`, [id]).catch(() => {})
+    await notify(scope, `❌ ${vdLabel} Thất bại: ${err.message?.slice(0, 120)}`).catch(() => {})
   } finally {
     if (fileUri) await deleteGeminiFile(fileUri).catch(() => {})
     if (minimaxFileId) await deleteMinimaFile(minimaxFileId).catch(() => {})
     if (larkTmpPath) await cleanupTmp(larkTmpPath).catch(() => {})
   }
+}
+
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const auth = await getAuthInfo(req)
+  if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+
+  const id = (req.params as any).id
+  const pool = getPool()
+
+  const { rows } = await pool.query(
+    `SELECT link, product, product_code, video_type, script, vd_code, maker, ai_status FROM mkt_video WHERE id = $1`,
+    [id]
+  )
+  if (!rows.length) return res.status(404).json({ error: "Không tìm thấy video" })
+
+  const row = rows[0]
+  if (!row.link) return res.status(400).json({ error: "Video chưa có link Drive/Lark" })
+
+  // Block nếu đang chạy
+  if (IN_PROGRESS.has(row.ai_status)) {
+    return res.status(409).json({ error: "Đang phân tích, vui lòng chờ", ai_status: row.ai_status })
+  }
+
+  // Block nếu server đang chạy 3 job song song
+  const { rows: busy } = await pool.query(
+    `SELECT count(*)::int AS n FROM mkt_video WHERE ai_status IN ('uploading','transcribing','analyzing')`
+  )
+  if (busy[0].n >= 3) {
+    return res.status(429).json({ error: "Server đang bận (3 job đang chạy) — thử lại sau 30s" })
+  }
+
+  const isLark = isLarkFileUrl(row.link)
+  const fileId = isLark ? null : extractDriveFileId(row.link)
+  if (!isLark && !fileId) return res.status(400).json({ error: "Không nhận ra link Google Drive hoặc Lark" })
+
+  const body = req.body as any
+  const requestedModel = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : GEMINI_MODEL_DEFAULT
+  const useMinmax = isMinimaxModel(requestedModel)
+
+  if (useMinmax && !MINIMAX_API_KEY) return res.status(500).json({ error: "Thiếu MINIMAX_API_KEY" })
+  if (!useMinmax && !GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
+
+  // Fetch dữ liệu cần req context TRƯỚC khi respond
+  const [productCtx, benchmarkRows] = await Promise.all([
+    fetchProductContext(req, row.product_code, row.product),
+    pool.query(
+      `SELECT ai_score, ai_review->>'tong_quan' as tong_quan, vd_code FROM mkt_video
+       WHERE product = $1 AND id != $2 AND ai_score IS NOT NULL ORDER BY ai_score DESC LIMIT 3`,
+      [row.product, id]
+    ).then(r => r.rows).catch(() => [] as any[]),
+  ])
+
+  const benchmarkText = benchmarkRows.length
+    ? benchmarkRows.map((b: any) => `- ${b.vd_code}: ${b.ai_score}/10 — ${b.tong_quan || ""}`).join("\n")
+    : "Chưa có video nào của SP này được phân tích trước đó."
+
+  const spContextText = [
+    productCtx.gia_ban ? `- Giá bán: ${productCtx.gia_ban}` : "",
+    productCtx.chat_lieu ? `- Chất liệu: ${productCtx.chat_lieu}` : "",
+    productCtx.kich_thuoc ? `- Kích thước: ${productCtx.kich_thuoc}` : "",
+    productCtx.xuat_xu ? `- Xuất xứ: ${productCtx.xuat_xu}` : "",
+    productCtx.bao_hanh ? `- Bảo hành: ${productCtx.bao_hanh}` : "",
+    productCtx.mkt_description ? `- Mô tả marketing:\n${productCtx.mkt_description}` : "",
+    productCtx.sale_guide ? `- Sale guide (điểm bán hàng chính):\n${productCtx.sale_guide}` : "",
+  ].filter(Boolean).join("\n") || "Chưa có thông tin chi tiết SP."
+
+  // Mark queued + capture scope trước khi respond
+  await pool.query(`UPDATE mkt_video SET ai_status='queued', updated_at=now() WHERE id=$1`, [id])
+  const scope = req.scope
+
+  // Fire and forget
+  setImmediate(() => {
+    runAnalysis(id, row, requestedModel, spContextText, benchmarkText, scope, pool).catch(() => {})
+  })
+
+  return res.json({ queued: true, ai_status: "queued" })
 }

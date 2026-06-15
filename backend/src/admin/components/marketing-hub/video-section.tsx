@@ -74,6 +74,7 @@ type VideoRow = {
   deadline?: string | null
   aiScore?: number | null
   aiReview?: any
+  aiStatus?: string | null
   starred?: boolean
 }
 
@@ -213,6 +214,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
+  const pollingRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({})
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; done: string[]; failed: string[] } | null>(null)
   const [linkCheckState, setLinkCheckState] = useState<{ checking: boolean; error: string | null; ok: boolean }>({ checking: false, error: null, ok: false })
@@ -328,22 +330,59 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     } catch (err: any) { setToast("Lỗi: " + err.message) }
   }
 
+  const startPolling = (id: string) => {
+    if (pollingRefs.current[id]) return
+    pollingRefs.current[id] = setInterval(async () => {
+      try {
+        const r = await apiJson(`/admin/marketing-video/${id}`)
+        const status: string | null = r?.aiStatus ?? null
+        if (!status || status === "done" || status === "error") {
+          clearInterval(pollingRefs.current[id])
+          delete pollingRefs.current[id]
+          setAnalyzingIds(prev => { const n = new Set(prev); n.delete(id); return n })
+          if (status === "done") reload()
+        }
+      } catch {}
+    }, 4000)
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => { Object.values(pollingRefs.current).forEach(t => clearInterval(t)) }, [])
+
+  // Resume polling for in-progress rows on page load
+  useEffect(() => {
+    rows.forEach(r => {
+      if (r.aiStatus && r.aiStatus !== "done" && r.aiStatus !== "error") {
+        setAnalyzingIds(prev => new Set(prev).add(r.id))
+        startPolling(r.id)
+      }
+    })
+  }, [rows])
+
   const analyzeVideo = async (row: VideoRow, model?: string) => {
     if (analyzingIds.has(row.id)) return
     if (row.aiReview && !model) { setAiModal({ row, result: row.aiReview }); return }
     setAnalyzingIds(prev => new Set(prev).add(row.id))
-    setToast("Đang phân tích AI (~20-40s)...")
+    setToast("⏳ Đã gửi yêu cầu phân tích — xem tiến độ trong chuông thông báo")
     try {
       const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: model || aiModel })
-      if (result?.ai_review) {
+      if (result?.queued) {
+        startPolling(row.id)
+        // analyzingIds stays — polling will clear it when done/error
+      } else if (result?.ai_review) {
+        // Fallback: synchronous response (backward compat)
         const updatedScript = (!row.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : row.script
         setAiModal({ row: { ...row, aiScore: result.ai_score, aiReview: result.ai_review, script: updatedScript }, result: result.ai_review })
+        setAnalyzingIds(prev => { const n = new Set(prev); n.delete(row.id); return n })
         reload()
       } else {
         setToast("Phân tích thất bại: " + (result?.error || "không có kết quả"))
+        setAnalyzingIds(prev => { const n = new Set(prev); n.delete(row.id); return n })
       }
-    } catch (e: any) { setToast("Lỗi phân tích: " + e.message) }
-    finally { setAnalyzingIds(prev => { const n = new Set(prev); n.delete(row.id); return n }) }
+    } catch (e: any) {
+      setToast("Lỗi phân tích: " + e.message)
+      setAnalyzingIds(prev => { const n = new Set(prev); n.delete(row.id); return n })
+    }
   }
 
   const toggleSelect = (id: string) => {
@@ -366,7 +405,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const batchAnalyze = async () => {
     const targets = filtered.filter(r => r.link && selectedIds.has(r.id))
     if (!targets.length) return
-    if (!confirm(`Phân tích ${targets.length} video bằng AI? (~${targets.length * 35}s)`)) return
+    if (!confirm(`Phân tích ${targets.length} video bằng AI? Job sẽ chạy nền, xem tiến độ qua chuông thông báo.`)) return
     setBatchProgress({ current: 0, total: targets.length, done: [], failed: [] })
     setSelectedIds(new Set())
     for (let i = 0; i < targets.length; i++) {
@@ -374,17 +413,20 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
       setBatchProgress(p => p ? { ...p, current: i + 1 } : null)
       try {
         const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: aiModel })
-        if (result?.ai_review) {
+        if (result?.queued || result?.ai_review) {
           setBatchProgress(p => p ? { ...p, done: [...p.done, row.vdCode] } : null)
+          if (result?.queued) {
+            setAnalyzingIds(prev => new Set(prev).add(row.id))
+            startPolling(row.id)
+          }
         } else {
           setBatchProgress(p => p ? { ...p, failed: [...p.failed, row.vdCode] } : null)
         }
       } catch {
         setBatchProgress(p => p ? { ...p, failed: [...p.failed, row.vdCode] } : null)
       }
-      if (i < targets.length - 1) await new Promise(r => setTimeout(r, 2000))
+      if (i < targets.length - 1) await new Promise(r => setTimeout(r, 500))
     }
-    reload()
     setTimeout(() => setBatchProgress(null), 5000)
   }
 
