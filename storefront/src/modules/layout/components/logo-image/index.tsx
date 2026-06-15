@@ -7,7 +7,7 @@ export default function LogoImage({ src }: { src: string }) {
     <img
       src={src || FALLBACK}
       alt="Vietmate"
-      className="h-16 sm:h-20 object-contain"
+      className="h-9 sm:h-20 object-contain"
       style={{ mixBlendMode: "multiply" }}
       onError={(e) => {
         const img = e.target as HTMLImageElement
