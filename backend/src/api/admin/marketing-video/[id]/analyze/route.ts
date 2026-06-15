@@ -343,9 +343,12 @@ async function callMinimax(fileId: string, prompt: string): Promise<string> {
       res.on("end", () => {
         try {
           const r = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
-          const text = r?.choices?.[0]?.message?.content
-          if (text) resolve(text)
-          else reject(new Error(r?.error?.message || JSON.stringify(r)))
+          let text = r?.choices?.[0]?.message?.content
+          if (text) {
+            // Strip <think>...</think> reasoning block MiniMax M3 trả về
+            text = text.replace(/<think>[\s\S]*?<\/think>\s*/g, "").trim()
+            resolve(text)
+          } else reject(new Error(r?.error?.message || JSON.stringify(r)))
         } catch (e) { reject(e) }
       })
     })
