@@ -206,6 +206,7 @@ type Meta = {
   page_content?: string
   fb_pixel_id?: string
   fb_capi_token?: string
+  promo_banner?: string
   hidden?: string
   [key: string]: string | undefined
 }
@@ -1509,6 +1510,31 @@ setShowPain(!!(clean.pain_1 || clean.pain_2 || clean.pain_3))
             </div>
           </div>
         )}
+      </div>
+
+      {/* Promo Banner per product */}
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginTop: 12 }}>
+        <div style={{ background: "#fff7ed", padding: "10px 14px", borderBottom: "1px solid #fed7aa" }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>📢 Thanh thông báo (Promo Banner)</span>
+          <p style={{ fontSize: 11, color: "#9a3412", margin: "2px 0 0" }}>Ghi đè thanh cam trên cùng cho sản phẩm này. Để trống = dùng mặc định của store.</p>
+        </div>
+        <div style={{ padding: "12px 14px" }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>
+            Nội dung (chuỗi đơn hoặc JSON array để xoay vòng)
+          </label>
+          <input
+            type="text"
+            placeholder='VD: "🔥 Flash sale — Giảm 50%!" hoặc ["msg1","msg2","msg3"]'
+            value={meta.promo_banner || ""}
+            onChange={e => setMeta(m => ({ ...m, promo_banner: e.target.value || undefined }))}
+            style={{ width: "100%", padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, boxSizing: "border-box" }}
+          />
+          {meta.promo_banner && (
+            <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              Preview: <strong style={{ color: "#ea580c" }}>{meta.promo_banner}</strong>
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Save button bottom — sticky */}
