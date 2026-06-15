@@ -9,10 +9,17 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ""
 const GEMINI_MODEL_DEFAULT = "gemini-3.1-pro-preview"
 const GEMINI_BASE = "generativelanguage.googleapis.com"
 
+const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || ""
+const MINIMAX_ANTHROPIC_BASE = "api.minimax.io"
+const MINIMAX_FILE_SIZE_LIMIT = 50 * 1024 * 1024 // 50MB — dưới dùng URL, trên dùng Files API
+
 const ALLOWED_MODELS = new Set([
   "gemini-3.1-pro-preview", "gemini-3-pro-preview", "gemini-2.5-pro",
   "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash",
+  "minimax-m3",
 ])
+
+function isMinimaxModel(model: string) { return model.startsWith("minimax-") }
 
 function extractDriveFileId(link: string): string | null {
   const m = link.match(/\/d\/([a-zA-Z0-9_-]+)/)
@@ -267,6 +274,100 @@ async function callGemini(fileUri: string, prompt: string, model = GEMINI_MODEL_
   })
 }
 
+// Upload video lên MiniMax Files API (dùng khi file > 50MB)
+async function uploadToMinimax(filePath: string): Promise<string> {
+  const stat = await fs.promises.stat(filePath)
+  const fileBuffer = await fs.promises.readFile(filePath)
+  const boundary = `----FormBoundary${Date.now()}`
+  const disposition = `Content-Disposition: form-data; name="file"; filename="video.mp4"\r\nContent-Type: video/mp4\r\n`
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="purpose"\r\n\r\nvideo_understanding\r\n`),
+    Buffer.from(`--${boundary}\r\n${disposition}\r\n`),
+    fileBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ])
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: MINIMAX_ANTHROPIC_BASE,
+      path: "/v1/files/upload",
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${MINIMAX_API_KEY}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
+      },
+    }, (res) => {
+      const chunks: Buffer[] = []
+      res.on("data", c => chunks.push(c))
+      res.on("end", () => {
+        try {
+          const r = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
+          if (r.base_resp?.status_code !== 0) throw new Error(r.base_resp?.status_msg || JSON.stringify(r))
+          resolve(r.file?.file_id)
+        } catch (e) { reject(e) }
+      })
+    })
+    req.on("error", reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+async function callMinimax(videoSource: { url?: string; fileId?: string }, prompt: string): Promise<string> {
+  const videoContent = videoSource.fileId
+    ? { type: "video", source: { type: "file", file_id: videoSource.fileId } }
+    : { type: "video", source: { type: "url", url: videoSource.url } }
+
+  const body = Buffer.from(JSON.stringify({
+    model: "MiniMax-M3",
+    max_tokens: 8192,
+    messages: [{ role: "user", content: [videoContent, { type: "text", text: prompt }] }],
+  }), "utf-8")
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: MINIMAX_ANTHROPIC_BASE,
+      path: "/anthropic/v1/messages",
+      method: "POST",
+      headers: {
+        "x-api-key": MINIMAX_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Length": body.length,
+      },
+    }, (res) => {
+      const chunks: Buffer[] = []
+      res.on("data", c => chunks.push(c))
+      res.on("end", () => {
+        try {
+          const r = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
+          const text = r?.content?.[0]?.text
+          if (text) resolve(text)
+          else reject(new Error(r?.error?.message || JSON.stringify(r)))
+        } catch (e) { reject(e) }
+      })
+    })
+    req.on("error", reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+// Xóa file MiniMax sau khi dùng xong
+async function deleteMinimaFile(fileId: string): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const req = https.request({
+      hostname: MINIMAX_ANTHROPIC_BASE,
+      path: `/v1/files/${fileId}`,
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${MINIMAX_API_KEY}` },
+    }, (res) => { res.resume(); resolve() })
+    req.on("error", () => resolve())
+    req.end()
+  })
+}
+
 function parseJsonFromContent(content: string): any {
   const stripped = content.replace(/^```json\s*/m, "").replace(/\s*```\s*$/m, "").trim()
   const start = stripped.indexOf("{")
@@ -333,10 +434,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const fileId = isLark ? null : extractDriveFileId(row.link)
   if (!isLark && !fileId) return res.status(400).json({ error: "Không nhận ra link Google Drive hoặc Lark" })
 
-  if (!GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
-
   const body = req.body as any
   const requestedModel = (body?.model && ALLOWED_MODELS.has(body.model)) ? body.model : GEMINI_MODEL_DEFAULT
+  const useMinmax = isMinimaxModel(requestedModel)
+
+  if (useMinmax && !MINIMAX_API_KEY) return res.status(500).json({ error: "Thiếu MINIMAX_API_KEY" })
+  if (!useMinmax && !GEMINI_API_KEY) return res.status(500).json({ error: "Thiếu GEMINI_API_KEY" })
 
   // Lấy context SP + benchmark song song
   const [productCtx, benchmarkRows] = await Promise.all([
@@ -364,19 +467,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   let fileUri = ""
   let larkTmpPath: string | null = null
+  let minimaxFileId: string | null = null
   try {
-    // 1. Upload video → Gemini Files API
-    if (isLark) {
-      // Lark: download về tmp trước, rồi upload lên Gemini
+    // 1. Upload video
+    if (useMinmax) {
+      // MiniMax path: download về tmp rồi kiểm tra size
       larkTmpPath = await downloadToTmp(row.link)
-      fileUri = await uploadLocalFileToGemini(larkTmpPath)
+      const stat = await fs.promises.stat(larkTmpPath)
+      if (stat.size > MINIMAX_FILE_SIZE_LIMIT) {
+        // Lớn hơn 50MB → upload lên MiniMax Files API
+        minimaxFileId = await uploadToMinimax(larkTmpPath)
+      }
+      // Nếu nhỏ hơn 50MB dùng URL trực tiếp (xử lý ở callMinimax)
     } else {
-      // Drive: stream thẳng, không lưu disk
-      fileUri = await uploadToGemini(fileId!)
+      // Gemini path (giữ nguyên)
+      if (isLark) {
+        larkTmpPath = await downloadToTmp(row.link)
+        fileUri = await uploadLocalFileToGemini(larkTmpPath)
+      } else {
+        fileUri = await uploadToGemini(fileId!)
+      }
+      await waitFileActive(fileUri)
     }
-
-    // 2. Chờ Gemini xử lý xong
-    await waitFileActive(fileUri)
 
     // 3a. BƯỚC 1: Transcribe toàn bộ lời thoại chính xác
     const transcribePrompt = `Xem toàn bộ video này từ đầu đến cuối.
@@ -388,7 +500,17 @@ Nhiệm vụ DUY NHẤT: Transcribe chính xác 100% lời thoại/voiceover ti�
 
 Trả về transcript thuần văn bản, không JSON.`
 
-    const rawTranscript = await callGemini(fileUri, transcribePrompt, requestedModel)
+    const callModel = async (prompt: string) => {
+      if (useMinmax) {
+        const videoSource = minimaxFileId
+          ? { fileId: minimaxFileId }
+          : { url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t` }
+        return callMinimax(videoSource, prompt)
+      }
+      return callGemini(fileUri, prompt, requestedModel)
+    }
+
+    const rawTranscript = await callModel(transcribePrompt)
 
     // 3b. BƯỚC 2: Phân tích sâu với transcript đã có
     const prompt = `Bạn là quản lý Ads Performance với 10 năm kinh nghiệm chạy quảng cáo Facebook/TikTok cho thị trường Việt Nam, chuyên ngành đồ gia dụng. Bạn KHÓ TÍNH, không chấp nhận video trung bình — mục tiêu duy nhất là video phải khiến người xem DỪNG LẠI, MUỐN MUA và BẤM ĐẶT HÀNG NGAY.
@@ -494,7 +616,7 @@ ${benchmarkText}
 
 Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùng từ "khá tốt", "ổn", "được" — phải cụ thể.`
 
-    const rawContent = await callGemini(fileUri, prompt, requestedModel)
+    const rawContent = await callModel(prompt)
 
     let aiReview: any
     try {
@@ -542,6 +664,7 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
     return res.status(500).json({ error: err.message })
   } finally {
     if (fileUri) await deleteGeminiFile(fileUri).catch(() => {})
+    if (minimaxFileId) await deleteMinimaFile(minimaxFileId).catch(() => {})
     if (larkTmpPath) await cleanupTmp(larkTmpPath).catch(() => {})
   }
 }

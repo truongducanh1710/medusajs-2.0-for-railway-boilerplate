@@ -531,6 +531,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
           title="Model AI dùng để phân tích video"
           style={{ fontSize: 11, border: "1px solid #E5E7EB", borderRadius: 6, padding: "4px 6px", color: "#374151", background: "#F9FAFB", cursor: "pointer", maxWidth: 160 }}
         >
+          <optgroup label="🆕 MiniMax">
+            <option value="minimax-m3">MiniMax M3 ($0.3/$1.2/M)</option>
+          </optgroup>
           <optgroup label="★ Chất lượng cao">
             <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ($2/M)</option>
             <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
@@ -1528,12 +1531,13 @@ export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }
 }
 
 const AI_MODELS = [
-  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "pro" },
-  { value: "gemini-3-pro-preview",   label: "Gemini 3 Pro",   tier: "pro" },
-  { value: "gemini-2.5-pro",         label: "Gemini 2.5 Pro", tier: "pro" },
+  { value: "minimax-m3",             label: "MiniMax M3",       tier: "minimax" },
+  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro",   tier: "pro" },
+  { value: "gemini-3-pro-preview",   label: "Gemini 3 Pro",     tier: "pro" },
+  { value: "gemini-2.5-pro",         label: "Gemini 2.5 Pro",   tier: "pro" },
   { value: "gemini-3.5-flash",       label: "Gemini 3.5 Flash", tier: "flash" },
   { value: "gemini-3.1-flash-lite",  label: "Gemini 3.1 Flash Lite", tier: "flash" },
-  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash", tier: "flash" },
+  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash",   tier: "flash" },
   { value: "gemini-2.5-flash",       label: "Gemini 2.5 Flash", tier: "flash" },
 ]
 
