@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
@@ -58,24 +59,86 @@ function Cell({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [activeIdx, setActiveIdx] = useState(-1)
   const ref = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setDraft(value) }, [value])
+
+  const filtered = products && draft
+    ? products.filter(p => p.name.toLowerCase().includes(draft.toLowerCase()) || p.code.toLowerCase().includes(draft.toLowerCase()))
+    : (products ?? [])
 
   function startEdit() {
     if (readOnly) return
     onFocus()
     setDraft(value)
     setEditing(true)
-    setTimeout(() => ref.current?.select(), 0)
+    setActiveIdx(-1)
+    setTimeout(() => {
+      ref.current?.select()
+      updateDropdownPos()
+    }, 0)
   }
 
-  function commit() {
-    setEditing(false)
-    if (draft !== value) onCommit(draft)
+  function updateDropdownPos() {
+    if (!ref.current) return
+    const rect = ref.current.getBoundingClientRect()
+    setDropdownPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 240) })
   }
+
+  function commitValue(v: string) {
+    setEditing(false)
+    setDropdownPos(null)
+    if (v !== value) onCommit(v)
+  }
+
+  function commit() { commitValue(draft) }
 
   const display = !editing && colType === "number" && value ? fmtNumber(value) : (editing ? draft : value)
+
+  const dropdown = editing && products && dropdownPos && filtered.length > 0
+    ? createPortal(
+        <div
+          onMouseDown={e => e.preventDefault()}
+          style={{
+            position: "absolute",
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            maxHeight: 220,
+            overflowY: "auto",
+            background: "#fff",
+            border: "1px solid #d1d5db",
+            borderRadius: 6,
+            boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+            zIndex: 99999,
+            fontSize: 12,
+          }}
+        >
+          {filtered.map((p, i) => (
+            <div
+              key={p.id}
+              onMouseDown={() => commitValue(p.name)}
+              style={{
+                padding: "6px 10px",
+                cursor: "pointer",
+                background: i === activeIdx ? "#ede9fe" : "#fff",
+                borderBottom: "1px solid #f3f4f6",
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+              }}
+              onMouseEnter={() => setActiveIdx(i)}
+            >
+              <span style={{ color: "#7c3aed", fontWeight: 700, minWidth: 90, fontSize: 11 }}>{p.code}</span>
+              <span style={{ color: "#111827" }}>{p.name}</span>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )
+    : null
 
   return (
     <div
@@ -90,17 +153,19 @@ function Cell({
           <input
             ref={el => { (ref as any).current = el; inputRef?.(el) }}
             value={draft}
-            list={products && colId ? `mkt-products-${colId}` : undefined}
-            onChange={e => setDraft(e.target.value)}
+            onChange={e => { setDraft(e.target.value); setActiveIdx(-1); updateDropdownPos() }}
             onBlur={commit}
             onKeyDown={e => {
+              if (products && filtered.length > 0) {
+                if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, filtered.length - 1)); return }
+                if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); return }
+                if (e.key === "Enter" && activeIdx >= 0) { e.preventDefault(); commitValue(filtered[activeIdx].name); onNav("down"); return }
+              }
               if (e.key === "Enter") { commit(); onNav("down") }
-              else if (e.key === "Escape") { setDraft(value); setEditing(false) }
+              else if (e.key === "Escape") { setDraft(value); setEditing(false); setDropdownPos(null) }
               else if (e.key === "Tab") { e.preventDefault(); commit(); onNav("tab") }
               else if (e.key === "ArrowRight" && ref.current && ref.current.selectionStart === draft.length) { commit(); onNav("right") }
               else if (e.key === "ArrowLeft" && ref.current && ref.current.selectionStart === 0) { commit(); onNav("left") }
-              else if (e.key === "ArrowUp") { commit(); onNav("up") }
-              else if (e.key === "ArrowDown") { commit(); onNav("down") }
             }}
             style={{
               position: "absolute", inset: 0, width: "100%", height: "100%",
@@ -111,13 +176,7 @@ function Cell({
               boxSizing: "border-box",
             }}
           />
-          {products && colId && (
-            <datalist id={`mkt-products-${colId}`}>
-              {products.map(p => (
-                <option key={p.id} value={p.name}>{p.code} — {p.name}</option>
-              ))}
-            </datalist>
-          )}
+          {dropdown}
         </>
       ) : (
         <div
