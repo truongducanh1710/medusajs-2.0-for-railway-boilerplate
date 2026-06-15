@@ -13,6 +13,7 @@ import ProductPageContent from "@modules/products/components/product-page-conten
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import ProductChatContextInjector from "@components/ProductChatContextInjector"
 import ViewerCount from "@components/ViewerCount"
+import PromoOverride from "@components/PromoOverride"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -385,6 +386,18 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
         productPixelId={productPixelId}
         productCapiToken={productCapiToken}
       />
+      {/* Promo banner override theo sản phẩm — set metadata promo_banner */}
+      {(() => {
+        const raw = product.metadata?.promo_banner as string | undefined
+        if (!raw) return null
+        try {
+          const parsed = JSON.parse(raw)
+          const msgs = Array.isArray(parsed) ? parsed : [String(parsed)]
+          return <PromoOverride messages={msgs} />
+        } catch {
+          return <PromoOverride messages={[raw]} />
+        }
+      })()}
       {/* Breadcrumb — ẩn trên mobile để tiết kiệm không gian */}
       <div className="bg-gray-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 py-2.5 text-xs text-gray-500 hidden sm:flex gap-1">
