@@ -601,8 +601,91 @@ function SaleTab({ range }: { range: DateRange }) {
   )
 }
 
+// ---- NV MKT Tab ----
+type MktRow = {
+  marketer: string
+  da_nhan: number; da_hoan: number; dang_hoan: number; da_huy: number
+  da_xoa: number; da_gui_hang: number; moi: number; cho_hang: number
+  da_xac_nhan: number; tong_giao: number; hoan_huy: number
+  ty_le_hoan: number; ty_le_huy: number; ty_le_giao: number
+}
+
+function NvMktTab({ range }: { range: DateRange }) {
+  const [data, setData] = useState<{ rows: MktRow[]; summary: MktRow } | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch(`/admin/pancake-sync/report/marketer-performance?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to])
+
+  const cols: { key: keyof MktRow; label: string; pct?: boolean }[] = [
+    { key: "da_nhan",     label: "Đã nhận" },
+    { key: "da_hoan",     label: "Đã hoàn" },
+    { key: "dang_hoan",   label: "Đang hoàn" },
+    { key: "da_huy",      label: "Đã hủy" },
+    { key: "da_xoa",      label: "Đã xóa" },
+    { key: "da_gui_hang", label: "Đã gửi hàng" },
+    { key: "moi",         label: "Mới" },
+    { key: "cho_hang",    label: "Chờ hàng" },
+    { key: "da_xac_nhan", label: "Đã xác nhận" },
+    { key: "tong_giao",   label: "Tổng giao" },
+    { key: "ty_le_hoan",  label: "Tỷ lệ hoàn", pct: true },
+    { key: "ty_le_huy",   label: "Tỷ lệ hủy",  pct: true },
+    { key: "ty_le_giao",  label: "Tỷ lệ giao TC", pct: true },
+    { key: "hoan_huy",    label: "Hoàn + Hủy" },
+  ]
+
+  const renderRow = (row: MktRow, isTotal = false) => (
+    <tr key={row.marketer} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium">
+        {row.marketer}
+      </td>
+      {cols.map(c => {
+        const v = row[c.key] as number
+        const isBad = (c.key === "ty_le_hoan" || c.key === "ty_le_huy") && v > 15
+        const isGood = c.key === "ty_le_giao" && v >= 60
+        return (
+          <td key={c.key} className={`px-3 py-2 text-sm text-right tabular-nums ${isBad ? "text-red-600 font-semibold" : isGood ? "text-green-600" : "text-gray-700"}`}>
+            {c.pct ? `${v}%` : fmtNum(v)}
+          </td>
+        )
+      })}
+    </tr>
+  )
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <h3 className="font-semibold text-gray-800">Tình trạng Vận đơn theo NV MKT</h3>
+        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+      </div>
+      {!data && !loading && <div className="p-8 text-center text-gray-400 text-sm">Chọn khoảng thời gian để xem dữ liệu</div>}
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">NV MKT</th>
+                {cols.map(c => (
+                  <th key={c.key} className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-right">{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {renderRow(data.summary, true)}
+              {data.rows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Main Page ----
-type TabKey = "overview" | "shipping" | "product" | "sale" | "marketing"
+type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "marketing"
 
 const BaoCaoPage = () => {
   const [tab, setTab] = useState<TabKey>("overview")
@@ -613,6 +696,7 @@ const BaoCaoPage = () => {
     { key: "shipping",  label: "Vận đơn",     icon: "🚚" },
     { key: "product",   label: "Sản phẩm & Lợi nhuận", icon: "💰" },
     { key: "sale",      label: "Sale & Funnel", icon: "🎯" },
+    { key: "nv-mkt",   label: "NV MKT",        icon: "📦" },
     { key: "marketing", label: "MKT",          icon: "📣" },
   ]
 
@@ -651,6 +735,7 @@ const BaoCaoPage = () => {
       {tab === "shipping"  && <ShippingTab range={range} />}
       {tab === "product"   && <ProductTab range={range} />}
       {tab === "sale"      && <SaleTab range={range} />}
+      {tab === "nv-mkt"   && <NvMktTab range={range} />}
       {tab === "marketing" && (
         <div className="bg-white border rounded-xl p-10 text-center space-y-4">
           <div className="text-5xl">📣</div>
