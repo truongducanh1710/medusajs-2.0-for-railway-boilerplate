@@ -795,8 +795,153 @@ function LngTab({ range }: { range: DateRange }) {
   )
 }
 
+// ---- Đơn lỗi Tab ----
+function ErrorsTab({ range }: { range: DateRange }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/lng-errors?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to])
+
+  if (!data && loading) return <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Đang tải...</div>
+  if (!data) return <div className="p-8 text-center text-gray-400 text-sm">Chọn khoảng thời gian để xem dữ liệu</div>
+
+  const nm = data.no_marketer, nc = data.no_cost, ul = data.unlinked_cost
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white border rounded-xl p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide">Đơn chưa có marketer</div>
+          <div className="text-2xl font-bold text-red-600 mt-1">{fmtNum(nm.count)}</div>
+          <div className="text-xs text-gray-400 mt-0.5">≈ {fmtNum(nm.total_amount)}đ doanh thu</div>
+        </div>
+        <div className="bg-white border rounded-xl p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide">SP chưa có giá vốn</div>
+          <div className="text-2xl font-bold text-amber-600 mt-1">{fmtNum(nc.count)}</div>
+          <div className="text-xs text-gray-400 mt-0.5">SP trong đơn đã giao</div>
+        </div>
+        <div className="bg-white border rounded-xl p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide">SP giá vốn chưa liên kết mã</div>
+          <div className="text-2xl font-bold text-violet-600 mt-1">{fmtNum(ul.count)}</div>
+          <div className="text-xs text-gray-400 mt-0.5">Lệch tên với danh mục SP</div>
+        </div>
+      </div>
+
+      {/* 1. Đơn chưa có marketer */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b">
+          <h3 className="font-semibold text-gray-800">① Đơn chưa có marketer ({fmtNum(nm.count)})</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Marketer rỗng / không quy được từ UTM → bị gom vào "KHÁC", lệch doanh số theo NV MKT.</p>
+        </div>
+        {nm.orders.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm">✓ Không có đơn lỗi</div>
+        ) : (
+          <div className="overflow-x-auto max-h-96">
+            <table className="min-w-full text-left border-collapse text-sm">
+              <thead className="sticky top-0">
+                <tr className="bg-gray-50 border-b">
+                  {["Mã đơn", "Khách", "Tỉnh", "Trạng thái", "Tiền", "Tạo lúc", "UTM camp", ""].map(h => (
+                    <th key={h} className="px-3 py-2 text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {nm.orders.map((o: any) => (
+                  <tr key={o.system_id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-mono text-xs">{o.system_id}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{o.customer_name || "—"}</td>
+                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{o.province || "—"}</td>
+                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{o.status_name || o.status}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmtNum(o.amount)}</td>
+                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{o.created}</td>
+                    <td className="px-3 py-2 text-gray-400 text-xs max-w-[160px] truncate" title={o.utm_campaign || ""}>{o.utm_campaign || "—"}</td>
+                    <td className="px-3 py-2">
+                      {o.order_link && (
+                        <a href={o.order_link} target="_blank" rel="noreferrer" className="text-violet-600 hover:underline text-xs whitespace-nowrap">Mở đơn ↗</a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 2. SP chưa có giá vốn */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b">
+          <h3 className="font-semibold text-gray-800">② SP chưa có giá vốn ({fmtNum(nc.count)})</h3>
+          <p className="text-xs text-gray-400 mt-0.5">SP bán ra (đơn giao TC) nhưng không map được giá vốn → tính COGS = 0, LNG bị thổi cao.</p>
+        </div>
+        {nc.products.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm">✓ Tất cả SP đã có giá vốn</div>
+        ) : (
+          <div className="overflow-x-auto max-h-80">
+            <table className="min-w-full text-left border-collapse text-sm">
+              <thead className="sticky top-0">
+                <tr className="bg-gray-50 border-b">
+                  {["Mã SP (display_id)", "Tên SP", "SL đã bán", "Số đơn"].map(h => (
+                    <th key={h} className="px-3 py-2 text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {nc.products.map((p: any, i: number) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-mono text-xs">{p.display_id || "—"}</td>
+                    <td className="px-3 py-2">{p.name}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmtNum(p.qty_sold)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">{fmtNum(p.order_count)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 3. SP giá vốn chưa liên kết mã */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b">
+          <h3 className="font-semibold text-gray-800">③ SP trong bảng giá vốn chưa liên kết mã ({fmtNum(ul.count)})</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Có giá TB trong bảng giá vốn nhưng tên không khớp danh mục SP → không nối được vào đơn. Sửa tên cho khớp hoặc chọn lại SP ở cột nhóm.</p>
+        </div>
+        {ul.products.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm">✓ Tất cả đã liên kết</div>
+        ) : (
+          <div className="overflow-x-auto max-h-80">
+            <table className="min-w-full text-left border-collapse text-sm">
+              <thead className="sticky top-0">
+                <tr className="bg-gray-50 border-b">
+                  {["Tên SP (trong bảng giá vốn)", "Giá TB/sp"].map(h => (
+                    <th key={h} className="px-3 py-2 text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {ul.products.map((p: any, i: number) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="px-3 py-2">{p.name}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-violet-600 font-medium">{fmtNum(p.gia_tb)}đ</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ---- Main Page ----
-type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "marketing"
+type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "errors" | "marketing"
 
 const BaoCaoPage = () => {
   const [tab, setTab] = useState<TabKey>("overview")
@@ -809,6 +954,7 @@ const BaoCaoPage = () => {
     { key: "sale",      label: "Sale & Funnel", icon: "🎯" },
     { key: "nv-mkt",   label: "NV MKT",        icon: "📦" },
     { key: "lng",       label: "LNG theo MKT", icon: "💵" },
+    { key: "errors",    label: "Đơn lỗi",      icon: "⚠️" },
     { key: "marketing", label: "MKT",          icon: "📣" },
   ]
 
@@ -849,6 +995,7 @@ const BaoCaoPage = () => {
       {tab === "sale"      && <SaleTab range={range} />}
       {tab === "nv-mkt"   && <NvMktTab range={range} />}
       {tab === "lng"      && <LngTab range={range} />}
+      {tab === "errors"   && <ErrorsTab range={range} />}
       {tab === "marketing" && (
         <div className="bg-white border rounded-xl p-10 text-center space-y-4">
           <div className="text-5xl">📣</div>
