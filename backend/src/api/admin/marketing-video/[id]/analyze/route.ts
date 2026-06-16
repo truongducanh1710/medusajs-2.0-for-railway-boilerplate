@@ -385,11 +385,15 @@ async function notify(scope: any, title: string, description?: string): Promise<
 }
 
 function parseJsonFromContent(content: string): any {
+  // Strip markdown code fences
   const stripped = content.replace(/^```json\s*/m, "").replace(/\s*```\s*$/m, "").trim()
   const start = stripped.indexOf("{")
   const end = stripped.lastIndexOf("}")
   if (start === -1 || end === -1) throw new Error("No JSON object found")
-  return JSON.parse(stripped.slice(start, end + 1))
+  const slice = stripped.slice(start, end + 1)
+  // Remove lone surrogates that MiniMax M3 sometimes emits — JSON.parse strict rejects them
+  const clean = slice.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+  return JSON.parse(clean)
 }
 
 async function fetchProductContext(req: MedusaRequest, productCode: string, productName: string): Promise<Record<string, string>> {
@@ -553,7 +557,13 @@ function safeParseJson(raw: string, vdCode: string): any {
     return parseJsonFromContent(raw)
   } catch (err: any) {
     console.error(`[analyze:${vdCode}] JSON parse error: ${err.message}`)
-    console.error(`[analyze:${vdCode}] raw (first 500): ${raw.slice(0, 500)}`)
+    console.error(`[analyze:${vdCode}] raw (first 300): ${raw.slice(0, 300)}`)
+    // Fallback: nếu raw chính là JSON object string thì thử parse trực tiếp sau khi clean surrogates
+    try {
+      const clean = raw.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+      const start = clean.indexOf("{"), end = clean.lastIndexOf("}")
+      if (start !== -1 && end !== -1) return JSON.parse(clean.slice(start, end + 1))
+    } catch {}
     return { tong_quan: raw.slice(0, 300), diem_ban_hang: null, parse_error: true }
   }
 }
