@@ -69,7 +69,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ── 1. Đơn chưa có marketer ────────────────────────────────────────────────
     const noMarketer = await sql(`
       SELECT
-        system_id,
+        id AS system_id,
         raw->>'order_link' AS order_link,
         customer_name,
         province,
@@ -93,7 +93,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         item->'variation_info'->>'display_id' AS display_id,
         item->>'name' AS name,
         SUM((item->>'quantity')::int) AS qty_sold,
-        COUNT(DISTINCT system_id) AS order_count
+        COUNT(DISTINCT po.id) AS order_count
       FROM pancake_order po,
         jsonb_array_elements(po.raw->'items') AS item
       WHERE po.deleted_at IS NULL
