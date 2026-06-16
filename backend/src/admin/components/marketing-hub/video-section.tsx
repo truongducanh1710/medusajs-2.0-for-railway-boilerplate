@@ -1598,7 +1598,7 @@ function AiReviewModal({ row, result, aiModel, isSuper, onClose, onReanalyze }: 
         <div style={{ background: "#1877F2", color: "#fff", padding: "16px 20px", borderRadius: "14px 14px 0 0", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Phân tích AI — {row.sp}</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>{row.vdCode && <span style={{ fontFamily: "monospace", marginRight: 6 }}>{row.vdCode}</span>}{row.nguoiLam && <span style={{ marginRight: 6 }}>· {row.nguoiLam}</span>}{row.loaiVideo}</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>{row.vdCode && <span style={{ fontFamily: "monospace", marginRight: 6 }}>{row.vdCode}</span>}{row.nguoiLam && <span style={{ marginRight: 6 }}>· {row.nguoiLam}</span>}{row.loaiVideo}{result?._model && <span style={{ marginLeft: 8, opacity: 0.7 }}>· {result._model}</span>}</div>
           </div>
           {score != null && (
             <div style={{ background: scoreBg, color: scoreColor, borderRadius: 20, padding: "4px 14px", fontWeight: 800, fontSize: 18 }}>★ {score}</div>
@@ -1616,7 +1616,11 @@ function AiReviewModal({ row, result, aiModel, isSuper, onClose, onReanalyze }: 
 
         <div style={{ padding: 20 }}>
           {/* Tổng quan */}
-          {result?.tong_quan && (
+          {result?.parse_error ? (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, color: "#991B1B", fontWeight: 600 }}>⚠️ Kết quả phân tích bị lỗi encoding — vui lòng bấm "Phân tích lại" để chạy lại.</div>
+            </div>
+          ) : result?.tong_quan && (
             <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 4 }}>TỔNG QUAN</div>
               <div style={{ fontSize: 13, color: "#111827", lineHeight: 1.6 }}>{result.tong_quan}</div>
