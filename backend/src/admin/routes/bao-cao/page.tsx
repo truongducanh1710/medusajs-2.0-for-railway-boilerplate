@@ -100,8 +100,19 @@ function Markdown({ text }: { text: string }) {
 type Period = "today" | "7d" | "month" | "lastmonth" | "custom"
 interface DateRange { from: string; to: string }
 
+function detectPeriod(range: DateRange): Period {
+  const today = todayVN()
+  if (range.from === today && range.to === today) return "today"
+  if (range.from === addDays(today, -6) && range.to === today) return "7d"
+  const tm = thisMonthRange()
+  if (range.from === tm.from && range.to === tm.to) return "month"
+  const lm = lastMonthRange()
+  if (range.from === lm.from && range.to === lm.to) return "lastmonth"
+  return "custom"
+}
+
 function PeriodSelector({ range, onChange }: { range: DateRange; onChange: (r: DateRange) => void }) {
-  const [active, setActive] = useState<Period>("month")
+  const [active, setActive] = useState<Period>(() => detectPeriod(range))
   const [custom, setCustom] = useState({ from: range.from, to: range.to })
 
   function pick(p: Period) {
@@ -940,12 +951,41 @@ function ErrorsTab({ range }: { range: DateRange }) {
   )
 }
 
+// ---- URL state helpers ----
+function getSearchParams() {
+  return new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
+}
+function pushState(tab: string, range: DateRange) {
+  const p = new URLSearchParams()
+  p.set("tab", tab)
+  p.set("from", range.from)
+  p.set("to", range.to)
+  history.replaceState(null, "", `?${p.toString()}`)
+}
+
 // ---- Main Page ----
 type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "errors" | "marketing"
 
+const VALID_TABS: TabKey[] = ["overview", "shipping", "product", "sale", "nv-mkt", "lng", "errors", "marketing"]
+
 const BaoCaoPage = () => {
-  const [tab, setTab] = useState<TabKey>("overview")
-  const [range, setRange] = useState<DateRange>(thisMonthRange())
+  const initParams = getSearchParams()
+  const initTab = (VALID_TABS.includes(initParams.get("tab") as TabKey) ? initParams.get("tab") : "overview") as TabKey
+  const initRange: DateRange = (initParams.get("from") && initParams.get("to"))
+    ? { from: initParams.get("from")!, to: initParams.get("to")! }
+    : thisMonthRange()
+
+  const [tab, setTab] = useState<TabKey>(initTab)
+  const [range, setRange] = useState<DateRange>(initRange)
+
+  function changeTab(t: TabKey) {
+    setTab(t)
+    pushState(t, range)
+  }
+  function changeRange(r: DateRange) {
+    setRange(r)
+    pushState(tab, r)
+  }
 
   const tabs: { key: TabKey; label: string; icon: string }[] = [
     { key: "overview",  label: "Tổng quan",   icon: "📊" },
@@ -969,7 +1009,7 @@ const BaoCaoPage = () => {
 
       {/* Period selector */}
       <div className="mb-4">
-        <PeriodSelector range={range} onChange={setRange} />
+        <PeriodSelector range={range} onChange={changeRange} />
       </div>
 
       {/* AI Summary */}
@@ -978,7 +1018,7 @@ const BaoCaoPage = () => {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200 overflow-x-auto">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => changeTab(t.key)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
               tab === t.key
                 ? "text-violet-600 border-b-2 border-violet-600 bg-violet-50/50"
