@@ -385,7 +385,21 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   function updateCell(rowId: string, colId: string, value: string) {
     setRows(rs => rs.map(r => {
       if (r.id !== rowId) return r
-      const updated = { ...r, data: { ...r.data, [colId]: value }, _dirty: true }
+      const newData = { ...r.data, [colId]: value }
+
+      // Auto-tính G = (E*D + F) * 8% khi D, E, hoặc F thay đổi
+      const cols = colsRef.current
+      const posToId = Object.fromEntries(cols.map(c => [c.position, c.id]))
+      const idD = posToId[3], idE = posToId[4], idF = posToId[5], idG = posToId[6]
+      if (idD && idE && idF && idG && [idD, idE, idF].includes(colId)) {
+        const D = parseFloat((newData[idD] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const E = parseFloat((newData[idE] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const F = parseFloat((newData[idF] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const G = Math.round((E * D + F) * 0.08)
+        newData[idG] = G > 0 ? String(G) : ""
+      }
+
+      const updated = { ...r, data: newData, _dirty: true }
       dirtyRef.current.set(rowId, updated)
       return updated
     }))
