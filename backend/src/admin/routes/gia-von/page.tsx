@@ -653,13 +653,133 @@ function tdS(w: number): React.CSSProperties {
   }
 }
 
+// ─── Summary Tab ─────────────────────────────────────────────────────────────
+
+function parseNum(s: string): number {
+  if (!s) return 0
+  return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0
+}
+
+function SummaryTab() {
+  const [items, setItems] = useState<{
+    ten: string; tinhChat: string; soLuong: number; tongTien: number; giaVeKho: number
+  }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
+
+  useEffect(() => {
+    Promise.all([
+      apiJson("/admin/gia-von/sheet", "GET"),
+    ]).then(([sheet]) => {
+      const cols: SheetColumn[] = sheet.columns ?? []
+      const rows: SheetRow[] = sheet.rows ?? []
+      if (rows.length < 2) { setLoading(false); return }
+
+      const headerRow = rows[0].data
+      // Build headerValue → colId map
+      const headerToId: Record<string, string> = {}
+      for (const [colId, val] of Object.entries(headerRow)) {
+        if (val) headerToId[val.trim()] = colId
+      }
+      // Also build position → colId
+      const posToId: Record<number, string> = {}
+      for (const c of cols) posToId[c.position] = c.id
+
+      const colSanPham = headerToId["Sản phẩm"] ?? posToId[1]
+      const colTinhChat = headerToId["Tính chất"] ?? posToId[2]
+      const colSoLuong = headerToId["Số lượng"] ?? posToId[3]
+      const colTongTien = headerToId["Tổng tiền"] ?? posToId[8]
+      const colGiaVeKho = headerToId["Giá về kho/sp"] ?? posToId[9]
+
+      const dataRows = rows.slice(1).filter(r => r.data[colSanPham]?.trim())
+
+      setItems(dataRows.map(r => ({
+        ten: r.data[colSanPham]?.trim() ?? "",
+        tinhChat: r.data[colTinhChat]?.trim() ?? "",
+        soLuong: parseNum(r.data[colSoLuong] ?? ""),
+        tongTien: parseNum(r.data[colTongTien] ?? ""),
+        giaVeKho: parseNum(r.data[colGiaVeKho] ?? ""),
+      })))
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const fmt = (n: number) => n > 0 ? new Intl.NumberFormat("vi-VN").format(Math.round(n)) : "—"
+
+  const filtered = items.filter(i =>
+    !search || i.ten.toLowerCase().includes(search.toLowerCase())
+  )
+
+  // Group by tên sản phẩm (chính + phụ kiện riêng)
+  const grouped: Record<string, typeof items> = {}
+  for (const i of filtered) {
+    if (!grouped[i.ten]) grouped[i.ten] = []
+    grouped[i.ten].push(i)
+  }
+
+  const summary = Object.entries(grouped).map(([ten, rows]) => {
+    const chinh = rows.find(r => r.tinhChat === "Sản phẩm chính") ?? rows[0]
+    const totalQty = chinh.soLuong
+    const totalAmt = chinh.tongTien
+    const giaTB = totalQty > 0 ? totalAmt / totalQty : chinh.giaVeKho
+    const phuKien = rows.filter(r => r.tinhChat !== "Sản phẩm chính")
+    return { ten, giaTB, giaVeKho: chinh.giaVeKho, soLuong: totalQty, tongTien: totalAmt, phuKien }
+  }).sort((a, b) => b.giaTB - a.giaTB)
+
+  if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Tìm sản phẩm..."
+          style={{ border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 12px", fontSize: 13, width: 280, outline: "none" }}
+        />
+        <span style={{ fontSize: 12, color: "#9ca3af", marginLeft: "auto" }}>{summary.length} sản phẩm</span>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              {["#", "Sản phẩm", "Số lượng (D)", "Tổng tiền (I)", "Giá về kho/sp (J)", "Giá TB (I÷D)", "Phụ kiện"].map((h, i) => (
+                <th key={i} style={{ padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f9fafb", textAlign: i >= 2 ? "right" : "left", fontWeight: 700, color: "#374151", whiteSpace: "nowrap", position: "sticky", top: 0 }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {summary.map((s, idx) => (
+              <tr key={s.ten} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
+                <td style={{ padding: "7px 10px", color: "#9ca3af", width: 36 }}>{idx + 1}</td>
+                <td style={{ padding: "7px 10px", fontWeight: 600, color: "#111827", maxWidth: 280 }}>{s.ten}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.soLuong)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.tongTien)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.giaVeKho)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmt(s.giaTB)}đ</td>
+                <td style={{ padding: "7px 10px", color: "#6b7280", fontSize: 12 }}>
+                  {s.phuKien.map(p => `${p.ten} (${fmt(p.giaVeKho)}đ)`).join(", ") || "—"}
+                </td>
+              </tr>
+            ))}
+            {summary.length === 0 && (
+              <tr><td colSpan={7} style={{ textAlign: "center", padding: 32, color: "#9ca3af" }}>Không có dữ liệu</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
+  const [tab, setTab] = useState<"sheet" | "summary">("sheet")
 
-  // Chờ permissions load xong mới render — tránh flash "read-only" rồi switch sang "editable"
   if (loading) {
     return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
   }
@@ -673,8 +793,25 @@ export default function GiaVonPage() {
           {canManage ? "" : " · (chỉ xem)"}
         </p>
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <Spreadsheet canManage={canManage} />
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "2px solid #e5e7eb" }}>
+        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"]] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{
+              padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              border: "none", background: "none",
+              color: tab === key ? "#7c3aed" : "#6b7280",
+              borderBottom: `3px solid ${tab === key ? "#7c3aed" : "transparent"}`,
+              marginBottom: -2,
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        {tab === "sheet" ? <Spreadsheet canManage={canManage} /> : <SummaryTab />}
       </div>
     </div>
   )
