@@ -368,7 +368,10 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
       const result = await apiJson(`/admin/marketing-video/${row.id}/analyze`, "POST", { model: model || aiModel })
       if (result?.queued) {
         startPolling(row.id)
-        // analyzingIds stays — polling will clear it when done/error
+      } else if (result?.ai_status && ["queued","uploading","transcribing","analyzing"].includes(result.ai_status)) {
+        // 409 — job đang chạy từ trước, bắt polling tiếp
+        startPolling(row.id)
+        setToast("⏳ Job đang chạy — theo dõi qua chuông thông báo")
       } else if (result?.ai_review) {
         // Fallback: synchronous response (backward compat)
         const updatedScript = (!row.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : row.script
