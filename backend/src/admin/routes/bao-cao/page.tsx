@@ -1,6 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState, useRef } from "react"
-import { apiFetch } from "../../lib/api-client"
+import { apiFetch, apiJson } from "../../lib/api-client"
 
 // ---- Helpers ----
 function fmtVND(n: number | null | undefined) {
@@ -616,7 +616,7 @@ function NvMktTab({ range }: { range: DateRange }) {
 
   useEffect(() => {
     setLoading(true)
-    apiFetch(`/admin/pancake-sync/report/marketer-performance?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+    apiJson(`/admin/pancake-sync/report/marketer-performance?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
       .then(setData).finally(() => setLoading(false))
   }, [range.from, range.to])
 
@@ -684,8 +684,119 @@ function NvMktTab({ range }: { range: DateRange }) {
   )
 }
 
+// ---- LNG theo MKT Tab ----
+type LngRow = {
+  mkt_name: string
+  total_orders: number
+  revenue_total: number
+  revenue_delivered: number
+  cogs: number
+  ship_cost: number
+  ads_cost: number
+  fullfill: number
+  lng: number
+  cogs_pct: number | null
+  ship_pct: number | null
+  ads_pct: number | null
+  fullfill_pct: number | null
+  lng_pct: number | null
+}
+
+function LngTab({ range }: { range: DateRange }) {
+  const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number } | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/marketer-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to])
+
+  const pctStr = (v: number | null) => v == null ? "—" : `${v}%`
+  const money = (v: number) => fmtNum(Math.round(v || 0))
+
+  const renderRow = (row: LngRow, isTotal = false) => (
+    <tr key={row.mkt_name} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium">
+        {isTotal ? "TỔNG" : row.mkt_name}
+      </td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.revenue_total)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.revenue_delivered)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.cogs)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.cogs_pct)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-amber-700">{money(row.ship_cost)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.ship_pct)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.ads_cost)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.ads_pct)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.fullfill)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.fullfill_pct)}</td>
+      <td className={`px-3 py-2 text-sm text-right tabular-nums font-bold ${row.lng >= 0 ? "text-green-600" : "text-red-600"}`}>{money(row.lng)}</td>
+      <td className={`px-3 py-2 text-sm text-right tabular-nums ${(row.lng_pct ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>{pctStr(row.lng_pct)}</td>
+    </tr>
+  )
+
+  const heads = ["Doanh số", "Doanh thu TT", "Giá vốn", "%GV", "Vận chuyển", "%VC", "Chi phí Ads", "%Ads", "Fullfill", "%FF", "LNG TẠM TÍNH", "%LNG"]
+
+  const totalRow: LngRow | null = data ? {
+    mkt_name: "TỔNG",
+    total_orders: data.totals.total_orders,
+    revenue_total: data.totals.revenue_total,
+    revenue_delivered: data.totals.revenue_delivered,
+    cogs: data.totals.cogs,
+    ship_cost: data.totals.ship_cost,
+    ads_cost: data.totals.ads_cost,
+    fullfill: data.totals.fullfill,
+    lng: data.totals.lng,
+    cogs_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.cogs / data.totals.revenue_delivered * 10000) / 100 : null,
+    ship_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.ship_cost / data.totals.revenue_delivered * 10000) / 100 : null,
+    ads_pct: data.totals.revenue_total > 0 ? Math.round(data.totals.ads_cost / data.totals.revenue_total * 10000) / 100 : null,
+    fullfill_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.fullfill / data.totals.revenue_delivered * 10000) / 100 : null,
+    lng_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.lng / data.totals.revenue_delivered * 10000) / 100 : null,
+  } : null
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-gray-800">Lợi nhuận gộp (LNG) theo NV MKT</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            LNG = Doanh thu TT − (Giá vốn + Vận chuyển + Ads + Fullfill 5.000đ/đơn)
+          </p>
+        </div>
+        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+      </div>
+      {data && (data.mapped_pct < 100) && (
+        <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">
+          ⚠️ Giá vốn mới map được <b>{data.mapped_pct}%</b> số lượng SP đã giao
+          ({data.cost_mapped}/{data.cost_total} sản phẩm trong bảng giá vốn có mã liên kết).
+          Phần chưa map tính giá vốn = 0 → LNG có thể cao hơn thực tế.
+        </div>
+      )}
+      {!data && !loading && <div className="p-8 text-center text-gray-400 text-sm">Chọn khoảng thời gian để xem dữ liệu</div>}
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">NV MKT</th>
+                {heads.map(h => (
+                  <th key={h} className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-right">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {totalRow && renderRow(totalRow, true)}
+              {data.rows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Main Page ----
-type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "marketing"
+type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "marketing"
 
 const BaoCaoPage = () => {
   const [tab, setTab] = useState<TabKey>("overview")
@@ -697,6 +808,7 @@ const BaoCaoPage = () => {
     { key: "product",   label: "Sản phẩm & Lợi nhuận", icon: "💰" },
     { key: "sale",      label: "Sale & Funnel", icon: "🎯" },
     { key: "nv-mkt",   label: "NV MKT",        icon: "📦" },
+    { key: "lng",       label: "LNG theo MKT", icon: "💵" },
     { key: "marketing", label: "MKT",          icon: "📣" },
   ]
 
@@ -736,6 +848,7 @@ const BaoCaoPage = () => {
       {tab === "product"   && <ProductTab range={range} />}
       {tab === "sale"      && <SaleTab range={range} />}
       {tab === "nv-mkt"   && <NvMktTab range={range} />}
+      {tab === "lng"      && <LngTab range={range} />}
       {tab === "marketing" && (
         <div className="bg-white border rounded-xl p-10 text-center space-y-4">
           <div className="text-5xl">📣</div>
