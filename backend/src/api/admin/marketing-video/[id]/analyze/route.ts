@@ -613,7 +613,7 @@ async function runAnalysisGemini(
     const aiReview = safeParseJson(rawContent, row.vd_code)
     if (!aiReview.loi_thoai && rawTranscript) aiReview.loi_thoai = rawTranscript
 
-    await saveAndNotify(id, row, aiReview, scope, pool, vdLabel, elapsed)
+    await saveAndNotify(id, row, aiReview, requestedModel, scope, pool, vdLabel, elapsed)
   } catch (err: any) {
     await handleError(id, row, err, scope, pool, vdLabel, elapsed)
   } finally {
@@ -660,7 +660,7 @@ async function runAnalysisMinimax(
     const aiReview = safeParseJson(rawContent, row.vd_code)
     if (!aiReview.loi_thoai && rawTranscript) aiReview.loi_thoai = rawTranscript
 
-    await saveAndNotify(id, row, aiReview, scope, pool, vdLabel, elapsed)
+    await saveAndNotify(id, row, aiReview, "minimax-m3", scope, pool, vdLabel, elapsed)
   } catch (err: any) {
     await handleError(id, row, err, scope, pool, vdLabel, elapsed)
   } finally {
@@ -672,9 +672,10 @@ async function runAnalysisMinimax(
 // ─── SHARED SAVE + NOTIFY ─────────────────────────────────────────────────────
 
 async function saveAndNotify(
-  id: string, row: any, aiReview: any,
+  id: string, row: any, aiReview: any, model: string,
   scope: any, pool: any, vdLabel: string, elapsed: () => string
 ): Promise<void> {
+  aiReview._model = model
   const aiScore = typeof aiReview.diem_ban_hang === "number" ? aiReview.diem_ban_hang : null
   const newScript = (!row.script && aiReview.loi_thoai) ? aiReview.loi_thoai : null
   await pool.query(
