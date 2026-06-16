@@ -612,8 +612,10 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
     let aiReview: any
     try {
       aiReview = parseJsonFromContent(rawContent)
-    } catch {
-      aiReview = { tong_quan: rawContent, diem_ban_hang: null, parse_error: true }
+    } catch (parseErr: any) {
+      console.error(`[analyze:${row.vd_code}] JSON parse error: ${parseErr.message}`)
+      console.error(`[analyze:${row.vd_code}] raw (first 500): ${rawContent.slice(0, 500)}`)
+      aiReview = { tong_quan: rawContent.slice(0, 300), diem_ban_hang: null, parse_error: true }
     }
 
     if (!aiReview.loi_thoai && rawTranscript) {
@@ -631,9 +633,12 @@ Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùn
 
     const scoreLabel = aiScore != null ? ` ★${aiScore}/10` : ""
     console.log(`[analyze:${row.vd_code}] DONE${scoreLabel} total=${elapsed()}`)
+    const tqText = (aiReview.parse_error || typeof aiReview.tong_quan !== "string")
+      ? (aiScore != null ? `Điểm: ${aiScore}/10` : "Phân tích hoàn tất")
+      : aiReview.tong_quan.slice(0, 150) + (aiReview.tong_quan.length > 150 ? "…" : "")
     await notify(scope,
       `✅ ${vdLabel}${scoreLabel} — ${row.product || "Video"} · ${row.maker || ""}`,
-      aiReview.tong_quan ? aiReview.tong_quan.slice(0, 150) + "…" : ""
+      tqText
     )
 
   } catch (err: any) {
