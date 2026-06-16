@@ -7,6 +7,7 @@ function getPool(): Pool {
 }
 
 const MODEL_COSTS: Record<string, number> = {
+  // OpenRouter / text models
   "deepseek-v4-pro":                    0.87,
   "deepseek-v4-flash":                  0.07,
   "google/gemini-3.5-flash":            0.15,
@@ -14,6 +15,17 @@ const MODEL_COSTS: Record<string, number> = {
   "anthropic/claude-sonnet-4-6":        3.0,
   "qwen/qwen2.5-vl-72b-instruct":       0.40,
   "meta-llama/llama-3.3-70b-instruct":  0.59,
+  // Gemini direct API (video analysis) — input price/1M (video tokens dominate)
+  "gemini-3.1-pro-preview":             2.0,
+  "gemini-3-pro-preview":               2.0,
+  "gemini-2.5-pro":                     1.25,
+  "gemini-3.5-flash":                   0.10,
+  "gemini-3.1-flash-lite":              0.10,
+  "gemini-3-flash-preview":             0.10,
+  "gemini-2.5-flash":                   0.10,
+  // MiniMax
+  "minimax-m3":                         0.07,
+  "MiniMax-M3":                         0.07,
 }
 
 export async function logAiUsage(params: {

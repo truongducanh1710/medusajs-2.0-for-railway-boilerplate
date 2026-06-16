@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo } from "../../_lib"
 import { isLarkFileUrl, downloadToTmp, cleanupTmp } from "../../../../../lib/fb-drive"
+import { logAiUsage } from "../../../../../lib/ai-usage"
 import * as fs from "fs"
 import * as https from "https"
 import * as http from "http"
@@ -237,7 +238,9 @@ async function deleteGeminiFile(fileUri: string): Promise<void> {
   })
 }
 
-async function callGemini(fileUri: string, prompt: string, model = GEMINI_MODEL_DEFAULT): Promise<string> {
+interface GeminiResult { text: string; promptTokens: number; completionTokens: number }
+
+async function callGemini(fileUri: string, prompt: string, model = GEMINI_MODEL_DEFAULT): Promise<GeminiResult> {
   const body = Buffer.from(JSON.stringify({
     contents: [{
       parts: [
@@ -264,7 +267,12 @@ async function callGemini(fileUri: string, prompt: string, model = GEMINI_MODEL_
         try {
           const r = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
           const text = r?.candidates?.[0]?.content?.parts?.[0]?.text
-          if (text) resolve(text)
+          const usage = r?.usageMetadata ?? {}
+          if (text) resolve({
+            text,
+            promptTokens:     usage.promptTokenCount     ?? 0,
+            completionTokens: usage.candidatesTokenCount ?? 0,
+          })
           else reject(new Error(r?.error?.message || JSON.stringify(r)))
         } catch (e) { reject(e) }
       })
@@ -315,7 +323,9 @@ async function uploadToMinimax(filePath: string): Promise<string> {
   })
 }
 
-async function callMinimax(fileId: string, prompt: string): Promise<string> {
+interface MinimaxResult { text: string; promptTokens: number; completionTokens: number }
+
+async function callMinimax(fileId: string, prompt: string): Promise<MinimaxResult> {
   const body = Buffer.from(JSON.stringify({
     model: "MiniMax-M3",
     max_tokens: 8192,
@@ -346,10 +356,14 @@ async function callMinimax(fileId: string, prompt: string): Promise<string> {
         try {
           const r = JSON.parse(Buffer.concat(chunks).toString("utf-8"))
           let text = r?.choices?.[0]?.message?.content
+          const usage = r?.usage ?? {}
           if (text) {
-            // Strip <think>...</think> reasoning block MiniMax M3 trả về
             text = text.replace(/<think>[\s\S]*?<\/think>\s*/g, "").trim()
-            resolve(text)
+            resolve({
+              text,
+              promptTokens:     usage.prompt_tokens     ?? 0,
+              completionTokens: usage.completion_tokens ?? 0,
+            })
           } else reject(new Error(r?.error?.message || JSON.stringify(r)))
         } catch (e) { reject(e) }
       })
@@ -601,14 +615,26 @@ async function runAnalysisGemini(
     await pool.query(`UPDATE mkt_video SET ai_status='transcribing', updated_at=now() WHERE id=$1`, [id])
     await notify(scope, `⏳ ${vdLabel} Đang transcribe lời thoại...`)
     const t2 = Date.now()
-    const rawTranscript = await callGemini(fileUri, TRANSCRIBE_PROMPT, requestedModel)
-    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s)`)
+    const transcribeResult = await callGemini(fileUri, TRANSCRIBE_PROMPT, requestedModel)
+    const rawTranscript = transcribeResult.text
+    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s) tokens=${transcribeResult.promptTokens}+${transcribeResult.completionTokens}`)
+    await logAiUsage({
+      feature: "video_analysis", run_id: row.vd_code, model: requestedModel, provider: "gemini",
+      usage: { prompt_tokens: transcribeResult.promptTokens, completion_tokens: transcribeResult.completionTokens },
+      context: { vd_code: row.vd_code, step: "transcribe", product: row.product },
+    })
 
     await pool.query(`UPDATE mkt_video SET ai_status='analyzing', updated_at=now() WHERE id=$1`, [id])
     await notify(scope, `⏳ ${vdLabel} Đang phân tích sâu...`)
     const t3 = Date.now()
-    const rawContent = await callGemini(fileUri, buildAnalyzePrompt(row, spContextText, benchmarkText, rawTranscript), requestedModel)
-    console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s)`)
+    const analyzeResult = await callGemini(fileUri, buildAnalyzePrompt(row, spContextText, benchmarkText, rawTranscript), requestedModel)
+    const rawContent = analyzeResult.text
+    console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s) tokens=${analyzeResult.promptTokens}+${analyzeResult.completionTokens}`)
+    await logAiUsage({
+      feature: "video_analysis", run_id: row.vd_code, model: requestedModel, provider: "gemini",
+      usage: { prompt_tokens: analyzeResult.promptTokens, completion_tokens: analyzeResult.completionTokens },
+      context: { vd_code: row.vd_code, step: "analyze", product: row.product },
+    })
 
     const aiReview = safeParseJson(rawContent, row.vd_code)
     if (!aiReview.loi_thoai && rawTranscript) aiReview.loi_thoai = rawTranscript
@@ -648,14 +674,26 @@ async function runAnalysisMinimax(
     await pool.query(`UPDATE mkt_video SET ai_status='transcribing', updated_at=now() WHERE id=$1`, [id])
     await notify(scope, `⏳ ${vdLabel} Đang transcribe lời thoại...`)
     const t2 = Date.now()
-    const rawTranscript = await callMinimax(minimaxFileId, TRANSCRIBE_PROMPT)
-    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s)`)
+    const transcribeResult = await callMinimax(minimaxFileId, TRANSCRIBE_PROMPT)
+    const rawTranscript = transcribeResult.text
+    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s) tokens=${transcribeResult.promptTokens}+${transcribeResult.completionTokens}`)
+    await logAiUsage({
+      feature: "video_analysis", run_id: row.vd_code, model: "minimax-m3", provider: "minimax",
+      usage: { prompt_tokens: transcribeResult.promptTokens, completion_tokens: transcribeResult.completionTokens },
+      context: { vd_code: row.vd_code, step: "transcribe", product: row.product },
+    })
 
     await pool.query(`UPDATE mkt_video SET ai_status='analyzing', updated_at=now() WHERE id=$1`, [id])
     await notify(scope, `⏳ ${vdLabel} Đang phân tích sâu...`)
     const t3 = Date.now()
-    const rawContent = await callMinimax(minimaxFileId, buildAnalyzePrompt(row, spContextText, benchmarkText, rawTranscript))
-    console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s)`)
+    const analyzeResult = await callMinimax(minimaxFileId, buildAnalyzePrompt(row, spContextText, benchmarkText, rawTranscript))
+    const rawContent = analyzeResult.text
+    console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s) tokens=${analyzeResult.promptTokens}+${analyzeResult.completionTokens}`)
+    await logAiUsage({
+      feature: "video_analysis", run_id: row.vd_code, model: "minimax-m3", provider: "minimax",
+      usage: { prompt_tokens: analyzeResult.promptTokens, completion_tokens: analyzeResult.completionTokens },
+      context: { vd_code: row.vd_code, step: "analyze", product: row.product },
+    })
 
     const aiReview = safeParseJson(rawContent, row.vd_code)
     if (!aiReview.loi_thoai && rawTranscript) aiReview.loi_thoai = rawTranscript

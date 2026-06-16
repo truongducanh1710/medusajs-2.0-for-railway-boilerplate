@@ -8,6 +8,10 @@ export const KNOWN_MODELS = [
   { id: "anthropic/claude-sonnet-4-6",         label: "Claude Sonnet 4.6",           provider: "openrouter",  costPer1M: 3.0  },
   { id: "qwen/qwen2.5-vl-72b-instruct",        label: "Qwen 2.5 VL 72B",            provider: "openrouter",  costPer1M: 0.40 },
   { id: "meta-llama/llama-3.3-70b-instruct",   label: "Llama 3.3 70B",              provider: "openrouter",  costPer1M: 0.59 },
+  // Gemini direct API (dùng cho video analysis)
+  { id: "gemini-3.1-pro-preview",              label: "Gemini 3.1 Pro (video)",      provider: "gemini",      costPer1M: 2.0  },
+  { id: "gemini-2.5-flash",                    label: "Gemini 2.5 Flash (video)",    provider: "gemini",      costPer1M: 0.10 },
+  { id: "minimax-m3",                          label: "MiniMax M3 (video)",          provider: "minimax",     costPer1M: 0.07 },
 ]
 
 /**
@@ -22,6 +26,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const envStatus = {
       DEEPSEEK_API_KEY:    !!process.env.DEEPSEEK_API_KEY,
       OPENROUTER_API_KEY:  !!process.env.OPENROUTER_API_KEY,
+      GEMINI_API_KEY:      !!process.env.GEMINI_API_KEY,
+      MINIMAX_API_KEY:     !!process.env.MINIMAX_API_KEY,
     }
 
     return res.json({ features, available_models: KNOWN_MODELS, env_status: envStatus })

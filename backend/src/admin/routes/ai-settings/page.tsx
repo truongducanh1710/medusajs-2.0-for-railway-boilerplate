@@ -10,7 +10,7 @@ interface Feature {
   updated_by: string | null; updated_at: string | null
 }
 interface ModelOption { id: string; label: string; provider: string; costPer1M: number }
-interface EnvStatus { DEEPSEEK_API_KEY: boolean; OPENROUTER_API_KEY: boolean }
+interface EnvStatus { DEEPSEEK_API_KEY: boolean; OPENROUTER_API_KEY: boolean; GEMINI_API_KEY: boolean; MINIMAX_API_KEY: boolean }
 
 interface UsageSummary {
   total_cost_usd: number; total_tokens: number; total_calls: number
@@ -30,10 +30,11 @@ const FEATURE_META: Record<string, { label: string; desc: string; icon: string; 
   camp_ai_agent:    { label: "Camp AI Agent",    desc: "Phân tích & đề xuất tối ưu Facebook Ads campaign tự động", icon: "🤖", scheduleInfo: "Chạy mỗi 4 giờ" },
   camp_ai_evaluator:{ label: "Camp AI Evaluator",desc: "Model phụ chấm điểm chất lượng recommendation của agent chính", icon: "🔍", scheduleInfo: "Chạy sau mỗi lần agent kết thúc" },
   cskh_analysis:    { label: "CSKH Analysis",    desc: "Phân tích đơn hàng & đề xuất action cho team CSKH", icon: "💬" },
+  video_analysis:   { label: "Video Analysis",   desc: "Phân tích video ads — transcribe + chấm điểm bán hàng (Gemini/MiniMax)", icon: "🎬" },
 }
 
 const FEATURE_COLORS: Record<string, string> = {
-  camp_ai_agent: "#7c3aed", camp_ai_evaluator: "#2563eb", cskh_analysis: "#059669",
+  camp_ai_agent: "#7c3aed", camp_ai_evaluator: "#2563eb", cskh_analysis: "#059669", video_analysis: "#dc6f2a",
 }
 
 function fmtCost(n: number) {
@@ -124,7 +125,7 @@ function FeatureCard({ feature, models, envStatus, onSave }: {
           {currentModelMeta && !dirty && <span style={{ fontSize: 11, color: "#6b7280" }}>~${currentModelMeta.costPer1M}/1M tokens · {currentModelMeta.provider}</span>}
         </div>
         <div style={{ display: "flex", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-          {(["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"] as const).map(k => (
+          {(["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY"] as const).map(k => (
             <span key={k} style={{ fontSize: 11, borderRadius: 5, padding: "2px 8px",
               background: envStatus[k] ? "#f0fdf4" : "#fef2f2", color: envStatus[k] ? "#16a34a" : "#dc2626", fontWeight: 600 }}>
               {envStatus[k] ? "✓" : "✗"} {k}
@@ -236,6 +237,36 @@ function UsageTab() {
           </div>
         ))}
       </div>
+
+      {/* Video Analysis cost card — chỉ hiện khi có data */}
+      {(() => {
+        const vidFeature = summary?.by_feature?.find(f => f.feature === "video_analysis")
+        if (!vidFeature || !vidFeature.calls) return null
+        // Mỗi video = 2 calls (transcribe + analyze)
+        const vidsAnalyzed = Math.round(vidFeature.calls / 2)
+        const costPerVid = vidsAnalyzed > 0 ? Number(vidFeature.cost_usd) / vidsAnalyzed : 0
+        const costPerVidVnd = Math.round(costPerVid * 25500)
+        return (
+          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 20 }}>🎬</span>
+            <div>
+              <div style={{ fontSize: 11, color: "#92400e", fontWeight: 600, marginBottom: 2 }}>Video Analysis</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#dc6f2a" }}>{fmtCost(Number(vidFeature.cost_usd))}</div>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>{vidFeature.calls} API calls · {vidsAnalyzed} video</div>
+            </div>
+            <div style={{ borderLeft: "1px solid #fed7aa", paddingLeft: 24 }}>
+              <div style={{ fontSize: 11, color: "#92400e", fontWeight: 600, marginBottom: 2 }}>Chi phí/video</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#dc6f2a" }}>{fmtCost(costPerVid)}</div>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>≈ {costPerVidVnd.toLocaleString("vi-VN")} đ/video</div>
+            </div>
+            <div style={{ borderLeft: "1px solid #fed7aa", paddingLeft: 24 }}>
+              <div style={{ fontSize: 11, color: "#92400e", fontWeight: 600, marginBottom: 2 }}>Tokens trung bình/video</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#dc6f2a" }}>{vidsAnalyzed > 0 ? fmtTokens(Math.round(Number(vidFeature.total_tokens) / vidsAnalyzed)) : "—"}</div>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}>tổng {fmtTokens(Number(vidFeature.total_tokens))} tokens</div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* By feature + chart */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
@@ -353,7 +384,7 @@ export default function AiSettingsPage() {
   const [tab, setTab] = useState<"config" | "usage">("config")
   const [features, setFeatures] = useState<Feature[]>([])
   const [models, setModels] = useState<ModelOption[]>([])
-  const [envStatus, setEnvStatus] = useState<EnvStatus>({ DEEPSEEK_API_KEY: false, OPENROUTER_API_KEY: false })
+  const [envStatus, setEnvStatus] = useState<EnvStatus>({ DEEPSEEK_API_KEY: false, OPENROUTER_API_KEY: false, GEMINI_API_KEY: false, MINIMAX_API_KEY: false })
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -421,12 +452,11 @@ export default function AiSettingsPage() {
               <span style={{ fontWeight: 700, color: "#7c3aed" }}>{enabledCount}</span>/{features.length} features đang bật
             </div>
             <div style={{ height: 16, width: 1, background: "#e5e7eb" }} />
-            <div style={{ fontSize: 12, color: envStatus.DEEPSEEK_API_KEY ? "#16a34a" : "#dc2626", fontWeight: 600 }}>
-              {envStatus.DEEPSEEK_API_KEY ? "✓" : "✗"} DeepSeek API Key
-            </div>
-            <div style={{ fontSize: 12, color: envStatus.OPENROUTER_API_KEY ? "#16a34a" : "#dc2626", fontWeight: 600 }}>
-              {envStatus.OPENROUTER_API_KEY ? "✓" : "✗"} OpenRouter API Key
-            </div>
+            {(["DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY"] as const).map(k => (
+              <div key={k} style={{ fontSize: 12, color: envStatus[k] ? "#16a34a" : "#dc2626", fontWeight: 600 }}>
+                {envStatus[k] ? "✓" : "✗"} {k.replace("_API_KEY", "")}
+              </div>
+            ))}
             <button onClick={load} style={{ marginLeft: "auto", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>
               ↻ Refresh
             </button>
