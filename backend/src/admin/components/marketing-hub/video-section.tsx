@@ -1086,7 +1086,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         </div>
       )}
       {/* AI Review Modal */}
-      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} isSuper={isSuper} onClose={() => setAiModal(null)} onReanalyze={isSuper ? (model) => { const r = aiModal.row; setAiModal(null); setAnalyzingId(r.id); setToast("Đang phân tích lại..."); apiJson(`/admin/marketing-video/${r.id}/analyze`, "POST", { model: model || aiModel }).then(result => { if (result?.ai_review) { const updatedScript = (!r.script && result.ai_review.loi_thoai) ? result.ai_review.loi_thoai : r.script; setAiModal({ row: { ...r, aiScore: result.ai_score, aiReview: result.ai_review, script: updatedScript }, result: result.ai_review }); reload() } else setToast("Phân tích thất bại") }).catch((e: any) => setToast("Lỗi: " + e.message)).finally(() => setAnalyzingId(null)) } : undefined} />}
+      {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} isSuper={isSuper} onClose={() => setAiModal(null)} onReanalyze={isSuper ? (model) => { const r = aiModal.row; setAiModal(null); analyzeVideo(r, model || aiModel) } : undefined} />}
     </div>
   )
 }
