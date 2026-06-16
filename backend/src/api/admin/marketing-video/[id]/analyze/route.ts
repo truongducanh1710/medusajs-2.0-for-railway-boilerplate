@@ -432,52 +432,9 @@ async function fetchProductContext(req: MedusaRequest, productCode: string, prod
 
 const IN_PROGRESS = new Set(["queued", "uploading", "transcribing", "analyzing"])
 
-async function runAnalysis(
-  id: string,
-  row: any,
-  requestedModel: string,
-  spContextText: string,
-  benchmarkText: string,
-  scope: any,
-  pool: any
-): Promise<void> {
-  const useMinmax = isMinimaxModel(requestedModel)
-  const isLark = isLarkFileUrl(row.link)
-  const fileId = isLark ? null : extractDriveFileId(row.link)
-  const vdLabel = row.vd_code ? `[${row.vd_code}]` : `[${id.slice(0,6)}]`
-  const t0 = Date.now()
-  const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`
+// ─── SHARED PROMPT BUILDERS ──────────────────────────────────────────────────
 
-  let fileUri = ""
-  let larkTmpPath: string | null = null
-  let minimaxFileId: string | null = null
-
-  try {
-    // 1. Upload
-    console.log(`[analyze:${row.vd_code}] START model=${requestedModel} link=${(row.link || "").slice(0, 60)}`)
-    await pool.query(`UPDATE mkt_video SET ai_status='uploading', updated_at=now() WHERE id=$1`, [id])
-    await notify(scope, `⏳ ${vdLabel} Đang upload video...`)
-
-    const t1 = Date.now()
-    if (useMinmax) {
-      larkTmpPath = await downloadToTmp(row.link)
-      minimaxFileId = await uploadToMinimax(larkTmpPath)
-    } else {
-      if (isLark) {
-        larkTmpPath = await downloadToTmp(row.link)
-        fileUri = await uploadLocalFileToGemini(larkTmpPath)
-      } else {
-        fileUri = await uploadToGemini(fileId!)
-      }
-      await waitFileActive(fileUri)
-    }
-    console.log(`[analyze:${row.vd_code}] upload done (${((Date.now() - t1) / 1000).toFixed(1)}s)`)
-
-    // 2. Transcribe
-    await pool.query(`UPDATE mkt_video SET ai_status='transcribing', updated_at=now() WHERE id=$1`, [id])
-    await notify(scope, `⏳ ${vdLabel} Đang transcribe lời thoại...`)
-
-    const transcribePrompt = `Xem toàn bộ video này từ đầu đến cuối.
+const TRANSCRIBE_PROMPT = `Xem toàn bộ video này từ đầu đến cuối.
 Nhiệm vụ DUY NHẤT: Transcribe chính xác 100% lời thoại/voiceover tiếng Việt.
 - Ghi đầy đủ từng câu, giữ nguyên cách nói tự nhiên, có dấu đầy đủ
 - Ghi kèm timestamp [0s-3s] trước mỗi đoạn
@@ -486,23 +443,8 @@ Nhiệm vụ DUY NHẤT: Transcribe chính xác 100% lời thoại/voiceover ti�
 
 Trả về transcript thuần văn bản, không JSON.`
 
-    const callModel = async (prompt: string) => {
-      if (useMinmax) {
-        if (!minimaxFileId) throw new Error("MiniMax file upload failed")
-        return callMinimax(minimaxFileId, prompt)
-      }
-      return callGemini(fileUri, prompt, requestedModel)
-    }
-
-    const t2 = Date.now()
-    const rawTranscript = await callModel(transcribePrompt)
-    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s)`)
-
-    // 3. Phân tích sâu
-    await pool.query(`UPDATE mkt_video SET ai_status='analyzing', updated_at=now() WHERE id=$1`, [id])
-    await notify(scope, `⏳ ${vdLabel} Đang phân tích sâu...`)
-
-    const prompt = `Bạn là quản lý Ads Performance với 10 năm kinh nghiệm chạy quảng cáo Facebook/TikTok cho thị trường Việt Nam, chuyên ngành đồ gia dụng. Bạn KHÓ TÍNH, không chấp nhận video trung bình — mục tiêu duy nhất là video phải khiến người xem DỪNG LẠI, MUỐN MUA và BẤM ĐẶT HÀNG NGAY.
+function buildAnalyzePrompt(row: any, spContextText: string, benchmarkText: string, rawTranscript: string): string {
+  return `Bạn là quản lý Ads Performance với 10 năm kinh nghiệm chạy quảng cáo Facebook/TikTok cho thị trường Việt Nam, chuyên ngành đồ gia dụng. Bạn KHÓ TÍNH, không chấp nhận video trung bình — mục tiêu duy nhất là video phải khiến người xem DỪNG LẠI, MUỐN MUA và BẤM ĐẶT HÀNG NGAY.
 
 Bạn đã review hàng nghìn video ads, biết chính xác giây nào người xem thoát, câu nào tạo desire, hình ảnh nào trigger mua hàng.
 
@@ -604,53 +546,168 @@ ${benchmarkText}
 }
 
 Viết toàn bộ tiếng Việt có dấu. KHÔNG khen chung chung. KHÔNG dùng từ "khá tốt", "ổn", "được" — phải cụ thể.`
+}
 
+function safeParseJson(raw: string, vdCode: string): any {
+  try {
+    return parseJsonFromContent(raw)
+  } catch (err: any) {
+    console.error(`[analyze:${vdCode}] JSON parse error: ${err.message}`)
+    console.error(`[analyze:${vdCode}] raw (first 500): ${raw.slice(0, 500)}`)
+    return { tong_quan: raw.slice(0, 300), diem_ban_hang: null, parse_error: true }
+  }
+}
+
+// ─── GEMINI PIPELINE ──────────────────────────────────────────────────────────
+
+async function runAnalysisGemini(
+  id: string, row: any, requestedModel: string,
+  spContextText: string, benchmarkText: string,
+  scope: any, pool: any
+): Promise<void> {
+  const isLark = isLarkFileUrl(row.link)
+  const fileId = isLark ? null : extractDriveFileId(row.link)
+  const vdLabel = `[${row.vd_code}]`
+  const t0 = Date.now()
+  const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`
+  let fileUri = ""
+  let larkTmpPath: string | null = null
+
+  try {
+    console.log(`[analyze:${row.vd_code}] GEMINI START model=${requestedModel} link=${(row.link || "").slice(0, 60)}`)
+    await pool.query(`UPDATE mkt_video SET ai_status='uploading', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang upload video...`)
+
+    const t1 = Date.now()
+    if (isLark) {
+      larkTmpPath = await downloadToTmp(row.link)
+      fileUri = await uploadLocalFileToGemini(larkTmpPath)
+    } else {
+      fileUri = await uploadToGemini(fileId!)
+    }
+    await waitFileActive(fileUri)
+    console.log(`[analyze:${row.vd_code}] upload done (${((Date.now() - t1) / 1000).toFixed(1)}s)`)
+
+    await pool.query(`UPDATE mkt_video SET ai_status='transcribing', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang transcribe lời thoại...`)
+    const t2 = Date.now()
+    const rawTranscript = await callGemini(fileUri, TRANSCRIBE_PROMPT, requestedModel)
+    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s)`)
+
+    await pool.query(`UPDATE mkt_video SET ai_status='analyzing', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang phân tích sâu...`)
     const t3 = Date.now()
-    const rawContent = await callModel(prompt)
+    const rawContent = await callGemini(fileUri, buildAnalyzePrompt(row, spContextText, benchmarkText, rawTranscript), requestedModel)
     console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s)`)
 
-    let aiReview: any
-    try {
-      aiReview = parseJsonFromContent(rawContent)
-    } catch (parseErr: any) {
-      console.error(`[analyze:${row.vd_code}] JSON parse error: ${parseErr.message}`)
-      console.error(`[analyze:${row.vd_code}] raw (first 500): ${rawContent.slice(0, 500)}`)
-      aiReview = { tong_quan: rawContent.slice(0, 300), diem_ban_hang: null, parse_error: true }
-    }
+    const aiReview = safeParseJson(rawContent, row.vd_code)
+    if (!aiReview.loi_thoai && rawTranscript) aiReview.loi_thoai = rawTranscript
 
-    if (!aiReview.loi_thoai && rawTranscript) {
-      aiReview.loi_thoai = rawTranscript
-    }
-
-    const aiScore = typeof aiReview.diem_ban_hang === "number" ? aiReview.diem_ban_hang : null
-    const newScript = (!row.script && aiReview.loi_thoai) ? aiReview.loi_thoai : null
-
-    // 4. Lưu DB
-    await pool.query(
-      `UPDATE mkt_video SET ai_score=$1, ai_review=$2, script=COALESCE(NULLIF($3,''),script), ai_status='done', updated_at=now() WHERE id=$4`,
-      [aiScore, JSON.stringify(aiReview), newScript || "", id]
-    )
-
-    const scoreLabel = aiScore != null ? ` ★${aiScore}/10` : ""
-    console.log(`[analyze:${row.vd_code}] DONE${scoreLabel} total=${elapsed()}`)
-    const tqText = (aiReview.parse_error || typeof aiReview.tong_quan !== "string")
-      ? (aiScore != null ? `Điểm: ${aiScore}/10` : "Phân tích hoàn tất")
-      : aiReview.tong_quan.slice(0, 150) + (aiReview.tong_quan.length > 150 ? "…" : "")
-    await notify(scope,
-      `✅ ${vdLabel}${scoreLabel} — ${row.product || "Video"} · ${row.maker || ""}`,
-      tqText
-    )
-
+    await saveAndNotify(id, row, aiReview, scope, pool, vdLabel, elapsed)
   } catch (err: any) {
-    console.error(`[analyze:${row.vd_code}] ERROR (${elapsed()})`, err.message)
-    await pool.query(`UPDATE mkt_video SET ai_status='error', updated_at=now() WHERE id=$1`, [id]).catch(() => {})
-    await notify(scope, `❌ ${vdLabel} Thất bại: ${err.message?.slice(0, 120)}`).catch(() => {})
+    await handleError(id, row, err, scope, pool, vdLabel, elapsed)
   } finally {
     if (fileUri) await deleteGeminiFile(fileUri).catch(() => {})
+    if (larkTmpPath) await cleanupTmp(larkTmpPath).catch(() => {})
+  }
+}
+
+// ─── MINIMAX PIPELINE ─────────────────────────────────────────────────────────
+
+async function runAnalysisMinimax(
+  id: string, row: any,
+  spContextText: string, benchmarkText: string,
+  scope: any, pool: any
+): Promise<void> {
+  const vdLabel = `[${row.vd_code}]`
+  const t0 = Date.now()
+  const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`
+  let larkTmpPath: string | null = null
+  let minimaxFileId: string | null = null
+
+  try {
+    console.log(`[analyze:${row.vd_code}] MINIMAX START link=${(row.link || "").slice(0, 60)}`)
+    await pool.query(`UPDATE mkt_video SET ai_status='uploading', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang upload video (MiniMax)...`)
+
+    const t1 = Date.now()
+    larkTmpPath = await downloadToTmp(row.link)
+    minimaxFileId = await uploadToMinimax(larkTmpPath)
+    console.log(`[analyze:${row.vd_code}] upload done (${((Date.now() - t1) / 1000).toFixed(1)}s) file_id=${minimaxFileId}`)
+
+    await pool.query(`UPDATE mkt_video SET ai_status='transcribing', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang transcribe lời thoại...`)
+    const t2 = Date.now()
+    const rawTranscript = await callMinimax(minimaxFileId, TRANSCRIBE_PROMPT)
+    console.log(`[analyze:${row.vd_code}] transcribe done (${((Date.now() - t2) / 1000).toFixed(1)}s)`)
+
+    await pool.query(`UPDATE mkt_video SET ai_status='analyzing', updated_at=now() WHERE id=$1`, [id])
+    await notify(scope, `⏳ ${vdLabel} Đang phân tích sâu...`)
+    const t3 = Date.now()
+    const rawContent = await callMinimax(minimaxFileId, buildAnalyzePrompt(row, spContextText, benchmarkText, rawTranscript))
+    console.log(`[analyze:${row.vd_code}] analyze done (${((Date.now() - t3) / 1000).toFixed(1)}s)`)
+
+    const aiReview = safeParseJson(rawContent, row.vd_code)
+    if (!aiReview.loi_thoai && rawTranscript) aiReview.loi_thoai = rawTranscript
+
+    await saveAndNotify(id, row, aiReview, scope, pool, vdLabel, elapsed)
+  } catch (err: any) {
+    await handleError(id, row, err, scope, pool, vdLabel, elapsed)
+  } finally {
     if (minimaxFileId) await deleteMinimaFile(minimaxFileId).catch(() => {})
     if (larkTmpPath) await cleanupTmp(larkTmpPath).catch(() => {})
   }
 }
+
+// ─── SHARED SAVE + NOTIFY ─────────────────────────────────────────────────────
+
+async function saveAndNotify(
+  id: string, row: any, aiReview: any,
+  scope: any, pool: any, vdLabel: string, elapsed: () => string
+): Promise<void> {
+  const aiScore = typeof aiReview.diem_ban_hang === "number" ? aiReview.diem_ban_hang : null
+  const newScript = (!row.script && aiReview.loi_thoai) ? aiReview.loi_thoai : null
+  await pool.query(
+    `UPDATE mkt_video SET ai_score=$1, ai_review=$2, script=COALESCE(NULLIF($3,''),script), ai_status='done', updated_at=now() WHERE id=$4`,
+    [aiScore, JSON.stringify(aiReview), newScript || "", id]
+  )
+  const scoreLabel = aiScore != null ? ` ★${aiScore}/10` : ""
+  console.log(`[analyze:${row.vd_code}] DONE${scoreLabel} total=${elapsed()}`)
+  const tqText = (aiReview.parse_error || typeof aiReview.tong_quan !== "string")
+    ? (aiScore != null ? `Điểm: ${aiScore}/10` : "Phân tích hoàn tất")
+    : aiReview.tong_quan.slice(0, 150) + (aiReview.tong_quan.length > 150 ? "…" : "")
+  await notify(scope,
+    `✅ ${vdLabel}${scoreLabel} — ${row.product || "Video"} · ${row.maker || ""}`,
+    tqText
+  )
+}
+
+async function handleError(
+  id: string, row: any, err: any,
+  scope: any, pool: any, vdLabel: string, elapsed: () => string
+): Promise<void> {
+  console.error(`[analyze:${row.vd_code}] ERROR (${elapsed()})`, err.message)
+  await pool.query(`UPDATE mkt_video SET ai_status='error', updated_at=now() WHERE id=$1`, [id]).catch(() => {})
+  await notify(scope, `❌ ${vdLabel} Thất bại: ${err.message?.slice(0, 120)}`).catch(() => {})
+}
+
+// ─── DISPATCHER ───────────────────────────────────────────────────────────────
+
+async function runAnalysis(
+  id: string,
+  row: any,
+  requestedModel: string,
+  spContextText: string,
+  benchmarkText: string,
+  scope: any,
+  pool: any
+): Promise<void> {
+  if (isMinimaxModel(requestedModel)) {
+    return runAnalysisMinimax(id, row, spContextText, benchmarkText, scope, pool)
+  }
+  return runAnalysisGemini(id, row, requestedModel, spContextText, benchmarkText, scope, pool)
+}
+
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
