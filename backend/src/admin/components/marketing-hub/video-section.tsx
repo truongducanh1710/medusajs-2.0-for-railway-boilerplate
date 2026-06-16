@@ -219,7 +219,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; done: string[]; failed: string[] } | null>(null)
   const [linkCheckState, setLinkCheckState] = useState<{ checking: boolean; error: string | null; ok: boolean }>({ checking: false, error: null, ok: false })
   const [aiModal, setAiModal] = useState<{ row: VideoRow; result: any } | null>(null)
-  const [aiModel, setAiModel] = useState<string>("gemini-3.1-pro-preview")
+  const [aiModel, setAiModel] = useState<string>("minimax-m3")
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
   const defaultNguoi = "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "", starOnly: false })
@@ -1587,7 +1587,7 @@ const AI_MODELS = [
 ]
 
 function AiReviewModal({ row, result, aiModel, isSuper, onClose, onReanalyze }: { row: VideoRow; result: any; aiModel?: string; isSuper?: boolean; onClose: () => void; onReanalyze?: (model?: string) => void }) {
-  const [selectedModel, setSelectedModel] = React.useState(aiModel || "gemini-3.1-pro-preview")
+  const [selectedModel, setSelectedModel] = React.useState(aiModel || "minimax-m3")
   const score = result?.diem_ban_hang ?? row.aiScore
   const scoreColor = score >= 8 ? "#166534" : score >= 6 ? "#713F12" : "#991B1B"
   const scoreBg = score >= 8 ? "#DCFCE7" : score >= 6 ? "#FEF9C3" : "#FEE2E2"
