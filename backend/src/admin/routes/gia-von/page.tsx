@@ -662,26 +662,22 @@ function parseNum(s: string): number {
 
 function SummaryTab() {
   const [items, setItems] = useState<{
-    ten: string; tinhChat: string; soLuong: number; tongTien: number; giaVeKho: number
+    ten: string; tinhChat: string; nhom: string; soLuong: number; tongTien: number
   }[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
 
   useEffect(() => {
-    Promise.all([
-      apiJson("/admin/gia-von/sheet", "GET"),
-    ]).then(([sheet]) => {
+    apiJson("/admin/gia-von/sheet", "GET").then((sheet) => {
       const cols: SheetColumn[] = sheet.columns ?? []
       const rows: SheetRow[] = sheet.rows ?? []
       if (rows.length < 2) { setLoading(false); return }
 
       const headerRow = rows[0].data
-      // Build headerValue → colId map
       const headerToId: Record<string, string> = {}
       for (const [colId, val] of Object.entries(headerRow)) {
         if (val) headerToId[val.trim()] = colId
       }
-      // Also build position → colId
       const posToId: Record<number, string> = {}
       for (const c of cols) posToId[c.position] = c.id
 
@@ -689,16 +685,17 @@ function SummaryTab() {
       const colTinhChat = headerToId["Tính chất"] ?? posToId[2]
       const colSoLuong = headerToId["Số lượng"] ?? posToId[3]
       const colTongTien = headerToId["Tổng tiền"] ?? posToId[8]
-      const colGiaVeKho = headerToId["Giá về kho/sp"] ?? posToId[9]
+      // Cột K (pos 10) = nhóm sản phẩm (product autocomplete)
+      const colNhom = posToId[10]
 
       const dataRows = rows.slice(1).filter(r => r.data[colSanPham]?.trim())
 
       setItems(dataRows.map(r => ({
         ten: r.data[colSanPham]?.trim() ?? "",
         tinhChat: r.data[colTinhChat]?.trim() ?? "",
+        nhom: (colNhom ? r.data[colNhom]?.trim() : "") ?? "",
         soLuong: parseNum(r.data[colSoLuong] ?? ""),
         tongTien: parseNum(r.data[colTongTien] ?? ""),
-        giaVeKho: parseNum(r.data[colGiaVeKho] ?? ""),
       })))
       setLoading(false)
     }).catch(() => setLoading(false))
@@ -706,25 +703,41 @@ function SummaryTab() {
 
   const fmt = (n: number) => n > 0 ? new Intl.NumberFormat("vi-VN").format(Math.round(n)) : "—"
 
-  const filtered = items.filter(i =>
-    !search || i.ten.toLowerCase().includes(search.toLowerCase())
+  // Group theo nhóm (cột K) — nếu không có nhóm thì group theo tên SP chính
+  // Chỉ hiển thị SP chính, phụ kiện cùng nhóm được cộng tổng tiền vào
+  const allItems = items.filter(i =>
+    !search || i.ten.toLowerCase().includes(search.toLowerCase()) || i.nhom.toLowerCase().includes(search.toLowerCase())
   )
 
-  // Group by tên sản phẩm (chính + phụ kiện riêng)
-  const grouped: Record<string, typeof items> = {}
-  for (const i of filtered) {
-    if (!grouped[i.ten]) grouped[i.ten] = []
-    grouped[i.ten].push(i)
+  // Build nhóm → { chinh, phuKien[] }
+  type Group = { tenChinh: string; nhom: string; soLuong: number; tongTienChinh: number; tongTienPhuKien: number; tenPhuKien: string[] }
+  const groupMap: Record<string, Group> = {}
+
+  for (const i of allItems) {
+    // Key group: ưu tiên nhóm (K), fallback tên SP
+    const key = i.nhom || i.ten
+    if (!groupMap[key]) {
+      groupMap[key] = { tenChinh: "", nhom: i.nhom, soLuong: 0, tongTienChinh: 0, tongTienPhuKien: 0, tenPhuKien: [] }
+    }
+    const g = groupMap[key]
+    if (i.tinhChat === "Sản phẩm chính") {
+      g.tenChinh = i.ten
+      g.soLuong += i.soLuong
+      g.tongTienChinh += i.tongTien
+    } else {
+      g.tongTienPhuKien += i.tongTien
+      if (i.ten && !g.tenPhuKien.includes(i.ten)) g.tenPhuKien.push(i.ten)
+    }
   }
 
-  const summary = Object.entries(grouped).map(([ten, rows]) => {
-    const chinh = rows.find(r => r.tinhChat === "Sản phẩm chính") ?? rows[0]
-    const totalQty = chinh.soLuong
-    const totalAmt = chinh.tongTien
-    const giaTB = totalQty > 0 ? totalAmt / totalQty : chinh.giaVeKho
-    const phuKien = rows.filter(r => r.tinhChat !== "Sản phẩm chính")
-    return { ten, giaTB, giaVeKho: chinh.giaVeKho, soLuong: totalQty, tongTien: totalAmt, phuKien }
-  }).sort((a, b) => b.giaTB - a.giaTB)
+  const summary = Object.values(groupMap)
+    .filter(g => g.tenChinh || g.soLuong > 0)
+    .map(g => {
+      const tongTienTong = g.tongTienChinh + g.tongTienPhuKien
+      const giaTB = g.soLuong > 0 ? tongTienTong / g.soLuong : 0
+      return { ...g, tongTienTong, giaTB }
+    })
+    .sort((a, b) => b.giaTB - a.giaTB)
 
   if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>
 
@@ -742,7 +755,7 @@ function SummaryTab() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr>
-              {["#", "Sản phẩm", "Số lượng (D)", "Tổng tiền (I)", "Giá về kho/sp (J)", "Giá TB (I÷D)", "Phụ kiện"].map((h, i) => (
+              {["#", "Sản phẩm", "SL sp chính (D)", "Tổng tiền sp chính", "Tổng tiền phụ kiện", "Tổng cộng", "Giá TB/sp"].map((h, i) => (
                 <th key={i} style={{ padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f9fafb", textAlign: i >= 2 ? "right" : "left", fontWeight: 700, color: "#374151", whiteSpace: "nowrap", position: "sticky", top: 0 }}>
                   {h}
                 </th>
@@ -751,16 +764,19 @@ function SummaryTab() {
           </thead>
           <tbody>
             {summary.map((s, idx) => (
-              <tr key={s.ten} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
+              <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
                 <td style={{ padding: "7px 10px", color: "#9ca3af", width: 36 }}>{idx + 1}</td>
-                <td style={{ padding: "7px 10px", fontWeight: 600, color: "#111827", maxWidth: 280 }}>{s.ten}</td>
-                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.soLuong)}</td>
-                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.tongTien)}</td>
-                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.giaVeKho)}</td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmt(s.giaTB)}đ</td>
-                <td style={{ padding: "7px 10px", color: "#6b7280", fontSize: 12 }}>
-                  {s.phuKien.map(p => `${p.ten} (${fmt(p.giaVeKho)}đ)`).join(", ") || "—"}
+                <td style={{ padding: "7px 10px", color: "#111827" }}>
+                  <div style={{ fontWeight: 600 }}>{s.tenChinh || s.nhom}</div>
+                  {s.tenPhuKien.length > 0 && (
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>+ {s.tenPhuKien.join(", ")}</div>
+                  )}
                 </td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.soLuong)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.tongTienChinh)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: s.tongTienPhuKien > 0 ? "#d97706" : "#d1d5db" }}>{fmt(s.tongTienPhuKien)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.tongTienTong)}</td>
+                <td style={{ padding: "7px 10px", textAlign: "right", fontWeight: 700, color: "#7c3aed", fontSize: 14 }}>{fmt(s.giaTB)}đ</td>
               </tr>
             ))}
             {summary.length === 0 && (
