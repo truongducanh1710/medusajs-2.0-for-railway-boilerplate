@@ -387,16 +387,30 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       if (r.id !== rowId) return r
       const newData = { ...r.data, [colId]: value }
 
-      // Auto-tính G = (E*D + F) * 8% khi D, E, hoặc F thay đổi
+      // Auto-tính các cột công thức khi D/E/F/G/H thay đổi
       const cols = colsRef.current
       const posToId = Object.fromEntries(cols.map(c => [c.position, c.id]))
-      const idD = posToId[3], idE = posToId[4], idF = posToId[5], idG = posToId[6]
+      const idD = posToId[3], idE = posToId[4], idF = posToId[5]
+      const idG = posToId[6], idH = posToId[7], idI = posToId[8], idJ = posToId[9]
       if (idD && idE && idF && idG && [idD, idE, idF].includes(colId)) {
         const D = parseFloat((newData[idD] ?? "").replace(/\./g, "").replace(",", ".")) || 0
         const E = parseFloat((newData[idE] ?? "").replace(/\./g, "").replace(",", ".")) || 0
         const F = parseFloat((newData[idF] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        // G = (E*D + F) * 8%
         const G = Math.round((E * D + F) * 0.08)
         newData[idG] = G > 0 ? String(G) : ""
+      }
+      // I = (E*D) + F + G + H  |  J = I/D  — trigger khi D/E/F/G/H thay đổi
+      if (idD && idE && idF && idG && idH && idI && idJ && [idD, idE, idF, idG, idH].includes(colId)) {
+        const D = parseFloat((newData[idD] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const E = parseFloat((newData[idE] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const F = parseFloat((newData[idF] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const G = parseFloat((newData[idG] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const H = parseFloat((newData[idH] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        const I = Math.round(E * D + F + G + H)
+        newData[idI] = I > 0 ? String(I) : ""
+        const J = D > 0 ? Math.round(I / D) : 0
+        newData[idJ] = J > 0 ? String(J) : ""
       }
 
       const updated = { ...r, data: newData, _dirty: true }
