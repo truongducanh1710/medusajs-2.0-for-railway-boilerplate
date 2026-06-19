@@ -128,17 +128,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (mode === "dark_post_raw_video") {
       if (!b.vd_code) return res.status(400).json({ error: "Thiếu vd_code" })
       if (!b.page_id) return res.status(400).json({ error: "Thiếu page_id" })
-      if (!b.drive_url) return res.status(400).json({ error: "Thiếu drive_url" })
       if (!b.message) return res.status(400).json({ error: "Thiếu message (caption)" })
+      if (!b.video_id && !b.drive_url) return res.status(400).json({ error: "Cần drive_url hoặc video_id đã upload" })
 
       const pageTokens = await getPageTokens(pool)
       const pageToken = pageTokens.find(t => t.page_id === b.page_id)?.access_token
       if (!pageToken) return res.status(400).json({ error: "Không tìm thấy page token cho page này" })
 
       const vdCode: string = b.vd_code
-      const videoId = await uploadVideoToFbFromDrive(adAcc, b.drive_url, vdCode)
-      const { ready, thumbnailUrl } = await waitForFbVideoReady(videoId)
-      if (!ready) return res.status(504).json({ error: `Video ${videoId} chưa xử lý xong sau khi chờ, thử lại sau`, video_id: videoId })
+      // Nếu đã có video_id (đã upload trước) thì bỏ qua bước upload + poll
+      let videoId: string = b.video_id || ""
+      let thumbnailUrl: string | null = b.thumbnail_url || null
+      if (!videoId) {
+        videoId = await uploadVideoToFbFromDrive(adAcc, b.drive_url, vdCode)
+        const pollResult = await waitForFbVideoReady(videoId)
+        if (!pollResult.ready) return res.status(504).json({ error: `Video ${videoId} chưa xử lý xong sau khi chờ, thử lại sau`, video_id: videoId })
+        thumbnailUrl = pollResult.thumbnailUrl
+      }
 
       const dailyBudget = Number(b.daily_budget) || 500000
       const campaignName: string = b.campaign_name?.trim() || (() => {
