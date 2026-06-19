@@ -87,6 +87,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         objective: adInfo.campaign.objective || "OUTCOME_SALES",
         status: "PAUSED",
         special_ad_categories: [],
+        is_adset_budget_sharing_enabled: false,
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -199,6 +200,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         objective: "OUTCOME_SALES",
         status: "PAUSED",
         special_ad_categories: [],
+        is_adset_budget_sharing_enabled: false,
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -292,6 +294,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         objective: "OUTCOME_SALES",
         status: "PAUSED",
         special_ad_categories: [],
+        is_adset_budget_sharing_enabled: false,
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -399,6 +402,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       objective: "OUTCOME_SALES",
       status: "PAUSED",
       special_ad_categories: [],
+        is_adset_budget_sharing_enabled: false,
     })
 
     // 2. Ad Set (PAUSED) — targeting + pixel + loại trừ audiences
