@@ -148,7 +148,7 @@ export async function callFb(method: "GET" | "POST", path: string, body?: Record
   const text = await res.text()
   let data: any
   try { data = JSON.parse(text) } catch { throw new Error(`FB parse error: ${text.slice(0, 300)}`) }
-  if (data?.error) throw new Error(`FB: ${data.error.message} (code ${data.error.code})`)
+  if (data?.error) throw new Error(`FB: ${data.error.message} (code ${data.error.code}) sub=${data.error.error_subcode} msg=${data.error.error_user_msg} path=${path.split("?")[0]}`)
   return data
 }
 
