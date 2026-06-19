@@ -144,6 +144,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         const pollResult = await waitForFbVideoReady(videoId)
         if (!pollResult.ready) return res.status(504).json({ error: `Video ${videoId} chưa xử lý xong sau khi chờ, thử lại sau`, video_id: videoId })
         thumbnailUrl = pollResult.thumbnailUrl
+      } else if (!thumbnailUrl) {
+        // Fetch thumbnail cho video đã có sẵn
+        const token = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
+        const thumbs: any = await fetch(`https://graph.facebook.com/v18.0/${videoId}/thumbnails?access_token=${token}`).then(r => r.json())
+        const preferred = (thumbs?.data || []).find((t: any) => t.is_preferred) || thumbs?.data?.[0]
+        thumbnailUrl = preferred?.uri || null
       }
 
       const dailyBudget = Number(b.daily_budget) || 500000
