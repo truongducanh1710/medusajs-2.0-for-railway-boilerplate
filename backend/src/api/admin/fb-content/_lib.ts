@@ -323,6 +323,96 @@ export async function createUnpublishedPost(opts: {
   return { post_id: pid, object_story_id: `${opts.pageId}_${pid}` }
 }
 
+/** Chuyển Drive "view" URL thành direct-download URL. Trả null nếu không parse được. */
+export function driveViewToDownloadUrl(viewUrl: string): string | null {
+  const m = viewUrl.match(/\/file\/d\/([^/]+)/) || viewUrl.match(/[?&]id=([^&]+)/)
+  if (!m) return null
+  return `https://drive.google.com/uc?export=download&id=${m[1]}`
+}
+
+/**
+ * Upload video từ Drive lên FB ad account qua /advideos (file_url).
+ * Nếu file_url bị FB reject (Drive đôi khi chặn fetch trực tiếp), fallback
+ * download file về buffer rồi upload qua multipart (source).
+ * Trả về video_id (chưa chắc đã "ready", caller cần poll).
+ */
+export async function uploadVideoToFbFromDrive(adAccountId: string, driveViewUrl: string, name: string): Promise<string> {
+  const downloadUrl = driveViewToDownloadUrl(driveViewUrl)
+  if (!downloadUrl) throw new Error(`Không parse được Drive URL: ${driveViewUrl}`)
+  const token = getSysToken()
+
+  // Thử 1: để FB tự fetch qua file_url (nhanh, không tốn băng thông server)
+  try {
+    const form = new URLSearchParams()
+    form.append("name", name)
+    form.append("file_url", downloadUrl)
+    form.append("access_token", token)
+    const res = await fetch(`https://graph-video.facebook.com/v18.0/${adAccountId}/advideos`, { method: "POST", body: form })
+    const data: any = await res.json()
+    if (!data?.error && data?.id) return data.id
+  } catch { /* fall through to resumable upload */ }
+
+  // Thử 2: download về buffer rồi upload qua resumable upload (start/transfer/finish)
+  const fileRes = await fetch(downloadUrl)
+  if (!fileRes.ok) throw new Error(`Không tải được video từ Drive (status ${fileRes.status})`)
+  const buf = Buffer.from(await fileRes.arrayBuffer())
+  const fileSize = buf.length
+
+  const startForm = new URLSearchParams()
+  startForm.append("upload_phase", "start")
+  startForm.append("file_size", String(fileSize))
+  startForm.append("access_token", token)
+  const start: any = await fetch(`https://graph-video.facebook.com/v18.0/${adAccountId}/advideos`, { method: "POST", body: startForm }).then(r => r.json())
+  if (start?.error) throw new Error(`FB resumable start: ${start.error.message}`)
+  const uploadSessionId = start.upload_session_id
+  const videoId = start.video_id
+  let startOffset = Number(start.start_offset)
+  const endOffset = Number(start.end_offset)
+
+  let offset = startOffset
+  while (offset < fileSize) {
+    const chunkEnd = Math.min(offset + (endOffset - startOffset || 4 * 1024 * 1024), fileSize)
+    const chunk = buf.subarray(offset, chunkEnd)
+    const transferForm = new FormData()
+    transferForm.append("upload_phase", "transfer")
+    transferForm.append("start_offset", String(offset))
+    transferForm.append("upload_session_id", uploadSessionId)
+    transferForm.append("access_token", token)
+    transferForm.append("video_file_chunk", new Blob([chunk]))
+    const t: any = await fetch(`https://graph-video.facebook.com/v18.0/${adAccountId}/advideos`, { method: "POST", body: transferForm as any }).then(r => r.json())
+    if (t?.error) throw new Error(`FB resumable transfer: ${t.error.message}`)
+    offset = Number(t.start_offset)
+    if (Number.isNaN(offset) || offset === 0 && chunkEnd >= fileSize) offset = chunkEnd
+  }
+
+  const finishForm = new URLSearchParams()
+  finishForm.append("upload_phase", "finish")
+  finishForm.append("upload_session_id", uploadSessionId)
+  finishForm.append("access_token", token)
+  const finish: any = await fetch(`https://graph-video.facebook.com/v18.0/${adAccountId}/advideos`, { method: "POST", body: finishForm }).then(r => r.json())
+  if (finish?.error) throw new Error(`FB resumable finish: ${finish.error.message}`)
+
+  return videoId
+}
+
+/** Poll video_status đến khi ready (hoặc timeout). Trả thumbnail preferred nếu có. */
+export async function waitForFbVideoReady(videoId: string, timeoutMs = 120_000): Promise<{ ready: boolean; thumbnailUrl: string | null }> {
+  const token = getSysToken()
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const d: any = await callFb("GET", `/${videoId}?fields=status`)
+    const state = d?.status?.video_status
+    if (state === "ready") {
+      const thumbs: any = await fetch(`https://graph.facebook.com/v18.0/${videoId}/thumbnails?access_token=${token}`).then(r => r.json())
+      const preferred = (thumbs?.data || []).find((t: any) => t.is_preferred) || thumbs?.data?.[0]
+      return { ready: true, thumbnailUrl: preferred?.uri || null }
+    }
+    if (state === "error") throw new Error(`FB video xử lý lỗi: ${JSON.stringify(d.status)}`)
+    await new Promise(r => setTimeout(r, 4000))
+  }
+  return { ready: false, thumbnailUrl: null }
+}
+
 export type AuthInfo = { email: string; isSuper: boolean; isAdmin: boolean; fbPageIds: string[] | null; mktCode: string | null }
 
 export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> {

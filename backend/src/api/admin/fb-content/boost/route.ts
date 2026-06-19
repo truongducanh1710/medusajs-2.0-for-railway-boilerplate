@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, ensureTables, callFb, getFbAdInfo, createUnpublishedPost, getPageTokens } from "../_lib"
+import { getPool, getAuthInfo, ensureTables, callFb, getFbAdInfo, createUnpublishedPost, getPageTokens, uploadVideoToFbFromDrive, waitForFbVideoReady } from "../_lib"
 
 // ── Naming helpers (mirror src/admin/lib/camp-naming.ts) ────────────────────
 const UTM_STATIC =
@@ -119,6 +119,105 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         mode, campaign_id: campaign.id, campaign_name: campaignName,
         adset_id: adset.id, ad_id: ad.id, creative_id: creative.id,
         source_ad: { id: adInfo.ad_id, name: adInfo.ad_name },
+        adsmanager_url: `https://business.facebook.com/adsmanager/manage/campaigns?act=${adAcc.replace("act_", "")}`,
+      })
+    }
+
+    // ── MODE E: video raw từ Drive (Marketing Hub) → upload FB → dark post creative → camp ──
+    // Input: vd_code + page_id + link (Drive view URL). Không cần đăng Page trước.
+    if (mode === "dark_post_raw_video") {
+      if (!b.vd_code) return res.status(400).json({ error: "Thiếu vd_code" })
+      if (!b.page_id) return res.status(400).json({ error: "Thiếu page_id" })
+      if (!b.drive_url) return res.status(400).json({ error: "Thiếu drive_url" })
+      if (!b.message) return res.status(400).json({ error: "Thiếu message (caption)" })
+
+      const pageTokens = await getPageTokens(pool)
+      const pageToken = pageTokens.find(t => t.page_id === b.page_id)?.access_token
+      if (!pageToken) return res.status(400).json({ error: "Không tìm thấy page token cho page này" })
+
+      const vdCode: string = b.vd_code
+      const videoId = await uploadVideoToFbFromDrive(adAcc, b.drive_url, vdCode)
+      const { ready, thumbnailUrl } = await waitForFbVideoReady(videoId)
+      if (!ready) return res.status(504).json({ error: `Video ${videoId} chưa xử lý xong sau khi chờ, thử lại sau`, video_id: videoId })
+
+      const dailyBudget = Number(b.daily_budget) || 500000
+      const campaignName: string = b.campaign_name?.trim() || (() => {
+        const sku = (b.sku_code || "PHVVN").toUpperCase()
+        const mkt = (auth.mktCode || "MKT").toUpperCase()
+        const sp = (b.product_name || "SP").toUpperCase()
+        const ads = b.ads_code || "ADS"
+        const audience = (b.audience || "30ALL").trim()
+        return `${sku}_${todayDM()}_${mkt}_${sp}_${ads}_${audience}_${vdCode}`
+      })()
+
+      const videoData: Record<string, any> = {
+        video_id: videoId,
+        title: b.title || vdCode,
+        message: b.message,
+        call_to_action: {
+          type: b.cta_type || "SHOP_NOW",
+          value: { link: b.link },
+        },
+      }
+      if (thumbnailUrl) videoData.image_url = thumbnailUrl
+      if (!b.link) return res.status(400).json({ error: "Thiếu link (CTA URL, không kèm UTM)" })
+
+      const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
+        name: `CR_${vdCode}`,
+        object_story_spec: { page_id: b.page_id, video_data: videoData },
+        url_tags: UTM_STATIC,
+      })
+
+      // Nếu chọn adset có sẵn → chỉ tạo ad
+      if (b.adset_id) {
+        const ad = await callFb("POST", `/${adAcc}/ads`, {
+          name: b.ad_name || vdCode,
+          adset_id: b.adset_id,
+          creative: { creative_id: creative.id },
+          status: "PAUSED",
+        })
+        return res.json({
+          mode, ad_id: ad.id, adset_id: b.adset_id, creative_id: creative.id, video_id: videoId,
+          adsmanager_url: `https://business.facebook.com/adsmanager/manage/ads?act=${adAcc.replace("act_", "")}`,
+        })
+      }
+
+      const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
+        name: campaignName,
+        objective: "OUTCOME_SALES",
+        status: "PAUSED",
+        special_ad_categories: [],
+      })
+      const targeting: any = {
+        geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
+        age_min: Number(b.age_min) || 25,
+        locales: [27],
+        targeting_automation: { advantage_audience: 1 },
+      }
+      if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
+        targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
+      const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
+      if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+      const adset = await callFb("POST", `/${adAcc}/adsets`, {
+        name: b.adset_name || vdCode,
+        campaign_id: campaign.id,
+        daily_budget: dailyBudget,
+        billing_event: "IMPRESSIONS",
+        optimization_goal: "OFFSITE_CONVERSIONS",
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        promoted_object: promotedObject,
+        targeting,
+        status: "PAUSED",
+      })
+      const ad = await callFb("POST", `/${adAcc}/ads`, {
+        name: b.ad_name || vdCode,
+        adset_id: adset.id,
+        creative: { creative_id: creative.id },
+        status: "PAUSED",
+      })
+      return res.json({
+        mode, campaign_id: campaign.id, campaign_name: campaignName,
+        adset_id: adset.id, ad_id: ad.id, creative_id: creative.id, video_id: videoId,
         adsmanager_url: `https://business.facebook.com/adsmanager/manage/campaigns?act=${adAcc.replace("act_", "")}`,
       })
     }
