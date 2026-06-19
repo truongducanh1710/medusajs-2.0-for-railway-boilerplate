@@ -442,6 +442,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       adsmanager_url: `https://business.facebook.com/adsmanager/manage/campaigns?act=${adAcc.replace("act_", "")}`,
     })
   } catch (err: any) {
+    console.error("[boost POST] error:", err.message)
     return res.status(500).json({ error: err.message })
   }
 }
