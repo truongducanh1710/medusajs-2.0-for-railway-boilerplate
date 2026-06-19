@@ -100,6 +100,7 @@ export class Migration20260604000001 extends Migration {
         finished_at TIMESTAMPTZ
       )
     `)
+    this.addSql(`ALTER TABLE fb_publish_job ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ DEFAULT now()`)
     this.addSql(`CREATE INDEX IF NOT EXISTS idx_fb_publish_job_user ON fb_publish_job (created_by, started_at DESC)`)
 
     // ── Ad-level insights theo video (đo hiệu quả video qua ads) ───────────

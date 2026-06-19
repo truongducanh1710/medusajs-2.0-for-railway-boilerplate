@@ -18,6 +18,9 @@ import { Migration } from "@medusajs/framework/mikro-orm/migrations"
 export class Migration20260526000006 extends Migration {
   async up(): Promise<void> {
     this.addSql(`
+      DROP VIEW IF EXISTS v_agent_vs_marketer;
+      DROP VIEW IF EXISTS v_marketer_action_log;
+
       -- 1. MARKETER ACTION LOG — ground truth
       -- camp_action_log đã có nhưng mix cả agent + marketer + scheduled
       -- View này filter ra chỉ action MANUAL của marketer (source='manual')
