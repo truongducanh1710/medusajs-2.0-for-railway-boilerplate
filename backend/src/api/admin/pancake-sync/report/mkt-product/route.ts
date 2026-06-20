@@ -21,11 +21,58 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const rows = await cskhService.sql(`
       WITH camp_spend AS (
-        SELECT campaign_name, mkt_name, SUM(spend)::bigint AS spend
+        SELECT campaign_name, mkt_name,
+          SUM(spend)::bigint AS spend
         FROM mkt_ads_cost
         WHERE deleted_at IS NULL
           AND date >= $1::date AND date <= $2::date
+          AND ($3 = '' OR mkt_name = $3)
         GROUP BY campaign_name, mkt_name
+      ),
+      -- Cách 1: lấy mã SP ở đầu tên camp (MÃSP_DD/MM_MKT_..., vd PHVVN031BCX) rồi join mkt_product
+      -- để ra tên SP thật (nguồn DB, không dùng dictionary cứng) — ưu tiên mã SP, KHÔNG dùng
+      -- đoạn text tên SP tự do trong tên camp (có thể đặt cũ/sai khi đổi SP mà không sửa tên camp)
+      camp_product_from_name AS (
+        SELECT cs.campaign_name, cs.mkt_name, cs.spend, mp.name AS item_name_from_camp
+        FROM camp_spend cs
+        LEFT JOIN mkt_product mp
+          ON mp.active = true
+          AND upper(mp.code) = upper(split_part(cs.campaign_name, '_', 1))
+      ),
+      -- Cách 2 (fallback khi camp không theo convention): suy SP thật từ đơn đã match UTM
+      -- (không giới hạn theo khoảng ngày đang xem báo cáo — camp có thể có đơn ở ngày khác)
+      camp_order_item AS (
+        SELECT
+          CASE WHEN po.raw->>'p_utm_source' = 'fb'
+            THEN po.raw->>'p_utm_campaign'
+            ELSE po.raw->>'p_utm_source'
+          END AS campaign_name,
+          item->>'name' AS item_name
+        FROM pancake_order po,
+             jsonb_array_elements(COALESCE(po.items, '[]'::jsonb)) AS item
+        WHERE po.deleted_at IS NULL
+          AND po.source IN ('manual', 'webcake')
+          AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+          AND NOT (po.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
+          AND po.pancake_created_at >= (now() - interval '365 days')
+      ),
+      camp_product AS (
+        SELECT DISTINCT ON (campaign_name) campaign_name, item_name
+        FROM (
+          SELECT campaign_name, item_name, COUNT(*) AS cnt
+          FROM camp_order_item
+          WHERE campaign_name IS NOT NULL
+          GROUP BY campaign_name, item_name
+        ) t
+        ORDER BY campaign_name, cnt DESC
+      ),
+      spend_per_sku AS (
+        SELECT cpn.mkt_name,
+          COALESCE(cpn.item_name_from_camp, cp.item_name, 'CHƯA RÕ SP (camp chưa có đơn match)') AS item_name,
+          SUM(cpn.spend)::bigint AS spend
+        FROM camp_product_from_name cpn
+        LEFT JOIN camp_product cp ON cp.campaign_name = cpn.campaign_name
+        GROUP BY cpn.mkt_name, COALESCE(cpn.item_name_from_camp, cp.item_name, 'CHƯA RÕ SP (camp chưa có đơn match)')
       ),
       order_base AS (
         SELECT
@@ -57,42 +104,31 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       item_agg AS (
         SELECT mkt_name, item_name,
           COUNT(*)::int AS total_orders,
-          SUM(CASE WHEN status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
-          SUM(CASE WHEN status IN (1,2,3,4,5) THEN item_cod ELSE 0 END)::bigint AS cod_confirmed
+          SUM(CASE WHEN status NOT IN (-2,7) THEN 1 ELSE 0 END)::int AS confirmed,
+          SUM(CASE WHEN status NOT IN (-2,7) THEN item_cod ELSE 0 END)::bigint AS cod_confirmed
         FROM order_item
         GROUP BY mkt_name, item_name
       ),
-      camp_item_count AS (
-        SELECT mkt_name, campaign_name, item_name, COUNT(*) AS cnt
-        FROM order_item
-        WHERE campaign_name IS NOT NULL AND status IN (1,2,3,4,5)
-        GROUP BY mkt_name, campaign_name, item_name
-      ),
-      camp_main_item AS (
-        SELECT DISTINCT ON (mkt_name, campaign_name)
-          mkt_name, campaign_name, item_name
-        FROM camp_item_count
-        ORDER BY mkt_name, campaign_name, cnt DESC, item_name
-      ),
-      spend_per_item AS (
-        SELECT cmi.mkt_name, cmi.item_name, SUM(cs.spend)::bigint AS spend
-        FROM camp_main_item cmi
-        JOIN camp_spend cs USING (mkt_name, campaign_name)
-        GROUP BY cmi.mkt_name, cmi.item_name
+      combined AS (
+        SELECT
+          COALESCE(ss.mkt_name, ia.mkt_name) AS mkt_name,
+          COALESCE(ss.item_name, ia.item_name) AS item_name,
+          COALESCE(ss.spend, 0) AS spend,
+          COALESCE(ia.total_orders, 0) AS total_orders,
+          COALESCE(ia.confirmed, 0) AS don,
+          COALESCE(ia.cod_confirmed, 0) AS doanh_so
+        FROM spend_per_sku ss
+        FULL OUTER JOIN item_agg ia USING (mkt_name, item_name)
       )
       SELECT
-        ia.mkt_name, ia.item_name,
-        COALESCE(sp.spend, 0) AS spend,
-        ia.total_orders,
-        ia.confirmed AS don,
-        CASE WHEN ia.confirmed > 0 THEN COALESCE(sp.spend,0) / ia.confirmed ELSE 0 END AS chi_phi_don,
-        ia.cod_confirmed AS doanh_so,
-        CASE WHEN ia.cod_confirmed > 0
-          THEN ROUND(COALESCE(sp.spend,0)::numeric / ia.cod_confirmed * 100, 1)
+        mkt_name, item_name, spend, total_orders, don,
+        CASE WHEN don > 0 THEN spend / don ELSE 0 END AS chi_phi_don,
+        doanh_so,
+        CASE WHEN doanh_so > 0
+          THEN ROUND(spend::numeric / doanh_so * 100, 1)
           ELSE NULL END AS pct_ads
-      FROM item_agg ia
-      LEFT JOIN spend_per_item sp USING (mkt_name, item_name)
-      ORDER BY ia.mkt_name, COALESCE(sp.spend,0) DESC
+      FROM combined
+      ORDER BY mkt_name, spend DESC
     `, [fromDate, toDate, mkt])
 
     return res.json({ rows, from: fromDate, to: toDate, mkt: mkt || null })
