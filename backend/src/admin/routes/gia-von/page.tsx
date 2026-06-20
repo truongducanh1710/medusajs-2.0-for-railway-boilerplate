@@ -57,13 +57,19 @@ function Cell({
   products?: MktProduct[]
   colId?: string
 }) {
+  // Cột SP (autocomplete): value lưu là code; resolve ngược ra tên để hiển thị cho dễ đọc.
+  // Dữ liệu cũ có thể vẫn là tên text (chưa được chọn lại từ dropdown) — khi đó không match
+  // được code nào trong `products` thì hiển thị/chỉnh sửa nguyên giá trị cũ.
+  const resolvedName = products?.find(p => p.code.trim().toUpperCase() === value.trim().toUpperCase())?.name
+  const editValue = resolvedName ?? value
+
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
+  const [draft, setDraft] = useState(editValue)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const [activeIdx, setActiveIdx] = useState(-1)
   const ref = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { setDraft(value) }, [value])
+  useEffect(() => { setDraft(editValue) }, [value])
 
   const filtered = products && draft
     ? products.filter(p => p.name.toLowerCase().includes(draft.toLowerCase()) || p.code.toLowerCase().includes(draft.toLowerCase()))
@@ -72,7 +78,7 @@ function Cell({
   function startEdit() {
     if (readOnly) return
     onFocus()
-    setDraft(value)
+    setDraft(editValue)
     setEditing(true)
     setActiveIdx(-1)
     setTimeout(() => {
@@ -93,9 +99,13 @@ function Cell({
     if (v !== value) onCommit(v)
   }
 
-  function commit() { commitValue(draft) }
+  function commit() {
+    // Nếu user không gõ gì khác (draft vẫn là tên/giá trị hiển thị ban đầu) thì giữ nguyên
+    // value gốc (code) — tránh việc tab/click qua ô ghi đè code bằng tên hiển thị.
+    commitValue(draft === editValue ? value : draft)
+  }
 
-  const display = !editing && colType === "number" && value ? fmtNumber(value) : (editing ? draft : value)
+  const display = !editing && colType === "number" && value ? fmtNumber(value) : (editing ? draft : editValue)
 
   const dropdown = editing && products && dropdownPos && filtered.length > 0
     ? createPortal(
@@ -119,7 +129,7 @@ function Cell({
           {filtered.map((p, i) => (
             <div
               key={p.id}
-              onMouseDown={() => commitValue(p.name)}
+              onMouseDown={() => commitValue(p.code)}
               style={{
                 padding: "6px 10px",
                 cursor: "pointer",
@@ -159,10 +169,10 @@ function Cell({
               if (products && filtered.length > 0) {
                 if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, filtered.length - 1)); return }
                 if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); return }
-                if (e.key === "Enter" && activeIdx >= 0) { e.preventDefault(); commitValue(filtered[activeIdx].name); onNav("down"); return }
+                if (e.key === "Enter" && activeIdx >= 0) { e.preventDefault(); commitValue(filtered[activeIdx].code); onNav("down"); return }
               }
               if (e.key === "Enter") { commit(); onNav("down") }
-              else if (e.key === "Escape") { setDraft(value); setEditing(false); setDropdownPos(null) }
+              else if (e.key === "Escape") { setDraft(editValue); setEditing(false); setDropdownPos(null) }
               else if (e.key === "Tab") { e.preventDefault(); commit(); onNav("tab") }
               else if (e.key === "ArrowRight" && ref.current && ref.current.selectionStart === draft.length) { commit(); onNav("right") }
               else if (e.key === "ArrowLeft" && ref.current && ref.current.selectionStart === 0) { commit(); onNav("left") }

@@ -17,6 +17,7 @@ export interface AvgCostResult {
   byName: Record<string, number>  // TÊN SP CHÍNH (upper) → giá TB
   mapped: number
   total: number
+  unlinked: { label: string; gia_tb: number }[]  // nhóm không khớp được mã (cũ: lệch tên; mới: K trống/không phải mã hợp lệ)
 }
 
 /**
@@ -36,7 +37,7 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     `SELECT id, position, data FROM cost_sheet_row ORDER BY position ASC`
   )
   if (sheetRows.length < 2) {
-    return { costs: {}, byName: {}, mapped: 0, total: 0 }
+    return { costs: {}, byName: {}, mapped: 0, total: 0, unlinked: [] }
   }
 
   // pos → colId
@@ -54,7 +55,7 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   const colTinhChat = headerToId["Tính chất"] ?? posToId[2]
   const colSoLuong = headerToId["Số lượng"] ?? posToId[3]
   const colTongTien = headerToId["Tổng tiền"] ?? posToId[8]
-  const colNhom = posToId[10] // cột K = nhóm SP (product autocomplete)
+  const colNhom = posToId[10] // cột K = nhóm SP (product autocomplete) — lưu mã SP (code); dữ liệu cũ có thể vẫn là tên
 
   type Group = { tenChinh: string; nhom: string; soLuong: number; tongTienChinh: number; tongTienPhuKien: number }
   const groupMap: Record<string, Group> = {}
@@ -82,17 +83,20 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     }
   }
 
-  // Load mkt_product để map tên → code
+  // Load mkt_product để map mã/tên → code
   const { rows: products } = await pool.query(
     `SELECT name, code FROM mkt_product WHERE active = true`
   )
   const nameToCode: Record<string, string> = {}
+  const codeSet = new Set<string>()
   for (const p of products) {
     if (p.name && p.code) nameToCode[String(p.name).trim().toUpperCase()] = p.code
+    if (p.code) codeSet.add(String(p.code).trim().toUpperCase())
   }
 
   const costs: Record<string, number> = {}
   const byName: Record<string, number> = {}
+  const unlinked: { label: string; gia_tb: number }[] = []
   let mapped = 0
   let total = 0
 
@@ -105,15 +109,19 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     const tenChinh = g.tenChinh || g.nhom
     byName[tenChinh.toUpperCase()] = giaTB
 
-    // Map sang code qua mkt_product (so khớp tên SP chính)
-    const code = nameToCode[tenChinh.toUpperCase()]
+    // Ưu tiên: cột K (nhóm) lưu trực tiếp mã SP (code) — khớp tuyệt đối, không qua tên
+    // Fallback (dữ liệu cũ): cột K/tên SP chính là text, so khớp với mkt_product.name
+    const nhomUpper = g.nhom.trim().toUpperCase()
+    const code = (nhomUpper && codeSet.has(nhomUpper)) ? nhomUpper : nameToCode[tenChinh.toUpperCase()]
     if (code) {
       costs[code] = giaTB
       mapped++
+    } else {
+      unlinked.push({ label: tenChinh || g.nhom, gia_tb: giaTB })
     }
   }
 
-  return { costs, byName, mapped, total }
+  return { costs, byName, mapped, total, unlinked }
 }
 
 /**

@@ -121,17 +121,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       order_count: Number(p.order_count),
     }))
 
-    // 3. SP có trong bảng giá vốn nhưng chưa liên kết code (byName có, costs không)
-    //    = tên SP chính trong bảng nhưng không khớp mkt_product
-    const linkedNames = new Set<string>()
-    // byName keys mà có code tương ứng → đã link. Suy ra qua so sánh: nếu 1 tên trong byName
-    // ứng với code nào đó trong costs cùng giá thì coi như linked. Đơn giản: dựng map code→giá đã có (avg.costs)
-    // Ta cần biết tên nào chưa link → load mkt_product names để so.
-    const products = await sql(`SELECT name, code FROM mkt_product WHERE active = true`)
-    const mktNameSet = new Set(products.map((p: any) => String(p.name).trim().toUpperCase()))
-    const unlinkedCost = Object.keys(avg.byName)
-      .filter(name => !mktNameSet.has(name))
-      .map(name => ({ name, gia_tb: avg.byName[name] }))
+    // 3. SP có trong bảng giá vốn nhưng chưa liên kết mã (cột K trống/không phải mã hợp lệ,
+    //    và tên SP chính cũng không khớp mkt_product.name) — lấy trực tiếp từ computeAvgCost
+    const unlinkedCost = avg.unlinked.map((u: any) => ({ name: u.label, gia_tb: u.gia_tb }))
 
     return res.json({
       from, to,
