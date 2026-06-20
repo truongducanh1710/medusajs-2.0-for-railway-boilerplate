@@ -1528,6 +1528,33 @@ export default function BaoCaoMktPage() {
                     </tr>
                   </thead>
                   <tbody>
+                    {(() => {
+                      const totalSpend = sorted.reduce((s, r) => s + Number(r.spend || 0), 0)
+                      const totalDon = sorted.reduce((s, r) => s + Number(r.don || 0), 0)
+                      const totalDoanhSo = sorted.reduce((s, r) => s + Number(r.doanh_so || 0), 0)
+                      const totalChiPhiDon = totalDon > 0 ? totalSpend / totalDon : 0
+                      const totalPct = totalDoanhSo > 0 ? Math.round(totalSpend / totalDoanhSo * 1000) / 10 : null
+                      return (
+                        <tr style={{ fontWeight: 700, background: dark ? "#1f2937" : "#f3f4f6" }}>
+                          <td style={{ padding: "10px 12px", fontSize: 13, borderBottom: `2px solid ${t.cardBorder}`, position: "sticky", left: 0, zIndex: 1, background: dark ? "#1f2937" : "#f3f4f6" }}>
+                            Tổng
+                          </td>
+                          <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>{totalSpend.toLocaleString("vi-VN")}đ</td>
+                          <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, color: t.blue, fontWeight: 700 }}>{totalDon}</td>
+                          <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>{totalDon > 0 ? Math.round(totalChiPhiDon).toLocaleString("vi-VN") + "đ" : "—"}</td>
+                          <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>{totalDoanhSo.toLocaleString("vi-VN")}đ</td>
+                          <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>
+                            {totalPct !== null ? (
+                              <span style={{
+                                background: totalPct < 30 ? (dark ? "#065f46" : "#dcfce7") : totalPct <= 40 ? (dark ? "#78350f" : "#fef3c7") : (dark ? "#7f1d1d" : "#fee2e2"),
+                                color: pctColor(totalPct),
+                                padding: "2px 8px", borderRadius: 4, fontSize: 12
+                              }}>{totalPct}%</span>
+                            ) : "—"}
+                          </td>
+                        </tr>
+                      )
+                    })()}
                     {sorted.map((row, i) => {
                       const mkt = (row.mkt_name ?? "").trim()
                       const pct = row.pct_ads !== null ? Number(row.pct_ads) : null
