@@ -702,10 +702,14 @@ function SummaryTab() {
   const [items, setItems] = useState<{
     ten: string; tinhChat: string; nhom: string; soLuong: number; tongTien: number
   }[]>([])
+  const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
 
   useEffect(() => {
+    apiJson("/admin/gia-von/products", "GET").then((d) => {
+      setMktProducts((d.products ?? []).filter((p: MktProduct) => p.active !== false))
+    }).catch(() => {})
     apiJson("/admin/gia-von/sheet", "GET").then((sheet) => {
       const cols: SheetColumn[] = sheet.columns ?? []
       const rows: SheetRow[] = sheet.rows ?? []
@@ -768,12 +772,25 @@ function SummaryTab() {
     }
   }
 
+  // Khớp mã SP — đúng logic computeAvgCost ở backend (avg-cost/route.ts):
+  // ưu tiên cột K là mã hợp lệ (đã chọn lại từ dropdown), fallback so tên SP chính với mkt_product.
+  const codeSet = new Set(mktProducts.map(p => p.code.trim().toUpperCase()).filter(Boolean))
+  const nameToCode: Record<string, string> = {}
+  for (const p of mktProducts) {
+    if (p.name && p.code) nameToCode[p.name.trim().toUpperCase()] = p.code
+  }
+
   const summary = Object.values(groupMap)
     .filter(g => g.tenChinh || g.soLuong > 0)
     .map(g => {
       const tongTienTong = g.tongTienChinh + g.tongTienPhuKien
       const giaTB = g.soLuong > 0 ? tongTienTong / g.soLuong : 0
-      return { ...g, tongTienTong, giaTB }
+      const tenChinh = g.tenChinh || g.nhom
+      const nhomUpper = g.nhom.trim().toUpperCase()
+      const matchedCode = (nhomUpper && codeSet.has(nhomUpper))
+        ? nhomUpper
+        : nameToCode[tenChinh.toUpperCase()]
+      return { ...g, tongTienTong, giaTB, matchedCode }
     })
     .sort((a, b) => b.giaTB - a.giaTB)
 
@@ -793,8 +810,8 @@ function SummaryTab() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr>
-              {["#", "Sản phẩm", "SL sp chính (D)", "Tổng tiền sp chính", "Tổng tiền phụ kiện", "Tổng cộng", "Giá TB/sp"].map((h, i) => (
-                <th key={i} style={{ padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f9fafb", textAlign: i >= 2 ? "right" : "left", fontWeight: 700, color: "#374151", whiteSpace: "nowrap", position: "sticky", top: 0 }}>
+              {["#", "Sản phẩm", "Mã SP (khớp LNG)", "SL sp chính (D)", "Tổng tiền sp chính", "Tổng tiền phụ kiện", "Tổng cộng", "Giá TB/sp"].map((h, i) => (
+                <th key={i} style={{ padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f9fafb", textAlign: i >= 3 ? "right" : "left", fontWeight: 700, color: "#374151", whiteSpace: "nowrap", position: "sticky", top: 0 }}>
                   {h}
                 </th>
               ))}
@@ -810,6 +827,13 @@ function SummaryTab() {
                     <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>+ {s.tenPhuKien.join(", ")}</div>
                   )}
                 </td>
+                <td style={{ padding: "7px 10px", textAlign: "right" }}>
+                  {s.matchedCode ? (
+                    <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 12 }}>{s.matchedCode}</span>
+                  ) : (
+                    <span style={{ color: "#dc2626", fontWeight: 600, fontSize: 11 }}>Chưa khớp</span>
+                  )}
+                </td>
                 <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.soLuong)}</td>
                 <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>{fmt(s.tongTienChinh)}</td>
                 <td style={{ padding: "7px 10px", textAlign: "right", color: s.tongTienPhuKien > 0 ? "#d97706" : "#d1d5db" }}>{fmt(s.tongTienPhuKien)}</td>
@@ -818,7 +842,7 @@ function SummaryTab() {
               </tr>
             ))}
             {summary.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: "center", padding: 32, color: "#9ca3af" }}>Không có dữ liệu</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: "center", padding: 32, color: "#9ca3af" }}>Không có dữ liệu</td></tr>
             )}
           </tbody>
         </table>
