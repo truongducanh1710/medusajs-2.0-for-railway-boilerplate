@@ -47,6 +47,18 @@ async function graphPost(path: string, body: Record<string, any>): Promise<any> 
   return data
 }
 
+export async function deletePost(postId: string, pageToken: string): Promise<void> {
+  const url = new URL(FB_GRAPH_BASE + "/" + postId)
+  url.searchParams.set("access_token", pageToken)
+  const res = await fetch(url, { method: "DELETE" })
+  const data = await res.json()
+  if (data?.error) throw new FbError(data.error.message, data.error.code)
+  if (data !== true && data?.success !== true) {
+    throw new FbError("Facebook did not confirm deletion for " + postId, 0)
+  }
+}
+
+
 /** Lấy toàn bộ page (kèm page token) từ long-lived user token, gồm phân trang. */
 export async function fetchAllPageTokens(): Promise<PageToken[]> {
   if (!FB_USER_TOKEN) throw new FbError("FB_USER_TOKEN chưa được cấu hình", 0)
