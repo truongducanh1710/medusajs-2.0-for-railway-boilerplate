@@ -24,16 +24,10 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     await deletePost(post.post_id, page.access_token)
     await pool.query("UPDATE fb_scheduled_post SET status = 'cancelled' WHERE id = $1", [id])
     if (post.video_id) {
-      await pool.query(
-        `UPDATE mkt_video
-            SET fb_post_links = COALESCE((
-              SELECT jsonb_agg(link)
-              FROM jsonb_array_elements(COALESCE(fb_post_links, '[]'::jsonb)) AS link
-              WHERE COALESCE(link->>'post_url', '') NOT LIKE $1
-            ), '[]'::jsonb), updated_at = now()
-          WHERE id = $2`,
-        ["%" + post.post_id + "%", post.video_id]
-      )
+      const { rows: [video] } = await pool.query("SELECT fb_post_links FROM mkt_video WHERE id = $1", [post.video_id])
+      const links = Array.isArray(video?.fb_post_links) ? video.fb_post_links : []
+      const filtered = links.filter((link: any) => !String(link?.post_url || "").includes(post.post_id))
+      await pool.query("UPDATE mkt_video SET fb_post_links = $1, updated_at = now() WHERE id = $2", [JSON.stringify(filtered), post.video_id])
     }
     return res.json({ ok: true })
   } catch (err: any) {

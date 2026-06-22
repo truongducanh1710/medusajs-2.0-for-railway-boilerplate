@@ -52,7 +52,11 @@ export async function deletePost(postId: string, pageToken: string): Promise<voi
   url.searchParams.set("access_token", pageToken)
   const res = await fetch(url, { method: "DELETE" })
   const data = await res.json()
-  if (data?.error) throw new FbError(data.error.message, data.error.code)
+  if (data?.error) {
+    const alreadyGone = data.error.code === 100 && /unsupported get request|does not exist|cannot be loaded/i.test(data.error.message || "")
+    if (!alreadyGone) throw new FbError(data.error.message, data.error.code)
+    return
+  }
   if (data !== true && data?.success !== true) {
     throw new FbError("Facebook did not confirm deletion for " + postId, 0)
   }
