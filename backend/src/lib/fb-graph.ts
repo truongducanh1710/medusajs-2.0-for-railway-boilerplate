@@ -87,12 +87,21 @@ export async function editPost(
   message: string,
   mediaType: "text" | "video" | "photo" = "text"
 ): Promise<void> {
-  const field = mediaType === "video" ? "description" : "message"
-  const res = await fetch(`${FB_GRAPH_BASE}/${postId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ [field]: message, access_token: pageToken }),
-  })
+  let res: Response
+  if (mediaType === "video") {
+    // Scheduled video posts: FB requires multipart/form-data to graph-video endpoint.
+    // JSON POST to graph.facebook.com/{video_id} returns #12 "singular statuses deprecated".
+    const form = new FormData()
+    form.append("description", message)
+    form.append("access_token", pageToken)
+    res = await fetch(`${VIDEO_BASE}/${postId}`, { method: "POST", body: form })
+  } else {
+    res = await fetch(`${FB_GRAPH_BASE}/${postId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, access_token: pageToken }),
+    })
+  }
   const data = await res.json()
   if (data?.error) throw new FbError(data.error.message, data.error.code)
   if (data?.success !== true && data?.id == null) {
