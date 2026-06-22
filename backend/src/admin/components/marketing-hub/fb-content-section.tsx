@@ -248,7 +248,46 @@ const postDisplayDate = (p: any) => new Date(p.published_at || p.scheduled_for |
 const DOW = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
 const MEDIA_COLOR: Record<string, string> = { video: "#8B5CF6", photo: "#0EA5E9", text: "#1877F2" }
 
-function CalendarView({ posts, onCancel, cancellingId }: { posts: any[]; onCancel?: (id: string) => void; cancellingId?: string | null }) {
+// ── Edit Post Modal ──────────────────────────────────────────────────────────
+function EditPostModal({ post, onClose, onSave }: { post: any; onClose: () => void; onSave: (id: string, message: string) => Promise<void> }) {
+  const [message, setMessage] = useState(post.message || "")
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const save = async () => {
+    if (!message.trim()) { setErr("Nội dung trống"); return }
+    setSaving(true); setErr(null)
+    try { await onSave(post.id, message) }
+    catch (e: any) { setErr(e.message || "Lỗi không xác định"); setSaving(false) }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 540, boxShadow: "0 10px 40px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>Sửa nội dung bài</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "#9CA3AF", cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: 18 }}>
+          <div style={{ color: "#6B7280", fontSize: 12, marginBottom: 8 }}>
+            {MEDIA_ICON[post.media_type] || "📝"} {post.page_name}
+            {post.scheduled_for && <> · 🕐 {new Date(post.scheduled_for).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</>}
+          </div>
+          <textarea value={message} onChange={e => setMessage(e.target.value)} rows={8} autoFocus
+            style={{ width: "100%", background: "#F0F1F5", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 9, padding: "10px 12px", fontSize: 13, lineHeight: 1.6, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+          <div style={{ color: "#9CA3AF", fontSize: 11, textAlign: "right", marginTop: 4 }}>{message.length} ký tự</div>
+          {err && <div style={{ color: "#DC2626", fontSize: 12, marginTop: 6 }}>⚠️ {err}</div>}
+        </div>
+        <div style={{ padding: "12px 18px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button onClick={onClose} disabled={saving} style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Hủy</button>
+          <button onClick={save} disabled={saving} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>{saving ? "Đang lưu…" : "Lưu thay đổi"}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CalendarView({ posts, onCancel, cancellingId, onEdit }: { posts: any[]; onCancel?: (id: string) => void; cancellingId?: string | null; onEdit?: (post: any) => void }) {
   const today = new Date()
   const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selected, setSelected] = useState<string | null>(null)
@@ -357,13 +396,24 @@ function CalendarView({ posts, onCancel, cancellingId }: { posts: any[]; onCance
                     <a href={`https://www.facebook.com/${p.post_id}`}
                       target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
                   )}
-                  {p.status === "scheduled" && onCancel && (
-                    <button
-                      onClick={() => onCancel(p.id)}
-                      disabled={cancellingId === p.id}
-                      style={{ marginTop: 4, background: cancellingId === p.id ? "#F3F4F6" : "#FEF2F2", color: cancellingId === p.id ? "#9CA3AF" : "#DC2626", border: "1px solid #FECACA", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 600, cursor: cancellingId === p.id ? "wait" : "pointer" }}>
-                      {cancellingId === p.id ? "Đang hủy…" : "✕ Hủy lịch"}
-                    </button>
+                  {p.status === "scheduled" && (onEdit || onCancel) && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      {onEdit && (
+                        <button
+                          onClick={() => onEdit(p)}
+                          style={{ background: "#EFF6FF", color: "#1877F2", border: "1px solid #BFDBFE", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                          ✎ Sửa
+                        </button>
+                      )}
+                      {onCancel && (
+                        <button
+                          onClick={() => onCancel(p.id)}
+                          disabled={cancellingId === p.id}
+                          style={{ background: cancellingId === p.id ? "#F3F4F6" : "#FEF2F2", color: cancellingId === p.id ? "#9CA3AF" : "#DC2626", border: "1px solid #FECACA", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 600, cursor: cancellingId === p.id ? "wait" : "pointer" }}>
+                          {cancellingId === p.id ? "Đang hủy…" : "✕ Hủy lịch"}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )
@@ -384,8 +434,15 @@ function LichDangTab() {
   const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar")
   const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<any | null>(null)
   const { mktCode, has, isSuper } = useCurrentPermissions()
   const canBoost = isSuper || has("page.fb-content.post")
+
+  const handleSaveEdit = async (postId: string, message: string) => {
+    await apiJson(`/admin/fb-content/post/${postId}`, "PATCH", { message })
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, message } : p))
+    setEditing(null)
+  }
 
   const handleCancel = async (postId: string) => {
     if (!confirm("Hủy bài lên lịch này?")) return
@@ -457,7 +514,7 @@ function LichDangTab() {
 
       {loading && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
 
-      {!loading && viewMode === "calendar" && <CalendarView posts={posts} onCancel={handleCancel} cancellingId={cancellingId} />}
+      {!loading && viewMode === "calendar" && <CalendarView posts={posts} onCancel={handleCancel} cancellingId={cancellingId} onEdit={setEditing} />}
 
       {!loading && viewMode === "list" && posts.length === 0 && (
         <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có bài nào</div>
@@ -508,6 +565,13 @@ function LichDangTab() {
                     )}
                     {p.status === "scheduled" && (
                       <button
+                        onClick={() => setEditing(p)}
+                        style={{ background: "#EFF6FF", color: "#1877F2", border: "1px solid #BFDBFE", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                        ✎ Sửa
+                      </button>
+                    )}
+                    {p.status === "scheduled" && (
+                      <button
                         onClick={() => handleCancel(p.id)}
                         disabled={cancellingId === p.id}
                         style={{ background: cancellingId === p.id ? "#F3F4F6" : "#FEF2F2", color: cancellingId === p.id ? "#9CA3AF" : "#DC2626", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: cancellingId === p.id ? "wait" : "pointer", whiteSpace: "nowrap" }}>
@@ -524,6 +588,10 @@ function LichDangTab() {
 
       {boostTarget && (
         <BoostCampModal target={boostTarget} onClose={() => setBoostTarget(null)} onDone={load} />
+      )}
+
+      {editing && (
+        <EditPostModal post={editing} onClose={() => setEditing(null)} onSave={handleSaveEdit} />
       )}
     </div>
   )
