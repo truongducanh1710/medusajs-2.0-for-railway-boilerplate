@@ -47,21 +47,58 @@ async function graphPost(path: string, body: Record<string, any>): Promise<any> 
   return data
 }
 
-export async function deletePost(postId: string, pageToken: string): Promise<void> {
-  const url = new URL(FB_GRAPH_BASE + "/" + postId)
-  url.searchParams.set("access_token", pageToken)
-  const res = await fetch(url, { method: "DELETE" })
-  const data = await res.json()
-  if (data?.error) {
-    const alreadyGone = data.error.code === 100 && /unsupported get request|does not exist|cannot be loaded/i.test(data.error.message || "")
-    if (!alreadyGone) throw new FbError(data.error.message, data.error.code)
-    return
+export async function deletePost(postId: string, pageToken: string, pageId?: string): Promise<void> {
+  // Scheduled video posts store a bare video ID (no "_"). Deleting it via the
+  // composite {pageId}_{id} form is treated as a singular page status, which FB
+  // deprecated (error #12). So try the bare ID first, and only fall back to the
+  // composite feed-story form for IDs that aren't already composite.
+  const candidates = !postId.includes("_") && pageId ? [postId, pageId + "_" + postId] : [postId]
+  let lastError: any = null
+  for (const candidate of candidates) {
+    const url = new URL(FB_GRAPH_BASE + "/" + candidate)
+    url.searchParams.set("access_token", pageToken)
+    const res = await fetch(url, { method: "DELETE" })
+    const data = await res.json()
+    if (!data?.error && (data === true || data?.success === true)) return
+    if (data?.error) {
+      const alreadyGone = data.error.code === 100 && /unsupported get request|does not exist|cannot be loaded/i.test(data.error.message || "")
+      if (alreadyGone) return
+      // #12 = deprecated singular-status endpoint hit by the composite feed form;
+      // not fatal — let the loop try the other candidate before giving up.
+      lastError = new FbError(data.error.message, data.error.code)
+      continue
+    }
+    lastError = new FbError("Facebook did not confirm deletion for " + candidate, 0)
   }
-  if (data !== true && data?.success !== true) {
-    throw new FbError("Facebook did not confirm deletion for " + postId, 0)
-  }
+  throw lastError || new FbError("Facebook deletion failed", 0)
 }
 
+
+/**
+ * Sửa nội dung 1 bài đã lên lịch (chưa publish). Dùng để fix message bị mojibake
+ * mà không cần xóa + upload lại video.
+ * - Video scheduled: POST /{video_id} với field `description`.
+ * - Feed/photo post: POST /{post_id} với field `message`.
+ * mediaType quyết định field nào FB chấp nhận.
+ */
+export async function editPost(
+  postId: string,
+  pageToken: string,
+  message: string,
+  mediaType: "text" | "video" | "photo" = "text"
+): Promise<void> {
+  const field = mediaType === "video" ? "description" : "message"
+  const res = await fetch(`${FB_GRAPH_BASE}/${postId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ [field]: message, access_token: pageToken }),
+  })
+  const data = await res.json()
+  if (data?.error) throw new FbError(data.error.message, data.error.code)
+  if (data?.success !== true && data?.id == null) {
+    throw new FbError("Facebook did not confirm the edit", 0)
+  }
+}
 
 /** Lấy toàn bộ page (kèm page token) từ long-lived user token, gồm phân trang. */
 export async function fetchAllPageTokens(): Promise<PageToken[]> {
