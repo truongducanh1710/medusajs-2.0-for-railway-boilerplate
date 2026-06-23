@@ -25,7 +25,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const page = allowedPages.find((p) => p.page_id === post.page_id)
     if (!page) return res.status(403).json({ error: "Không có quyền sửa bài trên Page này" })
 
-    await editPost(post.post_id, page.access_token, message, post.media_type || "text")
+    await editPost(post.post_id, page.access_token, message, post.media_type || "text", post.page_id)
     await pool.query("UPDATE fb_scheduled_post SET message = $1 WHERE id = $2", [message, id])
     return res.json({ ok: true })
   } catch (err: any) {

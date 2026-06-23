@@ -85,7 +85,8 @@ export async function editPost(
   postId: string,
   pageToken: string,
   message: string,
-  mediaType: "text" | "video" | "photo" = "text"
+  mediaType: "text" | "video" | "photo" = "text",
+  pageId?: string
 ): Promise<void> {
   let res: Response
   if (mediaType === "video") {
@@ -95,6 +96,14 @@ export async function editPost(
     form.append("description", message)
     form.append("access_token", pageToken)
     res = await fetch(`${VIDEO_BASE}/${postId}`, { method: "POST", body: form })
+    const videoData = await res.clone().json()
+    if (videoData?.error?.code === 12 && pageId) {
+      res = await fetch(`${FB_GRAPH_BASE}/${pageId}_${postId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, access_token: pageToken }),
+      })
+    }
   } else {
     res = await fetch(`${FB_GRAPH_BASE}/${postId}`, {
       method: "POST",
