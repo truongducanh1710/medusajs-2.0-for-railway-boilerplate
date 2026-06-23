@@ -145,5 +145,5 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
 
 export const config = {
   name: "mkt-cost-intraday-sync",
-  schedule: "*/5 * * * *",
+  schedule: "2-59/5 * * * *",
 }
