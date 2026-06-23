@@ -98,11 +98,20 @@ export async function editPost(
     res = await fetch(`${VIDEO_BASE}/${postId}`, { method: "POST", body: form })
     const videoData = await res.clone().json()
     if (videoData?.error?.code === 12 && pageId) {
-      res = await fetch(`${FB_GRAPH_BASE}/${pageId}_${postId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, access_token: pageToken }),
+      const scheduled = await graphGet(`/${pageId}/scheduled_posts`, {
+        fields: "id,attachments{target{id},media_type}",
+        limit: "100",
+        access_token: pageToken,
       })
+      const storyId = pageId + "_" + postId
+      const scheduledPost = (scheduled.data || []).find((item: any) => item.id === storyId || item.id === postId || String(item.id || "").endsWith("_" + postId))
+      const videoId = scheduledPost?.attachments?.data?.map((attachment: any) => attachment?.target?.id).find(Boolean)
+      if (!videoId) throw new FbError("Cannot resolve scheduled Facebook video ID for " + storyId, 0)
+
+      const retryForm = new FormData()
+      retryForm.append("description", message)
+      retryForm.append("access_token", pageToken)
+      res = await fetch(`${VIDEO_BASE}/${videoId}`, { method: "POST", body: retryForm })
     }
   } else {
     res = await fetch(`${FB_GRAPH_BASE}/${postId}`, {
