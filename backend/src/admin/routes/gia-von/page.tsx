@@ -789,7 +789,7 @@ function SummaryTab() {
       const nhomUpper = g.nhom.trim().toUpperCase()
       const matchedCode = (nhomUpper && codeSet.has(nhomUpper))
         ? nhomUpper
-        : nameToCode[tenChinh.toUpperCase()]
+        : nameToCode[nhomUpper] ?? nameToCode[tenChinh.toUpperCase()]
       return { ...g, tongTienTong, giaTB, matchedCode }
     })
     .sort((a, b) => b.giaTB - a.giaTB)
