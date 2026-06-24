@@ -112,7 +112,9 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     // Ưu tiên: cột K (nhóm) lưu trực tiếp mã SP (code) — khớp tuyệt đối, không qua tên
     // Fallback (dữ liệu cũ): cột K/tên SP chính là text, so khớp với mkt_product.name
     const nhomUpper = g.nhom.trim().toUpperCase()
-    const code = (nhomUpper && codeSet.has(nhomUpper)) ? nhomUpper : nameToCode[tenChinh.toUpperCase()]
+    const code = (nhomUpper && codeSet.has(nhomUpper))
+      ? nhomUpper
+      : nameToCode[nhomUpper] ?? nameToCode[tenChinh.toUpperCase()]
     if (code) {
       costs[code] = giaTB
       mapped++
