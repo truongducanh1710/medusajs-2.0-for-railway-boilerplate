@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { computeAvgCost } from "../../../gia-von/avg-cost/route"
+import { computeAvgCost, resolveDisplayId } from "../../../gia-von/avg-cost/route"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -136,7 +136,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           if (!qty) continue
           itemQty += qty
           const vi = it?.variation_info ?? {}
-          const code = vi.display_id ?? null
+          const code = resolveDisplayId(vi.display_id)
           const name = (vi.name ?? it?.name ?? "").toUpperCase()
           let unit: number | undefined
           if (code && avgCost.costs[code] != null) unit = avgCost.costs[code]

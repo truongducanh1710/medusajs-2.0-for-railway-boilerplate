@@ -12,6 +12,33 @@ function parseNum(s: string): number {
   return parseFloat(String(s).replace(/\./g, "").replace(",", ".")) || 0
 }
 
+/**
+ * Alias display_id Pancake (biến thể/lệch mã) → code chuẩn trong mkt_product.
+ * Pancake sinh biến thể (màu/size) bằng hậu tố riêng, hoặc mã gốc bị nhập lệch số/dấu
+ * so với mkt_product — alias để vẫn map đúng giá vốn mà không phải đổi mã trong Pancake.
+ */
+export const DISPLAY_ID_ALIASES: Record<string, string> = {
+  PHVVN027_CV: "PHVVN026_CV",
+  PHVVN020_TDH_LARGE: "PHVVN020_TDH",
+  PHVVN020_TDH_MEDIUM: "PHVVN020_TDH",
+  PHVVN023_GDQA: "PHVVN023_GĐQA",
+  PHVVN033_NS: "PHVVN033_NCDTMS",
+  PHVVN030_NAS_CAM: "PHVVN030_NAS",
+  PHVVN030_NAS_TRANG: "PHVVN030_NAS",
+  PHVVN032_NASV: "PHVVN032_NASĐN",
+  // Phụ kiện bán lẻ độc lập — giá vốn riêng không tách được khỏi SP chính trong sheet,
+  // dùng tạm giá vốn SP chính (số lượng bán lẻ rất nhỏ, không đáng kể với LNG tổng).
+  PHVVN004_GBLN: "PHVVN003_BLN",
+  PHVVN015_MXCLN: "PHVVN010_CLXOP",
+  PHVVN041_GBCX: "PHVVN031_BCX",
+}
+
+export function resolveDisplayId(displayId: string | null | undefined): string | null {
+  if (!displayId) return null
+  const upper = displayId.trim().toUpperCase()
+  return DISPLAY_ID_ALIASES[upper] ?? upper
+}
+
 export interface AvgCostResult {
   costs: Record<string, number>   // code → giá TB
   byName: Record<string, number>  // TÊN SP CHÍNH (upper) → giá TB
