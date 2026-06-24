@@ -151,12 +151,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // ── Merge duplicate mkt_name (handover có thể tạo trùng) + tính field ───────
-    const _debug = {
-      raw_rows: rows.length,
-      raw_revenue_delivered: rows.reduce((s: number, r: any) => s + Number(r.revenue_delivered ?? 0), 0),
-      raw_total_orders: rows.reduce((s: number, r: any) => s + Number(r.total_orders ?? 0), 0),
-      rows_detail: rows.map((r: any) => ({ mkt: r.mkt_name, rev: Number(r.revenue_delivered), orders: Number(r.total_orders) })),
-    }
     const merged: Record<string, any> = {}
     for (const row of rows) {
       const m = row.mkt_name
@@ -227,7 +221,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       cost_mapped: avgCost.mapped,
       cost_total: avgCost.total,
       from, to,
-      _debug,
     })
   } catch (err: any) {
     console.error("[report/marketer-lng]", err.message)
