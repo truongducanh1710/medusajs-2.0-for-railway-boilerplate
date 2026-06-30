@@ -37,6 +37,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ── Bảng giá vốn TB (code → giá, tên → giá) ─────────────────────────────────
     const avgCost = await computeAvgCost(getPool())
 
+    // Tên SP chuẩn theo code (để hiển thị thay vì tên item tự do, vd "Giẻ..." vs "Bộ...").
+    const prodNames = await sql(`SELECT code, name FROM mkt_product WHERE active = true`)
+    const codeToName: Record<string, string> = {}
+    for (const p of prodNames) {
+      if (p.code) codeToName[String(p.code).trim().toUpperCase()] = p.name
+    }
+
     // SQL alias map display_id (đồng bộ DISPLAY_ID_ALIASES) để gom biến thể mã về code chuẩn.
     const aliasCases = Object.entries(DISPLAY_ID_ALIASES)
       .map(([from, to]) => `WHEN '${from}' THEN '${to}'`)
@@ -148,8 +155,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // gom theo code nếu có, để biến thể tên cùng SP về 1 dòng
       const key = row.sp_code || row.sp_key
       if (!merged[key]) {
+        // Tên hiển thị: ưu tiên tên chuẩn mkt_product theo code, else tên item.
+        const stdName = row.sp_code ? codeToName[String(row.sp_code).toUpperCase()] : null
         merged[key] = {
-          sp_label: row.sp_label, sp_code: row.sp_code || null,
+          sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
           total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, ship_cost: 0,
           delivered_qty: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
