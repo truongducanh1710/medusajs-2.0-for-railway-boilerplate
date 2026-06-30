@@ -712,16 +712,30 @@ type LngRow = {
   ads_cost: number
   fullfill: number
   lng: number
+  lng_thuc: number
   cogs_pct: number | null
   ship_pct: number | null
   ads_pct: number | null
   fullfill_pct: number | null
   lng_pct: number | null
+  // khối tạm tính
+  du_kien_hoan_huy: number
+  revenue_tam_tinh: number
+  cogs_tam_tinh: number
+  ship_tam_tinh: number
+  fullfill_tam_tinh: number
+  lng_tam_tinh: number
+  cogs_tt_pct: number | null
+  ship_tt_pct: number | null
+  ads_tt_pct: number | null
+  fullfill_tt_pct: number | null
+  lng_tt_pct: number | null
 }
 
 function LngTab({ range }: { range: DateRange }) {
   const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [sub, setSub] = useState<"thuc" | "tam_tinh">("thuc")
 
   useEffect(() => {
     setLoading(true)
@@ -732,44 +746,83 @@ function LngTab({ range }: { range: DateRange }) {
   const pctStr = (v: number | null) => v == null ? "—" : `${v}%`
   const money = (v: number) => fmtNum(Math.round(v || 0))
 
+  // Mỗi sub-tab có bộ cột riêng: định nghĩa value/className để renderRow chạy chung.
+  type Cell = { val: string; cls?: string }
+  const buildCells = (row: LngRow): Cell[] => {
+    if (sub === "thuc") {
+      return [
+        { val: money(row.revenue_total) },
+        { val: money(row.revenue_delivered) },
+        { val: money(row.cogs) },
+        { val: pctStr(row.cogs_pct), cls: "text-gray-400" },
+        { val: money(row.ship_cost), cls: "text-amber-700" },
+        { val: pctStr(row.ship_pct), cls: "text-gray-400" },
+        { val: money(row.ads_cost) },
+        { val: pctStr(row.ads_pct), cls: "text-gray-400" },
+        { val: money(row.fullfill) },
+        { val: pctStr(row.fullfill_pct), cls: "text-gray-400" },
+        { val: money(row.lng_thuc ?? row.lng), cls: `font-bold ${(row.lng_thuc ?? row.lng) >= 0 ? "text-green-600" : "text-red-600"}` },
+        { val: pctStr(row.lng_pct), cls: (row.lng_pct ?? 0) >= 0 ? "text-green-600" : "text-red-600" },
+      ]
+    }
+    // tạm tính
+    return [
+      { val: money(row.revenue_total) },
+      { val: pctStr(row.du_kien_hoan_huy), cls: "text-rose-600" },
+      { val: money(row.revenue_tam_tinh) },
+      { val: money(row.cogs_tam_tinh) },
+      { val: pctStr(row.cogs_tt_pct), cls: "text-gray-400" },
+      { val: money(row.ship_tam_tinh), cls: "text-amber-700" },
+      { val: pctStr(row.ship_tt_pct), cls: "text-gray-400" },
+      { val: money(row.ads_cost) },
+      { val: pctStr(row.ads_tt_pct), cls: "text-gray-400" },
+      { val: money(row.fullfill_tam_tinh) },
+      { val: money(row.lng_tam_tinh), cls: `font-bold ${row.lng_tam_tinh >= 0 ? "text-green-600" : "text-red-600"}` },
+      { val: pctStr(row.lng_tt_pct), cls: (row.lng_tt_pct ?? 0) >= 0 ? "text-green-600" : "text-red-600" },
+    ]
+  }
+
   const renderRow = (row: LngRow, isTotal = false) => (
     <tr key={row.mkt_name} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
       <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium">
         {isTotal ? "TỔNG" : row.mkt_name}
       </td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.revenue_total)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.revenue_delivered)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.cogs)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.cogs_pct)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-amber-700">{money(row.ship_cost)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.ship_pct)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.ads_cost)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.ads_pct)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{money(row.fullfill)}</td>
-      <td className="px-3 py-2 text-sm text-right tabular-nums text-gray-400">{pctStr(row.fullfill_pct)}</td>
-      <td className={`px-3 py-2 text-sm text-right tabular-nums font-bold ${row.lng >= 0 ? "text-green-600" : "text-red-600"}`}>{money(row.lng)}</td>
-      <td className={`px-3 py-2 text-sm text-right tabular-nums ${(row.lng_pct ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>{pctStr(row.lng_pct)}</td>
+      {buildCells(row).map((c, i) => (
+        <td key={i} className={`px-3 py-2 text-sm text-right tabular-nums ${c.cls ?? "text-gray-700"}`}>{c.val}</td>
+      ))}
     </tr>
   )
 
-  const heads = ["Doanh số", "Doanh thu TT", "Giá vốn", "%GV", "Vận chuyển", "%VC", "Chi phí Ads", "%Ads", "Fullfill", "%FF", "LNG TẠM TÍNH", "%LNG"]
+  const heads = sub === "thuc"
+    ? ["Doanh số", "Doanh thu TT", "Giá vốn", "%GV", "Vận chuyển", "%VC", "Chi phí Ads", "%Ads", "Fullfill", "%FF", "LNG THỰC", "%LNG"]
+    : ["Doanh số", "% DK Hoàn hủy", "DT tạm tính", "Giá vốn", "%GV", "Vận chuyển", "%VC", "Chi phí Ads", "%Ads", "Fullfill", "LNG TẠM TÍNH", "%LNG"]
 
-  const totalRow: LngRow | null = data ? {
-    mkt_name: "TỔNG",
-    total_orders: data.totals.total_orders,
-    revenue_total: data.totals.revenue_total,
-    revenue_delivered: data.totals.revenue_delivered,
-    cogs: data.totals.cogs,
-    ship_cost: data.totals.ship_cost,
-    ads_cost: data.totals.ads_cost,
-    fullfill: data.totals.fullfill,
-    lng: data.totals.lng,
-    cogs_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.cogs / data.totals.revenue_delivered * 10000) / 100 : null,
-    ship_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.ship_cost / data.totals.revenue_delivered * 10000) / 100 : null,
-    ads_pct: data.totals.revenue_total > 0 ? Math.round(data.totals.ads_cost / data.totals.revenue_total * 10000) / 100 : null,
-    fullfill_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.fullfill / data.totals.revenue_delivered * 10000) / 100 : null,
-    lng_pct: data.totals.revenue_delivered > 0 ? Math.round(data.totals.lng / data.totals.revenue_delivered * 10000) / 100 : null,
-  } : null
+  const totalRow: LngRow | null = data ? (() => {
+    const t = data.totals
+    const p = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
+    return {
+      mkt_name: "TỔNG",
+      ...t,
+      lng_thuc: t.lng_thuc ?? t.lng,
+      cogs_pct: p(t.cogs, t.revenue_delivered),
+      ship_pct: p(t.ship_cost, t.revenue_delivered),
+      ads_pct: p(t.ads_cost, t.revenue_total),
+      fullfill_pct: p(t.fullfill, t.revenue_delivered),
+      lng_pct: p(t.lng, t.revenue_delivered),
+      cogs_tt_pct: p(t.cogs_tam_tinh, t.revenue_tam_tinh),
+      ship_tt_pct: p(t.ship_tam_tinh, t.revenue_tam_tinh),
+      ads_tt_pct: p(t.ads_cost, t.revenue_total),
+      fullfill_tt_pct: p(t.fullfill_tam_tinh, t.revenue_tam_tinh),
+      lng_tt_pct: p(t.lng_tam_tinh, t.revenue_tam_tinh),
+    } as LngRow
+  })() : null
+
+  const subBtn = (key: "thuc" | "tam_tinh", label: string) => (
+    <button onClick={() => setSub(key)}
+      className={`px-3 py-1 text-xs rounded-md font-medium ${sub === key ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+      {label}
+    </button>
+  )
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
@@ -777,10 +830,16 @@ function LngTab({ range }: { range: DateRange }) {
         <div>
           <h3 className="font-semibold text-gray-800">Lợi nhuận gộp (LNG) theo NV MKT</h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            LNG = Doanh thu TT − (Giá vốn + Vận chuyển + Ads + Fullfill 5.000đ/đơn)
+            {sub === "thuc"
+              ? "LNG thực = Doanh thu đã nhận − (Giá vốn + Vận chuyển + Ads + Fullfill 5.000đ/đơn)"
+              : "LNG tạm tính = DT tạm tính (= doanh số × (1 − % dự kiến hoàn hủy)) − (Giá vốn + Vận chuyển + Ads + Fullfill)"}
           </p>
         </div>
-        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+        <div className="flex items-center gap-2">
+          {subBtn("thuc", "Thực")}
+          {subBtn("tam_tinh", "Tạm tính")}
+          {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+        </div>
       </div>
       {data && (data.mapped_pct < 100) && (
         <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">

@@ -77,6 +77,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Phải group theo ngày để áp handover rule per-day giống report/mkt — nếu gom
     // thẳng theo marketer thì không có chiều ngày để test rule, dẫn tới ads/doanh
     // số của tuần bàn giao bị tính nhầm cho người gốc thay vì người nhận.
+    // Đơn nháp/trùng: đơn đã huỷ mang tag "Đơn nháp"/"Đơn trùng" (giống marketer-performance).
+    // Lưu ý: query này KHÔNG lọc nháp/trùng ở WHERE (để đếm được chúng cho dự kiến hoàn hủy);
+    // phần doanh số/giá vốn vẫn loại nháp/trùng qua điều kiện status như sheet.
+    const nhapTrungCond = `
+      status IN (6, -1)
+      AND (tags @> '[{"name":"Đơn nháp"}]'::jsonb OR tags @> '[{"name":"Đơn trùng"}]'::jsonb)
+    `
     const rows = await sql(`
       SELECT
         COALESCE(o.date, c.date)          AS date,
@@ -86,6 +93,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COALESCE(o.revenue_delivered, 0)  AS revenue_delivered,
         COALESCE(o.ship_cost, 0)          AS ship_cost,
         o.delivered_items                 AS delivered_items,
+        COALESCE(o.da_hoan, 0)            AS da_hoan,
+        COALESCE(o.dang_hoan, 0)          AS dang_hoan,
+        COALESCE(o.da_huy, 0)             AS da_huy,
+        COALESCE(o.don_nhap_trung, 0)     AS don_nhap_trung,
+        COALESCE(o.da_gui_hang, 0)        AS da_gui_hang,
+        COALESCE(o.da_xoa, 0)             AS da_xoa,
         COALESCE(c.spend, 0)::bigint      AS ads_cost
       FROM (
         SELECT
@@ -95,6 +108,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_total,
           SUM(CASE WHEN status = 3 THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_delivered,
           SUM(CASE WHEN status = 3 THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
+          COUNT(*) FILTER (WHERE status = 5)::int AS da_hoan,
+          COUNT(*) FILTER (WHERE status = 4)::int AS dang_hoan,
+          COUNT(*) FILTER (WHERE status IN (6, -1) AND NOT (${nhapTrungCond}))::int AS da_huy,
+          COUNT(*) FILTER (WHERE ${nhapTrungCond})::int AS don_nhap_trung,
+          COUNT(*) FILTER (WHERE status = 2)::int AS da_gui_hang,
+          COUNT(*) FILTER (WHERE status = 7)::int AS da_xoa,
           jsonb_agg(raw->'items') FILTER (WHERE status = 3 AND raw->'items' IS NOT NULL) AS delivered_items
         FROM pancake_order
         WHERE deleted_at IS NULL
@@ -163,6 +182,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         merged[m] = {
           mkt_name: m, total_orders: 0, revenue_total: 0, revenue_delivered: 0,
           ship_cost: 0, ads_cost: 0, cogs: 0, item_qty: 0, mapped_qty: 0,
+          da_hoan: 0, dang_hoan: 0, da_huy: 0, da_gui_hang: 0,
         }
       }
       const g = merged[m]
@@ -171,6 +191,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       g.revenue_delivered += Number(row.revenue_delivered)
       g.ship_cost += Number(row.ship_cost)
       g.ads_cost += Number(row.ads_cost)
+      g.da_hoan += Number(row.da_hoan)
+      g.dang_hoan += Number(row.dang_hoan)
+      g.da_huy += Number(row.da_huy)
+      g.da_gui_hang += Number(row.da_gui_hang)
       const { cogs, itemQty, mappedQty } = cogsFromItems(row.delivered_items)
       g.cogs += cogs
       g.item_qty += itemQty
@@ -181,9 +205,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
     const result = Object.values(merged).map((g: any) => {
+      // ── KHỐI THỰC (giữ nguyên logic cũ) ──
       const fullfill = FULLFILL_PER_ORDER * g.total_orders
       const cogs = Math.round(g.cogs)
       const lng = g.revenue_delivered - (cogs + g.ship_cost + g.ads_cost + fullfill)
+
+      // ── KHỐI TẠM TÍNH ──
+      // N_giao = total_orders (đã loại đơn xóa status 7/-2 + nháp/trùng ở WHERE/FILTER).
+      // Dự kiến hoàn hủy = (đã hoàn + đang hoàn + đã huỷ + đã gửi hàng/3) / N_giao.
+      // Doanh thu tạm tính = doanh số toàn bộ × (1 − dkhh).
+      // Giá vốn/ship tạm tính = doanh thu tạm tính × tỷ lệ vốn/ship THỰC của kỳ.
+      const nGiao = g.total_orders
+      const dkhh = nGiao > 0
+        ? (g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang / 3) / nGiao
+        : 0
+      const pctVon = g.revenue_delivered > 0 ? cogs / g.revenue_delivered : 0
+      const pctShip = g.revenue_delivered > 0 ? g.ship_cost / g.revenue_delivered : 0
+      const revenueTamTinh = Math.round(g.revenue_total * (1 - dkhh))
+      const cogsTamTinh = Math.round(revenueTamTinh * pctVon)
+      const shipTamTinh = Math.round(revenueTamTinh * pctShip)
+      const fullfillTamTinh = FULLFILL_PER_ORDER * nGiao
+      const lngTamTinh = revenueTamTinh - (cogsTamTinh + shipTamTinh + g.ads_cost + fullfillTamTinh)
+
       return {
         mkt_name: g.mkt_name,
         total_orders: g.total_orders,
@@ -194,11 +237,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ads_cost: g.ads_cost,
         fullfill,
         lng,
+        lng_thuc: lng,
         cogs_pct: pct(cogs, g.revenue_delivered),
         ship_pct: pct(g.ship_cost, g.revenue_delivered),
         ads_pct: pct(g.ads_cost, g.revenue_total),
         fullfill_pct: pct(fullfill, g.revenue_delivered),
         lng_pct: pct(lng, g.revenue_delivered),
+        // khối tạm tính
+        du_kien_hoan_huy: Math.round(dkhh * 10000) / 100,
+        revenue_tam_tinh: revenueTamTinh,
+        cogs_tam_tinh: cogsTamTinh,
+        ship_tam_tinh: shipTamTinh,
+        fullfill_tam_tinh: fullfillTamTinh,
+        lng_tam_tinh: lngTamTinh,
+        cogs_tt_pct: pct(cogsTamTinh, revenueTamTinh),
+        ship_tt_pct: pct(shipTamTinh, revenueTamTinh),
+        ads_tt_pct: pct(g.ads_cost, g.revenue_total),
+        fullfill_tt_pct: pct(fullfillTamTinh, revenueTamTinh),
+        lng_tt_pct: pct(lngTamTinh, revenueTamTinh),
         item_qty: g.item_qty,
         mapped_qty: g.mapped_qty,
       }
@@ -206,6 +262,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // ── Totals ─────────────────────────────────────────────────────────────────
     const sum = (k: string) => result.reduce((s, r: any) => s + (r[k] ?? 0), 0)
+    const totalRevenueTamTinh = sum("revenue_tam_tinh")
     const totals = {
       total_orders: sum("total_orders"),
       revenue_total: sum("revenue_total"),
@@ -215,6 +272,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ads_cost: sum("ads_cost"),
       fullfill: sum("fullfill"),
       lng: sum("lng"),
+      lng_thuc: sum("lng"),
+      // khối tạm tính
+      revenue_tam_tinh: totalRevenueTamTinh,
+      cogs_tam_tinh: sum("cogs_tam_tinh"),
+      ship_tam_tinh: sum("ship_tam_tinh"),
+      fullfill_tam_tinh: sum("fullfill_tam_tinh"),
+      lng_tam_tinh: sum("lng_tam_tinh"),
+      // dự kiến hoàn hủy tổng = (1 − dt_tạm_tính/doanh_số_toàn_bộ)
+      du_kien_hoan_huy: sum("revenue_total") > 0
+        ? Math.round((1 - totalRevenueTamTinh / sum("revenue_total")) * 10000) / 100
+        : 0,
     }
     const totalItemQty = sum("item_qty")
     const totalMappedQty = sum("mapped_qty")
