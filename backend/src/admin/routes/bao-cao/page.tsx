@@ -736,6 +736,13 @@ function LngTab({ range }: { range: DateRange }) {
   const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number } | null>(null)
   const [loading, setLoading] = useState(false)
   const [sub, setSub] = useState<"thuc" | "tam_tinh">("thuc")
+  const [sortKey, setSortKey] = useState<keyof LngRow>(sub === "thuc" ? "lng_thuc" : "lng_tam_tinh")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+
+  const toggleSort = (k: keyof LngRow) => {
+    if (sortKey === k) setSortDir(d => d === "desc" ? "asc" : "desc")
+    else { setSortKey(k); setSortDir("desc") }
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -793,9 +800,44 @@ function LngTab({ range }: { range: DateRange }) {
     </tr>
   )
 
-  const heads = sub === "thuc"
-    ? ["Doanh số", "Doanh thu TT", "Giá vốn", "%GV", "Vận chuyển", "%VC", "Chi phí Ads", "%Ads", "Fullfill", "%FF", "LNG THỰC", "%LNG"]
-    : ["Doanh số", "% DK Hoàn hủy", "DT tạm tính", "Giá vốn", "%GV", "Vận chuyển", "%VC", "Chi phí Ads", "%Ads", "Fullfill", "LNG TẠM TÍNH", "%LNG"]
+  // heads gắn sort key trùng field trong LngRow để click header sort được.
+  const heads: { label: string; key: keyof LngRow }[] = sub === "thuc"
+    ? [
+        { label: "Doanh số", key: "revenue_total" },
+        { label: "Doanh thu TT", key: "revenue_delivered" },
+        { label: "Giá vốn", key: "cogs" },
+        { label: "%GV", key: "cogs_pct" },
+        { label: "Vận chuyển", key: "ship_cost" },
+        { label: "%VC", key: "ship_pct" },
+        { label: "Chi phí Ads", key: "ads_cost" },
+        { label: "%Ads", key: "ads_pct" },
+        { label: "Fullfill", key: "fullfill" },
+        { label: "%FF", key: "fullfill_pct" },
+        { label: "LNG THỰC", key: "lng_thuc" },
+        { label: "%LNG", key: "lng_pct" },
+      ]
+    : [
+        { label: "Doanh số", key: "revenue_total" },
+        { label: "% DK Hoàn hủy", key: "du_kien_hoan_huy" },
+        { label: "DT tạm tính", key: "revenue_tam_tinh" },
+        { label: "Giá vốn", key: "cogs_tam_tinh" },
+        { label: "%GV", key: "cogs_tt_pct" },
+        { label: "Vận chuyển", key: "ship_tam_tinh" },
+        { label: "%VC", key: "ship_tt_pct" },
+        { label: "Chi phí Ads", key: "ads_cost" },
+        { label: "%Ads", key: "ads_tt_pct" },
+        { label: "Fullfill", key: "fullfill_tam_tinh" },
+        { label: "LNG TẠM TÍNH", key: "lng_tam_tinh" },
+        { label: "%LNG", key: "lng_tt_pct" },
+      ]
+
+  // Ẩn dòng marketer toàn 0 (không doanh số lẫn ads), rồi sort theo cột đang chọn.
+  const visibleRows = (data?.rows ?? [])
+    .filter(r => Number(r.revenue_total || 0) > 0 || Number(r.ads_cost || 0) > 0)
+    .sort((a, b) => {
+      const av = Number(a[sortKey] ?? 0), bv = Number(b[sortKey] ?? 0)
+      return sortDir === "desc" ? bv - av : av - bv
+    })
 
   const totalRow: LngRow | null = data ? (() => {
     const t = data.totals
@@ -818,7 +860,7 @@ function LngTab({ range }: { range: DateRange }) {
   })() : null
 
   const subBtn = (key: "thuc" | "tam_tinh", label: string) => (
-    <button onClick={() => setSub(key)}
+    <button onClick={() => { setSub(key); setSortKey(key === "thuc" ? "lng_thuc" : "lng_tam_tinh"); setSortDir("desc") }}
       className={`px-3 py-1 text-xs rounded-md font-medium ${sub === key ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
       {label}
     </button>
@@ -856,13 +898,17 @@ function LngTab({ range }: { range: DateRange }) {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">NV MKT</th>
                 {heads.map(h => (
-                  <th key={h} className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-right">{h}</th>
+                  <th key={h.key as string}
+                    onClick={() => toggleSort(h.key)}
+                    className={`px-3 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-right cursor-pointer select-none hover:bg-gray-100 ${sortKey === h.key ? "text-violet-700" : "text-gray-600"}`}>
+                    {h.label}{sortKey === h.key ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {totalRow && renderRow(totalRow, true)}
-              {data.rows.map(r => renderRow(r))}
+              {visibleRows.map(r => renderRow(r))}
             </tbody>
           </table>
         </div>
