@@ -616,8 +616,10 @@ function SaleTab({ range }: { range: DateRange }) {
 type MktRow = {
   marketer: string
   da_nhan: number; da_hoan: number; dang_hoan: number; da_huy: number
-  da_xoa: number; da_gui_hang: number; moi: number; cho_hang: number
-  da_xac_nhan: number; tong_giao: number; hoan_huy: number
+  don_nhap_trung: number; da_xoa: number; da_gui_hang: number; moi: number
+  cho_hang: number; da_xac_nhan: number; dang_dong_hang: number
+  cho_chuyen_hang: number; tong_giao: number; tong_don_giao: number
+  hoan_huy: number; du_kien_hoan_huy: number
   ty_le_hoan: number; ty_le_huy: number; ty_le_giao: number
 }
 
@@ -632,20 +634,24 @@ function NvMktTab({ range }: { range: DateRange }) {
   }, [range.from, range.to])
 
   const cols: { key: keyof MktRow; label: string; pct?: boolean }[] = [
-    { key: "da_nhan",     label: "Đã nhận" },
-    { key: "da_hoan",     label: "Đã hoàn" },
-    { key: "dang_hoan",   label: "Đang hoàn" },
-    { key: "da_huy",      label: "Đã hủy" },
-    { key: "da_xoa",      label: "Đã xóa" },
-    { key: "da_gui_hang", label: "Đã gửi hàng" },
-    { key: "moi",         label: "Mới" },
-    { key: "cho_hang",    label: "Chờ hàng" },
-    { key: "da_xac_nhan", label: "Đã xác nhận" },
-    { key: "tong_giao",   label: "Tổng giao" },
-    { key: "ty_le_hoan",  label: "Tỷ lệ hoàn", pct: true },
-    { key: "ty_le_huy",   label: "Tỷ lệ hủy",  pct: true },
-    { key: "ty_le_giao",  label: "Tỷ lệ giao TC", pct: true },
-    { key: "hoan_huy",    label: "Hoàn + Hủy" },
+    { key: "da_nhan",         label: "Đã nhận" },
+    { key: "da_hoan",         label: "Đã hoàn" },
+    { key: "dang_hoan",       label: "Đang hoàn" },
+    { key: "da_huy",          label: "Đã huỷ" },
+    { key: "don_nhap_trung",  label: "Đơn nháp, trùng Hủy" },
+    { key: "da_xoa",          label: "Đã xóa" },
+    { key: "da_gui_hang",     label: "Đã gửi hàng" },
+    { key: "moi",             label: "Mới" },
+    { key: "cho_hang",        label: "Chờ hàng" },
+    { key: "da_xac_nhan",     label: "Đã xác nhận" },
+    { key: "dang_dong_hang",  label: "Đang đóng hàng" },
+    { key: "cho_chuyen_hang", label: "Chờ chuyển hàng" },
+    { key: "tong_don_giao",   label: "Tổng đơn giao" },
+    { key: "ty_le_hoan",      label: "Tỷ lệ hoàn", pct: true },
+    { key: "ty_le_huy",       label: "Tỷ lệ hủy",  pct: true },
+    { key: "ty_le_giao",      label: "Tỷ lệ giao TC", pct: true },
+    { key: "hoan_huy",        label: "Hoàn + Hủy", pct: true },
+    { key: "du_kien_hoan_huy", label: "Dự kiến hoàn hủy", pct: true },
   ]
 
   const renderRow = (row: MktRow, isTotal = false) => (
