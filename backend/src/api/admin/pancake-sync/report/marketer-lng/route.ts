@@ -119,7 +119,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
           SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_total,
           SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_delivered,
-          SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
+          SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
           COUNT(*) FILTER (WHERE status = 5 AND NOT ${excludeCond})::int AS da_hoan,
           COUNT(*) FILTER (WHERE status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
           COUNT(*) FILTER (WHERE status IN (6, -1) AND NOT (${nhapTrungCond}))::int AS da_huy,
