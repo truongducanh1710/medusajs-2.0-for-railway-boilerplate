@@ -25,22 +25,25 @@ function addDays(s: string, n: number): string {
   const d = new Date(s); d.setDate(d.getDate() + n)
   return d.toISOString().slice(0, 10)
 }
+// Lấy năm/tháng theo giờ VN từ chuỗi todayVN() (đã chuẩn qua toISOString).
+// KHÔNG dùng getMonth()/getFullYear() trên Date đã +7h — nếu browser cũng ở +7
+// thì offset bị cộng kép, cuối tháng nhảy sang tháng sau.
 function thisMonthRange() {
-  const now = new Date(Date.now() + 7 * 3600000)
-  const y = now.getFullYear(), m = now.getMonth() + 1
-  const from = `${y}-${String(m).padStart(2,"0")}-01`
+  const t = todayVN()                         // YYYY-MM-DD (giờ VN)
+  const y = Number(t.slice(0, 4)), m = Number(t.slice(5, 7))
   const lastDay = new Date(y, m, 0).getDate()
-  const to = `${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`
-  return { from, to }
+  return {
+    from: `${t.slice(0, 8)}01`,
+    to: `${t.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`,
+  }
 }
 function lastMonthRange() {
-  const now = new Date(Date.now() + 7 * 3600000)
-  let y = now.getFullYear(), m = now.getMonth()
+  const t = todayVN()
+  let y = Number(t.slice(0, 4)), m = Number(t.slice(5, 7)) - 1
   if (m === 0) { m = 12; y-- }
-  const from = `${y}-${String(m).padStart(2,"0")}-01`
   const lastDay = new Date(y, m, 0).getDate()
-  const to = `${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`
-  return { from, to }
+  const mm = String(m).padStart(2, "0")
+  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}` }
 }
 
 // ---- DeltaBadge ----
@@ -504,6 +507,119 @@ function ProductTab({ range }: { range: DateRange }) {
 
       {/* Hoàn hủy + LNG theo SẢN PHẨM */}
       <ProductLngBlock range={range} />
+
+      {/* Phân tích lý do hủy/hoàn theo SP */}
+      <ProductCancelReasonsBlock range={range} />
+    </div>
+  )
+}
+
+// ---- Phân tích lý do hủy/hoàn theo SP (ma trận SP × tag lý do) ----
+function ProductCancelReasonsBlock({ range }: { range: DateRange }) {
+  const [data, setData] = useState<{ rows: any[]; totals: any; reasons: { key: string; label: string; group: string }[] } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [sortKey, setSortKey] = useState<string>("tong")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/product-cancel-reasons?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to])
+
+  const toggleSort = (k: string) => {
+    if (sortKey === k) setSortDir(d => d === "desc" ? "asc" : "desc")
+    else { setSortKey(k); setSortDir("desc") }
+  }
+
+  // Màu theo nhóm lý do
+  const groupColor: Record<string, string> = {
+    "Lý do hoàn": "#7c3aed", "Lý do từ Khách": "#dc2626",
+    "Lỗi liên lạc": "#d97706", "Lỗi dữ liệu đơn": "#0891b2", "Khác": "#6b7280",
+  }
+
+  if (!data && !loading) return null
+
+  // Gom reasons theo group để render header 2 tầng
+  const groups: { group: string; reasons: { key: string; label: string }[] }[] = []
+  for (const r of (data?.reasons ?? [])) {
+    let g = groups.find(x => x.group === r.group)
+    if (!g) { g = { group: r.group, reasons: [] }; groups.push(g) }
+    g.reasons.push({ key: r.key, label: r.label })
+  }
+  const flatReasons = data?.reasons ?? []
+
+  const cell = (v: number) => v > 0 ? fmtNum(v) : <span className="text-gray-300">0</span>
+
+  const visibleRows = (data?.rows ?? [])
+    .filter(r => Number(r.tong || 0) > 0)
+    .sort((a, b) => {
+      const av = Number(a[sortKey] ?? 0), bv = Number(b[sortKey] ?? 0)
+      return sortDir === "desc" ? bv - av : av - bv
+    })
+
+  const renderRow = (row: any, isTotal = false) => (
+    <tr key={isTotal ? "TỔNG" : (row.sp_code || row.sp_label)} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium max-w-xs truncate">
+        {isTotal ? "TỔNG" : (row.sp_label || "—")}
+      </td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums font-semibold text-red-600">{cell(row.tong_huy)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums font-semibold text-violet-600">{cell(row.tong_hoan)}</td>
+      {flatReasons.map(r => (
+        <td key={r.key} className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">{cell(row[r.key])}</td>
+      ))}
+    </tr>
+  )
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-gray-800">Lý do hủy / hoàn theo Sản phẩm</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Đơn hủy + hoàn · mỗi đơn 1 SP chính + 1 lý do ưu tiên</p>
+        </div>
+        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+      </div>
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              {/* hàng nhóm */}
+              <tr className="bg-gray-100 border-b border-gray-200">
+                <th className="px-3 py-1.5 sticky left-0 bg-gray-100 z-10"></th>
+                <th colSpan={2} className="px-3 py-1.5 text-xs font-bold text-gray-700 text-center border-l border-gray-200">Tổng</th>
+                {groups.map(g => (
+                  <th key={g.group} colSpan={g.reasons.length}
+                    className="px-3 py-1.5 text-xs font-bold text-center border-l border-gray-200"
+                    style={{ color: groupColor[g.group] ?? "#374151" }}>
+                    {g.group}
+                  </th>
+                ))}
+              </tr>
+              {/* hàng cột */}
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2 text-xs font-semibold text-gray-600 uppercase whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">Sản phẩm</th>
+                <th onClick={() => toggleSort("tong_huy")} className={`px-3 py-2 text-xs font-semibold uppercase text-right cursor-pointer hover:bg-gray-100 ${sortKey === "tong_huy" ? "text-violet-700" : "text-gray-600"}`}>
+                  Hủy{sortKey === "tong_huy" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+                </th>
+                <th onClick={() => toggleSort("tong_hoan")} className={`px-3 py-2 text-xs font-semibold uppercase text-right cursor-pointer hover:bg-gray-100 ${sortKey === "tong_hoan" ? "text-violet-700" : "text-gray-600"}`}>
+                  Hoàn{sortKey === "tong_hoan" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+                </th>
+                {flatReasons.map(r => (
+                  <th key={r.key} onClick={() => toggleSort(r.key)}
+                    className={`px-3 py-2 text-xs font-semibold whitespace-nowrap text-right cursor-pointer hover:bg-gray-100 ${sortKey === r.key ? "text-violet-700" : "text-gray-500"}`}>
+                    {r.label}{sortKey === r.key ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.totals && renderRow(data.totals, true)}
+              {visibleRows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
