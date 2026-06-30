@@ -32,7 +32,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE status = 4)::int                            as dang_hoan,
         COUNT(*) FILTER (WHERE status IN (6, -1))::int                     as da_huy,
         COUNT(*) FILTER (WHERE status = 7)::int                            as da_xoa,
-        COUNT(*) FILTER (WHERE status IN (9, 2, 3))::int                   as da_gui_hang,
+        COUNT(*) FILTER (WHERE status IN (9, 2))::int                      as da_gui_hang,
         COUNT(*) FILTER (WHERE status = 0)::int                            as moi,
         COUNT(*) FILTER (WHERE status = 11)::int                           as cho_hang,
         COUNT(*) FILTER (WHERE status = 1)::int                            as da_xac_nhan,
