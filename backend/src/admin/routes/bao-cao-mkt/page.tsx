@@ -27,10 +27,12 @@ function todayVN(): string {
 }
 
 function getThisMonthRange() {
-  const now = new Date(Date.now() + 7 * 3600000)
-  const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
-  const to = now.toISOString().slice(0, 10)
-  return { from, to }
+  // Dùng todayVN() (đã chuẩn giờ VN qua toISOString) cho cả from/to.
+  // KHÔNG dùng getMonth()/getFullYear() trên Date đã +7h — nếu browser cũng ở +7
+  // thì offset bị cộng kép, cuối tháng nhảy sang tháng sau (from = ngày 1 tháng sau).
+  const today = todayVN()           // YYYY-MM-DD theo giờ VN
+  const from = today.slice(0, 8) + "01"  // YYYY-MM-01
+  return { from, to: today }
 }
 
 export default function BaoCaoMktPage() {
