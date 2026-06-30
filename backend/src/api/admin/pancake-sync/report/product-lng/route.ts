@@ -113,19 +113,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       GROUP BY sp_key, sp_name_up
     `, [from, to])
 
-    // ── Ads theo SP: tách mã SP đầu tên camp → SUM spend theo code ──────────────
-    const adsRows = await sql(`
-      SELECT ${resolveSql("split_part(campaign_name, '_', 1)")} AS sp_code,
-             SUM(spend)::bigint AS spend
-      FROM mkt_ads_cost
-      WHERE deleted_at IS NULL
-        AND date >= $1::date AND date <= $2::date
-      GROUP BY ${resolveSql("split_part(campaign_name, '_', 1)")}
-    `, [from, to])
-    const adsByCode: Record<string, number> = {}
-    for (const r of adsRows) {
-      if (r.sp_code) adsByCode[r.sp_code] = (adsByCode[r.sp_code] ?? 0) + Number(r.spend)
-    }
+    // Ads KHÔNG gán được theo SP (tên camp không chứa mã SP ở vị trí cố định) → để 0.
+    // LNG theo SP vì vậy không trừ chi phí ads.
 
     // ── Merge theo sp_key (gom các biến thể tên cùng code) + tính field ─────────
     const merged: Record<string, any> = {}
@@ -158,7 +147,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ? avgCost.costs[g.sp_code]
         : (avgCost.byName[(g.sp_label || "").toUpperCase()] ?? null)
       const cogs = unit != null ? Math.round(unit * g.delivered_qty) : 0
-      const ads_cost = (g.sp_code && adsByCode[g.sp_code]) ? adsByCode[g.sp_code] : 0
+      const ads_cost = 0  // không gán ads theo SP
 
       // ── KHỐI THỰC ──
       const fullfill = FULLFILL_PER_ORDER * g.total_orders
