@@ -200,8 +200,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const fullfillTamTinh = FULLFILL_PER_ORDER * g.main_orders
       const lngTamTinh = revenueTamTinh - (cogsTamTinh + shipTamTinh + ads_cost + fullfillTamTinh)
 
-      // ── Hoàn hủy (copy marketer-performance) ──
-      const nGui = g.total_orders - g.da_xoa - g.don_nhap_trung  // = N tổng đơn giao
+      // ── Hoàn hủy ──
+      // total_orders ĐÃ loại đã xóa + nháp/trùng qua excludeCond, nên chính nó = tổng đơn giao
+      // (KHÔNG trừ lại da_xoa/don_nhap_trung — sẽ trừ trùng).
+      const nGui = g.total_orders
       const pctN = (part: number) => nGui > 0 ? Math.round(part / nGui * 1000) / 10 : 0
       const ty_le_hoan = pctN(g.dang_hoan + g.da_hoan)
       const ty_le_huy = pctN(g.da_huy)
