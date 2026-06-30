@@ -92,6 +92,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       OR (${tagNhap} AND status IN (0, 11))
       OR (${nhapTrungCond})
     )`
+    // Doanh thu = tiền thực khách phải trả SAU giảm giá (gồm cả COD lẫn trả trước),
+    // không phải total (giá trước giảm). total_price_after_sub_discount nhất quán cho
+    // cả đơn COD lẫn đơn trả trước; fallback cod_amount → total cho đơn cũ thiếu field.
+    const revenueExpr = `COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric)::bigint`
     const rows = await sql(`
       SELECT
         COALESCE(o.date, c.date)          AS date,
@@ -113,8 +117,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           to_char(date_trunc('day', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
           ${mktWithFallback} AS mkt_name,
           COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
-          SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_total,
-          SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_delivered,
+          SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_total,
+          SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_delivered,
           SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
           COUNT(*) FILTER (WHERE status = 5 AND NOT ${excludeCond})::int AS da_hoan,
           COUNT(*) FILTER (WHERE status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
