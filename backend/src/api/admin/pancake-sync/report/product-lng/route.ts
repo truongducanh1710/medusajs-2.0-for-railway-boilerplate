@@ -57,6 +57,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       OR (${nhapTrungCond})
     )`
     const revenueExpr = `COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric)::bigint`
+    // Giá item: raw.items không có field 'price' ở cấp item — giá nằm ở variation_info.retail_price.
+    const itemPrice = `COALESCE((mi->'variation_info'->>'retail_price')::numeric, (mi->>'price')::numeric, 0)`
+    const itemValueExpr = `(${itemPrice} * COALESCE((mi->>'quantity')::numeric, 1))`
 
     // ── Query: explode item, gom theo (đơn, SP) rồi group theo SP ───────────────
     // Đếm đơn: 1 đơn xuất hiện ở MỌI SP nó chứa (khớp cách POS lọc theo SP).
@@ -72,13 +75,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
           COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label,
           COALESCE((mi->>'quantity')::numeric, 1) AS qty,
-          (COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1)) AS item_value,
+          ${itemValueExpr} AS item_value,
           ${revenueExpr} AS order_revenue,
           COALESCE((po.raw->>'partner_fee')::numeric, 0) AS partner_fee,
-          SUM(COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1))
-            OVER (PARTITION BY po.id) AS order_total_value,
-          MAX(COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1))
-            OVER (PARTITION BY po.id) AS order_max_value
+          SUM(${itemValueExpr}) OVER (PARTITION BY po.id) AS order_total_value,
+          MAX(${itemValueExpr}) OVER (PARTITION BY po.id) AS order_max_value
         FROM pancake_order po
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
         WHERE po.deleted_at IS NULL
