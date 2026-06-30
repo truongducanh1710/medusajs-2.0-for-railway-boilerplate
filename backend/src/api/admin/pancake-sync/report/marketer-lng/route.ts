@@ -73,10 +73,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ── Bảng giá vốn TB từ gia-von (code → giá TB) ─────────────────────────────
     const avgCost = await computeAvgCost(getPool())
 
-    // ── Query orders + ads, group theo marketer ────────────────────────────────
+    // ── Query orders + ads, group theo (ngày, marketer) ─────────────────────────
+    // Phải group theo ngày để áp handover rule per-day giống report/mkt — nếu gom
+    // thẳng theo marketer thì không có chiều ngày để test rule, dẫn tới ads/doanh
+    // số của tuần bàn giao bị tính nhầm cho người gốc thay vì người nhận.
     const rows = await sql(`
       SELECT
-        COALESCE(o.mkt_name, c.mkt_name) AS mkt_name,
+        COALESCE(o.date, c.date)          AS date,
+        COALESCE(o.mkt_name, c.mkt_name)  AS mkt_name,
         COALESCE(o.total_orders, 0)       AS total_orders,
         COALESCE(o.revenue_total, 0)      AS revenue_total,
         COALESCE(o.revenue_delivered, 0)  AS revenue_delivered,
@@ -85,6 +89,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COALESCE(c.spend, 0)::bigint      AS ads_cost
       FROM (
         SELECT
+          to_char(date_trunc('day', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
           ${mktWithFallback} AS mkt_name,
           COUNT(*) FILTER (WHERE status NOT IN (-2, 7))::int AS total_orders,
           SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_total,
@@ -98,25 +103,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND NOT (tags @> '[{"name": "Đơn trùng"}]'::jsonb)
           AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        GROUP BY mkt_name
+        GROUP BY date, mkt_name
       ) o
       FULL OUTER JOIN (
-        SELECT mkt_name, SUM(spend)::bigint AS spend
+        SELECT to_char(date_trunc('day', date), 'YYYY-MM-DD') AS date, mkt_name, SUM(spend)::bigint AS spend
         FROM mkt_ads_cost
         WHERE deleted_at IS NULL
           AND date >= $1::date
           AND date <= $2::date
-        GROUP BY mkt_name
-      ) c ON c.mkt_name = o.mkt_name
+        GROUP BY date_trunc('day', date), mkt_name
+      ) c ON c.date = o.date AND c.mkt_name = o.mkt_name
     `, [from, to])
 
-    // ── Apply handover rules ───────────────────────────────────────────────────
+    // ── Apply handover rules (per-day) ──────────────────────────────────────────
     for (const row of rows) {
       for (const rule of handoverRules) {
         if (
           row.mkt_name === rule.from_code &&
-          from >= rule.effective_from &&
-          (!rule.effective_to || to <= rule.effective_to)
+          row.date >= rule.effective_from &&
+          (!rule.effective_to || row.date <= rule.effective_to)
         ) {
           row.mkt_name = rule.to_code
           break
