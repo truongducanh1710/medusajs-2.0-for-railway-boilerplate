@@ -87,13 +87,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.raw->'items' IS NOT NULL
       ),
+      -- gán sp_key cho từng item (cột thường để GROUP BY được)
+      oi2 AS (
+        SELECT *, COALESCE(NULLIF(sp_code, ''), sp_name_up, 'CHƯA RÕ SP') AS sp_key
+        FROM oi
+      ),
       -- gom item trùng SP trong cùng đơn → 1 dòng / (đơn, SP)
       os AS (
         SELECT
           order_id,
+          sp_key,
           MAX(status) AS status,
           (array_agg(tags))[1] AS tags,
-          COALESCE(NULLIF(MAX(sp_code), ''), MAX(sp_name_up), 'CHƯA RÕ SP') AS sp_key,
           MAX(sp_label) AS sp_label,
           NULLIF(MAX(sp_code), '') AS sp_code,
           -- phần doanh thu của SP = revenue đơn × (giá trị item SP / tổng giá trị item đơn)
@@ -104,8 +109,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           -- SP có chứa item giá trị cao nhất đơn → chịu ship/fullfill
           bool_or(item_value = order_max_value AND order_max_value > 0) AS is_main,
           MAX(partner_fee) AS partner_fee
-        FROM oi
-        GROUP BY order_id, COALESCE(NULLIF(MAX(sp_code), ''), MAX(sp_name_up), 'CHƯA RÕ SP')
+        FROM oi2
+        GROUP BY order_id, sp_key
       )
       SELECT
         sp_key,
