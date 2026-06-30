@@ -77,13 +77,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Phải group theo ngày để áp handover rule per-day giống report/mkt — nếu gom
     // thẳng theo marketer thì không có chiều ngày để test rule, dẫn tới ads/doanh
     // số của tuần bàn giao bị tính nhầm cho người gốc thay vì người nhận.
-    // Đơn nháp/trùng: đơn đã huỷ mang tag "Đơn nháp"/"Đơn trùng" (giống marketer-performance).
-    // Lưu ý: query này KHÔNG lọc nháp/trùng ở WHERE (để đếm được chúng cho dự kiến hoàn hủy);
-    // phần doanh số/giá vốn vẫn loại nháp/trùng qua điều kiện status như sheet.
-    const nhapTrungCond = `
-      status IN (6, -1)
-      AND (tags @> '[{"name":"Đơn nháp"}]'::jsonb OR tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-    `
+    // Tag nháp/trùng (match chính xác name).
+    const tagNhap = `tags @> '[{"name":"Đơn nháp"}]'::jsonb`
+    const tagTrung = `tags @> '[{"name":"Đơn trùng"}]'::jsonb`
+    // Đơn HỦY có tag nháp/trùng (cho cột Đơn nháp/trùng + dự kiến hoàn hủy).
+    const nhapTrungCond = `status IN (6, -1) AND (${tagNhap} OR ${tagTrung})`
+    // Đơn LOẠI khỏi Doanh số (và mọi metric phái sinh), theo định nghĩa sheet:
+    //   - Đã xóa (status 7)
+    //   - Đơn nháp CHƯA XÁC NHẬN: tag nháp ở status 0 (Chờ xử lý) hoặc 11 (Chờ hàng)
+    //   - Đơn HỦY có tag nháp/trùng (status 6/-1)
+    // Đơn nháp đã xác nhận/đang giao/đã nhận (status 1,2,3,4,5,8,9) VẪN tính doanh số.
+    const excludeCond = `(
+      status = 7
+      OR (${tagNhap} AND status IN (0, 11))
+      OR (${nhapTrungCond})
+    )`
     const rows = await sql(`
       SELECT
         COALESCE(o.date, c.date)          AS date,
@@ -104,22 +112,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SELECT
           to_char(date_trunc('day', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
           ${mktWithFallback} AS mkt_name,
-          COUNT(*) FILTER (WHERE status NOT IN (-2, 7))::int AS total_orders,
-          SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_total,
-          SUM(CASE WHEN status = 3 THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_delivered,
-          SUM(CASE WHEN status = 3 THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
-          COUNT(*) FILTER (WHERE status = 5)::int AS da_hoan,
-          COUNT(*) FILTER (WHERE status = 4)::int AS dang_hoan,
+          COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
+          SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_total,
+          SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_delivered,
+          SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
+          COUNT(*) FILTER (WHERE status = 5 AND NOT ${excludeCond})::int AS da_hoan,
+          COUNT(*) FILTER (WHERE status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
           COUNT(*) FILTER (WHERE status IN (6, -1) AND NOT (${nhapTrungCond}))::int AS da_huy,
           COUNT(*) FILTER (WHERE ${nhapTrungCond})::int AS don_nhap_trung,
-          COUNT(*) FILTER (WHERE status = 2)::int AS da_gui_hang,
+          COUNT(*) FILTER (WHERE status = 2 AND NOT ${excludeCond})::int AS da_gui_hang,
           COUNT(*) FILTER (WHERE status = 7)::int AS da_xoa,
-          jsonb_agg(raw->'items') FILTER (WHERE status = 3 AND raw->'items' IS NOT NULL) AS delivered_items
+          jsonb_agg(raw->'items') FILTER (WHERE status = 3 AND NOT ${excludeCond} AND raw->'items' IS NOT NULL) AS delivered_items
         FROM pancake_order
         WHERE deleted_at IS NULL
           AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
-          AND NOT (tags @> '[{"name": "Đơn nháp"}]'::jsonb)
-          AND NOT (tags @> '[{"name": "Đơn trùng"}]'::jsonb)
           AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
         GROUP BY date, mkt_name
