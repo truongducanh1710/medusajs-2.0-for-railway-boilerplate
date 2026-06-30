@@ -501,6 +501,157 @@ function ProductTab({ range }: { range: DateRange }) {
           </table>
         </div>
       </div>
+
+      {/* Hoàn hủy + LNG theo SẢN PHẨM */}
+      <ProductLngBlock range={range} />
+    </div>
+  )
+}
+
+// ---- Hoàn hủy + LNG theo SP (gộp trong tab Sản phẩm) ----
+type ProdRow = Record<string, any>
+function ProductLngBlock({ range }: { range: DateRange }) {
+  const [data, setData] = useState<{ rows: ProdRow[]; totals: any } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [sub, setSub] = useState<"hoan_huy" | "thuc" | "tam_tinh">("thuc")
+  const [sortKey, setSortKey] = useState<string>("lng_thuc")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/product-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to])
+
+  const toggleSort = (k: string) => {
+    if (sortKey === k) setSortDir(d => d === "desc" ? "asc" : "desc")
+    else { setSortKey(k); setSortDir("desc") }
+  }
+
+  const pctStr = (v: number | null) => v == null ? "—" : `${v}%`
+  const money = (v: number) => fmtNum(Math.round(v || 0))
+
+  // Bộ cột theo sub-tab. key trùng field trong row để sort.
+  const colDefs: Record<string, { label: string; key: string; fmt: "num" | "money" | "pct" }[]> = {
+    hoan_huy: [
+      { label: "Đã nhận", key: "da_nhan", fmt: "num" },
+      { label: "Đã hoàn", key: "da_hoan", fmt: "num" },
+      { label: "Đang hoàn", key: "dang_hoan", fmt: "num" },
+      { label: "Đã huỷ", key: "da_huy", fmt: "num" },
+      { label: "Nháp/trùng", key: "don_nhap_trung", fmt: "num" },
+      { label: "Đã xóa", key: "da_xoa", fmt: "num" },
+      { label: "Đã gửi", key: "da_gui_hang", fmt: "num" },
+      { label: "Mới", key: "moi", fmt: "num" },
+      { label: "Chờ hàng", key: "cho_hang", fmt: "num" },
+      { label: "Tổng đơn giao", key: "tong_don_giao", fmt: "num" },
+      { label: "% Hoàn", key: "ty_le_hoan", fmt: "pct" },
+      { label: "% Hủy", key: "ty_le_huy", fmt: "pct" },
+      { label: "% Giao TC", key: "ty_le_giao", fmt: "pct" },
+      { label: "Hoàn+Hủy", key: "hoan_huy", fmt: "pct" },
+      { label: "DK hoàn hủy", key: "du_kien_hoan_huy", fmt: "pct" },
+    ],
+    thuc: [
+      { label: "Doanh số", key: "revenue_total", fmt: "money" },
+      { label: "Doanh thu TT", key: "revenue_delivered", fmt: "money" },
+      { label: "Giá vốn", key: "cogs", fmt: "money" },
+      { label: "%GV", key: "cogs_pct", fmt: "pct" },
+      { label: "Vận chuyển", key: "ship_cost", fmt: "money" },
+      { label: "%VC", key: "ship_pct", fmt: "pct" },
+      { label: "Chi phí Ads", key: "ads_cost", fmt: "money" },
+      { label: "%Ads", key: "ads_pct", fmt: "pct" },
+      { label: "Fullfill", key: "fullfill", fmt: "money" },
+      { label: "LNG THỰC", key: "lng_thuc", fmt: "money" },
+      { label: "%LNG", key: "lng_pct", fmt: "pct" },
+    ],
+    tam_tinh: [
+      { label: "Doanh số", key: "revenue_total", fmt: "money" },
+      { label: "% DK Hoàn hủy", key: "du_kien_hoan_huy", fmt: "pct" },
+      { label: "DT tạm tính", key: "revenue_tam_tinh", fmt: "money" },
+      { label: "Giá vốn", key: "cogs_tam_tinh", fmt: "money" },
+      { label: "%GV", key: "cogs_tt_pct", fmt: "pct" },
+      { label: "Vận chuyển", key: "ship_tam_tinh", fmt: "money" },
+      { label: "%VC", key: "ship_tt_pct", fmt: "pct" },
+      { label: "Chi phí Ads", key: "ads_cost", fmt: "money" },
+      { label: "Fullfill", key: "fullfill_tam_tinh", fmt: "money" },
+      { label: "LNG TẠM TÍNH", key: "lng_tam_tinh", fmt: "money" },
+      { label: "%LNG", key: "lng_tt_pct", fmt: "pct" },
+    ],
+  }
+  const cols = colDefs[sub]
+
+  const cellVal = (row: ProdRow, c: { key: string; fmt: string }) => {
+    const v = row[c.key]
+    if (c.fmt === "pct") return pctStr(v)
+    if (c.fmt === "money") return money(v)
+    return fmtNum(v ?? 0)
+  }
+  const cellCls = (row: ProdRow, c: { key: string }) => {
+    if (c.key === "lng_thuc" || c.key === "lng_tam_tinh")
+      return `font-bold ${(row[c.key] ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`
+    if (c.key === "ship_cost" || c.key === "ship_tam_tinh") return "text-amber-700"
+    if (c.key === "du_kien_hoan_huy") return "text-rose-600"
+    if (c.key.endsWith("_pct")) return "text-gray-400"
+    return "text-gray-700"
+  }
+
+  const visibleRows = (data?.rows ?? [])
+    .filter(r => Number(r.revenue_total || 0) > 0 || Number(r.ads_cost || 0) > 0 || Number(r.total_orders || 0) > 0)
+    .sort((a, b) => {
+      const av = Number(a[sortKey] ?? 0), bv = Number(b[sortKey] ?? 0)
+      return sortDir === "desc" ? bv - av : av - bv
+    })
+
+  const renderRow = (row: ProdRow, isTotal = false) => (
+    <tr key={isTotal ? "TỔNG" : (row.sp_code || row.sp_label)} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium max-w-xs truncate">
+        {isTotal ? "TỔNG" : (row.sp_label || "—")}
+      </td>
+      {cols.map(c => (
+        <td key={c.key} className={`px-3 py-2 text-sm text-right tabular-nums ${cellCls(row, c)}`}>{cellVal(row, c)}</td>
+      ))}
+    </tr>
+  )
+
+  const subBtn = (key: "hoan_huy" | "thuc" | "tam_tinh", label: string, defaultSort: string) => (
+    <button onClick={() => { setSub(key); setSortKey(defaultSort); setSortDir("desc") }}
+      className={`px-3 py-1 text-xs rounded-md font-medium ${sub === key ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+      {label}
+    </button>
+  )
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <h3 className="font-semibold text-gray-800">Hoàn hủy & LNG theo Sản phẩm</h3>
+        <div className="flex items-center gap-2">
+          {subBtn("hoan_huy", "Hoàn hủy", "tong_don_giao")}
+          {subBtn("thuc", "LNG Thực", "lng_thuc")}
+          {subBtn("tam_tinh", "LNG Tạm tính", "lng_tam_tinh")}
+          {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+        </div>
+      </div>
+      {!data && !loading && <div className="p-8 text-center text-gray-400 text-sm">Chọn khoảng thời gian để xem dữ liệu</div>}
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">Sản phẩm</th>
+                {cols.map(c => (
+                  <th key={c.key} onClick={() => toggleSort(c.key)}
+                    className={`px-3 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-right cursor-pointer select-none hover:bg-gray-100 ${sortKey === c.key ? "text-violet-700" : "text-gray-600"}`}>
+                    {c.label}{sortKey === c.key ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.totals && renderRow(data.totals, true)}
+              {visibleRows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
