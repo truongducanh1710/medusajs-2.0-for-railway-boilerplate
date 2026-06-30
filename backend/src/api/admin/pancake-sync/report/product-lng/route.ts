@@ -58,21 +58,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )`
     const revenueExpr = `COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric)::bigint`
 
-    // ── Query: gán SP chính cho mỗi đơn, rồi group theo SP ──────────────────────
-    // main_item = item có price*quantity lớn nhất trong đơn.
-    // sp_key = display_id chuẩn hóa nếu có, else tên SP (upper). sp_label = tên SP.
+    // ── Query: explode item, gom theo (đơn, SP) rồi group theo SP ───────────────
+    // Đếm đơn: 1 đơn xuất hiện ở MỌI SP nó chứa (khớp cách POS lọc theo SP).
+    // Tiền (doanh thu/cogs): chia theo tỷ trọng giá trị item của SP trong đơn.
+    // Ship/fullfill: gán trọn cho SP chính (item giá trị cao nhất) của đơn.
     const rows = await sql(`
-      WITH order_main AS (
-        SELECT DISTINCT ON (po.id)
-          po.id,
+      WITH oi AS (
+        SELECT
+          po.id AS order_id,
           po.status,
-          po.cod_amount,
-          po.total,
-          po.raw,
           po.tags,
           ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
           upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
-          COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label
+          COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label,
+          COALESCE((mi->>'quantity')::numeric, 1) AS qty,
+          (COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1)) AS item_value,
+          ${revenueExpr} AS order_revenue,
+          COALESCE((po.raw->>'partner_fee')::numeric, 0) AS partner_fee,
+          SUM(COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1))
+            OVER (PARTITION BY po.id) AS order_total_value,
+          MAX(COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1))
+            OVER (PARTITION BY po.id) AS order_max_value
         FROM pancake_order po
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
         WHERE po.deleted_at IS NULL
@@ -80,23 +86,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.raw->'items' IS NOT NULL
-        ORDER BY po.id,
-          (COALESCE((mi->>'price')::numeric, 0) * COALESCE((mi->>'quantity')::numeric, 1)) DESC NULLS LAST
+      ),
+      -- gom item trùng SP trong cùng đơn → 1 dòng / (đơn, SP)
+      os AS (
+        SELECT
+          order_id,
+          MAX(status) AS status,
+          (array_agg(tags))[1] AS tags,
+          COALESCE(NULLIF(MAX(sp_code), ''), MAX(sp_name_up), 'CHƯA RÕ SP') AS sp_key,
+          MAX(sp_label) AS sp_label,
+          NULLIF(MAX(sp_code), '') AS sp_code,
+          -- phần doanh thu của SP = revenue đơn × (giá trị item SP / tổng giá trị item đơn)
+          CASE WHEN MAX(order_total_value) > 0
+            THEN MAX(order_revenue) * (SUM(item_value) / MAX(order_total_value))
+            ELSE 0 END AS sp_revenue,
+          SUM(qty) AS sp_qty,
+          -- SP có chứa item giá trị cao nhất đơn → chịu ship/fullfill
+          bool_or(item_value = order_max_value AND order_max_value > 0) AS is_main,
+          MAX(partner_fee) AS partner_fee
+        FROM oi
+        GROUP BY order_id, COALESCE(NULLIF(MAX(sp_code), ''), MAX(sp_name_up), 'CHƯA RÕ SP')
       )
       SELECT
-        COALESCE(NULLIF(sp_code, ''), sp_name_up, 'CHƯA RÕ SP') AS sp_key,
+        sp_key,
         MAX(sp_label) AS sp_label,
         MAX(sp_code)  AS sp_code,
         COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
-        SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_total,
-        SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_delivered,
-        SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
-        -- tổng SL của SP chính trên đơn đã giao (để tính cogs = giá vốn × SL)
-        SUM(CASE WHEN status = 3 AND NOT ${excludeCond}
-            THEN (SELECT COALESCE(SUM((it->>'quantity')::numeric), 1)
-                  FROM jsonb_array_elements(COALESCE(raw->'items', '[]'::jsonb)) it
-                  WHERE upper(trim(COALESCE(it->'variation_info'->>'name', it->>'name', ''))) = sp_name_up)
-            ELSE 0 END)::numeric AS delivered_qty,
+        SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_total,
+        SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_delivered,
+        SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
+        SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
+        COUNT(*) FILTER (WHERE is_main AND status NOT IN (-2) AND NOT ${excludeCond})::int AS main_orders,
         COUNT(*) FILTER (WHERE status = 3 AND NOT ${excludeCond})::int AS da_nhan,
         COUNT(*) FILTER (WHERE status = 5 AND NOT ${excludeCond})::int AS da_hoan,
         COUNT(*) FILTER (WHERE status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
@@ -109,8 +129,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE status = 1 AND NOT ${excludeCond})::int AS da_xac_nhan,
         COUNT(*) FILTER (WHERE status = 8 AND NOT ${excludeCond})::int AS dang_dong_hang,
         COUNT(*) FILTER (WHERE status = 9 AND NOT ${excludeCond})::int AS cho_chuyen_hang
-      FROM order_main
-      GROUP BY sp_key, sp_name_up
+      FROM os
+      GROUP BY sp_key
     `, [from, to])
 
     // Ads KHÔNG gán được theo SP (tên camp không chứa mã SP ở vị trí cố định) → để 0.
@@ -124,14 +144,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (!merged[key]) {
         merged[key] = {
           sp_label: row.sp_label, sp_code: row.sp_code || null,
-          total_orders: 0, revenue_total: 0, revenue_delivered: 0, ship_cost: 0,
+          total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, ship_cost: 0,
           delivered_qty: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
           da_xac_nhan: 0, dang_dong_hang: 0, cho_chuyen_hang: 0,
         }
       }
       const g = merged[key]
-      for (const k of ["total_orders", "revenue_total", "revenue_delivered", "ship_cost",
+      for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "ship_cost",
         "delivered_qty", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
         "da_xoa", "da_gui_hang", "moi", "cho_hang", "da_xac_nhan", "dang_dong_hang",
         "cho_chuyen_hang"]) {
@@ -150,7 +170,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const ads_cost = 0  // không gán ads theo SP
 
       // ── KHỐI THỰC ──
-      const fullfill = FULLFILL_PER_ORDER * g.total_orders
+      // Fullfill chỉ tính cho đơn mà SP này là SP chính (mỗi đơn chịu 1 lần fullfill).
+      const fullfill = FULLFILL_PER_ORDER * g.main_orders
       const lng = g.revenue_delivered - (cogs + g.ship_cost + ads_cost + fullfill)
 
       // ── KHỐI TẠM TÍNH ──
@@ -161,7 +182,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const revenueTamTinh = Math.round(g.revenue_total * (1 - dkhh))
       const cogsTamTinh = Math.round(revenueTamTinh * pctVon)
       const shipTamTinh = Math.round(revenueTamTinh * pctShip)
-      const fullfillTamTinh = FULLFILL_PER_ORDER * nGiao
+      const fullfillTamTinh = FULLFILL_PER_ORDER * g.main_orders
       const lngTamTinh = revenueTamTinh - (cogsTamTinh + shipTamTinh + ads_cost + fullfillTamTinh)
 
       // ── Hoàn hủy (copy marketer-performance) ──
