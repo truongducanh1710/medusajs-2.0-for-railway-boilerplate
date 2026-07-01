@@ -11,6 +11,24 @@ const FB_V = "v25.0"
 export default async function fbScheduledPostCheck(_container: MedusaContainer) {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL })
   try {
+    // Self-heal: các bài trước đây bị đánh 'failed' oan vì #12 (singular status deprecated)
+    // hoặc "unsupported get request" — bài thực chất vẫn đăng OK. Đưa lại 'published'.
+    const { rows: healed } = await pool.query(`
+      UPDATE fb_scheduled_post
+      SET status='published', published_at=COALESCE(published_at, now()), error_msg=NULL
+      WHERE status='failed'
+        AND (error_msg ILIKE '%singular statuses%' OR error_msg ILIKE '%singular status%'
+             OR error_msg ILIKE '%unsupported get request%')
+      RETURNING id, video_id
+    `)
+    if (healed.length) {
+      const vids = healed.map((r: any) => r.video_id).filter(Boolean)
+      if (vids.length) {
+        await pool.query(`UPDATE mkt_video SET status='posted', updated_at=now() WHERE id = ANY($1)`, [vids])
+      }
+      console.log(`[fb-scheduled-check] self-healed ${healed.length} bài bị đánh fail oan (#12)`)
+    }
+
     // Lấy bài scheduled đã qua giờ hẹn (thêm 5 phút buffer)
     const { rows: posts } = await pool.query(`
       SELECT sp.id, sp.post_id, sp.page_id, sp.video_id, sp.scheduled_for,
@@ -30,12 +48,35 @@ export default async function fbScheduledPostCheck(_container: MedusaContainer) 
 
     for (const post of posts) {
       try {
-        const url = `https://graph.facebook.com/${FB_V}/${post.post_id}?fields=id,is_published,message&access_token=${post.access_token}`
+        // Video/reel scheduled lưu bare video_id (hoặc {pageId}_{videoId}); query nó qua
+        // /{id}?fields=id bị FB coi là "singular status" → trả #12 (deprecated) hoặc
+        // "unsupported get request". Cả hai KHÔNG có nghĩa bài fail — bài vẫn sống.
+        // Với video, verify qua field `id` trên video object; nếu id tồn tại coi như published.
+        const idField = post.video_id ? "id,published,status" : "id,created_time"
+        const url = `https://graph.facebook.com/${FB_V}/${post.post_id}?fields=${idField}&access_token=${post.access_token}`
         const r = await fetch(url)
         const data = await r.json()
 
         if (data.error) {
-          // Post không tồn tại hoặc token hết hạn
+          const code = data.error.code
+          // #12 = singular-status deprecation (bài video vẫn đăng OK, chỉ là query sai kiểu).
+          // #100 unsupported-get-request cho video-story cũng vô hại. Coi như đã published.
+          const benign = code === 12 || (code === 100 && /unsupported get request|nonexisting field|cannot be loaded/i.test(data.error.message || ""))
+          if (benign) {
+            await pool.query(
+              `UPDATE fb_scheduled_post SET status='published', published_at=now(), error_msg=NULL WHERE id=$1`,
+              [post.id]
+            )
+            if (post.video_id) {
+              await pool.query(
+                `UPDATE mkt_video SET status='posted', updated_at=now() WHERE id=$1`,
+                [post.video_id]
+              )
+            }
+            published++
+            continue
+          }
+          // Lỗi thật: post không tồn tại / token hết hạn.
           await pool.query(
             `UPDATE fb_scheduled_post SET status='failed', error_msg=$1 WHERE id=$2`,
             [data.error.message, post.id]
@@ -44,7 +85,7 @@ export default async function fbScheduledPostCheck(_container: MedusaContainer) 
           continue
         }
 
-        if (data.is_published) {
+        if (data.id) {
           await pool.query(
             `UPDATE fb_scheduled_post SET status='published', published_at=now() WHERE id=$1`,
             [post.id]
