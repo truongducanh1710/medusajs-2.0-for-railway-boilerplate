@@ -244,6 +244,17 @@ const STATUS_POST: Record<string, { label: string; c: string; bg: string }> = {
 const MEDIA_ICON: Record<string, string> = { video: "🎬", photo: "🖼️", text: "📝" }
 const postDisplayDate = (p: any) => new Date(p.published_at || p.scheduled_for || p.created_at || Date.now())
 
+// Trích FILE_ID từ Google Drive share link (mirror backend fb-drive.ts:extractDriveFileId —
+// không import được lib backend Node vào Vite admin bundle).
+function driveFileId(url?: string): string | null {
+  if (!url) return null
+  let m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+  if (!m) m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+  return m ? m[1] : null
+}
+// iframe preview cho cả video lẫn ảnh Drive — không cần token
+const drivePreviewUrl = (id: string) => `https://drive.google.com/file/d/${id}/preview`
+
 // ── Calendar View ────────────────────────────────────────────────────────────
 const DOW = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
 const MEDIA_COLOR: Record<string, string> = { video: "#8B5CF6", photo: "#0EA5E9", text: "#1877F2" }
@@ -287,7 +298,91 @@ function EditPostModal({ post, onClose, onSave }: { post: any; onClose: () => vo
   )
 }
 
-function CalendarView({ posts, onCancel, cancellingId, onEdit }: { posts: any[]; onCancel?: (id: string) => void; cancellingId?: string | null; onEdit?: (post: any) => void }) {
+// ── Preview Post Modal ─────────────────────────────────────────────────────────
+// Mô phỏng bài Facebook từ dữ liệu local (không phụ thuộc FB publish) — xem trước cho MỌI bài.
+function PreviewPostModal({ post, onClose }: { post: any; onClose: () => void }) {
+  const st = STATUS_POST[post.status] || STATUS_POST.pending
+  const fid = driveFileId(post.drive_url)
+  const schedStr = post.scheduled_for
+    ? new Date(post.scheduled_for).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })
+    : (post.published_at ? new Date(post.published_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }) : null)
+  const avatarBg = pageColor(post.page_id || "")
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 540, maxHeight: "90vh", boxShadow: "0 10px 40px rgba(0,0,0,0.2)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        {/* Header modal */}
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>Xem trước bài đăng</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: "#9CA3AF", cursor: "pointer" }}>✕</button>
+        </div>
+
+        {/* Mock FB post card */}
+        <div style={{ padding: 18, overflowY: "auto" }}>
+          <div style={{ border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden" }}>
+            {/* Page row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px" }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: avatarBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+                {(post.page_name || "?").slice(0, 2).toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "#111827", fontSize: 14, fontWeight: 600 }}>{post.page_name || "—"}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                  <span style={{ background: st.bg, color: st.c, borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>{st.label}</span>
+                  {schedStr && <span style={{ color: "#9CA3AF", fontSize: 11 }}>🕐 {schedStr}</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Error banner (bài lỗi) */}
+            {post.error_msg && (
+              <div style={{ margin: "0 14px 10px", background: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+                ⚠️ {post.error_msg}
+              </div>
+            )}
+
+            {/* Message */}
+            {post.message && (
+              <div style={{ padding: "0 14px 12px", color: "#111827", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {post.message}
+              </div>
+            )}
+
+            {/* Media */}
+            {post.drive_url && (
+              fid ? (
+                <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#000" }}>
+                  <iframe
+                    src={drivePreviewUrl(fid)}
+                    title="media-preview"
+                    loading="lazy"
+                    allow="autoplay"
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }}
+                  />
+                </div>
+              ) : (
+                <div style={{ margin: 14, marginTop: 0, background: "#F0F1F5", border: "1px solid #E5E7EB", borderRadius: 8, padding: "14px 16px", textAlign: "center" }}>
+                  <div style={{ color: "#6B7280", fontSize: 12, marginBottom: 8 }}>Không xem trước được nguồn media này</div>
+                  <a href={post.drive_url} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>📁 Mở nguồn media</a>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 18px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {post.post_id
+            ? <a href={`https://www.facebook.com/${post.post_id}`} target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 13, fontWeight: 600, textDecoration: "none" }}>↗ Xem trên Facebook</a>
+            : <span />}
+          <button onClick={onClose} style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Đóng</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CalendarView({ posts, onCancel, cancellingId, onEdit, onPreview }: { posts: any[]; onCancel?: (id: string) => void; cancellingId?: string | null; onEdit?: (post: any) => void; onPreview?: (post: any) => void }) {
   const today = new Date()
   const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selected, setSelected] = useState<string | null>(null)
@@ -396,6 +491,15 @@ function CalendarView({ posts, onCancel, cancellingId, onEdit }: { posts: any[];
                     <a href={`https://www.facebook.com/${p.post_id}`}
                       target="_blank" rel="noopener noreferrer" style={{ color: "#1877F2", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>↗ Xem bài</a>
                   )}
+                  {onPreview && (
+                    <div style={{ marginTop: 4 }}>
+                      <button
+                        onClick={() => onPreview(p)}
+                        style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                        👁 Xem trước
+                      </button>
+                    </div>
+                  )}
                   {p.status === "scheduled" && (onEdit || onCancel) && (
                     <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                       {onEdit && (
@@ -435,6 +539,7 @@ function LichDangTab() {
   const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [editing, setEditing] = useState<any | null>(null)
+  const [previewing, setPreviewing] = useState<any | null>(null)
   const { mktCode, has, isSuper } = useCurrentPermissions()
   const canBoost = isSuper || has("page.fb-content.post")
 
@@ -514,7 +619,7 @@ function LichDangTab() {
 
       {loading && <div style={{ padding: 30, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Đang tải…</div>}
 
-      {!loading && viewMode === "calendar" && <CalendarView posts={posts} onCancel={handleCancel} cancellingId={cancellingId} onEdit={setEditing} />}
+      {!loading && viewMode === "calendar" && <CalendarView posts={posts} onCancel={handleCancel} cancellingId={cancellingId} onEdit={setEditing} onPreview={setPreviewing} />}
 
       {!loading && viewMode === "list" && posts.length === 0 && (
         <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có bài nào</div>
@@ -553,6 +658,11 @@ function LichDangTab() {
                   </div>
                   {/* Actions */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                    <button
+                      onClick={() => setPreviewing(p)}
+                      style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      👁 Xem trước
+                    </button>
                     {p.drive_url && (
                       <a href={p.drive_url} target="_blank" rel="noopener noreferrer"
                         style={{ color: "#6B7280", fontSize: 11, textDecoration: "none", whiteSpace: "nowrap" }}>📁 Drive</a>
@@ -592,6 +702,10 @@ function LichDangTab() {
 
       {editing && (
         <EditPostModal post={editing} onClose={() => setEditing(null)} onSave={handleSaveEdit} />
+      )}
+
+      {previewing && (
+        <PreviewPostModal post={previewing} onClose={() => setPreviewing(null)} />
       )}
     </div>
   )
