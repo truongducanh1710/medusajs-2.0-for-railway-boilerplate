@@ -1,7 +1,7 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = "https://graph.facebook.com/v25.0"
 
 // Trả về "YYYY-MM-DD" theo giờ Việt Nam (UTC+7)
 function dateVN(offsetDays = 0): string {
@@ -110,9 +110,9 @@ export default async function mktCostDailySync(container: MedusaContainer) {
   const logger = container.resolve("logger") as any
   const cskhService = container.resolve("cskhAnalysisModule") as any
 
-  const FB_TOKEN = process.env.FB_ACCESS_TOKEN ?? ""
+  const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
   if (!FB_TOKEN) {
-    logger?.warn?.("[MktCostDaily] FB_ACCESS_TOKEN chưa cấu hình — bỏ qua")
+    logger?.warn?.("[MktCostDaily] FB_SYSTEM_TOKEN/FB_ACCESS_TOKEN chưa cấu hình — bỏ qua")
     return
   }
 
