@@ -150,6 +150,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     if (body.result !== undefined) update.result = body.result || null
 
+    // Mua hàng: liên kết lô nhập giá vốn — assignee (NV mua) tự gắn sau khi tạo lô
+    if (body.import_lot_id !== undefined) update.import_lot_id = body.import_lot_id || null
+
     if (body.checklist !== undefined) {
       if (body.checklist !== null && !Array.isArray(body.checklist)) {
         return res.status(400).json({ error: "Checklist phải là mảng" })

@@ -10,7 +10,8 @@ type ChecklistItem = { id: string; text: string; done: boolean }
 type Task = {
   id: string
   title: string
-  type: "ads_camp" | "content_post"
+  type: "ads_camp" | "content_post" | "purchasing"
+  import_lot_id?: string | null
   assignee_id: string
   assignee_name: string
   created_by: string
@@ -117,6 +118,7 @@ const FREQUENCY_MAP: Record<string, { label: string; short: string }> = {
 const TYPE_MAP: Record<string, { label: string; icon: string; chip: string }> = {
   ads_camp:     { label: "Chạy Ads", icon: "📢", chip: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
   content_post: { label: "Nội dung", icon: "✍️", chip: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
+  purchasing:   { label: "Mua hàng", icon: "🛒", chip: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300" },
 }
 
 const PRIORITY_MAP: Record<string, { label: string; icon: string; weight: number; bar: string; chip: string }> = {
@@ -286,6 +288,204 @@ function ConfirmDialog({ msg, onConfirm, onCancel }: { msg: string; onConfirm: (
 // Input style chung
 const INPUT_CLS = "w-full rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-2 text-[13px] text-ui-fg-base outline-none transition-shadow placeholder:text-ui-fg-muted focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 const LABEL_CLS = "mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ui-fg-muted"
+
+// ─── Mua hàng: khối lô nhập giá vốn ──────────────────────────────────────────
+// Task type=purchasing liên kết tới 1 lô nhập trong bảng giá vốn (import_lot).
+// Nếu chưa liên kết: form tạo lô mới (POST /admin/gia-von) rồi gắn import_lot_id vào task.
+// Nếu đã liên kết: hiển thị tóm tắt lô (giá về kho, SL, phí).
+
+type MktProductLite = { id: string; name: string; code: string | null }
+type ImportLot = {
+  id: string; product_title: string; qty: number; price_unit: number
+  final_price: number; lot_date: string; received_date: string | null
+  local_fee_tq: number; ship_fee_ovs: number; local_fee_vn: number; vat_fee: number; other_fee: number
+  status: string; note: string
+}
+
+const nfmt = (v: number | null | undefined) =>
+  v == null ? "—" : new Intl.NumberFormat("vi-VN").format(Number(v))
+
+function PurchaseLotBlock({
+  lotId, canEdit, onLinked, onToast,
+}: {
+  lotId: string | null
+  canEdit: boolean
+  onLinked: (lotId: string) => void
+  onToast: (msg: string, type?: "success" | "error") => void
+}) {
+  const [lot, setLot] = useState<ImportLot | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [products, setProducts] = useState<MktProductLite[]>([])
+  const [saving, setSaving] = useState(false)
+  const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
+  const [f, setF] = useState({
+    product_id: "", qty: "", price_unit: "", lot_date: today, received_date: "",
+    local_fee_tq: "", ship_fee_ovs: "", local_fee_vn: "", vat_fee: "", other_fee: "", note: "",
+  })
+
+  // Nạp lô đã liên kết
+  useEffect(() => {
+    if (!lotId) { setLot(null); return }
+    setLoading(true)
+    apiFetch(`/admin/gia-von?limit=100`)
+      .then((r) => r.json())
+      .then((d) => {
+        const found = (d.lots || []).find((l: any) => l.id === lotId) || null
+        setLot(found)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [lotId])
+
+  // Nạp danh sách SP khi mở form tạo
+  const openCreate = () => {
+    setCreating(true)
+    if (products.length === 0) {
+      apiFetch(`/admin/gia-von/products`)
+        .then((r) => r.json())
+        .then((d) => setProducts(d.products || []))
+        .catch(() => onToast("Không tải được danh sách sản phẩm (cần quyền giá vốn)", "error"))
+    }
+  }
+
+  const num = (v: string) => (v === "" ? 0 : Number(v))
+  const previewFinal = (() => {
+    const q = num(f.qty)
+    if (!q) return 0
+    const total = q * num(f.price_unit) + num(f.local_fee_tq) + num(f.ship_fee_ovs) + num(f.local_fee_vn) + num(f.vat_fee) + num(f.other_fee)
+    return Math.round((total / q) * 100) / 100
+  })()
+
+  const createLot = async () => {
+    const prod = products.find((p) => p.id === f.product_id)
+    if (!prod) { onToast("Chọn sản phẩm", "error"); return }
+    if (!num(f.qty) || !num(f.price_unit)) { onToast("Nhập số lượng và đơn giá", "error"); return }
+    if (!f.received_date) { onToast("Chỉ tạo lô khi hàng đã về — nhập ngày nhận", "error"); return }
+    setSaving(true)
+    try {
+      const res = await apiFetch(`/admin/gia-von`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: prod.id,
+          product_title: prod.name,
+          lot_date: f.lot_date,
+          received_date: f.received_date || null,
+          qty: num(f.qty),
+          price_unit: num(f.price_unit),
+          local_fee_tq: num(f.local_fee_tq),
+          ship_fee_ovs: num(f.ship_fee_ovs),
+          local_fee_vn: num(f.local_fee_vn),
+          vat_fee: num(f.vat_fee),
+          other_fee: num(f.other_fee),
+          source: "TQ",
+          status: "received", // chỉ tạo lô khi hàng đã về (tránh cộng tồn kho ảo)
+          note: f.note,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.lot) throw new Error(data?.error || "Lỗi tạo lô")
+      setLot(data.lot)
+      setCreating(false)
+      onLinked(data.lot.id) // gắn vào task
+      onToast("Đã tạo & liên kết lô nhập vào giá vốn", "success")
+    } catch (e: any) {
+      onToast(e?.message || "Lỗi tạo lô", "error")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const numInput = (key: keyof typeof f, label: string) => (
+    <div>
+      <label className={LABEL_CLS}>{label}</label>
+      <input type="number" className={INPUT_CLS} value={f[key]} onChange={(e) => setF({ ...f, [key]: e.target.value })} />
+    </div>
+  )
+
+  return (
+    <div className="rounded-xl border border-cyan-200 bg-cyan-50/40 p-3 dark:border-cyan-500/20 dark:bg-cyan-500/5">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-[12px] font-bold text-cyan-800 dark:text-cyan-300">🛒 Lô nhập hàng (giá vốn)</div>
+        <a href="/app/gia-von" target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-cyan-700 underline dark:text-cyan-400">Mở giá vốn ↗</a>
+      </div>
+
+      {loading ? (
+        <div className="py-3 text-center text-[12px] text-ui-fg-muted">Đang tải lô…</div>
+      ) : lot ? (
+        // Đã liên kết → tóm tắt
+        <div className="space-y-1.5 text-[12px]">
+          <div className="font-semibold text-ui-fg-base">{lot.product_title}</div>
+          <div className="grid grid-cols-3 gap-2 text-ui-fg-subtle">
+            <div>SL: <b className="text-ui-fg-base">{nfmt(lot.qty)}</b></div>
+            <div>Đơn giá: <b className="text-ui-fg-base">{nfmt(lot.price_unit)}</b></div>
+            <div>Giá về kho: <b className="text-emerald-600 dark:text-emerald-400">{nfmt(lot.final_price)}</b></div>
+            <div>Ngày lô: {lot.lot_date}</div>
+            <div>Nhận: {lot.received_date || "—"}</div>
+            <div>TT: {lot.status}</div>
+          </div>
+        </div>
+      ) : creating ? (
+        // Form tạo lô
+        <div className="space-y-2.5">
+          <div>
+            <label className={LABEL_CLS}>Sản phẩm *</label>
+            <select className={INPUT_CLS} value={f.product_id} onChange={(e) => setF({ ...f, product_id: e.target.value })}>
+              <option value="">— Chọn sản phẩm —</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ""}{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {numInput("qty", "Số lượng *")}
+            {numInput("price_unit", "Đơn giá (giá chốt) *")}
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label className={LABEL_CLS}>Ngày đặt lô</label>
+              <input type="date" className={INPUT_CLS} value={f.lot_date} onChange={(e) => setF({ ...f, lot_date: e.target.value })} />
+            </div>
+            <div>
+              <label className={LABEL_CLS}>Ngày nhận *</label>
+              <input type="date" className={INPUT_CLS} value={f.received_date} onChange={(e) => setF({ ...f, received_date: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2.5">
+            {numInput("local_fee_tq", "Phí nội địa TQ")}
+            {numInput("ship_fee_ovs", "Ship quốc tế")}
+            {numInput("local_fee_vn", "Nội địa VN")}
+            {numInput("vat_fee", "VAT")}
+            {numInput("other_fee", "Phí khác")}
+          </div>
+          <div className="rounded-lg bg-ui-bg-subtle px-3 py-2 text-[12px] text-ui-fg-subtle">
+            Giá về kho/sp (tạm tính): <b className="text-emerald-600 dark:text-emerald-400">{nfmt(previewFinal)}</b>
+          </div>
+          <div className="flex gap-2">
+            <button disabled={saving} onClick={createLot}
+              className="flex-1 rounded-lg bg-cyan-600 py-1.5 text-xs font-semibold text-white transition hover:bg-cyan-700 active:scale-95 disabled:opacity-50">
+              {saving ? "Đang tạo…" : "Tạo & liên kết lô"}
+            </button>
+            <button onClick={() => setCreating(false)}
+              className="rounded-lg border border-ui-border-base bg-ui-bg-base px-3.5 py-1.5 text-xs text-ui-fg-subtle hover:bg-ui-bg-base-hover">Hủy</button>
+          </div>
+        </div>
+      ) : (
+        // Chưa liên kết
+        <div className="flex items-center justify-between">
+          <div className="text-[12px] text-ui-fg-muted">Chưa liên kết lô nhập nào.</div>
+          {canEdit && (
+            <button onClick={openCreate}
+              className="rounded-lg border border-cyan-400 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 dark:bg-transparent dark:text-cyan-300">
+              + Tạo lô nhập
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── Tags editor ─────────────────────────────────────────────────────────────
 
@@ -613,6 +813,7 @@ function TaskDrawer({
                     <select className={INPUT_CLS} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as any }))}>
                       <option value="ads_camp">Chạy Ads</option>
                       <option value="content_post">Nội dung</option>
+                      <option value="purchasing">Mua hàng</option>
                     </select>
                   </div>
                   <div>
@@ -729,6 +930,16 @@ function TaskDrawer({
                 </div>
               )}
             </div>
+
+            {/* Mua hàng: lô nhập giá vốn */}
+            {task.type === "purchasing" && (
+              <PurchaseLotBlock
+                lotId={task.import_lot_id || null}
+                canEdit={canWork}
+                onLinked={(lotId) => patchTask({ import_lot_id: lotId })}
+                onToast={onToast}
+              />
+            )}
 
             {/* Notes */}
             <div>
@@ -1002,6 +1213,7 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
               <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
                 <option value="ads_camp">📢 Chạy Ads / Camp</option>
                 <option value="content_post">✍️ Nội dung / Bài đăng</option>
+                <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
               </select>
             </div>
             <div>
@@ -2302,6 +2514,7 @@ export default function MktTasksPage() {
               <option value="">Mọi loại</option>
               <option value="ads_camp">📢 Chạy Ads</option>
               <option value="content_post">✍️ Nội dung</option>
+              <option value="purchasing">🛒 Mua hàng</option>
             </select>
 
             {/* Tag */}

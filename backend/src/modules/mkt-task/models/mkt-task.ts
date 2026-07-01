@@ -3,7 +3,7 @@ import { model } from "@medusajs/framework/utils"
 const MktTask = model.define("mkt_task", {
   id: model.id().primaryKey(),
   title: model.text(),
-  type: model.text(), // ads_camp | content_post
+  type: model.text(), // ads_camp | content_post | purchasing
   assignee_id: model.text(),
   created_by: model.text(),
   deadline: model.dateTime().nullable(),
@@ -22,6 +22,8 @@ const MktTask = model.define("mkt_task", {
   template_id: model.text().nullable(),     // instance → trỏ về template sinh ra nó
   period_key: model.text().nullable(),      // "2026-06-12" | "2026-W24" | "2026-06" — chống sinh trùng
   checklist: model.json().nullable(),       // [{ id, text, done }] — assignee tự quản sub-steps
+  // Mua hàng (type=purchasing): liên kết tới lô nhập trong bảng giá vốn (import_lot.id)
+  import_lot_id: model.text().nullable(),
 })
 
 export default MktTask
