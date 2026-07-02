@@ -21,6 +21,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Ensure chat-specific columns exist
     await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`)
     await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_days INT DEFAULT 7`)
+    await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()`)
 
     const { rows } = await pool.query(
       `SELECT page_id, page_name, sync_enabled, sync_days,
