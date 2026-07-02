@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ensureChatTables, getChatAuthInfo, getChatPool, logConversationEvent, refreshConversationContext, sendFacebookMessage } from "../../../_lib"
+import { getPancakeConfig, pancakeSendMessage } from "../../../pancake-lib"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -17,9 +18,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     let fbResult: any = null
     let fbMessageId: string | null = null
+    let channel: string | null = null
     if (send_to_facebook) {
-      fbResult = await sendFacebookMessage(c.page_id, c.customer_psid, text)
-      fbMessageId = fbResult?.message_id || null
+      // Prefer Pancake when a token is configured for this page (Facebook App may not
+      // yet be approved for messaging). Fall back to the Graph API otherwise.
+      const pancake = await getPancakeConfig(pool, c.page_id)
+      if (pancake) {
+        fbMessageId = await pancakeSendMessage(pancake, c.customer_psid, text)
+        fbResult = { via: "pancake", message_id: fbMessageId }
+        channel = "pancake"
+      } else {
+        fbResult = await sendFacebookMessage(c.page_id, c.customer_psid, text)
+        fbMessageId = fbResult?.message_id || null
+        channel = "facebook"
+      }
     }
 
     const msg = await pool.query(
@@ -31,7 +43,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       `UPDATE fb_conversation SET last_message = $2, last_message_at = now(), status = CASE WHEN status IN ('handoff','complaint') THEN 'assigned' ELSE status END, bot_paused = true, assigned_to = COALESCE(assigned_to, $3), updated_at = now() WHERE id = $1`,
       [id, text, auth.email]
     )
-    await logConversationEvent(pool, id, "manual_reply_sent", "sale", auth.email, { text, send_to_facebook })
+    await logConversationEvent(pool, id, "manual_reply_sent", "sale", auth.email, { text, send_to_facebook, channel })
     await maybeCreateReplyExample(pool, id, auth.email, text)
     await refreshConversationContext(pool, id)
     return res.json({ ok: true, message: msg.rows[0], fb: fbResult })

@@ -244,7 +244,7 @@ function TagPicker({ tags, onChange }: { tags: string[]; onChange: (tags: string
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const [view, setView]           = useState<"inbox" | "agents" | "examples" | "settings">("inbox")
+  const [view, setView]           = useState<"inbox" | "agents" | "examples" | "settings" | "pancake">("inbox")
   const [tab, setTab]             = useState("all")
   const [pageFilter, setPageFilter] = useState("")
   const [tagFilter, setTagFilter] = useState<string>("")
@@ -268,6 +268,9 @@ export default function ChatPage() {
   const [examples, setExamples]   = useState<Example[]>([])
   const [exTab, setExTab]         = useState("pending")
   const [settingPages, setSettingPages] = useState<any[]>([])
+  const [pancakePages, setPancakePages] = useState<any[]>([])
+  const [pcDraft, setPcDraft]     = useState<Record<string, string>>({})
+  const [pcBusy, setPcBusy]       = useState<string>("")
   const msgEndRef  = useRef<HTMLDivElement>(null)
   const msgTopRef  = useRef<HTMLDivElement>(null)
   const msgAreaRef = useRef<HTMLDivElement>(null)
@@ -352,6 +355,37 @@ export default function ChatPage() {
     setSettingPages(d.pages || [])
   }, [])
 
+  const loadPancakePages = useCallback(async () => {
+    const d = await apiJson("/admin/chat/pancake-pages")
+    setPancakePages(d.pages || [])
+  }, [])
+
+  const savePancakeToken = useCallback(async (fbPageId: string, token: string) => {
+    setPcBusy(fbPageId)
+    try {
+      await apiJson("/admin/chat/pancake-pages", "PATCH", { fb_page_id: fbPageId, page_access_token: token })
+      setPcDraft(prev => { const n = { ...prev }; delete n[fbPageId]; return n })
+      await loadPancakePages()
+    } finally { setPcBusy("") }
+  }, [loadPancakePages])
+
+  const togglePancake = useCallback(async (fbPageId: string, enabled: boolean) => {
+    setPcBusy(fbPageId)
+    try {
+      await apiJson("/admin/chat/pancake-pages", "PATCH", { fb_page_id: fbPageId, enabled })
+      await loadPancakePages()
+    } finally { setPcBusy("") }
+  }, [loadPancakePages])
+
+  const testPancakeToken = useCallback(async (fbPageId: string) => {
+    setPcBusy(fbPageId)
+    try {
+      const r = await apiJson("/admin/chat/pancake-pages", "POST", { fb_page_id: fbPageId })
+      alert(r.ok ? `✅ Token OK — ${r.sample?.count ?? 0} hội thoại${r.sample?.first ? ` (vd: ${r.sample.first})` : ""}` : `❌ Lỗi: ${r.error || "không rõ"}`)
+      await loadPancakePages()
+    } finally { setPcBusy("") }
+  }, [loadPancakePages])
+
   const loadAgents = useCallback(async () => {
     const d = await apiJson("/admin/chat/agents")
     setAgents(d.agents || [])
@@ -419,6 +453,7 @@ export default function ChatPage() {
   }, [view, tab, pageFilter, selectedId])
   useEffect(() => { if (view === "examples") loadExamples(exTab) }, [view])
   useEffect(() => { if (view === "settings") loadSettingPages() }, [view])
+  useEffect(() => { if (view === "pancake") loadPancakePages() }, [view])
 
   async function send() {
     if (!selectedId || !text.trim() || sending) return
@@ -462,9 +497,9 @@ export default function ChatPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 16px", height: 50, background: "#fff", borderBottom: "1px solid #e8edf2", flexShrink: 0 }}>
         <span style={{ fontSize: 18, marginRight: 6 }}>💬</span>
         <b style={{ fontSize: 15, marginRight: 8 }}>Chat</b>
-        {(["inbox","agents","examples","settings"] as const).map(v => (
+        {(["inbox","agents","examples","settings","pancake"] as const).map(v => (
           <button key={v} onClick={() => setView(v)} style={{ border: "none", background: "none", color: view === v ? "#1877f2" : "#64748b", borderBottom: view === v ? "2px solid #1877f2" : "2px solid transparent", padding: "0 14px", height: 50, fontSize: 13, fontWeight: view === v ? 600 : 400, cursor: "pointer" }}>
-            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : v === "examples" ? "Câu cần học" : "⚙ Cài đặt"}
+            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : v === "examples" ? "Câu cần học" : v === "settings" ? "⚙ Cài đặt" : "🥞 Pancake"}
           </button>
         ))}
         {view === "inbox" && (
@@ -956,8 +991,82 @@ export default function ChatPage() {
           )}
         </div>
       )}
+
+      {/* ── PANCAKE TOKEN ── */}
+      {view === "pancake" && (
+        <div style={{ padding: 24, overflow: "auto", flex: 1, maxWidth: 820 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>🥞 Page Access Token (Pancake)</h2>
+          <p style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>
+            Dùng để <b>gửi tin</b> qua Pancake khi Facebook App chưa được duyệt. Mỗi page 1 token riêng —
+            lấy tại <b>Pancake → mở page → Cài đặt → Công cụ</b> (Settings → Tools), copy dòng <i>Page Access Token</i>.
+          </p>
+          <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 20 }}>
+            Khi page đã có token và đang bật, nút gửi trong Inbox sẽ tự gửi qua Pancake. Page chưa cấu hình vẫn gửi qua Facebook như cũ.
+          </p>
+
+          {pancakePages.length === 0 && (
+            <div style={{ color: "#94a3b8", padding: 20, textAlign: "center" }}>Chưa có page nào trong fb_page_token.</div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {pancakePages.map(p => {
+              const busy = pcBusy === p.page_id
+              const draft = pcDraft[p.page_id]
+              const editing = draft !== undefined
+              return (
+                <div key={p.page_id} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
+                    <Avatar name={p.page_name} size={40} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{p.page_name}</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace" }}>{p.page_id}</div>
+                    </div>
+                    {/* Status */}
+                    {p.has_token ? (
+                      <Chip label={p.last_test_ok === true ? "✓ Token OK" : p.last_test_ok === false ? "⚠ Token lỗi" : "Đã lưu token"}
+                        bg={p.last_test_ok === false ? "#fee2e2" : "#dcfce7"}
+                        color={p.last_test_ok === false ? "#dc2626" : "#16a34a"} />
+                    ) : (
+                      <Chip label="Chưa có token" bg="#f1f5f9" color="#94a3b8" />
+                    )}
+                    {/* Enable toggle */}
+                    {p.has_token && (
+                      <button onClick={() => togglePancake(p.page_id, !p.enabled)} disabled={busy}
+                        style={{ background: p.enabled ? "#dcfce7" : "#f1f5f9", color: p.enabled ? "#16a34a" : "#94a3b8", border: `1.5px solid ${p.enabled ? "#86efac" : "#e2e8f0"}`, borderRadius: 99, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: busy ? "wait" : "pointer", minWidth: 78 }}>
+                        {p.enabled ? "✓ Bật gửi" : "Tắt"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Token input row */}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="password"
+                      value={editing ? draft : ""}
+                      placeholder={p.has_token && !editing ? "•••••••••••• (đã lưu — nhập để thay)" : "Dán Page Access Token…"}
+                      onChange={e => setPcDraft(prev => ({ ...prev, [p.page_id]: e.target.value }))}
+                      style={{ flex: 1, border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: "monospace", background: "#f8fafc", outline: "none" }}
+                    />
+                    <Btn size="sm" variant="primary" disabled={busy || !editing || !draft?.trim()}
+                      onClick={() => savePancakeToken(p.page_id, draft)}>
+                      {busy ? "..." : "Lưu"}
+                    </Btn>
+                    <Btn size="sm" disabled={busy || !p.has_token}
+                      onClick={() => testPancakeToken(p.page_id)}>
+                      Test
+                    </Btn>
+                  </div>
+                  {p.last_test_ok === false && p.last_test_error && (
+                    <div style={{ fontSize: 11, color: "#dc2626", marginTop: 6 }}>Lỗi test: {p.last_test_error}</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-export const config = defineRouteConfig({ label: "Chat", icon: "chat-bubble-left-right" })
+export const config = defineRouteConfig({ label: "Chat" })
