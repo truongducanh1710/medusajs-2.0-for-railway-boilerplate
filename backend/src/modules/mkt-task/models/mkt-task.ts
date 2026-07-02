@@ -24,6 +24,8 @@ const MktTask = model.define("mkt_task", {
   checklist: model.json().nullable(),       // [{ id, text, done }] — assignee tự quản sub-steps
   // Mua hàng (type=purchasing): liên kết tới lô nhập trong bảng giá vốn (import_lot.id)
   import_lot_id: model.text().nullable(),
+  // Mua hàng: giai đoạn quy trình riêng (độc lập với status gốc). Xem PURCHASE_STAGES.
+  purchase_stage: model.text().nullable(),
 })
 
 export default MktTask

@@ -69,6 +69,21 @@ const STATUS_LABEL: Record<string, string> = {
   missed: "Bỏ lỡ",
 }
 const PRIORITY_LABEL: Record<string, string> = { high: "Cao", medium: "Vừa", low: "Thấp" }
+const PURCHASE_STAGE_LABEL: Record<string, string> = {
+  cho_sep_duyet: "Chờ sếp duyệt",
+  sep_da_duyet: "Sếp đã duyệt",
+  dat_coc: "Đặt cọc",
+  ncc_chuan_bi: "NCC chuẩn bị hàng",
+  cho_thanh_toan_70: "Đang chờ thanh toán 70%",
+  da_thanh_toan: "Đã thanh toán",
+  cho_giao_kho_trung: "Chờ giao hàng tới kho Trung",
+  luu_kho_trung: "Lưu kho Trung",
+  xu_ly_hai_quan: "Xử lý thủ tục hải quan",
+  van_chuyen_quoc_te: "Vận chuyển Quốc Tế",
+  cho_giao_kho_hn: "Chờ giao tới kho HN",
+  luu_kho_ha_noi: "Lưu kho Hà Nội",
+  da_nhan_hang: "Đã nhận hàng",
+}
 
 // GET /admin/mkt-tasks/:id
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -153,6 +168,14 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     // Mua hàng: liên kết lô nhập giá vốn — assignee (NV mua) tự gắn sau khi tạo lô
     if (body.import_lot_id !== undefined) update.import_lot_id = body.import_lot_id || null
 
+    // Mua hàng: giai đoạn quy trình riêng. Giai đoạn cuối "da_nhan_hang" → auto set status=done.
+    if (body.purchase_stage !== undefined) {
+      update.purchase_stage = body.purchase_stage || null
+      if (body.purchase_stage === "da_nhan_hang" && body.status === undefined && task.status !== "done") {
+        update.status = "done"
+      }
+    }
+
     if (body.checklist !== undefined) {
       if (body.checklist !== null && !Array.isArray(body.checklist)) {
         return res.status(400).json({ error: "Checklist phải là mảng" })
@@ -183,6 +206,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       activityLogs.push({ author_id: email, text: `Chuyển giao cho: ${body.assignee_id}`, created_at: now, type: "system" })
     if (body.deadline !== undefined && body.deadline !== task.deadline?.slice(0, 10))
       activityLogs.push({ author_id: email, text: body.deadline ? `Đặt deadline: ${body.deadline}` : "Xóa deadline", created_at: now, type: "system" })
+    if (body.purchase_stage !== undefined && body.purchase_stage !== task.purchase_stage)
+      activityLogs.push({ author_id: email, text: `Giai đoạn mua hàng: ${PURCHASE_STAGE_LABEL[body.purchase_stage] ?? body.purchase_stage}`, created_at: now, type: "system" })
     if (activityLogs.length > 0) {
       update.comments = [...(task.comments || []), ...activityLogs]
     }

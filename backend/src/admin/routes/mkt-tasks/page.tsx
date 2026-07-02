@@ -12,6 +12,7 @@ type Task = {
   title: string
   type: "ads_camp" | "content_post" | "purchasing"
   import_lot_id?: string | null
+  purchase_stage?: string | null
   assignee_id: string
   assignee_name: string
   created_by: string
@@ -119,6 +120,50 @@ const TYPE_MAP: Record<string, { label: string; icon: string; chip: string }> = 
   ads_camp:     { label: "Chạy Ads", icon: "📢", chip: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
   content_post: { label: "Nội dung", icon: "✍️", chip: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
   purchasing:   { label: "Mua hàng", icon: "🛒", chip: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300" },
+}
+
+// 13 giai đoạn quy trình mua hàng TQ (type=purchasing). value → { label, chip }
+const PURCHASE_STAGES: { value: string; label: string; chip: string }[] = [
+  { value: "cho_sep_duyet",       label: "Chờ sếp duyệt",             chip: "bg-rose-100 text-rose-700" },
+  { value: "sep_da_duyet",        label: "Sếp đã duyệt",              chip: "bg-yellow-100 text-yellow-800" },
+  { value: "dat_coc",             label: "Đặt cọc",                   chip: "bg-purple-100 text-purple-700" },
+  { value: "ncc_chuan_bi",        label: "NCC chuẩn bị hàng",         chip: "bg-amber-100 text-amber-800" },
+  { value: "cho_thanh_toan_70",   label: "Đang chờ thanh toán 70%",   chip: "bg-gray-100 text-gray-700" },
+  { value: "da_thanh_toan",       label: "Đã thanh toán",             chip: "bg-orange-200 text-orange-900" },
+  { value: "cho_giao_kho_trung",  label: "Chờ giao tới kho Trung",    chip: "bg-red-100 text-red-600" },
+  { value: "luu_kho_trung",       label: "Lưu kho Trung",             chip: "bg-yellow-200 text-yellow-800" },
+  { value: "xu_ly_hai_quan",      label: "Xử lý thủ tục hải quan",    chip: "bg-blue-600 text-white" },
+  { value: "van_chuyen_quoc_te",  label: "Vận chuyển Quốc Tế",        chip: "bg-green-100 text-green-700" },
+  { value: "cho_giao_kho_hn",     label: "Chờ giao tới kho HN",       chip: "bg-teal-100 text-teal-700" },
+  { value: "luu_kho_ha_noi",      label: "Lưu kho Hà Nội",            chip: "bg-cyan-100 text-cyan-700" },
+  { value: "da_nhan_hang",        label: "Đã nhận hàng",              chip: "bg-emerald-600 text-white" },
+]
+const PURCHASE_STAGE_MAP: Record<string, { label: string; chip: string }> =
+  Object.fromEntries(PURCHASE_STAGES.map(s => [s.value, { label: s.label, chip: s.chip }]))
+
+// Dropdown đổi giai đoạn mua hàng inline (dùng trong dòng list)
+function PurchaseStageSelect({ value, disabled, onChange }: {
+  value: string | null
+  disabled: boolean
+  onChange: (v: string) => void
+}) {
+  const cur = value ? PURCHASE_STAGE_MAP[value] : null
+  return (
+    <select
+      value={value || "cho_sep_duyet"}
+      disabled={disabled}
+      onClick={e => e.stopPropagation()}
+      onChange={e => { e.stopPropagation(); onChange(e.target.value) }}
+      title={disabled ? "Bạn không phải người nhận task này" : "Đổi giai đoạn"}
+      className={cn(
+        "max-w-[150px] cursor-pointer truncate rounded-full border-0 px-2 py-0.5 text-[11px] font-semibold outline-none",
+        cur?.chip || "bg-ui-bg-component text-ui-fg-subtle",
+        disabled && "cursor-not-allowed opacity-70")}>
+      {PURCHASE_STAGES.map(s => (
+        <option key={s.value} value={s.value} className="bg-white text-gray-800">{s.label}</option>
+      ))}
+    </select>
+  )
 }
 
 const PRIORITY_MAP: Record<string, { label: string; icon: string; weight: number; bar: string; chip: string }> = {
@@ -931,6 +976,31 @@ function TaskDrawer({
               )}
             </div>
 
+            {/* Mua hàng: giai đoạn quy trình */}
+            {task.type === "purchasing" && (
+              <div>
+                <div className={LABEL_CLS}>🛒 Giai đoạn mua hàng</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PURCHASE_STAGES.map(s => {
+                    const active = (task.purchase_stage || "cho_sep_duyet") === s.value
+                    return (
+                      <button key={s.value}
+                        disabled={!canWork}
+                        onClick={() => canWork && patchTask(
+                          s.value === "da_nhan_hang" && task.status !== "done"
+                            ? { purchase_stage: s.value, status: "done" }
+                            : { purchase_stage: s.value })}
+                        className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
+                          active ? s.chip : "bg-ui-bg-component text-ui-fg-subtle hover:bg-ui-bg-base-hover",
+                          !canWork && "cursor-not-allowed opacity-60")}>
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Mua hàng: lô nhập giá vốn */}
             {task.type === "purchasing" && (
               <PurchaseLotBlock
@@ -1347,11 +1417,12 @@ function InlineCreate({ placeholder, needAssignee, users, onCreate, compact }: {
 
 // ─── List view ───────────────────────────────────────────────────────────────
 
-function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash, periodLabel }: {
+function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, onChangeStage, flash, periodLabel }: {
   task: Task
   onClick: () => void
   onQuickStatus: () => void
   canQuickStatus: boolean
+  onChangeStage?: (stage: string) => void
   flash?: boolean
   periodLabel?: string
 }) {
@@ -1401,7 +1472,11 @@ function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, flash, periodLa
       </div>
 
       <div><DeadlineChip task={task} /></div>
-      <div><StatusBadge status={task.status} /></div>
+      <div>
+        {task.type === "purchasing"
+          ? <PurchaseStageSelect value={task.purchase_stage || null} disabled={!canQuickStatus} onChange={s => onChangeStage?.(s)} />
+          : <StatusBadge status={task.status} />}
+      </div>
       <div>
         {task.rating
           ? <Stars value={task.rating} />
@@ -1504,12 +1579,13 @@ function RecurringGroupRow({ template, instances, onTaskClick, onQuickStatus, ca
   )
 }
 
-function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, isManager, users, onInlineCreate, inlineDefaults, flashId }: {
+function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, onChangeStage, isManager, users, onInlineCreate, inlineDefaults, flashId }: {
   label: string
   tasks: Task[]
   onTaskClick: (t: Task) => void
   onQuickStatus: (t: Task) => void
   canQuick: (t: Task) => boolean
+  onChangeStage: (t: Task, stage: string) => void
   isManager: boolean
   users: MktUser[]
   onInlineCreate: (title: string, assigneeId: string | null) => Promise<boolean>
@@ -1553,6 +1629,7 @@ function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, is
               onClick={() => onTaskClick(t)}
               onQuickStatus={() => onQuickStatus(t)}
               canQuickStatus={canQuick(t) && t.status !== "cancelled" && t.status !== "missed"}
+              onChangeStage={(s) => onChangeStage(t, s)}
               flash={flashId === t.id}
             />
           ))}
@@ -2354,6 +2431,25 @@ export default function MktTasksPage() {
     }
   }
 
+  // Đổi giai đoạn mua hàng inline (chỉ task type=purchasing)
+  const changeStage = async (t: Task, stage: string) => {
+    if (t.purchase_stage === stage) return
+    const prevStage = t.purchase_stage
+    const prevStatus = t.status
+    // Optimistic: đổi stage; nếu là bước cuối thì status→done
+    const patch: Partial<Task> = { purchase_stage: stage }
+    if (stage === "da_nhan_hang" && t.status !== "done") patch.status = "done"
+    applyLocalPatch(t.id, patch)
+    const r = await apiFetch(`/admin/mkt-tasks/${t.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ purchase_stage: stage }),
+    }).then(r => r.json()).catch(() => null)
+    if (!r?.task) {
+      applyLocalPatch(t.id, { purchase_stage: prevStage, status: prevStatus })  // revert
+      showToast(r?.error || "Lỗi cập nhật giai đoạn", "error")
+    }
+  }
+
   const moveTask = async (taskId: string, status: Task["status"]) => {
     const t = tasks.find(x => x.id === taskId)
     if (!t || t.status === status) return
@@ -2572,6 +2668,7 @@ export default function MktTasksPage() {
                 onTaskClick={setSelectedTask}
                 onQuickStatus={quickStatus}
                 canQuick={canQuick}
+                onChangeStage={changeStage}
                 isManager={isManager}
                 users={mktUsers}
                 inlineDefaults={{ assignee_id: g.assigneeId, needAssignee: !g.assigneeId }}
