@@ -389,7 +389,14 @@ export default function ChatPage() {
   const loadAgents = useCallback(async () => {
     const d = await apiJson("/admin/chat/agents")
     setAgents(d.agents || [])
-    setPageList((d.agents || []).map((a: any) => ({ page_id: a.page_id, page_name: a.page_name })))
+  }, [])
+
+  // Dropdown lọc page ở topbar: chỉ liệt kê page đang bật (sync_enabled).
+  const loadPageFilterList = useCallback(async () => {
+    const d = await apiJson("/admin/chat/pages")
+    setPageList((d.pages || [])
+      .filter((p: any) => p.sync_enabled)
+      .map((p: any) => ({ page_id: p.page_id, page_name: p.page_name })))
   }, [])
 
   const loadExamples = useCallback(async (s = exTab) => {
@@ -405,7 +412,7 @@ export default function ChatPage() {
     setDetail(prev => prev ? { ...prev, conversation: { ...prev.conversation, ...fields } } : prev)
   }, [selectedId])
 
-  useEffect(() => { loadConvs(); loadAgents() }, [])
+  useEffect(() => { loadConvs(); loadAgents(); loadPageFilterList() }, [])
   useEffect(() => { if (selectedId) loadDetail(selectedId) }, [selectedId])
   const prevSelectedId = useRef<string | null>(null)
   useEffect(() => {
@@ -924,9 +931,10 @@ export default function ChatPage() {
       {/* ── SETTINGS ── */}
       {view === "settings" && (
         <div style={{ padding: 24, overflow: "auto", flex: 1, maxWidth: 700 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>⚙ Cài đặt Sync Page</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>⚙ Chọn Page hiển thị</h2>
           <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
-            Chọn page nào sẽ được sync tin nhắn về. Nút "Sync" trên topbar sẽ chỉ lấy các page đang bật.
+            Page đang <b>Bật</b> sẽ được sync tin nhắn về <b>và hiện trong Inbox</b>. Page <b>Tắt</b> sẽ bị ẩn khỏi Inbox và không sync
+            (dữ liệu cũ vẫn giữ trong DB, bật lại là hiện lại).
           </p>
           {settingPages.length === 0 && (
             <div style={{ color: "#94a3b8", padding: 20, textAlign: "center" }}>
@@ -963,6 +971,7 @@ export default function ChatPage() {
                     const sync_enabled = !p.sync_enabled
                     await apiJson("/admin/chat/pages", "PATCH", { page_id: p.page_id, sync_enabled })
                     setSettingPages(prev => prev.map(x => x.page_id === p.page_id ? { ...x, sync_enabled } : x))
+                    loadPageFilterList()   // refresh dropdown lọc page ở topbar
                   }}
                   style={{
                     background: p.sync_enabled ? "#dcfce7" : "#f1f5f9",
@@ -972,7 +981,7 @@ export default function ChatPage() {
                     cursor: "pointer", minWidth: 80,
                   }}
                 >
-                  {p.sync_enabled ? "✓ Bật sync" : "Tắt"}
+                  {p.sync_enabled ? "✓ Bật" : "Tắt"}
                 </button>
               </div>
             ))}

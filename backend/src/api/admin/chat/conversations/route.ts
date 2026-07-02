@@ -14,6 +14,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const params: any[] = []
     const where: string[] = []
 
+    // Chỉ hiện hội thoại của page đang bật (sync_enabled) — page tắt bị ẩn khỏi Inbox.
+    // Ensure column exists (idempotent, khớp với /admin/chat/pages).
+    await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`)
+    where.push(`c.page_id IN (SELECT page_id FROM fb_page_token WHERE sync_enabled = true)`)
+
     if (auth.fbPageIds && auth.fbPageIds.length) {
       params.push(auth.fbPageIds)
       where.push(`c.page_id = ANY($${params.length})`)
