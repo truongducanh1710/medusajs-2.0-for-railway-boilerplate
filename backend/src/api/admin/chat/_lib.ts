@@ -262,19 +262,28 @@ async function getPageName(pool: Pool, pageId: string): Promise<string> {
 
 /**
  * Messenger webhook events chỉ gửi PSID, không có tên khách (Facebook bỏ field này từ 2018).
- * Gọi Graph API /{psid}?fields=first_name,last_name để lấy tên hiển thị.
+ *
+ * Lưu ý (đã verify 2026-07-02 với token page 693411540511731):
+ *   - GET /{psid}?fields=first_name,last_name → 400 (App chưa pass review cho profile access).
+ *   - GET /{pageId}/conversations?fields=participants → 200, có participants[].name.
+ * Nên phải lấy tên qua endpoint conversations rồi match theo PSID, KHÔNG query /{psid} trực tiếp.
  */
 async function fetchCustomerNameFromGraph(pool: Pool, pageId: string, psid: string): Promise<string | null> {
   try {
     const { rows } = await pool.query(`SELECT access_token FROM fb_page_token WHERE page_id = $1`, [pageId])
     const token = rows[0]?.access_token
     if (!token) return null
-    const url = `https://graph.facebook.com/v20.0/${psid}?fields=first_name,last_name&access_token=${token}`
+    // Conversation vừa có tin nhắn nằm đầu danh sách (sort updated_time DESC) → limit 25 gần như luôn khớp.
+    const url = `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=participants&limit=25&access_token=${token}`
     const r = await fetch(url)
     const d: any = await r.json().catch(() => ({}))
-    if (d?.error) return null
-    const name = [d?.first_name, d?.last_name].filter(Boolean).join(" ").trim()
-    return name || null
+    if (d?.error || !Array.isArray(d?.data)) return null
+    for (const conv of d.data) {
+      const parts: any[] = conv?.participants?.data || []
+      const match = parts.find((p: any) => p?.id === psid)
+      if (match?.name) return String(match.name).trim() || null
+    }
+    return null
   } catch {
     return null
   }

@@ -86,10 +86,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           const convId = convRow.rows[0]?.id
           if (convId) {
             await pool.query(
-              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, created_at)
-               VALUES ($1,$2,'outbound','page',$3,$4,$5)
+              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, raw_payload, created_at)
+               VALUES ($1,$2,'outbound','page',$3,$4,$5,$6)
                ON CONFLICT (fb_message_id) DO NOTHING`,
-              [convId, msgId, text, JSON.stringify(message?.attachments || []),
+              [convId, msgId, text, JSON.stringify(message?.attachments || []), JSON.stringify(event),
                event.timestamp ? new Date(Number(event.timestamp)) : new Date()]
             )
           }
