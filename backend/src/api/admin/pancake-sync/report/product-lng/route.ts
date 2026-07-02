@@ -23,9 +23,12 @@ const FULLFILL_PER_ORDER = 5000
  * GET /admin/pancake-sync/report/product-lng?from=2026-06-01&to=2026-06-30
  *
  * Báo cáo Hoàn hủy + LNG (thực & tạm tính) theo SẢN PHẨM.
- * Mỗi đơn được gán cho 1 "SP chính" = item có (giá × SL) cao nhất trong đơn,
- * nên hoàn hủy không bị đếm trùng. Công thức field copy nguyên từ report theo MKT
- * (marketer-lng + marketer-performance), chỉ đổi chiều group marketer → SP.
+ * Mỗi đơn được gán cho 1 "SP chính" = item có (giá × SL) cao nhất trong đơn.
+ * Đơn/số đếm (total_orders, da_nhan, da_hoan...) CHỈ tính cho SP chính của đơn,
+ * nên 1 đơn không bị đếm ở nhiều SP (không double-count qua SP phụ).
+ * Doanh thu/giá vốn vẫn chia theo tỷ trọng giá trị item trong đơn.
+ * Công thức field copy nguyên từ report theo MKT (marketer-lng + marketer-performance),
+ * chỉ đổi chiều group marketer → SP.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -69,7 +72,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const itemValueExpr = `(${itemPrice} * COALESCE((mi->>'quantity')::numeric, 1))`
 
     // ── Query: explode item, gom theo (đơn, SP) rồi group theo SP ───────────────
-    // Đếm đơn: 1 đơn xuất hiện ở MỌI SP nó chứa (khớp cách POS lọc theo SP).
+    // Đếm đơn (total_orders, da_nhan, da_hoan...): CHỈ tính khi SP này là SP chính
+    // của đơn (is_main) → 1 đơn chỉ được đếm đúng 1 lần, quy về đúng 1 SP.
     // Tiền (doanh thu/cogs): chia theo tỷ trọng giá trị item của SP trong đơn.
     // Ship/fullfill: gán trọn cho SP chính (item giá trị cao nhất) của đơn.
     const rows = await sql(`
@@ -124,24 +128,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         sp_key,
         MAX(sp_label) AS sp_label,
         MAX(sp_code)  AS sp_code,
-        COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
+        COUNT(*) FILTER (WHERE is_main AND status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
         SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_total,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_delivered,
         SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
         COUNT(*) FILTER (WHERE is_main AND status NOT IN (-2) AND NOT ${excludeCond})::int AS main_orders,
-        COUNT(*) FILTER (WHERE status = 3 AND NOT ${excludeCond})::int AS da_nhan,
-        COUNT(*) FILTER (WHERE status = 5 AND NOT ${excludeCond})::int AS da_hoan,
-        COUNT(*) FILTER (WHERE status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
-        COUNT(*) FILTER (WHERE status IN (6, -1) AND NOT (${nhapTrungCond}))::int AS da_huy,
-        COUNT(*) FILTER (WHERE ${nhapTrungCond})::int AS don_nhap_trung,
-        COUNT(*) FILTER (WHERE status = 7)::int AS da_xoa,
-        COUNT(*) FILTER (WHERE status = 2 AND NOT ${excludeCond})::int AS da_gui_hang,
-        COUNT(*) FILTER (WHERE status = 0 AND NOT ${excludeCond})::int AS moi,
-        COUNT(*) FILTER (WHERE status = 11 AND NOT ${excludeCond})::int AS cho_hang,
-        COUNT(*) FILTER (WHERE status = 1 AND NOT ${excludeCond})::int AS da_xac_nhan,
-        COUNT(*) FILTER (WHERE status = 8 AND NOT ${excludeCond})::int AS dang_dong_hang,
-        COUNT(*) FILTER (WHERE status = 9 AND NOT ${excludeCond})::int AS cho_chuyen_hang
+        COUNT(*) FILTER (WHERE is_main AND status = 3 AND NOT ${excludeCond})::int AS da_nhan,
+        COUNT(*) FILTER (WHERE is_main AND status = 5 AND NOT ${excludeCond})::int AS da_hoan,
+        COUNT(*) FILTER (WHERE is_main AND status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
+        COUNT(*) FILTER (WHERE is_main AND status IN (6, -1) AND NOT (${nhapTrungCond}))::int AS da_huy,
+        COUNT(*) FILTER (WHERE is_main AND ${nhapTrungCond})::int AS don_nhap_trung,
+        COUNT(*) FILTER (WHERE is_main AND status = 7)::int AS da_xoa,
+        COUNT(*) FILTER (WHERE is_main AND status = 2 AND NOT ${excludeCond})::int AS da_gui_hang,
+        COUNT(*) FILTER (WHERE is_main AND status = 0 AND NOT ${excludeCond})::int AS moi,
+        COUNT(*) FILTER (WHERE is_main AND status = 11 AND NOT ${excludeCond})::int AS cho_hang,
+        COUNT(*) FILTER (WHERE is_main AND status = 1 AND NOT ${excludeCond})::int AS da_xac_nhan,
+        COUNT(*) FILTER (WHERE is_main AND status = 8 AND NOT ${excludeCond})::int AS dang_dong_hang,
+        COUNT(*) FILTER (WHERE is_main AND status = 9 AND NOT ${excludeCond})::int AS cho_chuyen_hang
       FROM os
       GROUP BY sp_key
     `, [from, to])
@@ -201,8 +205,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const lngTamTinh = revenueTamTinh - (cogsTamTinh + shipTamTinh + ads_cost + fullfillTamTinh)
 
       // ── Hoàn hủy ──
-      // total_orders ĐÃ loại đã xóa + nháp/trùng qua excludeCond, nên chính nó = tổng đơn giao
-      // (KHÔNG trừ lại da_xoa/don_nhap_trung — sẽ trừ trùng).
+      // total_orders chỉ đếm đơn mà SP này là SP chính, ĐÃ loại đã xóa + nháp/trùng qua
+      // excludeCond, nên chính nó = tổng đơn giao (KHÔNG trừ lại da_xoa/don_nhap_trung — sẽ trừ trùng).
       const nGui = g.total_orders
       const pctN = (part: number) => nGui > 0 ? Math.round(part / nGui * 1000) / 10 : 0
       const ty_le_hoan = pctN(g.dang_hoan + g.da_hoan)
