@@ -260,6 +260,26 @@ async function getPageName(pool: Pool, pageId: string): Promise<string> {
   return rows[0]?.page_name || pageId
 }
 
+/**
+ * Messenger webhook events chỉ gửi PSID, không có tên khách (Facebook bỏ field này từ 2018).
+ * Gọi Graph API /{psid}?fields=first_name,last_name để lấy tên hiển thị.
+ */
+async function fetchCustomerNameFromGraph(pool: Pool, pageId: string, psid: string): Promise<string | null> {
+  try {
+    const { rows } = await pool.query(`SELECT access_token FROM fb_page_token WHERE page_id = $1`, [pageId])
+    const token = rows[0]?.access_token
+    if (!token) return null
+    const url = `https://graph.facebook.com/v20.0/${psid}?fields=first_name,last_name&access_token=${token}`
+    const r = await fetch(url)
+    const d: any = await r.json().catch(() => ({}))
+    if (d?.error) return null
+    const name = [d?.first_name, d?.last_name].filter(Boolean).join(" ").trim()
+    return name || null
+  } catch {
+    return null
+  }
+}
+
 async function getMktPageByPage(pool: Pool, pageId: string, pageName: string): Promise<any | null> {
   const byName = await pool.query(
     `SELECT * FROM mkt_page WHERE lower(trim(page_name)) = lower(trim($1)) LIMIT 1`,
@@ -326,6 +346,17 @@ export async function upsertIncomingMessage(opts: {
   const windowExpires = new Date(messageAt.getTime() + 24 * 3600 * 1000)
   const handoff = detectHandoff(opts.text)
 
+  let customerName = opts.customerName
+  if (!customerName) {
+    const existing = await pool.query(
+      `SELECT customer_name FROM fb_conversation WHERE page_id = $1 AND customer_psid = $2`,
+      [opts.pageId, opts.psid]
+    )
+    if (!existing.rows[0]?.customer_name) {
+      customerName = (await fetchCustomerNameFromGraph(pool, opts.pageId, opts.psid)) || undefined
+    }
+  }
+
   const conv = await pool.query(
     `INSERT INTO fb_conversation
       (page_id, page_name, customer_psid, customer_name, status, last_message, last_message_at, unread_count, message_window_expires_at, handoff_reason, handoff_at, handoff_by, priority, bot_paused)
@@ -349,7 +380,7 @@ export async function upsertIncomingMessage(opts: {
       opts.pageId,
       pageName,
       opts.psid,
-      opts.customerName || null,
+      customerName || null,
       handoff?.reason === "complaint" ? "complaint" : handoff ? "handoff" : "new",
       opts.text,
       messageAt,
