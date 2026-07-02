@@ -268,6 +268,7 @@ export default function ChatPage() {
   const [examples, setExamples]   = useState<Example[]>([])
   const [exTab, setExTab]         = useState("pending")
   const [settingPages, setSettingPages] = useState<any[]>([])
+  const [settingPagesErr, setSettingPagesErr] = useState<string>("")
   const [pancakePages, setPancakePages] = useState<any[]>([])
   const [pcDraft, setPcDraft]     = useState<Record<string, string>>({})
   const [pcBusy, setPcBusy]       = useState<string>("")
@@ -351,13 +352,22 @@ export default function ChatPage() {
   }, [selectedId, detail, loadingMore])
 
   const loadSettingPages = useCallback(async () => {
-    const d = await apiJson("/admin/chat/pages")
-    setSettingPages(d.pages || [])
+    try {
+      const d = await apiJson("/admin/chat/pages")
+      setSettingPages(d.pages || [])
+      setSettingPagesErr("")
+    } catch (e: any) {
+      setSettingPagesErr(e?.message || "Không tải được danh sách page")
+    }
   }, [])
 
   const loadPancakePages = useCallback(async () => {
-    const d = await apiJson("/admin/chat/pancake-pages")
-    setPancakePages(d.pages || [])
+    try {
+      const d = await apiJson("/admin/chat/pancake-pages")
+      setPancakePages(d.pages || [])
+    } catch (e: any) {
+      console.error("loadPancakePages failed:", e?.message)
+    }
   }, [])
 
   const savePancakeToken = useCallback(async (fbPageId: string, token: string) => {
@@ -393,10 +403,14 @@ export default function ChatPage() {
 
   // Dropdown lọc page ở topbar: chỉ liệt kê page đang bật (sync_enabled).
   const loadPageFilterList = useCallback(async () => {
-    const d = await apiJson("/admin/chat/pages")
-    setPageList((d.pages || [])
-      .filter((p: any) => p.sync_enabled)
-      .map((p: any) => ({ page_id: p.page_id, page_name: p.page_name })))
+    try {
+      const d = await apiJson("/admin/chat/pages")
+      setPageList((d.pages || [])
+        .filter((p: any) => p.sync_enabled)
+        .map((p: any) => ({ page_id: p.page_id, page_name: p.page_name })))
+    } catch (e: any) {
+      console.error("loadPageFilterList failed:", e?.message)
+    }
   }, [])
 
   const loadExamples = useCallback(async (s = exTab) => {
@@ -936,7 +950,13 @@ export default function ChatPage() {
             Page đang <b>Bật</b> sẽ được sync tin nhắn về <b>và hiện trong Inbox</b>. Page <b>Tắt</b> sẽ bị ẩn khỏi Inbox và không sync
             (dữ liệu cũ vẫn giữ trong DB, bật lại là hiện lại).
           </p>
-          {settingPages.length === 0 && (
+          {settingPagesErr && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#dc2626", display: "flex", gap: 10, alignItems: "center" }}>
+              <span>⚠ Lỗi tải danh sách page: {settingPagesErr}</span>
+              <Btn size="xs" onClick={loadSettingPages}>Thử lại</Btn>
+            </div>
+          )}
+          {!settingPagesErr && settingPages.length === 0 && (
             <div style={{ color: "#94a3b8", padding: 20, textAlign: "center" }}>
               Chưa có page nào. Cần có access_token trong bảng fb_page_token.
             </div>

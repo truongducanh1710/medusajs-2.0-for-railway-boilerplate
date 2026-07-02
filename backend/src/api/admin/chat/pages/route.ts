@@ -10,9 +10,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const pool = getChatPool()
     const fbPool = getPool()
 
-    // Ensure fb_page_token table exists and is populated
+    // Ensure fb_page_token table exists and is populated.
+    // Refresh is best-effort — a stale/expired FB system token must not blank out
+    // the whole page list (fb_page_token already has 18 pages cached from prior syncs).
     await ensureTables(fbPool)
-    await getPageTokens(fbPool) // refresh from FB Graph API if cache is stale/empty
+    await getPageTokens(fbPool).catch((e: any) => {
+      console.warn("[chat/pages] FB token refresh failed, falling back to cached rows:", e.message)
+    })
 
     // Ensure chat-specific columns exist
     await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`)
