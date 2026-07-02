@@ -62,7 +62,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const recipientId = String(event?.recipient?.id || "")
       const message = event?.message
       const postback = event?.postback
-      const text = String(message?.text || postback?.title || postback?.payload || "").trim()
+      const attachments = Array.isArray(message?.attachments) ? message.attachments : []
+      const eventAt = event.timestamp ? new Date(Number(event.timestamp)) : new Date()
+      const text = String(message?.text || postback?.title || postback?.payload || "").trim() || (attachments.length ? "[attachment]" : "")
       if (!text) continue
 
       // Echo = page trả lời khách — lưu lại dưới dạng outbound
@@ -85,15 +87,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           )
           const convId = convRow.rows[0]?.id
           if (convId) {
-            await pool.query(
+            const inserted = await pool.query(
               `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, raw_payload, created_at)
                VALUES ($1,$2,'outbound','page',$3,$4,$5,$6)
-               ON CONFLICT (fb_message_id) DO NOTHING`,
-              [convId, msgId, text, JSON.stringify(message?.attachments || []), JSON.stringify(event),
-               event.timestamp ? new Date(Number(event.timestamp)) : new Date()]
+               ON CONFLICT (fb_message_id) DO NOTHING
+               RETURNING id`,
+              [convId, msgId, text, JSON.stringify(attachments), JSON.stringify(event), eventAt]
             )
+            if (inserted.rowCount) {
+              broadcastChatEvent("new_message", { page_id: pageId, conversation_id: convId, direction: "outbound" })
+            }
           }
-          broadcastChatEvent("new_message", { page_id: pageId, conversation_id: convId, direction: "outbound" })
           console.log(`[FB Chat Webhook] Saved echo/page-reply page=${pageId} psid=${psid}`)
         } catch (e: any) {
           console.error("[FB Chat Webhook] Echo save error:", e.message)
@@ -108,9 +112,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           psid: senderId,
           text,
           fbMessageId: message?.mid || postback?.mid || `${pageId}:${senderId}:${event.timestamp || Date.now()}`,
-          attachments: message?.attachments || [],
+          attachments,
           raw: event,
-          createdAt: event.timestamp ? new Date(Number(event.timestamp)) : new Date(),
+          createdAt: eventAt,
         })
         console.log(`[FB Chat Webhook] Saved message page=${pageId} psid=${senderId}`)
       } catch (e: any) {

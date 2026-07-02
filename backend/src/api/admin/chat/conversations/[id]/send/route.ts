@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ensureChatTables, getChatAuthInfo, getChatPool, logConversationEvent, refreshConversationContext, sendFacebookMessage } from "../../../_lib"
+import { broadcastChatEvent, ensureChatTables, getChatAuthInfo, getChatPool, logConversationEvent, refreshConversationContext, sendFacebookMessage } from "../../../_lib"
 import { getPancakeConfig, pancakeSendMessage } from "../../../pancake-lib"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -46,6 +46,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await logConversationEvent(pool, id, "manual_reply_sent", "sale", auth.email, { text, send_to_facebook, channel })
     await maybeCreateReplyExample(pool, id, auth.email, text)
     await refreshConversationContext(pool, id)
+    broadcastChatEvent("new_message", { page_id: c.page_id, conversation_id: id, direction: "outbound" })
     return res.json({ ok: true, message: msg.rows[0], fb: fbResult })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })

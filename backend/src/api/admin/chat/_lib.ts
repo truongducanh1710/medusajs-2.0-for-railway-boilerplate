@@ -28,6 +28,11 @@ export function broadcastChatEvent(event: string, data: Record<string, any>) {
   }
 }
 
+function getMessageDisplayText(text: any, attachments: any[] = []): string {
+  const value = String(text || "").trim()
+  return value || (attachments.length ? "[attachment]" : "")
+}
+
 export type ChatAuthInfo = {
   email: string
   isSuper: boolean
@@ -337,6 +342,131 @@ export async function ensureAgentForPage(pool: Pool, pageId: string, pageName?: 
   return inserted.rows[0]
 }
 
+const FB_GRAPH_VERSION = "v20.0"
+
+async function fbGet(path: string, token: string): Promise<any> {
+  const url = `https://graph.facebook.com/${FB_GRAPH_VERSION}${path}${path.includes("?") ? "&" : "?"}access_token=${token}`
+  const r = await fetch(url)
+  const d = await r.json()
+  if (d?.error) throw new Error(`FB API: ${d.error.message} (code ${d.error.code})`)
+  return d
+}
+
+/**
+ * Kéo inbox 1 page từ Graph API và lưu cả tin khách (inbound) lẫn tin page (outbound).
+ *
+ * Dùng chung cho: route sync thủ công (/admin/chat/sync-inbox) VÀ cron fb-inbox-sync.
+ * Lý do cần cron: tin page trả lời được gõ trên Pancake nên Facebook KHÔNG phát
+ * message_echoes về app phanvietweb2 → webhook không nhận → phải kéo định kỳ.
+ */
+export async function pullPageInbox(
+  pageId: string,
+  pageName: string,
+  token: string,
+  since: Date
+): Promise<{ saved: number; skipped: number; errors: string[] }> {
+  let saved = 0, skipped = 0
+  const errors: string[] = []
+  const sinceTs = Math.floor(since.getTime() / 1000)
+  const pool = getChatPool()
+
+  let convData: any
+  try {
+    convData = await fbGet(`/${pageId}/conversations?fields=participants,updated_time&limit=25&since=${sinceTs}`, token)
+  } catch (e: any) {
+    errors.push(`Lấy conversations thất bại: ${e.message}`)
+    return { saved, skipped, errors }
+  }
+
+  for (const conv of convData?.data || []) {
+    const convId = conv.id
+    const participants: any[] = conv.participants?.data || []
+    const customer = participants.find((p: any) => p.id !== pageId)
+    if (!customer) { skipped++; continue }
+    const psid = customer.id
+    const customerName = customer.name || undefined
+
+    let msgsData: any
+    try {
+      msgsData = await fbGet(`/${convId}/messages?fields=id,message,from,created_time,attachments&limit=50`, token)
+    } catch (e: any) {
+      errors.push(`Conv ${convId}: ${e.message}`)
+      skipped++
+      continue
+    }
+
+    const messages: any[] = [...(msgsData?.data || [])].reverse() // oldest first
+    for (const msg of messages) {
+      const attachments = msg.attachments?.data || []
+      const msgText = getMessageDisplayText(msg.message, attachments)
+      const msgId = msg.id
+      const createdAt = msg.created_time ? new Date(msg.created_time) : new Date()
+      const isFromPage = msg.from?.id === pageId
+      if (!msgText || !msgId) { skipped++; continue }
+
+      try {
+        if (isFromPage) {
+          await ensureChatTables(pool)
+          await pool.query(
+            `INSERT INTO fb_conversation (page_id, page_name, customer_psid, customer_name, status, last_message, last_message_at)
+             VALUES ($1,$2,$3,$4,'new',$5,$6)
+             ON CONFLICT (page_id, customer_psid) DO UPDATE SET
+               page_name = EXCLUDED.page_name,
+               customer_name = COALESCE(EXCLUDED.customer_name, fb_conversation.customer_name),
+               updated_at = now()`,
+            [pageId, pageName, psid, customerName || null, msgText, createdAt]
+          )
+          const convRow = await pool.query(
+            `SELECT id FROM fb_conversation WHERE page_id=$1 AND customer_psid=$2`, [pageId, psid]
+          )
+          const dbConvId = convRow.rows[0]?.id
+          if (dbConvId && msgId) {
+            const inserted = await pool.query(
+              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, created_at)
+               VALUES ($1,$2,'outbound','page',$3,$4,$5)
+               ON CONFLICT (fb_message_id) DO NOTHING
+               RETURNING id`,
+              [dbConvId, msgId, msgText, JSON.stringify(attachments), createdAt]
+            )
+            if (inserted.rowCount) {
+              await pool.query(
+                `UPDATE fb_conversation
+                 SET last_message = $2, last_message_at = $3, updated_at = now()
+                 WHERE id = $1
+                   AND (last_message_at IS NULL OR last_message_at <= $3)`,
+                [dbConvId, msgText, createdAt]
+              )
+              broadcastChatEvent("new_message", { page_id: pageId, conversation_id: dbConvId, direction: "outbound" })
+              saved++
+            } else {
+              skipped++
+            }
+          } else {
+            skipped++
+          }
+        } else {
+          const result = await upsertIncomingMessage({
+            pageId, psid,
+            customerName: customerName || undefined,
+            text: msgText,
+            fbMessageId: msgId,
+            attachments,
+            raw: msg,
+            createdAt,
+          })
+          if (result.inserted) saved++
+          else skipped++
+        }
+      } catch (e: any) {
+        errors.push(`Msg ${msgId}: ${e.message}`)
+        skipped++
+      }
+    }
+  }
+
+  return { saved, skipped, errors }
+}
+
 export async function upsertIncomingMessage(opts: {
   pageId: string
   psid: string
@@ -346,14 +476,36 @@ export async function upsertIncomingMessage(opts: {
   attachments?: any[]
   raw?: any
   createdAt?: Date
-}): Promise<{ conversation: any; message: any; agent: any; handoff: ReturnType<typeof detectHandoff> }> {
+}): Promise<{ conversation: any; message: any; agent: any; handoff: ReturnType<typeof detectHandoff>; inserted: boolean }> {
   const pool = getChatPool()
   await ensureChatTables(pool)
   const pageName = await getPageName(pool, opts.pageId)
   const agent = await ensureAgentForPage(pool, opts.pageId, pageName)
   const messageAt = opts.createdAt || new Date()
   const windowExpires = new Date(messageAt.getTime() + 24 * 3600 * 1000)
-  const handoff = detectHandoff(opts.text)
+  const text = getMessageDisplayText(opts.text, opts.attachments || [])
+  if (!text) throw new Error("empty message")
+  const handoff = detectHandoff(text)
+
+  if (opts.fbMessageId) {
+    const existing = await pool.query(
+      `SELECT m.*, c.id AS conversation_id, c.page_id, c.customer_psid
+       FROM fb_message m
+       JOIN fb_conversation c ON c.id = m.conversation_id
+       WHERE m.fb_message_id = $1
+       LIMIT 1`,
+      [opts.fbMessageId]
+    )
+    if (existing.rows[0]) {
+      return {
+        conversation: { id: existing.rows[0].conversation_id, page_id: existing.rows[0].page_id, customer_psid: existing.rows[0].customer_psid },
+        message: existing.rows[0],
+        agent,
+        handoff,
+        inserted: false,
+      }
+    }
+  }
 
   let customerName = opts.customerName
   if (!customerName) {
@@ -391,7 +543,7 @@ export async function upsertIncomingMessage(opts: {
       opts.psid,
       customerName || null,
       handoff?.reason === "complaint" ? "complaint" : handoff ? "handoff" : "new",
-      opts.text,
+      text,
       messageAt,
       windowExpires,
       handoff?.reason ?? null,
@@ -406,17 +558,21 @@ export async function upsertIncomingMessage(opts: {
   const msg = await pool.query(
     `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, raw_payload, created_at)
      VALUES ($1,$2,'inbound','customer',$3,$4,$5,$6)
-     ON CONFLICT (fb_message_id) DO UPDATE SET raw_payload = fb_message.raw_payload
+     ON CONFLICT (fb_message_id) DO NOTHING
      RETURNING *`,
-    [conversation.id, opts.fbMessageId || null, opts.text, JSON.stringify(opts.attachments || []), JSON.stringify(opts.raw || {}), messageAt]
+    [conversation.id, opts.fbMessageId || null, text, JSON.stringify(opts.attachments || []), JSON.stringify(opts.raw || {}), messageAt]
   )
+  const inserted = !!msg.rows[0]
+  if (!inserted) {
+    return { conversation, message: null, agent, handoff, inserted: false }
+  }
   await refreshConversationContext(pool, conversation.id)
   if (handoff) {
     await logConversationEvent(pool, conversation.id, "bot_handoff_created", "bot", null, handoff)
   }
   broadcastChatEvent("new_message", { page_id: opts.pageId, conversation_id: conversation.id, direction: "inbound" })
-  await processBotDecision(pool, conversation.id, msg.rows[0].id, opts.text, agent, !!handoff)
-  return { conversation, message: msg.rows[0], agent, handoff }
+  await processBotDecision(pool, conversation.id, msg.rows[0].id, text, agent, !!handoff)
+  return { conversation, message: msg.rows[0], agent, handoff, inserted: true }
 }
 
 async function processBotDecision(pool: Pool, conversationId: string, messageId: string, text: string, agent: any, hasHandoff: boolean) {
@@ -460,6 +616,7 @@ async function processBotDecision(pool: Pool, conversationId: string, messageId:
     await pool.query(`UPDATE fb_conversation SET last_message = $2, last_message_at = now(), status = 'bot_handling', updated_at = now() WHERE id = $1`, [conversationId, reply])
     await logBotEvent(pool, conversationId, saved.rows[0]?.id || messageId, detectIntent(text), reply, true, null)
     await refreshConversationContext(pool, conversationId)
+    broadcastChatEvent("new_message", { page_id: c.page_id, conversation_id: conversationId, direction: "outbound" })
   } catch (e: any) {
     await pool.query(`UPDATE fb_bot_agent SET error_count = error_count + 1, last_error_at = now(), mode = CASE WHEN error_count + 1 >= 3 THEN 'paused_by_error' ELSE mode END WHERE page_id = $1`, [c.page_id])
     await logBotEvent(pool, conversationId, messageId, detectIntent(text), reply, false, `send_failed: ${e.message}`)
