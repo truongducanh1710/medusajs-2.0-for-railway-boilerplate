@@ -851,12 +851,342 @@ function SummaryTab() {
   )
 }
 
+// ─── CPQC Calculator Tab ───────────────────────────────────────────────────────
+
+interface CpqcInputs {
+  product_code: string | null
+  product_name: string
+  from_date: string
+  to_date: string
+  avg_selling_price: string
+  cost_don1: string
+  cost_don2: string
+  cost_don3: string
+  pct_don1: string  // 0..100 (hiển thị), quy đổi 0..1 khi tính/lưu
+  pct_don2: string
+  pct_don3: string
+  return_rate: string  // 0..100
+  ship_fee: string
+  cod_fee_pct: string  // 0..100
+  packing_fee: string
+  target_margin_pct: string  // 0..100
+  exchange_rate: string
+}
+
+const emptyCpqcInputs: CpqcInputs = {
+  product_code: null, product_name: "",
+  from_date: new Date(new Date().getFullYear(), new Date().getMonth() - 2, 1).toISOString().slice(0, 10),
+  to_date: new Date().toISOString().slice(0, 10),
+  avg_selling_price: "", cost_don1: "", cost_don2: "", cost_don3: "",
+  pct_don1: "", pct_don2: "", pct_don3: "",
+  return_rate: "", ship_fee: "16000", cod_fee_pct: "2", packing_fee: "3000",
+  target_margin_pct: "20", exchange_rate: "24000",
+}
+
+function numField(label: string, value: string, onChange: (v: string) => void, suffix?: string) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 12, color: "#374151" }}>
+      {label}
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <input
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 8px", fontSize: 13, width: 140, outline: "none", textAlign: "right" }}
+        />
+        {suffix && <span style={{ fontSize: 12, color: "#9ca3af", minWidth: 16 }}>{suffix}</span>}
+      </div>
+    </label>
+  )
+}
+
+function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
+  const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
+  const [inputs, setInputs] = useState<CpqcInputs>(emptyCpqcInputs)
+  const [productQuery, setProductQuery] = useState("")
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [autoLoading, setAutoLoading] = useState(false)
+  const [autoError, setAutoError] = useState<string | null>(null)
+  const [unmatchedItems, setUnmatchedItems] = useState<{ name: string; count: number }[]>([])
+  const [saving, setSaving] = useState(false)
+  const [history, setHistory] = useState<any[]>([])
+  const [showHistory, setShowHistory] = useState(false)
+
+  useEffect(() => {
+    apiJson("/admin/gia-von/products", "GET").then((d) => {
+      setMktProducts((d.products ?? []).filter((p: MktProduct) => p.active !== false))
+    }).catch(() => {})
+  }, [])
+
+  function set<K extends keyof CpqcInputs>(key: K, value: CpqcInputs[K]) {
+    setInputs(i => ({ ...i, [key]: value }))
+  }
+
+  function selectProduct(p: MktProduct) {
+    set("product_code", p.code)
+    set("product_name", p.name)
+    setProductQuery(p.name)
+    setShowDropdown(false)
+    setUnmatchedItems([])
+    setAutoError(null)
+  }
+
+  function useNewProduct() {
+    set("product_code", null)
+    set("product_name", productQuery)
+    setShowDropdown(false)
+  }
+
+  async function fetchAutoStats() {
+    if (!inputs.product_code) return
+    setAutoLoading(true)
+    setAutoError(null)
+    setUnmatchedItems([])
+    try {
+      const d = await apiJson(
+        `/admin/gia-von/cpqc/auto-stats?code=${encodeURIComponent(inputs.product_code)}&from=${inputs.from_date}&to=${inputs.to_date}`,
+        "GET"
+      )
+      if (d.insufficient_data) {
+        setAutoError(`Chưa đủ dữ liệu đơn thật (${d.sample_size ?? 0} đơn) trong khoảng thời gian này — hãy nhập tay hoặc mở rộng khoảng ngày.`)
+      } else {
+        setInputs(i => ({
+          ...i,
+          avg_selling_price: String(d.avg_selling_price ?? ""),
+          cost_don1: String(d.cost_don1 ?? ""),
+          cost_don2: String(d.cost_don2 ?? ""),
+          cost_don3: String(d.cost_don3 ?? ""),
+          pct_don1: String(Math.round((d.pct_don1 ?? 0) * 1000) / 10),
+          pct_don2: String(Math.round((d.pct_don2 ?? 0) * 1000) / 10),
+          pct_don3: String(Math.round((d.pct_don3 ?? 0) * 1000) / 10),
+          return_rate: String(Math.round((d.return_rate ?? 0) * 1000) / 10),
+        }))
+        setUnmatchedItems(d.unmatched_items ?? [])
+      }
+    } catch (e: any) {
+      setAutoError("Lỗi lấy dữ liệu: " + e.message)
+    } finally {
+      setAutoLoading(false)
+    }
+  }
+
+  async function loadHistory() {
+    if (!inputs.product_code) return
+    try {
+      const d = await apiJson(`/admin/gia-von/cpqc?product_code=${encodeURIComponent(inputs.product_code)}`, "GET")
+      setHistory(d.rows ?? [])
+      setShowHistory(true)
+    } catch (e: any) {
+      alert("Lỗi tải lịch sử: " + e.message)
+    }
+  }
+
+  async function save() {
+    if (!inputs.product_name.trim()) { alert("Thiếu tên sản phẩm"); return }
+    setSaving(true)
+    try {
+      await apiJson("/admin/gia-von/cpqc", "POST", {
+        product_code: inputs.product_code,
+        product_name: inputs.product_name,
+        from_date: inputs.product_code ? inputs.from_date : null,
+        to_date: inputs.product_code ? inputs.to_date : null,
+        avg_selling_price: n(inputs.avg_selling_price),
+        cost_don1: n(inputs.cost_don1), cost_don2: n(inputs.cost_don2), cost_don3: n(inputs.cost_don3),
+        pct_don1: n(inputs.pct_don1) / 100, pct_don2: n(inputs.pct_don2) / 100, pct_don3: n(inputs.pct_don3) / 100,
+        return_rate: n(inputs.return_rate) / 100,
+        ship_fee: n(inputs.ship_fee), cod_fee_pct: n(inputs.cod_fee_pct) / 100, packing_fee: n(inputs.packing_fee),
+        target_margin_pct: n(inputs.target_margin_pct) / 100,
+        exchange_rate: n(inputs.exchange_rate),
+      })
+      alert("Đã lưu.")
+    } catch (e: any) {
+      alert("Lỗi lưu: " + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteHistoryRow(id: string) {
+    if (!confirm("Xóa bản ghi này?")) return
+    try {
+      await apiJson(`/admin/gia-von/cpqc/${id}`, "DELETE")
+      setHistory(h => h.filter(r => r.id !== id))
+    } catch (e: any) {
+      alert("Lỗi xóa: " + e.message)
+    }
+  }
+
+  function n(s: string): number {
+    return parseFloat(parseViNum(s)) || 0
+  }
+
+  // ── Tính toán live ──
+  // Công thức khớp mẫu Excel gốc: tỷ lệ hoàn trừ thẳng theo VNĐ trên giá bán (không phải
+  // chiết khấu doanh thu), phí thu hộ tính % trên giá bán rồi trừ thẳng — không nhân với (1-hoàn).
+  const avgSellingPrice = n(inputs.avg_selling_price)
+  const giaVonTb =
+    n(inputs.cost_don1) * (n(inputs.pct_don1) / 100) +
+    n(inputs.cost_don2) * (n(inputs.pct_don2) / 100) +
+    n(inputs.cost_don3) * (n(inputs.pct_don3) / 100)
+  const phiHoan = avgSellingPrice * (n(inputs.return_rate) / 100)
+  const codFee = avgSellingPrice * (n(inputs.cod_fee_pct) / 100)
+  const lnGopBienPhi = avgSellingPrice - phiHoan - giaVonTb - n(inputs.ship_fee) - codFee - n(inputs.packing_fee)
+  const lnGopPct = avgSellingPrice > 0 ? (lnGopBienPhi / avgSellingPrice) * 100 : 0
+  const pctCpqcMax = lnGopPct - n(inputs.target_margin_pct)
+  const cpqcVnd = (pctCpqcMax / 100) * avgSellingPrice
+  const exchangeRate = n(inputs.exchange_rate) || 24000
+  const cpqcUsd = cpqcVnd / exchangeRate
+
+  const pctSum = n(inputs.pct_don1) + n(inputs.pct_don2) + n(inputs.pct_don3)
+  const fmt = (v: number) => new Intl.NumberFormat("vi-VN").format(Math.round(v))
+
+  const filteredProducts = productQuery
+    ? mktProducts.filter(p => p.name.toLowerCase().includes(productQuery.toLowerCase()) || p.code.toLowerCase().includes(productQuery.toLowerCase()))
+    : mktProducts
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+        {/* ── Cột trái: input ── */}
+        <div style={{ flex: "1 1 420px", minWidth: 380 }}>
+          <div style={{ marginBottom: 14, position: "relative" }}>
+            <label style={{ display: "block", fontSize: 12, color: "#374151", marginBottom: 4 }}>Sản phẩm</label>
+            <input
+              value={productQuery}
+              onChange={e => { setProductQuery(e.target.value); setShowDropdown(true); set("product_code", null) }}
+              onFocus={() => setShowDropdown(true)}
+              placeholder="Gõ tên/mã SP có sẵn, hoặc gõ tên SP mới..."
+              style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 6, padding: "8px 10px", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+            />
+            {showDropdown && productQuery && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, maxHeight: 220, overflowY: "auto", background: "#fff", border: "1px solid #d1d5db", borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,.12)", zIndex: 50 }}>
+                {filteredProducts.slice(0, 20).map(p => (
+                  <div key={p.id} onMouseDown={() => selectProduct(p)}
+                    style={{ padding: "6px 10px", cursor: "pointer", display: "flex", gap: 8, alignItems: "center", borderBottom: "1px solid #f3f4f6" }}>
+                    <span style={{ color: "#7c3aed", fontWeight: 700, minWidth: 90, fontSize: 11 }}>{p.code}</span>
+                    <span style={{ fontSize: 13 }}>{p.name}</span>
+                  </div>
+                ))}
+                <div onMouseDown={useNewProduct}
+                  style={{ padding: "6px 10px", cursor: "pointer", color: "#16a34a", fontSize: 12, fontWeight: 600 }}>
+                  + Dùng "{productQuery}" làm sản phẩm mới (nhập tay toàn bộ)
+                </div>
+              </div>
+            )}
+          </div>
+
+          {inputs.product_code && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+              <input type="date" value={inputs.from_date} onChange={e => set("from_date", e.target.value)}
+                style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 8px", fontSize: 12 }} />
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>→</span>
+              <input type="date" value={inputs.to_date} onChange={e => set("to_date", e.target.value)}
+                style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 8px", fontSize: 12 }} />
+              <button onClick={fetchAutoStats} disabled={autoLoading}
+                style={{ background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>
+                {autoLoading ? "Đang lấy…" : "📊 Lấy dữ liệu thật"}
+              </button>
+            </div>
+          )}
+          {autoError && (
+            <div style={{ fontSize: 12, color: "#dc2626", marginBottom: 10 }}>{autoError}</div>
+          )}
+          {unmatchedItems.length > 0 && (
+            <div style={{ fontSize: 11, color: "#d97706", marginBottom: 10, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
+              ⚠ {unmatchedItems.length} SP phụ chưa khớp giá vốn (tính 0): {unmatchedItems.map(u => `${u.name} (${u.count})`).join(", ")}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            {numField("Giá bán TB/đơn", inputs.avg_selling_price, v => set("avg_selling_price", v), "đ")}
+            <div />
+            {numField("Giá vốn đơn 1 (1 SP)", inputs.cost_don1, v => set("cost_don1", v), "đ")}
+            {numField("% đơn 1", inputs.pct_don1, v => set("pct_don1", v), "%")}
+            {numField("Giá vốn đơn đảo (2 SP)", inputs.cost_don2, v => set("cost_don2", v), "đ")}
+            {numField("% đơn đảo", inputs.pct_don2, v => set("pct_don2", v), "%")}
+            {numField("Giá vốn đơn đất liền (3+ SP)", inputs.cost_don3, v => set("cost_don3", v), "đ")}
+            {numField("% đơn đất liền", inputs.pct_don3, v => set("pct_don3", v), "%")}
+          </div>
+          {Math.abs(pctSum - 100) > 1 && (inputs.pct_don1 || inputs.pct_don2 || inputs.pct_don3) && (
+            <div style={{ fontSize: 11, color: "#dc2626", marginTop: -8, marginBottom: 12 }}>
+              ⚠ Tổng % đơn = {pctSum.toFixed(1)}% (nên ≈ 100%)
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            {numField("Tỷ lệ hoàn/huỷ dự kiến", inputs.return_rate, v => set("return_rate", v), "%")}
+            {numField("Target LN gộp", inputs.target_margin_pct, v => set("target_margin_pct", v), "%")}
+            {numField("Phí ship", inputs.ship_fee, v => set("ship_fee", v), "đ")}
+            {numField("Phí thu hộ (COD)", inputs.cod_fee_pct, v => set("cod_fee_pct", v), "%")}
+            {numField("Phí lưu kho/đóng gói", inputs.packing_fee, v => set("packing_fee", v), "đ")}
+            {numField("Tỷ giá USD/VNĐ", inputs.exchange_rate, v => set("exchange_rate", v))}
+          </div>
+
+          {canManage && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={save} disabled={saving}
+                style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 7, padding: "9px 20px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+                {saving ? "Đang lưu…" : "💾 Lưu"}
+              </button>
+              {inputs.product_code && (
+                <button onClick={loadHistory}
+                  style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, padding: "9px 16px", cursor: "pointer", fontSize: 13 }}>
+                  🕘 Xem lịch sử
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Cột phải: kết quả ── */}
+        <div style={{ flex: "1 1 320px", minWidth: 300 }}>
+          <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 20 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 14, color: "#111827" }}>Kết quả</div>
+            {[
+              ["Giá vốn TB theo tỷ lệ", `${fmt(giaVonTb)}đ`],
+              ["LN gộp - CP biến đổi", `${fmt(lnGopBienPhi)}đ`, lnGopBienPhi < 0 ? "#dc2626" : "#16a34a"],
+              ["% LN gộp - biến phí", `${lnGopPct.toFixed(2)}%`],
+              ["% CPQC max để đạt target", `${pctCpqcMax.toFixed(2)}%`, pctCpqcMax < 0 ? "#dc2626" : "#7c3aed"],
+              ["CPQC (VNĐ/đơn)", `${fmt(cpqcVnd)}đ`, cpqcVnd < 0 ? "#dc2626" : undefined],
+              ["CPQC ($/đơn)", `$${cpqcUsd.toFixed(2)}`, cpqcUsd < 0 ? "#dc2626" : undefined],
+            ].map(([label, value, color], i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: i < 5 ? "1px solid #e5e7eb" : "none" }}>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>{label}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: (color as string) ?? "#111827" }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {showHistory && (
+            <div style={{ marginTop: 16, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>Lịch sử lưu</span>
+                <button onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af" }}>✕</button>
+              </div>
+              {history.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#9ca3af" }}>Chưa có lần lưu nào.</div>
+              ) : history.map(h => (
+                <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #f3f4f6", fontSize: 12 }}>
+                  <span style={{ color: "#6b7280" }}>{new Date(h.created_at).toLocaleString("vi-VN")}</span>
+                  <span>Target {Number(h.target_margin_pct * 100).toFixed(0)}%</span>
+                  {canManage && (
+                    <button onClick={() => deleteHistoryRow(h.id)} style={{ background: "none", border: "none", color: "#d1d5db", cursor: "pointer" }}>✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
-  const [tab, setTab] = useState<"sheet" | "summary">("sheet")
+  const [tab, setTab] = useState<"sheet" | "summary" | "cpqc">("sheet")
 
   if (loading) {
     return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
@@ -874,7 +1204,7 @@ export default function GiaVonPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "2px solid #e5e7eb" }}>
-        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"]] as const).map(([key, label]) => (
+        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
               padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -889,7 +1219,9 @@ export default function GiaVonPage() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        {tab === "sheet" ? <Spreadsheet canManage={canManage} /> : <SummaryTab />}
+        {tab === "sheet" ? <Spreadsheet canManage={canManage} />
+          : tab === "summary" ? <SummaryTab />
+          : <CpqcCalculatorTab canManage={canManage} />}
       </div>
     </div>
   )
