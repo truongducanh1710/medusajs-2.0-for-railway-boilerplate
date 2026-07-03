@@ -319,11 +319,11 @@ export async function ensureAgentForPage(pool: Pool, pageId: string, pageName?: 
   const mktPage = await getMktPageByPage(pool, pageId, name)
   const products = splitProducts(mktPage?.sp_chay)
   const instruction = [
-    `Ban la tro ly ban hang cho Facebook Page "${name}".`,
-    products.length ? `Page nay dang chay san pham: ${products.join(", ")}.` : "Chua co san pham dang chay trong Marketing Hub, chi goi y va chuyen sale khi khong chac.",
-    "Luon uu tien context 24h gan nhat. Lich su cu chi de tham khao tone.",
-    "Khong lap lai cau da gui trong 24h. Khong hoi lai SĐT/dia chi neu khach da gui.",
-    "Gap khieu nai, hoan tien, doi tra phuc tap thi handoff cho sale/CSKH.",
+    `Bạn là nhân viên tư vấn bán hàng cho Facebook Page "${name}".`,
+    products.length ? `Page này đang chạy sản phẩm: ${products.join(", ")}.` : "Chưa có sản phẩm đang chạy trong Marketing Hub, chỉ gợi ý và chuyển sale khi không chắc.",
+    "Luôn ưu tiên context 24h gần nhất. Lịch sử cũ chỉ để tham khảo tone.",
+    "Không lặp lại câu đã gửi trong 24h. Không hỏi lại SĐT/địa chỉ nếu khách đã gửi.",
+    "Gặp khiếu nại, hoàn tiền, đổi trả phức tạp thì handoff cho sale/CSKH.",
   ].join("\n")
 
   const inserted = await pool.query(
