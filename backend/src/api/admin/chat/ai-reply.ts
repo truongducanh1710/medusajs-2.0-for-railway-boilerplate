@@ -81,37 +81,208 @@ const TOOLS = [
   },
 ]
 
+function normalizeCatalogText(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+}
+
+const PRODUCT_QUERY_STOPWORDS = new Set([
+  "gia", "bao", "nhieu", "bn", "may", "tien", "sp", "san", "pham",
+  "cai", "loai", "nay", "do", "ay", "kia", "nhe", "a", "ah", "oi",
+])
+
+function productTokens(value: unknown): string[] {
+  return normalizeCatalogText(value)
+    .split(" ")
+    .filter((token) => token.length >= 2 && !PRODUCT_QUERY_STOPWORDS.has(token))
+}
+
+function scoreCatalogText(queryTokens: string[], queryNorm: string, target: unknown): number {
+  const targetNorm = normalizeCatalogText(target)
+  if (!targetNorm || !queryNorm) return 0
+
+  const compactQuery = queryNorm.replace(/\s+/g, "")
+  const compactTarget = targetNorm.replace(/\s+/g, "")
+  if (compactTarget === compactQuery) return 120
+  if (compactTarget.includes(compactQuery)) return 100
+  if (compactQuery.length >= 5 && compactQuery.includes(compactTarget)) return 78
+
+  let score = 0
+  const targetTokens = new Set(targetNorm.split(" ").filter(Boolean))
+  let overlap = 0
+  for (const token of queryTokens) {
+    if (targetTokens.has(token) || targetNorm.includes(token)) overlap += 1
+  }
+  if (queryTokens.length) {
+    score += (overlap / queryTokens.length) * 70
+    score += overlap * 6
+  }
+  if (queryTokens.length >= 2 && queryTokens.every((token) => targetNorm.includes(token))) score += 20
+  return score
+}
+
+function extractComboSearchTexts(product: any): string[] {
+  const combos = Array.isArray(product?.metadata?.sales_combos) ? product.metadata.sales_combos : []
+  const texts: string[] = []
+  for (const combo of combos) {
+    texts.push(combo?.name, combo?.note)
+    if (Array.isArray(combo?.items)) {
+      for (const item of combo.items) {
+        texts.push(item?.product_id, item?.code, item?.name)
+      }
+    }
+  }
+  return texts.filter(Boolean).map(String)
+}
+
+async function listMktProductHints(pool: Pool): Promise<any[]> {
+  const { rows } = await pool.query(
+    `SELECT id, name, code FROM mkt_product WHERE active = true ORDER BY name ASC LIMIT 500`
+  ).catch(() => ({ rows: [] as any[] }))
+  return rows
+}
+
+function buildMktMatchedTexts(productName: string, mktProducts: any[]): string[] {
+  const queryNorm = normalizeCatalogText(productName)
+  const queryTokens = productTokens(productName)
+  return mktProducts
+    .map((p) => {
+      const score = Math.max(
+        scoreCatalogText(queryTokens, queryNorm, p.name),
+        scoreCatalogText(queryTokens, queryNorm, p.code)
+      )
+      return { product: p, score }
+    })
+    .filter((x) => x.score >= 45)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .flatMap((x) => [x.product.name, x.product.code].filter(Boolean).map(String))
+}
+
+function scoreProductCandidate(product: any, productName: string, preferredTexts: string[]): number {
+  const queryNorm = normalizeCatalogText(productName)
+  const queryTokens = productTokens(productName)
+  const directTexts = [
+    product?.id,
+    product?.title,
+    product?.description,
+    ...extractComboSearchTexts(product),
+  ]
+  let score = Math.max(...directTexts.map((text) => scoreCatalogText(queryTokens, queryNorm, text)), 0)
+
+  const productText = normalizeCatalogText(directTexts.join(" "))
+  for (const preferred of preferredTexts) {
+    const preferredNorm = normalizeCatalogText(preferred)
+    if (!preferredNorm) continue
+    if (productText.includes(preferredNorm) || preferredNorm.includes(normalizeCatalogText(product?.title))) {
+      score += 18
+    }
+  }
+
+  return score
+}
+
 /**
- * Nguồn giá DUY NHẤT cho bot: metadata.sales_combos trên Medusa product — đây là
- * bảng "Combo đơn" sale/marketing tự điền tay ở /app/san-pham/[id] (tab 🧩 Combo đơn),
- * KHÔNG phải Medusa variant pricing. Match theo tên gần đúng qua title; không match
- * được thì trả not_found — bot không được tự đoán giá.
+ * Nguon gia DUY NHAT cho bot: metadata.sales_combos tren Medusa product.
+ * Resolver xem catalog rong hon title: Medusa title/id, combo item code/name va
+ * mkt_product name/code. Neu khong du chac thi tra candidate de bot hoi lai, khong doan gia.
  */
-async function toolGetProductInfo(scope: any, productName: string): Promise<any> {
+async function toolGetProductInfo(pool: Pool, scope: any, productName: string, agent?: any): Promise<any> {
   if (!scope) {
     return { found: false, note: "Không có kết nối tới hệ thống sản phẩm lúc này — không được tự đoán giá, hãy nói sẽ kiểm tra lại hoặc chuyển nhân viên." }
   }
   const productModule = scope.resolve(Modules.PRODUCT)
-  const products = await productModule.listProducts(
+  const queryNorm = normalizeCatalogText(productName)
+  const queryTokens = productTokens(productName)
+  const directProducts = await productModule.listProducts(
     { title: { $ilike: `%${productName}%` } },
-    { select: ["id", "title", "description", "metadata"], take: 3 }
+    { select: ["id", "title", "description", "metadata"], take: 20 }
   ).catch(() => [] as any[])
-
-  if (!products.length) {
-    return { found: false, note: "Không tìm thấy sản phẩm khớp tên trong hệ thống — không được tự đoán giá, hãy nói sẽ kiểm tra lại hoặc chuyển nhân viên." }
+  const allProducts = await productModule.listProducts(
+    {},
+    { select: ["id", "title", "description", "metadata"], take: 500 }
+  ).catch(() => [] as any[])
+  const productsById = new Map<string, any>()
+  for (const p of [...directProducts, ...allProducts]) {
+    if (p?.id) productsById.set(p.id, p)
   }
-  const product = products[0] as any
+  const mktProductHints = await listMktProductHints(pool)
+  const preferredTexts = [
+    ...(Array.isArray(agent?.product_names) ? agent.product_names : []),
+    ...buildMktMatchedTexts(productName, mktProductHints),
+  ].filter(Boolean).map(String)
+
+  const ranked = [...productsById.values()]
+    .map((product) => ({
+      product,
+      score: scoreProductCandidate(product, productName, preferredTexts),
+    }))
+    .filter((item) => item.score >= 45)
+    .sort((a, b) => b.score - a.score)
+
+  if (!ranked.length) {
+    const mktSuggestions = mktProductHints
+      .map((p) => ({
+        name: p.name,
+        code: p.code,
+        score: Math.max(
+          scoreCatalogText(queryTokens, queryNorm, p.name),
+          scoreCatalogText(queryTokens, queryNorm, p.code)
+        ),
+      }))
+      .filter((p) => p.score >= 35)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ name, code }) => ({ name, code }))
+    return {
+      found: false,
+      candidates: mktSuggestions,
+      note: mktSuggestions.length
+        ? "Chưa map được sản phẩm Marketing Hub sang sản phẩm Medusa có giá combo — hãy hỏi khách xác nhận sản phẩm hoặc chuyển nhân viên, không được tự đoán giá."
+        : "Không tìm thấy sản phẩm khớp tên trong hệ thống — không được tự đoán giá, hãy nói sẽ kiểm tra lại hoặc chuyển nhân viên.",
+    }
+  }
+  const top = ranked[0]
+  const second = ranked[1]
+  if (second && top.score < 80 && top.score - second.score < 12) {
+    return {
+      found: false,
+      ambiguous: true,
+      candidates: ranked.slice(0, 5).map((item) => ({
+        product_id: item.product.id,
+        title: item.product.title,
+      })),
+      note: "Có nhiều sản phẩm gần giống nhau — hãy hỏi khách xác nhận đúng sản phẩm trước khi báo giá.",
+    }
+  }
+
+  const product = top.product as any
   const combos = Array.isArray(product.metadata?.sales_combos) ? product.metadata.sales_combos : []
   const validCombos = combos.filter((c: any) => Number(c?.order_value) > 0)
 
   if (!validCombos.length) {
-    return { found: true, product_title: product.title, has_price: false, note: "Sản phẩm có trong hệ thống nhưng chưa cấu hình giá combo — không được tự đoán giá, hãy nói sẽ kiểm tra lại hoặc chuyển nhân viên." }
+    return {
+      found: true,
+      product_id: product.id,
+      product_title: product.title,
+      match_score: Math.round(top.score),
+      has_price: false,
+      note: "Sản phẩm có trong hệ thống nhưng chưa cấu hình giá combo — không được tự đoán giá, hãy nói sẽ kiểm tra lại hoặc chuyển nhân viên.",
+    }
   }
 
   return {
     found: true,
     has_price: true,
+    product_id: product.id,
     product_title: product.title,
+    match_score: Math.round(top.score),
     description: String(product.description || "").slice(0, 300),
     combos: validCombos.map((c: any) => ({
       name: c.name,
@@ -121,7 +292,6 @@ async function toolGetProductInfo(scope: any, productName: string): Promise<any>
     })),
   }
 }
-
 async function toolGetPurchaseHistory(pool: Pool, phone: string): Promise<any> {
   const { rows } = await pool.query(
     `SELECT items, total, pancake_created_at, status_name
@@ -181,6 +351,7 @@ function buildSystemPrompt(agent: any, ctx: any): string {
     "Phong cach: xung ho 'em' - 'anh/chi', tu nhien nhu nguoi that, khong may moc, cau ngan gon.",
     "Moi luot tra loi TOI DA 3 cau, neu can nhieu y hay tach thanh nhieu bubble bang dau '|||' giua cac cau.",
     "QUY TAC GIA: chi duoc noi gia sau khi da goi tool get_product_info va lay duoc gia that. KHONG duoc tu doan gia, ton kho, bao hanh, phi ship. Neu tool tra khong tim thay san pham, hay noi se kiem tra lai hoac goi handoff_to_human.",
+    "QUY TAC SAN PHAM: khi khach hoi ten gan dung, ten rut gon, hoac noi 'loai do/cai ay', hay goi get_product_info voi ten/ngu canh san pham gan nhat. Tool se so khop catalog san pham va tra san pham gan nhat neu du chac.",
     "QUY TAC HANDOFF: goi tool handoff_to_human ngay khi khach khieu nai, doi hoan tien/doi tra, doi gap nguoi that, hoac cau hoi ngoai pham vi tu van san pham.",
     "Neu biet so dien thoai khach, co the goi get_purchase_history de ca nhan hoa (vd: khach da mua truoc do thi chao than hon, goi y phu kien di kem).",
     instruction ? `Thong tin rieng cho page nay:\n${instruction}` : "",
@@ -280,7 +451,7 @@ async function runAiLoop(opts: {
 
       let result: any
       if (fnName === "get_product_info") {
-        result = await toolGetProductInfo(scope, String(args.product_name || ""))
+        result = await toolGetProductInfo(pool, scope, String(args.product_name || ""), agent)
       } else if (fnName === "get_purchase_history") {
         result = await toolGetPurchaseHistory(pool, String(args.phone || ""))
       } else if (fnName === "handoff_to_human") {
