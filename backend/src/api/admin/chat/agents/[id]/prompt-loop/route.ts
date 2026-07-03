@@ -7,11 +7,69 @@ const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || "https://api.minimax.io
 const MINIMAX_TEXT_MODEL = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M2"
 const LOOP_TIMEOUT_MS = 15_000
 
-const DEFAULT_SCENARIOS = [
-  "Dạ giá sản phẩm này sao em?",
-  "Nhà chị 4 người thì nên lấy combo nào?",
-  "Sản phẩm này có bảo hành không em?",
-]
+function splitProductNames(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((x) => String(x).trim()).filter(Boolean)
+  return String(value || "").split(",").map((x) => x.trim()).filter(Boolean)
+}
+
+function getLoopProductNames(agent: any): string[] {
+  return [
+    ...splitProductNames(agent?.product_names),
+    ...splitProductNames(agent?.sp_chay),
+  ].filter((name, idx, arr) => name && arr.indexOf(name) === idx)
+}
+
+function getPrimaryProductLabel(agent: any): string {
+  return getLoopProductNames(agent)[0] || "sản phẩm gia dụng đang chạy trên page"
+}
+
+function buildDefaultScenarios(agent: any): string[] {
+  const product = getPrimaryProductLabel(agent)
+  return [
+    `Dạ ${product} giá sao em?`,
+    `Nhà chị 4 người thì nên lấy combo ${product} nào?`,
+    `${product} có bảo hành không em?`,
+  ]
+}
+
+function buildDryRunHistory(agent: any, customerText: string): { role: "customer" | "bot"; text: string }[] {
+  const product = getPrimaryProductLabel(agent)
+  if (product === "sản phẩm gia dụng đang chạy trên page") return []
+  const text = String(customerText || "").toLowerCase()
+  const isGeneric = /\bsản phẩm này\b|\bloại này\b|\bcái này\b|\bcombo nào\b|\bbảo hành\b/.test(text)
+  if (!isGeneric) return []
+  return [{ role: "customer", text: `Em đang quan tâm ${product}.` }]
+}
+
+function buildLoopFallbackReply(agent: any, customerText: string): string {
+  const product = getPrimaryProductLabel(agent)
+  const text = String(customerText || "").toLowerCase()
+  if (/bảo hành|bao hanh/.test(text)) {
+    return `Dạ ${product} bên em có hỗ trợ sau mua ạ.\n\nĐể báo đúng chính sách bảo hành theo sản phẩm, em kiểm tra lại thông tin trên hệ thống rồi tư vấn chính xác cho anh/chị nhé.\n\nAnh/chị đang quan tâm combo nào ạ?`
+  }
+  if (/uy tín|uy tin|lừa|lua|thật không|that khong|shop/.test(text)) {
+    return `Dạ shop bên em có hỗ trợ tư vấn và chăm sóc sau mua ạ.\n\nAnh/chị có thể cho em biết mình đang quan tâm ${product} để em gửi đúng thông tin sản phẩm, giá và chính sách hỗ trợ nhé.`
+  }
+  if (/giá|gia|bao nhiêu|bao nhieu|combo/.test(text)) {
+    return `Dạ em đang kiểm tra giá và combo của ${product} cho anh/chị ạ.\n\nAnh/chị dùng cho gia đình mấy người để em tư vấn combo phù hợp hơn nhé?`
+  }
+  return `Dạ em đang tư vấn ${product} ạ.\n\nAnh/chị muốn hỏi giá, combo hay chính sách bảo hành để em hỗ trợ đúng nhất nhé?`
+}
+
+async function hydrateLoopAgent(pool: any, agent: any): Promise<any> {
+  if (getLoopProductNames(agent).length) return agent
+  const found = await pool.query(
+    `SELECT sp_chay
+     FROM mkt_page
+     WHERE lower(trim(page_name)) = lower(trim($1))
+        OR page_link ILIKE $2
+     LIMIT 1`,
+    [agent.page_name || "", `%${agent.page_id || ""}%`]
+  ).catch(() => ({ rows: [] as any[] }))
+  const spChay = found.rows[0]?.sp_chay
+  if (!spChay) return agent
+  return { ...agent, sp_chay: spChay, product_names: splitProductNames(spChay) }
+}
 
 async function callMiniMax(messages: any[], maxTokens = 700): Promise<string> {
   if (!MINIMAX_API_KEY) throw new Error("MINIMAX_API_KEY not set")
@@ -49,13 +107,13 @@ function parseJsonArray(text: string): any[] | null {
 }
 
 async function simulateCustomers(agent: any, count: number): Promise<string[]> {
-  const productHint = Array.isArray(agent.product_names) && agent.product_names.length ? agent.product_names.join(", ") : "sản phẩm gia dụng đang chạy trên page"
+  const productHint = getLoopProductNames(agent).length ? getLoopProductNames(agent).join(", ") : "sản phẩm gia dụng đang chạy trên page"
   const raw = await callMiniMax([
     { role: "system", content: "Bạn đóng vai khách hàng Việt Nam nhắn Facebook Messenger. Chỉ trả JSON array string, không giải thích." },
     { role: "user", content: `Tạo ${count} câu khách hàng tự nhiên, ngắn, có dấu, xoay quanh: ${productHint}. Bao gồm hỏi giá, hỏi combo/phù hợp gia đình, và bảo hành/niềm tin. Trả đúng JSON array.` },
   ], 500)
   const arr = parseJsonArray(raw)
-  return (arr || DEFAULT_SCENARIOS).map((x) => String(x)).filter(Boolean).slice(0, count)
+  return (arr || buildDefaultScenarios(agent)).map((x) => String(x)).filter(Boolean).slice(0, count)
 }
 
 async function evaluateReply(customerText: string, botReply: string, toolCalls: any[]): Promise<any> {
@@ -89,10 +147,32 @@ function averageScore(evals: any[]): number {
 async function runScenarioSet(pool: any, scope: any, agent: any, scenarios: string[]) {
   const results = []
   for (const customer of scenarios) {
-    const reply = await generateAiReplyDryRun({ pool, scope, agent, history: [], latestText: customer })
-    const botText = (reply?.bubbles || []).join("\n")
+    let reply: Awaited<ReturnType<typeof generateAiReplyDryRun>> = null
+    let error: string | null = null
+    try {
+      reply = await generateAiReplyDryRun({
+        pool,
+        scope,
+        agent,
+        history: buildDryRunHistory(agent, customer),
+        latestText: customer,
+      })
+    } catch (err: any) {
+      error = err?.message ? String(err.message) : "generateAiReplyDryRun failed"
+    }
+    const aiText = (reply?.bubbles || []).join("\n").trim()
+    const fallbackUsed = !aiText
+    const botText = fallbackUsed ? buildLoopFallbackReply(agent, customer) : aiText
     const evaluation = await evaluateReply(customer, botText, reply?.toolCalls || [])
-    results.push({ customer, bot_reply: botText, tool_calls: reply?.toolCalls || [], evaluation })
+    results.push({
+      customer,
+      bot_reply: botText,
+      ai_reply_empty: fallbackUsed,
+      fallback_used: fallbackUsed,
+      error,
+      tool_calls: reply?.toolCalls || [],
+      evaluation,
+    })
   }
   return results
 }
@@ -111,7 +191,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     let agent = cur.rows[0]
     if (!agent) return res.status(404).json({ error: "Agent not found" })
     if (auth.fbPageIds && !auth.fbPageIds.includes(agent.page_id)) return res.status(403).json({ error: "Forbidden" })
-    agent = await ensureAgentForPage(pool, agent.page_id, agent.page_name)
+    agent = await hydrateLoopAgent(pool, await ensureAgentForPage(pool, agent.page_id, agent.page_name))
 
     const scenarios = Array.isArray(body.scenarios) && body.scenarios.length
       ? body.scenarios.map((s: any) => String(s)).filter(Boolean).slice(0, scenarioCount)
