@@ -1,7 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ensureChatTables, getChatAuthInfo, getChatPool, upsertIncomingMessage } from "../_lib"
-
-const FB_VERSION = "v20.0"
+import { ensureChatTables, getChatAuthInfo, getChatPool, pullPageInbox } from "../_lib"
 
 // In-memory job state (đủ dùng cho 1 instance Railway)
 type SyncJob = {
@@ -16,109 +14,6 @@ type SyncJob = {
 }
 const jobs = new Map<string, SyncJob>()
 let currentJobId: string | null = null
-
-async function fbGet(path: string, token: string) {
-  const url = `https://graph.facebook.com/${FB_VERSION}${path}${path.includes("?") ? "&" : "?"}access_token=${token}`
-  const r = await fetch(url)
-  const d = await r.json()
-  if (d?.error) throw new Error(`FB API: ${d.error.message} (code ${d.error.code})`)
-  return d
-}
-
-async function pullPageInbox(
-  pageId: string,
-  pageName: string,
-  token: string,
-  since: Date
-): Promise<{ saved: number; skipped: number; errors: string[] }> {
-  let saved = 0, skipped = 0
-  const errors: string[] = []
-  const sinceTs = Math.floor(since.getTime() / 1000)
-
-  let convData: any
-  try {
-    convData = await fbGet(`/${pageId}/conversations?fields=participants,updated_time&limit=25&since=${sinceTs}`, token)
-  } catch (e: any) {
-    errors.push(`Lấy conversations thất bại: ${e.message}`)
-    return { saved, skipped, errors }
-  }
-
-  const conversations = convData?.data || []
-  const pool = getChatPool()
-
-  for (const conv of conversations) {
-    const convId = conv.id
-    const participants: any[] = conv.participants?.data || []
-    const customer = participants.find((p: any) => p.id !== pageId)
-    if (!customer) { skipped++; continue }
-    const psid = customer.id
-    const customerName = customer.name || undefined
-
-    let msgsData: any
-    try {
-      msgsData = await fbGet(
-        `/${convId}/messages?fields=id,message,from,created_time,attachments&limit=50`,
-        token
-      )
-    } catch (e: any) {
-      errors.push(`Conv ${convId}: ${e.message}`)
-      skipped++
-      continue
-    }
-
-    const messages: any[] = [...(msgsData?.data || [])].reverse() // oldest first
-
-    for (const msg of messages) {
-      const text = (msg.message || "").trim()
-      const msgId = msg.id
-      const createdAt = msg.created_time ? new Date(msg.created_time) : new Date()
-      const isFromPage = msg.from?.id === pageId
-
-      try {
-        if (isFromPage) {
-          await ensureChatTables(pool)
-          await pool.query(
-            `INSERT INTO fb_conversation (page_id, page_name, customer_psid, customer_name, status, last_message, last_message_at)
-             VALUES ($1,$2,$3,$4,'new',$5,$6)
-             ON CONFLICT (page_id, customer_psid) DO UPDATE SET
-               customer_name = COALESCE(EXCLUDED.customer_name, fb_conversation.customer_name),
-               updated_at = now()`,
-            [pageId, pageName, psid, customerName || null, text || "[attachment]", createdAt]
-          )
-          const convRow = await pool.query(
-            `SELECT id FROM fb_conversation WHERE page_id=$1 AND customer_psid=$2`, [pageId, psid]
-          )
-          const dbConvId = convRow.rows[0]?.id
-          if (dbConvId && msgId) {
-            await pool.query(
-              `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, created_at)
-               VALUES ($1,$2,'outbound','page',$3,$4,$5)
-               ON CONFLICT (fb_message_id) DO NOTHING`,
-              [dbConvId, msgId, text || "[attachment]", JSON.stringify(msg.attachments?.data || []), createdAt]
-            )
-          }
-          saved++
-        } else {
-          await upsertIncomingMessage({
-            pageId, psid,
-            customerName: customerName || undefined,
-            text: text || "[attachment]",
-            fbMessageId: msgId,
-            attachments: msg.attachments?.data || [],
-            raw: msg,
-            createdAt,
-          })
-          saved++
-        }
-      } catch (e: any) {
-        errors.push(`Msg ${msgId}: ${e.message}`)
-        skipped++
-      }
-    }
-  }
-
-  return { saved, skipped, errors }
-}
 
 async function runSyncJob(jobId: string, pages: any[], days: number) {
   const since = new Date(Date.now() - days * 24 * 3600 * 1000)
