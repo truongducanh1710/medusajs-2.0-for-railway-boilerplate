@@ -5,6 +5,8 @@ import { useCurrentPermissions } from "../../lib/use-permissions"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type Comment = { author_id: string; text: string; created_at: string; type?: string }
+
 type Task = {
   id: string
   title: string
@@ -17,11 +19,26 @@ type Task = {
   rating: number | null
   result: string | null
   notes: string | null
+  comments: Comment[]
   customer_name: string | null
   customer_phone: string | null
   pancake_order_id: string | null
   call_stage: string | null
   created_at: string
+}
+
+type SourceOrder = {
+  id: string
+  status_name: string
+  customer_name: string
+  customer_phone: string
+  total: number
+  cod_amount: number
+  tracking_code: string
+  province: string
+  items: { name: string; qty: number; price: number }[]
+  sale_name: string
+  pancake_created_at: string | null
 }
 
 type SourceCustomer = {
@@ -45,6 +62,20 @@ function fmt(d: string | null) {
   if (!d) return "—"
   const dt = new Date(d)
   return `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`
+}
+function fmtDateTime(d: string | null) {
+  if (!d) return "—"
+  const dt = new Date(d)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${pad(dt.getHours())}:${pad(dt.getMinutes())} ${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}`
+}
+function fmtVND(v: number) {
+  if (!v) return "0đ"
+  return new Intl.NumberFormat("vi-VN").format(v) + "đ"
+}
+function authorLabel(authorId: string, users: MktUser[]) {
+  const u = users.find(u => u.email === authorId)
+  return u ? u.name : authorId.includes("@") ? authorId.split("@")[0] : authorId
 }
 
 const CALL_STAGES: { value: string; label: string; icon: string; chip: string }[] = [
@@ -294,61 +325,146 @@ function BulkCreateModal({ users, onClose, onCreated, onToast }: {
 
 // ─── Detail drawer ───────────────────────────────────────────────────────────
 
-function DetailDrawer({ task, canRate, onClose, onPatch, onRate }: {
+function OrderCard({ order }: { order: SourceOrder }) {
+  const statusColor = order.status_name?.includes("hủy") ? "text-rose-600"
+    : order.status_name?.includes("thành công") || order.status_name?.includes("giao") ? "text-emerald-600" : "text-amber-600"
+  return (
+    <div className="rounded-lg border border-ui-border-base bg-ui-bg-subtle p-3 text-[12px]">
+      <div className="mb-1.5 flex items-center justify-between">
+        <a href={`/app/pancake-orders/${order.id}`} className="font-mono font-bold text-blue-600 underline">#{order.id}</a>
+        <span className={cn("font-semibold", statusColor)}>{order.status_name || "—"}</span>
+      </div>
+      <div className="mb-1"><b>{order.customer_name}</b> · <span className="font-mono text-ui-fg-subtle">{order.customer_phone}</span></div>
+      {(order.items || []).length > 0 && (
+        <div className="mb-1 space-y-0.5 text-ui-fg-subtle">
+          {order.items.map((it, i) => <div key={i}>{it.name} x{it.qty} — {fmtVND(it.price)}</div>)}
+        </div>
+      )}
+      <div className="flex items-center justify-between text-ui-fg-subtle">
+        <span>{order.province}</span>
+        <span className="font-bold text-ui-fg-base">{fmtVND(order.cod_amount || order.total)}</span>
+      </div>
+      {order.tracking_code && <div className="mt-1 text-ui-fg-subtle">🚚 {order.tracking_code}</div>}
+      {order.sale_name && <div className="mt-1 text-ui-fg-subtle">👤 Sale: {order.sale_name}</div>}
+    </div>
+  )
+}
+
+function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommentAdded }: {
   task: Task
+  users: MktUser[]
   canRate: boolean
   onClose: () => void
   onPatch: (fields: Record<string, any>) => void
   onRate: (rating: number) => void
+  onCommentAdded: (comment: Comment) => void
 }) {
-  const [result, setResult] = useState(task.result || "")
+  const [order, setOrder] = useState<SourceOrder | null>(null)
+  const [loadingOrder, setLoadingOrder] = useState(false)
+  const [noteDraft, setNoteDraft] = useState("")
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    if (!task.pancake_order_id) { setOrder(null); return }
+    setLoadingOrder(true)
+    apiFetch(`/admin/mkt-tasks/${task.id}`)
+      .then(r => r.json())
+      .then(d => setOrder(d.source_order || null))
+      .finally(() => setLoadingOrder(false))
+  }, [task.id, task.pancake_order_id])
+
+  async function sendNote() {
+    if (!noteDraft.trim() || sending) return
+    setSending(true)
+    try {
+      const r = await apiFetch(`/admin/mkt-tasks/${task.id}/comment`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: noteDraft.trim() }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d?.error || "Lỗi gửi ghi chú")
+      onCommentAdded(d.comment)
+      setNoteDraft("")
+    } catch { /* toast do page cha xử lý nếu cần */ }
+    finally { setSending(false) }
+  }
+
+  const notes = (task.comments || []).filter(c => !c.type || c.type !== "system")
+
   return (
     <div className="fixed inset-0 z-[9997] flex justify-end bg-black/30" onClick={onClose}>
-      <div className="h-full w-full max-w-md overflow-y-auto bg-ui-bg-base p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-[15px] font-bold text-ui-fg-base">{task.title}</h3>
-          <button onClick={onClose} className="text-ui-fg-muted hover:text-ui-fg-base">✕</button>
-        </div>
+      <div className="flex h-full w-full max-w-md flex-col bg-ui-bg-base shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-[15px] font-bold text-ui-fg-base">{task.title}</h3>
+            <button onClick={onClose} className="text-ui-fg-muted hover:text-ui-fg-base">✕</button>
+          </div>
 
-        <div className="mb-4 space-y-1 rounded-lg bg-ui-bg-subtle p-3 text-[12px]">
-          <div><span className="text-ui-fg-subtle">Khách hàng:</span> <b>{task.customer_name || "—"}</b></div>
-          <div><span className="text-ui-fg-subtle">SĐT:</span> <a href={`tel:${task.customer_phone}`} className="font-mono text-blue-600">{task.customer_phone}</a></div>
+          <div className="mb-4 space-y-1 rounded-lg bg-ui-bg-subtle p-3 text-[12px]">
+            <div><span className="text-ui-fg-subtle">Khách hàng:</span> <b>{task.customer_name || "—"}</b></div>
+            <div><span className="text-ui-fg-subtle">SĐT:</span> <a href={`tel:${task.customer_phone}`} className="font-mono text-blue-600">{task.customer_phone}</a></div>
+            <div><span className="text-ui-fg-subtle">Phụ trách:</span> {task.assignee_name}</div>
+          </div>
+
+          {/* Đơn gốc */}
           {task.pancake_order_id && (
-            <div><span className="text-ui-fg-subtle">Đơn gốc:</span> <a href={`/app/pancake-orders/${task.pancake_order_id}`} className="text-blue-600 underline">{task.pancake_order_id}</a></div>
+            <div className="mb-4">
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Đơn gốc</div>
+              {loadingOrder && <div className="text-[12px] text-ui-fg-muted">Đang tải...</div>}
+              {!loadingOrder && order && <OrderCard order={order} />}
+              {!loadingOrder && !order && <div className="text-[12px] text-ui-fg-muted">Không tìm thấy đơn</div>}
+            </div>
           )}
-          <div><span className="text-ui-fg-subtle">Phụ trách:</span> {task.assignee_name}</div>
-        </div>
 
-        <div className="mb-4">
-          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Giai đoạn gọi</div>
-          <div className="flex flex-wrap gap-1.5">
-            {CALL_STAGES.map(s => {
-              const active = (task.call_stage || "chua_goi") === s.value
-              return (
-                <button key={s.value} onClick={() => onPatch({ call_stage: s.value })}
-                  className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
-                    active ? s.chip : "bg-ui-bg-component text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
-                  {s.icon} {s.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Ghi chú kết quả cuộc gọi</div>
-          <textarea value={result} onChange={e => setResult(e.target.value)}
-            onBlur={() => { if (result !== (task.result || "")) onPatch({ result: result || null }) }}
-            rows={3} placeholder="Nội dung góp ý / trao đổi với khách..."
-            className="w-full rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[13px]" />
-        </div>
-
-        {task.status === "done" && (
           <div className="mb-4">
-            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Đánh giá</div>
-            {canRate ? <Stars value={task.rating} onChange={onRate} /> : <Stars value={task.rating} />}
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Giai đoạn gọi</div>
+            <div className="flex flex-wrap gap-1.5">
+              {CALL_STAGES.map(s => {
+                const active = (task.call_stage || "chua_goi") === s.value
+                return (
+                  <button key={s.value} onClick={() => onPatch({ call_stage: s.value })}
+                    className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
+                      active ? s.chip : "bg-ui-bg-component text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
+                    {s.icon} {s.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        )}
+
+          {/* Nhật ký ghi chú — mỗi lần ghi 1 dòng kèm người + thời gian */}
+          <div className="mb-4">
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Ghi chú kết quả cuộc gọi</div>
+            <div className="mb-2 max-h-48 space-y-2 overflow-y-auto">
+              {notes.length === 0 && <div className="text-[12px] text-ui-fg-muted">Chưa có ghi chú nào</div>}
+              {notes.map((c, i) => (
+                <div key={i} className="rounded-lg bg-ui-bg-subtle px-3 py-2 text-[12px]">
+                  <div className="mb-0.5 flex items-center justify-between text-[11px] text-ui-fg-subtle">
+                    <span className="font-semibold text-ui-fg-base">{authorLabel(c.author_id, users)}</span>
+                    <span>{fmtDateTime(c.created_at)}</span>
+                  </div>
+                  <div className="whitespace-pre-wrap text-ui-fg-base">{c.text}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={noteDraft} onChange={e => setNoteDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") sendNote() }}
+                placeholder="Nhập ghi chú (Enter để gửi)"
+                className="flex-1 rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[13px] outline-none" />
+              <button onClick={sendNote} disabled={sending || !noteDraft.trim()}
+                className="rounded-lg bg-ui-button-inverted px-3 py-1.5 text-[13px] font-semibold text-ui-fg-on-inverted disabled:opacity-50">
+                Gửi
+              </button>
+            </div>
+          </div>
+
+          {task.status === "done" && (
+            <div className="mb-4">
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Đánh giá</div>
+              {canRate ? <Stars value={task.rating} onChange={onRate} /> : <Stars value={task.rating} />}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -447,10 +563,14 @@ export default function CskhGoiKhachPage() {
           onCreated={loadTasks} onToast={onToast} />
       )}
       {selectedTask && (
-        <DetailDrawer task={selectedTask} canRate={isManager}
+        <DetailDrawer task={selectedTask} users={users} canRate={isManager}
           onClose={() => setSelectedTask(null)}
           onPatch={fields => patchTask(selectedTask.id, fields)}
-          onRate={rating => rateTask(selectedTask.id, rating)} />
+          onRate={rating => rateTask(selectedTask.id, rating)}
+          onCommentAdded={comment => {
+            setSelectedTask(prev => prev ? { ...prev, comments: [...(prev.comments || []), comment] } : prev)
+            setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, comments: [...(t.comments || []), comment] } : t))
+          }} />
       )}
 
       {/* Header */}

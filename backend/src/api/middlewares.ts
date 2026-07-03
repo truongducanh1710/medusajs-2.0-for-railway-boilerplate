@@ -126,7 +126,7 @@ export default defineMiddlewares({
     { matcher: "/admin/mkt-tasks/cskh-call/bulk", method: ["POST"], middlewares: [requirePerm("page.mkt-tasks.manage")] },
     { matcher: "/admin/mkt-tasks*", method: ["GET"], middlewares: [requirePerm("page.mkt-tasks.view")] },
     { matcher: "/admin/mkt-tasks", method: ["POST"], middlewares: [requirePerm("page.mkt-tasks.manage")] },
-    { matcher: "/admin/mkt-tasks/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-tasks.view")] },
+    { matcher: "/admin/mkt-tasks/*", method: ["PATCH", "DELETE", "POST"], middlewares: [requirePerm("page.mkt-tasks.view")] },
     { matcher: "/admin/mkt-chat*", method: ["GET"], middlewares: [requirePerm("page.mkt-chat.view")] },
     { matcher: "/admin/mkt-chat/channels", method: ["POST"], middlewares: [requirePerm("page.mkt-chat.manage")] },
     { matcher: "/admin/mkt-chat/channels/*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },

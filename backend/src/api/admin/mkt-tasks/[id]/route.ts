@@ -1,6 +1,13 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { Pool } from "pg"
 import { notifyTelegramByEmail } from "../../../../lib/notify"
+
+let _pool: Pool | null = null
+function getPool(): Pool {
+  if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  return _pool
+}
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -112,7 +119,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(403).json({ error: "Không có quyền" })
     }
 
-    res.json({ task })
+    // CSKH gọi tư vấn: đính kèm đơn Pancake gốc (những field đã có sẵn trong DB,
+    // KHÔNG có địa chỉ chi tiết — Pancake chỉ lưu tỉnh/thành trong pancake_order)
+    let source_order: any = null
+    if (task.pancake_order_id) {
+      const { rows } = await getPool().query(
+        `SELECT id, status_name, customer_name, customer_phone, total, cod_amount,
+                tracking_code, province, items, sale_name, pancake_created_at
+         FROM pancake_order WHERE id = $1`,
+        [task.pancake_order_id]
+      ).catch(() => ({ rows: [] }))
+      source_order = rows[0] || null
+    }
+
+    res.json({ task, source_order })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
