@@ -26,6 +26,8 @@ const MODEL_COSTS: Record<string, number> = {
   // MiniMax
   "minimax-m3":                         0.07,
   "MiniMax-M3":                         0.07,
+  "MiniMax-M2":                         0.30,  // ước tính — chưa verify giá chính thức, cần đối chiếu lại
+  "MiniMax-Text-01":                    0.20,  // ước tính — chưa verify giá chính thức, cần đối chiếu lại
 }
 
 export async function logAiUsage(params: {

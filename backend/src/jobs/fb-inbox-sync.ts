@@ -44,7 +44,7 @@ export default async function fbInboxSync(container: MedusaContainer) {
 
   for (const page of pages) {
     try {
-      const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since)
+      const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since, container)
       totalSaved += r.saved
       totalErrors += r.errors.length
       if (r.errors.length) {

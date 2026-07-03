@@ -15,12 +15,12 @@ type SyncJob = {
 const jobs = new Map<string, SyncJob>()
 let currentJobId: string | null = null
 
-async function runSyncJob(jobId: string, pages: any[], days: number) {
+async function runSyncJob(jobId: string, pages: any[], days: number, scope: any) {
   const since = new Date(Date.now() - days * 24 * 3600 * 1000)
   const job = jobs.get(jobId)!
 
   for (const page of pages) {
-    const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since).catch(e => ({
+    const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since, scope).catch(e => ({
       saved: 0, skipped: 0, errors: [e.message]
     }))
     job.results[page.page_name] = r
@@ -92,7 +92,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     jobs.set(jobId, job)
 
     // Chạy background — không await
-    runSyncJob(jobId, pages, days).catch(e => {
+    runSyncJob(jobId, pages, days, req.scope).catch(e => {
       job.status = "error"
       job.error = e.message
       job.finishedAt = new Date().toISOString()

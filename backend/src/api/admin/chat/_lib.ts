@@ -363,7 +363,8 @@ export async function pullPageInbox(
   pageId: string,
   pageName: string,
   token: string,
-  since: Date
+  since: Date,
+  scope?: any
 ): Promise<{ saved: number; skipped: number; errors: string[] }> {
   let saved = 0, skipped = 0
   const errors: string[] = []
@@ -453,6 +454,7 @@ export async function pullPageInbox(
             attachments,
             raw: msg,
             createdAt,
+            scope,
           })
           if (result.inserted) saved++
           else skipped++
@@ -476,6 +478,7 @@ export async function upsertIncomingMessage(opts: {
   attachments?: any[]
   raw?: any
   createdAt?: Date
+  scope?: any
 }): Promise<{ conversation: any; message: any; agent: any; handoff: ReturnType<typeof detectHandoff>; inserted: boolean }> {
   const pool = getChatPool()
   await ensureChatTables(pool)
@@ -571,11 +574,11 @@ export async function upsertIncomingMessage(opts: {
     await logConversationEvent(pool, conversation.id, "bot_handoff_created", "bot", null, handoff)
   }
   broadcastChatEvent("new_message", { page_id: opts.pageId, conversation_id: conversation.id, direction: "inbound" })
-  await processBotDecision(pool, conversation.id, msg.rows[0].id, text, agent, !!handoff)
+  await processBotDecision(pool, conversation.id, msg.rows[0].id, text, agent, !!handoff, opts.scope)
   return { conversation, message: msg.rows[0], agent, handoff, inserted: true }
 }
 
-async function processBotDecision(pool: Pool, conversationId: string, messageId: string, text: string, agent: any, hasHandoff: boolean) {
+async function processBotDecision(pool: Pool, conversationId: string, messageId: string, text: string, agent: any, hasHandoff: boolean, scope?: any) {
   const conv = await pool.query(`SELECT * FROM fb_conversation WHERE id = $1`, [conversationId])
   const c = conv.rows[0]
   if (!c || c.bot_paused || hasHandoff || agent?.mode === "off" || agent?.mode === "paused_by_error") {
@@ -584,7 +587,34 @@ async function processBotDecision(pool: Pool, conversationId: string, messageId:
   }
 
   const ctx = await refreshConversationContext(pool, conversationId)
-  const reply = buildRuleReply(text, agent, ctx)
+
+  let reply: string | null = null
+  let aiHandoffReason: string | null = null
+  try {
+    const { generateAiReply } = await import("./ai-reply.js")
+    const ai = await generateAiReply({ pool, scope, conversationId, agent, latestText: text })
+    if (ai) {
+      reply = ai.bubbles.join("\n") || null
+      const handoffAction = ai.actions.find((a) => a.type === "handoff_to_human") as any
+      if (handoffAction) aiHandoffReason = handoffAction.reason
+    }
+  } catch (e: any) {
+    console.error("[chat AI] generateAiReply failed, fallback to rule reply:", e.message)
+  }
+  if (reply === null && !aiHandoffReason) {
+    reply = buildRuleReply(text, agent, ctx)
+  }
+
+  if (aiHandoffReason) {
+    await pool.query(
+      `UPDATE fb_conversation SET bot_paused = true, handoff_reason = $2, handoff_at = now(), handoff_by = 'bot', status = 'handoff', updated_at = now() WHERE id = $1`,
+      [conversationId, aiHandoffReason]
+    )
+    await logConversationEvent(pool, conversationId, "bot_handoff_created", "bot", null, { reason: aiHandoffReason, source: "ai" })
+    await logBotEvent(pool, conversationId, messageId, detectIntent(text), reply, false, `ai_handoff: ${aiHandoffReason}`)
+    return
+  }
+
   if (!reply) {
     await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, "no_safe_rule")
     return

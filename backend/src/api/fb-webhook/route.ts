@@ -115,6 +115,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           attachments,
           raw: event,
           createdAt: eventAt,
+          scope: req.scope,
         })
         console.log(`[FB Chat Webhook] Saved message page=${pageId} psid=${senderId}`)
       } catch (e: any) {

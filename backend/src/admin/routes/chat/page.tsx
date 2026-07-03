@@ -244,7 +244,7 @@ function TagPicker({ tags, onChange }: { tags: string[]; onChange: (tags: string
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const [view, setView]           = useState<"inbox" | "agents" | "examples" | "settings" | "pancake">("inbox")
+  const [view, setView]           = useState<"inbox" | "agents" | "examples" | "settings" | "pancake" | "test-bot">("inbox")
   const [tab, setTab]             = useState("all")
   const [pageFilter, setPageFilter] = useState("")
   const [tagFilter, setTagFilter] = useState<string>("")
@@ -271,6 +271,12 @@ export default function ChatPage() {
   const [settingPagesErr, setSettingPagesErr] = useState<string>("")
   const [pancakePages, setPancakePages] = useState<any[]>([])
   const [pcDraft, setPcDraft]     = useState<Record<string, string>>({})
+  const [testPageId, setTestPageId] = useState("")
+  const [testMessages, setTestMessages] = useState<{ role: "customer" | "bot"; text: string }[]>([])
+  const [testInput, setTestInput] = useState("")
+  const [testSending, setTestSending] = useState(false)
+  const [testToolCalls, setTestToolCalls] = useState<{ name: string; args: any; result: any }[]>([])
+  const [testActions, setTestActions] = useState<{ type: string; reason?: string }[]>([])
   const [pcBusy, setPcBusy]       = useState<string>("")
   const msgEndRef  = useRef<HTMLDivElement>(null)
   const msgTopRef  = useRef<HTMLDivElement>(null)
@@ -401,6 +407,35 @@ export default function ChatPage() {
     setAgents(d.agents || [])
   }, [])
 
+  const sendTestMessage = useCallback(async () => {
+    const text = testInput.trim()
+    if (!text || !testPageId || testSending) return
+    setTestSending(true)
+    const page = agents.find(a => a.page_id === testPageId)
+    const historyForApi = testMessages
+    setTestMessages(prev => [...prev, { role: "customer", text }])
+    setTestInput("")
+    try {
+      const r = await apiJson("/admin/chat/bot-test", "POST", {
+        page_id: testPageId,
+        page_name: page?.page_name,
+        messages: historyForApi,
+        text,
+      })
+      const bubbles: string[] = r.bubbles || []
+      setTestMessages(prev => [...prev, ...bubbles.map((b: string) => ({ role: "bot" as const, text: b }))])
+      setTestToolCalls(r.tool_calls || [])
+      setTestActions(r.actions || [])
+      if (!bubbles.length && r.actions?.length) {
+        setTestMessages(prev => [...prev, { role: "bot", text: `[Không trả lời — action: ${r.actions.map((a: any) => a.type).join(", ")}]` }])
+      }
+    } catch (e: any) {
+      setTestMessages(prev => [...prev, { role: "bot", text: `⚠ Lỗi: ${e.message}` }])
+    } finally {
+      setTestSending(false)
+    }
+  }, [testInput, testPageId, testSending, testMessages, agents])
+
   // Dropdown lọc page ở topbar: chỉ liệt kê page đang bật (sync_enabled).
   const loadPageFilterList = useCallback(async () => {
     try {
@@ -518,9 +553,9 @@ export default function ChatPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 16px", height: 50, background: "#fff", borderBottom: "1px solid #e8edf2", flexShrink: 0 }}>
         <span style={{ fontSize: 18, marginRight: 6 }}>💬</span>
         <b style={{ fontSize: 15, marginRight: 8 }}>Chat</b>
-        {(["inbox","agents","examples","settings","pancake"] as const).map(v => (
+        {(["inbox","agents","examples","settings","pancake","test-bot"] as const).map(v => (
           <button key={v} onClick={() => setView(v)} style={{ border: "none", background: "none", color: view === v ? "#1877f2" : "#64748b", borderBottom: view === v ? "2px solid #1877f2" : "2px solid transparent", padding: "0 14px", height: 50, fontSize: 13, fontWeight: view === v ? 600 : 400, cursor: "pointer" }}>
-            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : v === "examples" ? "Câu cần học" : v === "settings" ? "⚙ Cài đặt" : "🥞 Pancake"}
+            {v === "inbox" ? "Inbox" : v === "agents" ? "Bot Agents" : v === "examples" ? "Câu cần học" : v === "settings" ? "⚙ Cài đặt" : v === "pancake" ? "🥞 Pancake" : "🧪 Test bot"}
           </button>
         ))}
         {view === "inbox" && (
@@ -902,6 +937,66 @@ export default function ChatPage() {
                 </pre>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── TEST BOT (sandbox — không gửi tin thật, không ghi DB hội thoại) ── */}
+      {view === "test-bot" && (
+        <div style={{ padding: 20, overflow: "auto", flex: 1, display: "flex", gap: 16, maxWidth: 1100 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+              <select value={testPageId} onChange={e => { setTestPageId(e.target.value); setTestMessages([]); setTestToolCalls([]); setTestActions([]) }}
+                style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 10px", fontSize: 12, flex: 1 }}>
+                <option value="">Chọn page để test...</option>
+                {agents.map(a => <option key={a.page_id} value={a.page_id}>{a.page_name}</option>)}
+              </select>
+              <Btn size="sm" onClick={() => { setTestMessages([]); setTestToolCalls([]); setTestActions([]) }}>↺ Xoá hội thoại test</Btn>
+            </div>
+            <div style={{ flex: 1, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, overflow: "auto", minHeight: 360, display: "flex", flexDirection: "column", gap: 8 }}>
+              {testMessages.length === 0 && <div style={{ color: "#94a3b8", textAlign: "center", padding: 20 }}>Chọn page rồi nhắn thử như một khách hàng.</div>}
+              {testMessages.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "customer" ? "flex-end" : "flex-start" }}>
+                  <div style={{
+                    maxWidth: "70%", padding: "8px 12px", borderRadius: 12, fontSize: 13,
+                    background: m.role === "customer" ? "#1877f2" : "#f1f5f9",
+                    color: m.role === "customer" ? "#fff" : "#0f172a",
+                  }}>{m.text}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <input value={testInput} onChange={e => setTestInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTestMessage() } }}
+                placeholder={testPageId ? "Nhắn thử như khách hàng..." : "Chọn page trước"} disabled={!testPageId || testSending}
+                style={{ flex: 1, border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", fontSize: 13 }} />
+              <Btn variant="primary" onClick={sendTestMessage} disabled={!testPageId || !testInput.trim() || testSending}>
+                {testSending ? "Đang gửi..." : "Gửi"}
+              </Btn>
+            </div>
+          </div>
+          <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 14 }}>
+              <b style={{ fontSize: 12, color: "#64748b" }}>🔧 Tool calls</b>
+              {testToolCalls.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>Chưa có</div>}
+              {testToolCalls.map((tc, i) => (
+                <pre key={i} style={{ whiteSpace: "pre-wrap", background: "#f8fafc", borderRadius: 8, padding: 8, fontSize: 10.5, marginTop: 8, maxHeight: 160, overflow: "auto" }}>
+                  {tc.name}({JSON.stringify(tc.args)})
+                  {"\n→ "}{JSON.stringify(tc.result, null, 1)}
+                </pre>
+              ))}
+            </div>
+            {testActions.length > 0 && (
+              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 14 }}>
+                <b style={{ fontSize: 12, color: "#92400e" }}>⚠ Actions (chưa thực thi, chỉ hiển thị)</b>
+                {testActions.map((a, i) => (
+                  <div key={i} style={{ fontSize: 12, marginTop: 6 }}>{a.type}{a.reason ? `: ${a.reason}` : ""}</div>
+                ))}
+              </div>
+            )}
+            <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12, padding: 14, fontSize: 11.5, color: "#075985", lineHeight: 1.6 }}>
+              Sandbox: không gửi tin thật, không ghi vào Inbox. Tool tra giá/lịch sử mua chạy thật trên DB.
+            </div>
           </div>
         </div>
       )}
