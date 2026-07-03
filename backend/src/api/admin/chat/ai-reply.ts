@@ -304,6 +304,7 @@ async function toolGetProductInfo(pool: Pool, scope: any, productName: string, a
       note: c.note || "",
       items: Array.isArray(c.items) ? c.items.map((it: any) => `${it.name} x${it.quantity}`) : [],
     })),
+    instruction: "Day la DUY NHAT cac combo va gia hop le. TUYET DOI khong duoc nhan/cong/chia gia hoac tu dat ten combo moi khong co trong danh sach nay. Neu khach hoi so luong/combo khong khop voi danh sach, hay noi se kiem tra lai hoac chuyen nhan vien — khong tu tinh gia.",
   }
 }
 async function toolGetPurchaseHistory(pool: Pool, phone: string): Promise<any> {
@@ -366,7 +367,7 @@ function buildSystemPrompt(agent: any, ctx: any): string {
     "Phong cách: xưng hô 'em' - 'anh/chị', tự nhiên như nhân viên sale thật, câu ngắn gọn, dễ đọc. Không tự giới thiệu là trợ lý/bot trừ khi khách hỏi bạn là ai.",
     "QUY TẮC HIỂN THỊ: không dùng markdown như **text**, ###, bullet dính một dòng. Nếu liệt kê combo/sản phẩm, bắt buộc xuống dòng rõ ràng. Mỗi combo dùng format: Combo X: giá, dòng sau là thành phần chính.",
     "Mỗi lượt trả lời tối đa 3 ý chính. Nếu cần nhiều ý, tách thành nhiều bubble bằng dấu '|||' giữa các phần.",
-    "QUY TẮC GIÁ: chỉ được nói giá sau khi đã gọi tool get_product_info và lấy được giá thật. Không được tự đoán giá, tồn kho, bảo hành, phí ship. Nếu tool trả không tìm thấy sản phẩm, hãy nói sẽ kiểm tra lại hoặc gọi handoff_to_human.",
+    "QUY TẮC GIÁ: chỉ được nói giá sau khi đã gọi tool get_product_info và lấy được giá thật. CHỈ được báo đúng các combo và mức giá y nguyên như tool trả về — TUYỆT ĐỐI không được nhân/cộng/chia giá, không tự bịa ra combo mới, không tự đặt tên combo không có trong danh sách tool trả về (kể cả khi khách hỏi số lượng lẻ không khớp combo nào). Không được tự đoán tồn kho, bảo hành, phí ship. Nếu khách hỏi số lượng/gói không khớp combo nào trong danh sách, hoặc tool trả không tìm thấy sản phẩm, hãy nói sẽ kiểm tra lại hoặc gọi handoff_to_human — KHÔNG được tự tính giá thay.",
     "QUY TẮC SẢN PHẨM: khi khách hỏi tên gần đúng, tên rút gọn, hoặc nói 'loại đó/cái ấy', hãy gọi get_product_info với tên/ngữ cảnh sản phẩm gần nhất. Tool sẽ so khớp catalog sản phẩm và trả sản phẩm gần nhất nếu đủ chắc.",
     "QUY TẮC HANDOFF: gọi tool handoff_to_human ngay khi khách khiếu nại, đòi hoàn tiền/đổi trả, đòi gặp người thật, hoặc câu hỏi ngoài phạm vi tư vấn sản phẩm.",
     "Nếu biết số điện thoại khách, có thể gọi get_purchase_history để cá nhân hóa. Ví dụ khách đã mua trước đó thì chào thân hơn hoặc gợi ý phụ kiện đi kèm.",
