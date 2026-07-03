@@ -84,6 +84,16 @@ const PURCHASE_STAGE_LABEL: Record<string, string> = {
   luu_kho_ha_noi: "Lưu kho Hà Nội",
   da_nhan_hang: "Đã nhận hàng",
 }
+const CALL_STAGE_LABEL: Record<string, string> = {
+  chua_goi: "Chưa gọi",
+  da_goi_hai_long: "Đã gọi - Hài lòng",
+  da_goi_co_gop_y: "Đã gọi - Có góp ý",
+  khong_nghe_may: "Không nghe máy",
+  hen_goi_lai: "Hẹn gọi lại",
+  tu_choi: "Từ chối nghe tư vấn",
+}
+// Giai đoạn gọi coi như đã có kết quả cuộc gọi → auto set status=done
+const CALL_STAGE_AUTO_DONE = new Set(["da_goi_hai_long", "da_goi_co_gop_y"])
 
 // GET /admin/mkt-tasks/:id
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -176,6 +186,16 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // CSKH gọi tư vấn: giai đoạn cuộc gọi. Có kết quả (hài lòng/góp ý) → auto set status=done.
+    if (body.call_stage !== undefined) {
+      update.call_stage = body.call_stage || null
+      if (CALL_STAGE_AUTO_DONE.has(body.call_stage) && body.status === undefined && task.status !== "done") {
+        update.status = "done"
+      }
+    }
+    if (body.customer_name !== undefined) update.customer_name = body.customer_name || null
+    if (body.customer_phone !== undefined) update.customer_phone = body.customer_phone || null
+
     if (body.checklist !== undefined) {
       if (body.checklist !== null && !Array.isArray(body.checklist)) {
         return res.status(400).json({ error: "Checklist phải là mảng" })
@@ -208,6 +228,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       activityLogs.push({ author_id: email, text: body.deadline ? `Đặt deadline: ${body.deadline}` : "Xóa deadline", created_at: now, type: "system" })
     if (body.purchase_stage !== undefined && body.purchase_stage !== task.purchase_stage)
       activityLogs.push({ author_id: email, text: `Giai đoạn mua hàng: ${PURCHASE_STAGE_LABEL[body.purchase_stage] ?? body.purchase_stage}`, created_at: now, type: "system" })
+    if (body.call_stage !== undefined && body.call_stage !== task.call_stage)
+      activityLogs.push({ author_id: email, text: `Giai đoạn gọi CSKH: ${CALL_STAGE_LABEL[body.call_stage] ?? body.call_stage}`, created_at: now, type: "system" })
     if (activityLogs.length > 0) {
       update.comments = [...(task.comments || []), ...activityLogs]
     }

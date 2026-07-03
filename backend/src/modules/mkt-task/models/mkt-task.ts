@@ -26,6 +26,12 @@ const MktTask = model.define("mkt_task", {
   import_lot_id: model.text().nullable(),
   // Mua hàng: giai đoạn quy trình riêng (độc lập với status gốc). Xem PURCHASE_STAGES.
   purchase_stage: model.text().nullable(),
+  // CSKH gọi tư vấn (type=cskh_call): liên kết đơn hàng Pancake làm nguồn khách gọi
+  pancake_order_id: model.text().nullable(),
+  customer_name: model.text().nullable(),
+  customer_phone: model.text().nullable(),
+  // CSKH: giai đoạn cuộc gọi, độc lập với status gốc. Xem CALL_STAGES ở UI.
+  call_stage: model.text().nullable(),
 })
 
 export default MktTask

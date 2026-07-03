@@ -52,7 +52,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (channel_id) filter.channel_id = channel_id
 
     let tasks = await svc.listMktTasks(filter, {
-      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist", "import_lot_id", "purchase_stage"],
+      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist", "import_lot_id", "purchase_stage", "pancake_order_id", "customer_name", "customer_phone", "call_stage"],
       order: { created_at: "DESC" },
     })
 
@@ -116,7 +116,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!uid) return res.status(401).json({ error: "Unauthenticated" })
     if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
 
-    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status, output, frequency, checklist, import_lot_id, purchase_stage } = req.body as any
+    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status, output, frequency, checklist, import_lot_id, purchase_stage, pancake_order_id, customer_name, customer_phone, call_stage } = req.body as any
     if (!title || !type || !assignee_id) {
       return res.status(400).json({ error: "Thiếu title, type hoặc assignee_id" })
     }
@@ -144,6 +144,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       checklist: sanitizeChecklist(checklist),
       import_lot_id: import_lot_id || null,
       purchase_stage: type === "purchasing" ? (purchase_stage || "cho_sep_duyet") : null,
+      pancake_order_id: type === "cskh_call" ? (pancake_order_id || null) : null,
+      customer_name: type === "cskh_call" ? (customer_name || null) : null,
+      customer_phone: type === "cskh_call" ? (customer_phone || null) : null,
+      call_stage: type === "cskh_call" ? (call_stage || "chua_goi") : null,
     })
 
     // Recurring → sinh ngay instance kỳ hiện tại để nhân sự thấy việc luôn

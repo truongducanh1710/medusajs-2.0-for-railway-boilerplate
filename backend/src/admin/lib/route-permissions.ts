@@ -12,6 +12,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/marketing-hub": "page.marketing-video.view",
   "/chat": "page.chat.view",
   "/mkt-tasks": "page.mkt-tasks.view",
+  "/cskh-goi-khach": "page.mkt-tasks.view",
   "/mkt-chat": "page.mkt-chat.view",
 }
 

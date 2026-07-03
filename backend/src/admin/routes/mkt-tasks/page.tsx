@@ -10,9 +10,13 @@ type ChecklistItem = { id: string; text: string; done: boolean }
 type Task = {
   id: string
   title: string
-  type: "ads_camp" | "content_post" | "purchasing"
+  type: "ads_camp" | "content_post" | "purchasing" | "cskh_call"
   import_lot_id?: string | null
   purchase_stage?: string | null
+  pancake_order_id?: string | null
+  customer_name?: string | null
+  customer_phone?: string | null
+  call_stage?: string | null
   assignee_id: string
   assignee_name: string
   created_by: string
@@ -120,6 +124,7 @@ const TYPE_MAP: Record<string, { label: string; icon: string; chip: string }> = 
   ads_camp:     { label: "Chạy Ads", icon: "📢", chip: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
   content_post: { label: "Nội dung", icon: "✍️", chip: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
   purchasing:   { label: "Mua hàng", icon: "🛒", chip: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300" },
+  cskh_call:    { label: "Gọi CSKH", icon: "📞", chip: "bg-pink-50 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300" },
 }
 
 // 13 giai đoạn quy trình mua hàng TQ (type=purchasing). value → { label, chip }

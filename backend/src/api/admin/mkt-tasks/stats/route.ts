@@ -7,7 +7,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const svc = req.scope.resolve("mktTaskModule") as any
     const userModule = req.scope.resolve(Modules.USER)
 
-    const allTasks = await svc.listMktTasks({ deleted_at: null })
+    const { type } = req.query as any
+    const filter: Record<string, any> = { deleted_at: null }
+    if (type) filter.type = type
+    const allTasks = await svc.listMktTasks(filter)
 
     // Resolve names — map theo cả user id lẫn email (assignee_id lưu là email)
     const allUsers = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name"] })
