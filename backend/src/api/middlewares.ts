@@ -62,6 +62,12 @@ export default defineMiddlewares({
       method: ["POST"],
       bodyParser: { sizeLimit: "100mb" },
     },
+    // Product update — sản phẩm có metadata/variants lớn (vd combo đơn) có thể vượt limit mặc định
+    {
+      matcher: "/admin/products/:id",
+      method: ["POST"],
+      bodyParser: { sizeLimit: "20mb" },
+    },
 
     // CORS cho Chrome Extension — phải đứng trước auth middleware
     {
@@ -118,6 +124,11 @@ export default defineMiddlewares({
     { matcher: "/admin/ai-usage*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
 
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
+
+    // Chat bot — sandbox test + quản lý agent chỉ dành cho người có quyền quản lý bot
+    { matcher: "/admin/chat/bot-test", method: ["POST"], middlewares: [requirePerm("page.chat.bot.manage")] },
+    { matcher: "/admin/chat/agents*", method: ["GET"], middlewares: [requirePerm("page.chat.bot.manage")] },
+    { matcher: "/admin/chat/agents*", method: ["POST", "PATCH"], middlewares: [requirePerm("page.chat.bot.manage")] },
 
     // MKT Task Management + Chat
     // Telegram webhook — không cần auth JWT (bot gọi vào, xác thực bằng TELEGRAM_WEBHOOK_SECRET header)
