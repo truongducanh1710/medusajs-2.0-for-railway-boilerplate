@@ -695,6 +695,29 @@ export default function CskhGoiKhachPage() {
     }
   }
 
+  async function copyPhone(phone: string | null) {
+    const value = (phone || "").trim()
+    if (!value) return
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        const input = document.createElement("textarea")
+        input.value = value
+        input.setAttribute("readonly", "")
+        input.style.position = "fixed"
+        input.style.opacity = "0"
+        document.body.appendChild(input)
+        input.select()
+        document.execCommand("copy")
+        document.body.removeChild(input)
+      }
+      onToast(`\u0110\u00e3 copy S\u0110T ${value}`, "success")
+    } catch {
+      onToast("Kh\u00f4ng copy \u0111\u01b0\u1ee3c S\u0110T", "error")
+    }
+  }
+
   async function patchTask(id: string, fields: Record<string, any>) {
     try {
       const r = await apiFetch(`/admin/mkt-tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) })
@@ -835,7 +858,13 @@ export default function CskhGoiKhachPage() {
                           </td>
                         )}
                         <td className="py-2 font-medium">{t.customer_name || "—"}</td>
-                        <td className="py-2 font-mono text-ui-fg-subtle">{t.customer_phone}</td>
+                        <td className="py-2" onClick={e => e.stopPropagation()}>
+                          <button type="button" onClick={() => copyPhone(t.customer_phone)}
+                            className="font-mono text-ui-fg-subtle underline-offset-2 hover:text-ui-fg-base hover:underline"
+                            title={"B\u1ea5m \u0111\u1ec3 copy s\u1ed1 \u0111i\u1ec7n tho\u1ea1i"}>
+                            {t.customer_phone || "\u2014"}
+                          </button>
+                        </td>
                         <td className="max-w-[220px] truncate py-2 text-ui-fg-subtle" title={t.product_name || ""}>{t.product_name || "—"}</td>
                         <td className="py-2 text-ui-fg-subtle">👤 {t.assignee_name}</td>
                         <td className="py-2">
