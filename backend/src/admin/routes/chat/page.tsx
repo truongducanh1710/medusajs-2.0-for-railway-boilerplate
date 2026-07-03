@@ -317,6 +317,7 @@ export default function ChatPage() {
   const [testActions, setTestActions] = useState<{ type: string; reason?: string }[]>([])
   const [promptBusy, setPromptBusy] = useState<Record<string, string>>({})
   const [promptLoopResults, setPromptLoopResults] = useState<Record<string, any>>({})
+  const [promptLoopLogs, setPromptLoopLogs] = useState<Record<string, string[]>>({})
   const [pcBusy, setPcBusy]       = useState<string>("")
   const msgEndRef  = useRef<HTMLDivElement>(null)
   const msgTopRef  = useRef<HTMLDivElement>(null)
@@ -447,19 +448,40 @@ export default function ChatPage() {
     setAgents(d.agents || [])
   }, [])
 
+  const appendPromptLoopLog = useCallback((agentId: string, line: string) => {
+    setPromptLoopLogs(prev => ({ ...prev, [agentId]: [...(prev[agentId] || []), `${new Date().toLocaleTimeString("vi-VN")} - ${line}`].slice(-80) }))
+  }, [])
+
   const runPromptLoop = useCallback(async (agentId: string) => {
+    const timers: any[] = []
     setPromptBusy(prev => ({ ...prev, [agentId]: "loop" }))
+    setPromptLoopResults(prev => { const n = { ...prev }; delete n[agentId]; return n })
+    setPromptLoopLogs(prev => ({ ...prev, [agentId]: [`${new Date().toLocaleTimeString("vi-VN")} - Bắt đầu AI test loop`] }))
+    const schedule = (ms: number, line: string) => timers.push(setTimeout(() => appendPromptLoopLog(agentId, line), ms))
+    schedule(1500, "Tạo tình huống khách hàng giả lập")
+    schedule(5000, "Test prompt hiện tại với từng tình huống")
+    schedule(9500, "Evaluator chấm điểm câu trả lời hiện tại")
+    schedule(14000, "Sinh draft prompt cải thiện")
+    schedule(19000, "Test lại bằng draft prompt")
+    schedule(24000, "Lưu draft prompt, chờ admin duyệt")
     try {
       const r = await apiJson(`/admin/chat/agents/${agentId}/prompt-loop`, "POST", { scenario_count: 3 })
       setPromptLoopResults(prev => ({ ...prev, [agentId]: r }))
+      const detailLines = [
+        `Hoàn tất: ${r.score_before}/10 -> ${r.score_after}/10`,
+        ...(r.before || []).map((x: any, i: number) => `Scenario ${i + 1}: "${x.customer}" | hiện tại ${x.evaluation?.score ?? "-"}/10${x.evaluation?.issues?.length ? ` | lỗi: ${x.evaluation.issues.join("; ")}` : ""}`),
+        ...(r.after || []).map((x: any, i: number) => `Draft ${i + 1}: ${x.evaluation?.score ?? "-"}/10${x.evaluation?.issues?.length ? ` | còn lỗi: ${x.evaluation.issues.join("; ")}` : ""}`),
+      ]
+      setPromptLoopLogs(prev => ({ ...prev, [agentId]: [...(prev[agentId] || []), ...detailLines].slice(-80) }))
       await loadAgents()
     } catch (e: any) {
+      appendPromptLoopLog(agentId, `Lỗi: ${e.message}`)
       alert(`Không chạy được loop: ${e.message}`)
     } finally {
+      timers.forEach(clearTimeout)
       setPromptBusy(prev => { const n = { ...prev }; delete n[agentId]; return n })
     }
-  }, [loadAgents])
-
+  }, [appendPromptLoopLog, loadAgents])
   const activatePromptDraft = useCallback(async (agentId: string, promptId: string) => {
     setPromptBusy(prev => ({ ...prev, [agentId]: "activate" }))
     try {
@@ -1015,16 +1037,42 @@ export default function ChatPage() {
                     </span>
                   )}
                 </div>
-                {(promptLoopResults[a.id] || a.latest_prompt_version?.eval_summary) && (
+                {((promptLoopLogs[a.id]?.length || promptLoopResults[a.id] || a.latest_prompt_version?.eval_summary) && (
                   <div style={{ marginTop: 8, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
                     {promptLoopResults[a.id] ? (
                       <>
                         <b>Loop result:</b> {promptLoopResults[a.id].score_before}/10 → {promptLoopResults[a.id].score_after}/10
                         <div style={{ marginTop: 4 }}>{promptLoopResults[a.id].eval_summary}</div>
                       </>
-                    ) : a.latest_prompt_version?.eval_summary}
+                    ) : a.latest_prompt_version?.eval_summary ? (
+                      <div>{a.latest_prompt_version.eval_summary}</div>
+                    ) : null}
+
+                    {!!promptLoopLogs[a.id]?.length && (
+                      <div style={{ marginTop: 8, borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
+                        <b>Process log</b>
+                        <div style={{ marginTop: 6, display: "grid", gap: 4, fontFamily: "monospace", color: "#334155" }}>
+                          {promptLoopLogs[a.id].map((line, i) => <div key={i}>• {line}</div>)}
+                        </div>
+                      </div>
+                    )}
+
+                    {!!promptLoopResults[a.id]?.before?.length && (
+                      <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                        {promptLoopResults[a.id].before.map((row: any, i: number) => {
+                          const draft = promptLoopResults[a.id].after?.[i]
+                          return (
+                            <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                              <div style={{ fontWeight: 700, color: "#0f172a" }}>Scenario {i + 1}: {row.customer}</div>
+                              <div style={{ marginTop: 4 }}>Hiện tại: {row.evaluation?.score ?? "-"}/10{row.evaluation?.issues?.length ? ` - ${row.evaluation.issues.join("; ")}` : ""}</div>
+                              {draft && <div style={{ marginTop: 4 }}>Draft: {draft.evaluation?.score ?? "-"}/10{draft.evaluation?.issues?.length ? ` - ${draft.evaluation.issues.join("; ")}` : ""}</div>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
             ))}
           </div>
