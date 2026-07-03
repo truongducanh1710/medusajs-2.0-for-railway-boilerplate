@@ -486,6 +486,11 @@ export default function CskhGoiKhachPage() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
   const [view, setView] = useState<"list" | "stats">("list")
   const [stats, setStats] = useState<any[]>([])
+  const [pageSize, setPageSize] = useState(50)
+  const [page, setPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({})
+  const [bulkAssignee, setBulkAssignee] = useState("")
+  const [bulkAssigning, setBulkAssigning] = useState(false)
 
   const onToast = useCallback((msg: string, type: "success" | "error") => setToast({ msg, type }), [])
 
@@ -529,6 +534,57 @@ export default function CskhGoiKhachPage() {
     }
     return list
   }, [tasks, tab, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paged = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
+  useEffect(() => { setPage(1) }, [tab, search, pageSize])
+
+  const pagedSelectedCount = paged.filter(t => selectedIds[t.id]).length
+  const allPagedSelected = paged.length > 0 && pagedSelectedCount === paged.length
+  const selectedCount = Object.values(selectedIds).filter(Boolean).length
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+  function toggleSelectAllPaged() {
+    setSelectedIds(prev => {
+      const next = { ...prev }
+      const shouldSelect = !allPagedSelected
+      for (const t of paged) next[t.id] = shouldSelect
+      return next
+    })
+  }
+  function clearSelection() { setSelectedIds({}) }
+
+  async function bulkReassign() {
+    if (!bulkAssignee || bulkAssigning) return
+    const ids = Object.keys(selectedIds).filter(id => selectedIds[id])
+    if (!ids.length) return
+    setBulkAssigning(true)
+    try {
+      const results = await Promise.allSettled(
+        ids.map(id => apiFetch(`/admin/mkt-tasks/${id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignee_id: bulkAssignee }),
+        }).then(r => r.json().then(d => ({ ok: r.ok, id, d }))))
+      )
+      const okIds = new Set<string>()
+      let failCount = 0
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.ok) okIds.add(r.value.id)
+        else failCount++
+      }
+      const assigneeName = users.find(u => u.email === bulkAssignee)?.name || bulkAssignee
+      setTasks(prev => prev.map(t => okIds.has(t.id) ? { ...t, assignee_id: bulkAssignee, assignee_name: assigneeName } : t))
+      onToast(failCount ? `Đã chuyển ${okIds.size} việc, lỗi ${failCount}` : `Đã chuyển ${okIds.size} việc cho ${assigneeName}`, failCount ? "error" : "success")
+      clearSelection()
+      setBulkAssignee("")
+    } finally { setBulkAssigning(false) }
+  }
 
   async function patchTask(id: string, fields: Record<string, any>) {
     try {
@@ -605,41 +661,87 @@ export default function CskhGoiKhachPage() {
                 </button>
               ))}
             </div>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Tìm SĐT/tên"
-              className="w-48 rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[12px]" />
+            <div className="flex items-center gap-2">
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Tìm SĐT/tên"
+                className="w-48 rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[12px]" />
+              <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]">
+                {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n} / trang</option>)}
+              </select>
+            </div>
           </div>
+
+          {/* Bulk action toolbar */}
+          {isManager && selectedCount > 0 && (
+            <div className="flex items-center gap-2 border-b border-ui-border-base bg-blue-50 px-6 py-2 dark:bg-blue-500/10">
+              <span className="text-[12px] font-semibold text-ui-fg-base">Đã chọn {selectedCount} việc</span>
+              <select value={bulkAssignee} onChange={e => setBulkAssignee(e.target.value)}
+                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1 text-[12px]">
+                <option value="">— Chuyển cho —</option>
+                {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+              </select>
+              <button onClick={bulkReassign} disabled={!bulkAssignee || bulkAssigning}
+                className="rounded-lg bg-ui-button-inverted px-3 py-1 text-[12px] font-semibold text-ui-fg-on-inverted disabled:opacity-50">
+                {bulkAssigning ? "Đang chuyển..." : "Chuyển phụ trách"}
+              </button>
+              <button onClick={clearSelection} className="ml-auto text-[12px] text-ui-fg-subtle hover:text-ui-fg-base">Bỏ chọn</button>
+            </div>
+          )}
 
           {/* List */}
           <div className="px-6 py-3">
             {loading && <div className="py-10 text-center text-ui-fg-muted">Đang tải...</div>}
             {!loading && filtered.length === 0 && <div className="py-10 text-center text-ui-fg-muted">Không có việc nào</div>}
             {!loading && filtered.length > 0 && (
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-ui-border-base text-left text-[11px] uppercase text-ui-fg-subtle">
-                    <th className="py-2">Khách hàng</th>
-                    <th className="py-2">SĐT</th>
-                    <th className="py-2">Phụ trách</th>
-                    <th className="py-2">Giai đoạn gọi</th>
-                    <th className="py-2">★</th>
-                    <th className="py-2">Hạn</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(t => (
-                    <tr key={t.id} onClick={() => setSelectedTask(t)} className="cursor-pointer border-b border-ui-border-base last:border-0 hover:bg-ui-bg-subtle-hover">
-                      <td className="py-2 font-medium">{t.customer_name || "—"}</td>
-                      <td className="py-2 font-mono text-ui-fg-subtle">{t.customer_phone}</td>
-                      <td className="py-2 text-ui-fg-subtle">👤 {t.assignee_name}</td>
-                      <td className="py-2">
-                        <CallStageSelect value={t.call_stage} disabled={false} onChange={v => patchTask(t.id, { call_stage: v })} />
-                      </td>
-                      <td className="py-2">{t.status === "done" ? <Stars value={t.rating} /> : "·"}</td>
-                      <td className="py-2 text-ui-fg-subtle">{fmt(t.deadline)}</td>
+              <>
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-ui-border-base text-left text-[11px] uppercase text-ui-fg-subtle">
+                      {isManager && (
+                        <th className="w-8 py-2">
+                          <input type="checkbox" checked={allPagedSelected} onChange={toggleSelectAllPaged} onClick={e => e.stopPropagation()} />
+                        </th>
+                      )}
+                      <th className="py-2">Khách hàng</th>
+                      <th className="py-2">SĐT</th>
+                      <th className="py-2">Phụ trách</th>
+                      <th className="py-2">Giai đoạn gọi</th>
+                      <th className="py-2">★</th>
+                      <th className="py-2">Hạn</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {paged.map(t => (
+                      <tr key={t.id} onClick={() => setSelectedTask(t)} className="cursor-pointer border-b border-ui-border-base last:border-0 hover:bg-ui-bg-subtle-hover">
+                        {isManager && (
+                          <td className="py-2" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={!!selectedIds[t.id]} onChange={() => toggleSelect(t.id)} />
+                          </td>
+                        )}
+                        <td className="py-2 font-medium">{t.customer_name || "—"}</td>
+                        <td className="py-2 font-mono text-ui-fg-subtle">{t.customer_phone}</td>
+                        <td className="py-2 text-ui-fg-subtle">👤 {t.assignee_name}</td>
+                        <td className="py-2">
+                          <CallStageSelect value={t.call_stage} disabled={false} onChange={v => patchTask(t.id, { call_stage: v })} />
+                        </td>
+                        <td className="py-2">{t.status === "done" ? <Stars value={t.rating} /> : "·"}</td>
+                        <td className="py-2 text-ui-fg-subtle">{fmt(t.deadline)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Pagination */}
+                <div className="flex items-center justify-between py-3 text-[12px] text-ui-fg-subtle">
+                  <span>{filtered.length} việc · Trang {page}/{totalPages}</span>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                      className="rounded-lg border border-ui-border-base px-2.5 py-1 disabled:opacity-40">‹ Trước</button>
+                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                      className="rounded-lg border border-ui-border-base px-2.5 py-1 disabled:opacity-40">Sau ›</button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </>
