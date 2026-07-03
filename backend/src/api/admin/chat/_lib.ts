@@ -143,6 +143,9 @@ export async function ensureChatTables(pool = getChatPool()): Promise<void> {
       manual_override_instruction TEXT,
       manual_override_faq TEXT,
       manual_notes TEXT,
+      active_prompt_version_id UUID,
+      prompt_score NUMERIC,
+      last_eval_at TIMESTAMPTZ,
       last_generated_at TIMESTAMPTZ,
       last_error_at TIMESTAMPTZ,
       error_count INT DEFAULT 0,
@@ -150,6 +153,33 @@ export async function ensureChatTables(pool = getChatPool()): Promise<void> {
       updated_at TIMESTAMPTZ DEFAULT now()
     )
   `)
+  await pool.query(`ALTER TABLE fb_bot_agent ADD COLUMN IF NOT EXISTS active_prompt_version_id UUID`)
+  await pool.query(`ALTER TABLE fb_bot_agent ADD COLUMN IF NOT EXISTS prompt_score NUMERIC`)
+  await pool.query(`ALTER TABLE fb_bot_agent ADD COLUMN IF NOT EXISTS last_eval_at TIMESTAMPTZ`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_bot_prompt_version (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      agent_id UUID NOT NULL REFERENCES fb_bot_agent(id) ON DELETE CASCADE,
+      page_id VARCHAR(32),
+      version INT NOT NULL,
+      prompt_text TEXT NOT NULL,
+      change_reason TEXT,
+      score_before NUMERIC,
+      score_after NUMERIC,
+      eval_summary TEXT,
+      scenarios JSONB DEFAULT '[]',
+      status VARCHAR(24) DEFAULT 'draft',
+      created_by VARCHAR(64) DEFAULT 'ai',
+      approved_by VARCHAR(255),
+      approved_at TIMESTAMPTZ,
+      activated_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      UNIQUE(agent_id, version)
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_bot_prompt_agent ON fb_bot_prompt_version (agent_id, created_at DESC)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_bot_prompt_status ON fb_bot_prompt_version (status, created_at DESC)`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fb_bot_reply_example (
@@ -212,7 +242,6 @@ export async function ensureChatTables(pool = getChatPool()): Promise<void> {
     )
   `)
 }
-
 export function normalizeText(value: string): string {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim()
 }

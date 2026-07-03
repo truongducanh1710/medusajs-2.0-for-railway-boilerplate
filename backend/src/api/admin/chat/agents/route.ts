@@ -8,7 +8,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const pool = getChatPool()
     await ensureChatTables(pool)
     const { rows } = await pool.query(
-      `SELECT a.*, pt.fan_count, mp.sp_chay, mp.mkt_code, mp.hoat_dong
+      `SELECT a.*, pt.fan_count, mp.sp_chay, mp.mkt_code, mp.hoat_dong,
+        (
+          SELECT jsonb_build_object(
+            'id', pv.id,
+            'version', pv.version,
+            'status', pv.status,
+            'score_before', pv.score_before,
+            'score_after', pv.score_after,
+            'eval_summary', pv.eval_summary,
+            'change_reason', pv.change_reason,
+            'created_at', pv.created_at
+          )
+          FROM fb_bot_prompt_version pv
+          WHERE pv.agent_id = a.id
+          ORDER BY pv.created_at DESC
+          LIMIT 1
+        ) AS latest_prompt_version
        FROM fb_bot_agent a
        LEFT JOIN fb_page_token pt ON pt.page_id = a.page_id
        LEFT JOIN mkt_page mp ON lower(trim(mp.page_name)) = lower(trim(a.page_name))

@@ -33,6 +33,8 @@ type Agent = {
   product_names?: string[]; generated_instruction?: string
   manual_override_instruction?: string; last_generated_at?: string
   error_count?: number; sp_chay?: string; fan_count?: number
+  prompt_score?: number; last_eval_at?: string
+  latest_prompt_version?: { id: string; version: number; status: string; score_before?: number; score_after?: number; eval_summary?: string; change_reason?: string; created_at?: string }
 }
 type Example = {
   id: string; page_name: string; product_name?: string
@@ -313,6 +315,8 @@ export default function ChatPage() {
   const [testSending, setTestSending] = useState(false)
   const [testToolCalls, setTestToolCalls] = useState<{ name: string; args: any; result: any }[]>([])
   const [testActions, setTestActions] = useState<{ type: string; reason?: string }[]>([])
+  const [promptBusy, setPromptBusy] = useState<Record<string, string>>({})
+  const [promptLoopResults, setPromptLoopResults] = useState<Record<string, any>>({})
   const [pcBusy, setPcBusy]       = useState<string>("")
   const msgEndRef  = useRef<HTMLDivElement>(null)
   const msgTopRef  = useRef<HTMLDivElement>(null)
@@ -442,6 +446,31 @@ export default function ChatPage() {
     const d = await apiJson("/admin/chat/agents")
     setAgents(d.agents || [])
   }, [])
+
+  const runPromptLoop = useCallback(async (agentId: string) => {
+    setPromptBusy(prev => ({ ...prev, [agentId]: "loop" }))
+    try {
+      const r = await apiJson(`/admin/chat/agents/${agentId}/prompt-loop`, "POST", { scenario_count: 3 })
+      setPromptLoopResults(prev => ({ ...prev, [agentId]: r }))
+      await loadAgents()
+    } catch (e: any) {
+      alert(`Không chạy được loop: ${e.message}`)
+    } finally {
+      setPromptBusy(prev => { const n = { ...prev }; delete n[agentId]; return n })
+    }
+  }, [loadAgents])
+
+  const activatePromptDraft = useCallback(async (agentId: string, promptId: string) => {
+    setPromptBusy(prev => ({ ...prev, [agentId]: "activate" }))
+    try {
+      await apiJson(`/admin/chat/agents/${agentId}/prompts/${promptId}/activate`, "POST")
+      await loadAgents()
+    } catch (e: any) {
+      alert(`Không duyệt được prompt: ${e.message}`)
+    } finally {
+      setPromptBusy(prev => { const n = { ...prev }; delete n[agentId]; return n })
+    }
+  }, [loadAgents])
 
   const sendTestMessage = useCallback(async () => {
     const text = testInput.trim()
@@ -971,6 +1000,31 @@ export default function ChatPage() {
                 <pre style={{ whiteSpace: "pre-wrap", background: "#f8fafc", borderRadius: 8, padding: 10, fontSize: 11, color: "#374151", margin: 0, maxHeight: 140, overflow: "auto", lineHeight: 1.5 }}>
                   {a.manual_override_instruction || a.generated_instruction || "Chưa có instruction"}
                 </pre>
+                <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <Btn size="sm" onClick={() => runPromptLoop(a.id)} disabled={!!promptBusy[a.id]}>
+                    {promptBusy[a.id] === "loop" ? "AI đang test..." : "🔁 AI test loop"}
+                  </Btn>
+                  {a.latest_prompt_version?.status === "draft" && (
+                    <Btn size="sm" variant="success" onClick={() => activatePromptDraft(a.id, a.latest_prompt_version!.id)} disabled={!!promptBusy[a.id]}>
+                      {promptBusy[a.id] === "activate" ? "Đang duyệt..." : `✓ Duyệt draft v${a.latest_prompt_version.version}`}
+                    </Btn>
+                  )}
+                  {a.latest_prompt_version && (
+                    <span style={{ fontSize: 11, color: "#64748b" }}>
+                      Prompt v{a.latest_prompt_version.version} · {a.latest_prompt_version.status} · {a.latest_prompt_version.score_before ?? "-"} → {a.latest_prompt_version.score_after ?? "-"}/10
+                    </span>
+                  )}
+                </div>
+                {(promptLoopResults[a.id] || a.latest_prompt_version?.eval_summary) && (
+                  <div style={{ marginTop: 8, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
+                    {promptLoopResults[a.id] ? (
+                      <>
+                        <b>Loop result:</b> {promptLoopResults[a.id].score_before}/10 → {promptLoopResults[a.id].score_after}/10
+                        <div style={{ marginTop: 4 }}>{promptLoopResults[a.id].eval_summary}</div>
+                      </>
+                    ) : a.latest_prompt_version?.eval_summary}
+                  </div>
+                )}
               </div>
             ))}
           </div>
