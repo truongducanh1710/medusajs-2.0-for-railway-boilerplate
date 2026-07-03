@@ -52,6 +52,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const notes: string | null = body.notes || null
     const channelId: string | null = body.channel_id || null
     const mergeOrders = body.merge_orders !== false // default true
+    const productName: string | null = body.product_name || null
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const userModule = req.scope.resolve(Modules.USER)
@@ -119,6 +120,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         customer_phone: row.customer_phone,
         pancake_order_id: row.order_id,
         call_stage: "chua_goi",
+        product_name: productName,
       })
       created.push(task)
       // Đánh dấu order vừa dùng để tránh trùng trong chính lô này (nhiều dòng cùng order khi mergeOrders=false trên cùng order lặp lại — hiếm nhưng an toàn)

@@ -32,6 +32,8 @@ const MktTask = model.define("mkt_task", {
   customer_phone: model.text().nullable(),
   // CSKH: giai đoạn cuộc gọi, độc lập với status gốc. Xem CALL_STAGES ở UI.
   call_stage: model.text().nullable(),
+  // CSKH: tên sản phẩm khách đã mua (chọn ở bước tìm khách hàng khi bulk-create)
+  product_name: model.text().nullable(),
 })
 
 export default MktTask

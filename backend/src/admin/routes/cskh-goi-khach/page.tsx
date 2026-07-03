@@ -24,6 +24,7 @@ type Task = {
   customer_phone: string | null
   pancake_order_id: string | null
   call_stage: string | null
+  product_name: string | null
   created_at: string
 }
 
@@ -237,6 +238,7 @@ function BulkCreateModal({ users, onClose, onCreated, onToast }: {
         deadline: deadline || null,
         priority,
         notes: notes || null,
+        product_name: product?.name || productQuery.trim() || null,
       }
       if (mode === "round_robin") body.assignee_ids = rrList
       else body.assignee_map = manualAssignee
@@ -563,6 +565,7 @@ export default function CskhGoiKhachPage() {
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({})
   const [bulkAssignee, setBulkAssignee] = useState("")
   const [bulkAssigning, setBulkAssigning] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const onToast = useCallback((msg: string, type: "success" | "error") => setToast({ msg, type }), [])
 
@@ -656,6 +659,40 @@ export default function CskhGoiKhachPage() {
       clearSelection()
       setBulkAssignee("")
     } finally { setBulkAssigning(false) }
+  }
+
+  async function bulkDelete() {
+    const ids = Object.keys(selectedIds).filter(id => selectedIds[id])
+    if (!ids.length || bulkDeleting) return
+    if (!confirm(`Xóa ${ids.length} việc đã chọn? Không thể hoàn tác.`)) return
+    setBulkDeleting(true)
+    try {
+      const results = await Promise.allSettled(
+        ids.map(id => apiFetch(`/admin/mkt-tasks/${id}`, { method: "DELETE" }).then(r => ({ ok: r.ok, id })))
+      )
+      const okIds = new Set<string>()
+      let failCount = 0
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.ok) okIds.add(r.value.id)
+        else failCount++
+      }
+      setTasks(prev => prev.filter(t => !okIds.has(t.id)))
+      onToast(failCount ? `Đã xóa ${okIds.size} việc, lỗi ${failCount}` : `Đã xóa ${okIds.size} việc`, failCount ? "error" : "success")
+      clearSelection()
+    } finally { setBulkDeleting(false) }
+  }
+
+  async function deleteOne(id: string) {
+    if (!confirm("Xóa việc này? Không thể hoàn tác.")) return
+    try {
+      const r = await apiFetch(`/admin/mkt-tasks/${id}`, { method: "DELETE" })
+      if (!r.ok) { const d = await r.json(); throw new Error(d?.error || "Lỗi xóa") }
+      setTasks(prev => prev.filter(t => t.id !== id))
+      setSelectedTask(prev => prev && prev.id === id ? null : prev)
+      onToast("Đã xóa", "success")
+    } catch (e: any) {
+      onToast(e?.message || "Lỗi xóa", "error")
+    }
   }
 
   async function patchTask(id: string, fields: Record<string, any>) {
@@ -756,6 +793,10 @@ export default function CskhGoiKhachPage() {
                 className="rounded-lg bg-ui-button-inverted px-3 py-1 text-[12px] font-semibold text-ui-fg-on-inverted disabled:opacity-50">
                 {bulkAssigning ? "Đang chuyển..." : "Chuyển phụ trách"}
               </button>
+              <button onClick={bulkDelete} disabled={bulkDeleting}
+                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1 text-[12px] font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-50">
+                {bulkDeleting ? "Đang xóa..." : "Xóa đã chọn"}
+              </button>
               <button onClick={clearSelection} className="ml-auto text-[12px] text-ui-fg-subtle hover:text-ui-fg-base">Bỏ chọn</button>
             </div>
           )}
@@ -776,11 +817,13 @@ export default function CskhGoiKhachPage() {
                       )}
                       <th className="py-2">Khách hàng</th>
                       <th className="py-2">SĐT</th>
+                      <th className="py-2">Sản phẩm</th>
                       <th className="py-2">Phụ trách</th>
                       <th className="py-2">Giai đoạn gọi</th>
                       <th className="py-2">Ghi chú</th>
                       <th className="py-2">★</th>
                       <th className="py-2">Hạn</th>
+                      {isManager && <th className="w-16 py-2 text-right">Xóa</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -793,6 +836,7 @@ export default function CskhGoiKhachPage() {
                         )}
                         <td className="py-2 font-medium">{t.customer_name || "—"}</td>
                         <td className="py-2 font-mono text-ui-fg-subtle">{t.customer_phone}</td>
+                        <td className="max-w-[220px] truncate py-2 text-ui-fg-subtle" title={t.product_name || ""}>{t.product_name || "—"}</td>
                         <td className="py-2 text-ui-fg-subtle">👤 {t.assignee_name}</td>
                         <td className="py-2">
                           <CallStageSelect value={t.call_stage} disabled={false} onChange={v => patchTask(t.id, { call_stage: v })} />
@@ -800,6 +844,14 @@ export default function CskhGoiKhachPage() {
                         <td className="py-2" onClick={e => e.stopPropagation()}><NoteCell comments={t.comments} users={users} /></td>
                         <td className="py-2">{t.status === "done" ? <Stars value={t.rating} /> : "·"}</td>
                         <td className="py-2 text-ui-fg-subtle">{fmt(t.deadline)}</td>
+                        {isManager && (
+                          <td className="py-2 text-right" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => deleteOne(t.id)}
+                              className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">
+                              Xóa
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
