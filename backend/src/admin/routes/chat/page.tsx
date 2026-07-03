@@ -188,6 +188,42 @@ function InfoRow({ icon, label, value, mono }: { icon: string; label: string; va
   )
 }
 
+function makeMessageReadable(text: string) {
+  return String(text || "")
+    .replace(/\s+-\s+(\*\*?Combo\b)/gi, "\n- $1")
+    .replace(/\s+-\s+(Combo\s+\d+\b)/gi, "\n- $1")
+    .replace(/\s+(\*\*Combo\s+\d+\*\*\s*:)/gi, "\n- $1")
+    .replace(/\s+(Combo\s+\d+\s*:)/gi, "\n- $1")
+    .trim()
+}
+
+function InlineMessageText({ text }: { text: string }) {
+  const parts = String(text || "").split(/(\*\*[^*]+\*\*)/g)
+  return <>{parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} style={{ fontWeight: 700 }}>{part.slice(2, -2)}</strong>
+    }
+    return <span key={i}>{part}</span>
+  })}</>
+}
+
+function MessageText({ text }: { text: string }) {
+  const lines = makeMessageReadable(text).split(/\n+/).filter(Boolean)
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {lines.map((line, i) => {
+        const isBullet = /^\s*[-•]\s+/.test(line)
+        const content = line.replace(/^\s*[-•]\s+/, "")
+        return (
+          <div key={i} style={{ display: isBullet ? "grid" : "block", gridTemplateColumns: isBullet ? "12px minmax(0, 1fr)" : undefined, gap: isBullet ? 6 : undefined }}>
+            {isBullet && <span style={{ opacity: 0.7, lineHeight: 1.55 }}>•</span>}
+            <span style={{ minWidth: 0 }}><InlineMessageText text={content} /></span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 // ─── Status Pipeline Bar ─────────────────────────────────────────────────────
 function StatusPipeline({ current, onChange }: { current: string; onChange: (s: string) => void }) {
   return (
@@ -757,7 +793,7 @@ export default function ChatPage() {
                           )}
                           {m.text && !isSystemText(m.text) && (
                             <div style={{ background: bubbleBg, color: bubbleColor, borderRadius: br, padding: "9px 14px", fontSize: 13, lineHeight: 1.55, boxShadow: isOut ? "none" : "0 1px 2px rgba(0,0,0,.06)", border: isOut ? "none" : "1px solid #e8edf2", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                              {m.text}
+                              <MessageText text={m.text} />
                             </div>
                           )}
                           <div style={{ fontSize: 10, color: "#94a3b8", padding: "0 2px" }}>
@@ -778,7 +814,7 @@ export default function ChatPage() {
               <div style={{ background: "#f5f3ff", borderTop: "2px solid #ddd6fe", padding: "10px 16px", display: "flex", gap: 10, alignItems: "flex-start", flexShrink: 0 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", marginBottom: 4 }}>🤖 Gợi ý bot · {botSuggestion.intent}</div>
-                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.5 }}>{botSuggestion.reply_text}</div>
+                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.5 }}><MessageText text={botSuggestion.reply_text} /></div>
                 </div>
                 <Btn size="sm" variant="ghost" onClick={() => setText(botSuggestion.reply_text!)}>Dùng</Btn>
               </div>
@@ -961,7 +997,7 @@ export default function ChatPage() {
                     maxWidth: "70%", padding: "8px 12px", borderRadius: 12, fontSize: 13,
                     background: m.role === "customer" ? "#1877f2" : "#f1f5f9",
                     color: m.role === "customer" ? "#fff" : "#0f172a",
-                  }}>{m.text}</div>
+                  }}><MessageText text={m.text} /></div>
                 </div>
               ))}
             </div>
