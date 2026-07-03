@@ -283,7 +283,6 @@ export default function ChatPage() {
   // Frontend filter
   const filtered = useMemo(() => {
     let list = convs
-    if (hasPhone)   list = list.filter(c => c.active_phone && c.active_phone.trim() !== "")
     if (tagFilter)  list = list.filter(c => convTags(c).includes(tagFilter))
     if (!search.trim()) return list
     const s = search.toLowerCase()
@@ -292,7 +291,7 @@ export default function ChatPage() {
       c.customer_psid.toLowerCase().includes(s) ||
       (c.last_message || "").toLowerCase().includes(s)
     )
-  }, [convs, hasPhone, tagFilter, search])
+  }, [convs, tagFilter, search])
 
   const botSuggestion = useMemo(() =>
     botEvents.find(e => e.reply_text && !e.auto_sent && !e.skipped_reason?.includes("handoff")),
@@ -309,15 +308,16 @@ export default function ChatPage() {
     return groups
   }, [detail?.messages])
 
-  const loadConvs = useCallback(async (t = tab, p = pageFilter) => {
+  const loadConvs = useCallback(async (t = tab, p = pageFilter, hp = hasPhone) => {
     setLoading(true)
     try {
       let url = `/admin/chat/conversations?status=${t}&limit=100`
       if (p) url += `&page_id=${p}`
+      if (hp) url += `&has_phone=1`
       const d = await apiJson(url)
       setConvs(d.conversations || [])
     } finally { setLoading(false) }
-  }, [tab, pageFilter])
+  }, [tab, pageFilter, hasPhone])
 
   const loadDetail = useCallback(async (id = selectedId) => {
     if (!id) return
@@ -594,7 +594,7 @@ export default function ChatPage() {
               </div>
               {/* SĐT toggle */}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <button onClick={() => setHasPhone(v => !v)} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${hasPhone ? "#3b82f6" : "#e2e8f0"}`, background: hasPhone ? "#eff6ff" : "#fff", color: hasPhone ? "#1877f2" : "#64748b", borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: hasPhone ? 600 : 400, cursor: "pointer" }}>
+                <button onClick={() => { const next = !hasPhone; setHasPhone(next); loadConvs(tab, pageFilter, next) }} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${hasPhone ? "#3b82f6" : "#e2e8f0"}`, background: hasPhone ? "#eff6ff" : "#fff", color: hasPhone ? "#1877f2" : "#64748b", borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: hasPhone ? 600 : 400, cursor: "pointer" }}>
                   📞 Có SĐT
                 </button>
                 <span style={{ fontSize: 10, color: "#cbd5e1", marginLeft: "auto" }}>mới nhất ↑</span>
