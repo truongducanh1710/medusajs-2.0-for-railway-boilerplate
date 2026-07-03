@@ -8,9 +8,10 @@ function getPool(): Pool {
 }
 
 /**
- * GET /admin/mkt-tasks/cskh-source?keyword=chảo vàng&status=3&days=30&limit=200
+ * GET /admin/mkt-tasks/cskh-source?keyword=chảo vàng&status=3&from=2026-06-01&to=2026-07-01&limit=200
  * Preview khách hàng đã mua 1 sản phẩm (theo tên trong pancake_order.items) để bulk-tạo
  * task gọi CSKH. Mặc định status=3 (Giao thành công) — chỉ khách đã thực nhận hàng.
+ * from/to lọc theo pancake_created_at (khoảng ngày); nếu không truyền thì mặc định 30 ngày gần nhất.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -18,8 +19,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const keyword = (q.keyword || "chảo vàng").trim()
     if (!keyword) return res.status(400).json({ error: "keyword required" })
     const status = q.status !== undefined && q.status !== "" ? Number(q.status) : 3
-    const days = Math.min(Math.max(parseInt(q.days || "30", 10) || 30, 1), 365)
     const limit = Math.min(Math.max(parseInt(q.limit || "200", 10) || 200, 1), 1000)
+
+    // Khoảng ngày: ưu tiên from/to; fallback "days" (số ngày gần nhất) để tương thích ngược
+    let fromDate: Date
+    let toDate: Date
+    if (q.from || q.to) {
+      fromDate = q.from ? new Date(q.from) : new Date(0)
+      toDate = q.to ? new Date(new Date(q.to).getTime() + 24 * 3600 * 1000) : new Date() // to inclusive hết ngày
+    } else {
+      const days = Math.min(Math.max(parseInt(q.days || "30", 10) || 30, 1), 365)
+      toDate = new Date()
+      fromDate = new Date(toDate.getTime() - days * 24 * 3600 * 1000)
+    }
 
     const pool = getPool()
     const { rows } = await pool.query(
@@ -30,10 +42,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(o.items) i WHERE i->>'name' ILIKE $1)
          AND ($2::int IS NULL OR o.status = $2)
          AND o.customer_phone IS NOT NULL AND o.customer_phone != ''
-         AND o.pancake_created_at >= now() - ($3 || ' days')::interval
+         AND o.pancake_created_at >= $3 AND o.pancake_created_at <= $4
        ORDER BY o.pancake_created_at DESC
-       LIMIT $4`,
-      [`%${keyword}%`, Number.isNaN(status) ? null : status, days, limit]
+       LIMIT $5`,
+      [`%${keyword}%`, Number.isNaN(status) ? null : status, fromDate, toDate, limit]
     )
 
     // Group theo customer_phone — dedupe khách nhiều đơn

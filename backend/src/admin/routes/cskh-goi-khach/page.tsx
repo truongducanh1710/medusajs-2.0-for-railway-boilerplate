@@ -27,6 +27,8 @@ type Task = {
   created_at: string
 }
 
+type MktProduct = { id: number; name: string; code: string }
+
 type SourceOrder = {
   id: string
   status_name: string
@@ -131,6 +133,33 @@ function CallStageSelect({ value, disabled, onChange }: { value: string | null; 
   )
 }
 
+function NoteCell({ comments, users }: { comments: Comment[]; users: MktUser[] }) {
+  const [hover, setHover] = useState(false)
+  const notes = (comments || []).filter(c => !c.type || c.type !== "system")
+  if (notes.length === 0) return <span className="text-ui-fg-disabled">·</span>
+  const last = notes[notes.length - 1]
+  return (
+    <div className="relative inline-block" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <span className="cursor-default truncate text-[12px] text-ui-fg-subtle">
+        💬 {last.text.length > 16 ? last.text.slice(0, 16) + "…" : last.text}
+      </span>
+      {hover && (
+        <div className="absolute left-0 top-full z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-ui-border-base bg-ui-bg-base p-2 shadow-xl">
+          {[...notes].reverse().map((c, i) => (
+            <div key={i} className="mb-1.5 border-b border-ui-border-base pb-1.5 text-[11px] last:mb-0 last:border-0 last:pb-0">
+              <div className="mb-0.5 flex items-center justify-between text-ui-fg-subtle">
+                <span className="font-semibold text-ui-fg-base">{authorLabel(c.author_id, users)}</span>
+                <span>{fmtDateTime(c.created_at)}</span>
+              </div>
+              <div className="whitespace-pre-wrap text-ui-fg-base">{c.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Bulk create modal ───────────────────────────────────────────────────────
 
 function BulkCreateModal({ users, onClose, onCreated, onToast }: {
@@ -139,8 +168,15 @@ function BulkCreateModal({ users, onClose, onCreated, onToast }: {
   onCreated: () => void
   onToast: (msg: string, type: "success" | "error") => void
 }) {
-  const [keyword, setKeyword] = useState("chảo vàng")
-  const [days, setDays] = useState(30)
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const monthAgoStr = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10)
+  const [product, setProduct] = useState<MktProduct | null>(null)
+  const [productQuery, setProductQuery] = useState("chảo vàng")
+  const [productOptions, setProductOptions] = useState<MktProduct[]>([])
+  const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const [allProducts, setAllProducts] = useState<MktProduct[]>([])
+  const [fromDate, setFromDate] = useState(monthAgoStr)
+  const [toDate, setToDate] = useState(todayStr)
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<SourceCustomer[] | null>(null)
   const [selected, setSelected] = useState<Record<string, boolean>>({})
@@ -153,10 +189,25 @@ function BulkCreateModal({ users, onClose, onCreated, onToast }: {
   const [notes, setNotes] = useState("Hỏi thăm trải nghiệm sử dụng sản phẩm, xin đánh giá 5 sao")
   const [creating, setCreating] = useState(false)
 
+  useEffect(() => {
+    apiFetch("/admin/mkt-tasks/cskh-products").then(r => r.json()).then(d => setAllProducts(d.products || [])).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const q = productQuery.trim().toLowerCase()
+    if (!q) { setProductOptions(allProducts.slice(0, 20)); return }
+    setProductOptions(
+      allProducts.filter(p => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)).slice(0, 20)
+    )
+  }, [productQuery, allProducts])
+
   const search = useCallback(async () => {
+    const keyword = product?.name || productQuery.trim()
+    if (!keyword) { onToast("Chọn sản phẩm trước khi tìm", "error"); return }
     setSearching(true)
     try {
-      const r = await apiFetch(`/admin/mkt-tasks/cskh-source?keyword=${encodeURIComponent(keyword)}&days=${days}&limit=200`)
+      const params = new URLSearchParams({ keyword, from: fromDate, to: toDate, limit: "200" })
+      const r = await apiFetch(`/admin/mkt-tasks/cskh-source?${params.toString()}`)
       const d = await r.json()
       if (!r.ok) throw new Error(d?.error || "Lỗi tìm khách hàng")
       const customers: SourceCustomer[] = d.customers || []
@@ -167,7 +218,7 @@ function BulkCreateModal({ users, onClose, onCreated, onToast }: {
     } catch (e: any) {
       onToast(e?.message || "Lỗi tìm khách hàng", "error")
     } finally { setSearching(false) }
-  }, [keyword, days])
+  }, [product, productQuery, fromDate, toDate])
 
   const selectedCustomers = useMemo(() => (results || []).filter(c => selected[c.customer_phone]), [results, selected])
   const selectedCount = selectedCustomers.length
@@ -213,12 +264,33 @@ function BulkCreateModal({ users, onClose, onCreated, onToast }: {
         <div className="mb-5">
           <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Bước 1 · Tìm khách hàng</div>
           <div className="flex gap-2">
-            <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="Từ khóa sản phẩm"
-              className="flex-1 rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[13px] outline-none focus:ring-1 focus:ring-ui-border-interactive" />
-            <select value={days} onChange={e => setDays(Number(e.target.value))} className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[13px]">
-              {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>{d} ngày</option>)}
-            </select>
-            <button onClick={search} disabled={searching || !keyword.trim()}
+            <div className="relative flex-1">
+              <input
+                value={product ? `${product.code}  ${product.name}` : productQuery}
+                onChange={e => { setProduct(null); setProductQuery(e.target.value); setShowProductDropdown(true) }}
+                onFocus={() => setShowProductDropdown(true)}
+                onBlur={() => setTimeout(() => setShowProductDropdown(false), 150)}
+                placeholder="Tìm sản phẩm theo tên hoặc mã POS..."
+                className="w-full rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[13px] outline-none focus:ring-1 focus:ring-ui-border-interactive" />
+              {showProductDropdown && productOptions.length > 0 && (
+                <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-ui-border-base bg-ui-bg-base shadow-lg">
+                  {productOptions.map(p => (
+                    <button key={p.id} type="button"
+                      onMouseDown={() => { setProduct(p); setProductQuery(""); setShowProductDropdown(false) }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-ui-bg-subtle-hover">
+                      <span className="font-mono font-semibold text-violet-600">{p.code}</span>
+                      <span className="text-ui-fg-base">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+              className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[13px]" />
+            <span className="self-center text-ui-fg-subtle">—</span>
+            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+              className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[13px]" />
+            <button onClick={search} disabled={searching || (!product && !productQuery.trim())}
               className="rounded-lg bg-ui-button-inverted px-4 py-1.5 text-[13px] font-semibold text-ui-fg-on-inverted disabled:opacity-50">
               {searching ? "Đang tìm..." : "🔍 Tìm"}
             </button>
@@ -706,6 +778,7 @@ export default function CskhGoiKhachPage() {
                       <th className="py-2">SĐT</th>
                       <th className="py-2">Phụ trách</th>
                       <th className="py-2">Giai đoạn gọi</th>
+                      <th className="py-2">Ghi chú</th>
                       <th className="py-2">★</th>
                       <th className="py-2">Hạn</th>
                     </tr>
@@ -724,6 +797,7 @@ export default function CskhGoiKhachPage() {
                         <td className="py-2">
                           <CallStageSelect value={t.call_stage} disabled={false} onChange={v => patchTask(t.id, { call_stage: v })} />
                         </td>
+                        <td className="py-2" onClick={e => e.stopPropagation()}><NoteCell comments={t.comments} users={users} /></td>
                         <td className="py-2">{t.status === "done" ? <Stars value={t.rating} /> : "·"}</td>
                         <td className="py-2 text-ui-fg-subtle">{fmt(t.deadline)}</td>
                       </tr>
