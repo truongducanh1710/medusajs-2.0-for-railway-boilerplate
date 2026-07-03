@@ -8,7 +8,7 @@ const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || "https://api.minimax.io
 const MINIMAX_TEXT_MODEL = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M2"
 
 const MAX_TOOL_ROUNDS = 5
-const AI_TIMEOUT_MS = 10_000
+const AI_TIMEOUT_MS = 25_000
 
 export type AiAction =
   | { type: "handoff_to_human"; reason: string }
@@ -344,7 +344,7 @@ async function callMiniMax(messages: any[], tools: any[]): Promise<any> {
         messages,
         tools,
         tool_choice: "auto",
-        max_tokens: 500,
+        max_tokens: 1200,
       }),
       signal: controller.signal,
     })
