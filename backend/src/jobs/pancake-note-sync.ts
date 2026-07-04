@@ -15,13 +15,14 @@ export default async function pancakeActiveOrdersSync(container: MedusaContainer
 
   for (const shop of PANCAKE_SHOPS) {
     if (!shop.shopId || !shop.apiKey) continue
+    const shopLabel = `${shop.market}${shop.platform ? `/${shop.platform}` : ""}`
     try {
-      const result = await syncService.syncActiveOrders(shop.market)
+      const result = await syncService.syncActiveOrders(shop.market, { shopId: shop.shopId, apiKey: shop.apiKey })
       logger?.info?.(
-        `[PancakeActiveSync][${shop.market}] total=${result.total} updated=${result.updated} created=${result.created} errors=${result.errors}`
+        `[PancakeActiveSync][${shopLabel}] total=${result.total} updated=${result.updated} created=${result.created} errors=${result.errors}`
       )
     } catch (err: any) {
-      logger?.error?.(`[PancakeActiveSync][${shop.market}] Failed: ${err.message}`)
+      logger?.error?.(`[PancakeActiveSync][${shopLabel}] Failed: ${err.message}`)
     }
   }
 }

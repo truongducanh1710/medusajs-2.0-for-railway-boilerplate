@@ -108,8 +108,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .sort((a, b) => a.date.localeCompare(b.date))
 
     // --- By product ---
-    // MY: gắn thêm shop_name của mỗi SP (mỗi SP chỉ bán ở 1 gian hàng — verify thực tế 35/35 SP).
-    const productMap = new Map<string, { qty: number; revenue: number; shop_name?: string }>()
+    // MY: gắn thêm shop_name + source (platform: tiktok/shopee) của mỗi SP — mỗi SP chỉ bán ở
+    // 1 gian hàng/1 sàn (verify thực tế), dùng để lọc dropdown "Doanh số SP theo gian hàng".
+    const productMap = new Map<string, { qty: number; revenue: number; shop_name?: string; source?: string }>()
     for (const o of allOrders) {
       const items: any[] = Array.isArray(o.items) ? o.items : []
       for (const item of items) {
@@ -117,10 +118,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const qty = item.qty || 1
         const price = item.price || 0
         const lineRevenue = price * qty
-        const entry = productMap.get(name) || { qty: 0, revenue: 0, ...(mkt === "MY" ? { shop_name: o.shop_name || "" } : {}) }
+        const entry = productMap.get(name) || {
+          qty: 0, revenue: 0,
+          ...(mkt === "MY" ? { shop_name: o.shop_name || "", source: o.source || "" } : {}),
+        }
         entry.qty += qty
         entry.revenue += lineRevenue
         if (mkt === "MY" && !entry.shop_name && o.shop_name) entry.shop_name = o.shop_name
+        if (mkt === "MY" && !entry.source && o.source) entry.source = o.source
         productMap.set(name, entry)
       }
     }
@@ -175,6 +180,51 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // --- By platform (chỉ MY: TikTok vs Shopee, gom theo `source`) ---
+    // Cùng ý nghĩa với by_shop_day nhưng gom theo sàn thay vì gian hàng con, để thấy
+    // TikTok/Shopee cái nào đang đóng góp nhiều hơn.
+    let byPlatformDay: any | undefined
+    if (mkt === "MY") {
+      const platformMap = new Map<string, { orders: number; revenue: number }>()
+      const platformDayMap = new Map<string, Map<string, { orders: number; revenue: number }>>()
+      const daySet2 = new Set<string>()
+      const platformLabel = (src: string) => (src === "tiktok" ? "TikTok" : src === "shopee" ? "Shopee" : src || "Khác")
+      for (const o of allOrders) {
+        const plat = platformLabel(o.source)
+        const rev = revenueOf(o)
+        const dateStr = o.pancake_created_at
+          ? new Date(o.pancake_created_at).toISOString().slice(0, 10)
+          : "unknown"
+        daySet2.add(dateStr)
+
+        const p = platformMap.get(plat) || { orders: 0, revenue: 0 }
+        p.orders++; p.revenue += rev
+        platformMap.set(plat, p)
+
+        if (!platformDayMap.has(plat)) platformDayMap.set(plat, new Map())
+        const dm = platformDayMap.get(plat)!
+        const d = dm.get(dateStr) || { orders: 0, revenue: 0 }
+        d.orders++; d.revenue += rev
+        dm.set(dateStr, d)
+      }
+      const platforms = Array.from(platformMap.entries())
+        .map(([platform, data]) => ({ platform, ...data }))
+        .sort((a, b) => b.revenue - a.revenue)
+      const days2 = Array.from(daySet2).filter(d => d !== "unknown").sort()
+      byPlatformDay = {
+        days: days2,
+        platforms: platforms.map(p => ({
+          platform: p.platform,
+          total_orders: p.orders,
+          total_revenue: p.revenue,
+          per_day: days2.map(d => {
+            const cell = platformDayMap.get(p.platform)?.get(d)
+            return { date: d, orders: cell?.orders ?? 0, revenue: cell?.revenue ?? 0 }
+          }),
+        })),
+      }
+    }
+
     return res.json({
       from,
       to,
@@ -192,6 +242,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       by_day: byDay,
       by_product: byProduct,
       ...(byShop ? { by_shop: byShop, by_shop_day: byShopDay } : {}),
+      ...(byPlatformDay ? { by_platform_day: byPlatformDay } : {}),
     })
   } catch (err: any) {
     console.error("[PancakeSync Report API] Error:", err.message)

@@ -51,12 +51,14 @@ function getLast30Days(): { from: Date; to: Date } {
 // ---- Component ----
 
 type Market = "VN" | "MY"
+type Platform = "tiktok" | "shopee"
 
 const PancakeSyncPage = () => {
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
   const [force, setForce] = useState(false)
   const [market, setMarket] = useState<Market>("VN")
+  const [platform, setPlatform] = useState<Platform>("tiktok")
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<any>(null)
   const [syncing, setSyncing] = useState(false)
@@ -126,6 +128,7 @@ const PancakeSyncPage = () => {
           to: toISO(toDate, true),
           force,
           market,
+          ...(market === "MY" ? { platform } : {}),
         }),
       })
 
@@ -168,10 +171,10 @@ const PancakeSyncPage = () => {
       {/* Shop selector */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6 shadow-sm">
         <h2 className="font-semibold text-gray-700 mb-4">Shop Pancake</h2>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap mb-3">
           {[
             { key: "VN" as Market, label: "🇻🇳 Việt Nam" },
-            { key: "MY" as Market, label: "🇲🇾 Malaysia (TikTok)" },
+            { key: "MY" as Market, label: "🇲🇾 Malaysia" },
           ].map((m) => (
             <button
               key={m.key}
@@ -186,6 +189,26 @@ const PancakeSyncPage = () => {
             </button>
           ))}
         </div>
+        {market === "MY" && (
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { key: "tiktok" as Platform, label: "TikTok Shop" },
+              { key: "shopee" as Platform, label: "Shopee" },
+            ].map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPlatform(p.key)}
+                disabled={isRunning}
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  platform === p.key ? "bg-gray-700 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Date Range */}

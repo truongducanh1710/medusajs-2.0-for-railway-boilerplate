@@ -328,6 +328,9 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
         </div>
       </div>
 
+      {/* Doanh số theo sàn: TikTok vs Shopee (chỉ MY) */}
+      {data.by_platform_day && <PlatformBreakdownBlock data={data.by_platform_day} />}
+
       {/* Doanh số theo gian hàng (chỉ MY — nhiều gian TikTok con) */}
       {data.by_shop_day && <ShopBreakdownBlock data={data.by_shop_day} totalRevenue={data.total_revenue} />}
 
@@ -339,21 +342,107 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
   )
 }
 
+// ---- Doanh số theo sàn: TikTok vs Shopee (bảng đơn giản, không cần biểu đồ theo ngày phức tạp) ----
+const PLATFORM_COLORS: Record<string, string> = { TikTok: "#000000", Shopee: "#ee4d2d" }
+function PlatformBreakdownBlock({ data }: { data: any }) {
+  const fmt = useFmtMoney()
+  const days: string[] = data.days ?? []
+  const platforms: any[] = data.platforms ?? []
+  const totalRev = platforms.reduce((s, p) => s + Number(p.total_revenue || 0), 0)
+  const colorOf = (name: string) => PLATFORM_COLORS[name] ?? "#6b7280"
+
+  return (
+    <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
+        <span>Doanh số theo sàn</span>
+        <span className="text-xs font-normal text-gray-400">TikTok vs Shopee</span>
+      </div>
+
+      {/* Tổng quan 2 sàn dạng thanh ngang */}
+      <div className="p-4 space-y-3">
+        {platforms.map(p => {
+          const pct = totalRev > 0 ? Math.round(p.total_revenue / totalRev * 100) : 0
+          return (
+            <div key={p.platform}>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="font-medium text-gray-700 inline-flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: colorOf(p.platform) }} />
+                  {p.platform}
+                </span>
+                <span className="text-gray-500">{p.total_orders} đơn · {fmt(p.total_revenue)} · {pct}%</span>
+              </div>
+              <div className="w-full h-2 bg-gray-100 rounded overflow-hidden">
+                <div className="h-full rounded" style={{ width: `${Math.max(pct, 0)}%`, background: colorOf(p.platform) }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Bảng theo ngày */}
+      <div className="overflow-x-auto border-t">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b text-xs text-gray-500">
+            <tr>
+              <th className="text-left px-4 py-2.5">Sàn</th>
+              {days.map(d => <th key={d} className="text-right px-3 py-2.5 whitespace-nowrap">{d.slice(5)}</th>)}
+              <th className="text-right px-4 py-2.5">Tổng đơn</th>
+              <th className="text-right px-4 py-2.5">Tổng COD</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {platforms.map(p => (
+              <tr key={p.platform}>
+                <td className="px-4 py-2.5 font-medium">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: colorOf(p.platform) }} />
+                    {p.platform}
+                  </span>
+                </td>
+                {p.per_day.map((cell: any) => (
+                  <td key={cell.date} className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">
+                    {cell.orders > 0 ? fmt(cell.revenue) : "—"}
+                  </td>
+                ))}
+                <td className="px-4 py-2.5 text-right font-mono">{fmtNum(p.total_orders)}</td>
+                <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(p.total_revenue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ---- Doanh số sản phẩm theo gian hàng (MY) — mỗi SP thuộc 1 shop, gắn chấm màu + tên shop ----
+// Dropdown lọc sàn (Tất cả/TikTok/Shopee) để xem riêng SP đang bán trên từng sàn.
 function ProductByShopBlock({ products, shops }: { products: any[]; shops: any[] }) {
   const fmt = useFmtMoney()
+  const [platformFilter, setPlatformFilter] = useState<"all" | "tiktok" | "shopee">("all")
   // Map shop_name -> màu (khớp thứ tự với ShopBreakdownBlock)
   const colorOf = (shopName: string) => {
     const idx = shops.findIndex((s: any) => s.shop_name === shopName)
     return idx >= 0 ? SHOP_COLORS[idx % SHOP_COLORS.length] : "#9ca3af"
   }
-  const totalRev = products.reduce((s, p) => s + Number(p.revenue || 0), 0)
+  const filtered = platformFilter === "all"
+    ? products
+    : products.filter((p: any) => p.source === platformFilter)
+  const totalRev = filtered.reduce((s, p) => s + Number(p.revenue || 0), 0)
 
   return (
     <div className="mt-5 bg-white border rounded-xl shadow-sm overflow-hidden">
       <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
         <span>Doanh số sản phẩm theo gian hàng</span>
-        <span className="text-xs font-normal text-gray-400">giá niêm yết · top {products.length}</span>
+        <div className="flex items-center gap-2">
+          <select value={platformFilter} onChange={e => setPlatformFilter(e.target.value as any)}
+            className="border rounded-lg px-2 py-1 text-xs bg-white">
+            <option value="all">Tất cả sàn</option>
+            <option value="tiktok">TikTok</option>
+            <option value="shopee">Shopee</option>
+          </select>
+          <span className="text-xs font-normal text-gray-400">giá niêm yết · top {filtered.length}</span>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -368,7 +457,7 @@ function ProductByShopBlock({ products, shops }: { products: any[]; shops: any[]
             </tr>
           </thead>
           <tbody className="divide-y">
-            {products.map((p: any, i: number) => {
+            {filtered.map((p: any, i: number) => {
               const pct = totalRev > 0 ? Math.round(Number(p.revenue) / totalRev * 100) : 0
               const color = colorOf(p.shop_name || "")
               return (

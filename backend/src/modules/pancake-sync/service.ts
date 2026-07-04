@@ -244,7 +244,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   async pullByDateRange(
     from: Date,
     to: Date,
-    opts?: { force?: boolean; market?: string }
+    opts?: { force?: boolean; market?: string; shopId?: string; apiKey?: string }
   ): Promise<{ jobId: string }> {
     const market = opts?.market ?? "VN"
 
@@ -319,10 +319,12 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     jobId: string,
     from: Date,
     to: Date,
-    opts?: { force?: boolean; market?: string }
+    opts?: { force?: boolean; market?: string; shopId?: string; apiKey?: string }
   ): Promise<void> {
     const market = opts?.market ?? "VN"
-    const shop = getPancakeShop(market)
+    const base = getPancakeShop(market)
+    // Cho phép chỉ định shop cụ thể (market MY có nhiều sàn) — fallback shop đầu của market.
+    const shop = { ...base, shopId: opts?.shopId ?? base.shopId, apiKey: opts?.apiKey ?? base.apiKey }
     const startedAt = Date.now()
     const errors: Array<{ orderId?: string; message: string }> = []
     const failedPages: number[] = []
@@ -335,12 +337,13 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     let totalPages = 1
 
     try {
-      // Advisory lock — fail fast if another sync is running
+      // Advisory lock theo shopId — 2 sàn cùng market (TikTok/Shopee) khác shopId nên
+      // không chặn nhau; sync VN và MY cũng độc lập.
       const mgr = (this as any).__container?.manager
       if (mgr) {
         const [lockResult] = await mgr.execute(
           `SELECT pg_try_advisory_lock(hashtext('pancake-sync-' || $1)) as locked`,
-          [market]
+          [shop.shopId]
         )
         if (!lockResult?.locked) {
           await this.updatePancakeSyncJobs({
@@ -571,7 +574,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
       // Release lock
       if (mgr) {
-        await mgr.execute(`SELECT pg_advisory_unlock(hashtext('pancake-sync-' || $1))`, [market])
+        await mgr.execute(`SELECT pg_advisory_unlock(hashtext('pancake-sync-' || $1))`, [shop.shopId])
       }
     } finally {
       const durationMs = Date.now() - startedAt
@@ -631,8 +634,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
    *
    * Snapshot strategy: replace toàn bộ notes/tags mỗi lần sync. POS là source of truth.
    */
-  async syncActiveOrders(market: string = "VN"): Promise<{ updated: number; created: number; total: number; errors: number }> {
-    const shop = getPancakeShop(market)
+  async syncActiveOrders(market: string = "VN", shopOverride?: { shopId: string; apiKey: string }): Promise<{ updated: number; created: number; total: number; errors: number }> {
+    const base = getPancakeShop(market)
+    const shop = { ...base, shopId: shopOverride?.shopId ?? base.shopId, apiKey: shopOverride?.apiKey ?? base.apiKey }
     let page = 1
     const pageSize = 200
     let totalPages = 1
@@ -742,10 +746,11 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
    */
   async pullByStatus(
     status: number,
-    opts?: { daysBack?: number; market?: string }
+    opts?: { daysBack?: number; market?: string; shopId?: string; apiKey?: string }
   ): Promise<{ updated: number; created: number; total: number; errors: number }> {
     const market = opts?.market ?? "VN"
-    const shop = getPancakeShop(market)
+    const base = getPancakeShop(market)
+    const shop = { ...base, shopId: opts?.shopId ?? base.shopId, apiKey: opts?.apiKey ?? base.apiKey }
     let page = 1
     const pageSize = 100
     let totalPages = 1

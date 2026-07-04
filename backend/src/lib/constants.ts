@@ -101,8 +101,10 @@ export const PANCAKE_API_BASE = 'https://pos.pages.fm/api/v1'
 export const PANCAKE_WEBHOOK_SECRET = process.env.PANCAKE_WEBHOOK_SECRET || ''
 
 /**
- * Multi-shop Pancake config — mỗi shop là 1 thị trường độc lập (VN, Malaysia TikTok Shop...).
- * `market` là khóa định danh dùng xuyên suốt code + DB (`pancake_order.market`).
+ * Multi-shop Pancake config. `market` là khóa định danh thị trường dùng trong DB
+ * (`pancake_order.market`) — 1 market có thể gồm NHIỀU shop Pancake (vd Malaysia có
+ * TikTok Shop + Shopee, mỗi sàn là 1 shop_id riêng nhưng cùng currency/kho MY).
+ * Phân biệt sàn qua field `source` trên đơn (auto-detect từ order_sources_name).
  */
 export type PancakeShopConfig = {
   market: string
@@ -111,6 +113,7 @@ export type PancakeShopConfig = {
   warehouseId?: string
   currency: string
   label: string
+  platform?: string   // 'tiktok' | 'shopee' | ... — chỉ để log/nhận diện, không lưu DB
 }
 
 export const PANCAKE_SHOPS: PancakeShopConfig[] = [
@@ -129,13 +132,29 @@ export const PANCAKE_SHOPS: PancakeShopConfig[] = [
     warehouseId: process.env.PANCAKE_MY_WAREHOUSE_ID || '',
     currency: 'MYR',
     label: 'Malaysia (TikTok)',
+    platform: 'tiktok',
+  },
+  {
+    market: 'MY',
+    shopId: process.env.PANCAKE_SHOPEE_MY_SHOP_ID || '6018352',
+    apiKey: process.env.PANCAKE_SHOPEE_MY_API_KEY || '',
+    warehouseId: process.env.PANCAKE_SHOPEE_MY_WAREHOUSE_ID || '',
+    currency: 'MYR',
+    label: 'Malaysia (Shopee)',
+    platform: 'shopee',
   },
 ]
 
+/** Lấy shop đầu tiên của 1 market (dùng cho currency/kho — các shop cùng market chung currency). */
 export function getPancakeShop(market: string): PancakeShopConfig {
   const shop = PANCAKE_SHOPS.find(s => s.market === market)
   if (!shop) throw new Error(`Unknown Pancake market: ${market}`)
   return shop
+}
+
+/** Tất cả shop của 1 market (Malaysia có nhiều sàn). */
+export function getPancakeShopsForMarket(market: string): PancakeShopConfig[] {
+  return PANCAKE_SHOPS.filter(s => s.market === market)
 }
 
 /**
