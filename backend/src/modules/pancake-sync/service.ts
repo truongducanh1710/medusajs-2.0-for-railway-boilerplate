@@ -1,7 +1,7 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import PancakeOrder from "./models/pancake-order"
 import PancakeSyncJob from "./models/pancake-sync-job"
-import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../lib/constants"
+import { PANCAKE_API_BASE, getPancakeShop } from "../../lib/constants"
 import { extractNotesForOrder, extractTags } from "./extractors"
 
 // ---- Types ----
@@ -196,16 +196,20 @@ function extractFbCampaignId(raw: any): string | null {
   return null
 }
 
-export function mapPancakeOrder(raw: any): Record<string, any> {
+export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string, any> {
   const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
     name: item.variation_info?.name ?? item.name ?? "—",
     qty: item.quantity ?? 1,
     price: item.variation_info?.retail_price ?? item.price ?? 0,
   })) : []
 
+  const shop = getPancakeShop(market)
+
   return {
     id: String(raw.system_id || raw.id || ""),
     source: detectSource(raw),
+    market,
+    currency: shop.currency,
     status: raw.status ?? 0,
     status_name: statusLabel(raw.status ?? 0),
     customer_name: raw.bill_full_name ?? raw.customer?.name ?? "",
@@ -239,15 +243,19 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   async pullByDateRange(
     from: Date,
     to: Date,
-    opts?: { force?: boolean }
+    opts?: { force?: boolean; market?: string }
   ): Promise<{ jobId: string }> {
+    const market = opts?.market ?? "VN"
+
     // 1) Cleanup zombie jobs: mark "running" quá 30 phút thành "failed"
     //    (xảy ra khi backend restart giữa chừng — job stuck status=running)
     await this._cleanupZombieJobs()
 
-    // 2) Reject nếu đã có job thực sự đang chạy trong 30 phút qua
+    // 2) Reject nếu đã có job thực sự đang chạy trong 30 phút qua — chỉ xét job CÙNG market,
+    //    để sync VN và MY chạy song song không chặn nhau
     const recentRunning = await this.listPancakeSyncJobs(
       {
+        market,
         status: { $in: ["queued", "running"] } as any,
         started_at: { $gte: new Date(Date.now() - 30 * 60 * 1000) } as any,
       } as any,
@@ -263,6 +271,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
     // 3) Create new job
     const job = await this.createPancakeSyncJobs({
+      market,
       status: "queued",
       from_date: from,
       to_date: to,
@@ -309,8 +318,10 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     jobId: string,
     from: Date,
     to: Date,
-    opts?: { force?: boolean }
+    opts?: { force?: boolean; market?: string }
   ): Promise<void> {
+    const market = opts?.market ?? "VN"
+    const shop = getPancakeShop(market)
     const startedAt = Date.now()
     const errors: Array<{ orderId?: string; message: string }> = []
     const failedPages: number[] = []
@@ -327,7 +338,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       const mgr = (this as any).__container?.manager
       if (mgr) {
         const [lockResult] = await mgr.execute(
-          `SELECT pg_try_advisory_lock(hashtext('pancake-sync')) as locked`
+          `SELECT pg_try_advisory_lock(hashtext('pancake-sync-' || $1)) as locked`,
+          [market]
         )
         if (!lockResult?.locked) {
           await this.updatePancakeSyncJobs({
@@ -355,7 +367,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
         let pageTerminalCount = 0
 
         try {
-          const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&page_size=${pageSize}&page_number=${page}`
+          const url = `${PANCAKE_API_BASE}/shops/${shop.shopId}/orders?api_key=${shop.apiKey}&page_size=${pageSize}&page_number=${page}`
 
           const res = await fetchWithRetry(url)
           const body: PancakeListResponse = await res.json()
@@ -365,7 +377,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
           for (const raw of orders) {
             try {
-              const mapped = mapPancakeOrder(raw)
+              const mapped = mapPancakeOrder(raw, market)
               if (!mapped.id) continue
 
               // Kiểm tra đơn đã có trong DB chưa
@@ -558,7 +570,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
       // Release lock
       if (mgr) {
-        await mgr.execute(`SELECT pg_advisory_unlock(hashtext('pancake-sync'))`)
+        await mgr.execute(`SELECT pg_advisory_unlock(hashtext('pancake-sync-' || $1))`, [market])
       }
     } finally {
       const durationMs = Date.now() - startedAt
@@ -596,8 +608,9 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   /**
    * Fetch 1 đơn từ Pancake API theo ID — dùng cho webhook trigger.
    */
-  async fetchOrderById(orderId: string): Promise<any | null> {
-    const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders/${orderId}?api_key=${PANCAKE_API_KEY}`
+  async fetchOrderById(orderId: string, market: string = "VN"): Promise<any | null> {
+    const shop = getPancakeShop(market)
+    const url = `${PANCAKE_API_BASE}/shops/${shop.shopId}/orders/${orderId}?api_key=${shop.apiKey}`
     try {
       const res = await fetchWithRetry(url, 2)
       const json: any = await res.json()
@@ -617,7 +630,8 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
    *
    * Snapshot strategy: replace toàn bộ notes/tags mỗi lần sync. POS là source of truth.
    */
-  async syncActiveOrders(): Promise<{ updated: number; created: number; total: number; errors: number }> {
+  async syncActiveOrders(market: string = "VN"): Promise<{ updated: number; created: number; total: number; errors: number }> {
+    const shop = getPancakeShop(market)
     let page = 1
     const pageSize = 200
     let totalPages = 1
@@ -628,7 +642,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
     while (page <= totalPages) {
       try {
-        const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&status=0&page_size=${pageSize}&page_number=${page}`
+        const url = `${PANCAKE_API_BASE}/shops/${shop.shopId}/orders?api_key=${shop.apiKey}&status=0&page_size=${pageSize}&page_number=${page}`
         const res = await fetchWithRetry(url)
         const body: PancakeListResponse = await res.json()
         totalPages = body.total_pages ?? 1
@@ -638,7 +652,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
         for (const raw of orders) {
           try {
-            const mapped = mapPancakeOrder(raw)
+            const mapped = mapPancakeOrder(raw, market)
             if (!mapped.id) continue
 
             const { notes, lastNoteAt, callCount } = extractNotesForOrder(raw)
@@ -727,8 +741,10 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
    */
   async pullByStatus(
     status: number,
-    opts?: { daysBack?: number }
+    opts?: { daysBack?: number; market?: string }
   ): Promise<{ updated: number; created: number; total: number; errors: number }> {
+    const market = opts?.market ?? "VN"
+    const shop = getPancakeShop(market)
     let page = 1
     const pageSize = 100
     let totalPages = 1
@@ -740,7 +756,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
     while (page <= totalPages) {
       try {
-        const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}&status=${status}&page_size=${pageSize}&page_number=${page}`
+        const url = `${PANCAKE_API_BASE}/shops/${shop.shopId}/orders?api_key=${shop.apiKey}&status=${status}&page_size=${pageSize}&page_number=${page}`
         const res = await fetchWithRetry(url)
         const body: any = await res.json()
         totalPages = body.total_pages ?? body.data?.total_pages ?? 1
@@ -750,7 +766,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
         for (const raw of orders) {
           try {
             if (cutoffMs && raw.inserted_at && new Date(raw.inserted_at).getTime() < cutoffMs) continue
-            const mapped = mapPancakeOrder(raw)
+            const mapped = mapPancakeOrder(raw, market)
             if (!mapped.id) continue
             const { notes, lastNoteAt, callCount } = extractNotesForOrder(raw)
             const tags = extractTags(raw)
@@ -809,6 +825,7 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     finished_at: Date
     statuses: Array<{ status: number; total: number; updated: number; created: number; errors: number }>
     error_details?: Array<{ status: number; order_id?: string; message: string }>
+    market?: string
   }): Promise<void> {
     try {
       const durationMs = data.finished_at.getTime() - data.started_at.getTime()
@@ -820,11 +837,12 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       const em = (this as any).__container?.resolve?.("manager") ?? (this as any).manager_
       if (!em) return
       await em.execute(
-        `INSERT INTO pancake_cron_log (id, run_type, started_at, finished_at, duration_ms, statuses, total_orders, total_updated, total_created, total_errors, error_details, success, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+        `INSERT INTO pancake_cron_log (id, run_type, started_at, finished_at, duration_ms, statuses, total_orders, total_updated, total_created, total_errors, error_details, success, market, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
         [id, data.run_type, data.started_at, data.finished_at, durationMs,
          JSON.stringify(data.statuses), totalOrders, totalUpdated, totalCreated, totalErrors,
-         JSON.stringify(data.error_details ?? []), totalErrors === 0 || totalOrders > 0]
+         JSON.stringify(data.error_details ?? []), totalErrors === 0 || totalOrders > 0,
+         data.market ?? "VN"]
       )
     } catch (err: any) {
       console.error("[PancakeSync] logCronRun failed:", err.message)
@@ -845,18 +863,20 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
     error_message?: string
     duration_ms?: number
     received_at: Date
+    market?: string
   }): Promise<void> {
     try {
       const id = `wh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const em = (this as any).__container?.resolve?.("manager") ?? (this as any).manager_
       if (!em) return
       await em.execute(
-        `INSERT INTO pancake_webhook_log (id, received_at, pancake_order_id, pancake_status, status_name, event_type, api_fetch_success, upsert_success, fallback_used, error_message, duration_ms, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+        `INSERT INTO pancake_webhook_log (id, received_at, pancake_order_id, pancake_status, status_name, event_type, api_fetch_success, upsert_success, fallback_used, error_message, duration_ms, market, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
         [id, data.received_at, data.pancake_order_id, data.pancake_status ?? null,
          data.status_name ?? "", data.event_type ?? "order",
          data.api_fetch_success ?? null, data.upsert_success ?? null,
-         data.fallback_used ?? false, data.error_message ?? null, data.duration_ms ?? null]
+         data.fallback_used ?? false, data.error_message ?? null, data.duration_ms ?? null,
+         data.market ?? "VN"]
       )
     } catch (err: any) {
       console.error("[PancakeSync] logWebhookEvent failed:", err.message)
@@ -866,12 +886,14 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   /**
    * Reconcile: link medusa_order_id for rows that were synced before the column existed.
    * Scans pancake_order rows without medusa_order_id and tries to match via customer phone + total.
+   * Chỉ áp dụng cho market VN — đơn Medusa storefront chỉ bán ở VN, shop Malaysia (TikTok Shop)
+   * không đi qua Medusa nên không thể có medusa_order_id.
    */
   async reconcileMedusaLinks(): Promise<{ linked: number }> {
     let linked = 0
 
     const unlinked = await this.listPancakeOrders(
-      { medusa_order_id: null },
+      { medusa_order_id: null, market: "VN" } as any,
       { take: 500 }
     )
 

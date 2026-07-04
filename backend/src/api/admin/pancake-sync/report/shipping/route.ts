@@ -13,9 +13,10 @@ function getPool(): Pool {
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from, to } = req.query as Record<string, string>
+    const { from, to, market } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
 
+    const mkt = market || "VN"
     const pool = getPool()
 
     // Tổng hợp theo status
@@ -27,9 +28,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM pancake_order
       WHERE pancake_created_at BETWEEN $1 AND $2
         AND source IN ('manual','facebook','zalo','unknown','medusa')
+        AND market = $3
       GROUP BY status
       ORDER BY status
-    `, [from, to])
+    `, [from, to, mkt])
 
     // Theo ngày: stacked giao thành công / hoàn / hủy
     const { rows: byDay } = await pool.query(`
@@ -42,9 +44,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM pancake_order
       WHERE pancake_created_at BETWEEN $1 AND $2
         AND source IN ('manual','facebook','zalo','unknown','medusa')
+        AND market = $3
       GROUP BY date
       ORDER BY date
-    `, [from, to])
+    `, [from, to, mkt])
 
     // Top tỉnh/thành có tỷ lệ hoàn cao
     const { rows: byProvince } = await pool.query(`
@@ -56,11 +59,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM pancake_order
       WHERE pancake_created_at BETWEEN $1 AND $2
         AND source IN ('manual','facebook','zalo','unknown','medusa')
+        AND market = $3
       GROUP BY province
       HAVING COUNT(*) >= 5
       ORDER BY return_rate DESC
       LIMIT 15
-    `, [from, to])
+    `, [from, to, mkt])
 
     // Top lý do hoàn từ tags (Hoan_*)
     const { rows: returnTags } = await pool.query(`
@@ -74,11 +78,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE pancake_created_at BETWEEN $1 AND $2
         AND status IN (4,5,-2)
         AND source IN ('manual','facebook','zalo','unknown','medusa')
+        AND market = $3
         AND tag->>'name' ILIKE 'Hoan_%'
       GROUP BY tag_name
       ORDER BY count DESC
       LIMIT 10
-    `, [from, to])
+    `, [from, to, mkt])
 
     // Summary
     const delivered   = byStatus.find(r => r.status === 3)
@@ -92,6 +97,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const returningNow   = byStatus.find(r => r.status === 4)
 
     return res.json({
+      market: mkt,
       summary: {
         total: totalAll,
         delivered: deliveredCount,

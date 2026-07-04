@@ -1,6 +1,13 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useContext, createContext } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
+
+// ---- Currency display context ----
+// Cho phép mọi Tab format tiền đúng theo market đang chọn (VN → VND, MY → MYR/VND quy đổi)
+// mà không phải truyền prop qua từng lời gọi fmtVND() rải rác trong file.
+const CurrencyCtx = createContext<{ market: Market; currencyMode: CurrencyMode; rate: number }>({
+  market: "VN", currencyMode: "MYR", rate: 5800,
+})
 
 // ---- Helpers ----
 function fmtVND(n: number | null | undefined) {
@@ -9,6 +16,19 @@ function fmtVND(n: number | null | undefined) {
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}tỷ`
   if (v >= 1e6) return `${(v / 1e6).toFixed(1)}tr`
   return new Intl.NumberFormat("vi-VN").format(Math.round(v)) + "đ"
+}
+function fmtMYR(n: number) {
+  return `RM ${new Intl.NumberFormat("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`
+}
+// Format tiền theo context hiện tại — dùng thay fmtVND() ở nơi hiển thị doanh thu/tiền chính.
+function useFmtMoney() {
+  const { market, currencyMode, rate } = useContext(CurrencyCtx)
+  return (n: number | null | undefined) => {
+    if (n == null || isNaN(Number(n))) return "—"
+    if (market !== "MY") return fmtVND(n)
+    if (currencyMode === "MYR") return fmtMYR(Number(n))
+    return fmtVND(Number(n) * rate)
+  }
 }
 function fmtNum(n: number | null | undefined) {
   if (n == null) return "—"
@@ -102,6 +122,8 @@ function Markdown({ text }: { text: string }) {
 // ---- Period Selector ----
 type Period = "today" | "7d" | "month" | "lastmonth" | "custom"
 interface DateRange { from: string; to: string }
+type Market = "VN" | "MY"
+type CurrencyMode = "MYR" | "VND"
 
 function detectPeriod(range: DateRange): Period {
   const today = todayVN()
@@ -218,17 +240,22 @@ function AISummaryBlock({ range }: { range: DateRange }) {
 }
 
 // ---- Overview Tab ----
-function OverviewTab({ range }: { range: DateRange }) {
+function OverviewTab({ range, market, onRate }: { range: DateRange; market: Market; onRate?: (rate: number) => void }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
     const from = toISO(range.from), to = toISO(range.to, true)
-    apiFetch(`/admin/pancake-sync/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
-      .then(r => r.json()).then(setData).catch(() => setData(null))
+    apiFetch(`/admin/pancake-sync/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}`)
+      .then(r => r.json()).then(d => {
+        setData(d)
+        if (d?.myr_to_vnd_rate) onRate?.(d.myr_to_vnd_rate)
+      }).catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  const fmt = useFmtMoney()
 
   if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
   if (!data) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
@@ -242,7 +269,7 @@ function OverviewTab({ range }: { range: DateRange }) {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard label="Đơn thành công" value={fmtNum(data.success_count)}
           sub={`/ ${fmtNum(data.total_orders)} tổng đơn`} />
-        <KpiCard label="Doanh thu COD" value={fmtVND(data.total_revenue)}
+        <KpiCard label="Doanh thu COD" value={fmt(data.total_revenue)}
           accent="border-l-4 border-l-green-400" />
         <KpiCard label="Tỷ lệ thành công" value={`${data.success_rate}%`}
           sub={`Hoàn: ${data.return_rate}%`} />
@@ -250,7 +277,7 @@ function OverviewTab({ range }: { range: DateRange }) {
           sub={`Hoàn ${data.return_count} · Hủy ${data.cancel_count}`}
           accent={data.return_rate > 15 ? "border-l-4 border-l-red-400" : ""} />
         <KpiCard label="AOV (giao thành công)" value={
-          data.success_count > 0 ? fmtVND(data.total_revenue / data.success_count) : "—"
+          data.success_count > 0 ? fmt(data.total_revenue / data.success_count) : "—"
         } />
       </div>
 
@@ -271,7 +298,7 @@ function OverviewTab({ range }: { range: DateRange }) {
                     {d.orders} đơn
                   </span>
                 </div>
-                <span className="text-gray-400 w-20 text-right flex-shrink-0">{fmtVND(d.revenue)}</span>
+                <span className="text-gray-400 w-20 text-right flex-shrink-0">{fmt(d.revenue)}</span>
               </div>
             ))}
           </div>
@@ -302,17 +329,19 @@ function OverviewTab({ range }: { range: DateRange }) {
 }
 
 // ---- Shipping Tab ----
-function ShippingTab({ range }: { range: DateRange }) {
+function ShippingTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
     const from = toISO(range.from), to = toISO(range.to, true)
-    apiFetch(`/admin/pancake-sync/report/shipping?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+    apiFetch(`/admin/pancake-sync/report/shipping?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}`)
       .then(r => r.json()).then(setData).catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  const fmt = useFmtMoney()
 
   if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
   if (!data) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
@@ -325,10 +354,10 @@ function ShippingTab({ range }: { range: DateRange }) {
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Đang giao" value={fmtNum(s.returning_now)}
-          sub={`COD chờ thu: ${fmtVND(s.returning_now_cod)}`}
+          sub={`COD chờ thu: ${fmt(s.returning_now_cod)}`}
           accent="border-l-4 border-l-blue-400" />
         <KpiCard label="Giao thành công" value={fmtNum(s.delivered)}
-          sub={fmtVND(s.delivered_cod)}
+          sub={fmt(s.delivered_cod)}
           accent="border-l-4 border-l-green-400" />
         <KpiCard label="Hoàn hàng" value={fmtNum(s.returned)}
           sub={`Tỷ lệ: ${s.return_rate}%`}
@@ -414,17 +443,19 @@ function ShippingTab({ range }: { range: DateRange }) {
 }
 
 // ---- Product Profit Tab ----
-function ProductTab({ range }: { range: DateRange }) {
+function ProductTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
     const from = toISO(range.from), to = toISO(range.to, true)
-    apiFetch(`/admin/pancake-sync/report/product-profit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+    apiFetch(`/admin/pancake-sync/report/product-profit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}`)
       .then(r => r.json()).then(setData).catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  const fmt = useFmtMoney()
 
   if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
   if (!data) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
@@ -435,7 +466,7 @@ function ProductTab({ range }: { range: DateRange }) {
     <div className="space-y-5">
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Doanh thu" value={fmtVND(s.total_revenue)} accent="border-l-4 border-l-green-400" />
+        <KpiCard label="Doanh thu" value={fmt(s.total_revenue)} accent="border-l-4 border-l-green-400" />
         <KpiCard label="COGS (giá vốn)" value={fmtVND(s.total_cogs)} />
         <KpiCard label="Gross Profit" value={fmtVND(s.total_profit)}
           accent={s.total_profit > 0 ? "border-l-4 border-l-violet-400" : "border-l-4 border-l-red-400"} />
@@ -485,7 +516,7 @@ function ProductTab({ range }: { range: DateRange }) {
                     <td className="px-4 py-2.5 text-gray-400 text-xs">{i + 1}</td>
                     <td className="px-4 py-2.5 font-medium max-w-xs truncate">{p.name}</td>
                     <td className="px-4 py-2.5 text-right font-mono">{fmtNum(p.qty_sold)}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmtVND(p.revenue)}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(p.revenue)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-500">{p.avg_cost != null ? fmtVND(p.avg_cost) : "—"}</td>
                     <td className="px-4 py-2.5 text-right text-gray-600">{p.cogs != null ? fmtVND(p.cogs) : "—"}</td>
                     <td className={`px-4 py-2.5 text-right font-semibold ${p.profit != null && p.profit >= 0 ? "text-violet-700" : "text-red-500"}`}>
@@ -506,26 +537,30 @@ function ProductTab({ range }: { range: DateRange }) {
       </div>
 
       {/* Hoàn hủy + LNG theo SẢN PHẨM */}
-      <ProductLngBlock range={range} />
+      <ProductLngBlock range={range} market={market} />
 
       {/* Phân tích lý do hủy/hoàn theo SP */}
-      <ProductCancelReasonsBlock range={range} />
+      <ProductCancelReasonsBlock range={range} market={market} />
     </div>
   )
 }
 
 // ---- Phân tích lý do hủy/hoàn theo SP (ma trận SP × tag lý do) ----
-function ProductCancelReasonsBlock({ range }: { range: DateRange }) {
-  const [data, setData] = useState<{ rows: any[]; totals: any; reasons: { key: string; label: string; group: string }[] } | null>(null)
+function ProductCancelReasonsBlock({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: any[]; totals: any; reasons: { key: string; label: string; group: string }[]; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [sortKey, setSortKey] = useState<string>("tong")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
   useEffect(() => {
     setLoading(true)
-    apiJson(`/admin/pancake-sync/report/product-cancel-reasons?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+    apiJson(`/admin/pancake-sync/report/product-cancel-reasons?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
       .then(setData).finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) {
+    return <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-400">Chưa hỗ trợ báo cáo này cho thị trường Malaysia</div>
+  }
 
   const toggleSort = (k: string) => {
     if (sortKey === k) setSortDir(d => d === "desc" ? "asc" : "desc")
@@ -626,8 +661,8 @@ function ProductCancelReasonsBlock({ range }: { range: DateRange }) {
 
 // ---- Hoàn hủy + LNG theo SP (gộp trong tab Sản phẩm) ----
 type ProdRow = Record<string, any>
-function ProductLngBlock({ range }: { range: DateRange }) {
-  const [data, setData] = useState<{ rows: ProdRow[]; totals: any } | null>(null)
+function ProductLngBlock({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: ProdRow[]; totals: any; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [sub, setSub] = useState<"hoan_huy" | "thuc" | "tam_tinh">("thuc")
   const [sortKey, setSortKey] = useState<string>("lng_thuc")
@@ -635,9 +670,13 @@ function ProductLngBlock({ range }: { range: DateRange }) {
 
   useEffect(() => {
     setLoading(true)
-    apiJson(`/admin/pancake-sync/report/product-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+    apiJson(`/admin/pancake-sync/report/product-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
       .then(setData).finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) {
+    return <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-400">Chưa hỗ trợ báo cáo LNG cho thị trường Malaysia</div>
+  }
 
   const toggleSort = (k: string) => {
     if (sortKey === k) setSortDir(d => d === "desc" ? "asc" : "desc")
@@ -770,7 +809,7 @@ function ProductLngBlock({ range }: { range: DateRange }) {
 }
 
 // ---- Sale Tab (giữ nguyên logic cũ) ----
-function SaleTab({ range }: { range: DateRange }) {
+function SaleTab({ range, market }: { range: DateRange; market: Market }) {
   const [perfData, setPerfData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [dateOverride, setDateOverride] = useState(todayVN())
@@ -779,10 +818,10 @@ function SaleTab({ range }: { range: DateRange }) {
   useEffect(() => {
     setLoading(true)
     const date = useRange ? range.from : dateOverride
-    apiFetch(`/admin/pancake-sync/report/sale-performance?date=${date}`)
+    apiFetch(`/admin/pancake-sync/report/sale-performance?date=${date}&market=${market}`)
       .then(r => r.json()).then(setPerfData).catch(() => setPerfData(null))
       .finally(() => setLoading(false))
-  }, [dateOverride, useRange, range.from])
+  }, [dateOverride, useRange, range.from, market])
 
   return (
     <div className="space-y-4">
@@ -887,15 +926,19 @@ type MktRow = {
   ty_le_hoan: number; ty_le_huy: number; ty_le_giao: number
 }
 
-function NvMktTab({ range }: { range: DateRange }) {
-  const [data, setData] = useState<{ rows: MktRow[]; summary: MktRow } | null>(null)
+function NvMktTab({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: MktRow[]; summary: MktRow; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
-    apiJson(`/admin/pancake-sync/report/marketer-performance?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+    apiJson(`/admin/pancake-sync/report/marketer-performance?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
       .then(setData).finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) {
+    return <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-400">Chưa hỗ trợ báo cáo này cho thị trường Malaysia</div>
+  }
 
   const cols: { key: keyof MktRow; label: string; pct?: boolean }[] = [
     { key: "da_nhan",         label: "Đã nhận" },
@@ -996,8 +1039,8 @@ type LngRow = {
   lng_tt_pct: number | null
 }
 
-function LngTab({ range }: { range: DateRange }) {
-  const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number } | null>(null)
+function LngTab({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [sub, setSub] = useState<"thuc" | "tam_tinh">("thuc")
   const [sortKey, setSortKey] = useState<keyof LngRow>(sub === "thuc" ? "lng_thuc" : "lng_tam_tinh")
@@ -1010,9 +1053,13 @@ function LngTab({ range }: { range: DateRange }) {
 
   useEffect(() => {
     setLoading(true)
-    apiJson(`/admin/pancake-sync/report/marketer-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+    apiJson(`/admin/pancake-sync/report/marketer-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
       .then(setData).finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) {
+    return <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-400">Chưa hỗ trợ báo cáo LNG cho thị trường Malaysia</div>
+  }
 
   const pctStr = (v: number | null) => v == null ? "—" : `${v}%`
   const money = (v: number) => fmtNum(Math.round(v || 0))
@@ -1182,18 +1229,21 @@ function LngTab({ range }: { range: DateRange }) {
 }
 
 // ---- Đơn lỗi Tab ----
-function ErrorsTab({ range }: { range: DateRange }) {
+function ErrorsTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
-    apiJson(`/admin/pancake-sync/report/lng-errors?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+    apiJson(`/admin/pancake-sync/report/lng-errors?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
       .then(setData).finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
 
   if (!data && loading) return <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Đang tải...</div>
   if (!data) return <div className="p-8 text-center text-gray-400 text-sm">Chọn khoảng thời gian để xem dữ liệu</div>
+  if (data.not_supported) {
+    return <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-400">Chưa hỗ trợ báo cáo này cho thị trường Malaysia</div>
+  }
 
   const nm = data.no_marketer, nc = data.no_cost, ul = data.unlinked_cost
 
@@ -1330,11 +1380,12 @@ function ErrorsTab({ range }: { range: DateRange }) {
 function getSearchParams() {
   return new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
 }
-function pushState(tab: string, range: DateRange) {
+function pushState(tab: string, range: DateRange, market: string) {
   const p = new URLSearchParams()
   p.set("tab", tab)
   p.set("from", range.from)
   p.set("to", range.to)
+  p.set("market", market)
   history.replaceState(null, "", `?${p.toString()}`)
 }
 
@@ -1350,16 +1401,25 @@ const BaoCaoPage = () => {
     ? { from: initParams.get("from")!, to: initParams.get("to")! }
     : thisMonthRange()
 
+  const initMarket = (initParams.get("market") === "MY" ? "MY" : "VN") as Market
+
   const [tab, setTab] = useState<TabKey>(initTab)
   const [range, setRange] = useState<DateRange>(initRange)
+  const [market, setMarket] = useState<Market>(initMarket)
+  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("MYR")
+  const [myrRate, setMyrRate] = useState<number>(5800)
 
   function changeTab(t: TabKey) {
     setTab(t)
-    pushState(t, range)
+    pushState(t, range, market)
   }
   function changeRange(r: DateRange) {
     setRange(r)
-    pushState(tab, r)
+    pushState(tab, r, market)
+  }
+  function changeMarket(m: Market) {
+    setMarket(m)
+    pushState(tab, range, m)
   }
 
   const tabs: { key: TabKey; label: string; icon: string }[] = [
@@ -1382,9 +1442,22 @@ const BaoCaoPage = () => {
         </div>
       </div>
 
-      {/* Period selector */}
-      <div className="mb-4">
+      {/* Period selector + Market selector */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <PeriodSelector range={range} onChange={changeRange} />
+        <select value={market} onChange={e => changeMarket(e.target.value as Market)}
+          className="border rounded-lg px-3 py-1.5 text-sm font-medium bg-white">
+          <option value="VN">🇻🇳 Việt Nam</option>
+          <option value="MY">🇲🇾 Malaysia (TikTok)</option>
+        </select>
+        {market === "MY" && (
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button onClick={() => setCurrencyMode("MYR")}
+              className={`px-2 py-1 text-xs rounded ${currencyMode === "MYR" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>MYR</button>
+            <button onClick={() => setCurrencyMode("VND")}
+              className={`px-2 py-1 text-xs rounded ${currencyMode === "VND" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>VND (quy đổi)</button>
+          </div>
+        )}
       </div>
 
       {/* AI Summary */}
@@ -1404,13 +1477,15 @@ const BaoCaoPage = () => {
         ))}
       </div>
 
-      {tab === "overview"  && <OverviewTab range={range} />}
-      {tab === "shipping"  && <ShippingTab range={range} />}
-      {tab === "product"   && <ProductTab range={range} />}
-      {tab === "sale"      && <SaleTab range={range} />}
-      {tab === "nv-mkt"   && <NvMktTab range={range} />}
-      {tab === "lng"      && <LngTab range={range} />}
-      {tab === "errors"   && <ErrorsTab range={range} />}
+      <CurrencyCtx.Provider value={{ market, currencyMode, rate: myrRate }}>
+        {tab === "overview"  && <OverviewTab range={range} market={market} onRate={setMyrRate} />}
+        {tab === "shipping"  && <ShippingTab range={range} market={market} />}
+        {tab === "product"   && <ProductTab range={range} market={market} />}
+        {tab === "sale"      && <SaleTab range={range} market={market} />}
+        {tab === "nv-mkt"   && <NvMktTab range={range} market={market} />}
+        {tab === "lng"      && <LngTab range={range} market={market} />}
+        {tab === "errors"   && <ErrorsTab range={range} market={market} />}
+      </CurrencyCtx.Provider>
       {tab === "marketing" && (
         <div className="bg-white border rounded-xl p-10 text-center space-y-4">
           <div className="text-5xl">📣</div>

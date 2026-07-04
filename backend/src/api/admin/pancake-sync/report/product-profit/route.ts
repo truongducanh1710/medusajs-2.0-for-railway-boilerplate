@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
+import { MYR_TO_VND_RATE } from "../../../../../lib/constants"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -13,9 +14,10 @@ function getPool(): Pool {
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from, to } = req.query as Record<string, string>
+    const { from, to, market } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
 
+    const mkt = market || "VN"
     const pool = getPool()
 
     // Doanh thu và số lượng per sản phẩm (chỉ đơn giao thành công status=3)
@@ -35,19 +37,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE po.status = 3
         AND po.pancake_created_at BETWEEN $1 AND $2
         AND po.source IN ('manual','facebook','zalo','unknown','medusa')
+        AND po.market = $3
         AND po.raw->'items' IS NOT NULL
         AND (item->>'quantity') IS NOT NULL
         AND (item->>'price') IS NOT NULL
       GROUP BY name, display_id, pc.avg_cost, pc.stock_qty, pc.pancake_display_id
       ORDER BY revenue DESC
       LIMIT 50
-    `, [from, to])
+    `, [from, to, mkt])
 
-    // Tính COGS và profit
+    // Tính COGS và profit — bảng product_cost chỉ có giá vốn VND (thị trường VN).
+    // Market MY chưa có COGS riêng → không áp giá vốn VND lên doanh thu MYR (sai đơn vị tiền tệ).
+    const hasCost = mkt === "VN"
     const enriched = products.map((p: any) => {
       const qty = Number(p.qty_sold ?? 0)
       const revenue = Number(p.revenue ?? 0)
-      const avgCost = p.avg_cost != null ? Number(p.avg_cost) : null
+      const avgCost = hasCost && p.avg_cost != null ? Number(p.avg_cost) : null
       const cogs = avgCost != null ? avgCost * qty : null
       const profit = cogs != null ? revenue - cogs : null
       const margin = revenue > 0 && profit != null ? Math.round(profit / revenue * 100) : null
@@ -72,11 +77,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const lowStock     = enriched.filter(p => p.stock_qty != null && p.stock_qty < 50)
 
     return res.json({
+      market: mkt,
+      ...(mkt === "MY" ? { myr_to_vnd_rate: MYR_TO_VND_RATE, cost_data_available: false } : {}),
       summary: {
         total_revenue: totalRevenue,
-        total_cogs: totalCogs,
-        total_profit: totalProfit,
-        overall_margin: totalRevenue > 0 ? Math.round(totalProfit / totalRevenue * 100) : 0,
+        total_cogs: hasCost ? totalCogs : null,
+        total_profit: hasCost ? totalProfit : null,
+        overall_margin: hasCost && totalRevenue > 0 ? Math.round(totalProfit / totalRevenue * 100) : null,
         mapped_count: mappedCount,
         total_products: enriched.length,
       },

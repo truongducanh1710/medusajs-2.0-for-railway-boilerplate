@@ -2,6 +2,7 @@ import { model } from "@medusajs/framework/utils"
 
 const PancakeSyncJob = model.define("pancake_sync_job", {
   id: model.id().primaryKey(),
+  market: model.text().default("VN"),           // 'VN' | 'MY' — shop Pancake job này sync
   status: model.text().default("queued"),       // queued | running | done | failed
   from_date: model.dateTime(),
   to_date: model.dateTime(),

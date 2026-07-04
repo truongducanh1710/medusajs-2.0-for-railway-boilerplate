@@ -101,6 +101,50 @@ export const PANCAKE_API_BASE = 'https://pos.pages.fm/api/v1'
 export const PANCAKE_WEBHOOK_SECRET = process.env.PANCAKE_WEBHOOK_SECRET || ''
 
 /**
+ * Multi-shop Pancake config — mỗi shop là 1 thị trường độc lập (VN, Malaysia TikTok Shop...).
+ * `market` là khóa định danh dùng xuyên suốt code + DB (`pancake_order.market`).
+ */
+export type PancakeShopConfig = {
+  market: string
+  shopId: string
+  apiKey: string
+  warehouseId?: string
+  currency: string
+  label: string
+}
+
+export const PANCAKE_SHOPS: PancakeShopConfig[] = [
+  {
+    market: 'VN',
+    shopId: PANCAKE_SHOP_ID,
+    apiKey: PANCAKE_API_KEY,
+    warehouseId: PANCAKE_WAREHOUSE_ID,
+    currency: 'VND',
+    label: 'Việt Nam',
+  },
+  {
+    market: 'MY',
+    shopId: process.env.PANCAKE_MY_SHOP_ID || '120193131',
+    apiKey: process.env.PANCAKE_MY_API_KEY || '',
+    warehouseId: process.env.PANCAKE_MY_WAREHOUSE_ID || '',
+    currency: 'MYR',
+    label: 'Malaysia (TikTok)',
+  },
+]
+
+export function getPancakeShop(market: string): PancakeShopConfig {
+  const shop = PANCAKE_SHOPS.find(s => s.market === market)
+  if (!shop) throw new Error(`Unknown Pancake market: ${market}`)
+  return shop
+}
+
+/**
+ * Tỷ giá quy đổi MYR → VND cho hiển thị báo cáo — admin tự chỉnh qua env khi cần,
+ * không dùng API tỷ giá real-time (theo yêu cầu: đơn giản, đủ dùng cho báo cáo tham khảo).
+ */
+export const MYR_TO_VND_RATE = Number(process.env.MYR_TO_VND_RATE || '5800')
+
+/**
  * (optional) Sepay configuration
  */
 export const SEPAY_API_TOKEN = process.env.SEPAY_API_TOKEN

@@ -1,10 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHmac, timingSafeEqual } from "crypto"
 import { Modules } from "@medusajs/framework/utils"
-import { PANCAKE_WEBHOOK_SECRET } from "../../../../lib/constants"
-import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/service"
-import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
-import { sendPurchaseEvent } from "../../../../lib/fb-capi"
+import { PANCAKE_WEBHOOK_SECRET } from "../../../../../lib/constants"
+import { mapPancakeOrder, statusLabel } from "../../../../../modules/pancake-sync/service"
+import { extractNotesForOrder, extractTags } from "../../../../../modules/pancake-sync/extractors"
+import { sendPurchaseEvent } from "../../../../../lib/fb-capi"
+
+const VALID_MARKETS = ["VN", "MY"]
 
 /**
  * Verify HMAC signature from Pancake webhook.
@@ -33,8 +35,6 @@ async function updateMedusaOrderMetadata(
 ) {
   try {
     const orderService = scope.resolve(Modules.ORDER) as any
-    // Medusa không filter được nested JSONB metadata qua listOrders, nên vẫn .find() in-memory.
-    // Nâng take lên 1000 (từ 200): COD giao 3-7 ngày, top-200 không đủ khi volume cao → miss order.
     const orders = await orderService.listOrders({}, { take: 1000, order: { created_at: "DESC" } })
     const medusaOrder = orders.find(
       (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
@@ -58,10 +58,16 @@ async function updateMedusaOrderMetadata(
 }
 
 /**
- * POST /store/pancake/webhook
- * Strategy: return 200 immediately, then async fetch full order from Pancake API and upsert.
+ * POST /store/pancake/webhook/:market  (market = VN | MY)
+ * Dùng cho shop Pancake ngoài shop VN mặc định (vd Malaysia TikTok Shop).
+ * Route gốc /store/pancake/webhook (không có :market) vẫn giữ nguyên cho shop VN hiện tại.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const market = String((req.params as any)?.market || "").toUpperCase()
+  if (!VALID_MARKETS.includes(market)) {
+    return res.status(404).json({ error: `Unknown market: ${market}` })
+  }
+
   const body = req.body as any
 
   try {
@@ -91,7 +97,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const label = statusLabel(pancakeStatus)
-    console.log(`[Pancake Webhook] ✅ Đơn #${pancakeOrderId} → ${label} (${pancakeStatus})`)
+    console.log(`[Pancake Webhook][${market}] ✅ Đơn #${pancakeOrderId} → ${label} (${pancakeStatus})`)
 
     // Return 200 immediately so Pancake doesn't retry
     res.json({ success: true })
@@ -109,7 +115,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         const syncService = req.scope.resolve("pancakeSyncModule") as any
 
         // Fetch full order from Pancake API
-        const rawOrder = await syncService.fetchOrderById(pancakeOrderId)
+        const rawOrder = await syncService.fetchOrderById(pancakeOrderId, market)
         apiFetchSuccess = rawOrder !== null
 
         const existing = await syncService.listPancakeOrders({ id: pancakeOrderId }, { take: 1 })
@@ -120,7 +126,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
         if (rawOrder) {
           // Full upsert with complete data from API
-          const mapped = mapPancakeOrder(rawOrder)
+          const mapped = mapPancakeOrder(rawOrder, market)
           const { notes, lastNoteAt, callCount } = extractNotesForOrder(rawOrder)
           const tags = extractTags(rawOrder)
           const newHistory = statusChanged
@@ -153,7 +159,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             }] as any)
           }
           upsertSuccess = true
-          console.log(`[Pancake Webhook] ✓ Synced order #${pancakeOrderId} → ${label} (full)`)
+          console.log(`[Pancake Webhook][${market}] ✓ Synced order #${pancakeOrderId} → ${label} (full)`)
         } else {
           // Fallback: upsert minimal from webhook body
           fallbackUsed = true
@@ -172,6 +178,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           } else {
             await syncService.createPancakeOrders([{
               id: pancakeOrderId,
+              market,
               status: pancakeStatus,
               status_name: label,
               status_history: [{ status: pancakeStatus, status_name: label, changed_at: new Date().toISOString(), source: "webhook" }] as any,
@@ -186,7 +193,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             }] as any)
           }
           upsertSuccess = true
-          console.warn(`[Pancake Webhook] ⚠ Synced order #${pancakeOrderId} fallback (API fetch failed)`)
+          console.warn(`[Pancake Webhook][${market}] ⚠ Synced order #${pancakeOrderId} fallback (API fetch failed)`)
         }
 
         // Trigger AI analyze khi bưu tá báo thất bại
@@ -204,8 +211,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           }
         }
 
-        // Bắn FB CAPI Purchase khi đơn giao thành công (status=3)
-        if (pancakeStatus === 3) {
+        // Bắn FB CAPI Purchase khi đơn giao thành công (status=3) — CHỈ cho market VN.
+        // Malaysia chưa có pixel/token riêng cấu hình — tránh gửi sai currency/pixel.
+        if (pancakeStatus === 3 && market === "VN") {
           try {
             const order = rawOrder ?? body
             const phone = order?.bill_phone_number ?? order?.customer?.phone ?? ""
@@ -213,12 +221,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             const city = order?.bill_province ?? order?.shipping_address?.province ?? ""
             const total = Number(order?.total_price ?? order?.total ?? 0)
 
-            // Lấy fbclid/fbp + pixel riêng sản phẩm từ Medusa order metadata
             const orderService = req.scope.resolve(Modules.ORDER) as any
-            // take:1000: COD giao 3-7 ngày, top-200 không đủ khi volume cao.
-            // Không thêm relations vào listOrders — Medusa v2 không support dot-notation nested
-            // relations (items.variant.product) và sẽ throw "targetMeta" error. Load shallow trước,
-            // rồi retrieveOrder riêng để lấy deep relations cho pixel SP.
             const medusaOrders = await orderService.listOrders(
               {},
               { take: 1000, order: { created_at: "DESC" } }
@@ -226,7 +229,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             const medusaOrderShallow = medusaOrders.find(
               (o: any) => String(o.metadata?.pancake_order_id) === pancakeOrderId
             )
-            // Load deep relations chỉ khi tìm thấy order (1 query thay vì load tất cả 1000 đơn kèm relations)
             const medusaOrder = medusaOrderShallow
               ? await orderService.retrieveOrder(medusaOrderShallow.id, {
                   relations: ["items", "items.variant", "items.variant.product"],
@@ -234,12 +236,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               : undefined
             const meta = medusaOrder?.metadata ?? {}
 
-            // Đơn đã thanh toán SePay → Purchase đã bắn lúc thanh toán, không bắn lại.
-            // FB chỉ dedup trong 48h, giao hàng thường sau vài ngày nên phải tự guard.
             if (meta.payment_status === "paid") {
               console.log(`[Pancake Webhook] Skip Purchase CAPI — order ${medusaOrder?.id} đã bắn lúc thanh toán SePay`)
             } else {
-              // Lấy pixel + token từ store metadata (PX_CHUNG)
               let storePixelId: string | undefined
               let storeCapiToken: string | undefined
               try {
@@ -250,17 +249,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
                 storeCapiToken = storeMeta.fb_capi_token
               } catch {}
 
-              // Lấy pixel + token riêng từ sản phẩm đầu tiên trong đơn
               const firstItem = medusaOrder?.items?.[0]
               const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
               const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
 
-              // content_ids cho catalog matching
               const contentIds = medusaOrder?.items?.map((i: any) => i.variant_id || i.id).filter(Boolean)
 
               await sendPurchaseEvent({
-                // event_id thống nhất theo Medusa order id (dedup với mọi nguồn khác);
-                // đơn POS không có trên web thì mới dùng pancake id
                 orderId: medusaOrder?.id ?? pancakeOrderId,
                 phone,
                 customerName,
@@ -282,8 +277,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           }
         }
 
-        // Update Medusa order metadata
-        await updateMedusaOrderMetadata(req.scope, pancakeOrderId, pancakeStatus, label, body)
+        // Update Medusa order metadata — chỉ áp dụng cho VN (Malaysia không có đơn Medusa)
+        if (market === "VN") {
+          await updateMedusaOrderMetadata(req.scope, pancakeOrderId, pancakeStatus, label, body)
+        }
 
       } catch (asyncErr: any) {
         errorMessage = asyncErr.message
@@ -302,7 +299,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             error_message: errorMessage,
             duration_ms: Date.now() - asyncStart,
             received_at: receivedAt,
-            market: "VN",
+            market,
           })
         } catch { /* log fail không ảnh hưởng */ }
       }

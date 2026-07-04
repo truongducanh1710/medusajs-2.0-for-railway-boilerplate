@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { MYR_TO_VND_RATE } from "../../../../../lib/constants"
 
 // Mapping đúng theo Pancake (verify bằng status_name từ API)
 // "confirmed" = đã chốt sale = đã đẩy ra VTP và đang/đã giao (status 2/3)
@@ -49,6 +50,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const syncService = req.scope.resolve("pancakeSyncModule") as any
     const q = req.query as Record<string, string>
+    const mkt = q.market || "VN"
     const date = q.date ?? new Date().toISOString().slice(0, 10)
     const yesterday = shiftDate(date, -1)
     const weekAgoStart = shiftDate(date, -6)
@@ -59,7 +61,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Fetch a wider net then partition by date locally (cheaper than 3 queries)
     const all = await syncService.listPancakeOrders(
-      { pancake_created_at: { $gte: weekRange.start, $lte: weekRange.end } },
+      { pancake_created_at: { $gte: weekRange.start, $lte: weekRange.end }, market: mkt },
       {
         take: 5000,
         select: ["id", "status", "total", "pancake_created_at", "sale_name", "notes", "last_note_at"],
@@ -92,7 +94,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Overdue: status=0, hoursOld > 24
     const now = Date.now()
     const allActive = await syncService.listPancakeOrders(
-      { status: 0 },
+      { status: 0, market: mkt },
       { take: 1000, select: ["id", "sale_name", "pancake_created_at", "customer_name", "customer_phone"] }
     )
     const overdueList = allActive.filter((o: any) => {
@@ -136,6 +138,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({
       date,
+      market: mkt,
+      ...(mkt === "MY" ? { myr_to_vnd_rate: MYR_TO_VND_RATE } : {}),
       kpis: {
         orders_today: today.total,
         orders_delta: pctDelta(today.total, yest.total),

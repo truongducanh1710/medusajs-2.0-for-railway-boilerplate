@@ -12,6 +12,7 @@ const PancakeWebhookLog = model.define("pancake_webhook_log", {
   fallback_used: model.boolean().default(false),   // true nếu API fetch fail, dùng minimal upsert
   error_message: model.text().nullable(),
   duration_ms: model.number().nullable(),
+  market: model.text().default("VN"),              // 'VN' | 'MY' — shop Pancake webhook này thuộc về
 })
 
 export default PancakeWebhookLog

@@ -13,6 +13,7 @@ const PancakeCronLog = model.define("pancake_cron_log", {
   total_errors: model.number().default(0),
   error_details: model.json().default([] as any),  // [{ status, order_id, message }]
   success: model.boolean().default(true),
+  market: model.text().default("VN"),              // 'VN' | 'MY' — shop Pancake cron này chạy cho
 })
 
 export default PancakeCronLog

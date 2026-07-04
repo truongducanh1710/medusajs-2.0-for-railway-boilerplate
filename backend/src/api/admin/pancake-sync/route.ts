@@ -3,14 +3,15 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 /**
  * POST /admin/pancake-sync
  * Trigger a Pancake order sync job for a date range.
- * Body: { from: ISODateString, to: ISODateString, force?: boolean }
+ * Body: { from: ISODateString, to: ISODateString, force?: boolean, market?: 'VN'|'MY' }
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from, to, force } = req.body as {
+    const { from, to, force, market } = req.body as {
       from?: string
       to?: string
       force?: boolean
+      market?: string
     }
 
     if (!from || !to) {
@@ -29,7 +30,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const syncService = req.scope.resolve("pancakeSyncModule") as any
-    const { jobId } = await syncService.pullByDateRange(fromDate, toDate, { force })
+    const { jobId } = await syncService.pullByDateRange(fromDate, toDate, { force, market: market || "VN" })
 
     return res.status(202).json({ jobId })
   } catch (err: any) {

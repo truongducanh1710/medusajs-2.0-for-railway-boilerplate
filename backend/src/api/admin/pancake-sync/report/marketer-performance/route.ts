@@ -13,8 +13,13 @@ function getPool(): Pool {
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from, to } = req.query as Record<string, string>
+    const { from, to, market } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
+
+    // Báo cáo này chưa hỗ trợ market ngoài VN (COGS/fullfill/marketer mapping chỉ đúng cho VN)
+    if (market && market !== "VN") {
+      return res.json({ not_supported: true, market, rows: [] })
+    }
 
     const pool = getPool()
 

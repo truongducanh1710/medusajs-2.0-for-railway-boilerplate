@@ -66,7 +66,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const {
       from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
       to = new Date().toISOString().slice(0, 10),
+      market,
     } = req.query as Record<string, string>
+
+    // Báo cáo này chưa hỗ trợ market ngoài VN (mkt_product code mapping chỉ đúng cho VN)
+    if (market && market !== "VN") {
+      return res.json({ not_supported: true, market, rows: [], totals: {}, reasons: [] })
+    }
 
     const prodNames = await sql(`SELECT code, name FROM mkt_product WHERE active = true`)
     const codeToName: Record<string, string> = {}

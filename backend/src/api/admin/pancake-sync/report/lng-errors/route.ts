@@ -30,7 +30,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const {
       from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
       to = new Date().toISOString().slice(0, 10),
+      market,
     } = req.query as Record<string, string>
+
+    // Báo cáo này chưa hỗ trợ market ngoài VN (COGS/marketer mapping chỉ đúng cho VN)
+    if (market && market !== "VN") {
+      return res.json({ not_supported: true, market, no_marketer: [], no_cost: [], unlinked_cost: [] })
+    }
 
     // Marketer expr giống report/mkt — đơn lỗi = ra NULL hoặc 'KHÁC'
     const mktExpr = `

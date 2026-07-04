@@ -7,18 +7,22 @@
  */
 
 import { MedusaContainer } from "@medusajs/framework"
+import { PANCAKE_SHOPS } from "../lib/constants"
 
 export default async function pancakeActiveOrdersSync(container: MedusaContainer) {
   const logger = container.resolve("logger") as any
   const syncService = container.resolve("pancakeSyncModule") as any
 
-  try {
-    const result = await syncService.syncActiveOrders()
-    logger?.info?.(
-      `[PancakeActiveSync] total=${result.total} updated=${result.updated} created=${result.created} errors=${result.errors}`
-    )
-  } catch (err: any) {
-    logger?.error?.(`[PancakeActiveSync] Failed: ${err.message}`)
+  for (const shop of PANCAKE_SHOPS) {
+    if (!shop.shopId || !shop.apiKey) continue
+    try {
+      const result = await syncService.syncActiveOrders(shop.market)
+      logger?.info?.(
+        `[PancakeActiveSync][${shop.market}] total=${result.total} updated=${result.updated} created=${result.created} errors=${result.errors}`
+      )
+    } catch (err: any) {
+      logger?.error?.(`[PancakeActiveSync][${shop.market}] Failed: ${err.message}`)
+    }
   }
 }
 

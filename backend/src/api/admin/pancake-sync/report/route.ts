@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { MYR_TO_VND_RATE } from "../../../../lib/constants"
 
 /**
  * GET /admin/pancake-sync/report?from=...&to=...
@@ -11,7 +12,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from, to } = req.query as Record<string, string | undefined>
+    const { from, to, market } = req.query as Record<string, string | undefined>
 
     if (!from || !to) {
       return res.status(400).json({ error: "Missing required query params: from, to (ISO date strings)" })
@@ -25,6 +26,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const syncService = req.scope.resolve("pancakeSyncModule") as any
+    const mkt = market || "VN"
 
     // Fetch all orders in range (without raw column for performance)
     const allOrders = await syncService.listPancakeOrders(
@@ -33,6 +35,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           $gte: fromDate,
           $lte: toDate,
         },
+        market: mkt,
       },
       {
         take: 10000, // reasonable upper bound for reporting
@@ -43,6 +46,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "total",
           "items",
           "pancake_created_at",
+          "currency",
         ],
         order: { pancake_created_at: "ASC" },
       }
@@ -118,6 +122,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       from,
       to,
+      market: mkt,
+      currency: allOrders[0]?.currency ?? (mkt === "MY" ? "MYR" : "VND"),
+      ...(mkt === "MY" ? { myr_to_vnd_rate: MYR_TO_VND_RATE } : {}),
       total_orders: totalOrders,
       total_revenue: totalRevenue,
       success_rate: successRate,

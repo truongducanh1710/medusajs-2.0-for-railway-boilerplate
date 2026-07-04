@@ -50,10 +50,13 @@ function getLast30Days(): { from: Date; to: Date } {
 
 // ---- Component ----
 
+type Market = "VN" | "MY"
+
 const PancakeSyncPage = () => {
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
   const [force, setForce] = useState(false)
+  const [market, setMarket] = useState<Market>("VN")
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<any>(null)
   const [syncing, setSyncing] = useState(false)
@@ -122,6 +125,7 @@ const PancakeSyncPage = () => {
           from: toISO(fromDate),
           to: toISO(toDate, true),
           force,
+          market,
         }),
       })
 
@@ -160,6 +164,29 @@ const PancakeSyncPage = () => {
       <p className="text-gray-500 text-sm mb-6">
         Kéo đơn hàng từ Pancake POS về Medusa để hiển thị trong danh sách đơn hàng và báo cáo.
       </p>
+
+      {/* Shop selector */}
+      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6 shadow-sm">
+        <h2 className="font-semibold text-gray-700 mb-4">Shop Pancake</h2>
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { key: "VN" as Market, label: "🇻🇳 Việt Nam" },
+            { key: "MY" as Market, label: "🇲🇾 Malaysia (TikTok)" },
+          ].map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setMarket(m.key)}
+              disabled={isRunning}
+              className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                market === m.key ? "bg-blue-600 text-white" : "border border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Date Range */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6 shadow-sm">
@@ -289,7 +316,12 @@ const PancakeSyncPage = () => {
       {jobStatus && (
         <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
           <h2 className="font-semibold text-gray-700 mb-4">
-            Kết quả đồng bộ{" "}
+            Kết quả đồng bộ
+            {jobStatus.market && (
+              <span className="text-xs font-normal text-gray-400 ml-2">
+                ({jobStatus.market === "MY" ? "🇲🇾 Malaysia" : "🇻🇳 Việt Nam"})
+              </span>
+            )}{" "}
             {jobStatus.status === "running" && (
               <span className="text-blue-600 font-normal">(đang chạy...)</span>
             )}
