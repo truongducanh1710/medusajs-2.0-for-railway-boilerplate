@@ -80,6 +80,8 @@ const MODE_CONFIG: Record<string, { label: string; color: string }> = {
   paused_by_error: { label: "Lỗi",      color: "#ef4444" },
 }
 
+const phoneDigits = (value?: string | null) => String(value || "").replace(/\D/g, "")
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmtAgo(v?: string) {
   if (!v) return ""
@@ -329,14 +331,18 @@ export default function ChatPage() {
 
   // Frontend filter
   const filtered = useMemo(() => {
+    const hasSearch = !!search.trim()
     let list = convs
-    if (tagFilter)  list = list.filter(c => convTags(c).includes(tagFilter))
-    if (!search.trim()) return list
+    if (!hasSearch && tagFilter) list = list.filter(c => convTags(c).includes(tagFilter))
+    if (!hasSearch) return list
     const s = search.toLowerCase()
+    const digits = phoneDigits(search)
     return list.filter(c =>
       (c.customer_name || "").toLowerCase().includes(s) ||
       c.customer_psid.toLowerCase().includes(s) ||
-      (c.last_message || "").toLowerCase().includes(s)
+      (c.last_message || "").toLowerCase().includes(s) ||
+      (c.active_phone || "").toLowerCase().includes(s) ||
+      (!!digits && phoneDigits(c.active_phone).includes(digits))
     )
   }, [convs, tagFilter, search])
 
@@ -355,16 +361,18 @@ export default function ChatPage() {
     return groups
   }, [detail?.messages])
 
-  const loadConvs = useCallback(async (t = tab, p = pageFilter, hp = hasPhone) => {
+  const loadConvs = useCallback(async (t = tab, p = pageFilter, hp = hasPhone, q = search) => {
     setLoading(true)
     try {
-      let url = `/admin/chat/conversations?status=${t}&limit=100`
-      if (p) url += `&page_id=${p}`
-      if (hp) url += `&has_phone=1`
+      const term = q.trim()
+      let url = `/admin/chat/conversations?status=${term ? "all" : t}&limit=100`
+      if (!term && p) url += `&page_id=${p}`
+      if (!term && hp) url += `&has_phone=1`
+      if (term) url += `&q=${encodeURIComponent(term)}`
       const d = await apiJson(url)
       setConvs(d.conversations || [])
     } finally { setLoading(false) }
-  }, [tab, pageFilter, hasPhone])
+  }, [tab, pageFilter, hasPhone, search])
 
   const loadDetail = useCallback(async (id = selectedId) => {
     if (!id) return
@@ -549,6 +557,11 @@ export default function ChatPage() {
   }, [selectedId])
 
   useEffect(() => { loadConvs(); loadAgents(); loadPageFilterList() }, [])
+  useEffect(() => {
+    if (view !== "inbox") return
+    const handle = setTimeout(() => loadConvs(tab, pageFilter, hasPhone, search), 250)
+    return () => clearTimeout(handle)
+  }, [search, tab, pageFilter, hasPhone, view, loadConvs])
   useEffect(() => { if (selectedId) loadDetail(selectedId) }, [selectedId])
   const prevSelectedId = useRef<string | null>(null)
   useEffect(() => {
@@ -570,7 +583,7 @@ export default function ChatPage() {
       es = new EventSource("/admin/chat/events")
       es.addEventListener("new_message", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        loadConvs(tab, pageFilter)
+        loadConvs(tab, pageFilter, hasPhone, search)
         if (selectedId && data.conversation_id === selectedId) loadDetail(selectedId)
       })
       es.onerror = () => {
@@ -584,7 +597,7 @@ export default function ChatPage() {
     // Fallback polling 30s — bắt các thay đổi không qua webhook (assign, status...)
     clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      loadConvs(tab, pageFilter)
+      loadConvs(tab, pageFilter, hasPhone, search)
       if (selectedId) loadDetail(selectedId)
     }, 30000)
 
@@ -593,7 +606,7 @@ export default function ChatPage() {
       clearTimeout(retryTimer)
       clearInterval(timerRef.current)
     }
-  }, [view, tab, pageFilter, selectedId])
+  }, [view, tab, pageFilter, hasPhone, search, selectedId, loadConvs])
   useEffect(() => { if (view === "examples") loadExamples(exTab) }, [view])
   useEffect(() => { if (view === "settings") loadSettingPages() }, [view])
   useEffect(() => { if (view === "pancake") loadPancakePages() }, [view])

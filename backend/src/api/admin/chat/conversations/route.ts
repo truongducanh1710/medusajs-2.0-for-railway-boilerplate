@@ -13,11 +13,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const offset = Math.max(parseInt(q.offset || "0", 10), 0)
     const params: any[] = []
     const where: string[] = []
+    const search = q.q?.trim() || ""
+    const hasSearch = !!search
 
-    // Chỉ hiện hội thoại của page đang bật (sync_enabled) — page tắt bị ẩn khỏi Inbox.
-    // Ensure column exists (idempotent, khớp với /admin/chat/pages).
+    // Only hide disabled inbox-sync pages during normal browsing; search should find any DB chat the user can access.
     await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`)
-    where.push(`c.page_id IN (SELECT page_id FROM fb_page_token WHERE sync_enabled = true)`)
+    if (!hasSearch) where.push(`c.page_id IN (SELECT page_id FROM fb_page_token WHERE sync_enabled = true)`)
 
     if (auth.fbPageIds && auth.fbPageIds.length) {
       params.push(auth.fbPageIds)
@@ -25,7 +26,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     } else if (auth.fbPageIds && !auth.fbPageIds.length) {
       where.push(`false`)
     }
-    if (q.status && q.status !== "all") {
+    if (!hasSearch && q.status && q.status !== "all") {
       if (q.status === "mine") {
         params.push(auth.email)
         where.push(`c.assigned_to = $${params.length}`)
@@ -36,32 +37,48 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         where.push(`c.status = $${params.length}`)
       }
     }
-    if (q.page_id) {
+    if (!hasSearch && q.page_id) {
       params.push(q.page_id)
       where.push(`c.page_id = $${params.length}`)
     }
-    if (q.q) {
-      params.push(`%${q.q}%`)
-      where.push(`(c.customer_name ILIKE $${params.length} OR c.last_message ILIKE $${params.length} OR c.page_name ILIKE $${params.length})`)
+    if (hasSearch) {
+      params.push(`%${search}%`)
+      const textParam = params.length
+      const clauses = [
+        `c.customer_name ILIKE $${textParam}`,
+        `c.customer_psid ILIKE $${textParam}`,
+        `c.last_message ILIKE $${textParam}`,
+        `c.page_name ILIKE $${textParam}`,
+        `ctx.active_phone ILIKE $${textParam}`,
+      ]
+      const digits = search.replace(/\D/g, "")
+      if (digits) {
+        params.push(`%${digits}%`)
+        const phoneParam = params.length
+        clauses.push(`regexp_replace(COALESCE(ctx.active_phone, ''), '[^0-9]', '', 'g') LIKE $${phoneParam}`)
+        clauses.push(`EXISTS (SELECT 1 FROM fb_message m WHERE m.conversation_id = c.id AND regexp_replace(COALESCE(m.text, ''), '[^0-9]', '', 'g') LIKE $${phoneParam})`)
+      }
+      where.push(`(${clauses.join(" OR ")})`)
     }
-    if (q.has_phone === "1") {
-      // Lấy mọi conv mà context đang có phone active, không giới hạn thời gian
+    if (!hasSearch && q.has_phone === "1") {
       where.push(`ctx.active_phone IS NOT NULL AND ctx.active_phone != ''`)
     }
 
     params.push(limit, offset)
     const sqlWhere = where.length ? `WHERE ${where.join(" AND ")}` : ""
+    const fromSql = `FROM fb_conversation c
+       LEFT JOIN fb_conversation_context ctx ON ctx.conversation_id = c.id`
+
     const { rows } = await pool.query(
       `SELECT c.*, ctx.active_phone, ctx.active_address, ctx.active_order_state, a.mode AS bot_mode, a.product_names
-       FROM fb_conversation c
-       LEFT JOIN fb_conversation_context ctx ON ctx.conversation_id = c.id
+       ${fromSql}
        LEFT JOIN fb_bot_agent a ON a.page_id = c.page_id
        ${sqlWhere}
        ORDER BY COALESCE(c.last_message_at, c.updated_at) DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    const count = await pool.query(`SELECT COUNT(*)::int AS total FROM fb_conversation c ${sqlWhere}`, params.slice(0, -2))
+    const count = await pool.query(`SELECT COUNT(*)::int AS total ${fromSql} ${sqlWhere}`, params.slice(0, -2))
     return res.json({ conversations: rows, total: count.rows[0]?.total || 0 })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
