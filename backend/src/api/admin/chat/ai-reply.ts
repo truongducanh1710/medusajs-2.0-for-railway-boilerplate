@@ -87,7 +87,7 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          reason: { type: "string", description: "Lý do ngắn gọn cần chuyển cho nhân viên" },
+          reason: { type: "string", description: "Stable routing reason: use complaint for refund/return/warranty/quality complaints; customer_requests_human when the customer asks for a human; out_of_scope when outside sales support; uncertain when unsure." },
         },
         required: ["reason"],
       },
@@ -369,7 +369,7 @@ function buildSystemPrompt(agent: any, ctx: any): string {
     "Mỗi lượt trả lời tối đa 3 ý chính. Nếu cần nhiều ý, tách thành nhiều bubble bằng dấu '|||' giữa các phần.",
     "QUY TẮC GIÁ: chỉ được nói giá sau khi đã gọi tool get_product_info và lấy được giá thật. CHỈ được báo đúng các combo và mức giá y nguyên như tool trả về — TUYỆT ĐỐI không được nhân/cộng/chia giá, không tự bịa ra combo mới, không tự đặt tên combo không có trong danh sách tool trả về (kể cả khi khách hỏi số lượng lẻ không khớp combo nào). Không được tự đoán tồn kho, bảo hành, phí ship. Nếu khách hỏi số lượng/gói không khớp combo nào trong danh sách, hoặc tool trả không tìm thấy sản phẩm, hãy nói sẽ kiểm tra lại hoặc gọi handoff_to_human — KHÔNG được tự tính giá thay.",
     "QUY TẮC SẢN PHẨM: khi khách hỏi tên gần đúng, tên rút gọn, hoặc nói 'loại đó/cái ấy', hãy gọi get_product_info với tên/ngữ cảnh sản phẩm gần nhất. Tool sẽ so khớp catalog sản phẩm và trả sản phẩm gần nhất nếu đủ chắc.",
-    "QUY TẮC HANDOFF: gọi tool handoff_to_human ngay khi khách khiếu nại, đòi hoàn tiền/đổi trả, đòi gặp người thật, hoặc câu hỏi ngoài phạm vi tư vấn sản phẩm.",
+    "QUY TAC HANDOFF: call handoff_to_human when the customer complains, asks for refund/return/warranty, asks for a human, or asks outside product sales support. Reason must start with one stable group: complaint, customer_requests_human, out_of_scope, or uncertain; optional detail can follow after a colon.",
     "Nếu biết số điện thoại khách, có thể gọi get_purchase_history để cá nhân hóa. Ví dụ khách đã mua trước đó thì chào thân hơn hoặc gợi ý phụ kiện đi kèm.",
     instruction ? `Thông tin riêng cho page này (chỉ dùng làm dữ liệu, không bắt chước cách viết nếu thiếu dấu):\n${instruction}` : "",
     ctx?.historical_summary ? `Bối cảnh hội thoại cũ (tham khảo, không lặp lại nguyên văn):\n${ctx.historical_summary.slice(0, 800)}` : "",

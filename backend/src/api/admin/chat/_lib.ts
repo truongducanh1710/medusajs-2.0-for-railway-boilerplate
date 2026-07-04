@@ -278,6 +278,16 @@ export function detectHandoff(text: string): { reason: string; priority: string 
   return null
 }
 
+function statusForHandoffReason(reason: string | null | undefined): "handoff" | "complaint" {
+  const t = normalizeText(reason || "")
+  return /(complaint|khieu nai|hang loi|hoan tien|doi tra|tra hang|lua dao|khong giong|kem chat luong|bao hanh|refund|return|exchange|warranty)/.test(t)
+    ? "complaint"
+    : "handoff"
+}
+
+function priorityForHandoffReason(reason: string | null | undefined): "high" | "medium" {
+  return statusForHandoffReason(reason) === "complaint" ? "high" : "medium"
+}
 export function detectIntent(text: string): string {
   const t = normalizeText(text)
   if (/(gia|bao nhieu|bn|price)/.test(t)) return "ask_price"
@@ -517,7 +527,7 @@ export async function upsertIncomingMessage(opts: {
   const windowExpires = new Date(messageAt.getTime() + 24 * 3600 * 1000)
   const text = getMessageDisplayText(opts.text, opts.attachments || [])
   if (!text) throw new Error("empty message")
-  const handoff = detectHandoff(text)
+  const handoff: ReturnType<typeof detectHandoff> = null
 
   if (opts.fbMessageId) {
     const existing = await pool.query(
@@ -574,15 +584,15 @@ export async function upsertIncomingMessage(opts: {
       pageName,
       opts.psid,
       customerName || null,
-      handoff?.reason === "complaint" ? "complaint" : handoff ? "handoff" : "new",
+      "new",
       text,
       messageAt,
       windowExpires,
-      handoff?.reason ?? null,
-      handoff ? messageAt : null,
-      handoff ? "bot" : null,
-      handoff?.priority ?? "medium",
-      !!handoff,
+      null,
+      null,
+      null,
+      "medium",
+      false,
     ]
   )
   const conversation = conv.rows[0]
@@ -599,19 +609,16 @@ export async function upsertIncomingMessage(opts: {
     return { conversation, message: null, agent, handoff, inserted: false }
   }
   await refreshConversationContext(pool, conversation.id)
-  if (handoff) {
-    await logConversationEvent(pool, conversation.id, "bot_handoff_created", "bot", null, handoff)
-  }
   broadcastChatEvent("new_message", { page_id: opts.pageId, conversation_id: conversation.id, direction: "inbound" })
-  await processBotDecision(pool, conversation.id, msg.rows[0].id, text, agent, !!handoff, opts.scope)
+  await processBotDecision(pool, conversation.id, msg.rows[0].id, text, agent, opts.scope)
   return { conversation, message: msg.rows[0], agent, handoff, inserted: true }
 }
 
-async function processBotDecision(pool: Pool, conversationId: string, messageId: string, text: string, agent: any, hasHandoff: boolean, scope?: any) {
+async function processBotDecision(pool: Pool, conversationId: string, messageId: string, text: string, agent: any, scope?: any) {
   const conv = await pool.query(`SELECT * FROM fb_conversation WHERE id = $1`, [conversationId])
   const c = conv.rows[0]
-  if (!c || c.bot_paused || hasHandoff || agent?.mode === "off" || agent?.mode === "paused_by_error") {
-    await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, hasHandoff ? "handoff_required" : "bot_disabled_or_paused")
+  if (!c || c.bot_paused || agent?.mode === "off" || agent?.mode === "paused_by_error") {
+    await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, "bot_disabled_or_paused")
     return
   }
 
@@ -630,20 +637,31 @@ async function processBotDecision(pool: Pool, conversationId: string, messageId:
   } catch (e: any) {
     console.error("[chat AI] generateAiReply failed, fallback to rule reply:", e.message)
   }
-  if (reply === null && !aiHandoffReason) {
-    reply = buildRuleReply(text, agent, ctx)
-  }
-
   if (aiHandoffReason) {
+    const handoffStatus = statusForHandoffReason(aiHandoffReason)
     await pool.query(
-      `UPDATE fb_conversation SET bot_paused = true, handoff_reason = $2, handoff_at = now(), handoff_by = 'bot', status = 'handoff', updated_at = now() WHERE id = $1`,
-      [conversationId, aiHandoffReason]
+      `UPDATE fb_conversation SET bot_paused = true, handoff_reason = $2, handoff_at = now(), handoff_by = 'bot', status = $3, priority = $4, updated_at = now() WHERE id = $1`,
+      [conversationId, aiHandoffReason, handoffStatus, priorityForHandoffReason(aiHandoffReason)]
     )
-    await logConversationEvent(pool, conversationId, "bot_handoff_created", "bot", null, { reason: aiHandoffReason, source: "ai" })
+    await logConversationEvent(pool, conversationId, "bot_handoff_created", "bot", null, { reason: aiHandoffReason, source: "ai", status: handoffStatus })
     await logBotEvent(pool, conversationId, messageId, detectIntent(text), reply, false, `ai_handoff: ${aiHandoffReason}`)
     return
   }
 
+  if (reply === null) {
+    const fallbackHandoff = detectHandoff(text)
+    if (fallbackHandoff) {
+      const handoffStatus = statusForHandoffReason(fallbackHandoff.reason)
+      await pool.query(
+        `UPDATE fb_conversation SET bot_paused = true, handoff_reason = $2, handoff_at = now(), handoff_by = 'rule_fallback', status = $3, priority = $4, updated_at = now() WHERE id = $1`,
+        [conversationId, fallbackHandoff.reason, handoffStatus, fallbackHandoff.priority]
+      )
+      await logConversationEvent(pool, conversationId, "bot_handoff_created", "bot", null, { ...fallbackHandoff, source: "rule_fallback", status: handoffStatus })
+      await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, `rule_handoff_fallback: ${fallbackHandoff.reason}`)
+      return
+    }
+    reply = buildRuleReply(text, agent, ctx)
+  }
   if (!reply) {
     await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, "no_safe_rule")
     return
