@@ -54,12 +54,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     )
 
-    // Doanh thu "COD". VN giữ nguyên hành vi cũ (sum total, mọi trạng thái — không đổi để tránh
-    // xáo trộn số liệu VN đang dùng hằng ngày). MY dùng cod_amount (tiền cần thu sau giảm giá/phí
-    // sàn) của TẤT CẢ đơn mọi trạng thái — khớp với con số COD Pancake POS hiển thị. `total` là
-    // giá gốc trước khuyến mãi nên không dùng cho MY (verify: total=5800 nhưng cod_amount=1246).
-    const revenueOf = (o: any): number =>
-      mkt === "MY" ? Number(o.cod_amount ?? 0) : Number(o.total ?? 0)
+    // Doanh thu "COD" = SUM(cod_amount) của TẤT CẢ đơn mọi trạng thái, cho cả VN và MY —
+    // khớp con số COD Pancake POS. cod_amount là tiền cần thu (sau giảm giá/phí sàn), khác với
+    // `total` (giá gốc trước khuyến mãi). Trước đây VN dùng SUM(total) mọi đơn khiến doanh thu
+    // đội lên (vd tháng 6: total=3.18 tỷ vs cod_amount=2.59 tỷ) — đã thống nhất dùng cod_amount.
+    const revenueOf = (o: any): number => Number(o.cod_amount ?? 0)
 
     // --- Totals ---
     const totalOrders = allOrders.length
