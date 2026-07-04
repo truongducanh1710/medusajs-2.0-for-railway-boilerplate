@@ -48,6 +48,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "items",
           "pancake_created_at",
           "currency",
+          "shop_name",
         ],
         order: { pancake_created_at: "ASC" },
       }
@@ -127,6 +128,52 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 20) // top 20
 
+    // --- By shop (chỉ MY: nhiều gian hàng TikTok con phân biệt qua shop_name) ---
+    // Tách doanh số theo từng gian hàng + theo ngày để thấy shop nào đang tốt.
+    let byShop: any[] | undefined
+    let byShopDay: any | undefined
+    if (mkt === "MY") {
+      const shopMap = new Map<string, { orders: number; revenue: number }>()
+      // shopDay: shop_name -> { date -> { orders, revenue } }
+      const shopDayMap = new Map<string, Map<string, { orders: number; revenue: number }>>()
+      const daySet = new Set<string>()
+      for (const o of allOrders) {
+        const shop = o.shop_name || "(không rõ)"
+        const rev = revenueOf(o)
+        const dateStr = o.pancake_created_at
+          ? new Date(o.pancake_created_at).toISOString().slice(0, 10)
+          : "unknown"
+        daySet.add(dateStr)
+
+        const s = shopMap.get(shop) || { orders: 0, revenue: 0 }
+        s.orders++; s.revenue += rev
+        shopMap.set(shop, s)
+
+        if (!shopDayMap.has(shop)) shopDayMap.set(shop, new Map())
+        const dm = shopDayMap.get(shop)!
+        const d = dm.get(dateStr) || { orders: 0, revenue: 0 }
+        d.orders++; d.revenue += rev
+        dm.set(dateStr, d)
+      }
+      byShop = Array.from(shopMap.entries())
+        .map(([shop_name, data]) => ({ shop_name, ...data }))
+        .sort((a, b) => b.revenue - a.revenue)
+
+      const days = Array.from(daySet).filter(d => d !== "unknown").sort()
+      byShopDay = {
+        days,
+        shops: byShop.map(s => ({
+          shop_name: s.shop_name,
+          total_orders: s.orders,
+          total_revenue: s.revenue,
+          per_day: days.map(d => {
+            const cell = shopDayMap.get(s.shop_name)?.get(d)
+            return { date: d, orders: cell?.orders ?? 0, revenue: cell?.revenue ?? 0 }
+          }),
+        })),
+      }
+    }
+
     return res.json({
       from,
       to,
@@ -143,6 +190,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       by_source: bySource,
       by_day: byDay,
       by_product: byProduct,
+      ...(byShop ? { by_shop: byShop, by_shop_day: byShopDay } : {}),
     })
   } catch (err: any) {
     console.error("[PancakeSync Report API] Error:", err.message)

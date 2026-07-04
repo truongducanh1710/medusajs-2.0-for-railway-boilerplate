@@ -210,6 +210,7 @@ export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string,
     source: detectSource(raw),
     market,
     currency: shop.currency,
+    shop_name: raw.page?.name ?? "",   // tên gian hàng TikTok con (MY)
     status: raw.status ?? 0,
     status_name: statusLabel(raw.status ?? 0),
     customer_name: raw.bill_full_name ?? raw.customer?.name ?? "",

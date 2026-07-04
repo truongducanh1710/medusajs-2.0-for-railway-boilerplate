@@ -5,6 +5,7 @@ const PancakeOrder = model.define("pancake_order", {
   medusa_order_id: model.text().nullable(),    // Link nếu đơn từ Medusa
   source: model.text().default("unknown"),     // 'medusa' | 'facebook' | 'zalo' | 'tiktok' | 'manual' | ...
   market: model.text().default("VN"),          // 'VN' | 'MY' — shop Pancake nào (khác với `source` = kênh traffic)
+  shop_name: model.text().default(""),         // tên gian hàng TikTok con (MY) từ raw.page.name
   status: model.number().default(0),
   status_name: model.text().default(""),
   status_history: model.json().default([] as any),    // [{status, status_name, changed_at, source: 'webhook'|'sync'}]

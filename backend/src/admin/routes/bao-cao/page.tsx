@@ -327,6 +327,115 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
           </div>
         </div>
       </div>
+
+      {/* Doanh số theo gian hàng (chỉ MY — nhiều gian TikTok con) */}
+      {data.by_shop_day && <ShopBreakdownBlock data={data.by_shop_day} totalRevenue={data.total_revenue} />}
+    </div>
+  )
+}
+
+// ---- Doanh số theo gian hàng TikTok (bảng + biểu đồ cột theo ngày) ----
+const SHOP_COLORS = ["#7c3aed", "#2563eb", "#16a34a", "#ea580c", "#db2777", "#0891b2", "#ca8a04", "#4f46e5"]
+function ShopBreakdownBlock({ data, totalRevenue }: { data: any; totalRevenue: number }) {
+  const fmt = useFmtMoney()
+  const days: string[] = data.days ?? []
+  const shops: any[] = data.shops ?? []
+
+  // Màu cố định theo thứ tự shop (doanh số cao → thấp)
+  const shopColor = (i: number) => SHOP_COLORS[i % SHOP_COLORS.length]
+
+  // Biểu đồ cột nhóm theo ngày: mỗi ngày 1 cụm, mỗi shop 1 cột màu.
+  // maxRev để scale chiều cao cột.
+  let maxDayRev = 1
+  for (const d of days) {
+    for (const s of shops) {
+      const cell = s.per_day.find((p: any) => p.date === d)
+      if (cell && cell.revenue > maxDayRev) maxDayRev = cell.revenue
+    }
+  }
+
+  return (
+    <div className="mt-5 bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
+        <span>Doanh số theo gian hàng</span>
+        <span className="text-xs font-normal text-gray-400">{shops.length} gian hàng TikTok</span>
+      </div>
+
+      {/* Legend */}
+      <div className="px-5 pt-3 flex flex-wrap gap-3">
+        {shops.map((s, i) => (
+          <span key={s.shop_name} className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+            <span className="inline-block w-3 h-3 rounded" style={{ background: shopColor(i) }} />
+            {s.shop_name}
+          </span>
+        ))}
+      </div>
+
+      {/* Grouped bar chart theo ngày */}
+      <div className="px-5 py-4 overflow-x-auto">
+        <div className="flex items-end gap-4" style={{ minHeight: 160 }}>
+          {days.map(d => (
+            <div key={d} className="flex flex-col items-center gap-1.5 flex-shrink-0">
+              <div className="flex items-end gap-1 h-36">
+                {shops.map((s, i) => {
+                  const cell = s.per_day.find((p: any) => p.date === d)
+                  const rev = cell?.revenue ?? 0
+                  const h = Math.round(rev / maxDayRev * 140)
+                  return (
+                    <div key={s.shop_name} className="relative group">
+                      <div className="w-4 rounded-t transition-all hover:opacity-80"
+                        style={{ height: `${Math.max(h, rev > 0 ? 2 : 0)}px`, background: shopColor(i) }} />
+                      {/* tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block whitespace-nowrap bg-gray-900 text-white text-[10px] rounded px-1.5 py-0.5 z-20">
+                        {s.shop_name}: {fmt(rev)} · {cell?.orders ?? 0} đơn
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <span className="text-[10px] text-gray-400">{d.slice(5)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bảng số liệu */}
+      <div className="overflow-x-auto border-t">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b text-xs text-gray-500">
+            <tr>
+              <th className="text-left px-4 py-2.5">Gian hàng</th>
+              {days.map(d => <th key={d} className="text-right px-3 py-2.5 whitespace-nowrap">{d.slice(5)}</th>)}
+              <th className="text-right px-4 py-2.5">Tổng đơn</th>
+              <th className="text-right px-4 py-2.5">Tổng COD</th>
+              <th className="text-right px-4 py-2.5">%</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {shops.map((s, i) => {
+              const pct = totalRevenue > 0 ? Math.round(s.total_revenue / totalRevenue * 100) : 0
+              return (
+                <tr key={s.shop_name} className={i % 2 === 0 ? "" : "bg-gray-50/40"}>
+                  <td className="px-4 py-2.5 font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: shopColor(i) }} />
+                      {s.shop_name}
+                    </span>
+                  </td>
+                  {s.per_day.map((p: any) => (
+                    <td key={p.date} className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">
+                      {p.orders > 0 ? fmt(p.revenue) : "—"}
+                    </td>
+                  ))}
+                  <td className="px-4 py-2.5 text-right font-mono">{fmtNum(s.total_orders)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(s.total_revenue)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-600">{pct}%</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
