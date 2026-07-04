@@ -507,9 +507,13 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
             }
           }
 
-          // Early-stop: page "stable" nếu một trong 2 điều kiện:
+          // Early-stop: page "stable" nếu một trong 3 điều kiện:
           //   A. >= 95% đơn đã terminal-in-DB
-          //   B. 100% đơn có inserted_at > 30 ngày trước
+          //   B. 100% đơn có inserted_at > 30 ngày trước (fallback cứng khi không có `from`)
+          //   C. 100% đơn có inserted_at < `from` đã chọn — Pancake sort updated_at DESC nên
+          //      khi gặp trang toàn đơn cũ hơn mốc từ ngày, các trang sau chắc chắn cũng vậy.
+          //      Quan trọng cho sync LẦN ĐẦU (DB trống → điều kiện A không kích hoạt được),
+          //      nếu không có điều kiện C thì phải quét gần hết toàn bộ lịch sử shop.
           if (!opts?.force && orders.length > 0) {
             const terminalRatio = pageTerminalCount / orders.length
             const oldCutoff = Date.now() - STABLE_OLD_DAYS * 24 * 3600 * 1000
@@ -517,12 +521,18 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
               const inserted = raw.inserted_at ? new Date(raw.inserted_at).getTime() : 0
               return inserted > 0 && inserted < oldCutoff
             })
-            const isStablePage = terminalRatio >= STABLE_TERMINAL_RATIO || allOld
+            const allBeforeFrom = orders.every((raw: any) => {
+              const inserted = raw.inserted_at ? new Date(raw.inserted_at).getTime() : 0
+              return inserted > 0 && inserted < from.getTime()
+            })
+            const isStablePage = terminalRatio >= STABLE_TERMINAL_RATIO || allOld || allBeforeFrom
 
             if (isStablePage) {
               consecutiveTerminalPages++
               if (consecutiveTerminalPages >= EARLY_STOP_CONSECUTIVE_PAGES) {
-                const reason = allOld
+                const reason = allBeforeFrom
+                  ? `all orders older than selected 'from' date`
+                  : allOld
                   ? `all orders older than ${STABLE_OLD_DAYS}d`
                   : `terminal ratio ${(terminalRatio * 100).toFixed(0)}%`
                 console.log(
