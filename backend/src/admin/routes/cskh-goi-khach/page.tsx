@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 
@@ -153,6 +153,64 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
       type === "success" ? "bg-emerald-600" : "bg-rose-600")}>
       <span>{type === "success" ? "✓" : "✕"}</span>{msg}
     </div>
+  )
+}
+
+function startColumnResize(
+  column: CskhCallColumnKey,
+  event: ReactMouseEvent,
+  columnWidths: Record<CskhCallColumnKey, number>,
+  setColumnWidths: Dispatch<SetStateAction<Record<CskhCallColumnKey, number>>>,
+) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  const startX = event.clientX
+  const startWidth = columnWidths[column] || CSKH_CALL_DEFAULT_COLUMN_WIDTHS[column]
+  const minWidth = CSKH_CALL_MIN_COLUMN_WIDTHS[column]
+  const previousCursor = document.body.style.cursor
+  const previousSelect = document.body.style.userSelect
+  document.body.style.cursor = "col-resize"
+  document.body.style.userSelect = "none"
+
+  let frame = 0
+  let pendingWidth = startWidth
+  const flushWidth = () => {
+    frame = 0
+    setColumnWidths(prev => prev[column] === pendingWidth ? prev : { ...prev, [column]: pendingWidth })
+  }
+  const onMove = (moveEvent: MouseEvent) => {
+    pendingWidth = Math.max(minWidth, startWidth + moveEvent.clientX - startX)
+    if (!frame) frame = window.requestAnimationFrame(flushWidth)
+  }
+  const onUp = () => {
+    document.removeEventListener("mousemove", onMove)
+    document.removeEventListener("mouseup", onUp)
+    if (frame) window.cancelAnimationFrame(frame)
+    setColumnWidths(prev => prev[column] === pendingWidth ? prev : { ...prev, [column]: pendingWidth })
+    document.body.style.cursor = previousCursor
+    document.body.style.userSelect = previousSelect
+  }
+  document.addEventListener("mousemove", onMove)
+  document.addEventListener("mouseup", onUp)
+}
+
+function ResizableTh({ column, children, className = "", columnWidths, setColumnWidths }: {
+  column: CskhCallColumnKey
+  children: ReactNode
+  className?: string
+  columnWidths: Record<CskhCallColumnKey, number>
+  setColumnWidths: Dispatch<SetStateAction<Record<CskhCallColumnKey, number>>>
+}) {
+  return (
+    <th className={cn("relative select-none py-2 pr-3 align-middle", className)}>
+      <div className="min-w-0 truncate pr-2">{children}</div>
+      <span
+        aria-hidden="true"
+        onMouseDown={(e) => startColumnResize(column, e, columnWidths, setColumnWidths)}
+        className="absolute right-0 top-1/2 h-5 w-2 -translate-y-1/2 cursor-col-resize rounded-sm border-r border-transparent hover:border-ui-fg-muted"
+      />
+    </th>
   )
 }
 
@@ -698,45 +756,6 @@ export default function CskhGoiKhachPage() {
   }
   function clearSelection() { setSelectedIds({}) }
 
-  function startColumnResize(column: CskhCallColumnKey, event: any) {
-    if (event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    const startX = event.clientX
-    const startWidth = columnWidths[column] || CSKH_CALL_DEFAULT_COLUMN_WIDTHS[column]
-    const minWidth = CSKH_CALL_MIN_COLUMN_WIDTHS[column]
-    const previousCursor = document.body.style.cursor
-    const previousSelect = document.body.style.userSelect
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-
-    const onMove = (moveEvent: MouseEvent) => {
-      const nextWidth = Math.max(minWidth, startWidth + moveEvent.clientX - startX)
-      setColumnWidths(prev => ({ ...prev, [column]: nextWidth }))
-    }
-    const onUp = () => {
-      document.removeEventListener("mousemove", onMove)
-      document.removeEventListener("mouseup", onUp)
-      document.body.style.cursor = previousCursor
-      document.body.style.userSelect = previousSelect
-    }
-    document.addEventListener("mousemove", onMove)
-    document.addEventListener("mouseup", onUp)
-  }
-
-  function ResizableTh({ column, children, className = "" }: { column: CskhCallColumnKey; children: any; className?: string }) {
-    return (
-      <th className={cn("relative select-none py-2 pr-3 align-middle", className)}>
-        <div className="min-w-0 truncate pr-2">{children}</div>
-        <span
-          aria-hidden="true"
-          onMouseDown={(e) => startColumnResize(column, e)}
-          className="absolute right-0 top-1/2 h-5 w-2 -translate-y-1/2 cursor-col-resize rounded-sm border-r border-transparent hover:border-ui-fg-muted"
-        />
-      </th>
-    )
-  }
-
   async function bulkReassign() {
     if (!bulkAssignee || bulkAssigning) return
     const ids = Object.keys(selectedIds).filter(id => selectedIds[id])
@@ -942,19 +961,19 @@ export default function CskhGoiKhachPage() {
                   <thead>
                     <tr className="border-b border-ui-border-base text-left text-[11px] uppercase text-ui-fg-subtle">
                       {isManager && (
-                        <ResizableTh column="select" className="text-center">
+                        <ResizableTh column="select" className="text-center" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>
                           <input type="checkbox" checked={allPagedSelected} onChange={toggleSelectAllPaged} onClick={e => e.stopPropagation()} />
                         </ResizableTh>
                       )}
-                      <ResizableTh column="customer">Khách hàng</ResizableTh>
-                      <ResizableTh column="phone">SĐT</ResizableTh>
-                      <ResizableTh column="product">Sản phẩm</ResizableTh>
-                      <ResizableTh column="assignee">Phụ trách</ResizableTh>
-                      <ResizableTh column="stage">Giai đoạn gọi</ResizableTh>
-                      <ResizableTh column="notes">Ghi chú</ResizableTh>
-                      <ResizableTh column="rating">★</ResizableTh>
-                      <ResizableTh column="deadline">Hạn</ResizableTh>
-                      {isManager && <ResizableTh column="delete" className="text-right">Xóa</ResizableTh>}
+                      <ResizableTh column="customer" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Khách hàng</ResizableTh>
+                      <ResizableTh column="phone" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>SĐT</ResizableTh>
+                      <ResizableTh column="product" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Sản phẩm</ResizableTh>
+                      <ResizableTh column="assignee" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Phụ trách</ResizableTh>
+                      <ResizableTh column="stage" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Giai đoạn gọi</ResizableTh>
+                      <ResizableTh column="notes" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Ghi chú</ResizableTh>
+                      <ResizableTh column="rating" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>★</ResizableTh>
+                      <ResizableTh column="deadline" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Hạn</ResizableTh>
+                      {isManager && <ResizableTh column="delete" className="text-right" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Xóa</ResizableTh>}
                     </tr>
                   </thead>
                   <tbody>
