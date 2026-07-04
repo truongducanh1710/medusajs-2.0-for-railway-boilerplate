@@ -25,16 +25,18 @@ function pctDelta(curr: number, prev: number): number | null {
   return Math.round(((curr - prev) / prev) * 1000) / 10
 }
 
-// VN: sum `total` (hành vi cũ, giữ nguyên). MY: sum `cod_amount` — `total` là giá gốc trước
-// giảm giá, chênh lệch lớn so với tiền thực thu (verify: total=5800 nhưng cod_amount=1246).
+// VN: sum `total` của đơn confirmed (hành vi cũ, giữ nguyên). MY: sum `cod_amount` của TẤT CẢ
+// đơn mọi trạng thái (khớp con số COD Pancake POS) — `total` là giá gốc trước giảm giá nên
+// không dùng (verify: total=5800 nhưng cod_amount=1246). confirmed/cancelled count không đổi.
 function aggregateDay(orders: any[], market: string = "VN") {
   let revenue = 0
   let confirmed = 0
   let cancelled = 0
   for (const o of orders) {
+    if (market === "MY") revenue += Number(o.cod_amount) || 0
     if (CONFIRMED_STATUSES.includes(o.status)) {
       confirmed++
-      revenue += market === "MY" ? (Number(o.cod_amount) || 0) : (Number(o.total) || 0)
+      if (market !== "MY") revenue += Number(o.total) || 0
     } else if (CANCELLED_STATUSES.includes(o.status)) {
       cancelled++
     }

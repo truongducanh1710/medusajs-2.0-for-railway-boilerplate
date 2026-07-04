@@ -22,10 +22,9 @@ function shiftDate(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// VN giữ nguyên hành vi cũ (sum `total` cho mọi đơn confirmed — total = giá trước giảm giá
-// nhưng đây là logic VN đã dùng ổn định, không đổi). MY dùng `cod_amount` (tiền thực thu sau
-// giảm giá/phí sàn) — `total` ở Malaysia là giá gốc trước khuyến mãi, sai lệch nhiều so với
-// tiền thực thu (verify qua đơn thật: total=5800 nhưng cod_amount=1246, ~78% giảm giá).
+// VN giữ nguyên hành vi cũ (sum `total` cho đơn confirmed — logic VN đã dùng ổn định, không đổi).
+// MY dùng `cod_amount` của TẤT CẢ đơn mọi trạng thái (khớp COD Pancake POS) — `total` ở Malaysia
+// là giá gốc trước khuyến mãi, sai lệch lớn (verify: total=5800 nhưng cod_amount=1246, ~78% giảm).
 function computeStats(orders: any[], now: Date, periodEnd: Date, market: string = "VN") {
   let no_action = 0, called = 0, knm_1 = 0, knm_2 = 0, knm_3_plus = 0
   let confirmed = 0, cancelled = 0, overdue = 0, total_notes = 0
@@ -36,9 +35,11 @@ function computeStats(orders: any[], now: Date, periodEnd: Date, market: string 
     const tags  = Array.isArray(o.tags)  ? o.tags  : []
     total_notes += notes.length
 
+    if (market === "MY") revenue += Number(o.cod_amount) || 0
+
     if (CONFIRMED_STATUSES.includes(o.status)) {
       confirmed++
-      revenue += market === "MY" ? (Number(o.cod_amount) || 0) : (Number(o.total) || 0)
+      if (market !== "MY") revenue += Number(o.total) || 0
     } else if (CANCELLED_STATUSES.includes(o.status)) {
       cancelled++
     } else {

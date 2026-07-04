@@ -53,13 +53,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     )
 
-    // Doanh thu "COD" = tiền thực thu. VN giữ nguyên hành vi cũ (sum total, mọi trạng thái —
-    // không đổi để tránh xáo trộn số liệu VN đang dùng hằng ngày). MY dùng cod_amount (tiền
-    // thực thu sau giảm giá/phí sàn) và chỉ tính đơn giao thành công (status=3), vì `total`
-    // là giá gốc trước khuyến mãi — verify qua đơn thật: total=5800 (58 RM giá gốc) nhưng
-    // cod_amount=1246 (12.46 RM tiền thực thu, khớp Pancake "Tiền cần thu").
+    // Doanh thu "COD". VN giữ nguyên hành vi cũ (sum total, mọi trạng thái — không đổi để tránh
+    // xáo trộn số liệu VN đang dùng hằng ngày). MY dùng cod_amount (tiền cần thu sau giảm giá/phí
+    // sàn) của TẤT CẢ đơn mọi trạng thái — khớp với con số COD Pancake POS hiển thị. `total` là
+    // giá gốc trước khuyến mãi nên không dùng cho MY (verify: total=5800 nhưng cod_amount=1246).
     const revenueOf = (o: any): number =>
-      mkt === "MY" ? (o.status === 3 ? Number(o.cod_amount ?? 0) : 0) : Number(o.total ?? 0)
+      mkt === "MY" ? Number(o.cod_amount ?? 0) : Number(o.total ?? 0)
 
     // --- Totals ---
     const totalOrders = allOrders.length
