@@ -61,7 +61,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       where.push(`(${clauses.join(" OR ")})`)
     }
     if (!hasSearch && q.has_phone === "1") {
-      where.push(`ctx.active_phone IS NOT NULL AND ctx.active_phone != ''`)
+      where.push(`regexp_replace(COALESCE(ctx.active_phone, ''), '[^0-9]', '', 'g') ~ '^(0|84)(3|5|7|8|9)[0-9]{8}$'`)
     }
 
     params.push(limit, offset)

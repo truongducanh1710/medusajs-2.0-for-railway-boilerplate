@@ -81,6 +81,7 @@ const MODE_CONFIG: Record<string, { label: string; color: string }> = {
 }
 
 const phoneDigits = (value?: string | null) => String(value || "").replace(/\D/g, "")
+const hasValidPhone = (value?: string | null) => /^(0|84)(3|5|7|8|9)\d{8}$/.test(phoneDigits(value))
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmtAgo(v?: string) {
@@ -333,6 +334,7 @@ export default function ChatPage() {
   const filtered = useMemo(() => {
     const hasSearch = !!search.trim()
     let list = convs
+    if (!hasSearch && hasPhone) list = list.filter(c => hasValidPhone(c.active_phone))
     if (!hasSearch && tagFilter) list = list.filter(c => convTags(c).includes(tagFilter))
     if (!hasSearch) return list
     const s = search.toLowerCase()
@@ -344,7 +346,7 @@ export default function ChatPage() {
       (c.active_phone || "").toLowerCase().includes(s) ||
       (!!digits && phoneDigits(c.active_phone).includes(digits))
     )
-  }, [convs, tagFilter, search])
+  }, [convs, tagFilter, hasPhone, search])
 
   const botSuggestion = useMemo(() =>
     botEvents.find(e => e.reply_text && !e.auto_sent && !e.skipped_reason?.includes("handoff")),
