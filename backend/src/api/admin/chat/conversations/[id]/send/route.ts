@@ -22,15 +22,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (send_to_facebook) {
       // Prefer Pancake when a token is configured for this page (Facebook App may not
       // yet be approved for messaging). Fall back to the Graph API otherwise.
-      const pancake = await getPancakeConfig(pool, c.page_id)
-      if (pancake) {
-        fbMessageId = await pancakeSendMessage(pancake, c.customer_psid, text)
-        fbResult = { via: "pancake", message_id: fbMessageId }
-        channel = "pancake"
-      } else {
-        fbResult = await sendFacebookMessage(c.page_id, c.customer_psid, text)
-        fbMessageId = fbResult?.message_id || null
-        channel = "facebook"
+      try {
+        const pancake = await getPancakeConfig(pool, c.page_id)
+        if (pancake) {
+          channel = "pancake"
+          fbMessageId = await pancakeSendMessage(pancake, c.customer_psid, text)
+          fbResult = { via: "pancake", message_id: fbMessageId }
+        } else {
+          channel = "facebook"
+          fbResult = await sendFacebookMessage(c.page_id, c.customer_psid, text)
+          fbMessageId = fbResult?.message_id || null
+        }
+      } catch (err: any) {
+        const friendly = formatSendError(err, c, channel)
+        await logConversationEvent(pool, id, "manual_reply_failed", "sale", auth.email, {
+          channel,
+          raw_error: err?.message || String(err),
+          friendly_error: friendly,
+        }).catch(() => {})
+        return res.status(400).json({ error: friendly })
       }
     }
 
@@ -51,6 +61,35 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
+}
+
+function formatSendError(err: any, conversation: any, channel: string | null): string {
+  const raw = String(err?.message || err || "")
+  const provider = channel === "pancake" ? "Pancake" : "Facebook"
+
+  if (isMessengerWindowExpired(conversation) || /(24\s*hour|24h|outside.*window|allowed window|messaging window)/i.test(raw)) {
+    return "Không gửi được vì hội thoại đã quá 24 giờ kể từ tin nhắn cuối của khách. Cần khách nhắn lại trước, hoặc liên hệ qua SĐT/Zalo nếu đã có thông tin."
+  }
+  if (/(token|access token|session|oauth|permission|permissions|not authorized|unauthorized)/i.test(raw)) {
+    return `${provider} chưa cho gửi tin với token hiện tại. Kiểm tra lại token/quyền nhắn tin của page rồi thử lại.`
+  }
+  if (/(conversation|recipient|psid|not found|unsupported post request|does not exist)/i.test(raw)) {
+    return `Không tìm thấy đúng hội thoại/người nhận trên ${provider}. Hãy sync lại inbox hoặc mở hội thoại này trực tiếp trong ${provider} để kiểm tra.`
+  }
+  if (/something went wrong|please try again later|unknown|internal/i.test(raw)) {
+    return `${provider} chưa gửi được tin và chỉ trả lỗi chung. Nếu hội thoại đã cũ, hãy để khách nhắn lại trước; nếu vẫn mới, thử gửi lại hoặc kiểm tra token page.`
+  }
+  return `${provider} không gửi được tin: ${raw}`
+}
+
+function isMessengerWindowExpired(conversation: any): boolean {
+  const rawExpiry = conversation?.window_expires_at
+  const expiry = rawExpiry ? new Date(rawExpiry).getTime() : NaN
+  if (Number.isFinite(expiry)) return Date.now() > expiry
+
+  const rawLastMessageAt = conversation?.last_message_at
+  const lastMessageAt = rawLastMessageAt ? new Date(rawLastMessageAt).getTime() : NaN
+  return Number.isFinite(lastMessageAt) && Date.now() - lastMessageAt > 24 * 60 * 60 * 1000
 }
 
 async function maybeCreateReplyExample(pool: any, conversationId: string, saleId: string, saleReply: string) {
