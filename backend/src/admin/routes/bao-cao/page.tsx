@@ -21,13 +21,16 @@ function fmtMYR(n: number) {
   return `RM ${new Intl.NumberFormat("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`
 }
 // Format tiền theo context hiện tại — dùng thay fmtVND() ở nơi hiển thị doanh thu/tiền chính.
+// Lưu ý: Pancake shop Malaysia lưu total/cod ở đơn vị sen (RM × 100), giống convention payment
+// API phổ biến — cần chia 100 trước khi hiển thị/quy đổi. Shop VN lưu nguyên đơn vị VND.
 function useFmtMoney() {
   const { market, currencyMode, rate } = useContext(CurrencyCtx)
   return (n: number | null | undefined) => {
     if (n == null || isNaN(Number(n))) return "—"
     if (market !== "MY") return fmtVND(n)
-    if (currencyMode === "MYR") return fmtMYR(Number(n))
-    return fmtVND(Number(n) * rate)
+    const myr = Number(n) / 100
+    if (currencyMode === "MYR") return fmtMYR(myr)
+    return fmtVND(myr * rate)
   }
 }
 function fmtNum(n: number | null | undefined) {
