@@ -15,7 +15,7 @@ type Conversation = {
   active_address?: string; active_order_state?: string
   tags?: string[]
 }
-type Attachment = { type: string; payload?: { url?: string; title?: string }; name?: string }
+type Attachment = { type?: string; payload?: { url?: string; title?: string; src?: string }; name?: string; title?: string; url?: string; file_url?: string; mime_type?: string; image_data?: { url?: string; preview_url?: string }; video_data?: { url?: string; preview_url?: string } }
 type Message = {
   id: string; sender_type: string; direction: string
   text: string; attachments: Attachment[] | string | null; created_at: string
@@ -160,17 +160,41 @@ function Btn({ children, onClick, disabled, variant = "default", size = "md" }: 
     </button>
   )
 }
+function attachmentUrl(att: Attachment): string | undefined {
+  return att.payload?.url || att.payload?.src || att.image_data?.url || att.video_data?.url || att.file_url || att.url
+}
+function attachmentPreviewUrl(att: Attachment): string | undefined {
+  return att.image_data?.preview_url || att.video_data?.preview_url
+}
+function attachmentKind(att: Attachment): string {
+  const type = String(att.type || "").toLowerCase()
+  const mime = String(att.mime_type || "").toLowerCase()
+  if (type.includes("image") || mime.startsWith("image/") || att.image_data) return "image"
+  if (type.includes("video") || mime.startsWith("video/") || att.video_data) return "video"
+  if (type.includes("audio") || mime.startsWith("audio/")) return "audio"
+  return type || "file"
+}
 function AttView({ att }: { att: Attachment }) {
-  const url = att.payload?.url
-  if (!url) return <span style={{ fontSize: 12, color: "#9ca3af" }}>[{att.type}]</span>
-  if (att.type === "image") return (
-    <a href={url} target="_blank" rel="noreferrer">
-      <img src={url} alt="" style={{ maxWidth: 220, maxHeight: 220, borderRadius: 12, display: "block", cursor: "zoom-in", objectFit: "cover" }} onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
-    </a>
+  const url = attachmentUrl(att)
+  const previewUrl = attachmentPreviewUrl(att)
+  const kind = attachmentKind(att)
+  const label = att.payload?.title || att.title || att.name || kind
+  if (!url) return <span style={{ fontSize: 12, color: "#9ca3af" }}>[{label}]</span>
+  if (kind === "image") return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt="" style={{ maxWidth: 220, maxHeight: 220, borderRadius: 12, display: "block", cursor: "zoom-in", objectFit: "cover", background: "#f1f5f9" }} onError={e => {
+          const img = e.currentTarget
+          if (previewUrl && img.src !== previewUrl) img.src = previewUrl
+          else img.style.display = "none"
+        }} />
+      </a>
+      <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#bfdbfe", textDecoration: "underline" }}>Open image</a>
+    </div>
   )
-  if (att.type === "video") return <video src={url} controls style={{ maxWidth: 260, borderRadius: 12 }} />
-  if (att.type === "audio") return <audio src={url} controls style={{ maxWidth: 240 }} />
-  return <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#3b82f6" }}>📎 {att.payload?.title || att.name || att.type}</a>
+  if (kind === "video") return <video src={url} controls style={{ maxWidth: 260, borderRadius: 12 }} />
+  if (kind === "audio") return <audio src={url} controls style={{ maxWidth: 240 }} />
+  return <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#3b82f6" }}>File: {label}</a>
 }
 function DateSep({ label }: { label: string }) {
   return (
