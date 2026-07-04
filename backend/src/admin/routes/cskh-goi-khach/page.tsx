@@ -1,7 +1,8 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useCallback, useMemo, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { ResizeHandle, useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -103,32 +104,19 @@ const CALL_STAGES: { value: string; label: string; icon: string; chip: string }[
 ]
 const CALL_STAGE_MAP = Object.fromEntries(CALL_STAGES.map(s => [s.value, s]))
 
-const CSKH_CALL_COLUMN_STORAGE_KEY = "cskh-call-column-widths-v1"
-const CSKH_CALL_DEFAULT_COLUMN_WIDTHS: Record<CskhCallColumnKey, number> = {
-  select: 44,
-  customer: 260,
-  phone: 120,
-  product: 240,
-  assignee: 180,
-  stage: 160,
-  notes: 180,
-  rating: 80,
-  deadline: 72,
-  delete: 68,
-}
-const CSKH_CALL_MIN_COLUMN_WIDTHS: Record<CskhCallColumnKey, number> = {
-  select: 40,
-  customer: 120,
-  phone: 96,
-  product: 120,
-  assignee: 120,
-  stage: 140,
-  notes: 120,
-  rating: 64,
-  deadline: 64,
-  delete: 60,
-}
-
+const CSKH_CALL_COLUMN_STORAGE_KEY = "cskh-call.col-widths.v1"
+const CSKH_CALL_COLUMN_DEFS: ResizableColDef<CskhCallColumnKey>[] = [
+  { id: "select",   label: "",             default: 44,  min: 40 },
+  { id: "customer", label: "Khách hàng",   default: 260, min: 120 },
+  { id: "phone",    label: "SĐT",          default: 120, min: 96 },
+  { id: "product",  label: "Sản phẩm",     default: 240, min: 120 },
+  { id: "assignee", label: "Phụ trách",    default: 180, min: 120 },
+  { id: "stage",    label: "Giai đoạn gọi", default: 160, min: 140 },
+  { id: "notes",    label: "Ghi chú",      default: 180, min: 120 },
+  { id: "rating",   label: "★",            default: 80,  min: 64 },
+  { id: "deadline", label: "Hạn",          default: 72,  min: 64 },
+  { id: "delete",   label: "Xóa",          default: 68,  min: 60 },
+]
 function Stars({ value, onChange }: { value: number | null; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0)
   return (
@@ -153,64 +141,6 @@ function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; 
       type === "success" ? "bg-emerald-600" : "bg-rose-600")}>
       <span>{type === "success" ? "✓" : "✕"}</span>{msg}
     </div>
-  )
-}
-
-function startColumnResize(
-  column: CskhCallColumnKey,
-  event: ReactMouseEvent,
-  columnWidths: Record<CskhCallColumnKey, number>,
-  setColumnWidths: Dispatch<SetStateAction<Record<CskhCallColumnKey, number>>>,
-) {
-  if (event.button !== 0) return
-  event.preventDefault()
-  event.stopPropagation()
-  const startX = event.clientX
-  const startWidth = columnWidths[column] || CSKH_CALL_DEFAULT_COLUMN_WIDTHS[column]
-  const minWidth = CSKH_CALL_MIN_COLUMN_WIDTHS[column]
-  const previousCursor = document.body.style.cursor
-  const previousSelect = document.body.style.userSelect
-  document.body.style.cursor = "col-resize"
-  document.body.style.userSelect = "none"
-
-  let frame = 0
-  let pendingWidth = startWidth
-  const flushWidth = () => {
-    frame = 0
-    setColumnWidths(prev => prev[column] === pendingWidth ? prev : { ...prev, [column]: pendingWidth })
-  }
-  const onMove = (moveEvent: MouseEvent) => {
-    pendingWidth = Math.max(minWidth, startWidth + moveEvent.clientX - startX)
-    if (!frame) frame = window.requestAnimationFrame(flushWidth)
-  }
-  const onUp = () => {
-    document.removeEventListener("mousemove", onMove)
-    document.removeEventListener("mouseup", onUp)
-    if (frame) window.cancelAnimationFrame(frame)
-    setColumnWidths(prev => prev[column] === pendingWidth ? prev : { ...prev, [column]: pendingWidth })
-    document.body.style.cursor = previousCursor
-    document.body.style.userSelect = previousSelect
-  }
-  document.addEventListener("mousemove", onMove)
-  document.addEventListener("mouseup", onUp)
-}
-
-function ResizableTh({ column, children, className = "", columnWidths, setColumnWidths }: {
-  column: CskhCallColumnKey
-  children: ReactNode
-  className?: string
-  columnWidths: Record<CskhCallColumnKey, number>
-  setColumnWidths: Dispatch<SetStateAction<Record<CskhCallColumnKey, number>>>
-}) {
-  return (
-    <th className={cn("relative select-none py-2 pr-3 align-middle", className)}>
-      <div className="min-w-0 truncate pr-2">{children}</div>
-      <span
-        aria-hidden="true"
-        onMouseDown={(e) => startColumnResize(column, e, columnWidths, setColumnWidths)}
-        className="absolute right-0 top-1/2 h-5 w-2 -translate-y-1/2 cursor-col-resize rounded-sm border-r border-transparent hover:border-ui-fg-muted"
-      />
-    </th>
   )
 }
 
@@ -662,29 +592,18 @@ export default function CskhGoiKhachPage() {
   const [bulkAssignee, setBulkAssignee] = useState("")
   const [bulkAssigning, setBulkAssigning] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [columnWidths, setColumnWidths] = useState<Record<CskhCallColumnKey, number>>(() => {
-    const defaults = { ...CSKH_CALL_DEFAULT_COLUMN_WIDTHS }
-    if (typeof window === "undefined") return defaults
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(CSKH_CALL_COLUMN_STORAGE_KEY) || "{}") as Partial<Record<CskhCallColumnKey, number>>
-      for (const key of Object.keys(defaults) as CskhCallColumnKey[]) {
-        const value = Number(saved[key])
-        if (Number.isFinite(value)) defaults[key] = Math.max(CSKH_CALL_MIN_COLUMN_WIDTHS[key], value)
-      }
-    } catch { /* ignore saved layout */ }
-    return defaults
-  })
 
-  const visibleColumns = useMemo<CskhCallColumnKey[]>(() => (
+  const { colWidths, onResizeMouseDown, resetColWidths } =
+    useResizableColumns<CskhCallColumnKey>(CSKH_CALL_COLUMN_STORAGE_KEY, CSKH_CALL_COLUMN_DEFS)
+  const visibleColumnDefs = useMemo(() => (
     isManager
-      ? ["select", "customer", "phone", "product", "assignee", "stage", "notes", "rating", "deadline", "delete"]
-      : ["customer", "phone", "product", "assignee", "stage", "notes", "rating", "deadline"]
+      ? CSKH_CALL_COLUMN_DEFS
+      : CSKH_CALL_COLUMN_DEFS.filter(c => c.id !== "select" && c.id !== "delete")
   ), [isManager])
-  const tableMinWidth = useMemo(
-    () => visibleColumns.reduce((sum, key) => sum + (columnWidths[key] || CSKH_CALL_DEFAULT_COLUMN_WIDTHS[key]), 0),
-    [columnWidths, visibleColumns]
+  const tableWidth = useMemo(
+    () => visibleColumnDefs.reduce((sum, c) => sum + colWidths[c.id], 0),
+    [colWidths, visibleColumnDefs]
   )
-
   const onToast = useCallback((msg: string, type: "success" | "error") => setToast({ msg, type }), [])
 
   const loadTasks = useCallback(async () => {
@@ -717,9 +636,6 @@ export default function CskhGoiKhachPage() {
   useEffect(() => { loadTasks() }, [loadTasks])
   useEffect(() => { loadUsers() }, [loadUsers])
   useEffect(() => { if (view === "stats") loadStats() }, [view, loadStats])
-  useEffect(() => {
-    try { window.localStorage.setItem(CSKH_CALL_COLUMN_STORAGE_KEY, JSON.stringify(columnWidths)) } catch { /* ignore */ }
-  }, [columnWidths])
 
   const filtered = useMemo(() => {
     let list = tasks
@@ -921,6 +837,11 @@ export default function CskhGoiKhachPage() {
                 className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]">
                 {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n} / trang</option>)}
               </select>
+              <button type="button" onClick={resetColWidths}
+                className="rounded-lg border border-ui-border-base px-2.5 py-1.5 text-[12px] font-medium text-ui-fg-subtle hover:bg-ui-bg-subtle-hover"
+                title="Reset độ rộng cột về mặc định">
+                ↻ Reset cột
+              </button>
             </div>
           </div>
 
@@ -952,41 +873,59 @@ export default function CskhGoiKhachPage() {
             {!loading && filtered.length > 0 && (
               <>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full table-fixed text-[13px]" style={{ minWidth: tableMinWidth }}>
+                  <table
+                    className="text-[13px]"
+                    style={{
+                      tableLayout: "fixed",
+                      width: `${tableWidth}px`,
+                    }}
+                  >
                     <colgroup>
-                      {visibleColumns.map(column => (
-                        <col key={column} style={{ width: columnWidths[column] || CSKH_CALL_DEFAULT_COLUMN_WIDTHS[column] }} />
+                      {visibleColumnDefs.map((c) => (
+                        <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />
                       ))}
                     </colgroup>
-                  <thead>
-                    <tr className="border-b border-ui-border-base text-left text-[11px] uppercase text-ui-fg-subtle">
-                      {isManager && (
-                        <ResizableTh column="select" className="text-center" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>
-                          <input type="checkbox" checked={allPagedSelected} onChange={toggleSelectAllPaged} onClick={e => e.stopPropagation()} />
-                        </ResizableTh>
-                      )}
-                      <ResizableTh column="customer" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Khách hàng</ResizableTh>
-                      <ResizableTh column="phone" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>SĐT</ResizableTh>
-                      <ResizableTh column="product" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Sản phẩm</ResizableTh>
-                      <ResizableTh column="assignee" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Phụ trách</ResizableTh>
-                      <ResizableTh column="stage" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Giai đoạn gọi</ResizableTh>
-                      <ResizableTh column="notes" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Ghi chú</ResizableTh>
-                      <ResizableTh column="rating" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>★</ResizableTh>
-                      <ResizableTh column="deadline" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Hạn</ResizableTh>
-                      {isManager && <ResizableTh column="delete" className="text-right" columnWidths={columnWidths} setColumnWidths={setColumnWidths}>Xóa</ResizableTh>}
-                    </tr>
-                  </thead>
+                    <thead>
+                      <tr className="border-b border-ui-border-base text-left text-[11px] uppercase text-ui-fg-subtle">
+                        {(() => {
+                          const Th = ({ id, children, align = "left" }: { id: CskhCallColumnKey; children: any; align?: "left" | "right" | "center" }) => (
+                            <th className={cn("relative overflow-hidden px-3 py-2 font-semibold", align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left")}>
+                              <span className="block truncate" title={typeof children === "string" ? children : undefined}>{children}</span>
+                              <ResizeHandle onMouseDown={onResizeMouseDown(id)} />
+                            </th>
+                          )
+                          return (
+                            <>
+                              {isManager && (
+                                <Th id="select" align="center">
+                                  <input type="checkbox" checked={allPagedSelected} onChange={toggleSelectAllPaged} onClick={e => e.stopPropagation()} />
+                                </Th>
+                              )}
+                              <Th id="customer">Khách hàng</Th>
+                              <Th id="phone">SĐT</Th>
+                              <Th id="product">Sản phẩm</Th>
+                              <Th id="assignee">Phụ trách</Th>
+                              <Th id="stage">Giai đoạn gọi</Th>
+                              <Th id="notes">Ghi chú</Th>
+                              <Th id="rating">★</Th>
+                              <Th id="deadline">Hạn</Th>
+                              {isManager && <Th id="delete" align="right">Xóa</Th>}
+                            </>
+                          )
+                        })()}
+                      </tr>
+                    </thead>
                   <tbody>
                     {paged.map(t => (
                       <tr key={t.id} onClick={() => setSelectedTask(t)} className="cursor-pointer border-b border-ui-border-base last:border-0 hover:bg-ui-bg-subtle-hover">
                         {isManager && (
-                          <td className="py-2 pr-3 text-center" onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" checked={!!selectedIds[t.id]} onChange={() => toggleSelect(t.id)} />
+                          <td className="py-2 pr-3 text-center">
+                            <input type="checkbox" checked={!!selectedIds[t.id]} onClick={e => e.stopPropagation()} onChange={() => toggleSelect(t.id)} />
                           </td>
                         )}
                         <td className="truncate py-2 pr-3 font-medium" title={t.customer_name || ""}>{t.customer_name || "—"}</td>
-                        <td className="truncate py-2 pr-3" onClick={e => e.stopPropagation()}>
-                          <button type="button" onClick={() => copyPhone(t.customer_phone)}
+                        <td className="truncate py-2 pr-3">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); copyPhone(t.customer_phone) }}
                             className="font-mono text-ui-fg-subtle underline-offset-2 hover:text-ui-fg-base hover:underline"
                             title={"B\u1ea5m \u0111\u1ec3 copy s\u1ed1 \u0111i\u1ec7n tho\u1ea1i"}>
                             {t.customer_phone || "\u2014"}
@@ -997,12 +936,12 @@ export default function CskhGoiKhachPage() {
                         <td className="py-2 pr-3">
                           <CallStageSelect value={t.call_stage} disabled={false} onChange={v => patchTask(t.id, { call_stage: v })} />
                         </td>
-                        <td className="truncate py-2 pr-3" onClick={e => e.stopPropagation()}><NoteCell comments={t.comments} users={users} /></td>
+                        <td className="truncate py-2 pr-3"><NoteCell comments={t.comments} users={users} /></td>
                         <td className="truncate py-2 pr-3">{t.status === "done" ? <Stars value={t.rating} /> : "·"}</td>
                         <td className="truncate py-2 pr-3 text-ui-fg-subtle">{fmt(t.deadline)}</td>
                         {isManager && (
-                          <td className="py-2 pr-3 text-right" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => deleteOne(t.id)}
+                          <td className="py-2 pr-3 text-right">
+                            <button onClick={(e) => { e.stopPropagation(); deleteOne(t.id) }}
                               className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">
                               Xóa
                             </button>
