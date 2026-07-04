@@ -5,7 +5,7 @@ import { generateAiReplyDryRun } from "../../../ai-reply"
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || ""
 const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || "https://api.minimax.io/v1"
 const MINIMAX_TEXT_MODEL = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M2"
-const LOOP_TIMEOUT_MS = 15_000
+const LOOP_TIMEOUT_MS = 30_000
 
 function splitProductNames(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((x) => String(x).trim()).filter(Boolean)
@@ -71,7 +71,7 @@ async function hydrateLoopAgent(pool: any, agent: any): Promise<any> {
   return { ...agent, sp_chay: spChay, product_names: splitProductNames(spChay) }
 }
 
-async function callMiniMax(messages: any[], maxTokens = 700): Promise<string> {
+async function callMiniMax(messages: any[], maxTokens = 1200): Promise<string> {
   if (!MINIMAX_API_KEY) throw new Error("MINIMAX_API_KEY not set")
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), LOOP_TIMEOUT_MS)
@@ -90,8 +90,12 @@ async function callMiniMax(messages: any[], maxTokens = 700): Promise<string> {
   }
 }
 
+function stripThinkBlock(text: string): string {
+  return String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim()
+}
+
 function parseJsonObject(text: string): any {
-  const raw = String(text || "").replace(/```json|```/g, "").trim()
+  const raw = stripThinkBlock(text).replace(/```json|```/g, "").trim()
   try { return JSON.parse(raw) } catch { /* continue */ }
   const m = raw.match(/\{[\s\S]*\}/)
   if (!m) return null
@@ -99,7 +103,7 @@ function parseJsonObject(text: string): any {
 }
 
 function parseJsonArray(text: string): any[] | null {
-  const raw = String(text || "").replace(/```json|```/g, "").trim()
+  const raw = stripThinkBlock(text).replace(/```json|```/g, "").trim()
   try { const v = JSON.parse(raw); return Array.isArray(v) ? v : null } catch { /* continue */ }
   const m = raw.match(/\[[\s\S]*\]/)
   if (!m) return null
@@ -117,13 +121,24 @@ async function simulateCustomers(agent: any, count: number): Promise<string[]> {
 }
 
 async function evaluateReply(customerText: string, botReply: string, toolCalls: any[]): Promise<any> {
-  const raw = await callMiniMax([
-    { role: "system", content: "Bạn là QA evaluator cho bot bán hàng Messenger. Chấm nghiêm, trả JSON object." },
-    { role: "user", content: `Rubric 0-10: tiếng Việt có dấu, dễ đọc, không markdown thô, không bịa giá/tồn kho/phí ship, dùng giá từ tool nếu có, hỏi tiếp hợp lý, không quá dài, đúng xưng hô em-anh/chị.\n\nKhách: ${customerText}\n\nBot: ${botReply}\n\nTool calls: ${JSON.stringify(toolCalls).slice(0, 2000)}\n\nTrả JSON: {"score": number, "issues": string[], "strengths": string[], "verdict": string}` },
-  ], 700)
-  const parsed = parseJsonObject(raw) || {}
+  let raw = ""
+  let callError: string | null = null
+  try {
+    raw = await callMiniMax([
+      { role: "system", content: "Bạn là QA evaluator cho bot bán hàng Messenger. Chấm nghiêm, trả JSON object." },
+      { role: "user", content: `Rubric 0-10: tiếng Việt có dấu, dễ đọc, không markdown thô, không bịa giá/tồn kho/phí ship, dùng giá từ tool nếu có, hỏi tiếp hợp lý, không quá dài, đúng xưng hô em-anh/chị.\n\nKhách: ${customerText}\n\nBot: ${botReply}\n\nTool calls: ${JSON.stringify(toolCalls).slice(0, 2000)}\n\nTrả JSON: {"score": number, "issues": string[], "strengths": string[], "verdict": string}` },
+    ], 1200)
+  } catch (err: any) {
+    callError = err?.message ? String(err.message) : "evaluator call failed"
+  }
+  const parsed = parseJsonObject(raw)
+  // parsed === null nghĩa là evaluator lỗi/không trả JSON hợp lệ — KHÔNG phải bot chấm 0 điểm thật.
+  // Phân biệt rõ để không hiểu nhầm "lỗi kỹ thuật" thành "bot trả lời tệ".
+  if (parsed === null) {
+    return { score: 0, issues: [], strengths: [], verdict: "", eval_failed: true, eval_error: callError || "evaluator did not return valid JSON" }
+  }
   const score = Math.max(0, Math.min(10, Number(parsed.score) || 0))
-  return { score, issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [], strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [], verdict: String(parsed.verdict || "") }
+  return { score, issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [], strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [], verdict: String(parsed.verdict || ""), eval_failed: false }
 }
 
 async function improvePrompt(agent: any, currentInstruction: string, evals: any[]): Promise<{ prompt_text: string; change_reason: string }> {
@@ -205,7 +220,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const scoreBefore = averageScore(before)
     const scoreAfter = averageScore(after)
     const summaryIssues = after.flatMap((r: any) => r.evaluation?.issues || []).slice(0, 8)
-    const evalSummary = `Before: ${scoreBefore}/10. After draft: ${scoreAfter}/10. ${summaryIssues.length ? `Còn lưu ý: ${summaryIssues.join("; ")}` : "Draft đạt rubric tốt hơn hoặc tương đương."}`
+    const evalFailedCount = [...before, ...after].filter((r: any) => r.evaluation?.eval_failed).length
+    const evalSummary = evalFailedCount > 0
+      ? `⚠ Evaluator lỗi ${evalFailedCount}/${before.length + after.length} lần — điểm số KHÔNG đáng tin, không phản ánh chất lượng bot thật. Xem lại tool_calls/error trước khi duyệt draft này.`
+      : `Before: ${scoreBefore}/10. After draft: ${scoreAfter}/10. ${summaryIssues.length ? `Còn lưu ý: ${summaryIssues.join("; ")}` : "Draft đạt rubric tốt hơn hoặc tương đương."}`
 
     const next = await pool.query(`SELECT COALESCE(MAX(version), 0) + 1 AS version FROM fb_bot_prompt_version WHERE agent_id = $1`, [id])
     const saved = await pool.query(
