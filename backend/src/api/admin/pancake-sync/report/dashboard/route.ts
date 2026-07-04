@@ -25,14 +25,16 @@ function pctDelta(curr: number, prev: number): number | null {
   return Math.round(((curr - prev) / prev) * 1000) / 10
 }
 
-function aggregateDay(orders: any[]) {
+// VN: sum `total` (hành vi cũ, giữ nguyên). MY: sum `cod_amount` — `total` là giá gốc trước
+// giảm giá, chênh lệch lớn so với tiền thực thu (verify: total=5800 nhưng cod_amount=1246).
+function aggregateDay(orders: any[], market: string = "VN") {
   let revenue = 0
   let confirmed = 0
   let cancelled = 0
   for (const o of orders) {
     if (CONFIRMED_STATUSES.includes(o.status)) {
       confirmed++
-      revenue += Number(o.total) || 0
+      revenue += market === "MY" ? (Number(o.cod_amount) || 0) : (Number(o.total) || 0)
     } else if (CANCELLED_STATUSES.includes(o.status)) {
       cancelled++
     }
@@ -64,7 +66,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       { pancake_created_at: { $gte: weekRange.start, $lte: weekRange.end }, market: mkt },
       {
         take: 5000,
-        select: ["id", "status", "total", "pancake_created_at", "sale_name", "notes", "last_note_at"],
+        select: ["id", "status", "total", "cod_amount", "pancake_created_at", "sale_name", "notes", "last_note_at"],
         order: { pancake_created_at: "DESC" },
       }
     )
@@ -78,8 +80,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const todayOrders = partition(todayRange.start, todayRange.end)
     const yesterdayOrders = partition(yesterdayRange.start, yesterdayRange.end)
 
-    const today = aggregateDay(todayOrders)
-    const yest  = aggregateDay(yesterdayOrders)
+    const today = aggregateDay(todayOrders, mkt)
+    const yest  = aggregateDay(yesterdayOrders, mkt)
 
     // Mini chart 7 ngày
     const byDay: any[] = []
@@ -87,7 +89,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const d = shiftDate(date, -i)
       const r = dayRangeVN(d)
       const orders = partition(r.start, r.end)
-      const a = aggregateDay(orders)
+      const a = aggregateDay(orders, mkt)
       byDay.push({ date: d, orders: a.total, confirmed: a.confirmed, revenue: a.revenue, confirm_rate: a.confirm_rate })
     }
 
@@ -124,8 +126,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
     for (const [sale, list] of Object.entries(todayBySale)) {
       if (list.length < 3) continue
-      const todayAgg = aggregateDay(list)
-      const weekAgg  = aggregateDay(weekBySale[sale] || [])
+      const todayAgg = aggregateDay(list, mkt)
+      const weekAgg  = aggregateDay(weekBySale[sale] || [], mkt)
       if (weekAgg.confirm_rate - todayAgg.confirm_rate > 20) {
         salesAlerts.push({
           sale_name: sale,

@@ -44,6 +44,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "source",
           "status",
           "total",
+          "cod_amount",
           "items",
           "pancake_created_at",
           "currency",
@@ -52,9 +53,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     )
 
+    // Doanh thu "COD" = tiền thực thu. VN giữ nguyên hành vi cũ (sum total, mọi trạng thái —
+    // không đổi để tránh xáo trộn số liệu VN đang dùng hằng ngày). MY dùng cod_amount (tiền
+    // thực thu sau giảm giá/phí sàn) và chỉ tính đơn giao thành công (status=3), vì `total`
+    // là giá gốc trước khuyến mãi — verify qua đơn thật: total=5800 (58 RM giá gốc) nhưng
+    // cod_amount=1246 (12.46 RM tiền thực thu, khớp Pancake "Tiền cần thu").
+    const revenueOf = (o: any): number =>
+      mkt === "MY" ? (o.status === 3 ? Number(o.cod_amount ?? 0) : 0) : Number(o.total ?? 0)
+
     // --- Totals ---
     const totalOrders = allOrders.length
-    const totalRevenue = allOrders.reduce((sum: number, o: any) => sum + Number(o.total ?? 0), 0)
+    const totalRevenue = allOrders.reduce((sum: number, o: any) => sum + revenueOf(o), 0)
 
     // Mapping đúng theo Pancake (verify bằng status_name từ API):
     //   3 = giao thành công (delivered) — revenue thực thu
@@ -77,7 +86,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const src = o.source || "unknown"
       const entry = sourceMap.get(src) || { orders: 0, revenue: 0 }
       entry.orders++
-      entry.revenue += Number(o.total ?? 0)
+      entry.revenue += revenueOf(o)
       sourceMap.set(src, entry)
     }
     const bySource = Array.from(sourceMap.entries())
@@ -92,7 +101,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         : "unknown"
       const entry = dayMap.get(dateStr) || { orders: 0, revenue: 0 }
       entry.orders++
-      entry.revenue += Number(o.total ?? 0)
+      entry.revenue += revenueOf(o)
       dayMap.set(dateStr, entry)
     }
     const byDay = Array.from(dayMap.entries())

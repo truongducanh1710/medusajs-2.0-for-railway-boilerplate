@@ -22,7 +22,11 @@ function shiftDate(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function computeStats(orders: any[], now: Date, periodEnd: Date) {
+// VN giữ nguyên hành vi cũ (sum `total` cho mọi đơn confirmed — total = giá trước giảm giá
+// nhưng đây là logic VN đã dùng ổn định, không đổi). MY dùng `cod_amount` (tiền thực thu sau
+// giảm giá/phí sàn) — `total` ở Malaysia là giá gốc trước khuyến mãi, sai lệch nhiều so với
+// tiền thực thu (verify qua đơn thật: total=5800 nhưng cod_amount=1246, ~78% giảm giá).
+function computeStats(orders: any[], now: Date, periodEnd: Date, market: string = "VN") {
   let no_action = 0, called = 0, knm_1 = 0, knm_2 = 0, knm_3_plus = 0
   let confirmed = 0, cancelled = 0, overdue = 0, total_notes = 0
   let revenue = 0
@@ -34,7 +38,7 @@ function computeStats(orders: any[], now: Date, periodEnd: Date) {
 
     if (CONFIRMED_STATUSES.includes(o.status)) {
       confirmed++
-      revenue += Number(o.total) || 0
+      revenue += market === "MY" ? (Number(o.cod_amount) || 0) : (Number(o.total) || 0)
     } else if (CANCELLED_STATUSES.includes(o.status)) {
       cancelled++
     } else {
@@ -117,7 +121,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       : 1
 
     const sales = Object.entries(byS).map(([sale_name, list]) => {
-      const s = computeStats(list, now, periodEnd)
+      const s = computeStats(list, now, periodEnd, mkt)
       const total = list.length
       return {
         sale_name,
