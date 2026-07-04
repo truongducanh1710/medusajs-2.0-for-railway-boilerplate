@@ -330,6 +330,66 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
 
       {/* Doanh số theo gian hàng (chỉ MY — nhiều gian TikTok con) */}
       {data.by_shop_day && <ShopBreakdownBlock data={data.by_shop_day} totalRevenue={data.total_revenue} />}
+
+      {/* Doanh số sản phẩm theo gian hàng (chỉ MY) */}
+      {data.by_shop_day && data.by_product && (
+        <ProductByShopBlock products={data.by_product} shops={data.by_shop_day.shops ?? []} />
+      )}
+    </div>
+  )
+}
+
+// ---- Doanh số sản phẩm theo gian hàng (MY) — mỗi SP thuộc 1 shop, gắn chấm màu + tên shop ----
+function ProductByShopBlock({ products, shops }: { products: any[]; shops: any[] }) {
+  const fmt = useFmtMoney()
+  // Map shop_name -> màu (khớp thứ tự với ShopBreakdownBlock)
+  const colorOf = (shopName: string) => {
+    const idx = shops.findIndex((s: any) => s.shop_name === shopName)
+    return idx >= 0 ? SHOP_COLORS[idx % SHOP_COLORS.length] : "#9ca3af"
+  }
+  const totalRev = products.reduce((s, p) => s + Number(p.revenue || 0), 0)
+
+  return (
+    <div className="mt-5 bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
+        <span>Doanh số sản phẩm theo gian hàng</span>
+        <span className="text-xs font-normal text-gray-400">giá niêm yết · top {products.length}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b text-xs text-gray-500">
+            <tr>
+              <th className="text-left px-4 py-2.5">#</th>
+              <th className="text-left px-4 py-2.5">Sản phẩm</th>
+              <th className="text-left px-4 py-2.5">Gian hàng</th>
+              <th className="text-right px-4 py-2.5">SL bán</th>
+              <th className="text-right px-4 py-2.5">Doanh số</th>
+              <th className="text-right px-4 py-2.5">%</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {products.map((p: any, i: number) => {
+              const pct = totalRev > 0 ? Math.round(Number(p.revenue) / totalRev * 100) : 0
+              const color = colorOf(p.shop_name || "")
+              return (
+                <tr key={p.name} className={i % 2 === 0 ? "" : "bg-gray-50/40"}>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs">{i + 1}</td>
+                  <td className="px-4 py-2.5 font-medium max-w-xs truncate" title={p.name}>{p.name}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                      {p.shop_name || "(không rõ)"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono">{fmtNum(p.qty)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(p.revenue)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-600">{pct}%</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

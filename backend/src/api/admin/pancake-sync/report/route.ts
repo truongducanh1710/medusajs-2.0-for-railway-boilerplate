@@ -109,7 +109,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .sort((a, b) => a.date.localeCompare(b.date))
 
     // --- By product ---
-    const productMap = new Map<string, { qty: number; revenue: number }>()
+    // MY: gắn thêm shop_name của mỗi SP (mỗi SP chỉ bán ở 1 gian hàng — verify thực tế 35/35 SP).
+    const productMap = new Map<string, { qty: number; revenue: number; shop_name?: string }>()
     for (const o of allOrders) {
       const items: any[] = Array.isArray(o.items) ? o.items : []
       for (const item of items) {
@@ -117,16 +118,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const qty = item.qty || 1
         const price = item.price || 0
         const lineRevenue = price * qty
-        const entry = productMap.get(name) || { qty: 0, revenue: 0 }
+        const entry = productMap.get(name) || { qty: 0, revenue: 0, ...(mkt === "MY" ? { shop_name: o.shop_name || "" } : {}) }
         entry.qty += qty
         entry.revenue += lineRevenue
+        if (mkt === "MY" && !entry.shop_name && o.shop_name) entry.shop_name = o.shop_name
         productMap.set(name, entry)
       }
     }
     const byProduct = Array.from(productMap.entries())
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 20) // top 20
+      .slice(0, 50) // top 50 (MY cần đủ để phủ mọi shop)
 
     // --- By shop (chỉ MY: nhiều gian hàng TikTok con phân biệt qua shop_name) ---
     // Tách doanh số theo từng gian hàng + theo ngày để thấy shop nào đang tốt.
