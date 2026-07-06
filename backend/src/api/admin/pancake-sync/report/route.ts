@@ -72,9 +72,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const returnCount = allOrders.filter((o: any) =>
       o.status === 4 || o.status === 5 || o.status === -2
     ).length
-    const cancelCount = allOrders.filter((o: any) =>
-      o.status === 6 || o.status === 7 || o.status === -1
-    ).length
+    const isCancelled = (o: any): boolean => o.status === 6 || o.status === 7 || o.status === -1
+    const cancelCount = allOrders.filter(isCancelled).length
 
     const successRate = totalOrders > 0 ? Math.round((successCount / totalOrders) * 100) : 0
     const returnRate = totalOrders > 0 ? Math.round((returnCount / totalOrders) * 100) : 0
@@ -182,7 +181,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // --- By platform (chỉ MY: TikTok vs Shopee, gom theo `source`) ---
     // Cùng ý nghĩa với by_shop_day nhưng gom theo sàn thay vì gian hàng con, để thấy
-    // TikTok/Shopee cái nào đang đóng góp nhiều hơn.
+    // TikTok/Shopee cái nào đang đóng góp nhiều hơn. Loại đơn đã hủy (status 6/7/-1) —
+    // doanh số theo sàn tính trên đơn còn hiệu lực, không tính đơn hủy.
     let byPlatformDay: any | undefined
     if (mkt === "MY") {
       const platformMap = new Map<string, { orders: number; revenue: number }>()
@@ -190,6 +190,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const daySet2 = new Set<string>()
       const platformLabel = (src: string) => (src === "tiktok" ? "TikTok" : src === "shopee" ? "Shopee" : src || "Khác")
       for (const o of allOrders) {
+        if (isCancelled(o)) continue
         const plat = platformLabel(o.source)
         const rev = revenueOf(o)
         const dateStr = o.pancake_created_at
