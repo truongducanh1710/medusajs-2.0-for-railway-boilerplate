@@ -112,7 +112,7 @@ const PancakeSyncPage = () => {
     setToDate(toISODateString(range.to))
   }
 
-  const startSync = async () => {
+  const startSync = async (forceOverride?: boolean) => {
     if (!fromDate || !toDate) return
     setError(null)
     setSyncing(true)
@@ -126,7 +126,7 @@ const PancakeSyncPage = () => {
         body: JSON.stringify({
           from: toISO(fromDate),
           to: toISO(toDate, true),
-          force,
+          force: forceOverride ?? force,
           market,
           ...(market === "MY" ? { platform } : {}),
         }),
@@ -167,6 +167,12 @@ const PancakeSyncPage = () => {
       <p className="text-gray-500 text-sm mb-6">
         Kéo đơn hàng từ Pancake POS về Medusa để hiển thị trong danh sách đơn hàng và báo cáo.
       </p>
+      <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-4 py-3 mb-6">
+        <b>Lưu ý:</b> Pancake không cho lọc đơn theo ngày tạo — hệ thống phải quét đơn theo{" "}
+        <i>lần cập nhật gần nhất</i> rồi tự dừng khi chắc chắn đã qua "Từ ngày". Đơn tạo trong khoảng đã chọn
+        nhưng không có hoạt động gì thêm (không đổi trạng thái) có thể bị quét chậm hơn hoặc bỏ sót — xem
+        cảnh báo "chưa đầy đủ" bên dưới sau khi sync xong.
+      </div>
 
       {/* Shop selector */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6 shadow-sm">
@@ -237,7 +243,7 @@ const PancakeSyncPage = () => {
         {/* Custom date inputs */}
         <div className="flex items-center gap-3 flex-wrap">
           <div>
-            <label className="block text-xs text-gray-500 mb-1 font-medium">Từ ngày</label>
+            <label className="block text-xs text-gray-500 mb-1 font-medium">Quét lùi đến (tối thiểu)</label>
             <input
               type="date"
               value={fromDate}
@@ -258,6 +264,10 @@ const PancakeSyncPage = () => {
             />
           </div>
         </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Hệ thống quét đơn từ mới nhất lùi về, dừng khi chắc chắn đã qua "Quét lùi đến" — không phải filter
+          chính xác tuyệt đối theo ngày tạo.
+        </p>
 
         {/* Force checkbox */}
         <label className="flex items-start gap-2 mt-4 cursor-pointer select-none">
@@ -282,7 +292,7 @@ const PancakeSyncPage = () => {
       {/* Action */}
       <div className="mb-6 flex items-center gap-3 flex-wrap">
         <button
-          onClick={startSync}
+          onClick={() => startSync()}
           disabled={isRunning || !fromDate || !toDate}
           className="bg-blue-600 text-white px-6 py-3 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
@@ -404,23 +414,48 @@ const PancakeSyncPage = () => {
             )
           })()}
 
-          {/* Hint badges — sync optimization signals */}
-          {((jobStatus.stats?.skipped_terminal ?? 0) > 0 || jobStatus.stats?.stopped_early_at_page != null) && (
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              {(jobStatus.stats?.skipped_terminal ?? 0) > 0 && (
-                <span className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 rounded-full px-2.5 py-1">
-                  <span aria-hidden>⏭️</span>
-                  Bỏ qua <b>{jobStatus.stats.skipped_terminal.toLocaleString("vi-VN")}</b> đơn đã chốt cuối
-                </span>
-              )}
-              {jobStatus.stats?.stopped_early_at_page != null && (
-                <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 rounded-full px-2.5 py-1">
-                  <span aria-hidden>🛑</span>
-                  Dừng sớm ở trang <b>{jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}</b> — tiết kiệm {jobStatus.stats.total_pages - jobStatus.stats.stopped_early_at_page} trang
-                </span>
-              )}
-            </div>
-          )}
+          {/* Trạng thái đầy đủ dữ liệu — chỉ có ý nghĩa khi job đã xong */}
+          {(jobStatus.status === "done" || jobStatus.status === "failed") && (() => {
+            const stoppedEarly = jobStatus.stats?.stopped_early_at_page != null
+            const wasForced = !!force
+            if (!stoppedEarly) {
+              return (
+                <div className="flex items-start gap-2 bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3 mb-4">
+                  <span aria-hidden>✓</span>
+                  <span>
+                    Đã quét đầy đủ đến hết khoảng ngày đã chọn (không dừng sớm).
+                    {(jobStatus.stats?.skipped_terminal ?? 0) > 0 && (
+                      <> Bỏ qua {jobStatus.stats.skipped_terminal.toLocaleString("vi-VN")} đơn đã chốt cuối, không đổi trạng thái.</>
+                    )}
+                  </span>
+                </div>
+              )
+            }
+            return (
+              <div className="bg-amber-50 border border-amber-300 text-amber-900 text-sm rounded-lg px-4 py-3 mb-4">
+                <div className="flex items-start gap-2">
+                  <span aria-hidden>⚠️</span>
+                  <div>
+                    <b>Có thể chưa đầy đủ</b> — job dừng sớm ở trang{" "}
+                    <b>{jobStatus.stats.stopped_early_at_page}/{jobStatus.stats.total_pages}</b> vì gặp nhiều
+                    trang liên tiếp toàn đơn cũ/đã chốt. Pancake sắp xếp theo lần cập nhật gần nhất, không
+                    phải ngày tạo, nên đơn tạo trong khoảng đã chọn nhưng không có hoạt động gì thêm có thể
+                    chưa được quét tới.
+                    {wasForced && " (Lần chạy này đã bật Force — nếu vẫn dừng sớm, khoảng ngày có thể chưa đủ dữ liệu lịch sử.)"}
+                  </div>
+                </div>
+                {!wasForced && (
+                  <button
+                    onClick={() => { setForce(true); startSync(true) }}
+                    disabled={isRunning}
+                    className="mt-3 bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    🔁 Sync lại với Force (quét đầy đủ, không bỏ qua đơn đã chốt)
+                  </button>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Stats cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

@@ -26,6 +26,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({
       status: job.status,
+      market: job.market,
       from_date: job.from_date,
       to_date: job.to_date,
       started_at: job.started_at,
