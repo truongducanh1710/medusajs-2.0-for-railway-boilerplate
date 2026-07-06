@@ -53,6 +53,8 @@ function getLast30Days(): { from: Date; to: Date } {
 type Market = "VN" | "MY"
 type Platform = "tiktok" | "shopee"
 
+const LAST_JOB_STORAGE_KEY = "pancake-sync:last-job-id"
+
 const PancakeSyncPage = () => {
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
@@ -74,6 +76,7 @@ const PancakeSyncPage = () => {
       setJobStatus(data)
       if (data.status === "done" || data.status === "failed") {
         setSyncing(false)
+        localStorage.removeItem(LAST_JOB_STORAGE_KEY)
       }
     } catch {
       // ignore poll errors
@@ -91,6 +94,34 @@ const PancakeSyncPage = () => {
     const { from, to } = getMonthRange(0)
     setFromDate(toISODateString(from))
     setToDate(toISODateString(to))
+  }, [])
+
+  // Resume theo dõi job vẫn đang chạy trên server nếu trước đó thoát UI/refresh trang
+  useEffect(() => {
+    const savedJobId = localStorage.getItem(LAST_JOB_STORAGE_KEY)
+    if (!savedJobId) return
+    ;(async () => {
+      try {
+        const res = await apiFetch(`/admin/pancake-sync/status?jobId=${savedJobId}`)
+        if (!res.ok) {
+          localStorage.removeItem(LAST_JOB_STORAGE_KEY)
+          return
+        }
+        const data = await res.json()
+        if (data.status === "done" || data.status === "failed") {
+          localStorage.removeItem(LAST_JOB_STORAGE_KEY)
+          setJobStatus(data)
+          return
+        }
+        // Job vẫn đang chạy trên server — resume theo dõi
+        setJobId(savedJobId)
+        setJobStatus(data)
+        setSyncing(true)
+        if (data.market) setMarket(data.market)
+      } catch {
+        // ignore — có thể offline, thử lại lần load sau
+      }
+    })()
   }, [])
 
   const applyPreset = (preset: string) => {
@@ -138,6 +169,7 @@ const PancakeSyncPage = () => {
         // Có job đang chạy — tự động theo dõi job đó
         if (data.existingJobId) {
           setJobId(data.existingJobId)
+          localStorage.setItem(LAST_JOB_STORAGE_KEY, data.existingJobId)
           setError(`Đã có job đang chạy — chuyển sang theo dõi job ${data.existingJobId.slice(-8)}`)
           return
         }
@@ -153,6 +185,7 @@ const PancakeSyncPage = () => {
       }
 
       setJobId(data.jobId)
+      localStorage.setItem(LAST_JOB_STORAGE_KEY, data.jobId)
     } catch (err: any) {
       setError(err.message)
       setSyncing(false)
@@ -303,7 +336,7 @@ const PancakeSyncPage = () => {
             onClick={() => {
               setSyncing(false)
               setJobId(null)
-              setError("Đã ngừng theo dõi (job vẫn chạy nền trên server)")
+              setError("Đã ngừng theo dõi — job vẫn chạy nền trên server, quay lại trang này sẽ tự tiếp tục theo dõi")
             }}
             className="text-sm text-red-600 hover:text-red-700 underline"
           >
@@ -326,6 +359,7 @@ const PancakeSyncPage = () => {
                 setJobId(null)
                 setJobStatus(null)
                 setError(null)
+                localStorage.removeItem(LAST_JOB_STORAGE_KEY)
               } catch (err: any) {
                 alert(`Lỗi: ${err.message}`)
               }
