@@ -243,6 +243,97 @@ function AISummaryBlock({ range }: { range: DateRange }) {
   )
 }
 
+// ---- Exchange rate editor (tỷ giá MYR→VND theo tháng) ----
+function ExchangeRateEditor({ month, rate, onSaved }: { month: string; rate: number; onSaved: (rate: number) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(String(rate))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+
+  useEffect(() => { setValue(String(rate)) }, [rate])
+
+  async function save() {
+    const n = Number(value)
+    if (!n || n <= 0) { setError("Tỷ giá phải > 0"); return }
+    setSaving(true); setError(null)
+    try {
+      await apiJson("/admin/exchange-rate", "PUT", { month, rate: n })
+      onSaved(n)
+      setEditing(false)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5 bg-white border rounded-lg px-2 py-1">
+        <span className="text-xs text-gray-400">1 RM =</span>
+        <input
+          type="number"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false) }}
+          autoFocus
+          className="w-20 text-xs border rounded px-1.5 py-0.5"
+        />
+        <span className="text-xs text-gray-400">đ</span>
+        <button onClick={save} disabled={saving}
+          className="text-xs px-2 py-0.5 bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-50">
+          {saving ? "…" : "Lưu"}
+        </button>
+        <button onClick={() => { setEditing(false); setValue(String(rate)) }}
+          className="text-xs px-2 py-0.5 text-gray-400 hover:text-gray-600">Hủy</button>
+        {error && <span className="text-xs text-red-500 ml-1">{error}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setEditing(true)}
+        className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 hover:bg-gray-100 border rounded-lg px-2.5 py-1.5">
+        <span>1 RM = {new Intl.NumberFormat("vi-VN").format(rate)}đ</span>
+        <span className="text-gray-400">({month})</span>
+        <span className="text-violet-500">✎</span>
+      </button>
+      <button onClick={() => setShowHistory(v => !v)}
+        className="ml-1 text-xs text-gray-400 hover:text-violet-600 underline">lịch sử</button>
+      {showHistory && <ExchangeRateHistory onClose={() => setShowHistory(false)} />}
+    </div>
+  )
+}
+
+function ExchangeRateHistory({ onClose }: { onClose: () => void }) {
+  const [rows, setRows] = useState<any[] | null>(null)
+  useEffect(() => {
+    apiJson("/admin/exchange-rate/list").then(d => setRows(d?.rows ?? [])).catch(() => setRows([]))
+  }, [])
+  return (
+    <div className="absolute z-10 top-full left-0 mt-1 bg-white border rounded-lg shadow-lg p-3 w-56">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-gray-600">Lịch sử tỷ giá</span>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+      </div>
+      {rows == null && <div className="text-xs text-gray-400">Đang tải…</div>}
+      {rows != null && rows.length === 0 && <div className="text-xs text-gray-400">Chưa có tháng nào được chỉnh</div>}
+      {rows != null && rows.length > 0 && (
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {rows.map(r => (
+            <div key={r.month} className="flex justify-between text-xs">
+              <span className="text-gray-500">{r.month}</span>
+              <span className="font-medium">{new Intl.NumberFormat("vi-VN").format(Number(r.myr_to_vnd))}đ</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Overview Tab ----
 function OverviewTab({ range, market, onRate }: { range: DateRange; market: Market; onRate?: (rate: number) => void }) {
   const [data, setData] = useState<any>(null)
@@ -1719,6 +1810,9 @@ const BaoCaoPage = () => {
             <button onClick={() => setCurrencyMode("VND")}
               className={`px-2 py-1 text-xs rounded ${currencyMode === "VND" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>VND (quy đổi)</button>
           </div>
+        )}
+        {market === "MY" && (
+          <ExchangeRateEditor month={range.to.slice(0, 7)} rate={myrRate} onSaved={setMyrRate} />
         )}
       </div>
 

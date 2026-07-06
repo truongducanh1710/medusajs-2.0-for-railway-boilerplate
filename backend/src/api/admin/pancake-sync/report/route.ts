@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { MYR_TO_VND_RATE } from "../../../../lib/constants"
+import { getMyrToVndRate } from "../../../../lib/db"
 
 /**
  * GET /admin/pancake-sync/report?from=...&to=...
@@ -237,7 +237,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       to,
       market: mkt,
       currency: allOrders[0]?.currency ?? (mkt === "MY" ? "MYR" : "VND"),
-      ...(mkt === "MY" ? { myr_to_vnd_rate: MYR_TO_VND_RATE } : {}),
+      ...(mkt === "MY" ? { myr_to_vnd_rate: await getMyrToVndRate(to) } : {}),
       total_orders: totalOrders,
       total_revenue: totalRevenue,
       success_rate: successRate,

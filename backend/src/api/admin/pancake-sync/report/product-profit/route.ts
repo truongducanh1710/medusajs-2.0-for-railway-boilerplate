@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { MYR_TO_VND_RATE } from "../../../../../lib/constants"
+import { getMyrToVndRate } from "../../../../../lib/db"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -78,7 +78,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({
       market: mkt,
-      ...(mkt === "MY" ? { myr_to_vnd_rate: MYR_TO_VND_RATE, cost_data_available: false } : {}),
+      ...(mkt === "MY" ? { myr_to_vnd_rate: await getMyrToVndRate(to), cost_data_available: false } : {}),
       summary: {
         total_revenue: totalRevenue,
         total_cogs: hasCost ? totalCogs : null,

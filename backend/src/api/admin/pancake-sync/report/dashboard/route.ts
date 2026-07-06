@@ -1,5 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { MYR_TO_VND_RATE } from "../../../../../lib/constants"
+import { getMyrToVndRate } from "../../../../../lib/db"
 
 // Mapping đúng theo Pancake (verify bằng status_name từ API)
 // "confirmed" = đã chốt sale = đã đẩy ra VTP và đang/đã giao (status 2/3)
@@ -142,7 +142,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       date,
       market: mkt,
-      ...(mkt === "MY" ? { myr_to_vnd_rate: MYR_TO_VND_RATE } : {}),
+      ...(mkt === "MY" ? { myr_to_vnd_rate: await getMyrToVndRate(date) } : {}),
       kpis: {
         orders_today: today.total,
         orders_delta: pctDelta(today.total, yest.total),
