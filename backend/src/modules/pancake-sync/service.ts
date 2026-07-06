@@ -149,6 +149,24 @@ function detectSource(order: any): string {
   return "unknown"
 }
 
+// Nguồn traffic quảng cáo trả phí — tách biệt với `source` (kênh bán: webcake/mess/zalo/...)
+// Mọi đơn landing page đều là "webcake" ở source, nên phải nhìn UTM/click-id để biết đến từ nền tảng ads nào.
+function detectAdPlatform(order: any): string | null {
+  const adsSource = String(order.ads_source ?? "").toLowerCase()
+  if (adsSource === "google") return "google"
+
+  const link = String(order.link ?? order.order_link ?? "").toLowerCase()
+  if (/[?&](gclid|gbraid|wbraid|gad_source|gad_campaignid)=/.test(link)) return "google"
+
+  if (extractFbCampaignId(order)) return "facebook"
+
+  const utm = String(order.p_utm_source ?? order.marketing?.p_utm_source ?? order.marketing?.utm_source ?? "").toLowerCase()
+  if (utm.includes("facebook") || utm.includes("fb")) return "facebook"
+  if (utm.includes("google")) return "google"
+
+  return null
+}
+
 // ---- Mapping ----
 
 // Format: {PRODUCT}_{DD/M}_{MKTCODE}_... — tìm date token rồi lấy phần tử kế tiếp
@@ -226,6 +244,7 @@ export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string,
     sale_name: raw.assigning_seller?.name ?? "",
     care_name: raw.assigning_care?.name ?? "",
     fb_campaign_id: extractFbCampaignId(raw),
+    ad_platform: detectAdPlatform(raw),
     raw: raw,
     pancake_created_at: raw.inserted_at ? new Date(raw.inserted_at) : (raw.created_at ? new Date(raw.created_at) : null),
     synced_at: new Date(),
