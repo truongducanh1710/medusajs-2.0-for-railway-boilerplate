@@ -1,5 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { createPortal } from "react-dom"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { ResizeHandle, useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
@@ -162,16 +163,33 @@ function CallStageSelect({ value, disabled, onChange }: { value: string | null; 
 
 function NoteCell({ comments, users }: { comments: Comment[]; users: MktUser[] }) {
   const [hover, setHover] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const anchorRef = useRef<HTMLSpanElement | null>(null)
   const notes = (comments || []).filter(c => !c.type || c.type !== "system")
   if (notes.length === 0) return <span className="text-ui-fg-disabled">·</span>
   const last = notes[notes.length - 1]
+
+  function openPopup() {
+    const rect = anchorRef.current?.getBoundingClientRect()
+    if (rect) setPos({ top: rect.bottom + 4, left: rect.left })
+    setHover(true)
+  }
+
   return (
-    <div className="relative inline-block" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <span className="cursor-default truncate text-[12px] text-ui-fg-subtle">
+    <>
+      <span
+        ref={anchorRef}
+        className="cursor-default truncate text-[12px] text-ui-fg-subtle"
+        onMouseEnter={openPopup}
+        onMouseLeave={() => setHover(false)}
+      >
         💬 {last.text.length > 16 ? last.text.slice(0, 16) + "…" : last.text}
       </span>
-      {hover && (
-        <div className="absolute left-0 top-full z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-ui-border-base bg-ui-bg-base p-2 shadow-xl">
+      {hover && pos && createPortal(
+        <div
+          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 99999 }}
+          className="max-h-64 w-64 overflow-y-auto rounded-lg border border-ui-border-base bg-ui-bg-base p-2 shadow-xl"
+        >
           {[...notes].reverse().map((c, i) => (
             <div key={i} className="mb-1.5 border-b border-ui-border-base pb-1.5 text-[11px] last:mb-0 last:border-0 last:pb-0">
               <div className="mb-0.5 flex items-center justify-between text-ui-fg-subtle">
@@ -181,9 +199,10 @@ function NoteCell({ comments, users }: { comments: Comment[]; users: MktUser[] }
               <div className="whitespace-pre-wrap text-ui-fg-base">{c.text}</div>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   )
 }
 
