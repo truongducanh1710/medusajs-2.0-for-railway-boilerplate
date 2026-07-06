@@ -621,9 +621,11 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
 
   /**
    * Fetch 1 đơn từ Pancake API theo ID — dùng cho webhook trigger.
+   * shopOverride bắt buộc khi market có nhiều shop (MY: TikTok/Shopee khác shopId).
    */
-  async fetchOrderById(orderId: string, market: string = "VN"): Promise<any | null> {
-    const shop = getPancakeShop(market)
+  async fetchOrderById(orderId: string, market: string = "VN", shopOverride?: { shopId: string; apiKey: string }): Promise<any | null> {
+    const base = getPancakeShop(market)
+    const shop = { ...base, shopId: shopOverride?.shopId ?? base.shopId, apiKey: shopOverride?.apiKey ?? base.apiKey }
     const url = `${PANCAKE_API_BASE}/shops/${shop.shopId}/orders/${orderId}?api_key=${shop.apiKey}`
     try {
       const res = await fetchWithRetry(url, 2)

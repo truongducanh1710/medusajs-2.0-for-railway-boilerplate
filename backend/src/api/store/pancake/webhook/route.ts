@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { createHmac, timingSafeEqual } from "crypto"
 import { Modules } from "@medusajs/framework/utils"
-import { PANCAKE_WEBHOOK_SECRET } from "../../../../lib/constants"
+import { PANCAKE_WEBHOOK_SECRET, getPancakeShopsForMarket } from "../../../../lib/constants"
 import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/service"
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
 import { sendPurchaseEvent } from "../../../../lib/fb-capi"
@@ -64,7 +64,19 @@ async function updateMedusaOrderMetadata(
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const body = req.body as any
 
+  // market/platform qua query param — cấu hình khi đăng ký webhook URL trên từng shop Pancake.
+  // Mặc định VN để không đổi hành vi webhook hiện tại (shop VN không truyền query).
+  const market = (req.query.market as string) === "MY" ? "MY" : "VN"
+  const platform = req.query.platform as string | undefined
+  const shopsInMarket = getPancakeShopsForMarket(market)
+  const chosenShop = platform ? shopsInMarket.find(s => s.platform === platform) : shopsInMarket[0]
+
   try {
+    if (!chosenShop) {
+      console.error(`[Pancake Webhook] Không tìm thấy shop cho market=${market} platform=${platform ?? "(default)"}`)
+      return res.status(400).json({ error: `Unknown shop for market=${market} platform=${platform ?? "(default)"}` })
+    }
+
     // HMAC verification
     if (PANCAKE_WEBHOOK_SECRET) {
       const rawBody = req.rawBody ?? JSON.stringify(body)
@@ -108,8 +120,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       try {
         const syncService = req.scope.resolve("pancakeSyncModule") as any
 
-        // Fetch full order from Pancake API
-        const rawOrder = await syncService.fetchOrderById(pancakeOrderId)
+        // Fetch full order from Pancake API — đúng shop (VN hoặc MY-TikTok/MY-Shopee)
+        const rawOrder = await syncService.fetchOrderById(pancakeOrderId, market, {
+          shopId: chosenShop.shopId, apiKey: chosenShop.apiKey,
+        })
         apiFetchSuccess = rawOrder !== null
 
         const existing = await syncService.listPancakeOrders({ id: pancakeOrderId }, { take: 1 })
@@ -120,7 +134,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
         if (rawOrder) {
           // Full upsert with complete data from API
-          const mapped = mapPancakeOrder(rawOrder)
+          const mapped = mapPancakeOrder(rawOrder, market)
           const { notes, lastNoteAt, callCount } = extractNotesForOrder(rawOrder)
           const tags = extractTags(rawOrder)
           const newHistory = statusChanged
@@ -172,6 +186,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           } else {
             await syncService.createPancakeOrders([{
               id: pancakeOrderId,
+              market,
               status: pancakeStatus,
               status_name: label,
               status_history: [{ status: pancakeStatus, status_name: label, changed_at: new Date().toISOString(), source: "webhook" }] as any,
@@ -211,7 +226,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             const phone = order?.bill_phone_number ?? order?.customer?.phone ?? ""
             const customerName = order?.bill_full_name ?? order?.customer?.name ?? ""
             const city = order?.bill_province ?? order?.shipping_address?.province ?? ""
-            const total = Number(order?.total_price ?? order?.total ?? 0)
+            // Shop MY lưu total ở đơn vị sen (RM × 100) — chia 100 trước khi gửi CAPI.
+            const rawTotal = Number(order?.total_price ?? order?.total ?? 0)
+            const total = market === "MY" ? rawTotal / 100 : rawTotal
 
             // Lấy fbclid/fbp + pixel riêng sản phẩm từ Medusa order metadata
             const orderService = req.scope.resolve(Modules.ORDER) as any
@@ -302,7 +319,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             error_message: errorMessage,
             duration_ms: Date.now() - asyncStart,
             received_at: receivedAt,
-            market: "VN",
+            market,
           })
         } catch { /* log fail không ảnh hưởng */ }
       }
