@@ -41,8 +41,9 @@ function todayVN(): string {
   return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
 }
 function toISO(s: string, end = false): string {
-  return end ? `${s}T16:59:59.999Z` : `${s}T17:00:00.000Z`
-  // VN +7 → start of day VN = 17:00 UTC prev day, end of day = 16:59 UTC
+  // VN +7 → start of day VN (00:00 ngày s) = 17:00 UTC ngày s-1; end of day VN (23:59:59.999) = 16:59:59.999 UTC ngày s.
+  if (end) return `${s}T16:59:59.999Z`
+  return `${addDays(s, -1)}T17:00:00.000Z`
 }
 function addDays(s: string, n: number): string {
   const d = new Date(s); d.setDate(d.getDate() + n)
