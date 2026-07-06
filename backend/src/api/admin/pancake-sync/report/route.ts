@@ -28,6 +28,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const syncService = req.scope.resolve("pancakeSyncModule") as any
     const mkt = market || "VN"
 
+    // Group theo ngày ĐỊA PHƯƠNG (VN=UTC+7, MY=UTC+8), không phải ngày UTC — nếu không, đơn tạo
+    // vào ~7-8 tiếng đầu ngày giờ địa phương bị gán nhầm sang ngày hôm trước trong by_day/by_shop_day.
+    const TZ_OFFSET_HOURS = mkt === "MY" ? 8 : 7
+    const localDateStr = (d: Date): string =>
+      new Date(d.getTime() + TZ_OFFSET_HOURS * 3600_000).toISOString().slice(0, 10)
+
     // Fetch all orders in range (without raw column for performance)
     const allOrders = await syncService.listPancakeOrders(
       {
@@ -95,7 +101,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const dayMap = new Map<string, { orders: number; revenue: number }>()
     for (const o of allOrders) {
       const dateStr = o.pancake_created_at
-        ? new Date(o.pancake_created_at).toISOString().slice(0, 10)
+        ? localDateStr(new Date(o.pancake_created_at))
         : "unknown"
       const entry = dayMap.get(dateStr) || { orders: 0, revenue: 0 }
       entry.orders++
@@ -146,7 +152,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const shop = o.shop_name || "(không rõ)"
         const rev = revenueOf(o)
         const dateStr = o.pancake_created_at
-          ? new Date(o.pancake_created_at).toISOString().slice(0, 10)
+          ? localDateStr(new Date(o.pancake_created_at))
           : "unknown"
         daySet.add(dateStr)
 
@@ -194,7 +200,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const plat = platformLabel(o.source)
         const rev = revenueOf(o)
         const dateStr = o.pancake_created_at
-          ? new Date(o.pancake_created_at).toISOString().slice(0, 10)
+          ? localDateStr(new Date(o.pancake_created_at))
           : "unknown"
         daySet2.add(dateStr)
 
