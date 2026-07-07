@@ -92,6 +92,14 @@ export const MEILISEARCH_ADMIN_KEY =
   process.env.MEILISEARCH_ADMIN_KEY || process.env.MEILISEARCH_MASTER_KEY;
 
 /**
+ * (optional) ITY call center CDR sync — API chỉ giữ log 30 ngày, cần cron sync
+ * hằng ngày để lưu vĩnh viễn, phục vụ theo dõi hiệu suất Sale/CSKH.
+ */
+export const ITY_CDR_API_BASE = process.env.ITY_CDR_API_BASE || 'https://report-v1.ity.vn/wsapi/ity/ws_cdr.php'
+export const ITY_CDR_USERNAME = process.env.ITY_CDR_USERNAME || ''
+export const ITY_CDR_PASSWORD = process.env.ITY_CDR_PASSWORD || ''
+
+/**
  * (optional) Pancake POS configuration
  */
 export const PANCAKE_API_KEY = process.env.PANCAKE_API_KEY || ''

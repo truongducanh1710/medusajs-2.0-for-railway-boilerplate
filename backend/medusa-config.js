@@ -134,6 +134,10 @@ const medusaConfig = {
       key: "pancakeSyncModule",
     },
     {
+      resolve: "./src/modules/ity-cdr-sync",
+      key: "ityCdrSyncModule",
+    },
+    {
       resolve: "./src/modules/cskh-analysis",
       key: "cskhAnalysisModule",
     },
