@@ -9,7 +9,7 @@ type LastMessage = { content: string; author_id: string; msg_type: string; creat
 type Channel = {
   id: string; name: string; description: string | null
   member_count: number; member_ids?: string[]
-  unread_count: number; created_at: string
+  unread_count: number; mention_count: number; created_at: string
   last_message?: LastMessage | null
 }
 type ReplySnippet = { id: string; content: string; author_name: string }
@@ -776,7 +776,7 @@ export default function MktChatPage() {
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
 
-  const [sidebarTab, setSidebarTab] = useState<"all" | "unread">("all")
+  const [sidebarTab, setSidebarTab] = useState<"all" | "unread" | "mentioned">("all")
   const [channelSearch, setChannelSearch] = useState("")
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_STORAGE_KEY) !== "0")
 
@@ -1106,6 +1106,7 @@ export default function MktChatPage() {
   const visibleChannels = useMemo(() => {
     let list = channels
     if (sidebarTab === "unread") list = list.filter(c => c.unread_count > 0)
+    if (sidebarTab === "mentioned") list = list.filter(c => c.mention_count > 0)
     if (channelSearch.trim()) {
       const q = channelSearch.toLowerCase()
       list = list.filter(c => c.name.toLowerCase().includes(q))
@@ -1151,8 +1152,8 @@ export default function MktChatPage() {
         </div>
 
         {/* Filter tabs */}
-        <div className="mx-3 my-2 grid grid-cols-2 gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
-          {([["all", "Tất cả"], ["unread", "Chưa đọc"]] as const).map(([v, l]) => (
+        <div className="mx-3 my-2 grid grid-cols-3 gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
+          {([["all", "Tất cả"], ["unread", "Chưa đọc"], ["mentioned", "Nhắc đến"]] as const).map(([v, l]) => (
             <button key={v} onClick={() => setSidebarTab(v)}
               className={cn("h-7 rounded-md text-xs font-semibold transition-all",
                 sidebarTab === v ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
@@ -1165,7 +1166,7 @@ export default function MktChatPage() {
         <div className="flex-1 overflow-y-auto px-2 pb-2">
           {visibleChannels.length === 0 && (
             <div className="px-2 py-3 text-xs text-ui-fg-muted">
-              {sidebarTab === "unread" ? "Không có tin chưa đọc 🎉" : channelSearch ? "Không tìm thấy group" : "Chưa có group nào"}
+              {sidebarTab === "unread" ? "Không có tin chưa đọc 🎉" : sidebarTab === "mentioned" ? "Chưa có ai nhắc đến bạn 🎉" : channelSearch ? "Không tìm thấy group" : "Chưa có group nào"}
             </div>
           )}
           {visibleChannels.map(c => {

@@ -71,6 +71,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       unreadMap[channelId] = res2.rows[0]?.cnt ?? 0
     }
 
+    // Đếm tin chưa đọc mà user hiện tại bị @nhắc đến (dùng cho filter "Nhắc đến tôi")
+    let mentionUnreadMap: Record<string, number> = {}
+    for (const channelId of channelIds) {
+      const lastRead = lastReadMap[channelId]
+      const res3 = await getPool().query(
+        `SELECT COUNT(*)::int AS cnt FROM mkt_message
+         WHERE channel_id = $1 AND deleted_at IS NULL AND mentions ? $2
+         ${lastRead ? `AND created_at > $3` : ""}`,
+        lastRead ? [channelId, email, lastRead] : [channelId, email]
+      )
+      mentionUnreadMap[channelId] = res3.rows[0]?.cnt ?? 0
+    }
+
     // Last message per channel (sidebar snippet) — 1 query DISTINCT ON
     const lastMsgMap: Record<string, any> = {}
     if (channelIds.length > 0) {
@@ -107,6 +120,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         member_count: Array.isArray(c.members) ? c.members.length : 0,
         member_ids: Array.isArray(c.members) ? c.members.map((m: any) => m.user_id) : [],
         unread_count: unreadMap[c.id] ?? 0,
+        mention_count: mentionUnreadMap[c.id] ?? 0,
         created_at: c.created_at,
         last_message: last ? {
           content: last.msg_type === "image" ? "🖼 Hình ảnh" : last.msg_type === "file" ? "📎 File" : String(last.content || "").slice(0, 60),
