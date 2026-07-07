@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { ulid } from "ulid"
 import { getPool } from "../../../../../../lib/db"
+import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, isMktChannelMember } from "../../../_lib"
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -9,22 +10,20 @@ const ALLOWED_TYPES = new Set([
 ])
 const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 
-async function actorEmail(req: MedusaRequest): Promise<string | null> {
-  const auth = (req as any).auth_context
-  if (auth?.actor_type !== "user" || !auth?.actor_id) return null
-  const userModule = req.scope.resolve(Modules.USER)
-  const user = await userModule.retrieveUser(auth.actor_id, { select: ["email"] })
-  return user?.email ?? null
-}
-
 // POST /admin/mkt-chat/channels/:id/upload
 // multipart/form-data: file
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const email = await actorEmail(req)
-    if (!email) return res.status(401).json({ error: "Unauthenticated" })
+    const auth = await getMktChatAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
 
+    const svc = req.scope.resolve("mktTaskModule") as any
     const { id: channelId } = req.params
+    const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
+    if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
+    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+      return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
+    }
 
     // Medusa parse file từ request
     const files = (req as any).files as Record<string, any[]> | undefined
@@ -56,12 +55,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const fileKey: string = uploadedFile.key
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Lưu message ngay với file info
-    const svc = req.scope.resolve("mktTaskModule") as any
     const isImage = mimeType.startsWith("image/")
     const message = await svc.createMktMessages({
       channel_id: channelId,
-      author_id: email,
+      author_id: auth.email,
       content: isImage ? "📷 Ảnh" : `📎 ${file.originalname || file.name}`,
       msg_type: isImage ? "image" : "file",
       file_url: fileUrl,
@@ -79,6 +76,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
        ON CONFLICT DO NOTHING`,
       [ulid(), channelId, message.id, fileKey, expiresAt]
     ).catch(() => {}) // bảng này optional, không fail nếu chưa có
+
+    const userModule = req.scope.resolve(Modules.USER)
+    const user = await userModule.retrieveUser((req as any).auth_context.actor_id, { select: ["first_name", "last_name", "email"] })
+    const name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email
+    broadcastToChannel(channelId, "message.created", { message: formatMktMessage(message, { [auth.email]: name }) })
+    broadcastToChannel(channelId, "channel.updated", {})
 
     res.json({ message, file_url: fileUrl, expires_at: expiresAt })
   } catch (e: any) {

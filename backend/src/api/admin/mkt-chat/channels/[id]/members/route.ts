@@ -1,17 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
-
-function actorId(req: MedusaRequest): string | null {
-  const auth = (req as any).auth_context
-  return auth?.actor_type === "user" ? auth.actor_id : null
-}
+import { broadcastToChannel, broadcastToUser, getMktChatAuthInfo } from "../../../_lib"
 
 // PATCH /admin/mkt-chat/channels/:id/members
 // body: { add?: string[], remove?: string[] }
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const uid = actorId(req)
-    if (!uid) return res.status(401).json({ error: "Unauthenticated" })
+    const auth = await getMktChatAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
@@ -20,7 +15,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
 
-    let members: any[] = Array.isArray(channel.members) ? [...channel.members] : []
+    const beforeMembers: any[] = Array.isArray(channel.members) ? [...channel.members] : []
+    let members: any[] = [...beforeMembers]
 
     if (Array.isArray(remove)) {
       // Không bao giờ bỏ người tạo (admin) khỏi channel
@@ -36,6 +32,15 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     }
 
     await svc.updateMktChannels({ id, members })
+
+    const memberIds = members.map((m: any) => m.user_id)
+    const affected = new Set([...beforeMembers.map((m: any) => m.user_id), ...memberIds])
+    broadcastToChannel(id, "channel.member.updated", { member_ids: memberIds })
+    broadcastToChannel(id, "channel.updated", {})
+    for (const email of affected) {
+      broadcastToUser(email, "channel.member.updated", { channel_id: id, member_ids: memberIds })
+    }
+
     res.json({ success: true, member_count: members.length })
   } catch (e: any) {
     res.status(500).json({ error: e.message })

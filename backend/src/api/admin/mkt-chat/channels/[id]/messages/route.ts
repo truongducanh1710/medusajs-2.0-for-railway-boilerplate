@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
+import { broadcastToChannel, formatMktMessage } from "../../../_lib"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -171,6 +172,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       reactions: {},
       mentions,
     })
+    const formattedMessage = formatMktMessage(message, nameByEmail)
+    broadcastToChannel(id, "message.created", { message: formattedMessage })
+    broadcastToChannel(id, "channel.updated", {})
 
     // Notify mentioned users async
     if (mentions.length > 0) {
@@ -187,7 +191,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       if (process.env.ANTHROPIC_API_KEY) {
         handleAiResponse(svc, id, question).catch(console.error)
       } else {
-        await svc.createMktMessages({
+        const aiMessage = await svc.createMktMessages({
           channel_id: id,
           author_id: "ai",
           content: "⚠️ Tính năng @ai chưa bật (thiếu ANTHROPIC_API_KEY).",
@@ -195,6 +199,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           reactions: {},
           mentions: [],
         })
+        broadcastToChannel(id, "message.created", { message: formatMktMessage(aiMessage, nameByEmail) })
+        broadcastToChannel(id, "channel.updated", {})
       }
     }
 
@@ -230,14 +236,18 @@ async function notifyMentions(
   senderEmail: string, senderName: string, content: string, mentions: string[]
 ) {
   // Post system message với mention info để frontend badge
-  await svc.createMktMessages({
+  const message = await svc.createMktMessages({
     channel_id: channelId,
     author_id: "system",
     content: `${senderName} đã nhắc đến: ${mentions.join(", ")}`,
     msg_type: "mention",
     mentions,
     reactions: {},
-  }).catch(console.error)
+  }).catch((e: any) => { console.error(e); return null })
+  if (message) {
+    broadcastToChannel(channelId, "message.created", { message: formatMktMessage(message, { [senderEmail]: senderName }) })
+    broadcastToChannel(channelId, "channel.updated", {})
+  }
 }
 
 async function handleAiResponse(svc: any, channelId: string, question: string) {
@@ -263,15 +273,19 @@ async function handleAiResponse(svc: any, channelId: string, question: string) {
     })
     const data = await response.json() as any
     const aiText = data.content?.[0]?.text || "Không thể xử lý câu hỏi này."
-    await svc.createMktMessages({
+    const aiMessage = await svc.createMktMessages({
       channel_id: channelId, author_id: "ai", content: aiText,
       msg_type: "ai_response", reactions: {}, mentions: [],
     })
+    broadcastToChannel(channelId, "message.created", { message: formatMktMessage(aiMessage) })
+    broadcastToChannel(channelId, "channel.updated", {})
   } catch {
-    await svc.createMktMessages({
+    const aiMessage = await svc.createMktMessages({
       channel_id: channelId, author_id: "ai",
       content: "⚠️ AI không thể trả lời lúc này.",
       msg_type: "ai_response", reactions: {}, mentions: [],
     })
+    broadcastToChannel(channelId, "message.created", { message: formatMktMessage(aiMessage) })
+    broadcastToChannel(channelId, "channel.updated", {})
   }
 }

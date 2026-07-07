@@ -1,14 +1,21 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { getMktChatAuthInfo, isMktChannelMember } from "../../../_lib"
 
 // GET /admin/mkt-chat/channels/:id/pinned — lấy danh sách tin được ghim
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const auth = (req as any).auth_context
-    if (auth?.actor_type !== "user") return res.status(401).json({ error: "Unauthenticated" })
+    const auth = await getMktChatAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id: channelId } = req.params
+
+    const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
+    if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
+    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+      return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
+    }
 
     const pinned = await svc.listMktMessages(
       { channel_id: channelId, is_pinned: true, deleted_at: null },

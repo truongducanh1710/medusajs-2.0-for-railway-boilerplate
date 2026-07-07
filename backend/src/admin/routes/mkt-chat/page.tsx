@@ -797,6 +797,7 @@ export default function MktChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const atBottomRef = useRef(true)
   const lastTypingPingRef = useRef(0)
+  const typingTimersRef = useRef<Record<string, any>>({})
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -835,54 +836,110 @@ export default function MktChatPage() {
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
   }, [loadChannels, loadTemplates])
 
-  // Load messages khi đổi channel
-  useEffect(() => {
-    if (!activeChannel) return
+  const loadMessages = useCallback((channelId: string, opts?: { scroll?: boolean; markRead?: boolean }) => {
     setLoading(true)
-    setNewMsgCount(0)
-    atBottomRef.current = true
-    apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`)
+    if (opts?.scroll !== false) setNewMsgCount(0)
+    apiFetch(`/admin/mkt-chat/channels/${channelId}/messages`)
       .then(r => r.json()).then(d => {
         setMessages(d.messages || [])
         setTypingNames(d.presence?.typing || [])
-        requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView())
+        if (opts?.scroll !== false) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView())
       }).finally(() => setLoading(false))
-    apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/last-read`, { method: "PATCH" }).catch(() => {})
-  }, [activeChannel?.id])
+    if (opts?.markRead) {
+      apiFetch(`/admin/mkt-chat/channels/${channelId}/last-read`, { method: "PATCH" }).catch(() => {})
+    }
+  }, [])
 
-  // Polling 4s: messages + presence + heartbeat
+  // Load messages when channel changes
   useEffect(() => {
     if (!activeChannel) return
-    const channelId = activeChannel.id
-    const poll = setInterval(() => {
-      apiFetch(`/admin/mkt-chat/channels/${channelId}/messages?limit=30`)
-        .then(r => r.json()).then(d => {
-          const newMsgs: Message[] = d.messages || []
-          setTypingNames(d.presence?.typing || [])
+    atBottomRef.current = true
+    loadMessages(activeChannel.id, { markRead: true })
+  }, [activeChannel?.id, loadMessages])
+
+  // SSE realtime: receive pushed events instead of 4s polling
+  useEffect(() => {
+    let es: EventSource | null = null
+    let retryTimer: any = null
+
+    const refreshActive = () => {
+      if (activeChannel?.id) loadMessages(activeChannel.id, { scroll: false, markRead: true })
+    }
+
+    const connect = () => {
+      es = new EventSource("/admin/mkt-chat/events")
+
+      es.addEventListener("message.created", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        const msg = data.message as Message | undefined
+        if (!msg?.id || !data.channel_id) return
+
+        if (activeChannel?.id === data.channel_id) {
           setMessages(prev => {
-            const real = prev.filter(m => !m.id.startsWith("opt-"))
-            const polledById: Record<string, Message> = {}
-            for (const m of newMsgs) polledById[m.id] = m
-            // Cập nhật reactions/pin của tin đã có + thêm tin mới
-            const updated = real.map(m => polledById[m.id] ? { ...m, reactions: polledById[m.id].reactions, is_pinned: polledById[m.id].is_pinned } : m)
-            const realIds = new Set(real.map(m => m.id))
-            const fresh = newMsgs.filter(m => !realIds.has(m.id))
-            if (fresh.length > 0) {
-              const freshOthers = fresh.filter(m => m.author_id !== currentUserId && m.msg_type !== "system_notify")
-              if (!atBottomRef.current && freshOthers.length > 0) {
-                setNewMsgCount(c => c + freshOthers.length)
-              }
-            }
-            if (fresh.length === 0 && updated.every((m, i) => m === real[i]) && real.length === prev.length) return prev
-            return [...updated, ...fresh]
+            const withoutMatchingOptimistic = prev.filter(m => !(m.id.startsWith("opt-") && m.author_id === msg.author_id && m.content === msg.content))
+            if (withoutMatchingOptimistic.some(m => m.id === msg.id)) return withoutMatchingOptimistic
+            return [...withoutMatchingOptimistic, msg]
           })
-        }).catch(() => {})
-      // Heartbeat: mark-read + presence
-      apiFetch(`/admin/mkt-chat/channels/${channelId}/last-read`, { method: "PATCH" }).catch(() => {})
-      loadChannels()
-    }, 4000)
-    return () => clearInterval(poll)
-  }, [activeChannel?.id, loadChannels, currentUserId])
+          if (msg.author_id !== currentUserId && msg.msg_type !== "system_notify" && !atBottomRef.current) {
+            setNewMsgCount(c => c + 1)
+          }
+          apiFetch(`/admin/mkt-chat/channels/${data.channel_id}/last-read`, { method: "PATCH" }).catch(() => {})
+        }
+        loadChannels()
+      })
+
+      es.addEventListener("message.updated", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        if (activeChannel?.id !== data.channel_id || !data.message_id) return
+        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}) } : m))
+      })
+
+      es.addEventListener("channel.updated", () => loadChannels())
+      es.addEventListener("channel.member.updated", () => loadChannels())
+      es.addEventListener("read.updated", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        if (!data.channel_id) return
+        setChannels(prev => prev.map(c => c.id === data.channel_id ? { ...c, unread_count: 0 } : c))
+      })
+
+      es.addEventListener("typing.started", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        if (activeChannel?.id !== data.channel_id || data.email === currentUserId) return
+        const label = data.name || data.email
+        setTypingNames(prev => prev.includes(label) ? prev : [...prev, label])
+        if (typingTimersRef.current[data.email]) clearTimeout(typingTimersRef.current[data.email])
+        typingTimersRef.current[data.email] = setTimeout(() => {
+          setTypingNames(prev => prev.filter(n => n !== label))
+          delete typingTimersRef.current[data.email]
+        }, 6000)
+      })
+
+      es.onerror = () => {
+        es?.close()
+        loadChannels()
+        refreshActive()
+        retryTimer = setTimeout(connect, 5000)
+      }
+    }
+
+    connect()
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        loadChannels()
+        refreshActive()
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible)
+
+    return () => {
+      es?.close()
+      clearTimeout(retryTimer)
+      document.removeEventListener("visibilitychange", onVisible)
+      Object.values(typingTimersRef.current).forEach(clearTimeout)
+      typingTimersRef.current = {}
+    }
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages])
 
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {

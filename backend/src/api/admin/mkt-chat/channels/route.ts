@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../lib/db"
+import { broadcastToUser } from "../_lib"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -156,6 +157,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       created_by: email,
       members,
     })
+
+    // Chưa có client SSE nào đăng ký channel này lúc vừa tạo, nên chỉ cần báo trực tiếp cho từng member
+    for (const memberEmail of members.map((m: any) => m.user_id)) {
+      broadcastToUser(memberEmail, "channel.member.updated", { channel_id: channel.id, member_ids: members.map((m: any) => m.user_id) })
+    }
 
     res.json({ channel })
   } catch (e: any) {
