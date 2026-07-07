@@ -257,6 +257,110 @@ function CallsTable() {
   )
 }
 
+// ---- Báo cáo so sánh sale + xu hướng theo giờ ----
+
+function ReportSection() {
+  const [report, setReport] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [date, setDate] = useState(todayVN)
+
+  const fetchReport = async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        from: `${date}T00:00:00+07:00`,
+        to: `${date}T23:59:59+07:00`,
+      })
+      const data = await apiJson(`/admin/ity-cdr-sync/report?${params}`)
+      setReport(data)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchReport() }, [date])
+
+  const bySale: any[] = report?.by_sale ?? []
+  const byHour: any[] = report?.by_hour ?? []
+  const maxHourCalls = Math.max(1, ...byHour.map((h) => h.total_calls))
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+        />
+        {report && <span className="text-sm text-gray-400">{report.total_calls} cuộc gọi trong ngày</span>}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400">Đang tải báo cáo...</div>
+      ) : (
+        <>
+          {/* Bảng so sánh sale */}
+          <div className="border rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-gray-600">Nhân viên</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Tổng cuộc gọi</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Đã nghe</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Tỷ lệ nghe máy</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">Tổng đàm thoại</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600">TB/cuộc</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bySale.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-6 text-gray-400">Không có dữ liệu</td></tr>
+                ) : bySale.map((s) => (
+                  <tr key={s.extension} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium">{s.name}</td>
+                    <td className="px-3 py-2 text-center">{s.total_calls}</td>
+                    <td className="px-3 py-2 text-center">{s.answered}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                        s.answered_rate >= 50 ? "bg-green-100 text-green-700" : s.answered_rate >= 25 ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"
+                      }`}>
+                        {s.answered_rate}%
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-center">{formatDuration(s.total_talk_seconds)}</td>
+                    <td className="px-3 py-2 text-center">{formatDuration(s.avg_talk_seconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Chart xu hướng theo giờ */}
+          <div className="border rounded-xl p-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Số cuộc gọi theo giờ</p>
+            <div className="flex items-end gap-1 h-32">
+              {byHour.map((h) => (
+                <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                  <div className="text-[10px] text-gray-400 mb-0.5">{h.total_calls > 0 ? h.total_calls : ""}</div>
+                  <div
+                    className="w-full bg-violet-400 rounded-t hover:bg-violet-600 transition-colors"
+                    style={{ height: `${(h.total_calls / maxHourCalls) * 100}%`, minHeight: h.total_calls > 0 ? "2px" : "0" }}
+                    title={`${h.hour}h: ${h.total_calls} cuộc, ${h.answered} đã nghe`}
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1">{h.hour}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ---- Main page ----
 
 const ItyCdrPage = () => {
@@ -275,6 +379,11 @@ const ItyCdrPage = () => {
       <div>
         <h2 className="text-sm font-semibold text-gray-600 mb-2">Gán extension ↔ nhân viên</h2>
         {!permLoading && <ExtensionTable canManage={canManage} />}
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-gray-600 mb-2">Báo cáo hiệu suất</h2>
+        <ReportSection />
       </div>
 
       <div>

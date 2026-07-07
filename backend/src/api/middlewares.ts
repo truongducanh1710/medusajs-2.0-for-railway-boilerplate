@@ -95,6 +95,7 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/calls*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/extensions*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/extensions*", method: ["POST"], middlewares: [requirePerm("page.ity-cdr.run")] },
+    { matcher: "/admin/ity-cdr-sync/report*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/call-board*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
