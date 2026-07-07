@@ -115,6 +115,7 @@ function CallsTable() {
   const [extension, setExtension] = useState("")
   const [disposition, setDisposition] = useState("")
   const [offset, setOffset] = useState(0)
+  const [playingId, setPlayingId] = useState<string | null>(null)
   const limit = 50
 
   const fetchData = async () => {
@@ -194,24 +195,39 @@ function CallsTable() {
               </thead>
               <tbody>
                 {calls.map((c) => (
-                  <tr key={c.id} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{formatDateTime(c.calldate)}</td>
-                    <td className="px-3 py-2">{c.agent_display_name || c.agent_name || "—"}</td>
-                    <td className="px-3 py-2 font-mono text-gray-600">{c.customer_phone}</td>
-                    <td className="px-3 py-2 text-center text-gray-600">{formatDuration(c.billsec)}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${DISPOSITION_BADGE[c.disposition] ?? "bg-gray-100 text-gray-500"}`}>
-                        {c.disposition}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {c.recording_url ? (
-                        <a href={c.recording_url} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:text-violet-800">
-                          ▶ Nghe
-                        </a>
-                      ) : "—"}
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={c.id} className="border-b last:border-0 hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{formatDateTime(c.calldate)}</td>
+                      <td className="px-3 py-2">{c.agent_display_name || c.agent_name || "—"}</td>
+                      <td className="px-3 py-2 font-mono text-gray-600">{c.customer_phone}</td>
+                      <td className="px-3 py-2 text-center text-gray-600">{formatDuration(c.billsec)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${DISPOSITION_BADGE[c.disposition] ?? "bg-gray-100 text-gray-500"}`}>
+                          {c.disposition}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {c.recording_url ? (
+                          <button
+                            onClick={() => setPlayingId(playingId === c.id ? null : c.id)}
+                            className="text-violet-600 hover:text-violet-800"
+                          >
+                            {playingId === c.id ? "✕ Đóng" : "▶ Nghe"}
+                          </button>
+                        ) : "—"}
+                      </td>
+                    </tr>
+                    {playingId === c.id && c.recording_url && (
+                      <tr className="border-b last:border-0 bg-violet-50/40">
+                        <td colSpan={6} className="px-3 py-2">
+                          <audio controls autoPlay src={c.recording_url} className="w-full h-9">
+                            Trình duyệt không hỗ trợ phát audio.
+                            <a href={c.recording_url} target="_blank" rel="noopener noreferrer">Tải file ghi âm</a>
+                          </audio>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
