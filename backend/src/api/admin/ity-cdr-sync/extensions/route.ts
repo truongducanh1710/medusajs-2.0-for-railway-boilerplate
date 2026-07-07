@@ -10,13 +10,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const syncService = req.scope.resolve("ityCdrSyncModule") as any
     const maps = await syncService.listItyExtensionMaps({}, { order: { extension: "ASC" } })
 
-    const userIds = maps.map((m: any) => m.user_id).filter(Boolean)
-    let usersById: Record<string, any> = {}
-    if (userIds.length > 0) {
-      const userService = req.scope.resolve(Modules.USER) as any
-      const users = await userService.listUsers({ id: userIds })
-      usersById = Object.fromEntries(users.map((u: any) => [u.id, u]))
-    }
+    const userService = req.scope.resolve(Modules.USER) as any
+    const allUsers = await userService.listUsers({}, { select: ["id", "email", "first_name", "last_name"] })
+    const usersById: Record<string, any> = Object.fromEntries(allUsers.map((u: any) => [u.id, u]))
 
     const result = maps.map((m: any) => ({
       extension: m.extension,
@@ -28,7 +24,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         : null,
     }))
 
-    return res.json({ extensions: result })
+    // Kèm danh sách toàn bộ user để render dropdown gán extension trên UI
+    const allUsersSimple = allUsers.map((u: any) => ({
+      id: u.id,
+      email: u.email,
+      name: (u.first_name || u.last_name) ? [u.first_name, u.last_name].filter(Boolean).join(" ") : u.email,
+    }))
+
+    return res.json({ extensions: result, users: allUsersSimple })
   } catch (err: any) {
     console.error("[ItyExtensionMap API] Error:", err.message)
     return res.status(500).json({ error: err.message })

@@ -14,6 +14,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/mkt-tasks": "page.mkt-tasks.view",
   "/cskh-goi-khach": "page.mkt-tasks.view",
   "/mkt-chat": "page.mkt-chat.view",
+  "/ity-cdr": "page.ity-cdr.view",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {
