@@ -142,10 +142,17 @@ function CallsTable() {
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(todayVN)
   const [extension, setExtension] = useState("")
+  const [extensionOptions, setExtensionOptions] = useState<any[]>([])
   const [disposition, setDisposition] = useState("")
   const [offset, setOffset] = useState(0)
   const [playingId, setPlayingId] = useState<string | null>(null)
   const limit = 50
+
+  useEffect(() => {
+    apiJson("/admin/ity-cdr-sync/extensions")
+      .then((data) => setExtensionOptions(data?.extensions ?? []))
+      .catch(() => {})
+  }, [])
 
   const fetchData = async () => {
     setLoading(true)
@@ -182,13 +189,16 @@ function CallsTable() {
           onChange={(e) => setDate(e.target.value)}
           className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
         />
-        <input
-          type="text"
-          placeholder="Extension (vd 207491001)"
+        <select
           value={extension}
           onChange={(e) => setExtension(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-violet-500"
-        />
+          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+        >
+          <option value="">Tất cả nhân viên</option>
+          {extensionOptions.map((ext) => (
+            <option key={ext.extension} value={ext.extension}>{ext.display_name || ext.extension}</option>
+          ))}
+        </select>
         <select
           value={disposition}
           onChange={(e) => setDisposition(e.target.value)}
@@ -373,7 +383,7 @@ function ReportSection() {
                   <th className="text-center px-3 py-2 font-medium text-gray-600" title="Tổng thời gian từ lúc quay số tới khi kết thúc, kể cả cuộc không nghe máy">
                     Tổng thời gian gọi
                   </th>
-                  <th className="text-center px-3 py-2 font-medium text-gray-600" title="Tổng thời gian gọi ÷ số giờ/ca">
+                  <th className="text-center px-3 py-2 font-medium text-gray-600" title="Tổng thời gian gọi ÷ (số giờ/ca × số ngày có gọi trong khoảng đã chọn)">
                     % thời gian ca
                   </th>
                 </tr>
@@ -397,11 +407,15 @@ function ReportSection() {
                     <td className="px-3 py-2 text-center">{formatDuration(s.avg_talk_seconds)}</td>
                     <td className="px-3 py-2 text-center">{formatDuration(s.total_call_time_seconds)}</td>
                     <td className="px-3 py-2 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
-                        s.call_time_ratio >= 30 ? "bg-green-100 text-green-700" : s.call_time_ratio >= 15 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"
-                      }`}>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                          s.call_time_ratio >= 30 ? "bg-green-100 text-green-700" : s.call_time_ratio >= 15 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"
+                        }`}
+                        title={`Tính trên ${s.active_days} ngày có cuộc gọi`}
+                      >
                         {s.call_time_ratio}%
                       </span>
+                      <span className="text-[10px] text-gray-400 block">/{s.active_days} ngày</span>
                     </td>
                   </tr>
                 ))}

@@ -28,7 +28,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
 
     // ---- Aggregate theo extension (so sánh sale) ----
-    const byExt: Record<string, { total: number; answered: number; totalBillsec: number; totalDuration: number }> = {}
+    const byExt: Record<string, { total: number; answered: number; totalBillsec: number; totalDuration: number; activeDays: Set<string> }> = {}
     // ---- Aggregate theo giờ (xu hướng thời gian trong ngày) ----
     const byHour: Record<number, { total: number; answered: number }> = {}
     for (let h = 0; h < 24; h++) byHour[h] = { total: 0, answered: 0 }
@@ -37,7 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     for (const c of calls as any[]) {
       const ext = c.extension || "unknown"
-      if (!byExt[ext]) byExt[ext] = { total: 0, answered: 0, totalBillsec: 0, totalDuration: 0 }
+      if (!byExt[ext]) byExt[ext] = { total: 0, answered: 0, totalBillsec: 0, totalDuration: 0, activeDays: new Set() }
       byExt[ext].total++
       if (c.disposition === "ANSWERED") byExt[ext].answered++
       byExt[ext].totalBillsec += c.billsec || 0
@@ -49,6 +49,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (c.disposition === "ANSWERED") byHour[hourVN].answered++
 
       const dayStr = callDateVN.toISOString().slice(0, 10)
+      byExt[ext].activeDays.add(dayStr)
       if (!byDaySale[dayStr]) byDaySale[dayStr] = {}
       if (!byDaySale[dayStr][ext]) byDaySale[dayStr][ext] = { answered: 0, no_answer: 0, busy: 0, other: 0 }
       const bucket = byDaySale[dayStr][ext]
@@ -58,20 +59,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       else bucket.other++
     }
 
-    const shiftSeconds = shiftHours * 3600
-
     const bySale = Object.entries(byExt)
-      .map(([extension, stats]) => ({
-        extension,
-        name: nameByExtension[extension] || extension,
-        total_calls: stats.total,
-        answered: stats.answered,
-        answered_rate: stats.total > 0 ? Math.round((stats.answered / stats.total) * 1000) / 10 : 0,
-        total_talk_seconds: stats.totalBillsec,
-        avg_talk_seconds: stats.answered > 0 ? Math.round(stats.totalBillsec / stats.answered) : 0,
-        total_call_time_seconds: stats.totalDuration,
-        call_time_ratio: Math.round((stats.totalDuration / shiftSeconds) * 1000) / 10,
-      }))
+      .map(([extension, stats]) => {
+        // Mẫu số = số ngày nhân viên THỰC SỰ có cuộc gọi trong khoảng đã chọn × giờ/ca —
+        // tránh xem tuần/tháng mà vẫn chia cho 1 ca duy nhất (khiến % bị nhỏ giả tạo).
+        const activeDayCount = Math.max(1, stats.activeDays.size)
+        const shiftSeconds = shiftHours * 3600 * activeDayCount
+        return {
+          extension,
+          name: nameByExtension[extension] || extension,
+          total_calls: stats.total,
+          answered: stats.answered,
+          answered_rate: stats.total > 0 ? Math.round((stats.answered / stats.total) * 1000) / 10 : 0,
+          total_talk_seconds: stats.totalBillsec,
+          avg_talk_seconds: stats.answered > 0 ? Math.round(stats.totalBillsec / stats.answered) : 0,
+          total_call_time_seconds: stats.totalDuration,
+          active_days: activeDayCount,
+          call_time_ratio: Math.round((stats.totalDuration / shiftSeconds) * 1000) / 10,
+        }
+      })
       .sort((a, b) => b.total_calls - a.total_calls)
 
     const byHourArr = Object.entries(byHour).map(([hour, stats]) => ({
