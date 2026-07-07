@@ -25,7 +25,7 @@ export class Migration20260707000000 extends Migration {
       CREATE INDEX IF NOT EXISTS idx_ity_cdr_call_customer_phone ON ity_cdr_call (customer_phone);
 
       CREATE TABLE IF NOT EXISTS ity_cdr_sync_job (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id TEXT PRIMARY KEY,
         status TEXT NOT NULL DEFAULT 'queued',
         from_date TIMESTAMPTZ NOT NULL,
         to_date TIMESTAMPTZ NOT NULL,
