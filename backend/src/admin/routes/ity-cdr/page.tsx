@@ -9,6 +9,33 @@ function todayVN(): string {
   return vn.toISOString().slice(0, 10)
 }
 
+type RangePreset = "today" | "week" | "month"
+
+// Tính [from, to] theo giờ VN cho các preset — "week" = Thứ 2 tới hôm nay, "month" = ngày 1 tới hôm nay
+function getPresetRange(preset: RangePreset): { from: string; to: string } {
+  const nowVN = new Date(Date.now() + 7 * 3600 * 1000)
+  const to = nowVN.toISOString().slice(0, 10)
+  if (preset === "today") return { from: to, to }
+  if (preset === "month") {
+    const from = `${nowVN.toISOString().slice(0, 7)}-01`
+    return { from, to }
+  }
+  // week: lùi về thứ 2 gần nhất (getUTCDay vì nowVN đã cộng offset, đọc như UTC)
+  const dow = nowVN.getUTCDay() // 0=CN, 1=T2...
+  const diffToMonday = dow === 0 ? 6 : dow - 1
+  const monday = new Date(nowVN.getTime() - diffToMonday * 86400_000)
+  return { from: monday.toISOString().slice(0, 10), to }
+}
+
+const CHART_COLORS: Record<string, string> = {
+  ANSWERED: "#22c55e", // green
+  no_answer: "#9ca3af", // gray — NO ANSWER
+  busy: "#f97316", // orange
+  other: "#a78bfa",
+}
+
+const LINE_PALETTE = ["#7c3aed", "#0ea5e9", "#f43f5e", "#eab308", "#10b981", "#6366f1"]
+
 function formatDateTime(iso: string) {
   const d = new Date(iso)
   const pad = (x: number) => String(x).padStart(2, "0")
@@ -264,15 +291,17 @@ function CallsTable() {
 function ReportSection() {
   const [report, setReport] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [date, setDate] = useState(todayVN)
+  const [preset, setPreset] = useState<RangePreset>("today")
   const [shiftHours, setShiftHours] = useState(7)
+  const [selectedExt, setSelectedExt] = useState<string | null>(null)
 
   const fetchReport = async () => {
     setLoading(true)
     try {
+      const { from, to } = getPresetRange(preset)
       const params = new URLSearchParams({
-        from: `${date}T00:00:00+07:00`,
-        to: `${date}T23:59:59+07:00`,
+        from: `${from}T00:00:00+07:00`,
+        to: `${to}T23:59:59+07:00`,
         shift_hours: String(shiftHours),
       })
       const data = await apiJson(`/admin/ity-cdr-sync/report?${params}`)
@@ -284,21 +313,34 @@ function ReportSection() {
     }
   }
 
-  useEffect(() => { fetchReport() }, [date, shiftHours])
+  useEffect(() => { fetchReport() }, [preset, shiftHours])
 
   const bySale: any[] = report?.by_sale ?? []
   const byHour: any[] = report?.by_hour ?? []
+  const byDay: any[] = report?.by_day ?? []
   const maxHourCalls = Math.max(1, ...byHour.map((h) => h.total_calls))
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-        />
+        <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
+          {([
+            { label: "Hôm nay", val: "today" },
+            { label: "Tuần này", val: "week" },
+            { label: "Tháng này", val: "month" },
+          ] as { label: string; val: RangePreset }[]).map(({ label, val }) => (
+            <button
+              key={val}
+              onClick={() => setPreset(val)}
+              className={`px-3 py-2 transition-colors ${preset === val
+                ? "bg-violet-600 text-white font-medium"
+                : "bg-white text-gray-600 hover:bg-gray-50"
+              } ${val !== "today" ? "border-l border-gray-200" : ""}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <label className="flex items-center gap-2 text-sm text-gray-500">
           Giờ/ca:
           <input
@@ -367,25 +409,190 @@ function ReportSection() {
             </table>
           </div>
 
-          {/* Chart xu hướng theo giờ */}
-          <div className="border rounded-xl p-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Số cuộc gọi theo giờ</p>
-            <div className="flex items-end gap-1 h-32">
-              {byHour.map((h) => (
-                <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                  <div className="text-[10px] text-gray-400 mb-0.5">{h.total_calls > 0 ? h.total_calls : ""}</div>
-                  <div
-                    className="w-full bg-violet-400 rounded-t hover:bg-violet-600 transition-colors"
-                    style={{ height: `${(h.total_calls / maxHourCalls) * 100}%`, minHeight: h.total_calls > 0 ? "2px" : "0" }}
-                    title={`${h.hour}h: ${h.total_calls} cuộc, ${h.answered} đã nghe`}
-                  />
-                  <div className="text-[10px] text-gray-400 mt-1">{h.hour}</div>
-                </div>
-              ))}
+          {preset === "today" ? (
+            /* Chart xu hướng theo giờ — chỉ có ý nghĩa khi xem 1 ngày */
+            <div className="border rounded-xl p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Số cuộc gọi theo giờ</p>
+              <div className="flex items-end gap-1 h-32">
+                {byHour.map((h) => (
+                  <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                    <div className="text-[10px] text-gray-400 mb-0.5">{h.total_calls > 0 ? h.total_calls : ""}</div>
+                    <div
+                      className="w-full bg-violet-400 rounded-t hover:bg-violet-600 transition-colors"
+                      style={{ height: `${(h.total_calls / maxHourCalls) * 100}%`, minHeight: h.total_calls > 0 ? "2px" : "0" }}
+                      title={`${h.hour}h: ${h.total_calls} cuộc, ${h.answered} đã nghe`}
+                    />
+                    <div className="text-[10px] text-gray-400 mt-1">{h.hour}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <ComboChart byDay={byDay} selectedExt={selectedExt} onSelectExt={setSelectedExt} />
+          )}
         </>
       )}
+    </div>
+  )
+}
+
+// ---- Combo chart: cột stacked theo trạng thái + đường tỷ lệ nghe máy, toggle theo nhân viên ----
+
+function ComboChart({ byDay, selectedExt, onSelectExt }: { byDay: any[]; selectedExt: string | null; onSelectExt: (ext: string | null) => void }) {
+  if (byDay.length === 0) {
+    return <div className="border rounded-xl p-8 text-center text-gray-400">Không có dữ liệu trong khoảng này</div>
+  }
+
+  // Danh sách nhân viên duy nhất (để vẽ legend + line riêng từng người)
+  const allExtensions = Array.from(
+    new Set(byDay.flatMap((d) => d.by_extension.map((e: any) => e.extension)))
+  ) as string[]
+  const nameByExt: Record<string, string> = {}
+  byDay.forEach((d) => d.by_extension.forEach((e: any) => { nameByExt[e.extension] = e.name }))
+
+  const visibleExtensions = selectedExt ? [selectedExt] : allExtensions
+
+  // Tổng cuộc gọi mỗi ngày (chỉ tính nhân viên đang hiển thị) — dùng để scale cột
+  const dayTotals = byDay.map((d) => {
+    const rows = d.by_extension.filter((e: any) => visibleExtensions.includes(e.extension))
+    return rows.reduce((sum: number, e: any) => sum + e.total, 0)
+  })
+  const maxTotal = Math.max(1, ...dayTotals)
+
+  const W = 900
+  const H = 260
+  const padLeft = 40
+  const padBottom = 30
+  const padTop = 10
+  const chartW = W - padLeft - 10
+  const chartH = H - padTop - padBottom
+  const barSlot = chartW / byDay.length
+  const barWidth = Math.min(36, barSlot * 0.55)
+
+  function formatDayLabel(day: string) {
+    const [, m, dd] = day.split("-")
+    return `${dd}/${m}`
+  }
+
+  // Đường tỷ lệ nghe máy cho từng nhân viên đang hiển thị
+  const linePaths = visibleExtensions.map((ext, idx) => {
+    const points = byDay.map((d, i) => {
+      const row = d.by_extension.find((e: any) => e.extension === ext)
+      const rate = row?.answered_rate ?? 0
+      const x = padLeft + i * barSlot + barSlot / 2
+      const y = padTop + chartH - (rate / 100) * chartH
+      return { x, y, rate }
+    })
+    const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+    return { ext, color: LINE_PALETTE[idx % LINE_PALETTE.length], path, points }
+  })
+
+  return (
+    <div className="border rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          Cuộc gọi theo ngày (cột) · Tỷ lệ nghe máy (đường)
+        </p>
+        {selectedExt && (
+          <button onClick={() => onSelectExt(null)} className="text-xs text-violet-600 hover:underline">
+            ✕ Bỏ chọn, xem tất cả
+          </button>
+        )}
+      </div>
+
+      {/* Legend — click để chỉ xem 1 người */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {allExtensions.map((ext, idx) => (
+          <button
+            key={ext}
+            onClick={() => onSelectExt(selectedExt === ext ? null : ext)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-colors ${
+              selectedExt === ext
+                ? "bg-violet-100 border-violet-400 text-violet-700"
+                : selectedExt
+                ? "opacity-40 border-gray-200 text-gray-400"
+                : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full" style={{ background: LINE_PALETTE[idx % LINE_PALETTE.length] }} />
+            {nameByExt[ext] || ext}
+          </button>
+        ))}
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 280 }}>
+        {/* Trục Y bên trái: số cuộc gọi (cột) */}
+        {[0, 0.25, 0.5, 0.75, 1].map((frac) => (
+          <line
+            key={frac}
+            x1={padLeft} x2={W - 10}
+            y1={padTop + chartH * (1 - frac)} y2={padTop + chartH * (1 - frac)}
+            stroke="#f0f0f0" strokeWidth={1}
+          />
+        ))}
+
+        {/* Cột stacked theo trạng thái, tổng hợp các nhân viên đang hiển thị */}
+        {byDay.map((d, i) => {
+          const rows = d.by_extension.filter((e: any) => visibleExtensions.includes(e.extension))
+          const totals = rows.reduce(
+            (acc: any, e: any) => ({
+              answered: acc.answered + e.answered,
+              no_answer: acc.no_answer + e.no_answer,
+              busy: acc.busy + e.busy,
+              other: acc.other + e.other,
+            }),
+            { answered: 0, no_answer: 0, busy: 0, other: 0 }
+          )
+          const x = padLeft + i * barSlot + (barSlot - barWidth) / 2
+          let yCursor = padTop + chartH
+          const segments = [
+            { key: "answered", val: totals.answered, color: CHART_COLORS.ANSWERED },
+            { key: "no_answer", val: totals.no_answer, color: CHART_COLORS.no_answer },
+            { key: "busy", val: totals.busy, color: CHART_COLORS.busy },
+            { key: "other", val: totals.other, color: CHART_COLORS.other },
+          ]
+          return (
+            <g key={d.day}>
+              {segments.map((seg) => {
+                if (seg.val === 0) return null
+                const segH = (seg.val / maxTotal) * chartH
+                yCursor -= segH
+                return (
+                  <rect
+                    key={seg.key}
+                    x={x} y={yCursor} width={barWidth} height={segH}
+                    fill={seg.color}
+                  >
+                    <title>{`${formatDayLabel(d.day)} — ${seg.key}: ${seg.val}`}</title>
+                  </rect>
+                )
+              })}
+              <text x={x + barWidth / 2} y={H - padBottom + 14} textAnchor="middle" fontSize={10} fill="#9ca3af">
+                {formatDayLabel(d.day)}
+              </text>
+            </g>
+          )
+        })}
+
+        {/* Đường tỷ lệ nghe máy — 1 đường/nhân viên đang hiển thị */}
+        {linePaths.map(({ ext, color, path, points }) => (
+          <g key={ext}>
+            <path d={path} fill="none" stroke={color} strokeWidth={2} />
+            {points.map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r={3} fill={color}>
+                <title>{`${formatDayLabel(byDay[i].day)}: ${p.rate}% nghe máy`}</title>
+              </circle>
+            ))}
+          </g>
+        ))}
+
+        {/* Trục Y label bên phải: % tỷ lệ nghe máy */}
+        {[0, 50, 100].map((pct) => (
+          <text key={pct} x={W - 5} y={padTop + chartH * (1 - pct / 100) + 3} textAnchor="end" fontSize={9} fill="#9ca3af">
+            {pct}%
+          </text>
+        ))}
+      </svg>
     </div>
   )
 }

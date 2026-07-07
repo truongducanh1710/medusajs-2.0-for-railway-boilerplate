@@ -29,9 +29,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // ---- Aggregate theo extension (so sánh sale) ----
     const byExt: Record<string, { total: number; answered: number; totalBillsec: number; totalDuration: number }> = {}
-    // ---- Aggregate theo giờ (xu hướng thời gian) ----
+    // ---- Aggregate theo giờ (xu hướng thời gian trong ngày) ----
     const byHour: Record<number, { total: number; answered: number }> = {}
     for (let h = 0; h < 24; h++) byHour[h] = { total: 0, answered: 0 }
+    // ---- Aggregate theo ngày × nhân viên × trạng thái (cho chart tuần/tháng) ----
+    const byDaySale: Record<string, Record<string, { answered: number; no_answer: number; busy: number; other: number }>> = {}
 
     for (const c of calls as any[]) {
       const ext = c.extension || "unknown"
@@ -41,9 +43,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       byExt[ext].totalBillsec += c.billsec || 0
       byExt[ext].totalDuration += c.duration || 0
 
-      const hourVN = new Date(new Date(c.calldate).getTime() + 7 * 3600 * 1000).getUTCHours()
+      const callDateVN = new Date(new Date(c.calldate).getTime() + 7 * 3600 * 1000)
+      const hourVN = callDateVN.getUTCHours()
       byHour[hourVN].total++
       if (c.disposition === "ANSWERED") byHour[hourVN].answered++
+
+      const dayStr = callDateVN.toISOString().slice(0, 10)
+      if (!byDaySale[dayStr]) byDaySale[dayStr] = {}
+      if (!byDaySale[dayStr][ext]) byDaySale[dayStr][ext] = { answered: 0, no_answer: 0, busy: 0, other: 0 }
+      const bucket = byDaySale[dayStr][ext]
+      if (c.disposition === "ANSWERED") bucket.answered++
+      else if (c.disposition === "NO ANSWER") bucket.no_answer++
+      else if (c.disposition === "BUSY") bucket.busy++
+      else bucket.other++
     }
 
     const shiftSeconds = shiftHours * 3600
@@ -68,6 +80,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       answered: stats.answered,
     }))
 
+    // Mảng phẳng theo ngày, mỗi ngày có breakdown từng nhân viên — dùng để vẽ combo chart
+    // (cột stacked theo trạng thái + đường tỷ lệ nghe máy, toggle theo nhân viên ở frontend)
+    const byDayArr = Object.keys(byDaySale)
+      .sort()
+      .map((day) => ({
+        day,
+        by_extension: Object.entries(byDaySale[day]).map(([extension, b]) => {
+          const total = b.answered + b.no_answer + b.busy + b.other
+          return {
+            extension,
+            name: nameByExtension[extension] || extension,
+            answered: b.answered,
+            no_answer: b.no_answer,
+            busy: b.busy,
+            other: b.other,
+            total,
+            answered_rate: total > 0 ? Math.round((b.answered / total) * 1000) / 10 : 0,
+          }
+        }),
+      }))
+
     return res.json({
       from: fromDate.toISOString(),
       to: toDate.toISOString(),
@@ -75,6 +108,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       total_calls: calls.length,
       by_sale: bySale,
       by_hour: byHourArr,
+      by_day: byDayArr,
     })
   } catch (err: any) {
     console.error("[ItyCdrSync Report API] Error:", err.message)
