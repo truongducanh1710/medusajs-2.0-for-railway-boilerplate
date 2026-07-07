@@ -1,6 +1,7 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import ItyCdrCall from "./models/ity-cdr-call"
 import ItyCdrSyncJob from "./models/ity-cdr-sync-job"
+import ItyExtensionMap from "./models/ity-extension-map"
 import { ITY_CDR_API_BASE, ITY_CDR_USERNAME, ITY_CDR_PASSWORD } from "../../lib/constants"
 
 // ---- Helpers ----
@@ -69,7 +70,7 @@ function mapCdr(raw: any): Record<string, any> {
 
 // ---- Service ----
 
-class ItyCdrSyncService extends MedusaService({ ItyCdrCall, ItyCdrSyncJob }) {
+class ItyCdrSyncService extends MedusaService({ ItyCdrCall, ItyCdrSyncJob, ItyExtensionMap }) {
   /**
    * Pull toàn bộ CDR trong khoảng ngày [from, to] (inclusive, theo từng ngày riêng lẻ
    * vì API ITY chỉ filter được theo 1 `date` cụ thể, không có range thật).

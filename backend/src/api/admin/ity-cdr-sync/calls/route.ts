@@ -25,7 +25,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       { take: limit, skip: offset, order: { calldate: "DESC" } }
     )
 
-    return res.json({ calls, count, limit, offset })
+    // Join tên nhân viên thật qua bảng mapping extension → user
+    const extensionMaps = await syncService.listItyExtensionMaps({})
+    const nameByExtension: Record<string, string> = Object.fromEntries(
+      extensionMaps.map((m: any) => [m.extension, m.display_name])
+    )
+    const enrichedCalls = calls.map((c: any) => ({
+      ...c,
+      agent_display_name: nameByExtension[c.extension] || c.agent_name,
+    }))
+
+    return res.json({ calls: enrichedCalls, count, limit, offset })
   } catch (err: any) {
     console.error("[ItyCdrSync Calls API] Error:", err.message)
     return res.status(500).json({ error: err.message })
