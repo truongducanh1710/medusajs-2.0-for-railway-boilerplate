@@ -51,10 +51,18 @@ function toYmd(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
+// ITY trả calldate dạng "YYYY-MM-DD HH:mm:ss" theo giờ VN (+07:00), không có timezone suffix.
+// Node parse chuỗi không suffix là UTC → phải gắn rõ +07:00 để convert đúng sang UTC khi lưu,
+// nếu không giờ hiển thị sẽ lệch 7 tiếng (cuộc gọi "trong tương lai" so với giờ VN thật).
+function parseItyCalldate(raw: string | undefined): Date {
+  if (!raw) return new Date()
+  return new Date(raw.replace(" ", "T") + "+07:00")
+}
+
 function mapCdr(raw: any): Record<string, any> {
   return {
     id: String(raw.uniqueid),
-    calldate: raw.calldate ? new Date(raw.calldate.replace(" ", "T")) : new Date(),
+    calldate: parseItyCalldate(raw.calldate),
     direction: raw.direction ?? "",
     extension: raw.cnum ?? raw.src ?? "",
     agent_name: raw.cnam ?? raw.clid ?? "",

@@ -7,11 +7,13 @@ export default async function ityCdrDailySync(container: MedusaContainer) {
   const logger = container.resolve("logger") as any
   const syncService = container.resolve("ityCdrSyncModule") as any
 
-  const today = new Date()
+  // Server chạy UTC — phải cộng +7h để lấy đúng "hôm nay" theo giờ VN,
+  // tránh lệch ngày vào khung UTC 17:00-23:59 (= VN 00:00-06:59 hôm sau).
+  const todayVN = new Date(Date.now() + 7 * 3600 * 1000)
 
   try {
-    const { jobId } = await syncService.pullByDateRange(today, today)
-    logger?.info?.(`[ItyCdrJob] Started sync job ${jobId} for ${today.toISOString().slice(0, 10)}`)
+    const { jobId } = await syncService.pullByDateRange(todayVN, todayVN)
+    logger?.info?.(`[ItyCdrJob] Started sync job ${jobId} for ${todayVN.toISOString().slice(0, 10)}`)
   } catch (err: any) {
     if (err.code === "SYNC_IN_PROGRESS") {
       // Bình thường ở tần suất 5 phút nếu job trước chưa xong — không log noise
