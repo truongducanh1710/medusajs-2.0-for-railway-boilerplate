@@ -17,8 +17,10 @@ function formatDateTime(iso: string) {
 
 function formatDuration(sec: number) {
   if (sec <= 0) return "—"
-  const m = Math.floor(sec / 60)
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
   const s = sec % 60
+  if (h > 0) return `${h}h${m}p`
   return m > 0 ? `${m}p${s}s` : `${s}s`
 }
 
@@ -263,6 +265,7 @@ function ReportSection() {
   const [report, setReport] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(todayVN)
+  const [shiftHours, setShiftHours] = useState(7)
 
   const fetchReport = async () => {
     setLoading(true)
@@ -270,6 +273,7 @@ function ReportSection() {
       const params = new URLSearchParams({
         from: `${date}T00:00:00+07:00`,
         to: `${date}T23:59:59+07:00`,
+        shift_hours: String(shiftHours),
       })
       const data = await apiJson(`/admin/ity-cdr-sync/report?${params}`)
       setReport(data)
@@ -280,7 +284,7 @@ function ReportSection() {
     }
   }
 
-  useEffect(() => { fetchReport() }, [date])
+  useEffect(() => { fetchReport() }, [date, shiftHours])
 
   const bySale: any[] = report?.by_sale ?? []
   const byHour: any[] = report?.by_hour ?? []
@@ -288,13 +292,24 @@ function ReportSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
         />
+        <label className="flex items-center gap-2 text-sm text-gray-500">
+          Giờ/ca:
+          <input
+            type="number"
+            min={1}
+            max={24}
+            value={shiftHours}
+            onChange={(e) => setShiftHours(Number(e.target.value) || 7)}
+            className="border rounded-lg px-2 py-1.5 text-sm w-16 focus:outline-none focus:ring-2 focus:ring-violet-500"
+          />
+        </label>
         {report && <span className="text-sm text-gray-400">{report.total_calls} cuộc gọi trong ngày</span>}
       </div>
 
@@ -313,11 +328,17 @@ function ReportSection() {
                   <th className="text-center px-3 py-2 font-medium text-gray-600">Tỷ lệ nghe máy</th>
                   <th className="text-center px-3 py-2 font-medium text-gray-600">Tổng đàm thoại</th>
                   <th className="text-center px-3 py-2 font-medium text-gray-600">TB/cuộc</th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600" title="Tổng thời gian từ lúc quay số tới khi kết thúc, kể cả cuộc không nghe máy">
+                    Tổng thời gian gọi
+                  </th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600" title="Tổng thời gian gọi ÷ số giờ/ca">
+                    % thời gian ca
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {bySale.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-6 text-gray-400">Không có dữ liệu</td></tr>
+                  <tr><td colSpan={8} className="text-center py-6 text-gray-400">Không có dữ liệu</td></tr>
                 ) : bySale.map((s) => (
                   <tr key={s.extension} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium">{s.name}</td>
@@ -332,6 +353,14 @@ function ReportSection() {
                     </td>
                     <td className="px-3 py-2 text-center">{formatDuration(s.total_talk_seconds)}</td>
                     <td className="px-3 py-2 text-center">{formatDuration(s.avg_talk_seconds)}</td>
+                    <td className="px-3 py-2 text-center">{formatDuration(s.total_call_time_seconds)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                        s.call_time_ratio >= 30 ? "bg-green-100 text-green-700" : s.call_time_ratio >= 15 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"
+                      }`}>
+                        {s.call_time_ratio}%
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

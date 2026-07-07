@@ -8,6 +8,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const { from, to } = req.query as Record<string, string | undefined>
+    const shiftHours = Number(req.query.shift_hours ?? 7) || 7
 
     const nowVN = new Date(Date.now() + 7 * 3600 * 1000)
     const todayStr = nowVN.toISOString().slice(0, 10)
@@ -18,7 +19,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const calls = await syncService.listItyCdrCalls(
       { calldate: { $gte: fromDate, $lte: toDate } } as any,
-      { take: 100_000, select: ["extension", "calldate", "billsec", "disposition"] as any }
+      { take: 100_000, select: ["extension", "calldate", "duration", "billsec", "disposition"] as any }
     )
 
     const maps = await syncService.listItyExtensionMaps({})
@@ -27,22 +28,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
 
     // ---- Aggregate theo extension (so sánh sale) ----
-    const byExt: Record<string, { total: number; answered: number; totalBillsec: number }> = {}
+    const byExt: Record<string, { total: number; answered: number; totalBillsec: number; totalDuration: number }> = {}
     // ---- Aggregate theo giờ (xu hướng thời gian) ----
     const byHour: Record<number, { total: number; answered: number }> = {}
     for (let h = 0; h < 24; h++) byHour[h] = { total: 0, answered: 0 }
 
     for (const c of calls as any[]) {
       const ext = c.extension || "unknown"
-      if (!byExt[ext]) byExt[ext] = { total: 0, answered: 0, totalBillsec: 0 }
+      if (!byExt[ext]) byExt[ext] = { total: 0, answered: 0, totalBillsec: 0, totalDuration: 0 }
       byExt[ext].total++
       if (c.disposition === "ANSWERED") byExt[ext].answered++
       byExt[ext].totalBillsec += c.billsec || 0
+      byExt[ext].totalDuration += c.duration || 0
 
       const hourVN = new Date(new Date(c.calldate).getTime() + 7 * 3600 * 1000).getUTCHours()
       byHour[hourVN].total++
       if (c.disposition === "ANSWERED") byHour[hourVN].answered++
     }
+
+    const shiftSeconds = shiftHours * 3600
 
     const bySale = Object.entries(byExt)
       .map(([extension, stats]) => ({
@@ -53,6 +57,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         answered_rate: stats.total > 0 ? Math.round((stats.answered / stats.total) * 1000) / 10 : 0,
         total_talk_seconds: stats.totalBillsec,
         avg_talk_seconds: stats.answered > 0 ? Math.round(stats.totalBillsec / stats.answered) : 0,
+        total_call_time_seconds: stats.totalDuration,
+        call_time_ratio: Math.round((stats.totalDuration / shiftSeconds) * 1000) / 10,
       }))
       .sort((a, b) => b.total_calls - a.total_calls)
 
@@ -65,6 +71,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       from: fromDate.toISOString(),
       to: toDate.toISOString(),
+      shift_hours: shiftHours,
       total_calls: calls.length,
       by_sale: bySale,
       by_hour: byHourArr,
