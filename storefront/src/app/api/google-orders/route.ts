@@ -9,9 +9,11 @@ function getPool(): Pool {
   return _pool
 }
 
-// Nhóm gọn 3 trạng thái cho agency dễ theo dõi — chi tiết đầy đủ xem GLOSSARY.md (repo backend)
-const CONFIRMED_STATUSES = new Set([2, 3, 6, 9])
-const CANCELLED_STATUSES = new Set([-1, -2, 4, 5, 7])
+// Nhóm gọn 3 trạng thái cho agency dễ theo dõi — khớp STATUS_VI trong backend service.ts
+// (0 chờ xử lý, 1 sale đã chốt, 2 đang giao, 3 giao thành công, 4 đang hoàn về,
+//  5 đã hoàn về kho, 6 đã hủy, 7 đã xóa, 9 chờ chuyển hàng, 11 chờ hàng, -1 đã hủy, -2 hoàn hàng)
+const CONFIRMED_STATUSES = new Set([1, 2, 3, 9])
+const CANCELLED_STATUSES = new Set([-1, -2, 4, 5, 6, 7])
 
 function simpleStatus(status: number): { label: string; cls: string } {
   if (CONFIRMED_STATUSES.has(status)) return { label: "Đã xác nhận", cls: "confirmed" }
