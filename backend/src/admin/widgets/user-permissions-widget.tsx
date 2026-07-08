@@ -97,6 +97,8 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
       ? (data.metadata.mkt_codes as string[]).join(", ")
       : ""
   )
+  const [ggAdsSheetUrl, setGgAdsSheetUrl] = useState<string>((data?.metadata?.gg_ads_sheet_url as string) ?? "")
+  const [ggAdsSheetToken, setGgAdsSheetToken] = useState<string>((data?.metadata?.gg_ads_sheet_token as string) ?? "")
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [autoAdded, setAutoAdded] = useState<string[]>([])
@@ -142,6 +144,8 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
               .split(",")
               .map(s => s.trim().toUpperCase())
               .filter(Boolean),
+            gg_ads_sheet_url: ggAdsSheetUrl.trim() || null,
+            gg_ads_sheet_token: ggAdsSheetToken.trim() || null,
           },
         }),
       })
@@ -225,6 +229,35 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
           User care được camp của tất cả codes này (kể cả code bàn giao từ người khác)
         </span>
       </div>
+
+      {/* Google Ads Sheet — chỉ hiện khi user có MKT Code */}
+      {mktCode.trim() && (
+        <div className="space-y-2 pb-3 border-b">
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium whitespace-nowrap w-32">GG Ads Sheet URL:</label>
+            <input
+              type="text"
+              value={ggAdsSheetUrl}
+              onChange={(e) => setGgAdsSheetUrl(e.target.value)}
+              placeholder="https://script.google.com/macros/s/.../exec"
+              className="px-2 py-1 text-sm border rounded font-mono flex-1"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium whitespace-nowrap w-32">GG Ads Token:</label>
+            <input
+              type="text"
+              value={ggAdsSheetToken}
+              onChange={(e) => setGgAdsSheetToken(e.target.value)}
+              placeholder="token trong query ?token=..."
+              className="px-2 py-1 text-sm border rounded font-mono flex-1 max-w-xs"
+            />
+          </div>
+          <span className="text-xs text-gray-500">
+            Nếu điền, hệ thống sẽ tự động sync chi phí Google Ads hằng ngày cho user này (mkt_name = {mktCode.trim().toUpperCase()})
+          </span>
+        </div>
+      )}
 
       {autoAdded.length > 0 && (
         <p className="text-xs text-blue-600 bg-blue-50 rounded px-2 py-1">
