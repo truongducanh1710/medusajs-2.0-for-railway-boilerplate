@@ -125,19 +125,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ orders, campaignSummary, count: orders.length, days: dayRange })
     }
 
-    const summaryRowsHtml = campaignSummary
-      .map(
-        (c) => `<tr>
+    const SUMMARY_VISIBLE = 10
+    const summaryRowHtml = (c: (typeof campaignSummary)[number]) => `<tr>
         <td>${escapeHtml(c.campaign_id)}</td>
-        <td>${c.total}</td>
-        <td>${c.confirmed}</td>
-        <td>${c.cancelled}</td>
-        <td>${c.pending}</td>
-        <td>${c.confirm_rate.toFixed(1)}%</td>
-        <td>${c.revenue.toLocaleString("vi-VN")}đ</td>
+        <td data-v="${c.total}">${c.total}</td>
+        <td data-v="${c.confirmed}">${c.confirmed}</td>
+        <td data-v="${c.cancelled}">${c.cancelled}</td>
+        <td data-v="${c.pending}">${c.pending}</td>
+        <td data-v="${c.confirm_rate}">${c.confirm_rate.toFixed(1)}%</td>
+        <td data-v="${c.revenue}">${c.revenue.toLocaleString("vi-VN")}đ</td>
       </tr>`
-      )
-      .join("\n")
+
+    const summaryRowsHtml = campaignSummary.slice(0, SUMMARY_VISIBLE).map(summaryRowHtml).join("\n")
+    const summaryRestHtml = campaignSummary.slice(SUMMARY_VISIBLE).map(summaryRowHtml).join("\n")
+    const summaryRestCount = campaignSummary.length - SUMMARY_VISIBLE
 
     const rowsHtml = orders
       .map(
@@ -188,6 +189,16 @@ export async function GET(req: NextRequest) {
     .status-pending { background: #2a2a2e; color: #c0c0c5; }
   }
   .wrap { overflow-x: auto; }
+  #campaign-table th[data-sort] { cursor: pointer; user-select: none; }
+  #campaign-table th[data-sort]:hover { color: #0066cc; }
+  @media (prefers-color-scheme: dark) { #campaign-table th[data-sort]:hover { color: #6db3ff; } }
+  th.sort-asc::after { content: " ▲"; font-size: 10px; }
+  th.sort-desc::after { content: " ▼"; font-size: 10px; }
+  .toggle-btn {
+    margin-top: 8px; padding: 6px 14px; font-size: 13px; border-radius: 6px;
+    border: 1px solid #ccc; background: white; cursor: pointer;
+  }
+  @media (prefers-color-scheme: dark) { .toggle-btn { background: #222; border-color: #444; color: #e6e6e6; } }
 </style>
 </head>
 <body>
@@ -196,13 +207,15 @@ export async function GET(req: NextRequest) {
 
   <h2>Tổng hợp theo Campaign</h2>
   <div class="wrap">
-  <table>
+  <table id="campaign-table">
     <thead><tr>
-      <th>Mã Campaign GG</th><th>Tổng đơn</th><th>Đã xác nhận</th><th>Đã hủy</th><th>Đang xử lý</th><th>Tỷ lệ chốt</th><th>Doanh thu (đơn xác nhận)</th>
+      <th data-sort="text">Mã Campaign GG</th><th data-sort="num">Tổng đơn</th><th data-sort="num">Đã xác nhận</th><th data-sort="num">Đã hủy</th><th data-sort="num">Đang xử lý</th><th data-sort="num">Tỷ lệ chốt</th><th data-sort="num">Doanh thu (đơn xác nhận)</th>
     </tr></thead>
-    <tbody>${summaryRowsHtml}</tbody>
+    <tbody id="campaign-tbody-main">${summaryRowsHtml}</tbody>
+    ${summaryRestCount > 0 ? `<tbody id="campaign-tbody-rest" hidden>${summaryRestHtml}</tbody>` : ""}
   </table>
   </div>
+  ${summaryRestCount > 0 ? `<button id="campaign-toggle" class="toggle-btn" type="button">Xem thêm ${summaryRestCount} campaign</button>` : ""}
 
   <h2>Chi tiết đơn hàng</h2>
   <div class="wrap">
@@ -213,6 +226,77 @@ export async function GET(req: NextRequest) {
     <tbody>${rowsHtml}</tbody>
   </table>
   </div>
+
+<script>
+(function () {
+  var VISIBLE = ${SUMMARY_VISIBLE};
+  var table = document.getElementById("campaign-table");
+  var mainBody = document.getElementById("campaign-tbody-main");
+  var restBody = document.getElementById("campaign-tbody-rest");
+  var toggleBtn = document.getElementById("campaign-toggle");
+  var expanded = false;
+  var sortState = { col: -1, dir: 1 };
+
+  function allRows() {
+    var rows = Array.prototype.slice.call(mainBody.rows);
+    if (restBody) rows = rows.concat(Array.prototype.slice.call(restBody.rows));
+    return rows;
+  }
+
+  function render(rows) {
+    mainBody.innerHTML = "";
+    rows.slice(0, VISIBLE).forEach(function (r) { mainBody.appendChild(r); });
+    if (restBody) {
+      restBody.innerHTML = "";
+      rows.slice(VISIBLE).forEach(function (r) { restBody.appendChild(r); });
+    }
+  }
+
+  if (toggleBtn && restBody) {
+    toggleBtn.addEventListener("click", function () {
+      expanded = !expanded;
+      restBody.hidden = !expanded;
+      var restCount = rows_count_rest();
+      toggleBtn.textContent = expanded ? "Thu gọn" : "Xem thêm " + restCount + " campaign";
+    });
+  }
+
+  function rows_count_rest() {
+    return restBody ? restBody.rows.length : 0;
+  }
+
+  var headers = table.querySelectorAll("th[data-sort]");
+  headers.forEach(function (th, colIndex) {
+    th.addEventListener("click", function () {
+      var rows = allRows();
+      var type = th.getAttribute("data-sort");
+      var dir = sortState.col === colIndex ? -sortState.dir : (colIndex === 0 ? 1 : -1);
+      sortState = { col: colIndex, dir: dir };
+
+      rows.sort(function (a, b) {
+        var cellA = a.cells[colIndex], cellB = b.cells[colIndex];
+        var va, vb;
+        if (type === "num") {
+          va = parseFloat(cellA.getAttribute("data-v") || "0");
+          vb = parseFloat(cellB.getAttribute("data-v") || "0");
+        } else {
+          va = cellA.textContent.trim().toLowerCase();
+          vb = cellB.textContent.trim().toLowerCase();
+        }
+        if (va < vb) return -1 * dir;
+        if (va > vb) return 1 * dir;
+        return 0;
+      });
+
+      headers.forEach(function (h) { h.classList.remove("sort-asc", "sort-desc"); });
+      th.classList.add(dir === 1 ? "sort-asc" : "sort-desc");
+
+      render(rows);
+      if (restBody) restBody.hidden = !expanded;
+    });
+  });
+})();
+</script>
 </body>
 </html>`
 
