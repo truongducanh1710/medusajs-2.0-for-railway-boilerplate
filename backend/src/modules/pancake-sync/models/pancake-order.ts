@@ -32,6 +32,8 @@ const PancakeOrder = model.define("pancake_order", {
   last_note_at: model.dateTime().nullable(),        // timestamp note gần nhất
   call_count: model.number().default(0),            // số lần ghi note KNM
   tags: model.json().default([] as any),            // [{id, name}] từ Pancake tags
+  fb_campaign_id: model.text().nullable(),          // campaign ID Facebook Ads (từ utm_id/utm_campaign)
+  ad_platform: model.text().nullable(),             // 'facebook' | 'google' | null — nguồn traffic quảng cáo trả phí
 })
 
 export default PancakeOrder

@@ -56,13 +56,28 @@ export async function GET(req: NextRequest) {
     const dayRange = Math.min(Number(searchParams.get("days")) || 30, 90)
 
     const pool = getPool()
+    // ad_platform là cột chính thức, nhưng fallback detect trực tiếp trên raw JSON
+    // phòng trường hợp sync chưa kịp ghi field này (đã từng xảy ra — xem migration 20260708080000).
     const { rows } = await pool.query(
       `SELECT id, status, customer_name, customer_phone, province,
               total, items, items_count, tracking_code, pancake_created_at,
               COALESCE(raw->>'link', raw->>'order_link', '') AS order_link
        FROM pancake_order
-       WHERE ad_platform = 'google'
-         AND pancake_created_at >= NOW() - ($1 || ' days')::interval
+       WHERE pancake_created_at >= NOW() - ($1 || ' days')::interval
+         AND (
+           ad_platform = 'google'
+           OR (
+             ad_platform IS NULL
+             AND (
+               raw::text ILIKE '%"ads_source":"Google"%'
+               OR raw::text ILIKE '%gclid=%'
+               OR raw::text ILIKE '%gbraid=%'
+               OR raw::text ILIKE '%wbraid=%'
+               OR raw::text ILIKE '%gad_source=%'
+               OR raw::text ILIKE '%gad_campaignid=%'
+             )
+           )
+         )
        ORDER BY pancake_created_at DESC
        LIMIT 500`,
       [dayRange]
