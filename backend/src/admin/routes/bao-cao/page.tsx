@@ -1972,7 +1972,7 @@ const BaoCaoPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Báo cáo",
+  label: "Báo cáo", rank: 1,
 })
 
 export default BaoCaoPage

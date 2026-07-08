@@ -486,7 +486,7 @@ const XacNhanDonPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "        Xác nhận đơn",
+  label: "Xác nhận đơn", rank: 9,
 })
 
 export default XacNhanDonPage

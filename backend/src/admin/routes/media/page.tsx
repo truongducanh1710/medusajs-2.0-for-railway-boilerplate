@@ -382,7 +382,7 @@ const MediaPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "      Quản lý Media",
+  label: "Quản lý Media", rank: 7,
 })
 
 export default MediaPage

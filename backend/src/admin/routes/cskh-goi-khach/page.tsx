@@ -1045,4 +1045,4 @@ export default function CskhGoiKhachPage() {
   )
 }
 
-export const config = defineRouteConfig({ label: "            CSKH Gọi khách" })
+export const config = defineRouteConfig({ label: "CSKH Gọi khách", rank: 13 })

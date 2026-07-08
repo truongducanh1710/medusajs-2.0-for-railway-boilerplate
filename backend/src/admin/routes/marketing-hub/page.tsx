@@ -190,6 +190,6 @@ const MarketingHubPage = () => {
   )
 }
 
-export const config = defineRouteConfig({ label: "   Marketing Hub" })
+export const config = defineRouteConfig({ label: "Marketing Hub", rank: 4 })
 
 export default MarketingHubPage

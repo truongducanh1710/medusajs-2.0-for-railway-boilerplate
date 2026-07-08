@@ -854,5 +854,5 @@ export default function CskhPage() {
 }
 
 export const config = defineRouteConfig({
-  label: "           CSKH Vận đơn",
+  label: "CSKH Vận đơn", rank: 12,
 })

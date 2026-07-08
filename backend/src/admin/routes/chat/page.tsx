@@ -1405,4 +1405,4 @@ export default function ChatPage() {
   )
 }
 
-export const config = defineRouteConfig({ label: "          Chat" })
+export const config = defineRouteConfig({ label: "Chat", rank: 11 })

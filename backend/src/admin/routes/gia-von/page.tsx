@@ -1228,5 +1228,5 @@ export default function GiaVonPage() {
 }
 
 export const config = defineRouteConfig({
-  label: " Giá vốn",
+  label: "Giá vốn", rank: 2,
 })

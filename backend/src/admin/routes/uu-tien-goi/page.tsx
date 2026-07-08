@@ -439,7 +439,7 @@ const UuTienGoiPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "         Ưu tiên gọi",
+  label: "Ưu tiên gọi", rank: 10,
 })
 
 export default UuTienGoiPage

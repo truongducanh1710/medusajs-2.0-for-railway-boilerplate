@@ -143,7 +143,7 @@ const SanPhamPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "              Sản phẩm",
+  label: "Sản phẩm", rank: 15,
 })
 
 export default SanPhamPage
