@@ -37,6 +37,11 @@ function fmtNum(n: number | null | undefined) {
   if (n == null) return "—"
   return new Intl.NumberFormat("vi-VN").format(Number(n))
 }
+// % thay đổi so kỳ trước. null khi kỳ trước = 0 (không có mốc để so → tránh chia 0 / hiện "∞%").
+function pctDelta(cur: number, prev: number): number | null {
+  if (!prev || prev <= 0) return null
+  return Math.round((cur - prev) / prev * 100)
+}
 function todayVN(): string {
   return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
 }
@@ -338,6 +343,9 @@ function ExchangeRateHistory({ onClose }: { onClose: () => void }) {
 function OverviewTab({ range, market, onRate }: { range: DateRange; market: Market; onRate?: (rate: number) => void }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  // Top nhân sự lấy từ marketer-lng (đã chuẩn hoá attribution + handover + LNG). Chỉ VN;
+  // MY trả not_supported → ẩn khối. Tách state riêng để không chặn render khối chính nếu chậm.
+  const [mkt, setMkt] = useState<any>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -348,6 +356,12 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
         if (d?.myr_to_vnd_rate) onRate?.(d.myr_to_vnd_rate)
       }).catch(() => setData(null))
       .finally(() => setLoading(false))
+  }, [range.from, range.to, market])
+
+  useEffect(() => {
+    setMkt(null)
+    apiJson(`/admin/pancake-sync/report/marketer-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
+      .then(setMkt).catch(() => setMkt(null))
   }, [range.from, range.to, market])
 
   const fmt = useFmtMoney()
@@ -363,8 +377,11 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
       {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard label="Đơn thành công" value={fmtNum(data.success_count)}
-          sub={`/ ${fmtNum(data.total_orders)} tổng đơn`} />
+          sub={`/ ${fmtNum(data.total_orders)} tổng đơn`}
+          delta={data.prev ? pctDelta(data.success_count, data.prev.success_count) : null} />
         <KpiCard label="Doanh thu COD" value={fmt(data.total_revenue)}
+          sub="gồm mọi trạng thái"
+          delta={data.prev ? pctDelta(data.total_revenue, data.prev.total_revenue) : null}
           accent="border-l-4 border-l-green-400" />
         <KpiCard label="Tỷ lệ thành công" value={`${data.success_rate}%`}
           sub={`Hoàn: ${data.return_rate}%`} />
@@ -372,8 +389,8 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
           sub={`Hoàn ${data.return_count} · Hủy ${data.cancel_count}`}
           accent={data.return_rate > 15 ? "border-l-4 border-l-red-400" : ""} />
         <KpiCard label="AOV (giao thành công)" value={
-          data.success_count > 0 ? fmt(data.total_revenue / data.success_count) : "—"
-        } />
+          data.success_count > 0 ? fmt((data.success_revenue ?? 0) / data.success_count) : "—"
+        } sub="thực thu / đơn giao TC" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -405,12 +422,16 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
           <div className="p-4 space-y-3">
             {(data.by_source ?? []).map((s: any) => {
               const pct = data.total_revenue > 0 ? Math.round(s.revenue / data.total_revenue * 100) : 0
+              const dlt = s.prev_revenue != null ? pctDelta(s.revenue, s.prev_revenue) : null
               const labels: Record<string, string> = { medusa:"Website", facebook:"Facebook", zalo:"Zalo", tiktok:"TikTok", shopee:"Shopee", manual:"Thủ công", unknown:"Khác" }
               return (
                 <div key={s.source}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="font-medium text-gray-700">{labels[s.source] ?? s.source}</span>
-                    <span className="text-gray-500">{s.orders} đơn · {pct}%</span>
+                  <div className="flex justify-between items-center text-xs mb-1">
+                    <span className="font-medium text-gray-700 inline-flex items-center gap-1.5">
+                      {labels[s.source] ?? s.source}
+                      <Delta v={dlt} />
+                    </span>
+                    <span className="text-gray-500">{s.orders} đơn · {pct}% DT</span>
                   </div>
                   <Bar pct={pct} color="bg-violet-500" />
                 </div>
@@ -429,6 +450,99 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
       {/* Doanh số sản phẩm theo gian hàng (chỉ MY) */}
       {data.by_shop_day && data.by_product && (
         <ProductByShopBlock products={data.by_product} shops={data.by_shop_day.shops ?? []} />
+      )}
+
+      {/* Top nhân sự (MKT) + Top sản phẩm — gom về Tổng quan để 1 màn thấy hết.
+          MY chưa hỗ trợ marketer-lng → chỉ hiện Top nhân sự cho VN. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {!mkt?.not_supported && <OverviewMarketerBlock mkt={mkt} totalRevenue={data.total_revenue} fmt={fmt} />}
+        <OverviewProductBlock products={data.by_product ?? []} fmt={fmt} />
+      </div>
+    </div>
+  )
+}
+
+// ---- Top nhân sự (rút gọn cho Tổng quan) — nguồn: marketer-lng ----
+function OverviewMarketerBlock({ mkt, totalRevenue, fmt }: { mkt: any; totalRevenue: number; fmt: (n: any) => string }) {
+  const rows = (mkt?.rows ?? [])
+    .filter((r: any) => Number(r.revenue_total || 0) > 0)
+    .sort((a: any, b: any) => Number(b.revenue_total) - Number(a.revenue_total))
+    .slice(0, 8)
+  return (
+    <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
+        <span>Top nhân sự MKT</span>
+        <span className="text-xs font-normal text-gray-400">theo doanh số · LNG thực</span>
+      </div>
+      {mkt == null ? (
+        <div className="p-6 text-center text-sm text-gray-400 animate-pulse">Đang tải…</div>
+      ) : rows.length === 0 ? (
+        <div className="p-6 text-center text-sm text-gray-400">Không có dữ liệu</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b text-xs text-gray-500">
+            <tr>
+              <th className="text-left px-4 py-2.5">NV MKT</th>
+              <th className="text-right px-4 py-2.5">Doanh số</th>
+              <th className="text-right px-4 py-2.5">LNG thực</th>
+              <th className="text-right px-4 py-2.5">%LNG</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((r: any) => {
+              const lng = r.lng_thuc ?? r.lng ?? 0
+              return (
+                <tr key={r.mkt_name}>
+                  <td className="px-4 py-2.5 font-medium">{r.mkt_name}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(r.revenue_total)}</td>
+                  <td className={`px-4 py-2.5 text-right font-semibold ${lng >= 0 ? "text-violet-700" : "text-red-500"}`}>{fmt(lng)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{r.lng_pct != null ? `${r.lng_pct}%` : "—"}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// ---- Top sản phẩm (rút gọn cho Tổng quan) — nguồn: by_product của report ----
+function OverviewProductBlock({ products, fmt }: { products: any[]; fmt: (n: any) => string }) {
+  const rows = [...products].sort((a, b) => Number(b.revenue) - Number(a.revenue)).slice(0, 8)
+  const totalRev = products.reduce((s, p) => s + Number(p.revenue || 0), 0)
+  return (
+    <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
+        <span>Top sản phẩm</span>
+        <span className="text-xs font-normal text-gray-400">theo doanh số (giá niêm yết)</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="p-6 text-center text-sm text-gray-400">Không có dữ liệu</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b text-xs text-gray-500">
+            <tr>
+              <th className="text-left px-4 py-2.5">Sản phẩm</th>
+              <th className="text-right px-4 py-2.5">SL</th>
+              <th className="text-right px-4 py-2.5">Doanh số</th>
+              <th className="text-right px-4 py-2.5">%</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((p: any) => {
+              const pct = totalRev > 0 ? Math.round(Number(p.revenue) / totalRev * 100) : 0
+              return (
+                <tr key={p.name}>
+                  <td className="px-4 py-2.5 font-medium max-w-[220px] truncate" title={p.name}>{p.name}</td>
+                  <td className="px-4 py-2.5 text-right font-mono">{fmtNum(p.qty)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(p.revenue)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{pct}%</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       )}
     </div>
   )

@@ -28,6 +28,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const syncService = req.scope.resolve("pancakeSyncModule") as any
     const mkt = market || "VN"
 
+    // Kỳ liền trước cùng độ dài để tính tăng/giảm (Δ). Dời lùi đúng số ngày của kỳ hiện tại:
+    // prevTo = fromDate (loại trừ) , prevFrom = fromDate - (toDate - fromDate). Vd 01→31/07 (31 ngày)
+    // → so với 01→30/06. Chỉ dùng cho KPI tổng + by_source (không cần cho by_shop/by_platform).
+    const rangeMs = toDate.getTime() - fromDate.getTime()
+    const prevFromDate = new Date(fromDate.getTime() - rangeMs)
+    const prevToDate = new Date(fromDate.getTime())
+
     // Group theo ngày ĐỊA PHƯƠNG (VN=UTC+7, MY=UTC+8), không phải ngày UTC — nếu không, đơn tạo
     // vào ~7-8 tiếng đầu ngày giờ địa phương bị gán nhầm sang ngày hôm trước trong by_day/by_shop_day.
     const TZ_OFFSET_HOURS = mkt === "MY" ? 8 : 7
@@ -60,6 +67,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     )
 
+    // Kỳ liền trước: chỉ cần source + status + cod_amount để tính totals + bySource (Δ).
+    const prevOrders = await syncService.listPancakeOrders(
+      {
+        pancake_created_at: { $gte: prevFromDate, $lt: prevToDate },
+        market: mkt,
+      },
+      {
+        take: 10000,
+        select: ["id", "source", "status", "cod_amount"],
+      }
+    )
+
     // Doanh thu "COD" = SUM(cod_amount) của TẤT CẢ đơn mọi trạng thái, cho cả VN và MY —
     // khớp con số COD Pancake POS. cod_amount là tiền cần thu (sau giảm giá/phí sàn), khác với
     // `total` (giá gốc trước khuyến mãi). Trước đây VN dùng SUM(total) mọi đơn khiến doanh thu
@@ -75,6 +94,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     //   4 = đang hoàn về, 5 = đã hoàn về kho, -2 = hoàn manual
     //   6 = canceled (hủy bởi sale), 7 = deleted, -1 = hủy legacy
     const successCount = allOrders.filter((o: any) => o.status === 3).length
+    // Doanh thu THỰC THU = COD của riêng đơn giao thành công (status=3). Dùng cho AOV để tử số
+    // và mẫu số cùng tập đơn — total_revenue (mọi trạng thái) chia success_count sẽ thổi phồng AOV.
+    const successRevenue = allOrders
+      .filter((o: any) => o.status === 3)
+      .reduce((sum: number, o: any) => sum + revenueOf(o), 0)
     const returnCount = allOrders.filter((o: any) =>
       o.status === 4 || o.status === 5 || o.status === -2
     ).length
@@ -93,8 +117,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       entry.revenue += revenueOf(o)
       sourceMap.set(src, entry)
     }
+    // --- Kỳ trước: totals + revenue theo source, để tính Δ tăng/giảm ---
+    let prevTotalRevenue = 0
+    let prevSuccessCount = 0
+    const prevSourceRev = new Map<string, number>()
+    for (const o of prevOrders) {
+      const rev = revenueOf(o)
+      prevTotalRevenue += rev
+      if (o.status === 3) prevSuccessCount++
+      const src = o.source || "unknown"
+      prevSourceRev.set(src, (prevSourceRev.get(src) || 0) + rev)
+    }
+
     const bySource = Array.from(sourceMap.entries())
-      .map(([source, data]) => ({ source, ...data }))
+      .map(([source, data]) => ({ source, ...data, prev_revenue: prevSourceRev.get(source) || 0 }))
       .sort((a, b) => b.revenue - a.revenue)
 
     // --- By day ---
@@ -240,11 +276,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ...(mkt === "MY" ? { myr_to_vnd_rate: await getMyrToVndRate(to) } : {}),
       total_orders: totalOrders,
       total_revenue: totalRevenue,
+      success_revenue: successRevenue,
       success_rate: successRate,
       return_rate: returnRate,
       success_count: successCount,
       return_count: returnCount,
       cancel_count: cancelCount,
+      // Kỳ liền trước cùng độ dài — dùng cho Δ tăng/giảm ở KPI + theo nguồn.
+      prev: {
+        from: prevFromDate.toISOString(),
+        to: prevToDate.toISOString(),
+        total_revenue: prevTotalRevenue,
+        success_count: prevSuccessCount,
+      },
       by_source: bySource,
       by_day: byDay,
       by_product: byProduct,
