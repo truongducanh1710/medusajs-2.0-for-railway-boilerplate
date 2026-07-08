@@ -501,10 +501,13 @@ export default function ChatPage() {
     try {
       const r = await apiJson(`/admin/chat/agents/${agentId}/prompt-loop`, "POST", { scenario_count: 3 })
       setPromptLoopResults(prev => ({ ...prev, [agentId]: r }))
+      const fallbackBefore = (r.before || []).filter((x: any) => x.fallback_used).length
+      const fallbackAfter = (r.after || []).filter((x: any) => x.fallback_used).length
       const detailLines = [
         `Hoàn tất: ${r.score_before}/10 -> ${r.score_after}/10`,
-        ...(r.before || []).map((x: any, i: number) => `Scenario ${i + 1}: "${x.customer}" | hiện tại ${x.evaluation?.score ?? "-"}/10${x.evaluation?.issues?.length ? ` | lỗi: ${x.evaluation.issues.join("; ")}` : ""}`),
-        ...(r.after || []).map((x: any, i: number) => `Draft ${i + 1}: ${x.evaluation?.score ?? "-"}/10${x.evaluation?.issues?.length ? ` | còn lỗi: ${x.evaluation.issues.join("; ")}` : ""}`),
+        ...(fallbackBefore || fallbackAfter ? [`⚠ Bot không trả lời được ${fallbackBefore}/${(r.before || []).length} (hiện tại) và ${fallbackAfter}/${(r.after || []).length} (draft) kịch bản — dùng câu mẫu cứng thay vì AI thật, điểm số các case này KHÔNG phản ánh chất lượng bot.`] : []),
+        ...(r.before || []).map((x: any, i: number) => `Scenario ${i + 1}: "${x.customer}" | hiện tại ${x.evaluation?.score ?? "-"}/10${x.fallback_used ? " [FALLBACK - không phải AI thật]" : ""}${x.evaluation?.issues?.length ? ` | lỗi: ${x.evaluation.issues.join("; ")}` : ""}`),
+        ...(r.after || []).map((x: any, i: number) => `Draft ${i + 1}: ${x.evaluation?.score ?? "-"}/10${x.fallback_used ? " [FALLBACK - không phải AI thật]" : ""}${x.evaluation?.issues?.length ? ` | còn lỗi: ${x.evaluation.issues.join("; ")}` : ""}`),
       ]
       setPromptLoopLogs(prev => ({ ...prev, [agentId]: [...(prev[agentId] || []), ...detailLines].slice(-80) }))
       await loadAgents()
@@ -1058,9 +1061,31 @@ export default function ChatPage() {
                   </select>
                   {!!a.error_count && <span style={{ color: "#ef4444", fontSize: 12 }}>⚠ {a.error_count}</span>}
                 </div>
-                <pre style={{ whiteSpace: "pre-wrap", background: "#f8fafc", borderRadius: 8, padding: 10, fontSize: 11, color: "#374151", margin: 0, maxHeight: 140, overflow: "auto", lineHeight: 1.5 }}>
-                  {a.manual_override_instruction || a.generated_instruction || "Chưa có instruction"}
-                </pre>
+                {a.latest_prompt_version?.status === "draft" && a.latest_prompt_version?.prompt_text ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>ĐANG DÙNG</div>
+                      <pre style={{ whiteSpace: "pre-wrap", background: "#f8fafc", borderRadius: 8, padding: 10, fontSize: 11, color: "#374151", margin: 0, maxHeight: 200, overflow: "auto", lineHeight: 1.5 }}>
+                        {a.manual_override_instruction || a.generated_instruction || "Chưa có instruction"}
+                      </pre>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", marginBottom: 4 }}>DRAFT v{a.latest_prompt_version.version} (chờ duyệt)</div>
+                      <pre style={{ whiteSpace: "pre-wrap", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: 10, fontSize: 11, color: "#166534", margin: 0, maxHeight: 200, overflow: "auto", lineHeight: 1.5 }}>
+                        {a.latest_prompt_version.prompt_text}
+                      </pre>
+                    </div>
+                  </div>
+                ) : (
+                  <pre style={{ whiteSpace: "pre-wrap", background: "#f8fafc", borderRadius: 8, padding: 10, fontSize: 11, color: "#374151", margin: 0, maxHeight: 140, overflow: "auto", lineHeight: 1.5 }}>
+                    {a.manual_override_instruction || a.generated_instruction || "Chưa có instruction"}
+                  </pre>
+                )}
+                {a.latest_prompt_version?.status === "draft" && a.latest_prompt_version?.change_reason && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: "#475569" }}>
+                    <b>Lý do thay đổi:</b> {a.latest_prompt_version.change_reason}
+                  </div>
+                )}
                 <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <Btn size="sm" onClick={() => runPromptLoop(a.id)} disabled={!!promptBusy[a.id]}>
                     {promptBusy[a.id] === "loop" ? "AI đang test..." : "🔁 AI test loop"}
@@ -1103,8 +1128,18 @@ export default function ChatPage() {
                           return (
                             <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
                               <div style={{ fontWeight: 700, color: "#0f172a" }}>Scenario {i + 1}: {row.customer}</div>
-                              <div style={{ marginTop: 4 }}>Hiện tại: {row.evaluation?.score ?? "-"}/10{row.evaluation?.issues?.length ? ` - ${row.evaluation.issues.join("; ")}` : ""}</div>
-                              {draft && <div style={{ marginTop: 4 }}>Draft: {draft.evaluation?.score ?? "-"}/10{draft.evaluation?.issues?.length ? ` - ${draft.evaluation.issues.join("; ")}` : ""}</div>}
+                              <div style={{ marginTop: 4 }}>
+                                Hiện tại: {row.evaluation?.score ?? "-"}/10{row.evaluation?.issues?.length ? ` - ${row.evaluation.issues.join("; ")}` : ""}
+                                {row.fallback_used && <span style={{ color: "#dc2626", fontWeight: 600 }}> ⚠ FALLBACK — bot không trả lời được, đây là câu mẫu cứng, không phải AI thật</span>}
+                              </div>
+                              <div style={{ marginTop: 4, fontSize: 10, color: "#94a3b8", whiteSpace: "pre-wrap" }}>{row.bot_reply}</div>
+                              {draft && (
+                                <div style={{ marginTop: 6, borderTop: "1px dashed #e2e8f0", paddingTop: 6 }}>
+                                  Draft: {draft.evaluation?.score ?? "-"}/10{draft.evaluation?.issues?.length ? ` - ${draft.evaluation.issues.join("; ")}` : ""}
+                                  {draft.fallback_used && <span style={{ color: "#dc2626", fontWeight: 600 }}> ⚠ FALLBACK — bot không trả lời được, đây là câu mẫu cứng, không phải AI thật</span>}
+                                  <div style={{ marginTop: 4, fontSize: 10, color: "#94a3b8", whiteSpace: "pre-wrap" }}>{draft.bot_reply}</div>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -1370,4 +1405,4 @@ export default function ChatPage() {
   )
 }
 
-export const config = defineRouteConfig({ label: "Chat" })
+export const config = defineRouteConfig({ label: "          Chat" })

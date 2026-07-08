@@ -4439,5 +4439,5 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
 }
 
 export const config = defineRouteConfig({
-  label: "Doanh số MKT",
+  label: "  Doanh số MKT",
 })

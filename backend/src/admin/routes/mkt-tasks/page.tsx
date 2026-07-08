@@ -2716,5 +2716,5 @@ export default function MktTasksPage() {
 }
 
 export const config = defineRouteConfig({
-  label: "Giao Việc MKT",
+  label: "    Giao Việc MKT",
 })

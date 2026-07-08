@@ -469,7 +469,7 @@ function OrderCard({ order }: { order: SourceOrder }) {
   )
 }
 
-function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommentAdded }: {
+function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommentAdded, onToast }: {
   task: Task
   users: MktUser[]
   canRate: boolean
@@ -477,11 +477,31 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
   onPatch: (fields: Record<string, any>) => void
   onRate: (rating: number) => void
   onCommentAdded: (comment: Comment) => void
+  onToast: (msg: string, type: "success" | "error") => void
 }) {
   const [order, setOrder] = useState<SourceOrder | null>(null)
   const [loadingOrder, setLoadingOrder] = useState(false)
   const [noteDraft, setNoteDraft] = useState("")
   const [sending, setSending] = useState(false)
+  const [calling, setCalling] = useState(false)
+
+  async function callCustomer() {
+    if (calling || !task.customer_phone) return
+    setCalling(true)
+    try {
+      const r = await apiFetch("/admin/ity-cdr-sync/click2call", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: task.customer_phone, userfield: task.id }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d?.error || "Lỗi gọi")
+      onToast("Đã đổ chuông máy nhánh, vui lòng nhấc máy", "success")
+    } catch (e: any) {
+      onToast(e?.message || "Lỗi gọi", "error")
+    } finally {
+      setCalling(false)
+    }
+  }
 
   useEffect(() => {
     if (!task.pancake_order_id) { setOrder(null); return }
@@ -520,7 +540,14 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
 
           <div className="mb-4 space-y-1 rounded-lg bg-ui-bg-subtle p-3 text-[12px]">
             <div><span className="text-ui-fg-subtle">Khách hàng:</span> <b>{task.customer_name || "—"}</b></div>
-            <div><span className="text-ui-fg-subtle">SĐT:</span> <a href={`tel:${task.customer_phone}`} className="font-mono text-blue-600">{task.customer_phone}</a></div>
+            <div className="flex items-center gap-2">
+              <span className="text-ui-fg-subtle">SĐT:</span>
+              <span className="font-mono">{task.customer_phone}</span>
+              <button onClick={callCustomer} disabled={calling || !task.customer_phone}
+                className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-blue-700 disabled:opacity-50">
+                {calling ? "Đang gọi..." : "📞 Gọi"}
+              </button>
+            </div>
             <div><span className="text-ui-fg-subtle">Phụ trách:</span> {task.assignee_name}</div>
           </div>
 
@@ -807,7 +834,7 @@ export default function CskhGoiKhachPage() {
           onCreated={loadTasks} onToast={onToast} />
       )}
       {selectedTask && (
-        <DetailDrawer task={selectedTask} users={users} canRate={isManager}
+        <DetailDrawer task={selectedTask} users={users} canRate={isManager} onToast={onToast}
           onClose={() => setSelectedTask(null)}
           onPatch={fields => patchTask(selectedTask.id, fields)}
           onRate={rating => rateTask(selectedTask.id, rating)}
@@ -1018,4 +1045,4 @@ export default function CskhGoiKhachPage() {
   )
 }
 
-export const config = defineRouteConfig({ label: "CSKH Gọi khách" })
+export const config = defineRouteConfig({ label: "            CSKH Gọi khách" })

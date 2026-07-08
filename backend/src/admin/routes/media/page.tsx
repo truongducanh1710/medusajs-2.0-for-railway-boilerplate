@@ -382,7 +382,7 @@ const MediaPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Quản lý Media",
+  label: "      Quản lý Media",
 })
 
 export default MediaPage

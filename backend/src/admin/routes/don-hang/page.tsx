@@ -820,7 +820,7 @@ const DonHangPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Đơn hàng (Tên KH)",
+  label: "       Đơn hàng (Tên KH)",
 })
 
 export default DonHangPage

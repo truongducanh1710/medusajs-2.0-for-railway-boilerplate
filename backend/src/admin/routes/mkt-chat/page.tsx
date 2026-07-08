@@ -1458,4 +1458,4 @@ export default function MktChatPage() {
   )
 }
 
-export const config = defineRouteConfig({ label: "Chat MKT" })
+export const config = defineRouteConfig({ label: "     Chat MKT" })

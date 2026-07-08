@@ -568,7 +568,7 @@ const PancakeSyncPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Đồng bộ Pancake",
+  label: "               Đồng bộ Pancake",
 })
 
 export default PancakeSyncPage

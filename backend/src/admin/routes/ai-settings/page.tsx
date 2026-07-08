@@ -485,6 +485,6 @@ export default function AiSettingsPage() {
 }
 
 export const config = defineRouteConfig({
-  label: "AI Settings",
+  label: "                AI Settings",
   icon: "cog-six-tooth",
 })

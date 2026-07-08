@@ -645,7 +645,7 @@ const ItyCdrPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Cuộc gọi (CDR)",
+  label: "             Cuộc gọi (CDR)",
 })
 
 export default ItyCdrPage
