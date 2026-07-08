@@ -1,5 +1,7 @@
-import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { NextRequest, NextResponse } from "next/server"
 import { Pool } from "pg"
+
+export const dynamic = "force-dynamic"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -7,7 +9,7 @@ function getPool(): Pool {
   return _pool
 }
 
-// Nhóm gọn 3 trạng thái cho agency dễ theo dõi — chi tiết đầy đủ xem GLOSSARY.md
+// Nhóm gọn 3 trạng thái cho agency dễ theo dõi — chi tiết đầy đủ xem GLOSSARY.md (repo backend)
 const CONFIRMED_STATUSES = new Set([2, 3, 6, 9])
 const CANCELLED_STATUSES = new Set([-1, -2, 4, 5, 7])
 
@@ -26,9 +28,7 @@ function maskPhone(phone: string): string {
 function maskName(name: string): string {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return ""
-  return parts
-    .map((p, i) => (i === parts.length - 1 ? p : p[0] + "**"))
-    .join(" ")
+  return parts.map((p, i) => (i === parts.length - 1 ? p : p[0] + "**")).join(" ")
 }
 
 function escapeHtml(s: string): string {
@@ -45,18 +45,19 @@ function extractCampaignId(link: string): string {
 }
 
 /**
- * GET /store/google-orders
- * Public — bảng đơn hàng từ nguồn Google Ads (ad_platform='google') cho agency GG xem, không cần login.
- * ?format=json để lấy raw JSON thay vì trang HTML.
+ * GET /api/google-orders
+ * Public — bảng đơn hàng nguồn Google Ads (ad_platform='google') cho agency xem, không cần login.
+ * ?format=json để lấy raw JSON. ?days=N để đổi khoảng ngày (mặc định 30, tối đa 90).
  */
-export async function GET(req: MedusaRequest, res: MedusaResponse) {
+export async function GET(req: NextRequest) {
   try {
-    const { format, days } = req.query as Record<string, string | undefined>
-    const pool = getPool()
-    const dayRange = Math.min(Number(days) || 30, 90)
+    const { searchParams } = new URL(req.url)
+    const format = searchParams.get("format")
+    const dayRange = Math.min(Number(searchParams.get("days")) || 30, 90)
 
+    const pool = getPool()
     const { rows } = await pool.query(
-      `SELECT id, status, status_name, customer_name, customer_phone, province,
+      `SELECT id, status, customer_name, customer_phone, province,
               total, items, items_count, tracking_code, pancake_created_at,
               COALESCE(raw->>'link', raw->>'order_link', '') AS order_link
        FROM pancake_order
@@ -85,7 +86,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }))
 
     if (format === "json") {
-      return res.json({ orders, count: orders.length, days: dayRange })
+      return NextResponse.json({ orders, count: orders.length, days: dayRange })
     }
 
     const rowsHtml = orders
@@ -152,9 +153,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 </body>
 </html>`
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8")
-    return res.send(html)
+    return new NextResponse(html, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    })
   } catch (err: any) {
-    return res.status(500).json({ error: err.message })
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
