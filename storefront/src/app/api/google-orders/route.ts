@@ -102,9 +102,42 @@ export async function GET(req: NextRequest) {
       created_at: o.pancake_created_at,
     }))
 
-    if (format === "json") {
-      return NextResponse.json({ orders, count: orders.length, days: dayRange })
+    // Tổng hợp theo Mã Campaign GG: tổng đơn, số xác nhận/hủy/đang xử lý, tỷ lệ chốt
+    const byCampaign = new Map<string, { total: number; confirmed: number; cancelled: number; pending: number; revenue: number }>()
+    for (const o of orders) {
+      const key = o.campaign_id || "(không xác định)"
+      const agg = byCampaign.get(key) ?? { total: 0, confirmed: 0, cancelled: 0, pending: 0, revenue: 0 }
+      agg.total += 1
+      if (o.cls === "confirmed") { agg.confirmed += 1; agg.revenue += o.total }
+      else if (o.cls === "cancelled") agg.cancelled += 1
+      else agg.pending += 1
+      byCampaign.set(key, agg)
     }
+    const campaignSummary = [...byCampaign.entries()]
+      .map(([campaign_id, agg]) => ({
+        campaign_id,
+        ...agg,
+        confirm_rate: agg.total > 0 ? (agg.confirmed / agg.total) * 100 : 0,
+      }))
+      .sort((a, b) => b.total - a.total)
+
+    if (format === "json") {
+      return NextResponse.json({ orders, campaignSummary, count: orders.length, days: dayRange })
+    }
+
+    const summaryRowsHtml = campaignSummary
+      .map(
+        (c) => `<tr>
+        <td>${escapeHtml(c.campaign_id)}</td>
+        <td>${c.total}</td>
+        <td>${c.confirmed}</td>
+        <td>${c.cancelled}</td>
+        <td>${c.pending}</td>
+        <td>${c.confirm_rate.toFixed(1)}%</td>
+        <td>${c.revenue.toLocaleString("vi-VN")}đ</td>
+      </tr>`
+      )
+      .join("\n")
 
     const rowsHtml = orders
       .map(
@@ -136,6 +169,7 @@ export async function GET(req: NextRequest) {
   body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 24px; background: #f7f7f8; color: #1a1a1a; }
   @media (prefers-color-scheme: dark) { body { background: #16161a; color: #e6e6e6; } }
   h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 24px 0 10px; }
   .sub { color: #666; font-size: 13px; margin-bottom: 16px; }
   @media (prefers-color-scheme: dark) { .sub { color: #999; } }
   table { border-collapse: collapse; width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; }
@@ -159,6 +193,18 @@ export async function GET(req: NextRequest) {
 <body>
   <h1>Đơn hàng nguồn Google Ads</h1>
   <div class="sub">${orders.length} đơn trong ${dayRange} ngày gần nhất · Tự động cập nhật mỗi 2 phút · SĐT/tên đã ẩn 1 phần</div>
+
+  <h2>Tổng hợp theo Campaign</h2>
+  <div class="wrap">
+  <table>
+    <thead><tr>
+      <th>Mã Campaign GG</th><th>Tổng đơn</th><th>Đã xác nhận</th><th>Đã hủy</th><th>Đang xử lý</th><th>Tỷ lệ chốt</th><th>Doanh thu (đơn xác nhận)</th>
+    </tr></thead>
+    <tbody>${summaryRowsHtml}</tbody>
+  </table>
+  </div>
+
+  <h2>Chi tiết đơn hàng</h2>
   <div class="wrap">
   <table>
     <thead><tr>
