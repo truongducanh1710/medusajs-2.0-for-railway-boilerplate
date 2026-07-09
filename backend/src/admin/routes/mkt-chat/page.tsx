@@ -946,6 +946,7 @@ export default function MktChatPage() {
   const [notifications, setNotifications] = useState<MktNotification[]>([])
   const [notificationUnread, setNotificationUnread] = useState(0)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -956,6 +957,8 @@ export default function MktChatPage() {
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
   const pendingJumpRef = useRef<string | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioUnlockedRef = useRef(false)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -1014,6 +1017,59 @@ export default function MktChatPage() {
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
   }, [loadChannels, loadTemplates, loadNotifications])
 
+  const unlockNotificationAudio = useCallback(() => {
+    if (audioUnlockedRef.current || typeof window === "undefined") return
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextCtor) return
+    const ctx = audioContextRef.current || new AudioContextCtor()
+    audioContextRef.current = ctx
+    ctx.resume().then(() => { audioUnlockedRef.current = true }).catch(() => {})
+  }, [])
+
+  const playMentionSound = useCallback((force = false) => {
+    if ((!force && !notificationSoundEnabled) || typeof window === "undefined") return
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextCtor) return
+    const ctx = audioContextRef.current || new AudioContextCtor()
+    audioContextRef.current = ctx
+
+    const play = () => {
+      const now = ctx.currentTime
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36)
+      gain.connect(ctx.destination)
+
+      ;[880, 1175].forEach((freq, i) => {
+        const osc = ctx.createOscillator()
+        const start = now + i * 0.14
+        osc.type = "sine"
+        osc.frequency.setValueAtTime(freq, start)
+        osc.connect(gain)
+        osc.start(start)
+        osc.stop(start + 0.12)
+      })
+      window.setTimeout(() => gain.disconnect(), 450)
+    }
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(() => { audioUnlockedRef.current = true; play() }).catch(() => {})
+      return
+    }
+    audioUnlockedRef.current = true
+    play()
+  }, [notificationSoundEnabled])
+
+  useEffect(() => {
+    const unlock = () => unlockNotificationAudio()
+    window.addEventListener("pointerdown", unlock, { once: true, passive: true })
+    window.addEventListener("keydown", unlock, { once: true })
+    return () => {
+      window.removeEventListener("pointerdown", unlock)
+      window.removeEventListener("keydown", unlock)
+    }
+  }, [unlockNotificationAudio])
   const loadMessages = useCallback((channelId: string, opts?: { scroll?: boolean; markRead?: boolean }) => {
     setLoading(true)
     if (opts?.scroll !== false) setNewMsgCount(0)
@@ -1090,6 +1146,7 @@ export default function MktChatPage() {
         if (!notification?.id) return
         setNotifications(prev => [notification, ...prev.filter(n => n.id !== notification.id)].slice(0, 30))
         setNotificationUnread(c => c + 1)
+        playMentionSound()
       })
       es.addEventListener("mention.notifications.read", () => {
         setNotificationUnread(0)
@@ -1140,7 +1197,7 @@ export default function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id])
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound])
 
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
@@ -1318,6 +1375,16 @@ export default function MktChatPage() {
     if (nextOpen && notificationUnread > 0) markNotificationsRead()
   }
 
+  const toggleNotificationSound = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    const next = !notificationSoundEnabled
+    setNotificationSoundEnabled(next)
+    localStorage.setItem("mkt-chat:sound", next ? "1" : "0")
+    if (next) {
+      unlockNotificationAudio()
+      playMentionSound(true)
+    }
+  }
   const jumpToNotification = (notification: MktNotification) => {
     setNotificationOpen(false)
     setShowSearch(false)
@@ -1421,7 +1488,12 @@ export default function MktChatPage() {
                 <div className="chat-anim-fadeup absolute right-0 top-8 z-[80] w-[320px] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl">
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
-                    <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
+                    <span className="flex items-center gap-2">
+                      <button onClick={toggleNotificationSound} className={cn("text-[11px] font-medium", notificationSoundEnabled ? "text-emerald-600 hover:text-emerald-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+                        {notificationSoundEnabled ? "Âm bật" : "Âm tắt"}
+                      </button>
+                      <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
+                    </span>
                   </div>
                   <div className="max-h-[360px] overflow-y-auto py-1">
                     {notifications.length === 0 ? (
