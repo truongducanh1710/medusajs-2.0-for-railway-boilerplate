@@ -28,7 +28,7 @@ type LinkedTask = {
   id: string; title: string; status: string; priority?: string
   assignee_name: string; deadline: string | null
 }
-type ChatFile = { id: string; file_url: string; file_type: string | null; file_name: string | null; author_id: string; created_at: string }
+type ChatFile = { id: string; file_url: string; file_type: string | null; file_name: string | null; author_id: string; author_name?: string; created_at: string }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -122,14 +122,15 @@ function Avatar({ name, online, className }: { name: string; online?: boolean; c
   )
 }
 
-function ReactionBar({ reactions, msgId, currentEmail, onReact }: {
+function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine }: {
   reactions: Record<string, string[]>; msgId: string; currentEmail: string
   onReact: (msgId: string, emoji: string) => void
+  isMine?: boolean
 }) {
   const entries = Object.entries(reactions || {}).filter(([, users]) => users.length > 0)
   if (entries.length === 0) return null
   return (
-    <div className="mt-1 flex flex-wrap gap-1">
+    <div className={cn("mt-1 flex flex-wrap gap-1", isMine && "justify-end")}>
       {entries.map(([emoji, users]) => {
         const mine = users.includes(currentEmail)
         return (
@@ -148,7 +149,7 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact }: {
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin }: {
+function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread }: {
   msg: Message; isMine: boolean; currentUserEmail: string; isManager: boolean
   isOptimistic: boolean
   onTaskClick?: (taskId: string) => void
@@ -249,12 +250,12 @@ function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic,
           {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
         </div>
 
-        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} />
       </div>
 
       {/* Hover actions — thanh ngang phía trên bubble (kiểu Slack) */}
       <div className={cn("absolute -top-2.5 z-10 hidden items-center gap-px rounded-lg border border-ui-border-base bg-ui-bg-base p-0.5 shadow-md group-hover/msg:flex",
-        isMine ? "left-2" : "right-2")}>
+        isMine ? "right-2" : "left-2")}>
         {QUICK_EMOJIS.slice(0, 4).map(e => (
           <button key={e} onClick={() => onReact(msg.id, e)}
             className="grid size-6 place-items-center rounded-md text-[13px] transition-transform hover:scale-125 hover:bg-ui-bg-base-hover">{e}</button>
@@ -313,52 +314,89 @@ function PinnedBar({ channelId, onJump }: { channelId: string; onJump: (msgId: s
 
 // ─── Search panel ─────────────────────────────────────────────────────────────
 
-function SearchPanel({ channelId, onClose, onJump }: { channelId: string; onClose: () => void; onJump: (msgId: string) => void }) {
+function SearchPanel({ currentChannelId, channels, users, onClose, onJump }: {
+  currentChannelId: string
+  channels: Channel[]
+  users: MktUser[]
+  onClose: () => void
+  onJump: (msg: Message) => void
+}) {
   const [q, setQ] = useState("")
+  const [scope, setScope] = useState<"channel" | "workspace">("channel")
+  const [channelId, setChannelId] = useState("")
+  const [authorId, setAuthorId] = useState("")
+  const [fromDate, setFromDate] = useState("")
+  const [toDate, setToDate] = useState("")
   const [results, setResults] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!q.trim()) { setResults([]); return }
     const t = setTimeout(() => {
+      const params = new URLSearchParams({ q: q.trim(), limit: "50" })
+      const scopedChannel = scope === "channel" ? currentChannelId : channelId
+      if (scopedChannel) params.set("channel_id", scopedChannel)
+      if (authorId) params.set("author_id", authorId)
+      if (fromDate) params.set("from", fromDate)
+      if (toDate) params.set("to", `${toDate}T23:59:59`)
       setLoading(true)
-      apiFetch(`/admin/mkt-chat/channels/${channelId}/search?q=${encodeURIComponent(q)}`)
+      apiFetch(`/admin/mkt-chat/search?${params.toString()}`)
         .then(r => r.json()).then(d => setResults(d.messages || [])).finally(() => setLoading(false))
-    }, 400)
+    }, 350)
     return () => clearTimeout(t)
-  }, [q, channelId])
+  }, [q, scope, channelId, authorId, fromDate, toDate, currentChannelId])
+
+  const highlight = (text: string) => escapeHtml(text).replace(
+    new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+    s => `<mark class="rounded-sm bg-amber-200 dark:bg-amber-500/40">${s}</mark>`
+  )
 
   return (
-    <div className="chat-anim-panel absolute inset-y-0 right-0 z-10 flex w-[340px] flex-col border-l border-ui-border-base bg-ui-bg-base">
-      <div className="flex items-center gap-2 border-b border-ui-border-base px-4 py-3">
-        <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm trong channel..."
-          className={cn(INPUT_CLS, "py-1.5")} />
-        <button onClick={onClose} className="text-base text-ui-fg-muted transition-colors hover:text-ui-fg-base">✕</button>
+    <div className="chat-anim-panel absolute inset-y-0 right-0 z-10 flex w-[380px] flex-col border-l border-ui-border-base bg-ui-bg-base">
+      <div className="border-b border-ui-border-base px-4 py-3">
+        <div className="mb-2 flex items-center gap-2">
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Tim tin nhan..."
+            className={cn(INPUT_CLS, "py-1.5")} />
+          <button onClick={onClose} className="text-base text-ui-fg-muted transition-colors hover:text-ui-fg-base">x</button>
+        </div>
+        <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-ui-bg-component p-0.5">
+          <button onClick={() => setScope("channel")}
+            className={cn("rounded-md px-2 py-1 text-xs font-semibold", scope === "channel" ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted")}>Channel nay</button>
+          <button onClick={() => setScope("workspace")}
+            className={cn("rounded-md px-2 py-1 text-xs font-semibold", scope === "workspace" ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted")}>Workspace</button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {scope === "workspace" && (
+            <select value={channelId} onChange={e => setChannelId(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")}> 
+              <option value="">Tat ca channel</option>
+              {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <select value={authorId} onChange={e => setAuthorId(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs", scope === "channel" && "col-span-2")}> 
+            <option value="">Tat ca tac gia</option>
+            {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+          </select>
+          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")} />
+          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")} />
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3">
-        {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tìm...</div>}
-        {!loading && results.length === 0 && q.trim() && <div className="py-4 text-center text-xs text-ui-fg-muted">Không tìm thấy</div>}
+        {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Dang tim...</div>}
+        {!loading && results.length === 0 && q.trim() && <div className="py-4 text-center text-xs text-ui-fg-muted">Khong tim thay</div>}
         {results.map(m => (
-          <button key={m.id} onClick={() => onJump(m.id)}
+          <button key={m.id} onClick={() => onJump(m)}
             className="mb-1.5 block w-full rounded-lg border border-ui-border-base bg-ui-bg-subtle px-2.5 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-500/5">
-            <div className="mb-0.5 text-[11px] text-ui-fg-muted">{m.author_name} · {fmtDate(m.created_at)} {fmtTime(m.created_at)}</div>
-            <div className="whitespace-pre-wrap text-[13px] leading-snug text-ui-fg-base"
-              dangerouslySetInnerHTML={{
-                __html: escapeHtml(m.content).replace(
-                  new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
-                  s => `<mark class="rounded-sm bg-amber-200 dark:bg-amber-500/40">${s}</mark>`
-                ),
-              }}
-            />
+            <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-ui-fg-muted">
+              <span>{m.author_name} · {fmtDate(m.created_at)} {fmtTime(m.created_at)}</span>
+              {m.channel_name && <span className="max-w-[120px] truncate"># {m.channel_name}</span>}
+            </div>
+            <div className="whitespace-pre-wrap text-[13px] leading-snug text-ui-fg-base" dangerouslySetInnerHTML={{ __html: highlight(m.content) }} />
           </button>
         ))}
       </div>
     </div>
   )
 }
-
-// ─── Quick Reply (templates) ─────────────────────────────────────────────────
-
 function TemplatePicker({ templates, query, activeIndex, onSelect, onClose }: {
   templates: Template[]; query: string; activeIndex: number
   onSelect: (t: Template) => void; onClose: () => void
@@ -483,6 +521,7 @@ function UserCheckList({ users, selected, onToggle }: { users: MktUser[]; select
 function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void; onCreated: () => void; users: MktUser[] }) {
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
+  const [isPrivate, setIsPrivate] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
@@ -492,7 +531,7 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
     setSaving(true)
     await apiFetch("/admin/mkt-chat/channels", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description: desc, member_ids: [...selected] }),
+      body: JSON.stringify({ name, description: desc, member_ids: [...selected], is_private: isPrivate }),
     })
     setSaving(false); onCreated(); onClose()
   }
@@ -500,27 +539,30 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
   return (
     <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
       <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h2 className="mb-4 text-base font-extrabold text-ui-fg-base">Tạo group chat mới</h2>
+        <h2 className="mb-4 text-base font-extrabold text-ui-fg-base">Tao group chat moi</h2>
         <div className="flex flex-col gap-3">
-          <div><label className={LABEL_CLS}>Tên group *</label>
-            <input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="VD: Team MKT T6..." autoFocus /></div>
-          <div><label className={LABEL_CLS}>Mô tả</label>
-            <input className={INPUT_CLS} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Mục đích của group..." /></div>
-          <div><label className={LABEL_CLS}>Thêm thành viên</label>
+          <div><label className={LABEL_CLS}>Ten group *</label>
+            <input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="VD: ads-meta-team..." autoFocus /></div>
+          <div><label className={LABEL_CLS}>Mo ta</label>
+            <input className={INPUT_CLS} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Muc dich cua group..." /></div>
+          <label className="flex items-center gap-2 rounded-lg border border-ui-border-base bg-ui-bg-subtle px-3 py-2 text-[13px] text-ui-fg-base">
+            <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
+            <span>Rieng tu</span>
+          </label>
+          <div><label className={LABEL_CLS}>Them thanh vien</label>
             <UserCheckList users={users} selected={selected} onToggle={toggle} /></div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Huy</button>
           <button onClick={submit} disabled={saving || !name.trim()}
             className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
-            {saving ? "Đang tạo..." : "Tạo group"}
+            {saving ? "Dang tao..." : "Tao group"}
           </button>
         </div>
       </div>
     </div>
   )
 }
-
 function ManageMembersModal({ channel, users, onClose, onSaved }: { channel: Channel; users: MktUser[]; onClose: () => void; onSaved: () => void }) {
   const initial = useMemo(() => new Set(channel.member_ids || []), [channel])
   const [selected, setSelected] = useState<Set<string>>(new Set(initial))

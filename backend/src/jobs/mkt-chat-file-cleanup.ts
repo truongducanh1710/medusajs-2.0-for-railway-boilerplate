@@ -3,43 +3,49 @@ import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../lib/db"
 
 export default async function mktChatFileCleanupJob(container: MedusaContainer) {
+  const pool = getPool()
+  let cleaned = 0
+  let failed = 0
+
   try {
     const fileModule = container.resolve(Modules.FILE) as any
-
-    // Tìm tất cả file đã hết hạn
-    const result = await getPool().query(
-      `SELECT id, file_key, message_id FROM mkt_chat_file WHERE expires_at <= NOW()`
+    const result = await pool.query(
+      `SELECT id, file_key, message_id
+       FROM mkt_chat_file
+       WHERE expires_at < now() AND cleaned_at IS NULL
+       ORDER BY expires_at ASC
+       LIMIT 200`
     )
 
     if (result.rows.length === 0) return
 
-    console.log(`[mkt-chat-cleanup] Xoá ${result.rows.length} file hết hạn`)
-
     for (const row of result.rows) {
       try {
-        // Xoá trên MinIO
         await fileModule.deleteFiles([{ fileKey: row.file_key }])
-
-        // Xoá record
-        await getPool().query(`DELETE FROM mkt_chat_file WHERE id = $1`, [row.id])
-
-        // Cập nhật message: xoá file_url để UI không render nữa
-        await getPool().query(
-          `UPDATE mkt_message SET file_url = NULL, content = '[File đã hết hạn]', updated_at = NOW()
-           WHERE id = $1`,
-          [row.message_id]
-        )
       } catch (e: any) {
-        console.warn(`[mkt-chat-cleanup] Lỗi khi xoá file ${row.file_key}:`, e.message)
+        failed += 1
+        console.warn(`[mkt-chat-cleanup] file delete failed for ${row.file_key}: ${e.message}`)
       }
+
+      await pool.query(
+        `UPDATE mkt_message
+         SET file_url = NULL,
+             content = CASE WHEN file_url IS NULL THEN content ELSE '[File da het han]' END,
+             updated_at = now()
+         WHERE id = $1`,
+        [row.message_id]
+      )
+      await pool.query(`UPDATE mkt_chat_file SET cleaned_at = now() WHERE id = $1`, [row.id])
+      cleaned += 1
     }
+
+    console.log(`[mkt-chat-cleanup] scanned=${result.rows.length} cleaned=${cleaned} delete_failed=${failed}`)
   } catch (e: any) {
-    console.error("[mkt-chat-cleanup] Job lỗi:", e.message)
+    console.error("[mkt-chat-cleanup] job failed:", e.message)
   }
 }
 
 export const config = {
   name: "mkt-chat-file-cleanup",
-  // Chạy lúc 3:00 sáng mỗi ngày
   schedule: "0 3 * * *",
 }

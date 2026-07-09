@@ -6,6 +6,7 @@ const MktChannel = model.define("mkt_channel", {
   description: model.text().nullable(),
   created_by: model.text(),
   members: model.json(),
+  is_private: model.boolean().default(false),
 })
 
 export default MktChannel

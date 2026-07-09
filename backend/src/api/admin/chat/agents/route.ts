@@ -18,6 +18,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             'score_after', pv.score_after,
             'eval_summary', pv.eval_summary,
             'change_reason', pv.change_reason,
+            'prompt_text', pv.prompt_text,
             'created_at', pv.created_at
           )
           FROM fb_bot_prompt_version pv

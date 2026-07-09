@@ -100,6 +100,16 @@ export const ITY_CDR_USERNAME = process.env.ITY_CDR_USERNAME || ''
 export const ITY_CDR_PASSWORD = process.env.ITY_CDR_PASSWORD || ''
 
 /**
+ * (optional) ITY click-to-call — API riêng để bấm gọi từ web (đổ chuông máy nhánh
+ * softphone của sale trước, sale nhấc máy thì tổng đài mới nối tới khách).
+ * Domain PBX + secret KHÁC với ITY_CDR_USERNAME/PASSWORD (đó là auth cho CDR report API).
+ * Cần xin ITY cấp: domain PBX riêng của Phan Việt, secret cho API click2call, customer ID.
+ */
+export const ITY_PBX_DOMAIN = process.env.ITY_PBX_DOMAIN || ''
+export const ITY_CLICK2CALL_SECRET = process.env.ITY_CLICK2CALL_SECRET || ''
+export const ITY_CUSTOMER_ID = process.env.ITY_CUSTOMER_ID || ''
+
+/**
  * (optional) Pancake POS configuration
  */
 export const PANCAKE_API_KEY = process.env.PANCAKE_API_KEY || ''
