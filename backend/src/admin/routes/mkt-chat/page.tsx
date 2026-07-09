@@ -31,6 +31,10 @@ type LinkedTask = {
   assignee_name: string; deadline: string | null
 }
 type ChatFile = { id: string; file_url: string; file_type: string | null; file_name: string | null; author_id: string; author_name?: string; created_at: string }
+type MktNotification = {
+  id: string; recipient: string; channel_id: string; channel_name: string; message_id: string
+  sender: string; sender_name: string; preview: string; source?: string; created_at: string; read: boolean
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -939,6 +943,9 @@ export default function MktChatPage() {
   const [uploadingFile, setUploadingFile] = useState(false)
   const [newMsgCount, setNewMsgCount] = useState(0)
   const [threadRefreshKey, setThreadRefreshKey] = useState(0)
+  const [notifications, setNotifications] = useState<MktNotification[]>([])
+  const [notificationUnread, setNotificationUnread] = useState(0)
+  const [notificationOpen, setNotificationOpen] = useState(false)
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -981,11 +988,31 @@ export default function MktChatPage() {
     apiFetch("/admin/mkt-chat/templates").then(r => r.json()).then(d => setTemplates(d.templates || [])).catch(() => {})
   }, [])
 
+  const loadNotifications = useCallback(() => {
+    apiFetch("/admin/mkt-chat/notifications")
+      .then(r => r.json())
+      .then(d => {
+        setNotifications(d.notifications || [])
+        setNotificationUnread(Number(d.unread_count || 0))
+      })
+      .catch(() => {})
+  }, [])
+
+  const markNotificationsRead = useCallback(() => {
+    apiFetch("/admin/mkt-chat/notifications/read", { method: "PATCH" })
+      .then(r => r.json())
+      .then(() => {
+        setNotificationUnread(0)
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      })
+      .catch(() => {})
+  }, [])
   useEffect(() => {
     loadChannels()
     loadTemplates()
+    loadNotifications()
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
-  }, [loadChannels, loadTemplates])
+  }, [loadChannels, loadTemplates, loadNotifications])
 
   const loadMessages = useCallback((channelId: string, opts?: { scroll?: boolean; markRead?: boolean }) => {
     setLoading(true)
@@ -1057,6 +1084,17 @@ export default function MktChatPage() {
 
       es.addEventListener("channel.updated", () => loadChannels())
       es.addEventListener("channel.member.updated", () => loadChannels())
+      es.addEventListener("mention.notification.created", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        const notification = data.notification as MktNotification | undefined
+        if (!notification?.id) return
+        setNotifications(prev => [notification, ...prev.filter(n => n.id !== notification.id)].slice(0, 30))
+        setNotificationUnread(c => c + 1)
+      })
+      es.addEventListener("mention.notifications.read", () => {
+        setNotificationUnread(0)
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      })
       es.addEventListener("read.updated", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
         if (!data.channel_id) return
@@ -1078,6 +1116,7 @@ export default function MktChatPage() {
       es.onerror = () => {
         es?.close()
         loadChannels()
+        loadNotifications()
         refreshActive()
         retryTimer = setTimeout(connect, 5000)
       }
@@ -1088,6 +1127,7 @@ export default function MktChatPage() {
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         loadChannels()
+        loadNotifications()
         refreshActive()
       }
     }
@@ -1100,7 +1140,7 @@ export default function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, openThread?.id])
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id])
 
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
@@ -1272,6 +1312,25 @@ export default function MktChatPage() {
     jumpToMessage(msg.id)
   }
 
+  const toggleNotifications = () => {
+    const nextOpen = !notificationOpen
+    setNotificationOpen(nextOpen)
+    if (nextOpen && notificationUnread > 0) markNotificationsRead()
+  }
+
+  const jumpToNotification = (notification: MktNotification) => {
+    setNotificationOpen(false)
+    setShowSearch(false)
+    setOpenThread(null)
+    pendingJumpRef.current = notification.message_id
+
+    const target = channels.find(c => c.id === notification.channel_id)
+    if (target && target.id !== activeChannel?.id) {
+      setActiveChannel(target)
+      return
+    }
+    requestAnimationFrame(() => jumpToMessage(notification.message_id))
+  }
   useEffect(() => {
     const pendingId = pendingJumpRef.current
     if (!pendingId || !messages.some(m => m.id === pendingId)) return
@@ -1345,9 +1404,46 @@ export default function MktChatPage() {
         <div className="px-3 pb-1 pt-3">
           <div className="mb-2 flex items-center justify-between px-1">
             <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
-            {totalUnread > 0 && (
-              <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
-            )}
+            <div className="relative flex items-center gap-1.5">
+              {totalUnread > 0 && (
+                <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
+              )}
+              <button onClick={toggleNotifications} title="Thông báo nhắc đến"
+                className={cn("relative grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                  notificationOpen ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>🔔
+                {notificationUnread > 0 && (
+                  <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-4 text-white shadow-sm">
+                    {notificationUnread > 99 ? "99+" : notificationUnread}
+                  </span>
+                )}
+              </button>
+              {notificationOpen && (
+                <div className="chat-anim-fadeup absolute right-0 top-8 z-[80] w-[320px] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
+                    <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
+                    <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
+                  </div>
+                  <div className="max-h-[360px] overflow-y-auto py-1">
+                    {notifications.length === 0 ? (
+                      <div className="px-3 py-5 text-center text-xs text-ui-fg-muted">Chưa có ai tag bạn</div>
+                    ) : notifications.map(n => (
+                      <button key={n.id} onClick={() => jumpToNotification(n)}
+                        className={cn("flex w-full gap-2 px-3 py-2.5 text-left transition-colors hover:bg-ui-bg-base-hover", !n.read && "bg-blue-500/5")}>
+                        <Avatar name={n.sender_name || n.sender} className="size-7 text-[11px]" />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="truncate text-[12px] font-semibold text-ui-fg-base">{n.sender_name || n.sender}</span>
+                            <span className="shrink-0 text-[10px] text-ui-fg-muted">{fmtSnippetTime(n.created_at)}</span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-ui-fg-muted">#{n.channel_name} · {n.source === "thread" ? "trả lời thread" : "tin nhắn"}</span>
+                          <span className="mt-1 block line-clamp-2 text-[12px] leading-snug text-ui-fg-subtle">{n.preview}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <input
             value={channelSearch}

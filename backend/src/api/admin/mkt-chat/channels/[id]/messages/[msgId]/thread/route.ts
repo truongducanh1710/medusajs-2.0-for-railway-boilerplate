@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../../../../../lib/db"
-import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap, isMktChannelMember } from "../../../../../_lib"
+import { broadcastToChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap, isMktChannelMember } from "../../../../../_lib"
 
 function parseMentions(content: string, memberEmails: string[], nameByEmail: Record<string, string>): string[] {
   const mentioned = new Set<string>()
@@ -126,6 +126,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       content: String(root.content || "").slice(0, 80),
       author_name: root.author_id === "ai" ? "AI Assistant" : (nameByEmail[root.author_id] || root.author_id),
     })
+
+    if (mentions.length > 0) {
+      createMentionNotifications(svc, {
+        channelId,
+        channelName: channel.name,
+        senderEmail: auth.email,
+        senderName: nameByEmail[auth.email] || auth.email,
+        messageId: reply.id,
+        preview: text,
+        mentions,
+        source: "thread",
+      }).catch(console.error)
+    }
 
     broadcastToChannel(channelId, "message.created", { message: formattedReply })
     broadcastToChannel(channelId, "thread.reply.created", {

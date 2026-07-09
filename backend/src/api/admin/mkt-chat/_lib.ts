@@ -105,6 +105,58 @@ export function formatMktMessage(message: any, nameByEmail: Record<string, strin
   }
 }
 
+export type CreateMentionNotificationOptions = {
+  channelId: string
+  channelName: string
+  senderEmail: string
+  senderName: string
+  messageId: string
+  preview: string
+  mentions: string[]
+  source?: "message" | "thread"
+}
+
+export async function createMentionNotifications(svc: any, opts: CreateMentionNotificationOptions) {
+  const recipients = [...new Set((opts.mentions || []).filter(email => email && email !== opts.senderEmail))]
+  if (recipients.length === 0) return
+
+  for (const recipient of recipients) {
+    const createdAt = new Date().toISOString()
+    const payload = {
+      type: "mention",
+      recipient,
+      channel_id: opts.channelId,
+      channel_name: opts.channelName,
+      message_id: opts.messageId,
+      sender: opts.senderEmail,
+      sender_name: opts.senderName,
+      preview: String(opts.preview || "").slice(0, 160),
+      source: opts.source || "message",
+      created_at: createdAt,
+    }
+
+    const notification = await svc.createMktMessages({
+      channel_id: "__notify__",
+      author_id: "system",
+      content: JSON.stringify(payload),
+      msg_type: "system_notify",
+      reactions: {},
+      mentions: [],
+      reply_count: 0,
+    }).catch(() => null)
+
+    if (notification?.id) {
+      broadcastToUser(recipient, "mention.notification.created", {
+        notification: {
+          id: notification.id,
+          ...payload,
+          created_at: notification.created_at || createdAt,
+        },
+      })
+    }
+  }
+}
+
 export async function searchMktMessages(req: MedusaRequest, opts: MktMessageSearchOptions) {
   const q = opts.q.trim()
   if (!q || opts.visibleChannelIds.length === 0) return []

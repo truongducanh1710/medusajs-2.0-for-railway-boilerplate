@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
-import { broadcastToChannel, formatMktMessage, getMktUserNameMap } from "../../../_lib"
+import { broadcastToChannel, createMentionNotifications, formatMktMessage, getMktUserNameMap } from "../../../_lib"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -200,7 +200,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     broadcastToChannel(id, "channel.updated", {})
 
     if (mentions.length > 0) {
-      notifyMentions(svc, id, channel.name, email, nameByEmail[email] || email, text, mentions).catch(console.error)
+      const senderName = nameByEmail[email] || email
+      notifyMentions(svc, id, channel.name, email, senderName, text, mentions).catch(console.error)
+      createMentionNotifications(svc, {
+        channelId: id,
+        channelName: channel.name,
+        senderEmail: email,
+        senderName,
+        messageId: message.id,
+        preview: text,
+        mentions,
+        source: rootReplyId ? "thread" : "message",
+      }).catch(console.error)
     }
     notifyMembers(svc, id, channel.name, email, text, memberEmails).catch(console.error)
 
