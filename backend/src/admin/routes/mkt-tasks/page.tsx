@@ -21,6 +21,8 @@ type Task = {
   assignee_name: string
   created_by: string
   deadline: string | null
+  planned_for?: string | null
+  personal_order?: number | null
   status: "todo" | "in_progress" | "pending_review" | "done" | "cancelled" | "missed"
   priority: "high" | "medium" | "low"
   tags: string[]
@@ -41,7 +43,7 @@ type Task = {
 }
 
 type MktUser = { id?: string; email: string; name: string }
-type ViewMode = "list" | "board" | "calendar" | "stats" | "guide"
+type ViewMode = "myday" | "list" | "board" | "calendar" | "stats" | "guide"
 type GroupBy = "assignee" | "type" | "week"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,6 +70,31 @@ function isOverdue(t: Task) {
   if (!t.deadline || t.status === "done" || t.status === "cancelled" || t.status === "pending_review") return false
   return new Date(t.deadline) < new Date()
 }
+
+function isPersonalTask(t: Task) {
+  return !!t.created_by && !!t.assignee_id && t.created_by.trim().toLowerCase() === t.assignee_id.trim().toLowerCase()
+}
+
+function vnDateKey(value: string | Date | null | undefined): string | null {
+  if (!value) return null
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d)
+  const get = (type: string) => parts.find(p => p.type === type)?.value || ""
+  return `${get("year")}-${get("month")}-${get("day")}`
+}
+
+function addDaysKey(dateKey: string, days: number): string {
+  const d = new Date(`${dateKey}T00:00:00+07:00`)
+  d.setDate(d.getDate() + days)
+  return vnDateKey(d) || dateKey
+}
+
 
 function daysUntil(d: string | null): number | null {
   if (!d) return null
@@ -600,10 +627,13 @@ function TaskDrawer({
   onToast: (msg: string, type: "success" | "error") => void
 }) {
   const isAssignee = initialTask.assignee_id === currentUserEmail
+  const isPersonal = isPersonalTask(initialTask)
+  const canEditDetails = isManager || isPersonal
   const canWork = isManager || isAssignee  // status + checklist + result + comment
 
   const [task, setTask] = useState(initialTask)
   const [notes, setNotes] = useState(initialTask.notes || "")
+  const [plannedFor, setPlannedFor] = useState(initialTask.planned_for?.slice(0, 10) || "")
   const [notesDirty, setNotesDirty] = useState(false)
   const [result, setResult] = useState(initialTask.result || "")
   const [resultDirty, setResultDirty] = useState(false)
@@ -688,6 +718,13 @@ function TaskDrawer({
     if (ok) { setNotesDirty(false); onToast("Đã lưu ghi chú", "success") }
   }
 
+  const savePlannedFor = async (value: string) => {
+    const prev = plannedFor
+    setPlannedFor(value)
+    const ok = await patchTask({ planned_for: value ? `${value}T00:00:00+07:00` : null })
+    if (!ok) setPlannedFor(prev)
+  }
+
   const saveResult = async () => {
     setSavingResult(true)
     const ok = await patchTask({ result })
@@ -703,14 +740,18 @@ function TaskDrawer({
     const update: Record<string, any> = {
       title: editForm.title,
       deadline: deadlineVal,
-      assignee_id: editForm.assignee_id,
-      type: editForm.type,
+    }
+    if (isManager) {
+      update.assignee_id = editForm.assignee_id
+      update.type = editForm.type
     }
     const ok = await patchTask(update)
     if (ok) {
-      const assigneeName = mktUsers.find(u => u.email === editForm.assignee_id)?.name || editForm.assignee_id
-      setTask(t => ({ ...t, assignee_name: assigneeName }))
-      onUpdate({ id: task.id, assignee_name: assigneeName } as any)
+      if (isManager) {
+        const assigneeName = mktUsers.find(u => u.email === editForm.assignee_id)?.name || editForm.assignee_id
+        setTask(t => ({ ...t, assignee_name: assigneeName }))
+        onUpdate({ id: task.id, assignee_name: assigneeName } as any)
+      }
       setEditMode(false)
       onToast("Đã cập nhật task", "success")
     }
@@ -757,9 +798,11 @@ function TaskDrawer({
     ? (task.status === "pending_review"
         ? ["todo", "in_progress", "pending_review", "done", "cancelled"]
         : ["todo", "in_progress", "done", "cancelled"])
-    : (isOnce
-        ? (task.status === "pending_review" ? ["pending_review"] : ["todo", "in_progress"])
-        : ["todo", "in_progress", "pending_review", "done"])
+    : (isPersonal
+        ? ["todo", "in_progress", "done", "cancelled"]
+        : (isOnce
+            ? (task.status === "pending_review" ? ["pending_review"] : ["todo", "in_progress"])
+            : ["todo", "in_progress", "pending_review", "done"]))
 
   const statusBtnCls = (s: string) => {
     const active = task.status === s
@@ -800,14 +843,14 @@ function TaskDrawer({
               )}
             </div>
             <div className="flex shrink-0 gap-1">
-              {isManager && (
+              {canEditDetails && (
                 <button onClick={() => setEditMode(e => !e)} title="Sửa task"
                   className={cn("rounded-lg border px-2.5 py-1 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                     editMode ? "border-blue-300 bg-blue-50 text-blue-600 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
                   ✏️
                 </button>
               )}
-              {isManager && (
+              {(isManager || isPersonal) && (
                 <button onClick={() => setConfirmDelete(true)} title="Xóa task"
                   className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/30 dark:hover:bg-rose-500/10 outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40">
                   🗑
@@ -850,7 +893,7 @@ function TaskDrawer({
 
             {tab === "detail" && (<>
             {/* Edit form */}
-            {editMode && isManager && (
+            {editMode && canEditDetails && (
               <div className="mkt-anim-fadeup flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 dark:border-blue-500/30 dark:bg-blue-500/5">
                 <div className="text-[11px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Chỉnh sửa task</div>
                 <div>
@@ -860,7 +903,7 @@ function TaskDrawer({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className={LABEL_CLS}>Loại</label>
-                    <select className={INPUT_CLS} value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as any }))}>
+                    <select className={INPUT_CLS} value={editForm.type} disabled={!isManager} onChange={e => setEditForm(f => ({ ...f, type: e.target.value as any }))}>
                       <option value="ads_camp">Chạy Ads</option>
                       <option value="content_post">Nội dung</option>
                       <option value="purchasing">Mua hàng</option>
@@ -914,6 +957,12 @@ function TaskDrawer({
                   })()}
                 </div>
               </div>
+              <div className="rounded-lg bg-ui-bg-subtle px-3 py-2.5">
+                <label className={LABEL_CLS}>Ngày dự định làm</label>
+                <input type="date" value={plannedFor} disabled={!canWork}
+                  onChange={e => savePlannedFor(e.target.value)}
+                  className={cn(INPUT_CLS, "py-1.5", !canWork && "bg-ui-bg-subtle")} />
+              </div>
             </div>
 
             {/* Status */}
@@ -928,7 +977,7 @@ function TaskDrawer({
                 ))}
               </div>
               {/* Assignee: nút Gửi duyệt khi task once đang làm */}
-              {isOnce && !isManager && isAssignee && task.status === "in_progress" && (
+              {isOnce && !isPersonal && !isManager && isAssignee && task.status === "in_progress" && (
                 <button onClick={() => updateStatus("pending_review")}
                   className="mt-2 rounded-lg border border-amber-400 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 active:scale-95 dark:bg-amber-500/10 dark:text-amber-300">
                   📤 Gửi duyệt
@@ -949,8 +998,8 @@ function TaskDrawer({
               )}
             </div>
 
-            {/* Priority + Tags (manager) */}
-            {isManager && (
+            {/* Priority + Tags */}
+            {canEditDetails && (
               <div className="grid grid-cols-1 gap-3">
                 <div>
                   <div className={LABEL_CLS}>Độ ưu tiên</div>
@@ -1022,12 +1071,12 @@ function TaskDrawer({
               <textarea
                 value={notes}
                 onChange={e => { setNotes(e.target.value); setNotesDirty(true) }}
-                disabled={!isManager}
+                disabled={!canEditDetails}
                 rows={4}
-                className={cn(INPUT_CLS, "resize-y", notesDirty && "border-blue-400", !isManager && "bg-ui-bg-subtle")}
-                placeholder={isManager ? "Thêm mô tả, yêu cầu chi tiết..." : "(Chưa có ghi chú)"}
+                className={cn(INPUT_CLS, "resize-y", notesDirty && "border-blue-400", !canEditDetails && "bg-ui-bg-subtle")}
+                placeholder={canEditDetails ? "Thêm mô tả, yêu cầu chi tiết..." : "(Chưa có ghi chú)"}
               />
-              {isManager && notesDirty && (
+              {canEditDetails && notesDirty && (
                 <div className="mkt-anim-fadeup mt-1.5 flex gap-1.5">
                   <button onClick={saveNotes} disabled={saving}
                     className="rounded-lg bg-blue-600 px-3.5 py-1 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
@@ -1230,35 +1279,43 @@ function TaskDrawer({
 
 // ─── Create Task Modal (full form — cho task phức tạp) ──────────────────────
 
-function CreateTaskModal({ onClose, onCreated, users, defaults }: {
+function CreateTaskModal({ onClose, onCreated, users, defaults, isManager, currentUserEmail }: {
   onClose: () => void
   onCreated: () => void
   users: MktUser[]
-  defaults?: Partial<{ assignee_id: string; type: string; deadline: string }>
+  defaults?: Partial<{ assignee_id: string; type: string; deadline: string; planned_for: string }>
+  isManager: boolean
+  currentUserEmail: string
 }) {
   const [form, setForm] = useState({
     title: "",
     type: defaults?.type || "ads_camp",
-    assignee_id: defaults?.assignee_id || "",
+    assignee_id: defaults?.assignee_id || (isManager ? "" : currentUserEmail),
     deadline: defaults?.deadline || "",
     deadlineTime: "23:59",
+    planned_for: defaults?.planned_for || "",
     notes: "",
     priority: "medium",
     tags: [] as string[],
     frequency: "once",
     output: "",
   })
-  const isRecurring = form.frequency !== "once"
+  const isRecurring = isManager && form.frequency !== "once"
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
   const submit = async () => {
-    if (!form.title.trim() || !form.assignee_id) { setErr("Vui lòng nhập tiêu đề và chọn người nhận"); return }
+    if (!form.title.trim() || (isManager && !form.assignee_id)) { setErr(isManager ? "Vui lòng nhập tiêu đề và chọn người nhận" : "Vui lòng nhập tiêu đề"); return }
     setSaving(true); setErr("")
     const { deadlineTime, ...rest } = form
-    const payload = {
+    const payload: Record<string, any> = {
       ...rest,
       deadline: form.deadline ? `${form.deadline}T${deadlineTime || "23:59"}:00+07:00` : null,
+      planned_for: form.planned_for ? `${form.planned_for}T00:00:00+07:00` : null,
+    }
+    if (!isManager) {
+      delete payload.assignee_id
+      payload.frequency = "once"
     }
     const r = await apiFetch("/admin/mkt-tasks", {
       method: "POST",
@@ -1273,7 +1330,7 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
   return (
     <div className="mkt-anim-overlay fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
       <div className="mkt-anim-fadeup w-[520px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h2 className="mb-5 text-base font-extrabold text-ui-fg-base">📋 Tạo task mới</h2>
+        <h2 className="mb-5 text-base font-extrabold text-ui-fg-base">📋 {isManager ? "Tạo task mới" : "Tạo việc mới"}</h2>
 
         <div className="flex flex-col gap-3.5">
           <div>
@@ -1291,22 +1348,30 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
                 <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
               </select>
             </div>
-            <div>
-              <label className={LABEL_CLS}>Tần suất</label>
-              <select className={INPUT_CLS} value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}>
-                <option value="once">1 lần</option>
-                <option value="daily">🔁 Hằng ngày</option>
-                <option value="weekly">🔁 Hằng tuần</option>
-                <option value="monthly">🔁 Hằng tháng</option>
-              </select>
-            </div>
+            {isManager && (
+              <div>
+                <label className={LABEL_CLS}>Tần suất</label>
+                <select className={INPUT_CLS} value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}>
+                  <option value="once">1 lần</option>
+                  <option value="daily">🔁 Hằng ngày</option>
+                  <option value="weekly">🔁 Hằng tuần</option>
+                  <option value="monthly">🔁 Hằng tháng</option>
+                </select>
+              </div>
+            )}
           </div>
           {!isRecurring && (
-            <div>
-              <label className={LABEL_CLS}>Deadline</label>
-              <div className="flex gap-1.5">
-                <input type="date" className={cn(INPUT_CLS, "flex-1")} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
-                <input type="time" className={cn(INPUT_CLS, "w-[100px]")} value={form.deadlineTime} onChange={e => setForm(f => ({ ...f, deadlineTime: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL_CLS}>Deadline</label>
+                <div className="flex gap-1.5">
+                  <input type="date" className={cn(INPUT_CLS, "flex-1")} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+                  <input type="time" className={cn(INPUT_CLS, "w-[100px]")} value={form.deadlineTime} onChange={e => setForm(f => ({ ...f, deadlineTime: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Ngày dự định làm</label>
+                <input type="date" className={INPUT_CLS} value={form.planned_for} onChange={e => setForm(f => ({ ...f, planned_for: e.target.value }))} />
               </div>
             </div>
           )}
@@ -1315,13 +1380,15 @@ function CreateTaskModal({ onClose, onCreated, users, defaults }: {
               🔁 Việc lặp — hệ thống tự sinh đầu việc mỗi {FREQUENCY_MAP[form.frequency]?.label.toLowerCase()} cho người nhận. Kỳ chưa làm xong khi qua kỳ mới sẽ tự đánh dấu "Bỏ lỡ".
             </div>
           )}
-          <div>
-            <label className={LABEL_CLS}>Giao cho <span className="text-rose-500">*</span></label>
-            <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
-              <option value="">-- Chọn thành viên --</option>
-              {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
-            </select>
-          </div>
+          {isManager && (
+            <div>
+              <label className={LABEL_CLS}>Giao cho <span className="text-rose-500">*</span></label>
+              <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
+                <option value="">-- Chọn thành viên --</option>
+                {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className={LABEL_CLS}>Output cần có</label>
             <input className={INPUT_CLS} placeholder="VD: Quyết định budget ghi văn bản, gửi team trước 10h30"
@@ -1422,7 +1489,7 @@ function InlineCreate({ placeholder, needAssignee, users, onCreate, compact }: {
 
 // ─── List view ───────────────────────────────────────────────────────────────
 
-function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, onChangeStage, flash, periodLabel }: {
+function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, onChangeStage, flash, periodLabel, showPersonalChip, planNote, planOverdue }: {
   task: Task
   onClick: () => void
   onQuickStatus: () => void
@@ -1430,6 +1497,9 @@ function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, onChangeStage, 
   onChangeStage?: (stage: string) => void
   flash?: boolean
   periodLabel?: string
+  showPersonalChip?: boolean
+  planNote?: string
+  planOverdue?: boolean
 }) {
   const overdue = isOverdue(task)
   const p = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium
@@ -1453,6 +1523,12 @@ function TaskRow({ task, onClick, onQuickStatus, canQuickStatus, onChangeStage, 
         </button>
         {periodLabel && (
           <span className="shrink-0 rounded bg-indigo-50 px-1 py-px text-[10px] font-semibold tabular-nums text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">{periodLabel}</span>
+        )}
+        {showPersonalChip && (
+          <span className="shrink-0 rounded bg-indigo-50 px-1.5 py-px text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/30">CÁ NHÂN</span>
+        )}
+        {planNote && (
+          <span className={cn("shrink-0 rounded px-1.5 py-px text-[10px] font-semibold", planOverdue ? "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" : "bg-ui-bg-component text-ui-fg-muted")}>{planNote}</span>
         )}
         <span className={cn("truncate text-[13px] font-medium",
           (task.status === "cancelled" || task.status === "missed") ? "text-ui-fg-muted line-through" : task.status === "done" ? "text-ui-fg-subtle" : "text-ui-fg-base")}>
@@ -1654,6 +1730,111 @@ function GroupedSection({ label, tasks, onTaskClick, onQuickStatus, canQuick, on
 
 // ─── Board view (Kanban) ─────────────────────────────────────────────────────
 
+type PlannerBucketKey = "today" | "tomorrow" | "week" | "unscheduled"
+
+type PlannerMeta = { note?: string; overdue?: boolean }
+
+function MyDayView({ tasks, onTaskClick, onQuickStatus, canQuick, onChangeStage, onInlineCreate, flashId }: {
+  tasks: Task[]
+  onTaskClick: (t: Task) => void
+  onQuickStatus: (t: Task) => void
+  canQuick: (t: Task) => boolean
+  onChangeStage: (t: Task, stage: string) => void
+  onInlineCreate: (title: string, plannedFor: string | null) => Promise<boolean>
+  flashId: string | null
+}) {
+  const today = vnDateKey(new Date()) || ""
+  const tomorrow = addDaysKey(today, 1)
+  const weekInlineDate = addDaysKey(today, 2)
+  const meta: Record<string, PlannerMeta> = {}
+  const grouped: Record<PlannerBucketKey, Task[]> = {
+    today: [],
+    tomorrow: [],
+    week: [],
+    unscheduled: [],
+  }
+
+  for (const task of sortTasks(tasks.filter(t => !t.is_template))) {
+    const plannedKey = vnDateKey(task.planned_for)
+    const deadlineKey = vnDateKey(task.deadline)
+    const basis = plannedKey || deadlineKey
+    const active = task.status !== "done" && task.status !== "cancelled"
+    let bucket: PlannerBucketKey = "unscheduled"
+
+    if (plannedKey && plannedKey < today && active) {
+      bucket = "today"
+      meta[task.id] = { note: "⚠ trễ kế hoạch", overdue: true }
+    } else if (!basis) {
+      bucket = "unscheduled"
+    } else if (basis === today) {
+      bucket = "today"
+    } else if (basis === tomorrow) {
+      bucket = "tomorrow"
+    } else if (basis < today) {
+      bucket = "unscheduled"
+    } else {
+      bucket = "week"
+    }
+
+    if (!plannedKey && deadlineKey) meta[task.id] = { ...(meta[task.id] || {}), note: meta[task.id]?.note || "theo deadline" }
+    grouped[bucket].push(task)
+  }
+
+  const buckets: { key: PlannerBucketKey; label: string; hint: string; plannedFor: string | null; accent?: boolean }[] = [
+    { key: "today", label: "Hôm nay", hint: today, plannedFor: today, accent: true },
+    { key: "tomorrow", label: "Ngày mai", hint: tomorrow, plannedFor: tomorrow },
+    { key: "week", label: "Tuần này", hint: "Các ngày sắp tới", plannedFor: weekInlineDate },
+    { key: "unscheduled", label: "Chưa xếp lịch", hint: "Chưa có ngày dự định hoặc deadline", plannedFor: null },
+  ]
+  const total = Object.values(grouped).reduce((sum, list) => sum + list.length, 0)
+
+  return (
+    <div className="space-y-3">
+      {total === 0 && (
+        <div className="rounded-xl border border-dashed border-ui-border-base bg-ui-bg-subtle px-4 py-8 text-center text-sm text-ui-fg-muted">
+          Bấm + để thêm việc riêng, hoặc đặt Ngày dự định làm cho task được giao.
+        </div>
+      )}
+      {buckets.map(bucket => {
+        const list = grouped[bucket.key]
+        const done = list.filter(t => t.status === "done").length
+        return (
+          <section key={bucket.key} className={cn("overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base", bucket.accent && "border-blue-200 bg-blue-500/[0.03] dark:border-blue-500/30")}>
+            <header className={cn("flex items-center gap-2 border-b border-ui-border-base px-4 py-2.5", bucket.accent ? "bg-blue-50/70 dark:bg-blue-500/10" : "bg-ui-bg-subtle")}>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-bold text-ui-fg-base">{bucket.label}</div>
+                <div className="text-[11px] text-ui-fg-muted">{bucket.hint}</div>
+              </div>
+              <span className="text-[11px] tabular-nums text-ui-fg-muted">{done}/{list.length}</span>
+            </header>
+            <div>
+              {list.map(t => (
+                <TaskRow key={t.id} task={t}
+                  onClick={() => onTaskClick(t)}
+                  onQuickStatus={() => onQuickStatus(t)}
+                  canQuickStatus={canQuick(t) && t.status !== "cancelled" && t.status !== "missed"}
+                  onChangeStage={(s) => onChangeStage(t, s)}
+                  flash={flashId === t.id}
+                  showPersonalChip={isPersonalTask(t)}
+                  planNote={meta[t.id]?.note}
+                  planOverdue={meta[t.id]?.overdue}
+                />
+              ))}
+              {list.length === 0 && (
+                <div className="px-4 py-3 text-xs text-ui-fg-disabled">Không có việc trong nhóm này</div>
+              )}
+              <InlineCreate
+                placeholder={`Thêm việc vào ${bucket.label.toLowerCase()}...`}
+                users={[]}
+                onCreate={(title) => onInlineCreate(title, bucket.plannedFor)}
+              />
+            </div>
+          </section>
+        )
+      })}
+    </div>
+  )
+}
 const BOARD_COLUMNS: { status: Task["status"]; label: string; dot: string }[] = [
   { status: "todo",           label: "Chờ làm",    dot: "bg-gray-400" },
   { status: "in_progress",    label: "Đang làm",   dot: "bg-blue-500" },
@@ -2306,18 +2487,19 @@ function StatsTab() {
 const VIEW_STORAGE_KEY = "mkt-tasks:view"
 
 export default function MktTasksPage() {
-  const { has, isSuper, email: currentUserEmail } = useCurrentPermissions()
+  const { has, isSuper, email: currentUserEmail, loading: permsLoading } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-tasks.manage")
 
   const [view, setView] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(VIEW_STORAGE_KEY)
-    return (saved === "list" || saved === "board" || saved === "calendar") ? saved : "list"
+    return (saved === "myday" || saved === "list" || saved === "board" || saved === "calendar") ? saved : "list"
   })
   const [groupBy, setGroupBy] = useState<GroupBy>("assignee")
   const [filterStatus, setFilterStatus] = useState("all")
   const [filterType, setFilterType] = useState("")
   const [filterPriority, setFilterPriority] = useState("")
   const [filterTag, setFilterTag] = useState("")
+  const [mineOnly, setMineOnly] = useState(false)
   const [search, setSearch] = useState("")
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -2342,6 +2524,12 @@ export default function MktTasksPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (permsLoading) return
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY)
+    if (!saved && !isManager) setView("myday")
+  }, [permsLoading, isManager])
 
   useEffect(() => {
     apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
@@ -2382,15 +2570,17 @@ export default function MktTasksPage() {
     if (filterType) list = list.filter(t => t.type === filterType)
     if (filterPriority) list = list.filter(t => t.is_template || t.priority === filterPriority)
     if (filterTag) list = list.filter(t => t.tags.includes(filterTag))
+    if (mineOnly && currentUserEmail) list = list.filter(t => t.assignee_id === currentUserEmail)
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(t => t.title.toLowerCase().includes(q) || t.assignee_name.toLowerCase().includes(q) || t.tags.some(tag => tag.includes(q)))
     }
     return list
-  }, [normalized, filterStatus, filterType, filterPriority, filterTag, search])
+  }, [normalized, filterStatus, filterType, filterPriority, filterTag, mineOnly, currentUserEmail, search])
 
   // Board/Calendar chỉ hiện instance + task lẻ (template không có deadline/cột trạng thái)
   const boardCalTasks = useMemo(() => filtered.filter(t => !t.is_template), [filtered])
+  const myDayTasks = useMemo(() => filtered.filter(t => !t.is_template && t.assignee_id === currentUserEmail), [filtered, currentUserEmail])
 
   const allTags = useMemo(() => {
     const s = new Set<string>()
@@ -2538,18 +2728,17 @@ export default function MktTasksPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* View switcher */}
           <div className="flex gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
+            {viewBtn("myday", "◉", "Việc của tôi")}
             {viewBtn("list", "≡", "List")}
             {viewBtn("board", "▦", "Board")}
             {viewBtn("calendar", "📅", "Lịch")}
             {isManager && viewBtn("stats", "📊", "Báo cáo")}
             {viewBtn("guide", "❓", "Hướng dẫn")}
           </div>
-          {isManager && (
-            <button onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm shadow-blue-500/30 transition hover:bg-blue-700 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
-              + Tạo task
-            </button>
-          )}
+          <button onClick={() => setShowCreate(true)}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white shadow-sm shadow-blue-500/30 transition hover:bg-blue-700 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
+            {isManager ? "+ Tạo task" : "+ Tạo việc"}
+          </button>
         </div>
       </div>
 
@@ -2583,6 +2772,10 @@ export default function MktTasksPage() {
                   </button>
                 ))}
               </div>
+            )}
+
+            {isManager && currentUserEmail && (
+              <button onClick={() => setMineOnly(v => !v)} className={chipCls(mineOnly, "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-300")}>Của tôi</button>
             )}
 
             {/* Status chips */}
@@ -2626,8 +2819,8 @@ export default function MktTasksPage() {
               </select>
             )}
 
-            {(filterStatus !== "all" || filterType || filterPriority || filterTag || search) && (
-              <button onClick={() => { setFilterStatus("all"); setFilterType(""); setFilterPriority(""); setFilterTag(""); setSearch("") }}
+            {(filterStatus !== "all" || filterType || filterPriority || filterTag || mineOnly || search) && (
+              <button onClick={() => { setFilterStatus("all"); setFilterType(""); setFilterPriority(""); setFilterTag(""); setMineOnly(false); setSearch("") }}
                 className="text-xs font-medium text-ui-fg-muted underline-offset-2 transition-colors hover:text-ui-fg-base hover:underline">
                 Xóa lọc
               </button>
@@ -2639,11 +2832,27 @@ export default function MktTasksPage() {
             <div className="py-14 text-center text-ui-fg-muted">
               <div className="mb-2 text-2xl">⏳</div>Đang tải...
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && view !== "myday" ? (
             <div className="py-14 text-center text-ui-fg-muted">
               <div className="mb-2.5 text-3xl">📭</div>
               {search ? `Không tìm thấy task nào với "${search}"` : "Không có task nào"}
             </div>
+          ) : view === "myday" ? (
+            <MyDayView
+              tasks={myDayTasks}
+              onTaskClick={setSelectedTask}
+              onQuickStatus={quickStatus}
+              canQuick={canQuick}
+              onChangeStage={changeStage}
+              flashId={flashId}
+              onInlineCreate={(title, plannedFor) => createTask({
+                title,
+                type: "ads_camp",
+                assignee_id: isManager ? currentUserEmail : undefined,
+                planned_for: plannedFor ? `${plannedFor}T00:00:00+07:00` : null,
+                priority: "medium",
+              })}
+            />
           ) : view === "board" ? (
             <BoardView
               tasks={boardCalTasks}
@@ -2696,6 +2905,8 @@ export default function MktTasksPage() {
           onClose={() => setShowCreate(false)}
           onCreated={() => { load(); showToast("Đã tạo task mới!", "success") }}
           users={mktUsers}
+          isManager={isManager}
+          currentUserEmail={currentUserEmail}
         />
       )}
       {selectedTask && (

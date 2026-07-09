@@ -1,9 +1,32 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
+function actorId(req: MedusaRequest): string | null {
+  const auth = (req as any).auth_context
+  return auth?.actor_type === "user" ? auth.actor_id : null
+}
+
+function normalizeEmail(value: any): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : ""
+}
+
+async function isManager(req: MedusaRequest): Promise<boolean> {
+  const uid = actorId(req)
+  if (!uid) return false
+  const superEmail = process.env.SUPER_ADMIN_EMAIL
+  const userModule = req.scope.resolve(Modules.USER)
+  const user = await userModule.retrieveUser(uid, { select: ["email", "metadata"] })
+  if (user.email === superEmail) return true
+  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
+    ? (user.metadata as any).permissions : []
+  return perms.includes("page.mkt-tasks.manage")
+}
+
 // GET /admin/mkt-tasks/stats - báo cáo hiệu suất per-member (manager only)
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
+    if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
+
     const svc = req.scope.resolve("mktTaskModule") as any
     const userModule = req.scope.resolve(Modules.USER)
 
@@ -23,8 +46,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Templates: dùng cho khối "Tổng hợp việc lặp", KHÔNG tính vào per-member
     const templates = allTasks.filter((t: any) => t.is_template)
-    // Instance + one-off: dùng cho per-member aggregation
-    const realTasks = allTasks.filter((t: any) => !t.is_template)
+    // Instance + one-off: dùng cho per-member aggregation. Task tự giao không tính KPI manager.
+    const realTasks = allTasks.filter((t: any) =>
+      !t.is_template && normalizeEmail(t.created_by) !== normalizeEmail(t.assignee_id)
+    )
 
     // Per-member aggregation
     const memberMap: Record<string, {

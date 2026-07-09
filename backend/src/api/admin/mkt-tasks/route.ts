@@ -14,6 +14,10 @@ function actorId(req: MedusaRequest): string | null {
   return auth?.actor_type === "user" ? auth.actor_id : null
 }
 
+function normalizeEmail(value: any): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : ""
+}
+
 async function isManager(req: MedusaRequest): Promise<boolean> {
   const uid = actorId(req)
   if (!uid) return false
@@ -52,7 +56,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (channel_id) filter.channel_id = channel_id
 
     let tasks = await svc.listMktTasks(filter, {
-      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist", "import_lot_id", "purchase_stage", "pancake_order_id", "customer_name", "customer_phone", "call_stage", "product_name"],
+      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "planned_for", "personal_order", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist", "import_lot_id", "purchase_stage", "pancake_order_id", "customer_name", "customer_phone", "call_stage", "product_name"],
       order: { created_at: "DESC" },
     })
 
@@ -66,12 +70,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const allUsers = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name"] })
     const userMap: Record<string, string> = {}
     for (const u of allUsers) {
-      userMap[u.id] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+      const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+      userMap[u.id] = name
+      if (u.email) userMap[normalizeEmail(u.email)] = name
     }
 
     const enriched = tasks.map((t: any) => ({
       ...t,
-      assignee_name: userMap[t.assignee_id] || t.assignee_id,
+      assignee_name: userMap[normalizeEmail(t.assignee_id)] || userMap[t.assignee_id] || t.assignee_id,
     }))
 
     // Group if requested
@@ -114,26 +120,39 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const uid = actorId(req)
     if (!uid) return res.status(401).json({ error: "Unauthenticated" })
-    if (!(await isManager(req))) return res.status(403).json({ error: "Không có quyền" })
 
-    const { title, type, assignee_id, deadline, notes, channel_id, priority, tags, status, output, frequency, checklist, import_lot_id, purchase_stage, pancake_order_id, customer_name, customer_phone, call_stage, product_name } = req.body as any
-    if (!title || !type || !assignee_id) {
+    const userModule = req.scope.resolve(Modules.USER)
+    const creator = await userModule.retrieveUser(uid, { select: ["first_name", "last_name", "email"] })
+    const creatorEmail = normalizeEmail(creator.email)
+    const creatorName = [creator.first_name, creator.last_name].filter(Boolean).join(" ") || creator.email
+    const manager = await isManager(req)
+
+    const { title, type, assignee_id, deadline, planned_for, personal_order, notes, channel_id, priority, tags, status, output, frequency, checklist, import_lot_id, purchase_stage, pancake_order_id, customer_name, customer_phone, call_stage, product_name } = req.body as any
+    const effectiveAssigneeId = manager ? normalizeEmail(assignee_id) : creatorEmail
+    if (!title || !type || !effectiveAssigneeId) {
       return res.status(400).json({ error: "Thiếu title, type hoặc assignee_id" })
     }
+    if (!manager && frequency && frequency !== "once") {
+      return res.status(403).json({ error: "Chỉ manager mới được tạo việc lặp" })
+    }
+
     const validPriority = ["high", "medium", "low"].includes(priority) ? priority : "medium"
     const validStatus = ["todo", "in_progress"].includes(status) ? status : "todo"
-    const validFrequency: Frequency = ["once", "daily", "weekly", "monthly"].includes(frequency) ? frequency : "once"
+    const validFrequency: Frequency = manager && ["once", "daily", "weekly", "monthly"].includes(frequency) ? frequency : "once"
     const isRecurring = validFrequency !== "once"
     const cleanTags = Array.isArray(tags) ? tags.filter((t: any) => typeof t === "string" && t.trim()).slice(0, 10) : []
+    const personalOrder = Number.isFinite(Number(personal_order)) ? Number(personal_order) : null
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const task = await svc.createMktTasks({
-      title, type, assignee_id,
-      created_by: uid,
+      title, type, assignee_id: effectiveAssigneeId,
+      created_by: manager ? uid : creatorEmail,
       // Template không cần deadline thực — instance mới mang deadline cuối kỳ
       deadline: isRecurring ? null : (deadline ? new Date(deadline) : undefined),
+      planned_for: planned_for ? new Date(planned_for) : null,
+      personal_order: personalOrder,
       notes: notes || null,
-      channel_id: channel_id || null,
+      channel_id: manager ? (channel_id || null) : null,
       status: validStatus,
       priority: validPriority,
       tags: cleanTags,
@@ -142,13 +161,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       frequency: validFrequency,
       is_template: isRecurring,
       checklist: sanitizeChecklist(checklist),
-      import_lot_id: import_lot_id || null,
-      purchase_stage: type === "purchasing" ? (purchase_stage || "cho_sep_duyet") : null,
-      pancake_order_id: type === "cskh_call" ? (pancake_order_id || null) : null,
-      customer_name: type === "cskh_call" ? (customer_name || null) : null,
-      customer_phone: type === "cskh_call" ? (customer_phone || null) : null,
-      call_stage: type === "cskh_call" ? (call_stage || "chua_goi") : null,
-      product_name: type === "cskh_call" ? (product_name || null) : null,
+      import_lot_id: manager ? (import_lot_id || null) : null,
+      purchase_stage: type === "purchasing" ? (manager ? (purchase_stage || "cho_sep_duyet") : "cho_sep_duyet") : null,
+      pancake_order_id: type === "cskh_call" && manager ? (pancake_order_id || null) : null,
+      customer_name: type === "cskh_call" && manager ? (customer_name || null) : null,
+      customer_phone: type === "cskh_call" && manager ? (customer_phone || null) : null,
+      call_stage: type === "cskh_call" ? (manager ? (call_stage || "chua_goi") : "chua_goi") : null,
+      product_name: type === "cskh_call" && manager ? (product_name || null) : null,
     })
 
     // Recurring → sinh ngay instance kỳ hiện tại để nhân sự thấy việc luôn
@@ -159,26 +178,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await spawnInstanceForPeriod(svc, task, periodKey, instDeadline).catch(() => {})
     }
 
-    const userModule = req.scope.resolve(Modules.USER)
-    const creator = await userModule.retrieveUser(uid, { select: ["first_name", "last_name", "email"] })
-    const creatorName = [creator.first_name, creator.last_name].filter(Boolean).join(" ") || creator.email
-
     // Post system message to channel if provided
-    if (channel_id) {
+    if (manager && channel_id) {
       await svc.createMktMessages({
         channel_id,
         author_id: uid,
         content: isRecurring
-          ? `🔁 Việc lặp mới: "${title}" (${validFrequency}) → ${assignee_id}`
-          : `📋 Task mới: "${title}" → ${assignee_id}`,
+          ? `🔁 Việc lặp mới: "${title}" (${validFrequency}) → ${effectiveAssigneeId}`
+          : `📋 Task mới: "${title}" → ${effectiveAssigneeId}`,
         task_id: task.id,
         msg_type: isRecurring ? "recurring_created" : "task_created",
-        metadata: { task_title: title, created_by_name: creatorName, assignee_id },
+        metadata: { task_title: title, created_by_name: creatorName, assignee_id: effectiveAssigneeId },
       }).catch(console.error)
     }
 
     // Gửi email thông báo cho assignee (nếu khác người tạo)
-    if (assignee_id && assignee_id !== creator.email) {
+    if (effectiveAssigneeId && effectiveAssigneeId !== creatorEmail) {
       try {
         const notifModule = req.scope.resolve(Modules.NOTIFICATION) as any
         const BACKEND_URL = process.env.BACKEND_URL || "https://api.phanviet.vn"
@@ -190,12 +205,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             })
           : "Chưa đặt"
         await notifModule.createNotifications({
-          to: assignee_id,
+          to: effectiveAssigneeId,
           channel: "email",
           template: "task-reminder",
           data: {
             taskTitle: title,
-            assigneeName: assignee_id,
+            assigneeName: effectiveAssigneeId,
             deadline: deadlineStr,
             taskUrl,
             type: "task_assigned",
@@ -207,7 +222,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Telegram: thông báo cho assignee
-    if (assignee_id && assignee_id !== creator.email) {
+    if (effectiveAssigneeId && effectiveAssigneeId !== creatorEmail) {
       const userModule = req.scope.resolve(Modules.USER)
       const deadlineStr = task.deadline
         ? new Date(task.deadline).toLocaleString("vi-VN", {
@@ -226,7 +241,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         ``,
         `🔗 <a href="${taskUrl}">Xem task</a>`,
       ].filter(Boolean).join("\n")
-      notifyTelegramByEmail(userModule, assignee_id, tgText).catch(() => {})
+      notifyTelegramByEmail(userModule, effectiveAssigneeId, tgText).catch(() => {})
     }
 
     res.json({ task })

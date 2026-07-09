@@ -7,6 +7,8 @@ const MktTask = model.define("mkt_task", {
   assignee_id: model.text(),
   created_by: model.text(),
   deadline: model.dateTime().nullable(),
+  planned_for: model.dateTime().nullable(),
+  personal_order: model.number().nullable(),
   status: model.text().default("todo"), // todo | in_progress | done | cancelled | missed
   priority: model.text().default("medium"), // high | medium | low
   tags: model.json(),
