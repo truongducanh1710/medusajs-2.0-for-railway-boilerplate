@@ -1590,6 +1590,29 @@ export default function MktChatPage() {
     }
   }, [activeChannel, visibleChannels])
 
+  useEffect(() => {
+    if (channels.length === 0) return
+    const raw = sessionStorage.getItem("mkt-chat:pending-jump")
+    if (!raw) return
+
+    let jump: { channel_id?: string; message_id?: string } | null = null
+    try { jump = JSON.parse(raw) } catch { jump = null }
+    if (!jump?.channel_id || !jump?.message_id) {
+      sessionStorage.removeItem("mkt-chat:pending-jump")
+      return
+    }
+
+    const target = channels.find(c => c.id === jump.channel_id)
+    if (!target) return
+    sessionStorage.removeItem("mkt-chat:pending-jump")
+    pendingJumpRef.current = jump.message_id
+    setOpenThread(null)
+    if (target.id !== activeChannel?.id) {
+      setActiveChannel(target)
+      return
+    }
+    requestAnimationFrame(() => jumpToMessage(jump.message_id!))
+  }, [activeChannel?.id, channels])
   const groupedVisibleChannels = useMemo(() => {
     const groups: { label: string; items: Channel[] }[] = []
     const byLabel = new Map<string, Channel[]>()

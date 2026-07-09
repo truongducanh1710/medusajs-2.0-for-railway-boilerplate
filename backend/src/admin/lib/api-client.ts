@@ -1,3 +1,7 @@
+import { ensureMktChatGlobalMentionAlerts } from "./mkt-chat-global-alerts"
+
+ensureMktChatGlobalMentionAlerts()
+
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(url, { credentials: "include", ...init })
   if (res.status === 403) {

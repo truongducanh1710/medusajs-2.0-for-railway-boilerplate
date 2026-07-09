@@ -1,8 +1,13 @@
 import { useEffect } from "react"
 import { useCurrentPermissions } from "../lib/use-permissions"
 import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
+import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
 
 export const RouteGuard = () => {
+  useEffect(() => {
+    ensureMktChatGlobalMentionAlerts()
+  }, [])
+
   const { perms, loading, has } = useCurrentPermissions()
 
   // Ẩn sidebar native tabs mà user không có quyền
