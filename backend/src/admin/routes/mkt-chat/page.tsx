@@ -133,12 +133,14 @@ function collectMentionEntityEmails(text: string, entities: Record<string, strin
     .map(([email]) => email)
 }
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🔥"]
+const MENTION_SOUND_REPEAT_MS = 20_000
+const MENTION_SOUND_REPEAT_LIMIT = 8
 function emitMentionTone(ctx: AudioContext) {
   const now = ctx.currentTime
   const gain = ctx.createGain()
   gain.gain.setValueAtTime(0.0001, now)
-  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.02)
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.95)
+  gain.gain.exponentialRampToValueAtTime(0.34, now + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15)
   gain.connect(ctx.destination)
 
   ;[
@@ -146,17 +148,18 @@ function emitMentionTone(ctx: AudioContext) {
     { freq: 1318.5, start: 0.13 },
     { freq: 1174.7, start: 0.36 },
     { freq: 1568, start: 0.5 },
+    { freq: 2093, start: 0.66 },
   ].forEach(({ freq, start }) => {
     const osc = ctx.createOscillator()
     const startAt = now + start
-    osc.type = "sine"
+    osc.type = "triangle"
     osc.frequency.setValueAtTime(freq, startAt)
     osc.connect(gain)
     osc.start(startAt)
-    osc.stop(startAt + 0.14)
+    osc.stop(startAt + 0.18)
   })
 
-  window.setTimeout(() => gain.disconnect(), 1100)
+  window.setTimeout(() => gain.disconnect(), 1300)
 }
 
 const AVATAR_COLORS = [
@@ -1040,6 +1043,7 @@ export default function MktChatPage() {
   const [notificationUnread, setNotificationUnread] = useState(0)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
+  const [notificationRepeatSoundEnabled, setNotificationRepeatSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:repeat-sound") !== "0")
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -1054,6 +1058,8 @@ export default function MktChatPage() {
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioUnlockedRef = useRef(false)
   const pendingMentionSoundRef = useRef(false)
+  const mentionRepeatTimerRef = useRef<number | null>(null)
+  const mentionRepeatCountRef = useRef(0)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -1100,7 +1106,21 @@ export default function MktChatPage() {
       .catch(() => {})
   }, [])
 
+  const clearMentionRepeatTimer = useCallback(() => {
+    if (mentionRepeatTimerRef.current !== null) {
+      window.clearTimeout(mentionRepeatTimerRef.current)
+      mentionRepeatTimerRef.current = null
+    }
+  }, [])
+
+  const stopMentionSoundReminder = useCallback(() => {
+    clearMentionRepeatTimer()
+    mentionRepeatCountRef.current = 0
+    pendingMentionSoundRef.current = false
+  }, [clearMentionRepeatTimer])
+
   const markNotificationsRead = useCallback(() => {
+    stopMentionSoundReminder()
     apiFetch("/admin/mkt-chat/notifications/read", { method: "PATCH" })
       .then(r => r.json())
       .then(() => {
@@ -1108,7 +1128,7 @@ export default function MktChatPage() {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })))
       })
       .catch(() => {})
-  }, [])
+  }, [stopMentionSoundReminder])
   useEffect(() => {
     loadChannels()
     loadTemplates()
@@ -1141,6 +1161,26 @@ export default function MktChatPage() {
     return play()
   }, [notificationSoundEnabled])
 
+  useEffect(() => {
+    clearMentionRepeatTimer()
+    if (!notificationSoundEnabled || !notificationRepeatSoundEnabled || notificationUnread <= 0 || notificationOpen) {
+      if (notificationUnread <= 0) mentionRepeatCountRef.current = 0
+      return
+    }
+
+    const scheduleReminder = () => {
+      mentionRepeatTimerRef.current = window.setTimeout(() => {
+        mentionRepeatTimerRef.current = null
+        if (mentionRepeatCountRef.current >= MENTION_SOUND_REPEAT_LIMIT) return
+        mentionRepeatCountRef.current += 1
+        playMentionSound()
+        scheduleReminder()
+      }, MENTION_SOUND_REPEAT_MS)
+    }
+
+    scheduleReminder()
+    return clearMentionRepeatTimer
+  }, [clearMentionRepeatTimer, notificationOpen, notificationRepeatSoundEnabled, notificationSoundEnabled, notificationUnread, playMentionSound])
   const unlockNotificationAudio = useCallback(() => {
     if (typeof window === "undefined") return
     const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
@@ -1245,11 +1285,13 @@ export default function MktChatPage() {
         const data = JSON.parse(e.data || "{}")
         const notification = data.notification as MktNotification | undefined
         if (!notification?.id) return
+        mentionRepeatCountRef.current = 0
         setNotifications(prev => [notification, ...prev.filter(n => n.id !== notification.id)].slice(0, 30))
         setNotificationUnread(c => c + 1)
         playMentionSound()
       })
       es.addEventListener("mention.notifications.read", () => {
+        stopMentionSoundReminder()
         setNotificationUnread(0)
         setNotifications(prev => prev.map(n => ({ ...n, read: true })))
       })
@@ -1298,7 +1340,7 @@ export default function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound])
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, stopMentionSoundReminder])
 
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
@@ -1485,12 +1527,25 @@ export default function MktChatPage() {
     const next = !notificationSoundEnabled
     setNotificationSoundEnabled(next)
     localStorage.setItem("mkt-chat:sound", next ? "1" : "0")
-    if (next) {
-      unlockNotificationAudio()
-      playMentionSound(true)
+    if (!next) {
+      stopMentionSoundReminder()
+      return
     }
+    mentionRepeatCountRef.current = 0
+    unlockNotificationAudio()
+    playMentionSound(true)
+  }
+
+  const toggleNotificationRepeatSound = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    const next = !notificationRepeatSoundEnabled
+    setNotificationRepeatSoundEnabled(next)
+    localStorage.setItem("mkt-chat:repeat-sound", next ? "1" : "0")
+    mentionRepeatCountRef.current = 0
+    if (!next) stopMentionSoundReminder()
   }
   const jumpToNotification = (notification: MktNotification) => {
+    stopMentionSoundReminder()
     setNotificationOpen(false)
     setShowSearch(false)
     setOpenThread(null)
@@ -1597,6 +1652,7 @@ export default function MktChatPage() {
                       <button onClick={toggleNotificationSound} className={cn("text-[11px] font-medium", notificationSoundEnabled ? "text-emerald-600 hover:text-emerald-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>
                         {notificationSoundEnabled ? "Âm bật" : "Âm tắt"}
                       </button>
+                      <button onClick={toggleNotificationRepeatSound} className={cn("text-[11px] font-medium", notificationRepeatSoundEnabled ? "text-amber-600 hover:text-amber-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>{notificationRepeatSoundEnabled ? "Nhắc lại" : "Không nhắc"}</button>
                       <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
                     </span>
                   </div>
