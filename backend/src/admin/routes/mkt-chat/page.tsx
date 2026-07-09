@@ -61,10 +61,77 @@ function fmtSnippetTime(d: string) {
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
-function renderMentions(text: string): string {
-  return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="font-semibold text-blue-600 dark:text-blue-400">${m}</span>`)
+function renderMentions(
+  text: string,
+  mentions: string[] = [],
+  users: MktUser[] = [],
+  className = "font-semibold text-blue-600 dark:text-blue-400"
+): string {
+  if (mentions.length > 0) {
+    const nameByEmail = new Map(users.map(user => [user.email, user.name]))
+    const labels = mentions
+      .map(email => nameByEmail.get(email) || email.split("@")[0])
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)
+
+    return renderMentionEntities(text, labels, className)
+  }
+
+  return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="${className}">${m}</span>`)
 }
 
+function normalizeMentionEntityText(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0111/g, "d")
+}
+
+function renderMentionEntities(text: string, labels: string[], className: string): string {
+  const normalizedLabels = labels.map(label => ({
+    label,
+    token: `@${label}`,
+    normalizedToken: normalizeMentionEntityText(`@${label}`),
+  }))
+  const parts: string[] = []
+  let index = 0
+
+  while (index < text.length) {
+    const match = normalizedLabels.find(({ token, normalizedToken }) =>
+      normalizeMentionEntityText(text.slice(index, index + token.length)) === normalizedToken
+    )
+    const nextChar = match ? text[index + match.token.length] : ""
+    if (!match || (nextChar && !/[\s.,!?;:)\]}]/.test(nextChar))) {
+      parts.push(escapeHtml(text[index]))
+      index += 1
+      continue
+    }
+
+    const rawToken = text.slice(index, index + match.token.length)
+    parts.push(`<span class="${className}">${escapeHtml(rawToken)}</span>`)
+    index += match.token.length
+  }
+
+  return parts.join("")
+}
+function hasMentionEntity(text: string, label: string): boolean {
+  const token = `@${label}`
+  const normalizedToken = normalizeMentionEntityText(token)
+  for (let index = 0; index < text.length; index += 1) {
+    if (normalizeMentionEntityText(text.slice(index, index + token.length)) !== normalizedToken) continue
+    const nextChar = text[index + token.length]
+    if (!nextChar || /[\s.,!?;:)\]}]/.test(nextChar)) return true
+  }
+  return false
+}
+
+function collectMentionEntityEmails(text: string, entities: Record<string, string>, memberIds?: string[]): string[] {
+  const members = new Set(memberIds || [])
+  return Object.entries(entities)
+    .filter(([email, label]) => (!members.size || members.has(email)) && hasMentionEntity(text, label))
+    .map(([email]) => email)
+}
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🔥"]
 function emitMentionTone(ctx: AudioContext) {
   const now = ctx.currentTime
@@ -180,8 +247,8 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine }: {
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread }: {
-  msg: Message; isMine: boolean; currentUserEmail: string; isManager: boolean
+function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread }: {
+  msg: Message; users: MktUser[]; isMine: boolean; currentUserEmail: string; isManager: boolean
   isOptimistic: boolean
   onTaskClick?: (taskId: string) => void
   onReply: (msg: Message) => void
@@ -220,7 +287,7 @@ function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic,
           🔒 Note nội bộ · {msg.author_name} · {fmtTime(msg.created_at)}
         </div>
         <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base"
-          dangerouslySetInnerHTML={{ __html: renderMentions(msg.content) }} />
+          dangerouslySetInnerHTML={{ __html: renderMentions(msg.content, msg.mentions, users) }} />
         <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
       </div>
     )
@@ -274,7 +341,7 @@ function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic,
               <span>📎</span><span className="underline underline-offset-2">{msg.file_name || "File"}</span>
             </a>
           ) : (
-            <span dangerouslySetInnerHTML={{ __html: isMine ? escapeHtml(msg.content).replace(/@[\w.@-]+/g, m => `<span class="font-bold underline underline-offset-2">${m}</span>`) : renderMentions(msg.content) }} />
+            <span dangerouslySetInnerHTML={{ __html: renderMentions(msg.content, msg.mentions, users, isMine ? "font-bold underline underline-offset-2" : "font-semibold text-blue-600 dark:text-blue-400") }} />
           )}
         </div>
 
@@ -857,9 +924,10 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
   )
 }
 
-function ThreadPanel({ channelId, root, refreshKey, onClose }: {
+function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
   channelId: string
   root: Message
+  users: MktUser[]
   refreshKey: number
   onClose: () => void
 }) {
@@ -899,7 +967,7 @@ function ThreadPanel({ channelId, root, refreshKey, onClose }: {
           <span className="font-semibold text-ui-fg-base">{m.author_name}</span>
           <span>{fmtTime(m.created_at)}</span>
         </div>
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content) }} />
+        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users) }} />
       </div>
     </div>
   )
@@ -982,6 +1050,7 @@ export default function MktChatPage() {
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
   const pendingJumpRef = useRef<string | null>(null)
+  const mentionEntityRef = useRef<Record<string, string>>({})
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioUnlockedRef = useRef(false)
   const pendingMentionSoundRef = useRef(false)
@@ -1260,6 +1329,8 @@ export default function MktChatPage() {
     const text = input.trim()
     const mode = composerMode
     const currentReply = replyTo
+    const mentionEmails = collectMentionEntityEmails(text, mentionEntityRef.current, activeChannel.member_ids)
+    mentionEntityRef.current = {}
     setInput("")
     setReplyTo(null)
     setMentionOpen(false)
@@ -1272,7 +1343,7 @@ export default function MktChatPage() {
       reply_to_id: currentReply?.id || null,
       reply_to: currentReply ? { id: currentReply.id, content: currentReply.content.slice(0, 80), author_name: currentReply.author_name } : null,
       file_url: null, file_type: null, file_name: null, file_expires_at: null,
-      reactions: {}, is_pinned: false, mentions: [],
+      reactions: {}, is_pinned: false, mentions: mentionEmails,
       reply_count: 0,
       created_at: new Date().toISOString(),
     }
@@ -1280,7 +1351,7 @@ export default function MktChatPage() {
     await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text, reply_to_id: currentReply?.id || null, msg_type: mode === "note" ? "internal_note" : "text" }),
+      body: JSON.stringify({ content: text, reply_to_id: currentReply?.id || null, msg_type: mode === "note" ? "internal_note" : "text", mentions: mentionEmails }),
     })
     setSending(false)
     textareaRef.current?.focus()
@@ -1318,12 +1389,14 @@ export default function MktChatPage() {
 
   const insertMention = (user: MktUser) => {
     const atIdx = input.lastIndexOf("@")
+    mentionEntityRef.current[user.email] = user.name
     setInput(input.slice(0, atIdx) + `@${user.name} `)
     setMentionOpen(false)
     textareaRef.current?.focus()
   }
 
   const insertTemplate = (t: Template) => {
+    mentionEntityRef.current = {}
     setInput(t.content)
     setTemplateOpen(false)
     textareaRef.current?.focus()
@@ -1684,6 +1757,7 @@ export default function MktChatPage() {
                   <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} className="rounded-lg">
                     <MessageBubble
                       msg={m}
+                      users={mktUsers}
                       isMine={m.author_id === currentUserId}
                       currentUserEmail={currentUserId}
                       isManager={isManager}
@@ -1843,6 +1917,7 @@ export default function MktChatPage() {
         <ThreadPanel
           channelId={activeChannel.id}
           root={openThread}
+          users={mktUsers}
           refreshKey={threadRefreshKey}
           onClose={() => setOpenThread(null)}
         />

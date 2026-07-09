@@ -44,6 +44,11 @@ function parseMentions(content: string, memberEmails: string[], nameByEmail: Rec
   return [...mentioned]
 }
 
+function normalizeExplicitMentions(input: any, memberEmails: string[]): string[] {
+  if (!Array.isArray(input)) return []
+  const memberSet = new Set(memberEmails)
+  return [...new Set(input.map(email => String(email || "").trim()).filter(email => memberSet.has(email)))]
+}
 async function resolveReplyRoot(channelId: string, replyToId?: string | null) {
   if (!replyToId) return null
   const result = await getPool().query(
@@ -161,7 +166,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const nameByEmail = await getMktUserNameMap(req)
     const memberEmails: string[] = Array.isArray(channel.members) ? channel.members.map((m: any) => m.user_id) : []
-    const mentions = parseMentions(text, memberEmails, nameByEmail)
+    const explicitMentions = normalizeExplicitMentions((req.body as any)?.mentions, memberEmails)
+    const mentions = [...new Set([...explicitMentions, ...parseMentions(text, memberEmails, nameByEmail)])]
     const isAiCommand = messageType === "text" && text.toLowerCase().startsWith("@ai ")
     const question = isAiCommand ? text.slice(4).trim() : ""
 

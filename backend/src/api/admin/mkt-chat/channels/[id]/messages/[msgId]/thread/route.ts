@@ -44,6 +44,11 @@ function parseMentions(content: string, memberEmails: string[], nameByEmail: Rec
   return [...mentioned]
 }
 
+function normalizeExplicitMentions(input: any, memberEmails: string[]): string[] {
+  if (!Array.isArray(input)) return []
+  const memberSet = new Set(memberEmails)
+  return [...new Set(input.map(email => String(email || "").trim()).filter(email => memberSet.has(email)))]
+}
 async function requireChannelAccess(req: MedusaRequest, channelId: string) {
   const auth = await getMktChatAuthInfo(req)
   if (!auth) return { status: 401, body: { error: "Unauthenticated" } }
@@ -129,7 +134,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const nameByEmail = await getMktUserNameMap(req)
     const memberEmails: string[] = Array.isArray(channel.members) ? channel.members.map((m: any) => m.user_id) : []
-    const mentions = parseMentions(text, memberEmails, nameByEmail)
+    const explicitMentions = normalizeExplicitMentions((req.body as any)?.mentions, memberEmails)
+    const mentions = [...new Set([...explicitMentions, ...parseMentions(text, memberEmails, nameByEmail)])]
 
     const reply = await svc.createMktMessages({
       channel_id: channelId,
