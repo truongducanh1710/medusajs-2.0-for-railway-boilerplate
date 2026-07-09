@@ -8,6 +8,7 @@ import { useCurrentPermissions } from "../../lib/use-permissions"
 type LastMessage = { content: string; author_id: string; msg_type: string; created_at: string }
 type Channel = {
   id: string; name: string; description: string | null
+  is_private: boolean
   member_count: number; member_ids?: string[]
   unread_count: number; mention_count: number; created_at: string
   last_message?: LastMessage | null
@@ -20,6 +21,7 @@ type Message = {
   file_url: string | null; file_type: string | null; file_name: string | null
   file_expires_at: string | null
   reactions: Record<string, string[]>; is_pinned: boolean; mentions: string[]
+  reply_count: number; channel_name?: string
   created_at: string
 }
 type MktUser = { email: string; name: string }
@@ -156,6 +158,7 @@ function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic,
   onReply: (msg: Message) => void
   onReact: (msgId: string, emoji: string) => void
   onPin: (msgId: string) => void
+  onOpenThread: (msg: Message) => void
 }) {
   const isNote = msg.msg_type === "internal_note"
   const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
@@ -251,6 +254,12 @@ function MessageBubble({ msg, isMine, currentUserEmail, isManager, isOptimistic,
         </div>
 
         <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} />
+        {Number(msg.reply_count || 0) > 0 && (
+          <button onClick={() => onOpenThread(msg)}
+            className={cn("mt-1 block text-[11px] font-semibold transition-colors", isMine ? "ml-auto text-blue-100 hover:text-white" : "text-blue-600 hover:text-blue-700 dark:text-blue-400")}>
+            {msg.reply_count} phản hồi
+          </button>
+        )}
       </div>
 
       {/* Hover actions — thanh ngang phía trên bubble (kiểu Slack) */}
@@ -357,7 +366,7 @@ function SearchPanel({ currentChannelId, channels, users, onClose, onJump }: {
         <div className="mb-2 flex items-center gap-2">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Tim tin nhan..."
             className={cn(INPUT_CLS, "py-1.5")} />
-          <button onClick={onClose} className="text-base text-ui-fg-muted transition-colors hover:text-ui-fg-base">x</button>
+          <button onClick={onClose} className="text-base text-ui-fg-muted transition-colors hover:text-ui-fg-base">✕</button>
         </div>
         <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-ui-bg-component p-0.5">
           <button onClick={() => setScope("channel")}
@@ -367,13 +376,13 @@ function SearchPanel({ currentChannelId, channels, users, onClose, onJump }: {
         </div>
         <div className="grid grid-cols-2 gap-2">
           {scope === "workspace" && (
-            <select value={channelId} onChange={e => setChannelId(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")}> 
-              <option value="">Tat ca channel</option>
+            <select value={channelId} onChange={e => setChannelId(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")}>
+              <option value="">Tất cả channel</option>
               {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}
-          <select value={authorId} onChange={e => setAuthorId(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs", scope === "channel" && "col-span-2")}> 
-            <option value="">Tat ca tac gia</option>
+          <select value={authorId} onChange={e => setAuthorId(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs", scope === "channel" && "col-span-2")}>
+            <option value="">Tất cả tác giả</option>
             {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
           </select>
           <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")} />
@@ -381,8 +390,8 @@ function SearchPanel({ currentChannelId, channels, users, onClose, onJump }: {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3">
-        {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Dang tim...</div>}
-        {!loading && results.length === 0 && q.trim() && <div className="py-4 text-center text-xs text-ui-fg-muted">Khong tim thay</div>}
+        {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tìm...</div>}
+        {!loading && results.length === 0 && q.trim() && <div className="py-4 text-center text-xs text-ui-fg-muted">Không tìm thấy</div>}
         {results.map(m => (
           <button key={m.id} onClick={() => onJump(m)}
             className="mb-1.5 block w-full rounded-lg border border-ui-border-base bg-ui-bg-subtle px-2.5 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-500/5">
@@ -539,24 +548,24 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
   return (
     <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
       <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h2 className="mb-4 text-base font-extrabold text-ui-fg-base">Tao group chat moi</h2>
+        <h2 className="mb-4 text-base font-extrabold text-ui-fg-base">Tạo group chat mới</h2>
         <div className="flex flex-col gap-3">
-          <div><label className={LABEL_CLS}>Ten group *</label>
+          <div><label className={LABEL_CLS}>Tên group *</label>
             <input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="VD: ads-meta-team..." autoFocus /></div>
-          <div><label className={LABEL_CLS}>Mo ta</label>
+          <div><label className={LABEL_CLS}>Mô tả</label>
             <input className={INPUT_CLS} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Muc dich cua group..." /></div>
           <label className="flex items-center gap-2 rounded-lg border border-ui-border-base bg-ui-bg-subtle px-3 py-2 text-[13px] text-ui-fg-base">
             <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
-            <span>Rieng tu</span>
+            <span>Riêng tư</span>
           </label>
-          <div><label className={LABEL_CLS}>Them thanh vien</label>
+          <div><label className={LABEL_CLS}>Thêm thành viên</label>
             <UserCheckList users={users} selected={selected} onToggle={toggle} /></div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Huy</button>
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
           <button onClick={submit} disabled={saving || !name.trim()}
             className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
-            {saving ? "Dang tao..." : "Tao group"}
+            {saving ? "Đang tạo..." : "Tạo group"}
           </button>
         </div>
       </div>
@@ -659,6 +668,10 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
   const [tasks, setTasks] = useState<LinkedTask[]>([])
   const [files, setFiles] = useState<ChatFile[]>([])
   const [loading, setLoading] = useState(false)
+  const [fileType, setFileType] = useState<"all" | "image" | "file">("all")
+  const [fileAuthor, setFileAuthor] = useState("")
+  const [fileFrom, setFileFrom] = useState("")
+  const [fileTo, setFileTo] = useState("")
 
   useEffect(() => {
     if (tab === "tasks") {
@@ -666,11 +679,16 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
       apiFetch(`/admin/mkt-tasks?channel_id=${channel.id}`)
         .then(r => r.json()).then(d => setTasks(d.tasks || [])).finally(() => setLoading(false))
     } else if (tab === "files") {
+      const params = new URLSearchParams()
+      if (fileType !== "all") params.set("type", fileType)
+      if (fileAuthor) params.set("author", fileAuthor)
+      if (fileFrom) params.set("from", fileFrom)
+      if (fileTo) params.set("to", `${fileTo}T23:59:59`)
       setLoading(true)
-      apiFetch(`/admin/mkt-chat/channels/${channel.id}/files`)
+      apiFetch(`/admin/mkt-chat/channels/${channel.id}/files?${params.toString()}`)
         .then(r => r.json()).then(d => setFiles(d.files || [])).finally(() => setLoading(false))
     }
-  }, [tab, channel.id])
+  }, [tab, channel.id, fileType, fileAuthor, fileFrom, fileTo])
 
   const members = (channel.member_ids || []).map(email => ({
     email,
@@ -694,9 +712,9 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
       </div>
 
       <div className="m-2 flex gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
-        {tabBtn("info", "ℹ️ Info")}
-        {tabBtn("tasks", "📋 Task")}
-        {tabBtn("files", "📎 Files")}
+        {tabBtn("info", "Info")}
+        {tabBtn("tasks", "Task")}
+        {tabBtn("files", "Files")}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3">
@@ -722,7 +740,7 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
                     <Avatar name={m.name} online={m.online} className="size-7 text-[11px]" />
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-medium text-ui-fg-base">{m.name}</div>
-                      <div className="text-[10px] text-ui-fg-muted">{m.online ? "🟢 Đang hoạt động" : "Ngoại tuyến"}</div>
+                      <div className="text-[10px] text-ui-fg-muted">{m.online ? "Đang hoạt động" : "Ngoại tuyến"}</div>
                     </div>
                   </div>
                 ))}
@@ -767,18 +785,30 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
 
         {tab === "files" && (
           <div>
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <select value={fileType} onChange={e => setFileType(e.target.value as any)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")}>
+                <option value="all">Tất cả</option>
+                <option value="image">Ảnh</option>
+                <option value="file">File</option>
+              </select>
+              <select value={fileAuthor} onChange={e => setFileAuthor(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")}>
+                <option value="">Mọi người</option>
+                {mktUsers.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+              </select>
+              <input type="date" value={fileFrom} onChange={e => setFileFrom(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")} />
+              <input type="date" value={fileTo} onChange={e => setFileTo(e.target.value)} className={cn(INPUT_CLS, "h-8 py-0 text-xs")} />
+            </div>
             {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tải...</div>}
             {!loading && files.length === 0 && <div className="py-4 text-center text-xs text-ui-fg-muted">Chưa có file nào</div>}
-            {/* Ảnh dạng lưới */}
             <div className="mb-2 grid grid-cols-3 gap-1.5">
               {files.filter(f => f.file_type?.startsWith("image")).map(f => (
                 <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer"
+                  title={`${f.author_name || f.author_id} · ${fmtDate(f.created_at)}`}
                   className="block aspect-square overflow-hidden rounded-lg border border-ui-border-base transition-transform hover:scale-105">
-                  <img src={f.file_url} alt={f.file_name || ""} className="size-full object-cover" />
+                  <img src={f.file_url} alt={f.file_name || "ảnh"} className="size-full object-cover" />
                 </a>
               ))}
             </div>
-            {/* File khác dạng list */}
             <div className="flex flex-col gap-1">
               {files.filter(f => !f.file_type?.startsWith("image")).map(f => (
                 <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer"
@@ -786,7 +816,7 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
                   <span className="text-base">📎</span>
                   <div className="min-w-0">
                     <div className="truncate text-xs font-medium text-ui-fg-base">{f.file_name || "File"}</div>
-                    <div className="text-[10px] text-ui-fg-muted">{fmtDate(f.created_at)}</div>
+                    <div className="text-[10px] text-ui-fg-muted">{f.author_name || f.author_id} · {fmtDate(f.created_at)}</div>
                   </div>
                 </a>
               ))}
@@ -798,8 +828,84 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+function ThreadPanel({ channelId, root, refreshKey, onClose }: {
+  channelId: string
+  root: Message
+  refreshKey: number
+  onClose: () => void
+}) {
+  const [rootMessage, setRootMessage] = useState<Message>(root)
+  const [replies, setReplies] = useState<Message[]>([])
+  const [input, setInput] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
 
+  const loadThread = useCallback(() => {
+    setLoading(true)
+    apiFetch(`/admin/mkt-chat/channels/${channelId}/messages/${root.id}/thread`)
+      .then(r => r.json()).then(d => {
+        if (d.root) setRootMessage(d.root)
+        setReplies(d.replies || [])
+      }).finally(() => setLoading(false))
+  }, [channelId, root.id])
+
+  useEffect(() => { loadThread() }, [loadThread, refreshKey])
+
+  const sendReply = async () => {
+    const text = input.trim()
+    if (!text || sending) return
+    setInput(""); setSending(true)
+    const r = await apiFetch(`/admin/mkt-chat/channels/${channelId}/messages/${rootMessage.id}/thread`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text }),
+    }).then(r => r.json()).catch(() => null)
+    if (r?.reply) setReplies(prev => prev.some(m => m.id === r.reply.id) ? prev : [...prev, r.reply])
+    setSending(false)
+  }
+
+  const renderMini = (m: Message) => (
+    <div key={m.id} className="flex gap-2 rounded-lg px-2 py-2 hover:bg-ui-bg-base-hover">
+      <Avatar name={m.author_name} className="size-7 text-[11px]" />
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 flex items-baseline gap-2 text-[11px] text-ui-fg-muted">
+          <span className="font-semibold text-ui-fg-base">{m.author_name}</span>
+          <span>{fmtTime(m.created_at)}</span>
+        </div>
+        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content) }} />
+      </div>
+    </div>
+  )
+
+  return (
+    <aside className="chat-anim-panel flex w-[360px] shrink-0 flex-col border-l border-ui-border-base bg-ui-bg-base">
+      <div className="flex items-center justify-between border-b border-ui-border-base px-4 py-3">
+        <div>
+          <div className="text-sm font-bold text-ui-fg-base">Thread</div>
+          <div className="text-[11px] text-ui-fg-muted">{rootMessage.reply_count || replies.length} phản hồi</div>
+        </div>
+        <button onClick={onClose} className="grid size-7 place-items-center rounded-md text-ui-fg-muted hover:bg-ui-bg-base-hover">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3">
+        {renderMini(rootMessage)}
+        <div className="my-2 border-t border-ui-border-base" />
+        {loading && <div className="py-4 text-center text-xs text-ui-fg-muted">Đang tải...</div>}
+        {!loading && replies.length === 0 && <div className="py-4 text-center text-xs text-ui-fg-muted">Chưa có phản hồi</div>}
+        {replies.map(renderMini)}
+      </div>
+      <div className="border-t border-ui-border-base p-3">
+        <textarea value={input} onChange={e => setInput(e.target.value)} rows={2}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply() } }}
+          placeholder={`Trả lời ${rootMessage.author_name}...`}
+          className={cn(INPUT_CLS, "max-h-28 resize-none text-[13px]")} />
+        <div className="mt-2 flex justify-end">
+          <button onClick={sendReply} disabled={sending || !input.trim()}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-40">
+            {sending ? "Đang gửi..." : "Gửi"}
+          </button>
+        </div>
+      </div>
+    </aside>
+  )
+}
 const PANEL_STORAGE_KEY = "mkt-chat:panel"
 
 export default function MktChatPage() {
@@ -826,11 +932,13 @@ export default function MktChatPage() {
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showManageMembers, setShowManageMembers] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [openThread, setOpenThread] = useState<Message | null>(null)
   const [showTemplatesModal, setShowTemplatesModal] = useState(false)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [newMsgCount, setNewMsgCount] = useState(0)
+  const [threadRefreshKey, setThreadRefreshKey] = useState(0)
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -840,6 +948,7 @@ export default function MktChatPage() {
   const atBottomRef = useRef(true)
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
+  const pendingJumpRef = useRef<string | null>(null)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -936,6 +1045,16 @@ export default function MktChatPage() {
         setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}) } : m))
       })
 
+      es.addEventListener("thread.reply.created", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        if (activeChannel?.id !== data.channel_id || !data.root_message_id) return
+        setMessages(prev => prev.map(m => m.id === data.root_message_id
+          ? { ...m, reply_count: Number(data.root_reply_count ?? ((m.reply_count || 0) + 1)) }
+          : m
+        ))
+        if (openThread?.id === data.root_message_id) setThreadRefreshKey(k => k + 1)
+      })
+
       es.addEventListener("channel.updated", () => loadChannels())
       es.addEventListener("channel.member.updated", () => loadChannels())
       es.addEventListener("read.updated", (e: MessageEvent) => {
@@ -981,7 +1100,7 @@ export default function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages])
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, openThread?.id])
 
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
@@ -1025,6 +1144,7 @@ export default function MktChatPage() {
       reply_to: currentReply ? { id: currentReply.id, content: currentReply.content.slice(0, 80), author_name: currentReply.author_name } : null,
       file_url: null, file_type: null, file_name: null, file_expires_at: null,
       reactions: {}, is_pinned: false, mentions: [],
+      reply_count: 0,
       created_at: new Date().toISOString(),
     }
     setMessages(m => [...m, optimistic])
@@ -1126,6 +1246,7 @@ export default function MktChatPage() {
   }
 
   const jumpToMessage = (msgId: string) => {
+    pendingJumpRef.current = null
     setShowSearch(false)
     const el = messageRefs.current[msgId]
     if (el) {
@@ -1135,6 +1256,27 @@ export default function MktChatPage() {
       el.classList.add("chat-anim-highlight")
     }
   }
+
+
+  const jumpToSearchResult = (msg: Message) => {
+    if (msg.channel_id !== activeChannel?.id) {
+      const target = channels.find(c => c.id === msg.channel_id)
+      if (target) {
+        pendingJumpRef.current = msg.id
+        setOpenThread(null)
+        setActiveChannel(target)
+        setShowSearch(false)
+      }
+      return
+    }
+    jumpToMessage(msg.id)
+  }
+
+  useEffect(() => {
+    const pendingId = pendingJumpRef.current
+    if (!pendingId || !messages.some(m => m.id === pendingId)) return
+    requestAnimationFrame(() => jumpToMessage(pendingId))
+  }, [messages])
 
   const togglePanel = () => {
     setPanelOpen(p => {
@@ -1155,6 +1297,22 @@ export default function MktChatPage() {
     }
     return list
   }, [channels, sidebarTab, channelSearch])
+
+  const groupedVisibleChannels = useMemo(() => {
+    const groups: { label: string; items: Channel[] }[] = []
+    const byLabel = new Map<string, Channel[]>()
+    for (const channel of visibleChannels) {
+      const dash = channel.name.indexOf("-")
+      const label = dash > 0 ? channel.name.slice(0, dash).trim() : "Khac"
+      const key = label || "Khac"
+      if (!byLabel.has(key)) {
+        byLabel.set(key, [])
+        groups.push({ label: key, items: byLabel.get(key)! })
+      }
+      byLabel.get(key)!.push(channel)
+    }
+    return groups
+  }, [visibleChannels])
 
   const groupedByDate = useMemo(() => messages.reduce((acc, m) => {
     if (m.msg_type === "system_notify") return acc
@@ -1211,39 +1369,46 @@ export default function MktChatPage() {
               {sidebarTab === "unread" ? "Không có tin chưa đọc 🎉" : sidebarTab === "mentioned" ? "Chưa có ai nhắc đến bạn 🎉" : channelSearch ? "Không tìm thấy group" : "Chưa có group nào"}
             </div>
           )}
-          {visibleChannels.map(c => {
-            const isActive = activeChannel?.id === c.id
-            const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
-            const last = c.last_message
-            return (
-              <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false) }}
-                className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
-                  isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
-                <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase", avatarClass(c.name))}>
-                  {c.name.charAt(0)}
-                  <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline justify-between gap-1">
-                    <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>{c.name}</span>
-                    {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
-                  </span>
-                  <span className="flex items-center justify-between gap-1">
-                    <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
-                      {last
-                        ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "🔒 " : ""}${last.content}`
-                        : c.description || `${c.member_count} thành viên`}
+          {groupedVisibleChannels.map(group => (
+            <div key={group.label} className="mb-2">
+              <div className="px-2 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-ui-fg-muted">{group.label}</div>
+              {group.items.map(c => {
+                const isActive = activeChannel?.id === c.id
+                const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
+                const last = c.last_message
+                return (
+                  <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null) }}
+                    className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                      isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+                    <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase", avatarClass(c.name))}>
+                      {c.name.charAt(0)}
+                      <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
                     </span>
-                    {c.unread_count > 0 && (
-                      <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
-                        {c.unread_count > 99 ? "99+" : c.unread_count}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-1">
+                        <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>
+                          {c.is_private && <span className="mr-1">🔒</span>}{c.name}
+                        </span>
+                        {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
                       </span>
-                    )}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
+                      <span className="flex items-center justify-between gap-1">
+                        <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
+                          {last
+                            ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${last.content}`
+                            : c.description || `${c.member_count} thành viên`}
+                        </span>
+                        {c.unread_count > 0 && (
+                          <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
+                            {c.unread_count > 99 ? "99+" : c.unread_count}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </div>
 
         {isManager && (
@@ -1321,6 +1486,7 @@ export default function MktChatPage() {
                       onReply={setReplyTo}
                       onReact={handleReact}
                       onPin={handlePin}
+                      onOpenThread={setOpenThread}
                     />
                   </div>
                 ))}
@@ -1462,12 +1628,19 @@ export default function MktChatPage() {
             </div>
           </div>
 
-          {showSearch && <SearchPanel channelId={activeChannel.id} onClose={() => setShowSearch(false)} onJump={jumpToMessage} />}
+          {showSearch && <SearchPanel currentChannelId={activeChannel.id} channels={channels} users={mktUsers} onClose={() => setShowSearch(false)} onJump={jumpToSearchResult} />}
         </main>
       )}
 
       {/* ── Cột 3: Context Panel ── */}
-      {activeChannel && panelOpen && (
+      {activeChannel && openThread ? (
+        <ThreadPanel
+          channelId={activeChannel.id}
+          root={openThread}
+          refreshKey={threadRefreshKey}
+          onClose={() => setOpenThread(null)}
+        />
+      ) : activeChannel && panelOpen && (
         <ContextPanel
           channel={activeChannel}
           mktUsers={mktUsers}
