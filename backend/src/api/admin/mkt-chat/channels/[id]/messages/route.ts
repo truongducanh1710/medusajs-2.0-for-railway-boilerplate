@@ -2,18 +2,45 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../../../lib/db"
 import { broadcastToChannel, canAccessMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
 
+function normalizeMentionText(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+}
+
 function parseMentions(content: string, memberEmails: string[], nameByEmail: Record<string, string>): string[] {
   const mentioned = new Set<string>()
-  const matches = content.match(/@[\w.@-]+/g) || []
-  for (const match of matches) {
-    const token = match.slice(1).toLowerCase()
-    if (token === "ai") continue
-    for (const email of memberEmails) {
-      if (email.toLowerCase().includes(token)) { mentioned.add(email); break }
-      const name = nameByEmail[email]?.toLowerCase() ?? ""
-      if (name && name.includes(token)) { mentioned.add(email); break }
+  const normalizedContent = normalizeMentionText(content)
+  const tokenMatches = content.match(/@[^\s,;:]+/g) || []
+
+  for (const email of memberEmails) {
+    const name = nameByEmail[email] || ""
+    const candidates = [
+      email,
+      email.split("@")[0],
+      name,
+      name.replace(/\s+/g, "_"),
+    ]
+      .map(normalizeMentionText)
+      .filter(candidate => candidate && candidate !== "ai")
+
+    if (candidates.some(candidate => normalizedContent.includes(`@${candidate}`))) {
+      mentioned.add(email)
+      continue
+    }
+
+    for (const match of tokenMatches) {
+      const token = normalizeMentionText(match.slice(1))
+      if (!token || token === "ai" || token.length < 2) continue
+      if (candidates.some(candidate => candidate.includes(token) || token.includes(candidate))) {
+        mentioned.add(email)
+        break
+      }
     }
   }
+
   return [...mentioned]
 }
 

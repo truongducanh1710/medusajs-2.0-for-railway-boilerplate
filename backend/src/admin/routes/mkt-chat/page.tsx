@@ -66,6 +66,31 @@ function renderMentions(text: string): string {
 }
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🔥"]
+function emitMentionTone(ctx: AudioContext) {
+  const now = ctx.currentTime
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.95)
+  gain.connect(ctx.destination)
+
+  ;[
+    { freq: 1046.5, start: 0 },
+    { freq: 1318.5, start: 0.13 },
+    { freq: 1174.7, start: 0.36 },
+    { freq: 1568, start: 0.5 },
+  ].forEach(({ freq, start }) => {
+    const osc = ctx.createOscillator()
+    const startAt = now + start
+    osc.type = "sine"
+    osc.frequency.setValueAtTime(freq, startAt)
+    osc.connect(gain)
+    osc.start(startAt)
+    osc.stop(startAt + 0.14)
+  })
+
+  window.setTimeout(() => gain.disconnect(), 1100)
+}
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
@@ -959,6 +984,7 @@ export default function MktChatPage() {
   const pendingJumpRef = useRef<string | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioUnlockedRef = useRef(false)
+  const pendingMentionSoundRef = useRef(false)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -1021,54 +1047,56 @@ export default function MktChatPage() {
     apiFetch("/admin/mkt-chat/users").then(r => r.json()).then(d => setMktUsers(d.users || []))
   }, [loadChannels, loadTemplates, loadNotifications])
 
-  const unlockNotificationAudio = useCallback(() => {
-    if (audioUnlockedRef.current || typeof window === "undefined") return
-    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
-    if (!AudioContextCtor) return
-    const ctx = audioContextRef.current || new AudioContextCtor()
-    audioContextRef.current = ctx
-    ctx.resume().then(() => { audioUnlockedRef.current = true }).catch(() => {})
-  }, [])
-
   const playMentionSound = useCallback((force = false) => {
-    if ((!force && !notificationSoundEnabled) || typeof window === "undefined") return
+    if ((!force && !notificationSoundEnabled) || typeof window === "undefined") return false
     const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
-    if (!AudioContextCtor) return
+    if (!AudioContextCtor) return false
     const ctx = audioContextRef.current || new AudioContextCtor()
     audioContextRef.current = ctx
 
     const play = () => {
-      const now = ctx.currentTime
-      const gain = ctx.createGain()
-      gain.gain.setValueAtTime(0.0001, now)
-      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36)
-      gain.connect(ctx.destination)
-
-      ;[880, 1175].forEach((freq, i) => {
-        const osc = ctx.createOscillator()
-        const start = now + i * 0.14
-        osc.type = "sine"
-        osc.frequency.setValueAtTime(freq, start)
-        osc.connect(gain)
-        osc.start(start)
-        osc.stop(start + 0.12)
-      })
-      window.setTimeout(() => gain.disconnect(), 450)
+      audioUnlockedRef.current = true
+      pendingMentionSoundRef.current = false
+      emitMentionTone(ctx)
+      return true
     }
 
     if (ctx.state === "suspended") {
-      ctx.resume().then(() => { audioUnlockedRef.current = true; play() }).catch(() => {})
+      pendingMentionSoundRef.current = true
+      ctx.resume().then(() => {
+        if (ctx.state === "running") play()
+      }).catch(() => {})
+      return false
+    }
+
+    return play()
+  }, [notificationSoundEnabled])
+
+  const unlockNotificationAudio = useCallback(() => {
+    if (typeof window === "undefined") return
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextCtor) return
+    const ctx = audioContextRef.current || new AudioContextCtor()
+    audioContextRef.current = ctx
+
+    const markUnlocked = () => {
+      audioUnlockedRef.current = ctx.state === "running"
+      if (audioUnlockedRef.current && pendingMentionSoundRef.current && notificationSoundEnabled) {
+        playMentionSound(true)
+      }
+    }
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(markUnlocked).catch(() => {})
       return
     }
-    audioUnlockedRef.current = true
-    play()
-  }, [notificationSoundEnabled])
+    markUnlocked()
+  }, [notificationSoundEnabled, playMentionSound])
 
   useEffect(() => {
     const unlock = () => unlockNotificationAudio()
-    window.addEventListener("pointerdown", unlock, { once: true, passive: true })
-    window.addEventListener("keydown", unlock, { once: true })
+    window.addEventListener("pointerdown", unlock, { passive: true })
+    window.addEventListener("keydown", unlock)
     return () => {
       window.removeEventListener("pointerdown", unlock)
       window.removeEventListener("keydown", unlock)
