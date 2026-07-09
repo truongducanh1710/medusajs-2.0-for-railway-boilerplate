@@ -1,5 +1,6 @@
 import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { ROLE_PRESETS } from "../../../admin/lib/permissions"
 import { getPool } from "../../../lib/db"
 
 type SseClient = {
@@ -41,9 +42,7 @@ export async function getMktChatAuthInfo(req: MedusaRequest): Promise<MktChatAut
   if (!email) return null
 
   const isSuper = email === process.env.SUPER_ADMIN_EMAIL
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-    ? (user.metadata as any).permissions
-    : []
+  const perms = resolveMktUserPerms(user.metadata)
 
   return {
     email,
@@ -105,6 +104,12 @@ export function formatMktMessage(message: any, nameByEmail: Record<string, strin
   }
 }
 
+export function resolveMktUserPerms(metadata: any): string[] {
+  const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
+  const role: string = metadata?.role ?? ""
+  const fromRole: string[] = role && ROLE_PRESETS[role] ? (ROLE_PRESETS[role] as string[]) : []
+  return [...new Set([...fromRole, ...explicit])]
+}
 export type CreateMentionNotificationOptions = {
   channelId: string
   channelName: string

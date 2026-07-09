@@ -1018,7 +1018,7 @@ export default function MktChatPage() {
     loadChannels()
     loadTemplates()
     loadNotifications()
-    apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
+    apiFetch("/admin/mkt-chat/users").then(r => r.json()).then(d => setMktUsers(d.users || []))
   }, [loadChannels, loadTemplates, loadNotifications])
 
   const unlockNotificationAudio = useCallback(() => {
