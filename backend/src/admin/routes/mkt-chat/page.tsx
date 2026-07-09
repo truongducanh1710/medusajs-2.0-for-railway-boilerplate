@@ -1298,6 +1298,12 @@ export default function MktChatPage() {
     return list
   }, [channels, sidebarTab, channelSearch])
 
+  useEffect(() => {
+    if (!activeChannel && visibleChannels.length > 0) {
+      setActiveChannel(visibleChannels[0])
+    }
+  }, [activeChannel, visibleChannels])
+
   const groupedVisibleChannels = useMemo(() => {
     const groups: { label: string; items: Channel[] }[] = []
     const byLabel = new Map<string, Channel[]>()
