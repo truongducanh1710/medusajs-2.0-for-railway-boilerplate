@@ -75,8 +75,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const rows = await sql(`
       SELECT
-        COALESCE(r.date, c.date) AS date,
-        COALESCE(r.mkt_name, c.mkt_name) AS mkt_name,
+        COALESCE(r.date, c.date, g.date) AS date,
+        COALESCE(r.mkt_name, c.mkt_name, g.mkt_name) AS mkt_name,
         COALESCE(r.total_orders, 0) AS total_orders,
         COALESCE(r.delivered, 0) AS delivered,
         COALESCE(r.new_orders, 0) AS new_orders,
@@ -86,10 +86,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COALESCE(r.revenue_total, 0) AS revenue_total,
         COALESCE(r.revenue_delivered, 0) AS revenue_delivered,
         COALESCE(r.cod_total, 0) AS cod_total,
-        COALESCE(c.spend, 0)::bigint AS ads_cost,
+        (COALESCE(c.spend, 0) + COALESCE(g.cost, 0))::bigint AS ads_cost,
         CASE
           WHEN COALESCE(r.revenue_total, 0) > 0
-          THEN ROUND(COALESCE(c.spend, 0)::numeric / r.revenue_total * 100, 2)
+          THEN ROUND((COALESCE(c.spend, 0) + COALESCE(g.cost, 0))::numeric / r.revenue_total * 100, 2)
           ELSE NULL
         END AS care_pct
       FROM (
@@ -125,7 +125,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND date <= $2::date
         GROUP BY date_trunc('${truncUnit}', date), mkt_name
       ) c ON c.date = r.date AND c.mkt_name = r.mkt_name
-      ORDER BY COALESCE(r.date, c.date) DESC, COALESCE(r.revenue_total, 0) DESC
+      FULL OUTER JOIN (
+        SELECT
+          to_char(date_trunc('${truncUnit}', date), 'YYYY-MM-DD') AS date,
+          mkt_name,
+          SUM(cost)::bigint AS cost
+        FROM mkt_ads_cost_gg
+        WHERE deleted_at IS NULL
+          AND date >= $1::date
+          AND date <= $2::date
+        GROUP BY date_trunc('${truncUnit}', date), mkt_name
+      ) g ON g.date = COALESCE(r.date, c.date) AND g.mkt_name = COALESCE(r.mkt_name, c.mkt_name)
+      ORDER BY COALESCE(r.date, c.date, g.date) DESC, COALESCE(r.revenue_total, 0) DESC
     `, [`${from}T00:00:00Z`, to])
 
     // Apply handover rules: nếu date >= effective_from thì đổi mkt_name

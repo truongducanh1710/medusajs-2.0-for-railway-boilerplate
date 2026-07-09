@@ -20,7 +20,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
     const today = todayVN()
 
-    const [todayStats, lastSync, accountsWithData, permErrorAccounts] = await Promise.all([
+    const [todayStats, lastSync, accountsWithData, permErrorAccounts, ggConfigured, ggToday, ggLastSync] = await Promise.all([
       // Tổng campaigns + spend hôm nay (theo giờ VN)
       cskhService.sql(`
         SELECT
@@ -62,6 +62,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
               AND (m.date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1::date
           )
       `, [today]),
+
+      // Users đã cấu hình GG Ads sheet (Settings > Users)
+      cskhService.sql(`
+        SELECT metadata->>'mkt_code' AS mkt_code
+        FROM "user"
+        WHERE deleted_at IS NULL AND metadata->>'gg_ads_sheet_url' IS NOT NULL
+      `).catch(() => []),
+
+      // GG Ads: spend hôm nay theo mkt_name
+      cskhService.sql(`
+        SELECT mkt_name, cost::bigint AS cost, updated_at
+        FROM mkt_ads_cost_gg
+        WHERE deleted_at IS NULL AND date = $1::date
+      `, [today]).catch(() => []),
+
+      // GG Ads: lần sync gần nhất (bất kỳ ngày nào)
+      cskhService.sql(`
+        SELECT MAX(updated_at) AS last_sync FROM mkt_ads_cost_gg WHERE deleted_at IS NULL
+      `).catch(() => [{ last_sync: null }]),
     ])
 
     const stats = todayStats[0] ?? {}
@@ -89,6 +108,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       missing_accounts: missingAccounts,
       last_updated: lastUpdated,
       minutes_ago: minutesAgo,
+      google_ads: {
+        configured_mkt_codes: ggConfigured.map((r: any) => r.mkt_code),
+        today_by_mkt: ggToday,
+        last_sync: ggLastSync[0]?.last_sync ?? null,
+      },
     })
   } catch (err: any) {
     console.error("[mkt-cost-status]", err.message)
