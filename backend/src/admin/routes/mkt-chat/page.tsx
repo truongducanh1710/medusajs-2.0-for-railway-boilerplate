@@ -964,10 +964,14 @@ export default function MktChatPage() {
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionIndex, setMentionIndex] = useState(0)
-  const mentionSuggestions = mktUsers.filter(u =>
-    u.name.toLowerCase().includes(mentionQuery.toLowerCase()) || u.email.toLowerCase().includes(mentionQuery.toLowerCase())
-  ).slice(0, 5)
-
+  const mentionSuggestions = useMemo(() => {
+    const memberEmails = new Set(activeChannel?.member_ids || [])
+    const scopedUsers = mktUsers.filter(u => memberEmails.has(u.email))
+    const q = mentionQuery.toLowerCase()
+    return scopedUsers.filter(u =>
+      !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+    ).slice(0, 5)
+  }, [activeChannel?.member_ids, mentionQuery, mktUsers])
   // Template picker (slash command)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [templateIndex, setTemplateIndex] = useState(0)
