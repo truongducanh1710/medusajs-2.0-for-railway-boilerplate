@@ -319,14 +319,19 @@ export default function BaoCaoMktPage() {
     setSyncing(true)
     try {
       const today = todayVN()
-      const res = await apiFetch("/admin/pancake-sync/report/mkt-cost", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: today }),
-      })
-      const data = await res.json()
+      const [fbRes, ggRes] = await Promise.all([
+        apiFetch("/admin/pancake-sync/report/mkt-cost", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: today }),
+        }),
+        apiFetch("/admin/pancake-sync/report/mkt-cost-gg", { method: "POST" }),
+      ])
+      const data = await fbRes.json()
+      const ggData = await ggRes.json().catch(() => null)
+      const ggMsg = ggData?.ok ? `, GG Ads: ${ggData.synced} ngày` : ggData?.error ? `, GG Ads lỗi: ${ggData.error}` : ""
       if (data.ok) {
-        alert(`✓ Đã sync ${data.synced} campaigns cho ngày ${data.date}`)
+        alert(`✓ Đã sync ${data.synced} campaigns cho ngày ${data.date}${ggMsg}`)
         await fetchData()
       } else {
         alert("Lỗi sync: " + (data.error ?? "unknown"))
