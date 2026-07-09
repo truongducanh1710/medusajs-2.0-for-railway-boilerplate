@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { broadcastToChannel, getMktChatAuthInfo, isMktChannelMember } from "../../../../../_lib"
+import { broadcastToChannel, getMktChatAuthInfo, canAccessMktChannel } from "../../../../../_lib"
 
 // POST /admin/mkt-chat/channels/:id/messages/:msgId/react
 // body: { emoji: "👍" }  — toggle reaction
@@ -15,7 +15,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
-    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
     }
 

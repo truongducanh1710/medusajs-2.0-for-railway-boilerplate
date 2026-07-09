@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../../../../../lib/db"
-import { broadcastToChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap, isMktChannelMember } from "../../../../../_lib"
+import { broadcastToChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap, canAccessMktChannel } from "../../../../../_lib"
 
 function parseMentions(content: string, memberEmails: string[], nameByEmail: Record<string, string>): string[] {
   const mentioned = new Set<string>()
@@ -23,7 +23,7 @@ async function requireChannelAccess(req: MedusaRequest, channelId: string) {
   const svc = req.scope.resolve("mktTaskModule") as any
   const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
   if (!channel) return { status: 404, body: { error: "Khong tim thay channel" } }
-  if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+  if (!canAccessMktChannel(channel, auth)) {
     return { status: 403, body: { error: "Ban khong phai thanh vien cua channel nay" } }
   }
   return { auth, channel, svc }

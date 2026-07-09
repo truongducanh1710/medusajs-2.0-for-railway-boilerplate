@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { ulid } from "ulid"
 import { getPool } from "../../../../../../lib/db"
-import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, isMktChannelMember } from "../../../_lib"
+import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, canAccessMktChannel } from "../../../_lib"
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -21,7 +21,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const { id: channelId } = req.params
     const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
-    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
     }
 

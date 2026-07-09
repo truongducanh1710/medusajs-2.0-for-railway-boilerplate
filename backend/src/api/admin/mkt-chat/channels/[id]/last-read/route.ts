@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../../../lib/db"
 import { ulid } from "ulid"
-import { broadcastToUser, getMktChatAuthInfo, isMktChannelMember } from "../../../_lib"
+import { broadcastToUser, getMktChatAuthInfo, canAccessMktChannel } from "../../../_lib"
 
 // PATCH /admin/mkt-chat/channels/:id/last-read
 // Đánh dấu user đã đọc đến thời điểm hiện tại trong channel này
@@ -14,7 +14,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const { id: channelId } = req.params
     const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
-    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
     }
 

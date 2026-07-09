@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getMktChatAuthInfo, isMktChannelMember, searchMktMessages } from "../../../_lib"
+import { getMktChatAuthInfo, canAccessMktChannel, searchMktMessages } from "../../../_lib"
 
 // GET /admin/mkt-chat/channels/:id/search?q=keyword
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -14,7 +14,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const svc = req.scope.resolve("mktTaskModule") as any
     const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Khong tim thay channel" })
-    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Ban khong phai thanh vien cua channel nay" })
     }
 

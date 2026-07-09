@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
-import { getMktChatAuthInfo, isMktChannelMember } from "../../../_lib"
+import { getMktChatAuthInfo, canAccessMktChannel } from "../../../_lib"
 
 // GET /admin/mkt-chat/channels/:id/pinned — lấy danh sách tin được ghim
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -13,7 +13,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const [channel] = await svc.listMktChannels({ id: channelId, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
-    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
     }
 

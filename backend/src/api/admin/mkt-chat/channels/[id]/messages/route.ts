@@ -1,24 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
-import { broadcastToChannel, createMentionNotifications, formatMktMessage, getMktUserNameMap } from "../../../_lib"
-
-function actorId(req: MedusaRequest): string | null {
-  const auth = (req as any).auth_context
-  return auth?.actor_type === "user" ? auth.actor_id : null
-}
-
-async function actorEmail(req: MedusaRequest): Promise<string | null> {
-  const uid = actorId(req)
-  if (!uid) return null
-  const userModule = req.scope.resolve(Modules.USER)
-  const user = await userModule.retrieveUser(uid, { select: ["email"] })
-  return user?.email ?? null
-}
-
-function isMember(channel: any, email: string): boolean {
-  return Array.isArray(channel.members) && channel.members.some((m: any) => m.user_id === email)
-}
+import { broadcastToChannel, canAccessMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
 
 function parseMentions(content: string, memberEmails: string[], nameByEmail: Record<string, string>): string[] {
   const mentioned = new Set<string>()
@@ -60,8 +42,9 @@ async function resolveReplyRoot(channelId: string, replyToId?: string | null) {
 // GET /admin/mkt-chat/channels/:id/messages
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const email = await actorEmail(req)
-    if (!email) return res.status(401).json({ error: "Unauthenticated" })
+    const auth = await getMktChatAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+    const email = auth.email
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
@@ -70,8 +53,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Khong tim thay channel" })
 
-    const superEmail = process.env.SUPER_ADMIN_EMAIL
-    if (email !== superEmail && !isMember(channel, email)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Ban khong phai thanh vien cua channel nay" })
     }
 
@@ -132,8 +114,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 // POST /admin/mkt-chat/channels/:id/messages
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const email = await actorEmail(req)
-    if (!email) return res.status(401).json({ error: "Unauthenticated" })
+    const auth = await getMktChatAuthInfo(req)
+    if (!auth) return res.status(401).json({ error: "Unauthenticated" })
+    const email = auth.email
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { id } = req.params
@@ -145,8 +128,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Khong tim thay channel" })
 
-    const superEmail = process.env.SUPER_ADMIN_EMAIL
-    if (email !== superEmail && !isMember(channel, email)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Ban khong phai thanh vien cua channel nay" })
     }
 

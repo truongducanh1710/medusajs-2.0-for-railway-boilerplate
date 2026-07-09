@@ -32,6 +32,10 @@ export function isMktChannelMember(channel: any, email: string, isSuper = false)
   return Array.isArray(channel?.members) && channel.members.some((m: any) => m.user_id === email)
 }
 
+export function canAccessMktChannel(channel: any, auth: MktChatAuthInfo): boolean {
+  return auth.isManager || isMktChannelMember(channel, auth.email, auth.isSuper)
+}
+
 export async function getMktChatAuthInfo(req: MedusaRequest): Promise<MktChatAuthInfo | null> {
   const auth = (req as any).auth_context
   if (auth?.actor_type !== "user" || !auth?.actor_id) return null
@@ -55,7 +59,7 @@ export async function listVisibleMktChannelIds(req: MedusaRequest, auth: MktChat
   const svc = req.scope.resolve("mktTaskModule") as any
   const allChannels = await svc.listMktChannels({ deleted_at: null })
   return allChannels
-    .filter((c: any) => auth.isManager || isMktChannelMember(c, auth.email, auth.isSuper))
+    .filter((c: any) => canAccessMktChannel(c, auth))
     .map((c: any) => c.id)
 }
 

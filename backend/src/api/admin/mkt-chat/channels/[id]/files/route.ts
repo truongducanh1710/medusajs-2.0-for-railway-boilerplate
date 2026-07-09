@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../../../lib/db"
-import { getMktChatAuthInfo, getMktUserNameMap, isMktChannelMember } from "../../../_lib"
+import { getMktChatAuthInfo, getMktUserNameMap, canAccessMktChannel } from "../../../_lib"
 
 // GET /admin/mkt-chat/channels/:id/files?type=image|file&author=&from=&to=
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -14,7 +14,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Khong tim thay channel" })
-    if (!isMktChannelMember(channel, auth.email, auth.isSuper)) {
+    if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Ban khong phai thanh vien cua channel nay" })
     }
 

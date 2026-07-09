@@ -1,17 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
+import { getMktChatAuthInfo } from "../../_lib"
 import { getPool } from "../../../../../lib/db"
 
 async function isManager(req: MedusaRequest): Promise<boolean> {
-  const auth = (req as any).auth_context
-  if (auth?.actor_type !== "user" || !auth?.actor_id) return false
-  const superEmail = process.env.SUPER_ADMIN_EMAIL
-  const userModule = req.scope.resolve(Modules.USER)
-  const user = await userModule.retrieveUser(auth.actor_id, { select: ["email", "metadata"] })
-  if (user.email === superEmail) return true
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-    ? (user.metadata as any).permissions : []
-  return perms.includes("page.mkt-chat.manage")
+  const auth = await getMktChatAuthInfo(req)
+  return Boolean(auth?.isManager)
 }
 
 // PATCH /admin/mkt-chat/templates/:id — manager only
