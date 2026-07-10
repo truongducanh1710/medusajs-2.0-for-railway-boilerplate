@@ -371,6 +371,199 @@ const LABEL_CLS = "mb-1 block text-[11px] font-semibold uppercase tracking-wide 
 // Nếu chưa liên kết: form tạo lô mới (POST /admin/gia-von) rồi gắn import_lot_id vào task.
 // Nếu đã liên kết: hiển thị tóm tắt lô (giá về kho, SL, phí).
 
+type DailyMktReportRow = {
+  date: string
+  mkt_name: string
+  total_orders: number
+  delivered: number
+  new_orders: number
+  confirmed: number
+  cancelled: number
+  pending: number
+  revenue_total: number | string
+  revenue_delivered: number | string
+  cod_total: number | string
+  ads_cost: number | string
+  care_pct: number | string | null
+}
+
+function normalizeReportTitle(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+}
+
+function isDailyMktReportTask(task: Task): boolean {
+  return task.type === "ads_camp" && normalizeReportTitle(task.title).includes("bao cao")
+}
+
+function todayVNKey(): string {
+  return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+function formatVND(value: number | string | null | undefined): string {
+  return `${new Intl.NumberFormat("vi-VN").format(Math.round(Number(value || 0)))}đ`
+}
+
+function formatPercent(value: number | string | null | undefined): string {
+  return `${Number(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`
+}
+
+function formatDateVN(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-")
+  return `${d}/${m}/${y}`
+}
+
+function buildDailyMktReportText(row: DailyMktReportRow, note: string): string {
+  return [
+    `📊 Báo cáo MKT — ${formatDateVN(row.date)} — ${row.mkt_name}`,
+    "",
+    `Tổng đơn: ${Number(row.total_orders || 0)}`,
+    `Mới: ${Number(row.new_orders || 0)} | Xác nhận: ${Number(row.confirmed || 0)} | Hủy: ${Number(row.cancelled || 0)} | Chờ: ${Number(row.pending || 0)}`,
+    `Doanh số tổng: ${formatVND(row.revenue_total)}`,
+    `Doanh số đã giao: ${formatVND(row.revenue_delivered)}`,
+    `Chi phí ads: ${formatVND(row.ads_cost)}`,
+    `Tỷ lệ chi phí/doanh số: ${formatPercent(row.care_pct)}`,
+    "",
+    "📝 Nhận xét:",
+    note.trim() || "(Không có)",
+  ].join("\n")
+}
+
+function DailyMktReportBlock({ task, canSend, onToast }: {
+  task: Task
+  canSend: boolean
+  onToast: (msg: string, type: "success" | "error") => void
+}) {
+  const [date, setDate] = useState(todayVNKey())
+  const [report, setReport] = useState<DailyMktReportRow | null>(null)
+  const [note, setNote] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [cooldown, setCooldown] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError(null)
+    fetch(`/admin/mkt-tasks/${task.id}/daily-report?date=${date}`, { credentials: "include" })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || data?.message || "Không tải được báo cáo")
+        if (active) setReport(data.report || null)
+      })
+      .catch((e) => {
+        if (!active) return
+        setReport(null)
+        setError(e?.message || "Không tải được báo cáo")
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [task.id, date])
+
+  const sendReport = async () => {
+    if (!task.channel_id) {
+      onToast("Task này chưa gắn kênh chat, liên hệ quản lý gắn kênh trước", "error")
+      return
+    }
+    if (!report) {
+      onToast("Chưa có dữ liệu báo cáo để gửi", "error")
+      return
+    }
+    setSending(true)
+    try {
+      const res = await fetch(`/admin/mkt-chat/channels/${task.channel_id}/messages`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: buildDailyMktReportText(report, note), msg_type: "text" }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || data?.message || "Không gửi được báo cáo")
+      onToast("Đã gửi báo cáo vào chat", "success")
+      setCooldown(true)
+      setTimeout(() => setCooldown(false), 3000)
+    } catch (e: any) {
+      onToast(e?.message || "Không gửi được báo cáo", "error")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const metrics = report ? [
+    ["Tổng đơn", Number(report.total_orders || 0)],
+    ["Mới / Xác nhận / Hủy / Chờ", `${Number(report.new_orders || 0)} / ${Number(report.confirmed || 0)} / ${Number(report.cancelled || 0)} / ${Number(report.pending || 0)}`],
+    ["Doanh số tổng", formatVND(report.revenue_total)],
+    ["Doanh số đã giao", formatVND(report.revenue_delivered)],
+    ["Chi phí ads", formatVND(report.ads_cost)],
+    ["Tỷ lệ chi phí/doanh số", formatPercent(report.care_pct)],
+  ] : []
+
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[12px] font-bold text-emerald-800 dark:text-emerald-300">📊 Báo cáo MKT</div>
+          {report && <div className="mt-0.5 text-[11px] text-ui-fg-muted">{report.mkt_name} · {formatDateVN(report.date)}</div>}
+        </div>
+        <input type="date" className={cn(INPUT_CLS, "w-[150px] py-1.5")} value={date} onChange={e => setDate(e.target.value)} />
+      </div>
+
+      {loading ? (
+        <div className="py-3 text-center text-[12px] text-ui-fg-muted">Đang tải báo cáo...</div>
+      ) : error ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">{error}</div>
+      ) : report ? (
+        <>
+          <div className="overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
+            <table className="w-full text-[12px]">
+              <thead className="bg-ui-bg-subtle text-left text-ui-fg-muted">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Chỉ số</th>
+                  <th className="px-3 py-2 text-right font-semibold">Giá trị</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.map(([label, value]) => (
+                  <tr key={label} className="border-t border-ui-border-base">
+                    <td className="px-3 py-2 text-ui-fg-subtle">{label}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-ui-fg-base">{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-3">
+            <label className={LABEL_CLS}>Nhận xét</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              rows={4}
+              className={cn(INPUT_CLS, "resize-y")}
+              placeholder="Nhập nhận xét trước khi gửi vào chat..."
+            />
+          </div>
+
+          <button
+            onClick={sendReport}
+            disabled={!canSend || sending || cooldown}
+            className={cn("mt-3 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition active:scale-95",
+              canSend && !sending && !cooldown
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-ui-bg-component text-ui-fg-disabled")}
+            title={!canSend ? "Bạn không phải người xử lý task này" : undefined}
+          >
+            {sending ? "Đang gửi..." : cooldown ? "Đã gửi" : "Gửi báo cáo"}
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
 type MktProductLite = { id: string; name: string; code: string | null }
 type ImportLot = {
   id: string; product_title: string; qty: number; price_unit: number
@@ -1065,6 +1258,13 @@ function TaskDrawer({
               />
             )}
 
+            {isDailyMktReportTask(task) && (
+              <DailyMktReportBlock
+                task={task}
+                canSend={canWork}
+                onToast={onToast}
+              />
+            )}
             {/* Notes */}
             <div>
               <div className={LABEL_CLS}>Ghi chú / Yêu cầu</div>

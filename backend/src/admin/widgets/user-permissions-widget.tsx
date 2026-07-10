@@ -91,7 +91,9 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
   const [perms, setPerms] = useState<string[]>(
     Array.isArray(data?.metadata?.permissions) ? data.metadata.permissions : []
   )
-  const [mktCode, setMktCode] = useState<string>((data?.metadata?.mkt_code as string) ?? "")
+  const [mktCode, setMktCode] = useState<string>(
+    ((data?.metadata?.mkt_name as string) || (data?.metadata?.mkt_code as string)) ?? ""
+  )
   const [mktCodesRaw, setMktCodesRaw] = useState<string>(
     Array.isArray(data?.metadata?.mkt_codes)
       ? (data.metadata.mkt_codes as string[]).join(", ")
@@ -140,6 +142,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
             role: role || null,
             permissions: finalPerms,
             mkt_code: mktCode.trim().toUpperCase() || null,
+            mkt_name: mktCode.trim().toUpperCase() || null,
             mkt_codes: mktCodesRaw
               .split(",")
               .map(s => s.trim().toUpperCase())

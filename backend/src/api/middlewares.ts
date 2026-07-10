@@ -69,6 +69,12 @@ export default defineMiddlewares({
       bodyParser: { sizeLimit: "20mb" },
     },
 
+    // MKT chat upload - multipart image/file payloads up to the route limit.
+    {
+      matcher: "/admin/mkt-chat/channels/*/upload",
+      method: ["POST"],
+      bodyParser: { sizeLimit: "20mb" },
+    },
     // CORS cho Chrome Extension — phải đứng trước auth middleware
     {
       matcher: "/admin/1688-import",
@@ -146,6 +152,7 @@ export default defineMiddlewares({
     { matcher: "/admin/telegram/webhook", method: ["POST"], middlewares: [] },
     { matcher: "/admin/mkt-tasks/cskh-source*", method: ["GET"], middlewares: [requirePerm("page.mkt-tasks.manage")] },
     { matcher: "/admin/mkt-tasks/cskh-call/bulk", method: ["POST"], middlewares: [requirePerm("page.mkt-tasks.manage")] },
+    { matcher: "/admin/mkt-tasks/*/daily-report", method: ["GET"], middlewares: [requirePerm("page.mkt-tasks.view")] },
     { matcher: "/admin/mkt-tasks*", method: ["GET"], middlewares: [requirePerm("page.mkt-tasks.view")] },
     { matcher: "/admin/mkt-tasks", method: ["POST"], middlewares: [requirePerm("page.mkt-tasks.view")] },
     { matcher: "/admin/mkt-tasks/*", method: ["PATCH", "DELETE", "POST"], middlewares: [requirePerm("page.mkt-tasks.view")] },
