@@ -88,9 +88,7 @@ export const RouteGuard = () => {
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
       if (path.startsWith(prefix) && !has(perm)) {
         alert("Bạn không có quyền truy cập trang này")
-        setTimeout(() => {
-          window.location.href = DEFAULT_ADMIN_APP_ROUTE
-        }, 600)
+        window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return
       }
     }
@@ -98,9 +96,7 @@ export const RouteGuard = () => {
     for (const [key, perm] of Object.entries(NATIVE_PERMS)) {
       if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !has(perm)) {
         alert("Bạn không có quyền truy cập trang này")
-        setTimeout(() => {
-          window.location.href = DEFAULT_ADMIN_APP_ROUTE
-        }, 600)
+        window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return
       }
     }
