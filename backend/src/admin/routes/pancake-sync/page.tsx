@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback } from "react"
 import { apiFetch } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ---- Helpers ----
 
@@ -571,4 +572,4 @@ export const config = defineRouteConfig({
   label: "Đồng bộ Pancake", rank: 16,
 })
 
-export default PancakeSyncPage
+export default withRouteGuard(PancakeSyncPage)

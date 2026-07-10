@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { apiFetch } from "../../../lib/api-client"
+import { withRouteGuard } from "../../../components/route-guard"
 
 const useProductId = () => {
   const parts = window.location.pathname.split("/")
@@ -608,4 +609,4 @@ const SanPhamDetailPage = () => {
   )
 }
 
-export default SanPhamDetailPage
+export default withRouteGuard(SanPhamDetailPage)

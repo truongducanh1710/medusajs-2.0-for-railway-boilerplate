@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ============ Formatters ============
 
@@ -823,4 +824,4 @@ export const config = defineRouteConfig({
   label: "Đơn hàng (Tên KH)", rank: 8,
 })
 
-export default DonHangPage
+export default withRouteGuard(DonHangPage)

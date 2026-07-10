@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 function formatBytes(n: number) {
   if (n < 1024) return `${n} B`
@@ -385,4 +386,4 @@ export const config = defineRouteConfig({
   label: "Quản lý Media", rank: 7,
 })
 
-export default MediaPage
+export default withRouteGuard(MediaPage)

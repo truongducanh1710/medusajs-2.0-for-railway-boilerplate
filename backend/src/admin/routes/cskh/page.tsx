@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ============ Helpers ============
 
@@ -415,7 +416,7 @@ function TeamStatsTab() {
 
 // ============ Main page ============
 
-export default function CskhPage() {
+function CskhPage() {
   const { has, loading: permLoading } = useCurrentPermissions()
   const canManage = has("page.cskh.manage")
 
@@ -856,3 +857,5 @@ export default function CskhPage() {
 export const config = defineRouteConfig({
   label: "CSKH Vận đơn", rank: 12,
 })
+
+export default withRouteGuard(CskhPage)

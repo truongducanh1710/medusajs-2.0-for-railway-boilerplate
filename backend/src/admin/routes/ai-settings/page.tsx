@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useRef, useState } from "react"
 import { apiJson } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -380,7 +381,7 @@ function UsageTab() {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function AiSettingsPage() {
+function AiSettingsPage() {
   const [tab, setTab] = useState<"config" | "usage">("config")
   const [features, setFeatures] = useState<Feature[]>([])
   const [models, setModels] = useState<ModelOption[]>([])
@@ -488,3 +489,5 @@ export const config = defineRouteConfig({
   label: "AI Settings", rank: 17,
   icon: "cog-six-tooth",
 })
+
+export default withRouteGuard(AiSettingsPage)

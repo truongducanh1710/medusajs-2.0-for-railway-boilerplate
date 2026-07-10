@@ -4,6 +4,7 @@ import { createPortal } from "react-dom"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { ResizeHandle, useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -618,7 +619,7 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-export default function CskhGoiKhachPage() {
+function CskhGoiKhachPage() {
   const { has, isSuper, email } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-tasks.manage")
 
@@ -1046,3 +1047,5 @@ export default function CskhGoiKhachPage() {
 }
 
 export const config = defineRouteConfig({ label: "CSKH Gọi khách", rank: 13 })
+
+export default withRouteGuard(CskhGoiKhachPage)

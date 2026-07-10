@@ -7,6 +7,7 @@ import { HieuQuaSection } from "../../components/marketing-hub/hieu-qua-section"
 import { QuanLyPageTab } from "../../components/marketing-hub/quan-ly-page-tab"
 import { AudienceTab } from "../../components/marketing-hub/audience-tab"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { withRouteGuard } from "../../components/route-guard"
 
 function ProductsTab() {
   const [products, setProducts] = useState<any[]>([])
@@ -192,4 +193,4 @@ const MarketingHubPage = () => {
 
 export const config = defineRouteConfig({ label: "Marketing Hub", rank: 4 })
 
-export default MarketingHubPage
+export default withRouteGuard(MarketingHubPage)

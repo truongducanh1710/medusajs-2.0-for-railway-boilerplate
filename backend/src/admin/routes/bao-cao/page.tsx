@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState, useRef, useContext, createContext } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ---- Currency display context ----
 // Cho phép mọi Tab format tiền đúng theo market đang chọn (VN → VND, MY → MYR/VND quy đổi)
@@ -1975,4 +1976,4 @@ export const config = defineRouteConfig({
   label: "Báo cáo", rank: 1,
 })
 
-export default BaoCaoPage
+export default withRouteGuard(BaoCaoPage)

@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1112,7 +1113,7 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
 }
 const PANEL_STORAGE_KEY = "mkt-chat:panel"
 
-export default function MktChatPage() {
+function MktChatPage() {
   const { has, isSuper, email: currentUserId } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-chat.manage")
 
@@ -2304,3 +2305,5 @@ export default function MktChatPage() {
 }
 
 export const config = defineRouteConfig({ label: "Chat MKT", rank: 6 })
+
+export default withRouteGuard(MktChatPage)

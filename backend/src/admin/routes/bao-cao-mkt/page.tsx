@@ -4,6 +4,7 @@ import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { CreateCampPicker } from "../../components/marketing-hub/create-camp-picker"
 import { BoostCampModal, type BoostTarget } from "../../components/marketing-hub/boost-camp-modal"
+import { withRouteGuard } from "../../components/route-guard"
 
 function fmtMoney(n: number): string {
   return n.toLocaleString("vi-VN") + "đ"
@@ -35,7 +36,7 @@ function getThisMonthRange() {
   return { from, to: today }
 }
 
-export default function BaoCaoMktPage() {
+function BaoCaoMktPage() {
   const { from: defaultFrom, to: defaultTo } = getThisMonthRange()
   const [from, setFrom] = useState(defaultFrom)
   const [to, setTo] = useState(defaultTo)
@@ -4446,3 +4447,5 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
 export const config = defineRouteConfig({
   label: "Doanh số MKT", rank: 3,
 })
+
+export default withRouteGuard(BaoCaoMktPage)

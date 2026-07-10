@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 function formatVND(amount: number) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
@@ -146,4 +147,4 @@ export const config = defineRouteConfig({
   label: "Sản phẩm", rank: 15,
 })
 
-export default SanPhamPage
+export default withRouteGuard(SanPhamPage)

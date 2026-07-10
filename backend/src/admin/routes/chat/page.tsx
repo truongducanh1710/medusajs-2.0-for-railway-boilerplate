@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { apiJson } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type ConvTag = "mua_hang" | "chot_duoc" | "hoi_gia" | "voucher_30k" | "kieu_nai" | "mua_lai"
@@ -308,7 +309,7 @@ function TagPicker({ tags, onChange }: { tags: string[]; onChange: (tags: string
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export default function ChatPage() {
+function ChatPage() {
   const [view, setView]           = useState<"inbox" | "agents" | "examples" | "settings" | "pancake" | "test-bot">("inbox")
   const [tab, setTab]             = useState("all")
   const [pageFilter, setPageFilter] = useState("")
@@ -1406,3 +1407,5 @@ export default function ChatPage() {
 }
 
 export const config = defineRouteConfig({ label: "Chat", rank: 11 })
+
+export default withRouteGuard(ChatPage)

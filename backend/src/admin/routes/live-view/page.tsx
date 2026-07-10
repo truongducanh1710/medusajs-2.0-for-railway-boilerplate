@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react"
 import { apiJson } from "../../lib/api-client"
+import { withRouteGuard } from "../../components/route-guard"
 
 const BASE = "/admin/live-view"
 
@@ -49,7 +50,7 @@ type Pageview = { session_id: string; url: string; title: string; created_at: st
 
 const TODAY = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" })
 
-export default function LiveViewPage() {
+function LiveViewPage() {
   const [stats, setStats] = useState<any>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [topPages, setTopPages] = useState<PageRow[]>([])
@@ -254,3 +255,5 @@ const inputStyle: React.CSSProperties = { border: "1px solid #d1d5db", borderRad
 const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", border: "1px solid #e5e7eb", fontSize: 13 }
 const th: React.CSSProperties = { padding: "6px 10px", background: "#f3f4f6", borderBottom: "1px solid #e5e7eb", textAlign: "left", fontWeight: 600, whiteSpace: "nowrap" }
 const td: React.CSSProperties = { padding: "5px 10px", borderBottom: "1px solid #f3f4f6", verticalAlign: "middle" }
+
+export default withRouteGuard(LiveViewPage)

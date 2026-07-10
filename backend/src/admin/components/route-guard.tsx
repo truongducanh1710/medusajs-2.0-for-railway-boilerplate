@@ -1,10 +1,23 @@
-import { useEffect } from "react"
+import { useEffect, type ComponentType } from "react"
 import { useCurrentPermissions } from "../lib/use-permissions"
 import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
 import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
 import { DEFAULT_ADMIN_APP_ROUTE } from "../lib/default-route"
 
 const FORBIDDEN_MESSAGE = "B\u1ea1n kh\u00f4ng c\u00f3 quy\u1ec1n truy c\u1eadp trang n\u00e0y"
+
+// Wrap a custom route page so RouteGuard mounts even on direct load/refresh,
+// where none of the native widget zones (login/order/product/customer) render.
+export function withRouteGuard<P extends object>(Component: ComponentType<P>) {
+  const Guarded = (props: P) => (
+    <>
+      <RouteGuard />
+      <Component {...props} />
+    </>
+  )
+  Guarded.displayName = `withRouteGuard(${Component.displayName || Component.name || "Page"})`
+  return Guarded
+}
 
 export const RouteGuard = () => {
   useEffect(() => {

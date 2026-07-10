@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import SalePeriodSummary from "../../components/sale-period-summary"
 import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ============ Resizable columns ============
 
@@ -489,4 +490,4 @@ export const config = defineRouteConfig({
   label: "Xác nhận đơn", rank: 9,
 })
 
-export default XacNhanDonPage
+export default withRouteGuard(XacNhanDonPage)

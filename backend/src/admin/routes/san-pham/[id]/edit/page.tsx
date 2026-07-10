@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { apiFetch } from "../../../../lib/api-client"
 import ProductPageBuilder from "../../../../components/product-page-builder"
+import { withRouteGuard } from "../../../../components/route-guard"
 
 const useProductId = () => {
   const parts = window.location.pathname.split("/")
@@ -103,4 +104,4 @@ const SanPhamEditPage = () => {
   )
 }
 
-export default SanPhamEditPage
+export default withRouteGuard(SanPhamEditPage)

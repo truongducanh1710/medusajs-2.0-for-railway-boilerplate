@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1183,7 +1184,7 @@ function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function GiaVonPage() {
+function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
   const [tab, setTab] = useState<"sheet" | "summary" | "cpqc">("sheet")
@@ -1230,3 +1231,5 @@ export default function GiaVonPage() {
 export const config = defineRouteConfig({
   label: "Giá vốn", rank: 2,
 })
+
+export default withRouteGuard(GiaVonPage)

@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import { apiFetch } from "../../../lib/api-client"
+import { withRouteGuard } from "../../../components/route-guard"
 
 // Get route param without react-router-dom import
 const useOrderId = () => {
@@ -476,4 +477,4 @@ export const config = defineRouteConfig({
   label: "Chi tiết đơn Pancake",
 })
 
-export default PancakeOrderDetailPage
+export default withRouteGuard(PancakeOrderDetailPage)

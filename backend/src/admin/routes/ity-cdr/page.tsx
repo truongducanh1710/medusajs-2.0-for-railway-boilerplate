@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { withRouteGuard } from "../../components/route-guard"
 
 function todayVN(): string {
   const d = new Date()
@@ -648,4 +649,4 @@ export const config = defineRouteConfig({
   label: "Cuộc gọi (CDR)", rank: 14,
 })
 
-export default ItyCdrPage
+export default withRouteGuard(ItyCdrPage)

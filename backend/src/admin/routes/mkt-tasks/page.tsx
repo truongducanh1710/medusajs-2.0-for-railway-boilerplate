@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -2700,7 +2701,7 @@ function StatsTab() {
 
 const VIEW_STORAGE_KEY = "mkt-tasks:view"
 
-export default function MktTasksPage() {
+function MktTasksPage() {
   const { has, isSuper, email: currentUserEmail, loading: permsLoading } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-tasks.manage")
 
@@ -3144,3 +3145,4 @@ export const config = defineRouteConfig({
   label: "Giao Việc MKT", rank: 5,
 })
 
+export default withRouteGuard(MktTasksPage)
