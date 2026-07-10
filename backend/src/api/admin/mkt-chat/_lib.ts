@@ -14,6 +14,7 @@ const _sseClients = new Set<SseClient>()
 export type MktChatAuthInfo = {
   email: string
   isSuper: boolean
+  isAdmin: boolean
   isManager: boolean
 }
 
@@ -45,13 +46,16 @@ export async function getMktChatAuthInfo(req: MedusaRequest): Promise<MktChatAut
   const email = user?.email || ""
   if (!email) return null
 
+  const role = (user.metadata as any)?.role ?? ""
   const isSuper = email === process.env.SUPER_ADMIN_EMAIL
+  const isAdmin = isSuper || role === "admin"
   const perms = resolveMktUserPerms(user.metadata)
 
   return {
     email,
     isSuper,
-    isManager: isSuper || perms.includes("page.mkt-chat.manage"),
+    isAdmin,
+    isManager: isAdmin || perms.includes("page.mkt-chat.manage"),
   }
 }
 
