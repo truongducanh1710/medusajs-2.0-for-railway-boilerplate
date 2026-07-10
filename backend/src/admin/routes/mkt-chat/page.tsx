@@ -1910,6 +1910,8 @@ function MktChatPage() {
                 )}
               </button>
               {notificationOpen && (
+                <>
+                <div className="fixed inset-0 z-[75] bg-black/20 md:bg-transparent" onClick={() => setNotificationOpen(false)} />
                 <div className="chat-anim-fadeup fixed inset-x-2 top-16 z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl md:absolute md:inset-x-auto md:right-0 md:top-8 md:w-[320px]">
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
@@ -1919,6 +1921,8 @@ function MktChatPage() {
                       </button>
                       <button onClick={toggleNotificationRepeatSound} className={cn("text-[11px] font-medium", notificationRepeatSoundEnabled ? "text-amber-600 hover:text-amber-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>{notificationRepeatSoundEnabled ? "Nhắc lại" : "Không nhắc"}</button>
                       <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
+                      <button onClick={() => setNotificationOpen(false)} title="Đóng"
+                        className="grid size-6 place-items-center rounded-md text-sm text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">✕</button>
                     </span>
                   </div>
                   <div className="max-h-[360px] overflow-y-auto py-1">
@@ -1940,6 +1944,7 @@ function MktChatPage() {
                     ))}
                   </div>
                 </div>
+                </>
               )}
             </div>
           </div>
