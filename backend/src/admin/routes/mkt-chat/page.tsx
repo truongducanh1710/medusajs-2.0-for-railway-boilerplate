@@ -2098,6 +2098,12 @@ export default function MktChatPage() {
                 value={input}
                 onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={e => {
+                  const file = Array.from(e.clipboardData?.items || [])
+                    .find(item => item.type.startsWith("image/"))
+                    ?.getAsFile()
+                  if (file) { e.preventDefault(); handleUpload(file) }
+                }}
                 rows={2}
                 placeholder={composerMode === "note"
                   ? "Note nội bộ — chỉ thành viên channel thấy..."
