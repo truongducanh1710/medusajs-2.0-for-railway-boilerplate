@@ -1912,7 +1912,8 @@ function MktChatPage() {
               {notificationOpen && (
                 <>
                 <div className="fixed inset-0 z-[75] bg-black/20 md:bg-transparent" onClick={() => setNotificationOpen(false)} />
-                <div className="chat-anim-fadeup fixed inset-x-2 top-16 z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl md:absolute md:inset-x-auto md:right-0 md:top-8 md:w-[320px]">
+                <div className="chat-anim-fadeup fixed z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl"
+                  style={{ width: "min(calc(100vw - 24px), 320px)", top: "56px", right: "12px" }}>
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
                     <span className="flex items-center gap-2">
