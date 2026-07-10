@@ -1163,6 +1163,8 @@ function MktChatPage() {
   const [notifications, setNotifications] = useState<MktNotification[]>([])
   const [notificationUnread, setNotificationUnread] = useState(0)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const [notificationPopupPos, setNotificationPopupPos] = useState<{ top: number; right: number } | null>(null)
+  const notificationBtnRef = useRef<HTMLButtonElement>(null)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
   const [notificationRepeatSoundEnabled, setNotificationRepeatSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:repeat-sound") !== "0")
 
@@ -1706,6 +1708,13 @@ function MktChatPage() {
 
   const toggleNotifications = () => {
     const nextOpen = !notificationOpen
+    if (nextOpen && notificationBtnRef.current) {
+      const rect = notificationBtnRef.current.getBoundingClientRect()
+      setNotificationPopupPos({
+        top: rect.bottom + 6,
+        right: Math.max(12, window.innerWidth - rect.right),
+      })
+    }
     setNotificationOpen(nextOpen)
     if (nextOpen && notificationUnread > 0) markNotificationsRead()
   }
@@ -1900,7 +1909,7 @@ function MktChatPage() {
               {totalUnread > 0 && (
                 <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
               )}
-              <button onClick={toggleNotifications} title="Thông báo nhắc đến"
+              <button ref={notificationBtnRef} onClick={toggleNotifications} title="Thông báo nhắc đến"
                 className={cn("relative grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                   notificationOpen ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>🔔
                 {notificationUnread > 0 && (
@@ -1909,11 +1918,11 @@ function MktChatPage() {
                   </span>
                 )}
               </button>
-              {notificationOpen && (
+              {notificationOpen && notificationPopupPos && (
                 <>
                 <div className="fixed inset-0 z-[75] bg-black/20 md:bg-transparent" onClick={() => setNotificationOpen(false)} />
-                <div className="chat-anim-fadeup absolute right-0 top-9 z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl"
-                  style={{ width: "min(calc(100vw - 24px), 300px)" }}>
+                <div className="chat-anim-fadeup fixed z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl"
+                  style={{ top: notificationPopupPos.top, right: notificationPopupPos.right, width: "min(calc(100vw - 24px), 300px)" }}>
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
                     <span className="flex items-center gap-2">
