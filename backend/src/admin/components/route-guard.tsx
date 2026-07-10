@@ -39,6 +39,11 @@ export const RouteGuard = () => {
       hide.push("aside nav > div.px-3:has(button)")
     }
 
+    // Settings link lives at the bottom of the sidebar, outside <nav> — superadmin only.
+    if (!isSuper) {
+      hide.push(`aside a[href$="/settings"]`, `aside a[href*="/settings/"]`)
+    }
+
     for (const [prefix, p] of Object.entries(ROUTE_PERMS)) {
       if (!has(p)) {
         hide.push(
@@ -60,7 +65,7 @@ export const RouteGuard = () => {
       document.head.appendChild(el)
     }
     el.textContent = `${hide.join(", ")} { display: none !important; }`
-  }, [perms, has, isAdmin])
+  }, [perms, has, isAdmin, isSuper])
 
   // Hide the native Search button as soon as the sidebar DOM is available.
   useEffect(() => {
@@ -123,7 +128,8 @@ export const RouteGuard = () => {
     const path = window.location.pathname.replace(/^\/app/, "")
 
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
-      if (path.startsWith(prefix) && !has(perm)) {
+      // Exact segment match so "/bao-cao" does not swallow "/bao-cao-mkt".
+      if ((path === prefix || path.startsWith(`${prefix}/`)) && !has(perm)) {
         alert(FORBIDDEN_MESSAGE)
         window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return
@@ -131,13 +137,14 @@ export const RouteGuard = () => {
     }
 
     for (const key of Object.keys(NATIVE_PERMS)) {
-      if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !isAdmin) {
+      const allowed = key === "settings" ? isSuper : isAdmin
+      if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !allowed) {
         alert(FORBIDDEN_MESSAGE)
         window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return
       }
     }
-  }, [perms, loading, has, isAdmin])
+  }, [perms, loading, has, isAdmin, isSuper])
 
   return null
 }

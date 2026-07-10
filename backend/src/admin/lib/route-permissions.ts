@@ -15,6 +15,11 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/cskh-goi-khach": "page.mkt-tasks.view",
   "/mkt-chat": "page.mkt-chat.view",
   "/ity-cdr": "page.ity-cdr.view",
+  "/bao-cao-mkt": "page.bao-cao.view",
+  "/media": "page.san-pham.edit",
+  "/uu-tien-goi": "page.don-hang.view",
+  "/live-view": "page.live-view.view",
+  "/1688-import": "page.san-pham.edit",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {
