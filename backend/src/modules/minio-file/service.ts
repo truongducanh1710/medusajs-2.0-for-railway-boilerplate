@@ -14,8 +14,12 @@ import { Readable } from 'stream';
 import sharp from 'sharp';
 
 const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
-const MAX_DIMENSION = 1200; // px — resize nếu lớn hơn
-const WEBP_QUALITY = 82;   // chất lượng WebP
+const MAX_DIMENSION = 1200; // px — resize nếu lớn hơn (ảnh sản phẩm, CMS...)
+const WEBP_QUALITY = 82;   // chất lượng WebP mặc định
+
+// Ảnh chat nội bộ không cần chất lượng cao như ảnh sản phẩm — nén chặt hơn để giảm egress khi xem lại lịch sử
+const CHAT_MAX_DIMENSION = 900
+const CHAT_WEBP_QUALITY = 70
 
 type InjectedDependencies = {
   logger: Logger
@@ -180,15 +184,18 @@ class MinioFileProviderService extends AbstractFileProviderService {
     }
   }
 
-  private async compressImage(content: Buffer, mimeType: string): Promise<{ buffer: Buffer; mimeType: string; ext: string }> {
+  private async compressImage(content: Buffer, mimeType: string, isChat = false): Promise<{ buffer: Buffer; mimeType: string; ext: string }> {
     // GIF không xử lý — giữ nguyên
     if (mimeType === 'image/gif') {
       return { buffer: content, mimeType, ext: '.gif' }
     }
 
+    const maxDimension = isChat ? CHAT_MAX_DIMENSION : MAX_DIMENSION
+    const quality = isChat ? CHAT_WEBP_QUALITY : WEBP_QUALITY
+
     const compressed = await sharp(content)
-      .resize(MAX_DIMENSION, MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: WEBP_QUALITY })
+      .resize(maxDimension, maxDimension, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality })
       .toBuffer()
 
     // Chỉ dùng WebP nếu nhỏ hơn ảnh gốc
@@ -240,7 +247,8 @@ class MinioFileProviderService extends AbstractFileProviderService {
 
       if (IMAGE_MIME_TYPES.has(file.mimeType)) {
         try {
-          const result = await this.compressImage(content, file.mimeType)
+          const isChat = file.filename.startsWith('chat/')
+          const result = await this.compressImage(content, file.mimeType, isChat)
           finalContent = result.buffer
           finalMimeType = result.mimeType
           finalExt = result.ext
@@ -260,6 +268,7 @@ class MinioFileProviderService extends AbstractFileProviderService {
         finalContent.length,
         {
           'Content-Type': finalMimeType,
+          'Cache-Control': 'public, max-age=31536000, immutable',
           'x-amz-meta-original-filename': file.filename,
           'x-amz-acl': 'public-read'
         }
