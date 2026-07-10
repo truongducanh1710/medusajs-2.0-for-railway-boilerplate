@@ -276,7 +276,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
   if (isSystem) {
     return (
       <div className="my-1 text-center">
-        <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-component")}>
+        <span className={cn("inline-block max-w-[90%] rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted break-words", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-component")}>
           {msg.is_pinned && "📌 "}
           {msg.content}
           {msg.task_id && onTaskClick && (
