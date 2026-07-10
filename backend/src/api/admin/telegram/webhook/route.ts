@@ -13,10 +13,11 @@ async function sendTg(chatId: string | number, text: string) {
 }
 
 /**
- * POST /store/telegram/webhook
+ * POST /admin/telegram/webhook
  * Telegram bot webhook — nhận update khi user nhắn /link {email}
  * Lưu tg_chat_id vào user.metadata để gửi noti cá nhân.
  * Bảo mật: X-Telegram-Bot-Api-Secret-Token header.
+ * Nằm ở /admin (không /store) vì route store luôn yêu cầu x-publishable-api-key mà Telegram không gửi.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
