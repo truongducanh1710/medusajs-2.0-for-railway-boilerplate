@@ -25,6 +25,8 @@ type Message = {
   created_at: string
 }
 type MktUser = { email: string; name: string }
+type MentionSuggestion = MktUser & { mentionAll?: boolean }
+const ALL_MENTION_EMAIL = "__all__"
 type Template = { id: string; label: string; content: string; created_by: string }
 type LinkedTask = {
   id: string; title: string; status: string; priority?: string
@@ -69,8 +71,10 @@ function renderMentions(
 ): string {
   if (mentions.length > 0) {
     const nameByEmail = new Map(users.map(user => [user.email, user.name]))
-    const labels = mentions
-      .map(email => nameByEmail.get(email) || email.split("@")[0])
+    const labels = [
+      ...mentions.map(email => nameByEmail.get(email) || email.split("@")[0]),
+      ...(hasMentionEntity(text, "all") ? ["all", "ALL"] : []),
+    ]
       .filter(Boolean)
       .sort((a, b) => b.length - a.length)
 
@@ -306,7 +310,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         <span className="grid size-7 shrink-0 place-items-center rounded-full bg-violet-500 text-xs text-white">🤖</span>
         <div className="min-w-0">
           <div className="mb-0.5 text-[11px] text-ui-fg-muted">AI · {fmtTime(msg.created_at)}</div>
-          <div className="max-w-[400px] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10">
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 md:max-w-[400px] bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10">
             {msg.content}
           </div>
           <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
@@ -316,10 +320,10 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
   }
 
   return (
-    <div className={cn("group/msg relative my-0.5 flex gap-2", isMine && "flex-row-reverse")}>
+    <div tabIndex={0} className={cn("group/msg relative my-0.5 flex gap-2 outline-none", isMine && "flex-row-reverse")}>
       {!isMine && <Avatar name={msg.author_name} className="mt-4 size-7 text-[11px]" />}
 
-      <div className="max-w-[400px] min-w-0">
+      <div className="max-w-[82%] min-w-0 md:max-w-[400px]">
         {!isMine && <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name}</div>}
 
         {msg.reply_to && (
@@ -366,7 +370,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
       </div>
 
       {/* Hover actions — thanh ngang phía trên bubble (kiểu Slack) */}
-      <div className={cn("absolute -top-2.5 z-10 hidden items-center gap-px rounded-lg border border-ui-border-base bg-ui-bg-base p-0.5 shadow-md group-hover/msg:flex",
+      <div className={cn("absolute -top-2.5 z-10 hidden items-center gap-px rounded-lg border border-ui-border-base bg-ui-bg-base p-0.5 shadow-md group-hover/msg:flex group-focus-within/msg:flex",
         isMine ? "right-2" : "left-2")}>
         {QUICK_EMOJIS.slice(0, 4).map(e => (
           <button key={e} onClick={() => onReact(msg.id, e)}
@@ -464,7 +468,7 @@ function SearchPanel({ currentChannelId, channels, users, onClose, onJump }: {
   )
 
   return (
-    <div className="chat-anim-panel absolute inset-y-0 right-0 z-10 flex w-[380px] flex-col border-l border-ui-border-base bg-ui-bg-base">
+    <div className="chat-anim-panel absolute inset-y-0 right-0 z-10 flex w-full flex-col border-l border-ui-border-base bg-ui-bg-base md:w-[380px]">
       <div className="border-b border-ui-border-base px-4 py-3">
         <div className="mb-2 flex items-center gap-2">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Tim tin nhan..."
@@ -831,12 +835,14 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
 
 // ─── Context Panel (cột 3) ───────────────────────────────────────────────────
 
-function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, onManageMembers, onEditChannel, onCreateTask, onClose }: {
+function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
   channel: Channel
   mktUsers: MktUser[]
   onlineEmails: string[]
   isManager: boolean
   isSuper: boolean
+  mobileVisible: boolean
+  desktopVisible: boolean
   onManageMembers: () => void
   onEditChannel: () => void
   onCreateTask: () => void
@@ -883,7 +889,9 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, onM
   )
 
   return (
-    <aside className="chat-anim-panel flex w-[300px] shrink-0 flex-col border-l border-ui-border-base bg-ui-bg-subtle">
+    <aside className={cn("chat-anim-panel flex-col border-l border-ui-border-base bg-ui-bg-subtle",
+      mobileVisible ? "fixed inset-0 z-[100] flex w-full" : "hidden",
+      desktopVisible ? "md:static md:z-auto md:flex md:w-[300px] md:shrink-0" : "md:hidden")}>
       <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2.5">
         <span className="text-[13px] font-bold text-ui-fg-base">Chi tiết</span>
         <div className="flex items-center gap-1">
@@ -1061,7 +1069,7 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
   )
 
   return (
-    <aside className="chat-anim-panel flex w-[360px] shrink-0 flex-col border-l border-ui-border-base bg-ui-bg-base">
+    <aside className="chat-anim-panel fixed inset-0 z-[100] flex w-full flex-col border-l border-ui-border-base bg-ui-bg-base md:static md:z-auto md:w-[360px] md:shrink-0">
       <div className="flex items-center justify-between border-b border-ui-border-base px-4 py-3">
         <div>
           <div className="text-sm font-bold text-ui-fg-base">Thread</div>
@@ -1110,8 +1118,11 @@ export default function MktChatPage() {
   const [templates, setTemplates] = useState<Template[]>([])
 
   const [sidebarTab, setSidebarTab] = useState<"all" | "unread" | "mentioned">("all")
+  // Mobile: false = show channel list, true = show chat area (desktop shows both)
+  const [mobileChatOpen, setMobileChatOpen] = useState(false)
   const [channelSearch, setChannelSearch] = useState("")
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_STORAGE_KEY) !== "0")
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
 
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showCreateTask, setShowCreateTask] = useState(false)
@@ -1152,13 +1163,17 @@ export default function MktChatPage() {
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionIndex, setMentionIndex] = useState(0)
-  const mentionSuggestions = useMemo(() => {
+  const mentionSuggestions = useMemo<MentionSuggestion[]>(() => {
     const memberEmails = new Set(activeChannel?.member_ids || [])
     const scopedUsers = mktUsers.filter(u => memberEmails.has(u.email))
     const q = mentionQuery.toLowerCase()
-    return scopedUsers.filter(u =>
-      !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-    ).slice(0, 5)
+    const allSuggestion: MentionSuggestion = { email: ALL_MENTION_EMAIL, name: "ALL", mentionAll: true }
+    return [
+      ...(!q || "all".includes(q) ? [allSuggestion] : []),
+      ...scopedUsers.filter(u =>
+        !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+      ),
+    ].slice(0, 6)
   }, [activeChannel?.member_ids, mentionQuery, mktUsers])
   // Template picker (slash command)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -1539,10 +1554,17 @@ export default function MktChatPage() {
     }
   }
 
-  const insertMention = (user: MktUser) => {
+  const insertMention = (user: MentionSuggestion) => {
     const atIdx = input.lastIndexOf("@")
-    mentionEntityRef.current[user.email] = user.name
-    setInput(input.slice(0, atIdx) + `@${user.name} `)
+    if (user.mentionAll) {
+      for (const email of activeChannel?.member_ids || []) {
+        if (email !== currentUserId) mentionEntityRef.current[email] = "all"
+      }
+      setInput(input.slice(0, atIdx) + "@all ")
+    } else {
+      mentionEntityRef.current[user.email] = user.name
+      setInput(input.slice(0, atIdx) + `@${user.name} `)
+    }
     setMentionOpen(false)
     textareaRef.current?.focus()
   }
@@ -1686,7 +1708,13 @@ export default function MktChatPage() {
     requestAnimationFrame(() => jumpToMessage(pendingId))
   }, [messages])
 
+  const isDesktop = () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
+
   const togglePanel = () => {
+    if (!isDesktop()) {
+      setMobilePanelOpen(o => !o)
+      return
+    }
     setPanelOpen(p => {
       localStorage.setItem(PANEL_STORAGE_KEY, p ? "0" : "1")
       return !p
@@ -1768,11 +1796,12 @@ export default function MktChatPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex h-[calc(100vh-64px)] bg-ui-bg-base">
+    <div className="relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base">
       <PageStyles />
 
       {/* ── Cột 1: Sidebar ── */}
-      <aside className="flex w-[260px] shrink-0 flex-col border-r border-ui-border-base bg-ui-bg-subtle">
+      <aside className={cn("w-full shrink-0 flex-col border-r border-ui-border-base bg-ui-bg-subtle md:flex md:w-[260px]",
+        mobileChatOpen ? "hidden" : "flex")}>
         <div className="px-3 pb-1 pt-3">
           <div className="mb-2 flex items-center justify-between px-1">
             <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
@@ -1790,7 +1819,7 @@ export default function MktChatPage() {
                 )}
               </button>
               {notificationOpen && (
-                <div className="chat-anim-fadeup absolute right-0 top-8 z-[80] w-[320px] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl">
+                <div className="chat-anim-fadeup fixed inset-x-2 top-16 z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl md:absolute md:inset-x-auto md:right-0 md:top-8 md:w-[320px]">
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
                     <span className="flex items-center gap-2">
@@ -1857,7 +1886,7 @@ export default function MktChatPage() {
                 const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
                 const last = c.last_message
                 return (
-                  <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null) }}
+                  <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null); setMobilePanelOpen(false); setMobileChatOpen(true) }}
                     className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                       isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
                     <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase", avatarClass(c.name))}>
@@ -1903,7 +1932,8 @@ export default function MktChatPage() {
 
       {/* ── Cột 2: Chat area ── */}
       {!activeChannel ? (
-        <main className="flex flex-1 flex-col items-center justify-center gap-3 text-ui-fg-muted">
+        <main className={cn("flex-1 flex-col items-center justify-center gap-3 text-ui-fg-muted md:flex",
+          mobileChatOpen ? "flex" : "hidden")}>
           <div className="text-4xl">💬</div>
           <div className="text-base font-semibold">Chọn một group để bắt đầu</div>
           {isManager && channels.length === 0 && (
@@ -1914,10 +1944,12 @@ export default function MktChatPage() {
           )}
         </main>
       ) : (
-        <main className="relative flex min-w-0 flex-1 flex-col">
+        <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}>
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-4 py-2.5">
-            <div className="min-w-0">
+          <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-3 py-2.5 md:px-4">
+            <button onClick={() => { setMobileChatOpen(false); setMobilePanelOpen(false); setShowSearch(false); setOpenThread(null) }} title="Quay lại danh sách"
+              className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg border border-ui-border-base text-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover md:hidden">←</button>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="truncate text-sm font-bold text-ui-fg-base"># {activeChannel.name}</span>
               </div>
@@ -2015,8 +2047,8 @@ export default function MktChatPage() {
                       i === mentionIndex ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
                     <Avatar name={u.name} className="size-6 text-[10px]" />
                     <span>
-                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.name}</span>
-                      <span className="block text-[11px] text-ui-fg-muted">{u.email}</span>
+                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.mentionAll ? "ALL" : u.name}</span>
+                      <span className="block text-[11px] text-ui-fg-muted">{u.mentionAll ? "Tag tat ca thanh vien trong group" : u.email}</span>
                     </span>
                   </button>
                 ))}
@@ -2122,13 +2154,15 @@ export default function MktChatPage() {
           refreshKey={threadRefreshKey}
           onClose={() => setOpenThread(null)}
         />
-      ) : activeChannel && panelOpen && (
+      ) : activeChannel && (panelOpen || mobilePanelOpen) && (
         <ContextPanel
           channel={activeChannel}
           mktUsers={mktUsers}
           onlineEmails={onlineEmails}
           isManager={isManager}
           isSuper={isSuper}
+          mobileVisible={mobilePanelOpen}
+          desktopVisible={panelOpen}
           onManageMembers={() => setShowManageMembers(true)}
           onEditChannel={() => setShowEditChannel(true)}
           onCreateTask={() => setShowCreateTask(true)}

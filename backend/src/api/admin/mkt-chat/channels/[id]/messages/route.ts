@@ -14,6 +14,9 @@ function parseMentions(content: string, memberEmails: string[], nameByEmail: Rec
   const mentioned = new Set<string>()
   const normalizedContent = normalizeMentionText(content)
   const tokenMatches = content.match(/@[^\s,;:]+/g) || []
+  if (/(^|[\s.,!?;:()\[\]{}])@all(?=$|[\s.,!?;:()\[\]{}])/i.test(normalizedContent)) {
+    return memberEmails
+  }
 
   for (const email of memberEmails) {
     const name = nameByEmail[email] || ""
@@ -167,7 +170,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const nameByEmail = await getMktUserNameMap(req)
     const memberEmails: string[] = Array.isArray(channel.members) ? channel.members.map((m: any) => m.user_id) : []
     const explicitMentions = normalizeExplicitMentions((req.body as any)?.mentions, memberEmails)
-    const mentions = [...new Set([...explicitMentions, ...parseMentions(text, memberEmails, nameByEmail)])]
+    const mentions = [...new Set([...explicitMentions, ...parseMentions(text, memberEmails, nameByEmail)])].filter(mentionEmail => mentionEmail !== email)
     const isAiCommand = messageType === "text" && text.toLowerCase().startsWith("@ai ")
     const question = isAiCommand ? text.slice(4).trim() : ""
 
