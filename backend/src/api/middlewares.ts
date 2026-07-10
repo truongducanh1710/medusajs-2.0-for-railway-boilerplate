@@ -153,6 +153,8 @@ export default defineMiddlewares({
     { matcher: "/admin/mkt-chat*", method: ["GET"], middlewares: [requirePerm("page.mkt-chat.view")] },
     { matcher: "/admin/mkt-chat/notifications/read", method: ["PATCH"], middlewares: [requirePerm("page.mkt-chat.view")] },
     { matcher: "/admin/mkt-chat/channels", method: ["POST"], middlewares: [requirePerm("page.mkt-chat.manage")] },
+    // Wildcard bao gồm cả sub-route member-level (messages, react, pin, typing, upload, members...) nên chỉ yêu cầu view;
+    // riêng sửa/xóa channel (PATCH|DELETE /channels/:id) do handler tự chặn chỉ super admin mới được phép.
     { matcher: "/admin/mkt-chat/channels/*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
     // Quick Reply templates: handler tự check manage cho write, perm view đủ để vào route
     { matcher: "/admin/mkt-chat/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },

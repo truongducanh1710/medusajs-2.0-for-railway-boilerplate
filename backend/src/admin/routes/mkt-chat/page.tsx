@@ -706,6 +706,79 @@ function ManageMembersModal({ channel, users, onClose, onSaved }: { channel: Cha
   )
 }
 
+function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
+  channel: Channel; onClose: () => void; onSaved: () => void; onDeleted: () => void
+}) {
+  const [name, setName] = useState(channel.name)
+  const [description, setDescription] = useState(channel.description || "")
+  const [isPrivate, setIsPrivate] = useState(channel.is_private)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const submit = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    await apiFetch(`/admin/mkt-chat/channels/${channel.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), description: description || null, is_private: isPrivate }),
+    })
+    setSaving(false); onSaved(); onClose()
+  }
+
+  const submitDelete = async () => {
+    setDeleting(true)
+    await apiFetch(`/admin/mkt-chat/channels/${channel.id}`, { method: "DELETE" })
+    setDeleting(false); onDeleted(); onClose()
+  }
+
+  return (
+    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-4 text-base font-extrabold text-ui-fg-base">Sửa nhóm</h2>
+        <div className="flex flex-col gap-2.5">
+          <div><label className={LABEL_CLS}>Tên nhóm *</label>
+            <input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} autoFocus /></div>
+          <div><label className={LABEL_CLS}>Mô tả</label>
+            <input className={INPUT_CLS} value={description} onChange={e => setDescription(e.target.value)} placeholder="Mô tả ngắn (tuỳ chọn)" /></div>
+          <label className="flex items-center gap-2 text-[13px] text-ui-fg-base">
+            <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
+            Nhóm riêng tư
+          </label>
+        </div>
+
+        <div className="mt-5 border-t border-ui-border-base pt-4">
+          {!confirmDelete ? (
+            <button onClick={() => setConfirmDelete(true)}
+              className="text-[12px] font-medium text-rose-600 transition-colors hover:text-rose-700">
+              Xóa nhóm này
+            </button>
+          ) : (
+            <div className="rounded-lg bg-rose-500/10 p-3">
+              <p className="mb-2 text-[12px] text-rose-700 dark:text-rose-400">Xóa nhóm sẽ ẩn toàn bộ nội dung với mọi thành viên. Bạn chắc chắn?</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDelete(false)} className="rounded-lg border border-ui-border-base px-3 py-1.5 text-xs text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+                <button onClick={submitDelete} disabled={deleting}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-700 active:scale-95 disabled:opacity-50">
+                  {deleting ? "Đang xóa..." : "Xác nhận xóa"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+          <button onClick={submit} disabled={saving || !name.trim()}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
+            {saving ? "Đang lưu..." : "Lưu"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
   const [saving, setSaving] = useState(false)
@@ -754,12 +827,14 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
 
 // ─── Context Panel (cột 3) ───────────────────────────────────────────────────
 
-function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMembers, onCreateTask, onClose }: {
+function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, onManageMembers, onEditChannel, onCreateTask, onClose }: {
   channel: Channel
   mktUsers: MktUser[]
   onlineEmails: string[]
   isManager: boolean
+  isSuper: boolean
   onManageMembers: () => void
+  onEditChannel: () => void
   onCreateTask: () => void
   onClose: () => void
 }) {
@@ -807,7 +882,13 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, onManageMemb
     <aside className="chat-anim-panel flex w-[300px] shrink-0 flex-col border-l border-ui-border-base bg-ui-bg-subtle">
       <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2.5">
         <span className="text-[13px] font-bold text-ui-fg-base">Chi tiết</span>
-        <button onClick={onClose} className="grid size-6 place-items-center rounded-md text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">✕</button>
+        <div className="flex items-center gap-1">
+          {isSuper && (
+            <button onClick={onEditChannel}
+              className="rounded-md px-1.5 py-1 text-[11px] font-medium text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">Sửa nhóm</button>
+          )}
+          <button onClick={onClose} className="grid size-6 place-items-center rounded-md text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">✕</button>
+        </div>
       </div>
 
       <div className="m-2 flex gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
@@ -1031,6 +1112,7 @@ export default function MktChatPage() {
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showManageMembers, setShowManageMembers] = useState(false)
+  const [showEditChannel, setShowEditChannel] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [openThread, setOpenThread] = useState<Message | null>(null)
   const [showTemplatesModal, setShowTemplatesModal] = useState(false)
@@ -1089,6 +1171,15 @@ export default function MktChatPage() {
       setChannels(list)
       setOnlineEmails(d.online_emails || [])
       setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || prev) : prev)
+    })
+  }, [])
+
+  const handleChannelDeleted = useCallback(() => {
+    apiFetch("/admin/mkt-chat/channels").then(r => r.json()).then(d => {
+      const list: Channel[] = d.channels || []
+      setChannels(list)
+      setOnlineEmails(d.online_emails || [])
+      setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || null) : prev)
     })
   }, [])
 
@@ -2015,7 +2106,9 @@ export default function MktChatPage() {
           mktUsers={mktUsers}
           onlineEmails={onlineEmails}
           isManager={isManager}
+          isSuper={isSuper}
           onManageMembers={() => setShowManageMembers(true)}
+          onEditChannel={() => setShowEditChannel(true)}
           onCreateTask={() => setShowCreateTask(true)}
           onClose={togglePanel}
         />
@@ -2032,6 +2125,11 @@ export default function MktChatPage() {
       {showManageMembers && activeChannel && (
         <ManageMembersModal channel={activeChannel} users={mktUsers}
           onClose={() => setShowManageMembers(false)} onSaved={loadChannels}
+        />
+      )}
+      {showEditChannel && activeChannel && (
+        <EditChannelModal channel={activeChannel}
+          onClose={() => setShowEditChannel(false)} onSaved={loadChannels} onDeleted={handleChannelDeleted}
         />
       )}
       {showTemplatesModal && (
