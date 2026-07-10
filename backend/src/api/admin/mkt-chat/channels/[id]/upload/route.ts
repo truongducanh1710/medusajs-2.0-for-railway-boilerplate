@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { ulid } from "ulid"
 import { getPool } from "../../../../../../lib/db"
-import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, canAccessMktChannel } from "../../../_lib"
+import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, canAccessMktChannel, canPostInMktChannel } from "../../../_lib"
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -32,6 +32,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
     if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
+    }
+    if (!canPostInMktChannel(channel, auth)) {
+      return res.status(403).json({ error: "Chi quan tri vien duoc dang bai trong channel thong bao nay" })
     }
 
     const file = (req as any).file

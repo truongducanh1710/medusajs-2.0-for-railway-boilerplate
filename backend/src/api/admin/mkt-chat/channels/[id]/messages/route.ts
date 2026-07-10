@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../../../lib/db"
-import { broadcastToChannel, canAccessMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
+import { broadcastToChannel, canAccessMktChannel, canPostInMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
 
 function normalizeMentionText(value: string): string {
   return String(value || "")
@@ -165,6 +165,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     if (!canAccessMktChannel(channel, auth)) {
       return res.status(403).json({ error: "Ban khong phai thanh vien cua channel nay" })
+    }
+    if (messageType === "text" && !canPostInMktChannel(channel, auth)) {
+      return res.status(403).json({ error: "Chi quan tri vien duoc dang bai trong channel thong bao nay" })
     }
 
     const nameByEmail = await getMktUserNameMap(req)

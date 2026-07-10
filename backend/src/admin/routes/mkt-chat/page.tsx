@@ -9,6 +9,7 @@ type LastMessage = { content: string; author_id: string; msg_type: string; creat
 type Channel = {
   id: string; name: string; description: string | null
   is_private: boolean
+  is_announcement: boolean
   member_count: number; member_ids?: string[]
   unread_count: number; mention_count: number; created_at: string
   last_message?: LastMessage | null
@@ -638,6 +639,7 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
   const [isPrivate, setIsPrivate] = useState(false)
+  const [isAnnouncement, setIsAnnouncement] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
@@ -647,7 +649,7 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
     setSaving(true)
     await apiFetch("/admin/mkt-chat/channels", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description: desc, member_ids: [...selected], is_private: isPrivate }),
+      body: JSON.stringify({ name, description: desc, member_ids: [...selected], is_private: isPrivate, is_announcement: isAnnouncement }),
     })
     setSaving(false); onCreated(); onClose()
   }
@@ -664,6 +666,10 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
           <label className="flex items-center gap-2 rounded-lg border border-ui-border-base bg-ui-bg-subtle px-3 py-2 text-[13px] text-ui-fg-base">
             <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
             <span>Riêng tư</span>
+          </label>
+          <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-[13px] text-ui-fg-base dark:border-amber-500/30 dark:bg-amber-500/5">
+            <input type="checkbox" checked={isAnnouncement} onChange={e => setIsAnnouncement(e.target.checked)} />
+            <span>📢 Channel thông báo <span className="text-ui-fg-muted">(chỉ quản trị viên được đăng bài, còn lại chỉ đọc)</span></span>
           </label>
           <div><label className={LABEL_CLS}>Thêm thành viên</label>
             <UserCheckList users={users} selected={selected} onToggle={toggle} /></div>
@@ -720,6 +726,7 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
   const [name, setName] = useState(channel.name)
   const [description, setDescription] = useState(channel.description || "")
   const [isPrivate, setIsPrivate] = useState(channel.is_private)
+  const [isAnnouncement, setIsAnnouncement] = useState(channel.is_announcement)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -729,7 +736,7 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
     setSaving(true)
     await apiFetch(`/admin/mkt-chat/channels/${channel.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), description: description || null, is_private: isPrivate }),
+      body: JSON.stringify({ name: name.trim(), description: description || null, is_private: isPrivate, is_announcement: isAnnouncement }),
     })
     setSaving(false); onSaved(); onClose()
   }
@@ -752,6 +759,10 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
           <label className="flex items-center gap-2 text-[13px] text-ui-fg-base">
             <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
             Nhóm riêng tư
+          </label>
+          <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-[13px] text-ui-fg-base dark:border-amber-500/30 dark:bg-amber-500/5">
+            <input type="checkbox" checked={isAnnouncement} onChange={e => setIsAnnouncement(e.target.checked)} />
+            <span>📢 Channel thông báo <span className="text-ui-fg-muted">(chỉ quản trị viên được đăng bài)</span></span>
           </label>
         </div>
 
@@ -1120,6 +1131,18 @@ export default function MktChatPage() {
   const [sidebarTab, setSidebarTab] = useState<"all" | "unread" | "mentioned">("all")
   // Mobile: false = show channel list, true = show chat area (desktop shows both)
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("mkt-chat:collapsed-groups") || "[]")) }
+    catch { return new Set() }
+  })
+  const toggleGroupCollapsed = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      localStorage.setItem("mkt-chat:collapsed-groups", JSON.stringify([...next]))
+      return next
+    })
+  }
   const [channelSearch, setChannelSearch] = useState("")
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_STORAGE_KEY) !== "0")
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
@@ -1764,15 +1787,21 @@ export default function MktChatPage() {
     requestAnimationFrame(() => jumpToMessage(jump.message_id!))
   }, [activeChannel?.id, channels])
   const groupedVisibleChannels = useMemo(() => {
-    const groups: { label: string; items: Channel[] }[] = []
+    const groups: { key: string; label: string; icon: string; pinned?: boolean; items: Channel[] }[] = []
+    const announceItems = visibleChannels.filter(c => c.is_announcement)
+    if (announceItems.length > 0) {
+      groups.push({ key: "__announcement", label: "Thông báo", icon: "📢", pinned: true, items: announceItems })
+    }
+
     const byLabel = new Map<string, Channel[]>()
     for (const channel of visibleChannels) {
+      if (channel.is_announcement) continue
       const dash = channel.name.indexOf("-")
       const label = dash > 0 ? channel.name.slice(0, dash).trim() : "Khac"
       const key = label || "Khac"
       if (!byLabel.has(key)) {
         byLabel.set(key, [])
-        groups.push({ label: key, items: byLabel.get(key)! })
+        groups.push({ key, label: key, icon: "", items: byLabel.get(key)! })
       }
       byLabel.get(key)!.push(channel)
     }
@@ -1792,6 +1821,7 @@ export default function MktChatPage() {
     : 0
 
   const totalUnread = channels.reduce((s, c) => s + c.unread_count, 0)
+  const canPostInActiveChannel = !activeChannel?.is_announcement || isManager
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -1878,46 +1908,61 @@ export default function MktChatPage() {
               {sidebarTab === "unread" ? "Không có tin chưa đọc 🎉" : sidebarTab === "mentioned" ? "Chưa có ai nhắc đến bạn 🎉" : channelSearch ? "Không tìm thấy group" : "Chưa có group nào"}
             </div>
           )}
-          {groupedVisibleChannels.map(group => (
-            <div key={group.label} className="mb-2">
-              <div className="px-2 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-ui-fg-muted">{group.label}</div>
-              {group.items.map(c => {
-                const isActive = activeChannel?.id === c.id
-                const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
-                const last = c.last_message
-                return (
-                  <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null); setMobilePanelOpen(false); setMobileChatOpen(true) }}
-                    className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
-                      isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
-                    <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase", avatarClass(c.name))}>
-                      {c.name.charAt(0)}
-                      <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-1">
-                        <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>
-                          {c.is_private && <span className="mr-1">🔒</span>}{c.name}
-                        </span>
-                        {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
+          {groupedVisibleChannels.map(group => {
+            const isCollapsed = collapsedGroups.has(group.key)
+            const groupUnread = group.items.reduce((s, c) => s + c.unread_count, 0)
+            return (
+              <div key={group.key} className="mb-2">
+                <button onClick={() => toggleGroupCollapsed(group.key)}
+                  className={cn("flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors hover:bg-ui-bg-base-hover active:bg-ui-bg-base-hover md:py-1.5",
+                    group.pinned ? "text-amber-600 dark:text-amber-400" : "text-ui-fg-muted")}>
+                  <span className={cn("text-[9px] transition-transform", isCollapsed && "-rotate-90")}>▾</span>
+                  {group.icon && <span>{group.icon}</span>}
+                  <span className="truncate">{group.label}</span>
+                  <span className="ml-auto rounded-full bg-ui-bg-component px-1.5 py-px text-[9.5px] font-bold text-ui-fg-muted">{group.items.length}</span>
+                  {groupUnread > 0 && isCollapsed && (
+                    <span className="rounded-full bg-blue-600 px-1.5 py-px text-[9.5px] font-bold text-white">{groupUnread > 99 ? "99+" : groupUnread}</span>
+                  )}
+                </button>
+                {!isCollapsed && group.items.map(c => {
+                  const isActive = activeChannel?.id === c.id
+                  const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
+                  const last = c.last_message
+                  return (
+                    <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null); setMobilePanelOpen(false); setMobileChatOpen(true) }}
+                      className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                        isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+                      <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase",
+                        c.is_announcement ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400" : avatarClass(c.name))}>
+                        {c.is_announcement ? "🔒" : c.name.charAt(0)}
+                        <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
                       </span>
-                      <span className="flex items-center justify-between gap-1">
-                        <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
-                          {last
-                            ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${last.content}`
-                            : c.description || `${c.member_count} thành viên`}
-                        </span>
-                        {c.unread_count > 0 && (
-                          <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
-                            {c.unread_count > 99 ? "99+" : c.unread_count}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline justify-between gap-1">
+                          <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>
+                            {c.is_private && <span className="mr-1">🔒</span>}{c.name}
                           </span>
-                        )}
+                          {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
+                        </span>
+                        <span className="flex items-center justify-between gap-1">
+                          <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
+                            {last
+                              ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${last.content}`
+                              : c.description || `${c.member_count} thành viên`}
+                          </span>
+                          {c.unread_count > 0 && (
+                            <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
+                              {c.unread_count > 99 ? "99+" : c.unread_count}
+                            </span>
+                          )}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          ))}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
         </div>
 
         {isManager && (
@@ -1965,6 +2010,12 @@ export default function MktChatPage() {
                 )}
                 {activeChannel.description && <><span>·</span><span className="truncate">{activeChannel.description}</span></>}
               </div>
+              {activeChannel.is_announcement && (
+                <span className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                  <span className="md:hidden">📢 Chỉ quản trị viên đăng bài</span>
+                  <span className="hidden md:inline">📢 Channel thông báo — chỉ quản trị viên đăng bài</span>
+                </span>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button onClick={() => setShowSearch(s => !s)} title="Tìm kiếm"
@@ -2037,6 +2088,14 @@ export default function MktChatPage() {
           )}
 
           {/* Composer */}
+          {!canPostInActiveChannel ? (
+            <div className="shrink-0 border-t border-ui-border-base p-3">
+              <div className="rounded-xl border border-dashed border-ui-border-strong bg-ui-bg-subtle px-4 py-3 text-center text-[12px] text-ui-fg-muted">
+                🔒 Bạn chỉ có thể <b className="text-ui-fg-base">đọc</b> channel này.<br />
+                Chỉ quản trị viên được đăng thông báo mới.
+              </div>
+            </div>
+          ) : (
           <div className="relative shrink-0 border-t border-ui-border-base p-3">
             {/* Mention autocomplete */}
             {mentionOpen && mentionSuggestions.length > 0 && (
@@ -2146,6 +2205,7 @@ export default function MktChatPage() {
               </div>
             </div>
           </div>
+          )}
 
           {showSearch && <SearchPanel currentChannelId={activeChannel.id} channels={channels} users={mktUsers} onClose={() => setShowSearch(false)} onJump={jumpToSearchResult} />}
         </main>

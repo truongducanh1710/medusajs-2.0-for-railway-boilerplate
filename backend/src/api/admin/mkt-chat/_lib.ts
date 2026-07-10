@@ -37,6 +37,12 @@ export function canAccessMktChannel(channel: any, auth: MktChatAuthInfo): boolea
   return auth.isManager || isMktChannelMember(channel, auth.email, auth.isSuper)
 }
 
+// Channel thông báo (is_announcement): chỉ manager được đăng bài, còn lại chỉ đọc.
+export function canPostInMktChannel(channel: any, auth: MktChatAuthInfo): boolean {
+  if (!channel?.is_announcement) return true
+  return auth.isManager
+}
+
 export async function getMktChatAuthInfo(req: MedusaRequest): Promise<MktChatAuthInfo | null> {
   const auth = (req as any).auth_context
   if (auth?.actor_type !== "user" || !auth?.actor_id) return null

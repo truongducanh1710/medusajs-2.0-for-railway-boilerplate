@@ -13,7 +13,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const [channel] = await svc.listMktChannels({ id, deleted_at: null })
     if (!channel) return res.status(404).json({ error: "Không tìm thấy channel" })
 
-    const { name, description, is_private } = req.body as any
+    const { name, description, is_private, is_announcement } = req.body as any
     const data: Record<string, any> = { id }
     if (name !== undefined) {
       if (!String(name).trim()) return res.status(400).json({ error: "Ten channel khong duoc rong" })
@@ -21,6 +21,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     }
     if (description !== undefined) data.description = description || null
     if (is_private !== undefined) data.is_private = Boolean(is_private)
+    if (is_announcement !== undefined) data.is_announcement = Boolean(is_announcement)
 
     const updated = await svc.updateMktChannels(data)
 

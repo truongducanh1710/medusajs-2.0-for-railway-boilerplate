@@ -79,6 +79,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         name: c.name,
         description: c.description,
         is_private: Boolean(c.is_private),
+        is_announcement: Boolean(c.is_announcement),
         member_count: Array.isArray(c.members) ? c.members.length : 0,
         member_ids: Array.isArray(c.members) ? c.members.map((m: any) => m.user_id) : [],
         unread_count: unreadMap[c.id] ?? 0,
@@ -94,6 +95,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
 
     enriched.sort((a: any, b: any) => {
+      if (a.is_announcement !== b.is_announcement) return a.is_announcement ? -1 : 1
       const ta = a.last_message ? new Date(a.last_message.created_at).getTime() : new Date(a.created_at).getTime()
       const tb = b.last_message ? new Date(b.last_message.created_at).getTime() : new Date(b.created_at).getTime()
       return tb - ta
@@ -112,7 +114,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!auth) return res.status(401).json({ error: "Unauthenticated" })
     if (!auth.isManager) return res.status(403).json({ error: "Chi manager moi duoc tao channel" })
 
-    const { name, description, member_ids, is_private } = req.body as any
+    const { name, description, member_ids, is_private, is_announcement } = req.body as any
     if (!name?.trim()) return res.status(400).json({ error: "Ten channel khong duoc rong" })
 
     const svc = req.scope.resolve("mktTaskModule") as any
@@ -130,6 +132,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       created_by: auth.email,
       members,
       is_private: Boolean(is_private),
+      is_announcement: Boolean(is_announcement),
     })
 
     const memberIds = members.map((m: any) => m.user_id)
