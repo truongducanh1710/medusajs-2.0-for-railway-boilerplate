@@ -5,6 +5,7 @@ type CacheData = {
   mkt_code: string | null
   mkt_codes: string[]
   is_super: boolean
+  role: string | null
   email: string
   loadedAt: number
 }
@@ -13,7 +14,7 @@ let cache: CacheData | null = null
 
 export function useCurrentPermissions() {
   const [data, setData] = useState<Omit<CacheData, "loadedAt"> | null>(
-    cache ? { perms: cache.perms, mkt_code: cache.mkt_code, mkt_codes: cache.mkt_codes, is_super: cache.is_super, email: cache.email } : null
+    cache ? { perms: cache.perms, mkt_code: cache.mkt_code, mkt_codes: cache.mkt_codes, is_super: cache.is_super, role: cache.role, email: cache.email } : null
   )
   const [loading, setLoading] = useState(!cache)
 
@@ -29,13 +30,14 @@ export function useCurrentPermissions() {
           mkt_code: mktCode,
           mkt_codes: mktCodes,
           is_super: !!d.is_super,
+          role: d.role ?? null,
           email: d.email ?? "",
           loadedAt: Date.now(),
         }
-        setData({ perms: cache.perms, mkt_code: cache.mkt_code, mkt_codes: cache.mkt_codes, is_super: cache.is_super, email: cache.email })
+        setData({ perms: cache.perms, mkt_code: cache.mkt_code, mkt_codes: cache.mkt_codes, is_super: cache.is_super, role: cache.role, email: cache.email })
       })
       .catch(() => {
-        setData({ perms: [], mkt_code: null, mkt_codes: [], is_super: false, email: "" })
+        setData({ perms: [], mkt_code: null, mkt_codes: [], is_super: false, role: null, email: "" })
       })
       .finally(() => setLoading(false))
   }, [])
@@ -45,6 +47,7 @@ export function useCurrentPermissions() {
     mktCode: data?.mkt_code ?? null,
     mktCodes: data?.mkt_codes ?? [],
     isSuper: data?.is_super ?? false,
+    role: data?.role ?? null,
     email: data?.email ?? "",
     loading,
     has: (p: string) => data?.perms === "*" || (Array.isArray(data?.perms) && data.perms.includes(p)),

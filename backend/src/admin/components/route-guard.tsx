@@ -4,25 +4,30 @@ import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
 import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
 import { DEFAULT_ADMIN_APP_ROUTE } from "../lib/default-route"
 
+const FORBIDDEN_MESSAGE = "B\u1ea1n kh\u00f4ng c\u00f3 quy\u1ec1n truy c\u1eadp trang n\u00e0y"
+
 export const RouteGuard = () => {
   useEffect(() => {
     ensureMktChatGlobalMentionAlerts()
   }, [])
 
-  const { perms, loading, has } = useCurrentPermissions()
+  const { perms, loading, has, isSuper, role } = useCurrentPermissions()
+  const isAdmin = isSuper || role === "admin"
 
-  // Ẩn sidebar native tabs mà user không có quyền
+  // Native Medusa core routes are admin-only. Custom Extensions still follow ROUTE_PERMS.
   useEffect(() => {
-    if (!perms || perms === "*") return
+    if (!perms) return
     const hide: string[] = []
-    for (const [key, p] of Object.entries(NATIVE_PERMS)) {
-      if (!(perms as string[]).includes(p)) {
+
+    if (!isAdmin) {
+      for (const key of Object.keys(NATIVE_PERMS)) {
         hide.push(`nav a[href$="/${key}"]`, `nav a[href*="/${key}/"]`)
       }
+      hide.push("aside nav > div.px-3:has(button)")
     }
-    // Ẩn custom route sidebar links
+
     for (const [prefix, p] of Object.entries(ROUTE_PERMS)) {
-      if (!(perms as string[]).includes(p)) {
+      if (!has(p)) {
         hide.push(
           `nav a[href$="/app${prefix}"]`,
           `nav a[href*="/app${prefix}/"]`,
@@ -42,11 +47,31 @@ export const RouteGuard = () => {
       document.head.appendChild(el)
     }
     el.textContent = `${hide.join(", ")} { display: none !important; }`
-  }, [perms])
+  }, [perms, has, isAdmin])
 
-  // Ẩn heading "Extensions" nếu tất cả item con bên trong đã bị ẩn hết (gọn sidebar)
+  // Hide the native Search button as soon as the sidebar DOM is available.
+  useEffect(() => {
+    if (!perms) return
+    const updateNativeSearch = () => {
+      const buttons = Array.from(document.querySelectorAll("aside nav button"))
+      buttons.forEach((btn) => {
+        const text = btn.textContent?.replace(/\s+/g, " ").trim().toLowerCase() ?? ""
+        if (!text.includes("search") || !text.includes("k")) return
+        const wrapper = btn.closest("div.px-3") as HTMLElement | null
+        const target = wrapper ?? (btn as HTMLElement)
+        target.style.display = isAdmin ? "" : "none"
+      })
+    }
+    const raf = requestAnimationFrame(updateNativeSearch)
+    const timer = setTimeout(updateNativeSearch, 300)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
+  }, [perms, isAdmin])
+
+  // Hide heading "Extensions" when all child items are hidden.
   // Medusa render: <div>{divider}<div><Collapsible><button>Extensions</button><div data-state><nav>{links}</nav></div></Collapsible></div></div>
-  // Không đếm cấp cha cứng — leo dần tới ancestor đầu tiên chứa <nav>, tối đa 6 cấp.
   useEffect(() => {
     if (!perms) return
     const checkExtensionsHeading = () => {
@@ -60,7 +85,6 @@ export const RouteGuard = () => {
           outer = outer.parentElement
         }
         if (!outer) return
-        // Ẩn luôn wrapper cha (bao gồm divider phía trước) nếu có, fallback về chính outer
         const section = (outer.parentElement as HTMLElement) ?? outer
         const links = outer.querySelectorAll("nav a")
         const visible = Array.from(links).some((a) => (a as HTMLElement).offsetParent !== null)
@@ -75,7 +99,7 @@ export const RouteGuard = () => {
     }
   }, [perms])
 
-  // Redirect nếu vào route (custom hoặc native Medusa) không có quyền
+  // Redirect if user enters a forbidden custom route or any native Medusa core route as non-admin.
   useEffect(() => {
     if (loading || !perms) return
     if (window.location.pathname.replace(/\/+$/, "") === "/app") {
@@ -87,20 +111,20 @@ export const RouteGuard = () => {
 
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
       if (path.startsWith(prefix) && !has(perm)) {
-        alert("Bạn không có quyền truy cập trang này")
+        alert(FORBIDDEN_MESSAGE)
         window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return
       }
     }
 
-    for (const [key, perm] of Object.entries(NATIVE_PERMS)) {
-      if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !has(perm)) {
-        alert("Bạn không có quyền truy cập trang này")
+    for (const key of Object.keys(NATIVE_PERMS)) {
+      if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !isAdmin) {
+        alert(FORBIDDEN_MESSAGE)
         window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return
       }
     }
-  }, [perms, loading])
+  }, [perms, loading, has, isAdmin])
 
   return null
 }
