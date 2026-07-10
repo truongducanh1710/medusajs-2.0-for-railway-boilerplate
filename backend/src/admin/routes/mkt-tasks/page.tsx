@@ -396,7 +396,8 @@ function normalizeReportTitle(value: string): string {
 }
 
 function isDailyMktReportTask(task: Task): boolean {
-  return task.type === "ads_camp" && normalizeReportTitle(task.title).includes("bao cao")
+  const haystack = normalizeReportTitle([task.title, task.output, task.notes, ...(task.tags || [])].filter(Boolean).join(" "))
+  return haystack.includes("bao cao") || haystack.includes("bao_cao") || haystack.includes("mkt_daily") || haystack.includes("daily_mkt")
 }
 
 function todayVNKey(): string {
