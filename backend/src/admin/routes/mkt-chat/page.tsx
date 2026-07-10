@@ -1358,7 +1358,10 @@ function MktChatPage() {
       .then(r => r.json()).then(d => {
         setMessages(d.messages || [])
         setTypingNames(d.presence?.typing || [])
-        if (opts?.scroll !== false) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView())
+        if (opts?.scroll !== false) requestAnimationFrame(() => {
+          const el = messagesBoxRef.current
+          if (el) el.scrollTop = el.scrollHeight
+        })
       }).finally(() => setLoading(false))
     if (opts?.markRead) {
       apiFetch(`/admin/mkt-chat/channels/${channelId}/last-read`, { method: "PATCH" }).catch(() => {})
@@ -1491,13 +1494,21 @@ function MktChatPage() {
     }
   }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, stopMentionSoundReminder])
 
+  // Cuộn trong khung tin nhắn thôi — KHÔNG dùng scrollIntoView vì nó cuộn
+  // cả các scroll container cha (trang admin), làm layout mobile bị đẩy lệch/hở đáy.
+  const scrollMessagesToEnd = useCallback((smooth = false) => {
+    const el = messagesBoxRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" })
+  }, [])
+
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
     if (atBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+      scrollMessagesToEnd(true)
       setNewMsgCount(0)
     }
-  }, [messages])
+  }, [messages, scrollMessagesToEnd])
 
   const handleScroll = () => {
     const el = messagesBoxRef.current
@@ -1509,7 +1520,7 @@ function MktChatPage() {
 
   const scrollToBottom = () => {
     atBottomRef.current = true
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    scrollMessagesToEnd(true)
     setNewMsgCount(0)
   }
 
@@ -1629,7 +1640,7 @@ function MktChatPage() {
       if (data?.message) {
         atBottomRef.current = true
         setMessages(prev => prev.some(m => m.id === data.message.id) ? prev : [...prev, data.message])
-        requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }))
+        requestAnimationFrame(() => scrollMessagesToEnd(true))
         return
       }
       const refreshed = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).catch(() => null)
@@ -1662,7 +1673,16 @@ function MktChatPage() {
     setShowSearch(false)
     const el = messageRefs.current[msgId]
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      // Cuộn thủ công trong khung tin nhắn để không kéo scroll của trang admin bên ngoài
+      const box = messagesBoxRef.current
+      if (box) {
+        const elRect = el.getBoundingClientRect()
+        const boxRect = box.getBoundingClientRect()
+        box.scrollTo({
+          top: box.scrollTop + (elRect.top - boxRect.top) - box.clientHeight / 2 + elRect.height / 2,
+          behavior: "smooth",
+        })
+      }
       el.classList.remove("chat-anim-highlight")
       void el.offsetWidth // restart animation
       el.classList.add("chat-anim-highlight")
@@ -2072,7 +2092,7 @@ function MktChatPage() {
           <PinnedBar channelId={activeChannel.id} onJump={jumpToMessage} />
 
           {/* Messages */}
-          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
+          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
             {loading && <div className="py-5 text-center text-[13px] text-ui-fg-muted">Đang tải...</div>}
             {Object.entries(groupedByDate).map(([date, msgs]) => (
               <div key={date}>
