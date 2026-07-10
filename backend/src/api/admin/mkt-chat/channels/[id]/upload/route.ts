@@ -10,6 +10,35 @@ const ALLOWED_TYPES = new Set([
 ])
 const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 
+function firstUploadFile(files: any): any | null {
+  if (!files) return null
+  if (Array.isArray(files)) return files[0] ?? null
+  for (const key of ["file", "files", "file[]"]) {
+    const value = files[key]
+    if (Array.isArray(value) && value[0]) return value[0]
+    if (value) return value
+  }
+  return null
+}
+
+function getUploadName(file: any): string {
+  return String(file?.originalname || file?.name || file?.filename || "upload")
+}
+
+function readUploadContent(file: any): Buffer {
+  if (Buffer.isBuffer(file?.buffer)) return file.buffer
+  if (Buffer.isBuffer(file?.content)) return file.content
+  if (typeof file?.content === "string") return Buffer.from(file.content, "base64")
+  if (file?.path) return require("fs").readFileSync(file.path)
+  throw new Error("Khong doc duoc noi dung file upload")
+}
+
+function firstUploadedResult(result: any): any | null {
+  if (Array.isArray(result)) return result[0] ?? null
+  if (Array.isArray(result?.files)) return result.files[0] ?? null
+  if (Array.isArray(result?.uploads)) return result.uploads[0] ?? null
+  return result?.file || result?.upload || result || null
+}
 // POST /admin/mkt-chat/channels/:id/upload
 // multipart/form-data: file
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -25,45 +54,44 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
     }
 
-    // Medusa parse file từ request
-    const files = (req as any).files as Record<string, any[]> | undefined
-    const fileArr = files?.["file"]
-    const file = Array.isArray(fileArr) ? fileArr[0] : fileArr
-    if (!file) return res.status(400).json({ error: "Không tìm thấy file" })
+    const file = firstUploadFile((req as any).files)
+    if (!file) return res.status(400).json({ error: "Khong tim thay file upload. Hay thu lai voi anh nho hon 20MB." })
 
-    const mimeType: string = file.mimetype || file.type || "application/octet-stream"
+    const mimeType: string = file.mimetype || file.type || file.mimeType || "application/octet-stream"
     if (!ALLOWED_TYPES.has(mimeType)) {
-      return res.status(400).json({ error: `Loại file không được hỗ trợ: ${mimeType}` })
-    }
-    if (file.size > MAX_SIZE) {
-      return res.status(400).json({ error: "File vượt quá 20MB" })
+      return res.status(400).json({ error: `Loai file khong duoc ho tro: ${mimeType}` })
     }
 
-    // Upload lên MinIO qua Medusa file module
+    const content = readUploadContent(file)
+    const actualSize = Number(file.size || content.length || 0)
+    if (actualSize > MAX_SIZE) {
+      return res.status(400).json({ error: "File vuot qua 20MB" })
+    }
+
+    const originalName = getUploadName(file)
     const fileModule = req.scope.resolve(Modules.FILE) as any
-    const content = file.buffer ?? require("fs").readFileSync(file.path)
-
     const result = await fileModule.uploadFiles([{
-      filename: `chat/${channelId}/${ulid()}_${file.originalname || file.name}`,
+      filename: `chat/${channelId}/${ulid()}_${originalName}`,
       mimeType,
       content,
       access: "public",
     }])
 
-    const uploadedFile = Array.isArray(result) ? result[0] : result
-    const fileUrl: string = uploadedFile.url
-    const fileKey: string = uploadedFile.key
+    const uploadedFile = firstUploadedResult(result)
+    const fileUrl: string = uploadedFile?.url || uploadedFile?.location || uploadedFile?.public_url
+    const fileKey: string = uploadedFile?.key || uploadedFile?.id || fileUrl
+    if (!fileUrl) throw new Error("Upload xong nhung khong nhan duoc URL file")
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
     const isImage = mimeType.startsWith("image/")
     const message = await svc.createMktMessages({
       channel_id: channelId,
       author_id: auth.email,
-      content: isImage ? "📷 Ảnh" : `📎 ${file.originalname || file.name}`,
+      content: isImage ? "Anh" : `File: ${originalName}`,
       msg_type: isImage ? "image" : "file",
       file_url: fileUrl,
       file_type: mimeType,
-      file_name: file.originalname || file.name,
+      file_name: originalName,
       file_expires_at: expiresAt,
       reactions: {},
       mentions: [],
@@ -80,11 +108,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const userModule = req.scope.resolve(Modules.USER)
     const user = await userModule.retrieveUser((req as any).auth_context.actor_id, { select: ["first_name", "last_name", "email"] })
     const name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email
-    broadcastToChannel(channelId, "message.created", { message: formatMktMessage(message, { [auth.email]: name }) })
+    const formattedMessage = formatMktMessage(message, { [auth.email]: name })
+    broadcastToChannel(channelId, "message.created", { message: formattedMessage })
     broadcastToChannel(channelId, "channel.updated", {})
 
-    res.json({ message, file_url: fileUrl, expires_at: expiresAt })
+    res.json({ message: formattedMessage, file_url: fileUrl, expires_at: expiresAt })
   } catch (e: any) {
+    console.error("[mkt-chat/upload]", e)
     res.status(500).json({ error: e.message })
   }
 }

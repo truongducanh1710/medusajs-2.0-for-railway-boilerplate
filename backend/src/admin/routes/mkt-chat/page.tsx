@@ -1572,16 +1572,28 @@ export default function MktChatPage() {
   }
 
   const handleUpload = async (file: File) => {
-    if (!activeChannel) return
+    if (!activeChannel || uploadingFile) return
     setUploadingFile(true)
-    const fd = new FormData(); fd.append("file", file)
-    await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/upload`, { method: "POST", body: fd })
-    // Refresh ngay để thấy file
-    const d = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).catch(() => null)
-    if (d?.messages) { atBottomRef.current = true; setMessages(d.messages) }
-    setUploadingFile(false)
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      const res = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/upload`, { method: "POST", body: fd })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || data?.message || `Upload that bai (HTTP ${res.status})`)
+      if (data?.message) {
+        atBottomRef.current = true
+        setMessages(prev => prev.some(m => m.id === data.message.id) ? prev : [...prev, data.message])
+        requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }))
+        return
+      }
+      const refreshed = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).catch(() => null)
+      if (refreshed?.messages) { atBottomRef.current = true; setMessages(refreshed.messages) }
+    } catch (err: any) {
+      alert(err?.message || "Khong gui duoc file")
+    } finally {
+      setUploadingFile(false)
+    }
   }
-
   const handleReact = async (msgId: string, emoji: string) => {
     if (!activeChannel) return
     const r = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages/${msgId}/react`, {
