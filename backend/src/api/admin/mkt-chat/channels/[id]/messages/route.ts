@@ -228,8 +228,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         source: rootReplyId ? "thread" : "message",
       }).catch(console.error)
     }
-    notifyMembers(svc, id, channel.name, email, text, memberEmails).catch(console.error)
-
     if (isAiCommand && question) {
       if (process.env.ANTHROPIC_API_KEY) {
         handleAiResponse(svc, id, question).catch(console.error)
@@ -252,26 +250,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
-}
-
-async function notifyMembers(
-  svc: any, channelId: string, channelName: string,
-  senderEmail: string, preview: string, memberEmails: string[]
-) {
-  try {
-    const others = memberEmails.filter(e => e !== senderEmail)
-    for (const email of others) {
-      await svc.createMktMessages({
-        channel_id: "__notify__",
-        author_id: "system",
-        content: JSON.stringify({ type: "new_message", channel_id: channelId, channel_name: channelName, sender: senderEmail, preview: preview.slice(0, 60), recipient: email }),
-        msg_type: "system_notify",
-        reactions: {},
-        mentions: [],
-        reply_count: 0,
-      }).catch(() => {})
-    }
-  } catch {}
 }
 
 async function notifyMentions(

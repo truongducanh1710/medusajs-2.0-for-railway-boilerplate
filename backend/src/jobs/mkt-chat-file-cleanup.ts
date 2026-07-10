@@ -20,12 +20,18 @@ export default async function mktChatFileCleanupJob(container: MedusaContainer) 
     if (result.rows.length === 0) return
 
     for (const row of result.rows) {
+      let deleteOk = true
       try {
         await fileModule.deleteFiles([{ fileKey: row.file_key }])
       } catch (e: any) {
+        deleteOk = false
         failed += 1
         console.warn(`[mkt-chat-cleanup] file delete failed for ${row.file_key}: ${e.message}`)
       }
+
+      // Chỉ đánh dấu cleaned_at khi xóa MinIO thành công — nếu không, để lại cleaned_at = NULL
+      // để lần chạy cron kế tiếp retry, tránh file rác tồn tại vĩnh viễn không bao giờ được dọn.
+      if (!deleteOk) continue
 
       await pool.query(
         `UPDATE mkt_message

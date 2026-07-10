@@ -1236,9 +1236,17 @@ export default function MktChatPage() {
   useEffect(() => {
     let es: EventSource | null = null
     let retryTimer: any = null
+    let loadChannelsDebounceTimer: any = null
 
     const refreshActive = () => {
       if (activeChannel?.id) loadMessages(activeChannel.id, { scroll: false, markRead: true })
+    }
+
+    // Gộp nhiều sự kiện dồn dập (nhiều tin nhắn liên tiếp trong channel đông người)
+    // thành 1 lần gọi loadChannels() thay vì gọi lại cho từng sự kiện.
+    const loadChannelsDebounced = () => {
+      clearTimeout(loadChannelsDebounceTimer)
+      loadChannelsDebounceTimer = setTimeout(loadChannels, 600)
     }
 
     const connect = () => {
@@ -1260,7 +1268,7 @@ export default function MktChatPage() {
           }
           apiFetch(`/admin/mkt-chat/channels/${data.channel_id}/last-read`, { method: "PATCH" }).catch(() => {})
         }
-        loadChannels()
+        loadChannelsDebounced()
       })
 
       es.addEventListener("message.updated", (e: MessageEvent) => {
@@ -1279,8 +1287,8 @@ export default function MktChatPage() {
         if (openThread?.id === data.root_message_id) setThreadRefreshKey(k => k + 1)
       })
 
-      es.addEventListener("channel.updated", () => loadChannels())
-      es.addEventListener("channel.member.updated", () => loadChannels())
+      es.addEventListener("channel.updated", () => loadChannelsDebounced())
+      es.addEventListener("channel.member.updated", () => loadChannelsDebounced())
       es.addEventListener("mention.notification.created", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
         const notification = data.notification as MktNotification | undefined
@@ -1336,6 +1344,7 @@ export default function MktChatPage() {
     return () => {
       es?.close()
       clearTimeout(retryTimer)
+      clearTimeout(loadChannelsDebounceTimer)
       document.removeEventListener("visibilitychange", onVisible)
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}

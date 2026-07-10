@@ -95,6 +95,15 @@ export function broadcastToUser(email: string, event: string, data: Record<strin
   }
 }
 
+// Cập nhật ngay channelIds của các SSE connection đang mở khi membership channel thay đổi,
+// tránh session-stale: user bị remove khỏi private channel vẫn nhận broadcast tới khi F5.
+export function syncSseClientChannel(channelId: string, addedEmails: string[], removedEmails: string[]) {
+  for (const client of _sseClients) {
+    if (addedEmails.includes(client.email)) client.channelIds.add(channelId)
+    if (removedEmails.includes(client.email)) client.channelIds.delete(channelId)
+  }
+}
+
 export function formatMktMessage(message: any, nameByEmail: Record<string, string> = {}, replyTo?: any) {
   return {
     ...message,

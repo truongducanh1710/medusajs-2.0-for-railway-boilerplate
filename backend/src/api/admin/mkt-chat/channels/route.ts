@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
-import { broadcastToUser, getMktChatAuthInfo, isMktChannelMember } from "../_lib"
+import { broadcastToUser, getMktChatAuthInfo, isMktChannelMember, syncSseClientChannel } from "../_lib"
 
 // GET /admin/mkt-chat/channels - list visible channels
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -24,28 +24,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       for (const row of readRows.rows) lastReadMap[row.channel_id] = row.last_read_at
     }
 
+    // Gộp N query/channel thành 1 query duy nhất (join channel với lastRead tương ứng qua unnest),
+    // tránh N+1 khi loadChannels() được gọi lại nhiều lần (mỗi tin nhắn mới trong channel đông người).
     const unreadMap: Record<string, number> = {}
-    for (const channelId of channelIds) {
-      const lastRead = lastReadMap[channelId]
-      const r = await getPool().query(
-        `SELECT COUNT(*)::int AS cnt FROM mkt_message
-         WHERE channel_id = $1 AND deleted_at IS NULL AND author_id != 'ai'
-         ${lastRead ? `AND created_at > $2` : ""}`,
-        lastRead ? [channelId, lastRead] : [channelId]
-      )
-      unreadMap[channelId] = r.rows[0]?.cnt ?? 0
-    }
-
     const mentionUnreadMap: Record<string, number> = {}
-    for (const channelId of channelIds) {
-      const lastRead = lastReadMap[channelId]
+    if (channelIds.length > 0) {
+      const lastReadValues = channelIds.map((id: string) => lastReadMap[id] || null)
       const r = await getPool().query(
-        `SELECT COUNT(*)::int AS cnt FROM mkt_message
-         WHERE channel_id = $1 AND deleted_at IS NULL AND mentions ? $2
-         ${lastRead ? `AND created_at > $3` : ""}`,
-        lastRead ? [channelId, auth.email, lastRead] : [channelId, auth.email]
+        `SELECT cid.channel_id,
+                COUNT(*) FILTER (WHERE m.author_id != 'ai') AS unread_cnt,
+                COUNT(*) FILTER (WHERE m.mentions ? $3) AS mention_cnt
+         FROM unnest($1::text[], $2::timestamptz[]) AS cid(channel_id, last_read)
+         JOIN mkt_message m ON m.channel_id = cid.channel_id
+           AND m.deleted_at IS NULL
+           AND (cid.last_read IS NULL OR m.created_at > cid.last_read)
+         GROUP BY cid.channel_id`,
+        [channelIds, lastReadValues, auth.email]
       )
-      mentionUnreadMap[channelId] = r.rows[0]?.cnt ?? 0
+      for (const row of r.rows) {
+        unreadMap[row.channel_id] = Number(row.unread_cnt) || 0
+        mentionUnreadMap[row.channel_id] = Number(row.mention_cnt) || 0
+      }
     }
 
     const lastMsgMap: Record<string, any> = {}
@@ -133,10 +132,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       is_private: Boolean(is_private),
     })
 
-    for (const memberEmail of members.map((m: any) => m.user_id)) {
+    const memberIds = members.map((m: any) => m.user_id)
+    syncSseClientChannel(channel.id, memberIds, [])
+    for (const memberEmail of memberIds) {
       broadcastToUser(memberEmail, "channel.member.updated", {
         channel_id: channel.id,
-        member_ids: members.map((m: any) => m.user_id),
+        member_ids: memberIds,
       })
     }
 

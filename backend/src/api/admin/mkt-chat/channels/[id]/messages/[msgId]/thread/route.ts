@@ -173,7 +173,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }).catch(console.error)
     }
 
-    broadcastToChannel(channelId, "message.created", { message: formattedReply })
+    // Không broadcast "message.created" ở đây: reply thread không phải tin nhắn độc lập trong
+    // luồng chat chính, chỉ cần "thread.reply.created" để cập nhật reply_count + refresh Thread Panel.
     broadcastToChannel(channelId, "thread.reply.created", {
       root_message_id: root.id,
       root_reply_count: rootReplyCount,

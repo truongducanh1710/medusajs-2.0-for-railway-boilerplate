@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { broadcastToChannel, broadcastToUser, getMktChatAuthInfo } from "../../../_lib"
+import { broadcastToChannel, broadcastToUser, getMktChatAuthInfo, syncSseClientChannel } from "../../../_lib"
 
 // PATCH /admin/mkt-chat/channels/:id/members
 // body: { add?: string[], remove?: string[] }
@@ -33,7 +33,13 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     await svc.updateMktChannels({ id, members })
 
+    const beforeIds = new Set(beforeMembers.map((m: any) => m.user_id))
     const memberIds = members.map((m: any) => m.user_id)
+    const afterIds = new Set(memberIds)
+    const actuallyAdded = memberIds.filter((email: string) => !beforeIds.has(email))
+    const actuallyRemoved = beforeMembers.map((m: any) => m.user_id).filter((email: string) => !afterIds.has(email))
+    syncSseClientChannel(id, actuallyAdded, actuallyRemoved)
+
     const affected = new Set([...beforeMembers.map((m: any) => m.user_id), ...memberIds])
     broadcastToChannel(id, "channel.member.updated", { member_ids: memberIds })
     broadcastToChannel(id, "channel.updated", {})
