@@ -1894,9 +1894,9 @@ function MktChatPage() {
       <aside className={cn("w-full shrink-0 flex-col border-r border-ui-border-base bg-ui-bg-subtle md:flex md:w-[260px]",
         mobileChatOpen ? "hidden" : "flex")}>
         <div className="px-3 pb-1 pt-3">
-          <div className="mb-2 flex items-center justify-between px-1">
+          <div className="relative mb-2 flex items-center justify-between px-1">
             <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
-            <div className="relative flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
               {totalUnread > 0 && (
                 <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
               )}
@@ -1912,8 +1912,8 @@ function MktChatPage() {
               {notificationOpen && (
                 <>
                 <div className="fixed inset-0 z-[75] bg-black/20 md:bg-transparent" onClick={() => setNotificationOpen(false)} />
-                <div className="chat-anim-fadeup fixed z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl"
-                  style={{ width: "min(calc(100vw - 24px), 320px)", top: "56px", right: "12px" }}>
+                <div className="chat-anim-fadeup absolute right-0 top-9 z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl"
+                  style={{ width: "min(calc(100vw - 24px), 300px)" }}>
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
                     <span className="flex items-center gap-2">
