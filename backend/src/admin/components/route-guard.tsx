@@ -29,7 +29,11 @@ export const RouteGuard = () => {
       }
     }
 
-    if (!hide.length) return
+    if (!hide.length) {
+      const old = document.getElementById("rbac-hide-css")
+      if (old) old.remove()
+      return
+    }
     let el = document.getElementById("rbac-hide-css") as HTMLStyleElement | null
     if (!el) {
       el = document.createElement("style")
@@ -39,12 +43,46 @@ export const RouteGuard = () => {
     el.textContent = `${hide.join(", ")} { display: none !important; }`
   }, [perms])
 
-  // Redirect nếu vào custom route không có quyền
+  // Ẩn heading "Extensions" nếu tất cả item con bên trong đã bị ẩn hết (gọn sidebar)
+  useEffect(() => {
+    if (!perms) return
+    const checkExtensionsHeading = () => {
+      const headings = Array.from(document.querySelectorAll("nav [data-sidebar-heading], nav h3, nav div[role='heading']"))
+      headings.forEach((h) => {
+        const text = h.textContent?.trim().toLowerCase()
+        if (text !== "extensions") return
+        const section = h.closest("div")?.parentElement || h.parentElement
+        if (!section) return
+        const links = section.querySelectorAll("a")
+        const visible = Array.from(links).some((a) => (a as HTMLElement).offsetParent !== null)
+        ;(section as HTMLElement).style.display = links.length && !visible ? "none" : ""
+      })
+    }
+    const raf = requestAnimationFrame(checkExtensionsHeading)
+    const timer = setTimeout(checkExtensionsHeading, 300)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
+  }, [perms])
+
+  // Redirect nếu vào route (custom hoặc native Medusa) không có quyền
   useEffect(() => {
     if (loading || !perms) return
     const path = window.location.pathname.replace(/^\/app/, "")
+
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
       if (path.startsWith(prefix) && !has(perm)) {
+        alert("Bạn không có quyền truy cập trang này")
+        setTimeout(() => {
+          window.location.href = "/app"
+        }, 600)
+        return
+      }
+    }
+
+    for (const [key, perm] of Object.entries(NATIVE_PERMS)) {
+      if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !has(perm)) {
         alert("Bạn không có quyền truy cập trang này")
         setTimeout(() => {
           window.location.href = "/app"
