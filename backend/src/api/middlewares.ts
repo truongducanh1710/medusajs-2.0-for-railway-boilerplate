@@ -148,8 +148,7 @@ export default defineMiddlewares({
     { matcher: "/admin/chat/agents*", method: ["POST", "PATCH"], middlewares: [requirePerm("page.chat.bot.manage")] },
 
     // MKT Task Management + Chat
-    // Telegram webhook — không cần auth JWT (bot gọi vào, xác thực bằng TELEGRAM_WEBHOOK_SECRET header)
-    { matcher: "/admin/telegram/webhook", method: ["POST"], middlewares: [] },
+    // Telegram webhook (/telegram-webhook, ngoài /admin và /store — xem src/api/telegram-webhook/route.ts)
     { matcher: "/admin/mkt-tasks/cskh-source*", method: ["GET"], middlewares: [requirePerm("page.mkt-tasks.manage")] },
     { matcher: "/admin/mkt-tasks/cskh-call/bulk", method: ["POST"], middlewares: [requirePerm("page.mkt-tasks.manage")] },
     { matcher: "/admin/mkt-tasks/*/daily-report", method: ["GET"], middlewares: [requirePerm("page.mkt-tasks.view")] },

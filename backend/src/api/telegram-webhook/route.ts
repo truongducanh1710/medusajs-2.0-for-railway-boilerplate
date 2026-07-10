@@ -13,11 +13,13 @@ async function sendTg(chatId: string | number, text: string) {
 }
 
 /**
- * POST /admin/telegram/webhook
+ * POST /telegram-webhook
  * Telegram bot webhook — nhận update khi user nhắn /link {email}
  * Lưu tg_chat_id vào user.metadata để gửi noti cá nhân.
  * Bảo mật: X-Telegram-Bot-Api-Secret-Token header.
- * Nằm ở /admin (không /store) vì route store luôn yêu cầu x-publishable-api-key mà Telegram không gửi.
+ * Nằm ngoài /admin và /store: cả 2 namespace đó bị Medusa gắn middleware
+ * toàn cục bắt buộc (admin JWT auth, store publishable-api-key) mà không
+ * thể loại trừ theo path — Telegram không gửi được các header đó.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -60,7 +62,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     )
     return res.json({ ok: true })
   } catch (e: any) {
-    console.error("[telegram/webhook]", e.message)
+    console.error("[telegram-webhook]", e.message)
     return res.json({ ok: true })
   }
 }
