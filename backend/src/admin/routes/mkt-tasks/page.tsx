@@ -396,8 +396,20 @@ function normalizeReportTitle(value: string): string {
 }
 
 function isDailyMktReportTask(task: Task): boolean {
-  const haystack = normalizeReportTitle([task.title, task.output, task.notes, ...(task.tags || [])].filter(Boolean).join(" "))
-  return haystack.includes("bao cao") || haystack.includes("bao_cao") || haystack.includes("mkt_daily") || haystack.includes("daily_mkt")
+  return (task.tags || []).some(tag => normalizeReportTitle(tag) === "bao_cao_9h")
+}
+
+const DAILY_REPORT_FALLBACK_CHANNEL = "Báo Cáo Ads Hằng Ngày"
+
+async function resolveReportChannelId(task: Task): Promise<string | null> {
+  if (task.channel_id) return task.channel_id
+  const res = await fetch("/admin/mkt-chat/channels", { credentials: "include" })
+  if (!res.ok) return null
+  const data = await res.json().catch(() => ({}))
+  const channels: { id: string; name: string }[] = data?.channels || []
+  const target = normalizeReportTitle(DAILY_REPORT_FALLBACK_CHANNEL)
+  const match = channels.find(c => normalizeReportTitle(c.name || "") === target)
+  return match?.id || null
 }
 
 function todayVNKey(): string {
@@ -466,17 +478,18 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
   }, [task.id, date])
 
   const sendReport = async () => {
-    if (!task.channel_id) {
-      onToast("Task này chưa gắn kênh chat, liên hệ quản lý gắn kênh trước", "error")
-      return
-    }
     if (!report) {
       onToast("Chưa có dữ liệu báo cáo để gửi", "error")
       return
     }
     setSending(true)
     try {
-      const res = await fetch(`/admin/mkt-chat/channels/${task.channel_id}/messages`, {
+      const channelId = await resolveReportChannelId(task)
+      if (!channelId) {
+        onToast(`Không tìm thấy kênh chat "${DAILY_REPORT_FALLBACK_CHANNEL}", liên hệ quản lý gắn kênh trước`, "error")
+        return
+      }
+      const res = await fetch(`/admin/mkt-chat/channels/${channelId}/messages`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -3130,3 +3143,4 @@ export default function MktTasksPage() {
 export const config = defineRouteConfig({
   label: "Giao Việc MKT", rank: 5,
 })
+

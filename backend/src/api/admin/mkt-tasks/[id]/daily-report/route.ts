@@ -194,11 +194,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const userModule = req.scope.resolve(Modules.USER)
     const user = await userModule.retrieveUser(auth.actor_id, { select: ["email", "metadata"] })
     const email = user?.email || ""
-    const metadata = (user?.metadata || {}) as any
-    const mktName = normalizeMktName(metadata.mkt_name || metadata.mkt_code)
-    if (!mktName) {
-      return res.status(403).json({ error: "Tài khoản chưa gán mkt_name, liên hệ quản lý" })
-    }
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const [task] = await svc.listMktTasks({ id, deleted_at: null })
@@ -208,6 +203,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const isManager = email === process.env.SUPER_ADMIN_EMAIL || perms.includes("page.mkt-tasks.manage")
     if (!isManager && normalizeEmail(task.assignee_id) !== normalizeEmail(email)) {
       return res.status(403).json({ error: "Không có quyền xem báo cáo của task này" })
+    }
+
+    // mkt_name lấy theo người được giao task (assignee), không phải người đang xem
+    const [assignee] = await userModule.listUsers(
+      { email: task.assignee_id },
+      { select: ["email", "metadata"] }
+    )
+    const assigneeMetadata = (assignee?.metadata || {}) as any
+    const mktName = normalizeMktName(assigneeMetadata.mkt_name || assigneeMetadata.mkt_code)
+    if (!mktName) {
+      return res.status(403).json({ error: `Nhân sự phụ trách task (${task.assignee_id}) chưa được gán mkt_name, liên hệ quản lý` })
     }
 
     const rows = await buildDailyMktRows(dateKey)
