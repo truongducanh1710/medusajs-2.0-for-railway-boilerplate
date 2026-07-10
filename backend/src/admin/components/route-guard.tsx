@@ -44,18 +44,26 @@ export const RouteGuard = () => {
   }, [perms])
 
   // Ẩn heading "Extensions" nếu tất cả item con bên trong đã bị ẩn hết (gọn sidebar)
+  // Medusa render: <div>{divider}<div><Collapsible><button>Extensions</button><div data-state><nav>{links}</nav></div></Collapsible></div></div>
+  // Không đếm cấp cha cứng — leo dần tới ancestor đầu tiên chứa <nav>, tối đa 6 cấp.
   useEffect(() => {
     if (!perms) return
     const checkExtensionsHeading = () => {
-      const headings = Array.from(document.querySelectorAll("nav [data-sidebar-heading], nav h3, nav div[role='heading']"))
-      headings.forEach((h) => {
-        const text = h.textContent?.trim().toLowerCase()
+      const buttons = Array.from(document.querySelectorAll("aside button"))
+      buttons.forEach((btn) => {
+        const text = btn.textContent?.trim().toLowerCase()
         if (text !== "extensions") return
-        const section = h.closest("div")?.parentElement || h.parentElement
-        if (!section) return
-        const links = section.querySelectorAll("a")
+        let outer: HTMLElement | null = btn.parentElement
+        for (let i = 0; i < 6 && outer; i++) {
+          if (outer.querySelector("nav")) break
+          outer = outer.parentElement
+        }
+        if (!outer) return
+        // Ẩn luôn wrapper cha (bao gồm divider phía trước) nếu có, fallback về chính outer
+        const section = (outer.parentElement as HTMLElement) ?? outer
+        const links = outer.querySelectorAll("nav a")
         const visible = Array.from(links).some((a) => (a as HTMLElement).offsetParent !== null)
-        ;(section as HTMLElement).style.display = links.length && !visible ? "none" : ""
+        section.style.display = links.length && !visible ? "none" : ""
       })
     }
     const raf = requestAnimationFrame(checkExtensionsHeading)
