@@ -19,13 +19,6 @@ function readUploadContent(file: any): Buffer {
   if (file?.path) return require("fs").readFileSync(file.path)
   throw new Error("Khong doc duoc noi dung file upload")
 }
-
-function firstUploadedResult(result: any): any | null {
-  if (Array.isArray(result)) return result[0] ?? null
-  if (Array.isArray(result?.files)) return result.files[0] ?? null
-  if (Array.isArray(result?.uploads)) return result.uploads[0] ?? null
-  return result?.file || result?.upload || result || null
-}
 // POST /admin/mkt-chat/channels/:id/upload
 // multipart/form-data: file
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -57,16 +50,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const originalName = getUploadName(file)
     const fileModule = req.scope.resolve(Modules.FILE) as any
-    const result = await fileModule.uploadFiles([{
+    const uploadedFile = await fileModule.createFiles({
       filename: `chat/${channelId}/${ulid()}_${originalName}`,
       mimeType,
-      content,
+      content: content.toString("base64"),
       access: "public",
-    }])
+    })
 
-    const uploadedFile = firstUploadedResult(result)
-    const fileUrl: string = uploadedFile?.url || uploadedFile?.location || uploadedFile?.public_url
-    const fileKey: string = uploadedFile?.key || uploadedFile?.id || fileUrl
+    const fileUrl: string = uploadedFile?.url
+    const fileKey: string = uploadedFile?.id || fileUrl
     if (!fileUrl) throw new Error("Upload xong nhung khong nhan duoc URL file")
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 

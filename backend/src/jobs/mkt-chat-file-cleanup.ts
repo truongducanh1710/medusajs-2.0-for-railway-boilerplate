@@ -22,7 +22,7 @@ export default async function mktChatFileCleanupJob(container: MedusaContainer) 
     for (const row of result.rows) {
       let deleteOk = true
       try {
-        await fileModule.deleteFiles([{ fileKey: row.file_key }])
+        await fileModule.deleteFiles(row.file_key)
       } catch (e: any) {
         deleteOk = false
         failed += 1
