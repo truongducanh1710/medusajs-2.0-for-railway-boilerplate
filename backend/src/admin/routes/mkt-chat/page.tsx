@@ -1823,10 +1823,50 @@ export default function MktChatPage() {
   const totalUnread = channels.reduce((s, c) => s + c.unread_count, 0)
   const canPostInActiveChannel = !activeChannel?.is_announcement || isManager
 
+  // Mobile: chiều cao container đo theo vị trí thực tế thay vì trừ cứng 64px
+  // (header admin cao khác nhau giữa desktop/mobile, trừ sai gây hở đáy)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const update = () => {
+      const top = el.getBoundingClientRect().top
+      el.style.height = `calc(100dvh - ${Math.max(0, top)}px)`
+    }
+    update()
+    window.addEventListener("resize", update)
+    window.visualViewport?.addEventListener("resize", update)
+    return () => {
+      window.removeEventListener("resize", update)
+      window.visualViewport?.removeEventListener("resize", update)
+    }
+  }, [])
+
+  // Mobile: vuốt từ mép trái sang phải để quay lại danh sách channel
+  const swipeRef = useRef<{ x: number; y: number; edge: boolean } | null>(null)
+  const onChatTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0]
+    swipeRef.current = { x: t.clientX, y: t.clientY, edge: t.clientX < 28 }
+  }
+  const onChatTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeRef.current
+    swipeRef.current = null
+    if (!start?.edge) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    const dy = Math.abs(t.clientY - start.y)
+    if (dx > 70 && dy < 60) {
+      setMobileChatOpen(false)
+      setMobilePanelOpen(false)
+      setShowSearch(false)
+      setOpenThread(null)
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base">
+    <div ref={rootRef} className="relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base">
       <PageStyles />
 
       {/* ── Cột 1: Sidebar ── */}
@@ -1989,7 +2029,8 @@ export default function MktChatPage() {
           )}
         </main>
       ) : (
-        <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}>
+        <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}
+          onTouchStart={onChatTouchStart} onTouchEnd={onChatTouchEnd}>
           {/* Header */}
           <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-3 py-2.5 md:px-4">
             <button onClick={() => { setMobileChatOpen(false); setMobilePanelOpen(false); setShowSearch(false); setOpenThread(null) }} title="Quay lại danh sách"
@@ -2089,14 +2130,14 @@ export default function MktChatPage() {
 
           {/* Composer */}
           {!canPostInActiveChannel ? (
-            <div className="shrink-0 border-t border-ui-border-base p-3">
+            <div className="shrink-0 border-t border-ui-border-base p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
               <div className="rounded-xl border border-dashed border-ui-border-strong bg-ui-bg-subtle px-4 py-3 text-center text-[12px] text-ui-fg-muted">
                 🔒 Bạn chỉ có thể <b className="text-ui-fg-base">đọc</b> channel này.<br />
                 Chỉ quản trị viên được đăng thông báo mới.
               </div>
             </div>
           ) : (
-          <div className="relative shrink-0 border-t border-ui-border-base p-3">
+          <div className="relative shrink-0 border-t border-ui-border-base p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
             {/* Mention autocomplete */}
             {mentionOpen && mentionSuggestions.length > 0 && (
               <div className="chat-anim-fadeup absolute bottom-full left-3 z-50 mb-1 min-w-[230px] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-xl">
