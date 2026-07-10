@@ -10,25 +10,12 @@ const ALLOWED_TYPES = new Set([
 ])
 const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 
-function firstUploadFile(files: any): any | null {
-  if (!files) return null
-  if (Array.isArray(files)) return files[0] ?? null
-  for (const key of ["file", "files", "file[]"]) {
-    const value = files[key]
-    if (Array.isArray(value) && value[0]) return value[0]
-    if (value) return value
-  }
-  return null
-}
-
 function getUploadName(file: any): string {
   return String(file?.originalname || file?.name || file?.filename || "upload")
 }
 
 function readUploadContent(file: any): Buffer {
   if (Buffer.isBuffer(file?.buffer)) return file.buffer
-  if (Buffer.isBuffer(file?.content)) return file.content
-  if (typeof file?.content === "string") return Buffer.from(file.content, "base64")
   if (file?.path) return require("fs").readFileSync(file.path)
   throw new Error("Khong doc duoc noi dung file upload")
 }
@@ -54,7 +41,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(403).json({ error: "Bạn không phải thành viên của channel này" })
     }
 
-    const file = firstUploadFile((req as any).files)
+    const file = (req as any).file
     if (!file) return res.status(400).json({ error: "Khong tim thay file upload. Hay thu lai voi anh nho hon 20MB." })
 
     const mimeType: string = file.mimetype || file.type || file.mimeType || "application/octet-stream"

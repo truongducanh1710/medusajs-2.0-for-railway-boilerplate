@@ -1,7 +1,10 @@
 import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import multer from "multer"
 import { ROLE_PRESETS } from "../admin/lib/permissions"
+
+const mktChatUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } })
 
 export function resolveUserPerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
@@ -69,11 +72,11 @@ export default defineMiddlewares({
       bodyParser: { sizeLimit: "20mb" },
     },
 
-    // MKT chat upload - multipart image/file payloads up to the route limit.
+    // MKT chat upload - multipart image/file payloads, parsed vào req.files bằng multer (memory storage)
     {
       matcher: "/admin/mkt-chat/channels/*/upload",
       method: ["POST"],
-      bodyParser: { sizeLimit: "20mb" },
+      middlewares: [mktChatUpload.single("file")],
     },
     // CORS cho Chrome Extension — phải đứng trước auth middleware
     {
