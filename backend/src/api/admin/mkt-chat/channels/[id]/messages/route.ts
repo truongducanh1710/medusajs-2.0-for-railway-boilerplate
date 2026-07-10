@@ -222,7 +222,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     if (mentions.length > 0) {
       const senderName = nameByEmail[email] || email
-      notifyMentions(svc, id, channel.name, email, senderName, text, mentions, memberEmails, nameByEmail).catch(console.error)
       createMentionNotifications(svc, {
         channelId: id,
         channelName: channel.name,
@@ -255,30 +254,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.json({ message: formattedMessage })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
-  }
-}
-
-async function notifyMentions(
-  svc: any, channelId: string, channelName: string,
-  senderEmail: string, senderName: string, content: string, mentions: string[],
-  memberEmails: string[] = [], nameByEmail: Record<string, string> = {}
-) {
-  const isMentionAll = memberEmails.length > 0 && mentions.length >= memberEmails.length
-  const namesLabel = isMentionAll
-    ? "cả channel"
-    : mentions.map(e => nameByEmail[e] || e).join(", ")
-  const message = await svc.createMktMessages({
-    channel_id: channelId,
-    author_id: "system",
-    content: `${senderName} da nhac den: ${namesLabel}`,
-    msg_type: "mention",
-    mentions,
-    reactions: {},
-    reply_count: 0,
-  }).catch((e: any) => { console.error(e); return null })
-  if (message) {
-    broadcastToChannel(channelId, "message.created", { message: formatMktMessage(message, { [senderEmail]: senderName }) })
-    broadcastToChannel(channelId, "channel.updated", {})
   }
 }
 
