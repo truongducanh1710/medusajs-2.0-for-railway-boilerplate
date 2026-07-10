@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { useCurrentPermissions } from "../lib/use-permissions"
 import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
 import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
+import { DEFAULT_ADMIN_APP_ROUTE } from "../lib/default-route"
 
 export const RouteGuard = () => {
   useEffect(() => {
@@ -77,13 +78,18 @@ export const RouteGuard = () => {
   // Redirect nếu vào route (custom hoặc native Medusa) không có quyền
   useEffect(() => {
     if (loading || !perms) return
+    if (window.location.pathname.replace(/\/+$/, "") === "/app") {
+      window.location.href = DEFAULT_ADMIN_APP_ROUTE
+      return
+    }
+
     const path = window.location.pathname.replace(/^\/app/, "")
 
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
       if (path.startsWith(prefix) && !has(perm)) {
         alert("Bạn không có quyền truy cập trang này")
         setTimeout(() => {
-          window.location.href = "/app"
+          window.location.href = DEFAULT_ADMIN_APP_ROUTE
         }, 600)
         return
       }
@@ -93,7 +99,7 @@ export const RouteGuard = () => {
       if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !has(perm)) {
         alert("Bạn không có quyền truy cập trang này")
         setTimeout(() => {
-          window.location.href = "/app"
+          window.location.href = DEFAULT_ADMIN_APP_ROUTE
         }, 600)
         return
       }

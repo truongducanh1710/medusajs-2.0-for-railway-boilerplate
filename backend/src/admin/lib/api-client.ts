@@ -1,4 +1,5 @@
 import { ensureMktChatGlobalMentionAlerts } from "./mkt-chat-global-alerts"
+import { DEFAULT_ADMIN_APP_ROUTE } from "./default-route"
 
 ensureMktChatGlobalMentionAlerts()
 
@@ -6,7 +7,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   const res = await fetch(url, { credentials: "include", ...init })
   if (res.status === 403) {
     alert("Bạn không có quyền truy cập chức năng này")
-    window.location.href = "/app"
+    window.location.href = DEFAULT_ADMIN_APP_ROUTE
   }
   return res
 }
@@ -21,7 +22,7 @@ export async function apiJson(url: string, method = "GET", body?: unknown): Prom
   const res = await fetch(url, init)
   if (res.status === 403) {
     alert("Bạn không có quyền truy cập chức năng này")
-    window.location.href = "/app"
+    window.location.href = DEFAULT_ADMIN_APP_ROUTE
     return null
   }
   const text = await res.text()
