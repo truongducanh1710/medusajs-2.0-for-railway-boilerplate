@@ -5,6 +5,8 @@ import logo from "../assets/phanviet-logo.png"
 // Native Medusa login page has no i18n/theming override API and hardcodes its logo,
 // copy, and Medusa-blue accent. We overlay Phan Việt branding via this widget zone
 // (login.before) instead of patching @medusajs/dashboard.
+// Match by substring (not exact-equal) since production build can merge/whitespace
+// text nodes differently than dev (e.g. "Forgot password? - " is one text node with "Reset" as a sibling link).
 const TEXT_REPLACEMENTS: Array<[string, string]> = [
   ["Welcome to Medusa", "Chào mừng đến với Phan Việt"],
   ["Sign in to access the account area", "Đăng nhập để truy cập trang quản trị"],
@@ -34,9 +36,6 @@ const THEME_CSS = `
       --pv-bg-pattern: #1c1f24;
     }
   }
-
-  /* Hide native Medusa mark; our logo widget replaces it. */
-  .size-14.bg-ui-button-neutral { display: none !important; }
 
   /* Login screen background: warm dotted texture instead of flat Medusa grey. */
   #phanviet-login-logo {
@@ -79,20 +78,42 @@ const LoginBranding = () => {
       document.head.appendChild(style)
     }
 
+    // Medusa's login mark is a fixed SVG path (see @medusajs/dashboard logo-box.tsx);
+    // matching on that path is more stable across versions than guessing Tailwind class names.
+    const MEDUSA_LOGO_PATH_PREFIX = "M30.85 6.16832L22.2453 1.21782"
+    const hideMedusaLogo = () => {
+      document.querySelectorAll("path").forEach((path) => {
+        const d = path.getAttribute("d")
+        if (!d || !d.startsWith(MEDUSA_LOGO_PATH_PREFIX)) return
+        const box = path.closest("svg")?.parentElement
+        if (box) (box as HTMLElement).style.display = "none"
+      })
+    }
+
     const applyText = () => {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
       const nodes: Text[] = []
       let n: Node | null
       while ((n = walker.nextNode())) nodes.push(n as Text)
       nodes.forEach((node) => {
-        const match = TEXT_REPLACEMENTS.find(([en]) => node.textContent?.trim() === en)
-        if (match) node.textContent = match[1]
+        const text = node.textContent
+        if (!text || !text.trim()) return
+        for (const [en, vi] of TEXT_REPLACEMENTS) {
+          if (text.includes(en)) {
+            node.textContent = text.split(en).join(vi)
+          }
+        }
       })
     }
 
-    const raf = requestAnimationFrame(applyText)
-    const timer = setTimeout(applyText, 300)
-    const observer = new MutationObserver(applyText)
+    const run = () => {
+      hideMedusaLogo()
+      applyText()
+    }
+
+    const raf = requestAnimationFrame(run)
+    const timer = setTimeout(run, 300)
+    const observer = new MutationObserver(run)
     observer.observe(document.body, { childList: true, subtree: true })
 
     return () => {
