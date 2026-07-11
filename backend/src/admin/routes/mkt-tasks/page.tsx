@@ -400,17 +400,12 @@ function isDailyMktReportTask(task: Task): boolean {
   return (task.tags || []).some(tag => normalizeReportTitle(tag) === "bao_cao_9h")
 }
 
-const DAILY_REPORT_FALLBACK_CHANNEL = "Báo Cáo Ads Hằng Ngày"
+// Channel "Báo Cáo - Ads FB Hằng Ngày" — gắn cứng bằng ID thay vì tìm theo tên
+// (tên channel có thể đổi/gõ sai dấu, ID thì không bao giờ đổi).
+const DAILY_REPORT_FALLBACK_CHANNEL_ID = "01KX4YFP4H32AKJKYSXVY7AXWH"
 
 async function resolveReportChannelId(task: Task): Promise<string | null> {
-  if (task.channel_id) return task.channel_id
-  const res = await fetch("/admin/mkt-chat/channels", { credentials: "include" })
-  if (!res.ok) return null
-  const data = await res.json().catch(() => ({}))
-  const channels: { id: string; name: string }[] = data?.channels || []
-  const target = normalizeReportTitle(DAILY_REPORT_FALLBACK_CHANNEL)
-  const match = channels.find(c => normalizeReportTitle(c.name || "") === target)
-  return match?.id || null
+  return task.channel_id || DAILY_REPORT_FALLBACK_CHANNEL_ID
 }
 
 function todayVNKey(): string {
@@ -486,10 +481,6 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
     setSending(true)
     try {
       const channelId = await resolveReportChannelId(task)
-      if (!channelId) {
-        onToast(`Không tìm thấy kênh chat "${DAILY_REPORT_FALLBACK_CHANNEL}", liên hệ quản lý gắn kênh trước`, "error")
-        return
-      }
       const res = await fetch(`/admin/mkt-chat/channels/${channelId}/messages`, {
         method: "POST",
         credentials: "include",
