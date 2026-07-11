@@ -204,6 +204,10 @@ function Toast({ msg, onDone }: { msg: string; onDone: () => void }) {
 // Tab: Bảng
 // ============================================================================
 const LOAI_LIST = ["Video AI", "Real", "Review", "RAW"]
+// Sản phẩm test — không có trong Pancake POS, dùng khi quay thử/test content.
+// Bắt buộc ghi chú tên SP cụ thể vì hệ thống không track được qua product_code.
+const TEST_SP_VALUE = "__TEST__"
+const TEST_SP_LABEL = "🧪 TEST — Sản phẩm ngoài POS"
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
 
@@ -292,19 +296,25 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const saveRow = async () => {
     if (saving) return
+    if (draft.sp === TEST_SP_VALUE && !draft.ghiChu.trim()) {
+      setToast("Chọn TEST thì phải ghi chú tên sản phẩm test cụ thể")
+      return
+    }
     if (draft.link) {
       const valid = await checkLink(draft.link)
       if (!valid) return
     }
     setSaving(true)
     try {
+      const isTest = draft.sp === TEST_SP_VALUE
+      const spName = isTest ? `TEST: ${draft.ghiChu.trim()}` : draft.sp
       const spEntry = spList.find(s => s.name.toLowerCase() === draft.sp.toLowerCase())
-      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, link: draft.link || "", trangThai: "Cần làm", productCode: spEntry?.code || "" })
+      const res = await apiJson(`/admin/marketing-video`, "POST", { ...draft, sp: spName, link: draft.link || "", trangThai: "Cần làm", productCode: isTest ? "TEST" : (spEntry?.code || "") })
       setAdding(false)
       setLinkCheckState({ checking: false, error: null, ok: false })
       const id = res?.row?.id || res?.id || null
       if (id) { setNewRowId(id); setTimeout(() => setNewRowId(null), 2000) }
-      setToast("Đã thêm: " + draft.sp)
+      setToast("Đã thêm: " + spName)
       reload()
     } catch (e: any) { setToast("Lỗi: " + e.message) }
     finally { setSaving(false) }
@@ -443,13 +453,19 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const saveEdit = async (id: string) => {
     if (!editDraft) return
+    if (editDraft.sp === TEST_SP_VALUE && !editDraft.ghiChu.trim()) {
+      setToast("Chọn TEST thì phải ghi chú tên sản phẩm test cụ thể")
+      return
+    }
     if (editDraft.link) {
       const valid = await checkLink(editDraft.link)
       if (!valid) return
     }
     try {
+      const isTest = editDraft.sp === TEST_SP_VALUE
+      const spName = isTest ? `TEST: ${editDraft.ghiChu.trim()}` : editDraft.sp
       const spEntry = spList.find(s => s.name.toLowerCase() === editDraft.sp.toLowerCase())
-      const payload = { ...editDraft, ...(spEntry?.code ? { productCode: spEntry.code } : {}) }
+      const payload = { ...editDraft, sp: spName, ...(isTest ? { productCode: "TEST" } : (spEntry?.code ? { productCode: spEntry.code } : {})) }
       await apiJson(`/admin/marketing-video/${id}`, "PATCH", payload)
       setLinkCheckState({ checking: false, error: null, ok: false })
       setToast("Đã lưu"); cancelEdit(); reload()
@@ -664,7 +680,11 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     <select ref={spRef} value={draft.sp} onChange={e => setDraft(p => ({ ...p, sp: e.target.value }))} style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }}>
                       {spList.length === 0 && <option value="">Đang tải…</option>}
                       {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
+                      <option value={TEST_SP_VALUE}>{TEST_SP_LABEL}</option>
                     </select>
+                    {draft.sp === TEST_SP_VALUE && (
+                      <div style={{ fontSize: 10, color: "#D97706", fontWeight: 600, marginTop: 3 }}>⚠ Ghi rõ tên SP test ở cột Ghi chú</div>
+                    )}
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     <select value={draft.loaiVideo} onChange={e => setDraft(p => ({ ...p, loaiVideo: e.target.value }))} style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }}>
@@ -751,9 +771,15 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   {/* Sản phẩm */}
                   <td style={{ padding: "9px 12px" }}>
                     {isEditing
-                      ? <select value={ed.sp} onChange={e => setEditDraft(p => ({ ...p!, sp: e.target.value }))} style={cellInp}>
-                          {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
-                        </select>
+                      ? <>
+                          <select value={ed.sp} onChange={e => setEditDraft(p => ({ ...p!, sp: e.target.value }))} style={cellInp}>
+                            {spList.map(s => <option key={s.name} value={s.name}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>)}
+                            <option value={TEST_SP_VALUE}>{TEST_SP_LABEL}</option>
+                          </select>
+                          {ed.sp === TEST_SP_VALUE && (
+                            <div style={{ fontSize: 10, color: "#D97706", fontWeight: 600, marginTop: 3 }}>⚠ Ghi rõ tên SP test ở cột Ghi chú</div>
+                          )}
+                        </>
                       : <span className="line-clamp-1" style={{ color: "#111827", fontSize: 12 }}>{row.sp}</span>}
                   </td>
                   {/* Loại */}
