@@ -993,11 +993,13 @@ function TaskDrawer({
 
   // Task once: assignee thấy nút "Gửi duyệt" khi đang làm; manager thấy nút Duyệt/Từ chối khi pending_review
   const isOnce = task.frequency === "once" && !task.is_template
+  // Báo cáo Ads hằng ngày: chỉ nộp số liệu, không cần manager duyệt — assignee tự đánh dấu hoàn thành.
+  const skipApproval = isDailyMktReportTask(task)
   const STATUSES: string[] = isManager
     ? (task.status === "pending_review"
         ? ["todo", "in_progress", "pending_review", "done", "cancelled"]
         : ["todo", "in_progress", "done", "cancelled"])
-    : (isPersonal
+    : (isPersonal || skipApproval
         ? ["todo", "in_progress", "done", "cancelled"]
         : (isOnce
             ? (task.status === "pending_review" ? ["pending_review"] : ["todo", "in_progress"])
@@ -1176,7 +1178,7 @@ function TaskDrawer({
                 ))}
               </div>
               {/* Assignee: nút Gửi duyệt khi task once đang làm */}
-              {isOnce && !isPersonal && !isManager && isAssignee && task.status === "in_progress" && (
+              {isOnce && !isPersonal && !skipApproval && !isManager && isAssignee && task.status === "in_progress" && (
                 <button onClick={() => updateStatus("pending_review")}
                   className="mt-2 rounded-lg border border-amber-400 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 active:scale-95 dark:bg-amber-500/10 dark:text-amber-300">
                   📤 Gửi duyệt
