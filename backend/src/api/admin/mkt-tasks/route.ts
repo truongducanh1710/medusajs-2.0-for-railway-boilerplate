@@ -56,7 +56,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (channel_id) filter.channel_id = channel_id
 
     let tasks = await svc.listMktTasks(filter, {
-      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "planned_for", "personal_order", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist", "import_lot_id", "purchase_stage", "pancake_order_id", "customer_name", "customer_phone", "call_stage", "product_name"],
+      select: ["id", "title", "type", "assignee_id", "created_by", "deadline", "planned_for", "personal_order", "status", "priority", "tags", "notes", "comments", "rating", "channel_id", "created_at", "updated_at", "output", "result", "frequency", "is_template", "template_id", "period_key", "checklist", "import_lot_id", "purchase_stage", "pancake_order_id", "customer_name", "customer_phone", "call_stage", "called_at", "first_called_at", "product_name"],
       order: { created_at: "DESC" },
     })
 

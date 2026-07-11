@@ -485,6 +485,8 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
   const [noteDraft, setNoteDraft] = useState("")
   const [sending, setSending] = useState(false)
   const [calling, setCalling] = useState(false)
+  const [timeline, setTimeline] = useState<{ type: "call" | "note"; at: string; actor: string; text: string }[] | null>(null)
+  const [loadingTimeline, setLoadingTimeline] = useState(false)
 
   async function callCustomer() {
     if (calling || !task.customer_phone) return
@@ -512,6 +514,16 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
       .then(d => setOrder(d.source_order || null))
       .finally(() => setLoadingOrder(false))
   }, [task.id, task.pancake_order_id])
+
+  useEffect(() => {
+    setLoadingTimeline(true)
+    apiFetch(`/admin/mkt-tasks/${task.id}/timeline`)
+      .then(r => r.json())
+      .then(d => setTimeline(d.events || []))
+      .catch(() => setTimeline([]))
+      .finally(() => setLoadingTimeline(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, task.call_stage, (task.comments || []).length])
 
   async function sendNote() {
     if (!noteDraft.trim() || sending) return
@@ -611,6 +623,24 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
               {canRate ? <Stars value={task.rating} onChange={onRate} /> : <Stars value={task.rating} />}
             </div>
           )}
+
+          {/* Timeline hợp nhất: cuộc gọi thật (CDR tổng đài) + thay đổi trạng thái/ghi chú — để lead sale theo dõi đối chiếu */}
+          <div className="mb-4">
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ui-fg-subtle">Lịch sử xử lý (đối chiếu tổng đài)</div>
+            <div className="max-h-56 space-y-1.5 overflow-y-auto">
+              {loadingTimeline && <div className="text-[12px] text-ui-fg-muted">Đang tải...</div>}
+              {!loadingTimeline && timeline?.length === 0 && <div className="text-[12px] text-ui-fg-muted">Chưa có hoạt động nào</div>}
+              {!loadingTimeline && timeline?.map((e, i) => (
+                <div key={i} className={cn("rounded-lg px-3 py-2 text-[12px]", e.type === "call" ? "bg-blue-50 dark:bg-blue-500/10" : "bg-ui-bg-subtle")}>
+                  <div className="mb-0.5 flex items-center justify-between text-[11px] text-ui-fg-subtle">
+                    <span className="font-semibold text-ui-fg-base">{e.type === "call" ? "📞" : "💬"} {e.actor}</span>
+                    <span>{fmtDateTime(e.at)}</span>
+                  </div>
+                  <div className="whitespace-pre-wrap text-ui-fg-base">{e.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -633,6 +663,12 @@ function CskhGoiKhachPage() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
   const [view, setView] = useState<"list" | "stats">("list")
   const [stats, setStats] = useState<any[]>([])
+  const [compareRows, setCompareRows] = useState<any[]>([])
+  const [compareUnmapped, setCompareUnmapped] = useState(0)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const todayStr0 = new Date().toISOString().slice(0, 10)
+  const [compareFrom, setCompareFrom] = useState(todayStr0)
+  const [compareTo, setCompareTo] = useState(todayStr0)
   const [pageSize, setPageSize] = useState(50)
   const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({})
@@ -680,9 +716,23 @@ function CskhGoiKhachPage() {
     setStats(d.stats || [])
   }, [])
 
+  const loadCompare = useCallback(async () => {
+    setCompareLoading(true)
+    try {
+      const params = new URLSearchParams({
+        from: `${compareFrom}T00:00:00+07:00`,
+        to: `${compareTo}T23:59:59+07:00`,
+      })
+      const r = await apiFetch(`/admin/ity-cdr-sync/compare?${params.toString()}`)
+      const d = await r.json()
+      setCompareRows(d.rows || [])
+      setCompareUnmapped(d.unmapped_extension_calls || 0)
+    } finally { setCompareLoading(false) }
+  }, [compareFrom, compareTo])
+
   useEffect(() => { loadTasks() }, [loadTasks])
   useEffect(() => { loadUsers() }, [loadUsers])
-  useEffect(() => { if (view === "stats") loadStats() }, [view, loadStats])
+  useEffect(() => { if (view === "stats") { loadStats(); loadCompare() } }, [view, loadStats, loadCompare])
 
   const filtered = useMemo(() => {
     let list = tasks
@@ -1040,6 +1090,70 @@ function CskhGoiKhachPage() {
               ))}
             </tbody>
           </table>
+
+          <div className="mt-8 mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-ui-fg-subtle">
+              📞 Đối chiếu cuộc gọi thật (tổng đài) vs task đã xử lý
+            </h2>
+            <div className="flex items-center gap-1.5">
+              {[
+                ["Hôm nay", 0], ["7 ngày", 6], ["30 ngày", 29],
+              ].map(([label, daysBack]) => (
+                <button key={label as string} type="button"
+                  onClick={() => {
+                    const to = new Date()
+                    const from = new Date(Date.now() - Number(daysBack) * 86400_000)
+                    setCompareTo(to.toISOString().slice(0, 10))
+                    setCompareFrom(from.toISOString().slice(0, 10))
+                  }}
+                  className="rounded-full border border-ui-border-base px-2.5 py-1 text-[11px] font-medium text-ui-fg-subtle hover:bg-ui-bg-subtle-hover">
+                  {label}
+                </button>
+              ))}
+              <input type="date" value={compareFrom} onChange={e => setCompareFrom(e.target.value)}
+                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1 text-[12px]" />
+              <span className="text-ui-fg-subtle">—</span>
+              <input type="date" value={compareTo} onChange={e => setCompareTo(e.target.value)}
+                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1 text-[12px]" />
+              {compareLoading && <span className="text-[12px] text-ui-fg-muted">Đang tải...</span>}
+            </div>
+          </div>
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-ui-border-base text-left text-[11px] uppercase text-ui-fg-subtle">
+                <th className="py-2">Nhân viên</th>
+                <th className="py-2">Cuộc gọi thật (CDR)</th>
+                <th className="py-2">Trong đó nghe máy</th>
+                <th className="py-2">Task đã xử lý</th>
+                <th className="py-2">Số mới</th>
+                <th className="py-2">Số cũ (tồn đọng)</th>
+                <th className="py-2">Chênh lệch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compareRows.map(r => (
+                <tr key={r.email} className="border-b border-ui-border-base last:border-0">
+                  <td className="py-2 font-medium">{r.name}</td>
+                  <td className="py-2">{r.real_calls}</td>
+                  <td className="py-2">{r.real_answered}</td>
+                  <td className="py-2">{r.task_calls}</td>
+                  <td className="py-2 text-emerald-600">{r.new_numbers}</td>
+                  <td className="py-2 text-amber-600">{r.old_numbers}</td>
+                  <td className={cn("py-2 font-semibold", r.diff === 0 ? "text-ui-fg-subtle" : r.diff > 0 ? "text-amber-600" : "text-rose-600")}>
+                    {r.diff > 0 ? `+${r.diff}` : r.diff}
+                  </td>
+                </tr>
+              ))}
+              {!compareLoading && compareRows.length === 0 && (
+                <tr><td colSpan={7} className="py-6 text-center text-ui-fg-muted">Chưa có dữ liệu hôm nay</td></tr>
+              )}
+            </tbody>
+          </table>
+          {compareUnmapped > 0 && (
+            <div className="mt-2 text-[12px] text-ui-fg-muted">
+              ⚠ {compareUnmapped} cuộc gọi từ extension chưa gán nhân viên (xem trang ITY CDR để gán).
+            </div>
+          )}
         </div>
       )}
     </div>

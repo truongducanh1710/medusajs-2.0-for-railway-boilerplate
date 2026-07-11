@@ -34,6 +34,11 @@ const MktTask = model.define("mkt_task", {
   customer_phone: model.text().nullable(),
   // CSKH: giai đoạn cuộc gọi, độc lập với status gốc. Xem CALL_STAGES ở UI.
   call_stage: model.text().nullable(),
+  // CSKH: thời điểm nhân viên cập nhật call_stage lần gần nhất (dùng đối chiếu với CDR ITY theo ngày)
+  called_at: model.dateTime().nullable(),
+  // CSKH: thời điểm xử lý (đổi call_stage khỏi "chưa gọi") LẦN ĐẦU TIÊN — không bị ghi đè ở các lần sau.
+  // So với created_at (ngày giao task) để phân loại "số mới" (xử lý cùng ngày giao) vs "số cũ" (tồn đọng qua ngày).
+  first_called_at: model.dateTime().nullable(),
   // CSKH: tên sản phẩm khách đã mua (chọn ở bước tìm khách hàng khi bulk-create)
   product_name: model.text().nullable(),
 })

@@ -228,6 +228,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     // CSKH gọi tư vấn: giai đoạn cuộc gọi. Có kết quả (hài lòng/góp ý) → auto set status=done.
     if (body.call_stage !== undefined) {
       update.call_stage = body.call_stage || null
+      const isProcessed = body.call_stage && body.call_stage !== "chua_goi"
+      update.called_at = isProcessed ? new Date().toISOString() : null
+      if (isProcessed && !task.first_called_at) update.first_called_at = update.called_at
       if (CALL_STAGE_AUTO_DONE.has(body.call_stage) && body.status === undefined && task.status !== "done") {
         update.status = "done"
       }
