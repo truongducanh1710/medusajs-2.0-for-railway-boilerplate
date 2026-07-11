@@ -1863,6 +1863,45 @@ function MktChatPage() {
   const totalUnread = channels.reduce((s, c) => s + c.unread_count, 0)
   const canPostInActiveChannel = !activeChannel?.is_announcement || isManager
 
+  // Nhấp nháy tiêu đề tab khi có tin/nhắc đến chưa đọc và người dùng đang ở tab khác,
+  // để nhận ra tin mới mà không cần quay lại tab mkt-chat.
+  const baseTabTitleRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (baseTabTitleRef.current === null) baseTabTitleRef.current = document.title
+    const baseTitle = baseTabTitleRef.current
+    const pendingCount = totalUnread + notificationUnread
+
+    let timer: number | null = null
+    const stopBlinking = () => {
+      if (timer !== null) { window.clearInterval(timer); timer = null }
+      document.title = baseTitle
+    }
+    const startBlinking = () => {
+      if (timer !== null) return
+      const badge = `(${pendingCount > 99 ? "99+" : pendingCount}) `
+      let showBadge = true
+      document.title = badge + baseTitle
+      timer = window.setInterval(() => {
+        showBadge = !showBadge
+        document.title = showBadge ? badge + baseTitle : "💬 Tin nhắn mới!"
+      }, 1200)
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") stopBlinking()
+      else if (pendingCount > 0) startBlinking()
+    }
+
+    if (pendingCount > 0 && document.visibilityState !== "visible") startBlinking()
+    else stopBlinking()
+
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+      stopBlinking()
+    }
+  }, [totalUnread, notificationUnread])
+
   // Mobile: chiều cao container đo theo vị trí thực tế thay vì trừ cứng 64px
   // (header admin cao khác nhau giữa desktop/mobile, trừ sai gây hở đáy)
   const rootRef = useRef<HTMLDivElement>(null)
