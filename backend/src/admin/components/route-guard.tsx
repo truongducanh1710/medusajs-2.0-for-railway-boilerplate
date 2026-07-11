@@ -33,8 +33,12 @@ export const RouteGuard = () => {
     const hide: string[] = []
 
     if (!isAdmin) {
-      for (const key of Object.keys(NATIVE_PERMS)) {
-        hide.push(`nav a[href$="/${key}"]`, `nav a[href*="/${key}/"]`)
+      for (const [key, perm] of Object.entries(NATIVE_PERMS)) {
+        // Settings luôn admin-only (chứa API keys/webhooks nhạy cảm), các tab native khác
+        // theo đúng permission đã gán (vd medusa.products.view cho role marketing).
+        if (key === "settings" || !has(perm)) {
+          hide.push(`nav a[href$="/${key}"]`, `nav a[href*="/${key}/"]`)
+        }
       }
       hide.push("aside nav > div.px-3:has(button)")
     }
@@ -136,8 +140,8 @@ export const RouteGuard = () => {
       }
     }
 
-    for (const key of Object.keys(NATIVE_PERMS)) {
-      const allowed = key === "settings" ? isSuper : isAdmin
+    for (const [key, perm] of Object.entries(NATIVE_PERMS)) {
+      const allowed = key === "settings" ? isSuper : (isAdmin || has(perm))
       if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !allowed) {
         alert(FORBIDDEN_MESSAGE)
         window.location.href = DEFAULT_ADMIN_APP_ROUTE
