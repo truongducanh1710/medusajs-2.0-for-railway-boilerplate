@@ -233,23 +233,26 @@ function Avatar({ name, online, className }: { name: string; online?: boolean; c
   )
 }
 
-function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine }: {
+function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine, users: mktUsers }: {
   reactions: Record<string, string[]>; msgId: string; currentEmail: string
   onReact: (msgId: string, emoji: string) => void
   isMine?: boolean
+  users?: MktUser[]
 }) {
   const entries = Object.entries(reactions || {}).filter(([, users]) => users.length > 0)
   if (entries.length === 0) return null
+  const nameByEmail = new Map((mktUsers || []).map(u => [u.email, u.name]))
   return (
-    <div className={cn("mt-1 flex flex-wrap gap-1", isMine && "justify-end")}>
+    <div className={cn("-mt-2.5 mb-0.5 flex flex-wrap gap-1", isMine ? "justify-end pr-1" : "pl-1")}>
       {entries.map(([emoji, users]) => {
         const mine = users.includes(currentEmail)
         return (
           <button key={emoji} onClick={() => onReact(msgId, emoji)}
-            className={cn("chat-anim-pop rounded-full border px-1.5 py-px text-xs leading-relaxed transition-all active:scale-90",
+            title={users.map(email => nameByEmail.get(email) || email.split("@")[0]).join(", ")}
+            className={cn("chat-anim-pop rounded-full border bg-ui-bg-base px-1.5 py-px text-xs leading-relaxed shadow-sm transition-all active:scale-90",
               mine
                 ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300"
-                : "border-ui-border-base bg-ui-bg-component text-ui-fg-subtle hover:border-ui-border-strong")}>
+                : "border-ui-border-base text-ui-fg-subtle hover:border-ui-border-strong")}>
             {emoji} {users.length}
           </button>
         )
@@ -301,7 +304,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         </div>
         <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base"
           dangerouslySetInnerHTML={{ __html: renderMentions(msg.content, msg.mentions, users) }} />
-        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} users={users} />
       </div>
     )
   }
@@ -315,7 +318,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
           <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 md:max-w-[400px] bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10">
             {msg.content}
           </div>
-          <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
+          <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} users={users} />
         </div>
       </div>
     )
@@ -358,11 +361,11 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
           )}
         </div>
 
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} users={users} />
+
         <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>
           {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
         </div>
-
-        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} />
         {Number(msg.reply_count || 0) > 0 && (
           <button onClick={() => onOpenThread(msg)}
             className={cn("mt-1 block text-[11px] font-semibold transition-colors", isMine ? "ml-auto text-blue-100 hover:text-white" : "text-blue-600 hover:text-blue-700 dark:text-blue-400")}>
