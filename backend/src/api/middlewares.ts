@@ -146,6 +146,14 @@ export default defineMiddlewares({
 
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
 
+    { matcher: "/admin/exchange-rate/list", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+
+    // Revalidate storefront cache — có side-effect thật, chỉ admin/ai-settings được trigger
+    { matcher: "/admin/revalidate", method: ["POST"], middlewares: [requirePerm("page.ai-settings.manage")] },
+
+    // Route test/leftover, không đọc/ghi gì — chặn để không lộ endpoint không rõ mục đích
+    { matcher: "/admin/custom", method: ["GET"], middlewares: [requirePerm("page.ai-settings.manage")] },
+
     // Chat bot — sandbox test + quản lý agent chỉ dành cho người có quyền quản lý bot
     { matcher: "/admin/chat/bot-test", method: ["POST"], middlewares: [requirePerm("page.chat.bot.manage")] },
     { matcher: "/admin/chat/agents*", method: ["GET"], middlewares: [requirePerm("page.chat.bot.manage")] },

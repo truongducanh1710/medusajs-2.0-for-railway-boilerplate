@@ -41,6 +41,8 @@ export const PERMISSIONS = {
   "page.cskh-goi-khach.call": "Bấm gọi khách qua tổng đài (click-to-call)",
   "page.mkt-chat.view": "Xem chat group MKT",
   "page.mkt-chat.manage": "Tạo/quản lý channel chat MKT (manager)",
+  "page.live-view.view": "Xem Live View (visitor tracking storefront)",
+  "page.ai-settings.manage": "Cấu hình AI Settings (model, exchange rate)",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -52,4 +54,7 @@ export const ROLE_PRESETS: Record<string, string[]> = {
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage", "page.mkt-chat.view"],
+  // Tài khoản AI Agent — chỉ quyền đọc. Mọi hành động ghi phải đi qua approval flow riêng (chưa xây),
+  // không cấp .edit/.manage/.post/.run cho preset này dù mở rộng phạm vi đọc sau này.
+  "ai-agent": ["page.bao-cao.view", "page.don-hang.view", "page.mkt-chat.view", "page.mkt-tasks.view", "page.marketing-video.view", "page.fb-content.view"],
 }
