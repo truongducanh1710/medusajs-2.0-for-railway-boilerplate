@@ -802,15 +802,24 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
 function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
   const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState("")
 
   const submit = async () => {
     if (!form.title.trim() || !form.assignee_id) return
-    setSaving(true)
-    await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    })
-    setSaving(false); onCreated(); onClose()
+    setSaving(true); setErr("")
+    try {
+      const r = await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(data?.error || "Tạo task thất bại")
+      onCreated(); onClose()
+    } catch (e: any) {
+      setErr(e?.message || "Tạo task thất bại")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -833,6 +842,7 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
           <div><label className={LABEL_CLS}>Deadline</label>
             <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
         </div>
+        {err && <div className="mt-2 text-xs text-rose-500">{err}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-ui-border-base px-3.5 py-1.5 text-xs text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
           <button onClick={submit} disabled={saving || !form.title.trim() || !form.assignee_id}
