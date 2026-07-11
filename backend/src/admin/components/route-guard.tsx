@@ -40,7 +40,6 @@ export const RouteGuard = () => {
           hide.push(`nav a[href$="/${key}"]`, `nav a[href*="/${key}/"]`)
         }
       }
-      hide.push("aside nav > div.px-3:has(button)")
     }
 
     // Settings link lives at the bottom of the sidebar, outside <nav> — superadmin only.
