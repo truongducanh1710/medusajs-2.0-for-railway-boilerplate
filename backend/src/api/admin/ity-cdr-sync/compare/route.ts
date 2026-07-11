@@ -23,13 +23,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const [calls, maps, allUsers, tasks] = await Promise.all([
       syncService.listItyCdrCalls(
         { calldate: { $gte: fromDate, $lte: toDate } } as any,
-        { take: 100_000, select: ["extension", "calldate", "disposition"] as any }
+        { take: 100_000, select: ["extension", "calldate", "disposition", "customer_phone"] as any }
       ),
       syncService.listItyExtensionMaps({}),
       userService.listUsers({}, { select: ["id", "email", "first_name", "last_name"] }),
+      // Lấy toàn bộ task cskh_call (không lọc theo called_at) — match với CDR bằng SĐT để không phụ thuộc
+      // vào field called_at/first_called_at (chỉ có với task được xử lý sau khi field này ra đời).
       taskService.listMktTasks(
-        { type: "cskh_call", called_at: { $gte: fromDate, $lte: toDate } } as any,
-        { take: 100_000, select: ["assignee_id", "call_stage", "called_at", "first_called_at", "created_at"] as any }
+        { type: "cskh_call" } as any,
+        { take: 100_000, select: ["assignee_id", "call_stage", "customer_phone", "created_at"] as any }
       ),
     ])
 
@@ -57,23 +59,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     let unmappedExtensionCalls = 0
+    // Gom CDR theo 9 số cuối SĐT khách -> danh sách cuộc gọi (dùng để match với task theo customer_phone)
+    const callsByPhone: Record<string, any[]> = {}
     for (const c of calls as any[]) {
       const email = emailByExtension[c.extension]
-      if (!email) { unmappedExtensionCalls++; continue }
-      const bucket = ensure(email)
-      bucket.real_calls++
-      if (c.disposition === "ANSWERED") bucket.real_answered++
+      if (!email) { unmappedExtensionCalls++ } else {
+        const bucket = ensure(email)
+        bucket.real_calls++
+        if (c.disposition === "ANSWERED") bucket.real_answered++
+      }
+      const digits = (c.customer_phone || "").replace(/\D/g, "").slice(-9)
+      if (!digits) continue
+      if (!callsByPhone[digits]) callsByPhone[digits] = []
+      callsByPhone[digits].push(c)
     }
 
-    // "Số mới": task được xử lý (đổi call_stage) lần đầu tiên đúng vào ngày được giao (created_at).
-    // "Số cũ": task tồn đọng qua ngày khác mới được xử lý — kể cả lần xử lý đầu tiên đó xảy ra hôm nay.
+    // Task "đã xử lý" trong khoảng đang xem = có ít nhất 1 cuộc gọi CDR thật khớp SĐT khách
+    // trong khoảng from-to (không phụ thuộc field called_at/first_called_at — khớp cả dữ liệu cũ).
+    // "Số mới": cuộc gọi thật đầu tiên khớp task này rơi đúng ngày task được giao (created_at).
+    // "Số cũ": task tồn đọng, cuộc gọi thật đầu tiên khớp xảy ra sau ngày giao.
     for (const t of tasks as any[]) {
-      if (!t.assignee_id || !t.call_stage || t.call_stage === "chua_goi") continue
+      if (!t.assignee_id) continue
+      const digits = (t.customer_phone || "").replace(/\D/g, "").slice(-9)
+      const matchedCalls = digits ? (callsByPhone[digits] || []) : []
+      if (matchedCalls.length === 0) continue
+
       const bucket = ensure(t.assignee_id)
       bucket.task_calls++
+      const firstMatch = matchedCalls.reduce((min: any, c: any) => (!min || new Date(c.calldate) < new Date(min.calldate)) ? c : min, null)
       const createdDay = t.created_at ? new Date(t.created_at).toISOString().slice(0, 10) : null
-      const firstCalledDay = t.first_called_at ? new Date(t.first_called_at).toISOString().slice(0, 10) : null
-      if (firstCalledDay && createdDay && firstCalledDay === createdDay) bucket.new_numbers++
+      const firstCallDay = firstMatch ? new Date(firstMatch.calldate).toISOString().slice(0, 10) : null
+      if (firstCallDay && createdDay && firstCallDay === createdDay) bucket.new_numbers++
       else bucket.old_numbers++
     }
 
