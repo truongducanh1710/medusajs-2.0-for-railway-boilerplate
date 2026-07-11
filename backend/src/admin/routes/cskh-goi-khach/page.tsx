@@ -29,6 +29,7 @@ type Task = {
   call_stage: string | null
   product_name: string | null
   created_at: string
+  updated_at: string
 }
 
 type MktProduct = { id: number; name: string; code: string }
@@ -655,6 +656,8 @@ function CskhGoiKhachPage() {
 
   const [tab, setTab] = useState<"all" | "mine" | string>("all")
   const [search, setSearch] = useState("")
+  const [changedFrom, setChangedFrom] = useState("")
+  const [changedTo, setChangedTo] = useState("")
   const [tasks, setTasks] = useState<Task[]>([])
   const [users, setUsers] = useState<MktUser[]>([])
   const [loading, setLoading] = useState(false)
@@ -741,8 +744,18 @@ function CskhGoiKhachPage() {
       const s = search.toLowerCase()
       list = list.filter(t => (t.customer_name || "").toLowerCase().includes(s) || (t.customer_phone || "").includes(s))
     }
+    // Lọc theo đơn có thay đổi giai đoạn/trạng thái trong khoảng ngày — dùng updated_at
+    // (không dùng called_at vì task xử lý trước khi field đó ra đời sẽ bị bỏ sót).
+    if (changedFrom) {
+      const fromTs = new Date(`${changedFrom}T00:00:00+07:00`).getTime()
+      list = list.filter(t => t.updated_at && new Date(t.updated_at).getTime() >= fromTs)
+    }
+    if (changedTo) {
+      const toTs = new Date(`${changedTo}T23:59:59+07:00`).getTime()
+      list = list.filter(t => t.updated_at && new Date(t.updated_at).getTime() <= toTs)
+    }
     return list
-  }, [tasks, tab, search])
+  }, [tasks, tab, search, changedFrom, changedTo])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paged = useMemo(() => {
@@ -750,7 +763,7 @@ function CskhGoiKhachPage() {
     return filtered.slice(start, start + pageSize)
   }, [filtered, page, pageSize])
 
-  useEffect(() => { setPage(1) }, [tab, search, pageSize])
+  useEffect(() => { setPage(1) }, [tab, search, pageSize, changedFrom, changedTo])
 
   const pagedSelectedCount = paged.filter(t => selectedIds[t.id]).length
   const allPagedSelected = paged.length > 0 && pagedSelectedCount === paged.length
@@ -930,6 +943,19 @@ function CskhGoiKhachPage() {
             <div className="flex items-center gap-2">
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Tìm SĐT/tên"
                 className="w-48 rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[12px]" />
+              <span className="text-[11px] text-ui-fg-subtle">Đổi giai đoạn:</span>
+              <input type="date" value={changedFrom} onChange={e => setChangedFrom(e.target.value)}
+                title="Chỉ hiện đơn có thay đổi giai đoạn/ghi chú từ ngày này"
+                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]" />
+              <span className="text-ui-fg-subtle">—</span>
+              <input type="date" value={changedTo} onChange={e => setChangedTo(e.target.value)}
+                title="Chỉ hiện đơn có thay đổi giai đoạn/ghi chú đến ngày này"
+                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]" />
+              {(changedFrom || changedTo) && (
+                <button type="button" onClick={() => { setChangedFrom(""); setChangedTo("") }}
+                  className="rounded-lg border border-ui-border-base px-2 py-1.5 text-[12px] text-ui-fg-subtle hover:bg-ui-bg-subtle-hover"
+                  title="Xóa bộ lọc ngày">✕</button>
+              )}
               <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
                 className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]">
                 {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n} / trang</option>)}
