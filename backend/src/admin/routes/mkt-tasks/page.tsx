@@ -400,6 +400,10 @@ function isDailyMktReportTask(task: Task): boolean {
   return (task.tags || []).some(tag => normalizeReportTitle(tag) === "bao_cao_9h")
 }
 
+function isDailyVideoPostTask(task: Task): boolean {
+  return (task.tags || []).some(tag => normalizeReportTitle(tag) === "dang_video")
+}
+
 // Channel "Báo Cáo - Ads FB Hằng Ngày" — gắn cứng bằng ID thay vì tìm theo tên
 // (tên channel có thể đổi/gõ sai dấu, ID thì không bao giờ đổi).
 const DAILY_REPORT_FALLBACK_CHANNEL_ID = "01KX4YFP4H32AKJKYSXVY7AXWH"
@@ -994,7 +998,7 @@ function TaskDrawer({
   // Task once: assignee thấy nút "Gửi duyệt" khi đang làm; manager thấy nút Duyệt/Từ chối khi pending_review
   const isOnce = task.frequency === "once" && !task.is_template
   // Báo cáo Ads hằng ngày: chỉ nộp số liệu, không cần manager duyệt — assignee tự đánh dấu hoàn thành.
-  const skipApproval = isDailyMktReportTask(task)
+  const skipApproval = isDailyMktReportTask(task) || isDailyVideoPostTask(task)
   const STATUSES: string[] = isManager
     ? (task.status === "pending_review"
         ? ["todo", "in_progress", "pending_review", "done", "cancelled"]
