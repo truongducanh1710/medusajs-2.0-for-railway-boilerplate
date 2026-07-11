@@ -26,6 +26,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       notes: notes || null,
       channel_id: channelId,
       status: "todo",
+      tags: [],
+      comments: [],
     })
 
     const userModule = req.scope.resolve(Modules.USER)
