@@ -744,15 +744,18 @@ function CskhGoiKhachPage() {
       const s = search.toLowerCase()
       list = list.filter(t => (t.customer_name || "").toLowerCase().includes(s) || (t.customer_phone || "").includes(s))
     }
-    // Lọc theo đơn có thay đổi giai đoạn/trạng thái trong khoảng ngày — dùng updated_at
-    // (không dùng called_at vì task xử lý trước khi field đó ra đời sẽ bị bỏ sót).
-    if (changedFrom) {
-      const fromTs = new Date(`${changedFrom}T00:00:00+07:00`).getTime()
-      list = list.filter(t => t.updated_at && new Date(t.updated_at).getTime() >= fromTs)
-    }
-    if (changedTo) {
-      const toTs = new Date(`${changedTo}T23:59:59+07:00`).getTime()
-      list = list.filter(t => t.updated_at && new Date(t.updated_at).getTime() <= toTs)
+    // Lọc theo đơn có nhân sự gọi/đổi giai đoạn/ghi chú trong khoảng ngày.
+    // Chỉ tính event thật (ghi chú tự do, hoặc "Giai đoạn gọi CSKH: ...") — KHÔNG tính
+    // các activity log khác (chuyển giao, đổi deadline, đổi ưu tiên...) dù cũng đổi updated_at.
+    if (changedFrom || changedTo) {
+      const fromTs = changedFrom ? new Date(`${changedFrom}T00:00:00+07:00`).getTime() : -Infinity
+      const toTs = changedTo ? new Date(`${changedTo}T23:59:59+07:00`).getTime() : Infinity
+      list = list.filter(t => (t.comments || []).some(c => {
+        const isRelevant = !c.type || c.type !== "system" || c.text.startsWith("Giai đoạn gọi CSKH:")
+        if (!isRelevant) return false
+        const ts = new Date(c.created_at).getTime()
+        return ts >= fromTs && ts <= toTs
+      }))
     }
     return list
   }, [tasks, tab, search, changedFrom, changedTo])
@@ -943,19 +946,6 @@ function CskhGoiKhachPage() {
             <div className="flex items-center gap-2">
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Tìm SĐT/tên"
                 className="w-48 rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-[12px]" />
-              <span className="text-[11px] text-ui-fg-subtle">Đổi giai đoạn:</span>
-              <input type="date" value={changedFrom} onChange={e => setChangedFrom(e.target.value)}
-                title="Chỉ hiện đơn có thay đổi giai đoạn/ghi chú từ ngày này"
-                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]" />
-              <span className="text-ui-fg-subtle">—</span>
-              <input type="date" value={changedTo} onChange={e => setChangedTo(e.target.value)}
-                title="Chỉ hiện đơn có thay đổi giai đoạn/ghi chú đến ngày này"
-                className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]" />
-              {(changedFrom || changedTo) && (
-                <button type="button" onClick={() => { setChangedFrom(""); setChangedTo("") }}
-                  className="rounded-lg border border-ui-border-base px-2 py-1.5 text-[12px] text-ui-fg-subtle hover:bg-ui-bg-subtle-hover"
-                  title="Xóa bộ lọc ngày">✕</button>
-              )}
               <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
                 className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-[12px]">
                 {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n} / trang</option>)}
@@ -966,6 +956,36 @@ function CskhGoiKhachPage() {
                 ↻ Reset cột
               </button>
             </div>
+          </div>
+
+          {/* Bộ lọc theo thời gian gọi/đổi giai đoạn */}
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-ui-border-base px-6 py-2">
+            <span className="text-[11px] font-medium text-ui-fg-subtle">📅 Đã gọi/đổi giai đoạn:</span>
+            {[["Hôm nay", 0], ["7 ngày", 6]].map(([label, daysBack]) => (
+              <button key={label as string} type="button"
+                onClick={() => {
+                  const to = new Date()
+                  const from = new Date(Date.now() - Number(daysBack) * 86400_000)
+                  setChangedTo(to.toISOString().slice(0, 10))
+                  setChangedFrom(from.toISOString().slice(0, 10))
+                }}
+                className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium",
+                  "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-subtle-hover")}>
+                {label}
+              </button>
+            ))}
+            <input type="date" value={changedFrom} onChange={e => setChangedFrom(e.target.value)}
+              title="Chỉ hiện đơn có gọi/đổi giai đoạn từ ngày này"
+              className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1 text-[12px]" />
+            <span className="text-ui-fg-subtle">—</span>
+            <input type="date" value={changedTo} onChange={e => setChangedTo(e.target.value)}
+              title="Chỉ hiện đơn có gọi/đổi giai đoạn đến ngày này"
+              className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1 text-[12px]" />
+            {(changedFrom || changedTo) && (
+              <button type="button" onClick={() => { setChangedFrom(""); setChangedTo("") }}
+                className="rounded-full border border-ui-border-base px-2.5 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50"
+                title="Xóa bộ lọc, hiện tất cả">✕ Hiện tất cả</button>
+            )}
           </div>
 
           {/* Bulk action toolbar */}
