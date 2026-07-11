@@ -1,6 +1,5 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { useEffect } from "react"
-import logo from "../assets/phanviet-logo.png"
 
 // Native Medusa login page has no i18n/theming override API and hardcodes its logo,
 // copy, and Medusa-blue accent. We overlay Phan Việt branding via this widget zone
@@ -78,18 +77,6 @@ const LoginBranding = () => {
       document.head.appendChild(style)
     }
 
-    // Medusa's login mark is a fixed SVG path (see @medusajs/dashboard logo-box.tsx);
-    // matching on that path is more stable across versions than guessing Tailwind class names.
-    const MEDUSA_LOGO_PATH_PREFIX = "M30.85 6.16832L22.2453 1.21782"
-    const hideMedusaLogo = () => {
-      document.querySelectorAll("path").forEach((path) => {
-        const d = path.getAttribute("d")
-        if (!d || !d.startsWith(MEDUSA_LOGO_PATH_PREFIX)) return
-        const box = path.closest("svg")?.parentElement
-        if (box) (box as HTMLElement).style.display = "none"
-      })
-    }
-
     const applyText = () => {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
       const nodes: Text[] = []
@@ -106,14 +93,9 @@ const LoginBranding = () => {
       })
     }
 
-    const run = () => {
-      hideMedusaLogo()
-      applyText()
-    }
-
-    const raf = requestAnimationFrame(run)
-    const timer = setTimeout(run, 300)
-    const observer = new MutationObserver(run)
+    const raf = requestAnimationFrame(applyText)
+    const timer = setTimeout(applyText, 300)
+    const observer = new MutationObserver(applyText)
     observer.observe(document.body, { childList: true, subtree: true })
 
     return () => {
@@ -123,48 +105,9 @@ const LoginBranding = () => {
     }
   }, [])
 
-  return (
-    <div
-      id="phanviet-login-logo"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 10,
-        marginBottom: 20,
-      }}
-    >
-      <div
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 14,
-          background: "var(--pv-accent, #c24a2e)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 12px 32px -12px rgba(31,36,34,0.35)",
-        }}
-      >
-        <img src={logo} alt="Phan Việt" style={{ height: 32, objectFit: "contain" }} />
-      </div>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "0.01em" }}>
-          Phan Việt
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            opacity: 0.6,
-          }}
-        >
-          Trang quản trị
-        </div>
-      </div>
-    </div>
-  )
+  // Zero-size anchor node — keeps the CSS theme selectors (which target
+  // "#phanviet-login-logo ~ ...") working without rendering any visible logo/title.
+  return <div id="phanviet-login-logo" style={{ display: "none" }} />
 }
 
 export const config = defineWidgetConfig({ zone: "login.before" })
