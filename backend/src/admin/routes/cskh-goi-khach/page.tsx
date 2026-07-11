@@ -648,6 +648,89 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
   )
 }
 
+// ─── Daily new/old numbers chart ───────────────────────────────────────────────
+
+function DailyCompareChart({ byDay }: { byDay: any[] }) {
+  const [agentFilter, setAgentFilter] = useState<string>("all")
+
+  const agents = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const d of byDay) for (const a of d.by_agent) map[a.email] = a.name
+    return Object.entries(map).map(([email, name]) => ({ email, name }))
+  }, [byDay])
+
+  const rows = useMemo(() => byDay.map(d => {
+    const agentsList = agentFilter === "all" ? d.by_agent : d.by_agent.filter((a: any) => a.email === agentFilter)
+    const new_numbers = agentsList.reduce((s: number, a: any) => s + a.new_numbers, 0)
+    const old_numbers = agentsList.reduce((s: number, a: any) => s + a.old_numbers, 0)
+    return { day: d.day, new_numbers, old_numbers, total: new_numbers + old_numbers }
+  }), [byDay, agentFilter])
+
+  const maxTotal = Math.max(1, ...rows.map(r => r.total))
+  const W = 720, H = 220, padL = 32, padB = 28, padT = 12, padR = 12
+  const chartW = W - padL - padR, chartH = H - padT - padB
+  const barSlot = rows.length > 0 ? chartW / rows.length : chartW
+  const barW = Math.min(28, barSlot * 0.5)
+
+  const yFor = (v: number) => padT + chartH - (v / maxTotal) * chartH
+  const linePoints = rows.map((r, i) => `${padL + barSlot * i + barSlot / 2},${yFor(r.total)}`).join(" ")
+
+  if (rows.length === 0) {
+    return <div className="py-8 text-center text-[12px] text-ui-fg-muted">Chưa có dữ liệu theo ngày trong khoảng đã chọn</div>
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-medium text-ui-fg-subtle">Xem:</span>
+        <button type="button" onClick={() => setAgentFilter("all")}
+          className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium",
+            agentFilter === "all" ? "border-ui-border-interactive bg-ui-bg-interactive text-ui-fg-on-inverted" : "border-ui-border-base text-ui-fg-subtle")}>
+          Tất cả
+        </button>
+        {agents.map(a => (
+          <button key={a.email} type="button" onClick={() => setAgentFilter(a.email)}
+            className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium",
+              agentFilter === a.email ? "border-ui-border-interactive bg-ui-bg-interactive text-ui-fg-on-inverted" : "border-ui-border-base text-ui-fg-subtle")}>
+            {a.name}
+          </button>
+        ))}
+        <span className="ml-3 flex items-center gap-1 text-[11px] text-ui-fg-subtle"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Số mới</span>
+        <span className="flex items-center gap-1 text-[11px] text-ui-fg-subtle"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" /> Số cũ</span>
+        <span className="flex items-center gap-1 text-[11px] text-ui-fg-subtle"><span className="inline-block h-0.5 w-3 bg-blue-500" /> Tổng</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxWidth: W }}>
+        {[0, 0.5, 1].map(f => (
+          <line key={f} x1={padL} x2={W - padR} y1={padT + chartH * f} y2={padT + chartH * f} stroke="currentColor" strokeOpacity={0.1} className="text-ui-fg-subtle" />
+        ))}
+        {rows.map((r, i) => {
+          const x = padL + barSlot * i + (barSlot - barW) / 2
+          const newH = (r.new_numbers / maxTotal) * chartH
+          const oldH = (r.old_numbers / maxTotal) * chartH
+          return (
+            <g key={r.day}>
+              <rect x={x} y={yFor(r.new_numbers)} width={barW} height={newH} fill="#10b981" rx={2} />
+              <rect x={x} y={padT + chartH - newH - oldH} width={barW} height={oldH} fill="#fbbf24" rx={2} />
+              <text x={x + barW / 2} y={H - 8} textAnchor="middle" className="fill-current text-ui-fg-subtle" fontSize={10}>
+                {r.day.slice(5)}
+              </text>
+              {r.total > 0 && (
+                <text x={x + barW / 2} y={yFor(r.total) - 4} textAnchor="middle" className="fill-current text-ui-fg-base" fontSize={10} fontWeight={600}>
+                  {r.total}
+                </text>
+              )}
+            </g>
+          )
+        })}
+        <polyline points={linePoints} fill="none" stroke="#3b82f6" strokeWidth={2} />
+        {rows.map((r, i) => (
+          <circle key={r.day} cx={padL + barSlot * i + barSlot / 2} cy={yFor(r.total)} r={2.5} fill="#3b82f6" />
+        ))}
+      </svg>
+    </div>
+  )
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 function CskhGoiKhachPage() {
@@ -667,6 +750,7 @@ function CskhGoiKhachPage() {
   const [view, setView] = useState<"list" | "stats">("list")
   const [stats, setStats] = useState<any[]>([])
   const [compareRows, setCompareRows] = useState<any[]>([])
+  const [compareByDay, setCompareByDay] = useState<any[]>([])
   const [compareUnmapped, setCompareUnmapped] = useState(0)
   const [compareLoading, setCompareLoading] = useState(false)
   const todayStr0 = new Date().toISOString().slice(0, 10)
@@ -729,6 +813,7 @@ function CskhGoiKhachPage() {
       const r = await apiFetch(`/admin/ity-cdr-sync/compare?${params.toString()}`)
       const d = await r.json()
       setCompareRows(d.rows || [])
+      setCompareByDay(d.by_day || [])
       setCompareUnmapped(d.unmapped_extension_calls || 0)
     } finally { setCompareLoading(false) }
   }, [compareFrom, compareTo])
@@ -1142,9 +1227,23 @@ function CskhGoiKhachPage() {
               📞 Đối chiếu cuộc gọi thật (tổng đài) vs task đã xử lý
             </h2>
             <div className="flex items-center gap-1.5">
-              {[
-                ["Hôm nay", 0], ["7 ngày", 6], ["30 ngày", 29],
-              ].map(([label, daysBack]) => (
+              <button type="button"
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10)
+                  setCompareFrom(today); setCompareTo(today)
+                }}
+                className="rounded-full border border-ui-border-base px-2.5 py-1 text-[11px] font-medium text-ui-fg-subtle hover:bg-ui-bg-subtle-hover">
+                Hôm nay
+              </button>
+              <button type="button"
+                onClick={() => {
+                  const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
+                  setCompareFrom(yesterday); setCompareTo(yesterday)
+                }}
+                className="rounded-full border border-ui-border-base px-2.5 py-1 text-[11px] font-medium text-ui-fg-subtle hover:bg-ui-bg-subtle-hover">
+                Hôm qua
+              </button>
+              {[["7 ngày", 6], ["30 ngày", 29]].map(([label, daysBack]) => (
                 <button key={label as string} type="button"
                   onClick={() => {
                     const to = new Date()
@@ -1200,6 +1299,11 @@ function CskhGoiKhachPage() {
               ⚠ {compareUnmapped} cuộc gọi từ extension chưa gán nhân viên (xem trang ITY CDR để gán).
             </div>
           )}
+
+          <h2 className="mt-8 mb-2 text-[13px] font-bold uppercase tracking-wide text-ui-fg-subtle">
+            📈 Theo dõi hằng ngày — số mới vs số cũ
+          </h2>
+          <DailyCompareChart byDay={compareByDay} />
         </div>
       )}
     </div>

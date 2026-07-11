@@ -78,6 +78,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // trong khoảng from-to (không phụ thuộc field called_at/first_called_at — khớp cả dữ liệu cũ).
     // "Số mới": cuộc gọi thật đầu tiên khớp task này rơi đúng ngày task được giao (created_at).
     // "Số cũ": task tồn đọng, cuộc gọi thật đầu tiên khớp xảy ra sau ngày giao.
+    // by_day: gộp theo [ngày gọi thật][email] để vẽ biểu đồ theo dõi hằng ngày.
+    const byDay: Record<string, Record<string, { new_numbers: number; old_numbers: number }>> = {}
     for (const t of tasks as any[]) {
       if (!t.assignee_id) continue
       const digits = (t.customer_phone || "").replace(/\D/g, "").slice(-9)
@@ -89,8 +91,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const firstMatch = matchedCalls.reduce((min: any, c: any) => (!min || new Date(c.calldate) < new Date(min.calldate)) ? c : min, null)
       const createdDay = t.created_at ? new Date(t.created_at).toISOString().slice(0, 10) : null
       const firstCallDay = firstMatch ? new Date(firstMatch.calldate).toISOString().slice(0, 10) : null
-      if (firstCallDay && createdDay && firstCallDay === createdDay) bucket.new_numbers++
+      const isNew = !!(firstCallDay && createdDay && firstCallDay === createdDay)
+      if (isNew) bucket.new_numbers++
       else bucket.old_numbers++
+
+      if (firstCallDay) {
+        if (!byDay[firstCallDay]) byDay[firstCallDay] = {}
+        if (!byDay[firstCallDay][t.assignee_id]) byDay[firstCallDay][t.assignee_id] = { new_numbers: 0, old_numbers: 0 }
+        if (isNew) byDay[firstCallDay][t.assignee_id].new_numbers++
+        else byDay[firstCallDay][t.assignee_id].old_numbers++
+      }
     }
 
     const rows = Object.entries(byEmail)
@@ -102,10 +112,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }))
       .sort((a, b) => b.real_calls - a.real_calls)
 
+    const byDayArr = Object.keys(byDay)
+      .sort()
+      .map(day => ({
+        day,
+        by_agent: Object.entries(byDay[day]).map(([email, s]) => ({
+          email,
+          name: nameByEmail[email] || email,
+          new_numbers: s.new_numbers,
+          old_numbers: s.old_numbers,
+          total: s.new_numbers + s.old_numbers,
+        })),
+      }))
+
     return res.json({
       from: fromDate.toISOString(),
       to: toDate.toISOString(),
       rows,
+      by_day: byDayArr,
       unmapped_extension_calls: unmappedExtensionCalls,
     })
   } catch (err: any) {
