@@ -67,6 +67,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (q.product && q.product !== "all") { params.push(`${q.product}%`); where += ` AND product ILIKE $${params.length}` }
     if (q.from) { params.push(q.from); where += ` AND post_date >= $${params.length}` }
     if (q.to)   { params.push(q.to);   where += ` AND post_date <= $${params.length}` }
+    // created_from/created_to lọc theo ngày tạo/tải lên (created_at) — khác post_date
+    // (ngày đăng FB, thường NULL với video chưa đăng). "Tuần trước ai tải video lên"
+    // cần lọc theo created_at, không phải post_date.
+    if (q.created_from) { params.push(q.created_from); where += ` AND created_at >= $${params.length}::date` }
+    if (q.created_to)   { params.push(q.created_to);   where += ` AND created_at < ($${params.length}::date + interval '1 day')` }
     if (q.mine === "true" && auth.email) { params.push(auth.email); where += ` AND created_by = $${params.length}` }
     if (q.q) {
       params.push(`%${q.q}%`)
