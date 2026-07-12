@@ -65,25 +65,93 @@ function fmtSnippetTime(d: string) {
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
+
+// Markdown nhẹ cho tin nhắn (chủ yếu phục vụ AI agent trả lời có cấu trúc) — luôn
+// chạy SAU escapeHtml trên từng dòng/segment nên input không thể chứa HTML thật,
+// chỉ inject các tag cố định (strong/em/table/ul/ol) do chính hàm này tạo ra.
+// Không dùng thư viện ngoài — chỉ hỗ trợ **bold**, *italic*, bullet "- "/"* ",
+// numbered "1. ", và bảng GFM cơ bản (| a | b |).
+function renderMarkdownLite(escapedText: string): string {
+  const lines = escapedText.split("\n")
+  const htmlBlocks: string[] = []
+  let i = 0
+
+  const inline = (line: string) =>
+    line
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)/g, "<em>$1</em>")
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Bảng markdown: dòng header | a | b |, dòng phân cách |---|---|, rồi các dòng dữ liệu
+    if (/^\s*\|.+\|\s*$/.test(line) && /^\s*\|[\s|:-]+\|\s*$/.test(lines[i + 1] || "")) {
+      const parseRow = (row: string) => row.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim())
+      const header = parseRow(line)
+      const bodyRows: string[][] = []
+      let j = i + 2
+      while (j < lines.length && /^\s*\|.+\|\s*$/.test(lines[j])) {
+        bodyRows.push(parseRow(lines[j]))
+        j += 1
+      }
+      const thead = `<tr>${header.map(c => `<th class="mkt-md-th">${inline(c)}</th>`).join("")}</tr>`
+      const tbody = bodyRows.map(row => `<tr>${row.map(c => `<td class="mkt-md-td">${inline(c)}</td>`).join("")}</tr>`).join("")
+      htmlBlocks.push(`<table class="mkt-md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`)
+      i = j
+      continue
+    }
+
+    // Danh sách gạch đầu dòng hoặc đánh số liên tiếp
+    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
+      const ordered = /^\s*\d+\.\s+/.test(line)
+      const items: string[] = []
+      let j = i
+      const itemRe = ordered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[-*]\s+(.*)$/
+      while (j < lines.length && itemRe.test(lines[j])) {
+        items.push(inline(lines[j].replace(itemRe, "$1")))
+        j += 1
+      }
+      const tag = ordered ? "ol" : "ul"
+      htmlBlocks.push(`<${tag} class="mkt-md-list">${items.map(it => `<li>${it}</li>`).join("")}</${tag}>`)
+      i = j
+      continue
+    }
+
+    htmlBlocks.push(line.trim() ? `<div>${inline(line)}</div>` : "<br/>")
+    i += 1
+  }
+
+  return htmlBlocks.join("")
+}
+const AI_AGENT_AUTHOR_IDS = new Set(["ai", "ai-agent@phanviet.vn"])
+
+// markdown = true chỉ bật cho tin nhắn AI agent (author_id "ai" hoặc "ai-agent@phanviet.vn").
+// Tin nhắn người dùng giữ nguyên hành vi cũ — tránh rủi ro một user gõ "*" hay "|" trong
+// câu bình thường bị parse nhầm thành định dạng.
 function renderMentions(
   text: string,
   mentions: string[] = [],
   users: MktUser[] = [],
-  className = "font-semibold text-blue-600 dark:text-blue-400"
+  className = "font-semibold text-blue-600 dark:text-blue-400",
+  markdown = false
 ): string {
-  if (mentions.length > 0) {
-    const nameByEmail = new Map(users.map(user => [user.email, user.name]))
-    const labels = [
-      ...mentions.map(email => nameByEmail.get(email) || email.split("@")[0]),
-      ...(hasMentionEntity(text, "all") ? ["all", "ALL"] : []),
-    ]
-      .filter(Boolean)
-      .sort((a, b) => b.length - a.length)
+  const html = (() => {
+    if (mentions.length > 0) {
+      const nameByEmail = new Map(users.map(user => [user.email, user.name]))
+      const labels = [
+        ...mentions.map(email => nameByEmail.get(email) || email.split("@")[0]),
+        ...(hasMentionEntity(text, "all") ? ["all", "ALL"] : []),
+      ]
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length)
 
-    return renderMentionEntities(text, labels, className)
-  }
+      return renderMentionEntities(text, labels, className)
+    }
 
-  return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="${className}">${m}</span>`)
+    return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="${className}">${m}</span>`)
+  })()
+
+  return markdown ? renderMarkdownLite(html) : html
 }
 
 function normalizeMentionEntityText(value: string): string {
@@ -216,6 +284,17 @@ function PageStyles() {
       @media (prefers-reduced-motion: reduce) {
         .chat-anim-msgin, .chat-anim-pop, .chat-anim-fadein, .chat-anim-fadeup, .chat-anim-panel, .chat-anim-highlight, .chat-typing-dot { animation: none }
       }
+      .mkt-md strong { font-weight: 700 }
+      .mkt-md em { font-style: italic }
+      .mkt-md-list { margin: 4px 0; padding-left: 20px }
+      .mkt-md-list li { margin: 2px 0 }
+      .mkt-md-table { margin: 6px 0; border-collapse: collapse; font-size: 12px; width: 100%; overflow-x: auto; display: block }
+      .mkt-md-table thead { display: table; width: 100%; table-layout: fixed }
+      .mkt-md-table tbody { display: table; width: 100%; table-layout: fixed }
+      .mkt-md-th, .mkt-md-td { border: 1px solid rgb(0 0 0 / 0.1); padding: 4px 8px; text-align: left }
+      .dark .mkt-md-th, .dark .mkt-md-td { border-color: rgb(255 255 255 / 0.15) }
+      .mkt-md-th { font-weight: 700; background: rgb(0 0 0 / 0.04) }
+      .dark .mkt-md-th { background: rgb(255 255 255 / 0.06) }
     `}</style>
   )
 }
@@ -274,7 +353,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
 }) {
   const isNote = msg.msg_type === "internal_note"
   const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
-  const isAI = msg.msg_type === "ai_response"
+  const isAI = msg.msg_type === "ai_response" || AI_AGENT_AUTHOR_IDS.has(msg.author_id)
   const isImage = msg.msg_type === "image"
   const isFile = msg.msg_type === "file"
 
@@ -314,10 +393,9 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
       <div className="chat-anim-msgin my-2 flex gap-2">
         <span className="grid size-7 shrink-0 place-items-center rounded-full bg-violet-500 text-xs text-white">🤖</span>
         <div className="min-w-0">
-          <div className="mb-0.5 text-[11px] text-ui-fg-muted">AI · {fmtTime(msg.created_at)}</div>
-          <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 md:max-w-[400px] bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10">
-            {msg.content}
-          </div>
+          <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name || "AI"} · {fmtTime(msg.created_at)}</div>
+          <div className="mkt-md max-w-[85%] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 md:max-w-[400px] bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10"
+            dangerouslySetInnerHTML={{ __html: renderMentions(msg.content, msg.mentions, users, "font-semibold text-blue-600 dark:text-blue-400", true) }} />
           <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} users={users} />
         </div>
       </div>
@@ -1088,7 +1166,7 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
           <span className="font-semibold text-ui-fg-base">{m.author_name}</span>
           <span>{fmtTime(m.created_at)}</span>
         </div>
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users) }} />
+        <div className="mkt-md whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users, undefined, AI_AGENT_AUTHOR_IDS.has(m.author_id)) }} />
       </div>
     </div>
   )
