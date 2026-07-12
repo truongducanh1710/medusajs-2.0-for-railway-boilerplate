@@ -243,7 +243,7 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine, users: m
   if (entries.length === 0) return null
   const nameByEmail = new Map((mktUsers || []).map(u => [u.email, u.name]))
   return (
-    <div className={cn("-mt-2.5 mb-0.5 flex flex-wrap gap-1", isMine ? "justify-end pr-1" : "pl-1")}>
+    <div className={cn("mt-0.5 mb-0.5 flex flex-wrap gap-1", isMine ? "justify-end pr-1" : "pl-1")}>
       {entries.map(([emoji, users]) => {
         const mine = users.includes(currentEmail)
         return (
