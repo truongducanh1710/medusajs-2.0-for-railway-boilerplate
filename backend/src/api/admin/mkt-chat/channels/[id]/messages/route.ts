@@ -233,7 +233,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         source: rootReplyId ? "thread" : "message",
       }).catch(console.error)
     }
-    if (isAiCommand && question) {
+    // Nhánh @ai cũ (Claude Haiku single-shot, không tool) đã bị thay bằng ai-agent
+    // service riêng (Railway, tool-calling + permission thật) — service đó tự poll
+    // mention/@ai qua /admin/mkt-chat/notifications và tự trả lời. Giữ nguyên
+    // ANTHROPIC_AI_LEGACY_ENABLE="1" làm lối thoát khẩn cấp nếu ai-agent service sập.
+    if (isAiCommand && question && process.env.ANTHROPIC_AI_LEGACY_ENABLE === "1") {
       if (process.env.ANTHROPIC_API_KEY) {
         handleAiResponse(svc, id, question).catch(console.error)
       } else {
