@@ -178,6 +178,11 @@ export default defineMiddlewares({
     // Quick Reply templates: handler tự check manage cho write, perm view đủ để vào route
     { matcher: "/admin/mkt-chat/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
 
+    // permissions/check: guard nằm trong chính route handler (chỉ cho phép actor
+    // ai-agent hoặc actor có page.mkt-tasks.manage) — không dùng requirePerm chung vì
+    // cấp page.mkt-tasks.manage cho ai-agent sẽ kéo theo cả quyền giao việc/đánh giá
+    // task thật, quá rộng chỉ để đọc quyền người khác.
+
     // Marketing Hub — nguyên liệu video (thay Google Sheet)
     { matcher: "/admin/permissions/mkt-users", method: ["GET"], middlewares: [requirePerm("page.marketing-video.view")] },
     { matcher: "/admin/mkt-pages*", method: ["GET"], middlewares: [requirePerm("page.marketing-video.view")] },

@@ -54,7 +54,13 @@ export const ROLE_PRESETS: Record<string, string[]> = {
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage", "page.mkt-chat.view"],
-  // Tài khoản AI Agent — chỉ quyền đọc. Mọi hành động ghi phải đi qua approval flow riêng (chưa xây),
-  // không cấp .edit/.manage/.post/.run cho preset này dù mở rộng phạm vi đọc sau này.
-  "ai-agent": ["page.bao-cao.view", "page.don-hang.view", "page.mkt-chat.view", "page.mkt-tasks.view", "page.marketing-video.view", "page.fb-content.view"],
+  // Tài khoản AI Agent. Mặc định chỉ đọc. Các quyền .post/.edit/.manage chỉ được thêm
+  // vào đây SAU KHI đã có write tool tương ứng đi qua approval flow (agent/approval-flow.mjs
+  // trong phanviet-agent-mcp) — permission ở đây không thay thế approval, cả hai đều
+  // phải pass: policy.mjs's assertToolAllowed chặn write tool tuyệt đối nếu thiếu
+  // approvalId, dù actor có đủ quyền hay không.
+  // page.fb-content.post: cho phép schedule_fb_post SAU KHI đã được người có quyền
+  // duyệt qua Chat MKT (B8) — không cấp thêm quyền write nào khác cho tới khi tool đó
+  // cũng có approval flow.
+  "ai-agent": ["page.bao-cao.view", "page.don-hang.view", "page.mkt-chat.view", "page.mkt-tasks.view", "page.marketing-video.view", "page.fb-content.view", "page.fb-content.post"],
 }
