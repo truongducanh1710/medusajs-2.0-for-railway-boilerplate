@@ -84,6 +84,7 @@ const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "sale", label: "Sale (đơn hàng, chat)" },
   { value: "cskh", label: "CSKH (vận đơn, chat)" },
   { value: "ketoan", label: "Kế toán (giá vốn)" },
+  { value: "ai-agent", label: "AI Agent (đọc báo cáo/KPI, đăng FB cần duyệt — không sửa/xóa dữ liệu)" },
 ]
 
 const UserPermissionsWidget = ({ data }: { data: any }) => {

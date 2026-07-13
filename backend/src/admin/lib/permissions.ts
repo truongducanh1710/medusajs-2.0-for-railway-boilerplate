@@ -62,5 +62,11 @@ export const ROLE_PRESETS: Record<string, string[]> = {
   // page.fb-content.post: cho phép schedule_fb_post SAU KHI đã được người có quyền
   // duyệt qua Chat MKT (B8) — không cấp thêm quyền write nào khác cho tới khi tool đó
   // cũng có approval flow.
-  "ai-agent": ["page.bao-cao.view", "page.don-hang.view", "page.mkt-chat.view", "page.mkt-tasks.view", "page.marketing-video.view", "page.fb-content.view", "page.fb-content.post"],
+  // page.cskh.manage, page.mkt-tasks.manage, page.ity-cdr.view: quyền ĐỌC KPI/báo cáo
+  // đội (team-stats, suspicious, mkt-tasks/stats, ity-cdr report/compare) — các route
+  // này dùng chung permission "manage"/"view" cho cả xem lẫn sửa vì lịch sử thiết kế,
+  // nhưng tool tương ứng trong tools-registry.mjs CHỈ gọi GET, không có tool ghi nào
+  // dùng các quyền này. Không tự suy ra "ai-agent được sửa CSKH/task" — quyền ghi thật
+  // (assign/rate task, sửa care) không có tool nào expose cho model gọi.
+  "ai-agent": ["page.bao-cao.view", "page.don-hang.view", "page.mkt-chat.view", "page.mkt-tasks.view", "page.marketing-video.view", "page.fb-content.view", "page.fb-content.post", "page.cskh.manage", "page.mkt-tasks.manage", "page.ity-cdr.view"],
 }
