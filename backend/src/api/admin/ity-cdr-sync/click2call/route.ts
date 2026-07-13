@@ -11,8 +11,9 @@ function normalizeVnPhone(raw: string): string {
 /**
  * POST /admin/ity-cdr-sync/click2call
  * Bấm gọi từ web: tra extension của user đang đăng nhập qua ItyExtensionMap,
- * gọi API click2call.php của ITY để đổ chuông máy nhánh trước rồi tổng đài tự nối
- * sang khách khi sale nhấc máy. Không nhận extension từ client để tránh gọi nhầm máy người khác.
+ * gọi API https://{ITY_PBX_DOMAIN}/wsapi/click2call.php (?secret&domain&extension&phone)
+ * để đổ chuông máy nhánh trước rồi tổng đài tự nối sang khách khi sale nhấc máy.
+ * Không nhận extension từ client để tránh gọi nhầm máy người khác.
  * Body: { phone: string, userfield?: string }
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -39,8 +40,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const phoneDigits = normalizeVnPhone(phone)
-    const url = new URL(`https://${ITY_PBX_DOMAIN}/wsapi/${ITY_CUSTOMER_ID}/click2call.php`)
+    const url = new URL(`https://${ITY_PBX_DOMAIN}/wsapi/click2call.php`)
     url.searchParams.set("secret", ITY_CLICK2CALL_SECRET)
+    url.searchParams.set("domain", ITY_CUSTOMER_ID)
     url.searchParams.set("extension", extension)
     url.searchParams.set("phone", phoneDigits)
     if (userfield) url.searchParams.set("userfield", userfield)
