@@ -28,6 +28,24 @@ interface GgAdsSource {
   token: string
 }
 
+// Chạy các task với giới hạn concurrency để tránh nghẽn khi nhiều marketer cùng sync
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let idx = 0
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++
+      results[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 export default async function mktCostGgSync(container: MedusaContainer) {
   const logger = container.resolve("logger") as any
   const cskhService = container.resolve("cskhAnalysisModule") as any
@@ -55,8 +73,7 @@ export default async function mktCostGgSync(container: MedusaContainer) {
     return
   }
 
-  let grandSynced = 0
-  for (const src of sources) {
+  const perSourceSynced = await mapWithConcurrency(sources, 4, async (src) => {
     try {
       const url = `${src.url}?token=${encodeURIComponent(src.token)}`
       const res = await fetch(url)
@@ -64,7 +81,7 @@ export default async function mktCostGgSync(container: MedusaContainer) {
 
       if (!json.ok) {
         logger?.error?.(`[MktCostGg] ${src.mktName} API error: ${json.error ?? "unknown"}`)
-        continue
+        return 0
       }
 
       const rows: GgAdsRow[] = json.data ?? []
@@ -99,17 +116,20 @@ export default async function mktCostGgSync(container: MedusaContainer) {
       }
 
       logger?.info?.(`[MktCostGg] ${src.mktName} → synced=${synced}/${rows.length}`)
-      grandSynced += synced
+      return synced
     } catch (err: any) {
       logger?.error?.(`[MktCostGg] ${src.mktName} Error: ${err.message}`)
+      return 0
     }
-  }
+  })
+
+  const grandSynced = perSourceSynced.reduce((sum, n) => sum + n, 0)
 
   logger?.info?.(`[MktCostGg] Xong — ${sources.length} nguồn, tổng synced=${grandSynced}`)
 }
 
 export const config = {
   name: "mkt-cost-gg-sync",
-  // 01:00 ICT (GMT+7) = 18:00 UTC ngày hôm trước
-  schedule: "0 18 * * *",
+  // 01:20 ICT (GMT+7) = 18:20 UTC ngày hôm trước — dịch trễ hơn daily-sync để tránh chồng job
+  schedule: "20 18 * * *",
 }
