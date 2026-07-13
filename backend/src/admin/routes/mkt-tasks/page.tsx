@@ -1115,7 +1115,7 @@ function TaskDrawer({
                     </select>
                   </div>
                   <div>
-                    <label className={LABEL_CLS}>Deadline</label>
+                    <label className={LABEL_CLS}>Deadline{editForm.type === "purchasing" && <span className="ml-1 font-normal normal-case text-ui-fg-muted">(mua hàng theo dõi qua giai đoạn, có thể để trống)</span>}</label>
                     <div className="flex gap-1.5">
                       <input type="date" className={cn(INPUT_CLS, "flex-1")} value={editForm.deadline} onChange={e => setEditForm(f => ({ ...f, deadline: e.target.value }))} />
                       <input type="time" className={cn(INPUT_CLS, "w-[100px]")} value={editForm.deadlineTime} onChange={e => setEditForm(f => ({ ...f, deadlineTime: e.target.value }))} />
@@ -1554,7 +1554,7 @@ function CreateTaskModal({ onClose, onCreated, users, defaults, isManager, curre
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={LABEL_CLS}>Loại task <span className="text-rose-500">*</span></label>
-              <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+              <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, deadline: e.target.value === "purchasing" ? "" : f.deadline }))}>
                 <option value="ads_camp">📢 Chạy Ads / Camp</option>
                 <option value="content_post">✍️ Nội dung / Bài đăng</option>
                 <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
@@ -1572,7 +1572,19 @@ function CreateTaskModal({ onClose, onCreated, users, defaults, isManager, curre
               </div>
             )}
           </div>
-          {!isRecurring && (
+          {/* Mua hàng theo dõi qua giai đoạn quy trình (purchase_stage), không cần deadline cố định */}
+          {form.type === "purchasing" && !isRecurring && (
+            <>
+              <div className="rounded-lg bg-cyan-50/60 px-3 py-2 text-[11px] text-cyan-700 dark:bg-cyan-500/5 dark:text-cyan-300">
+                🛒 Việc mua hàng theo dõi qua giai đoạn quy trình (chọn nhà cung cấp → đặt hàng → ... → đã nhận hàng), không cần đặt deadline cố định.
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Ngày dự định làm</label>
+                <input type="date" className={INPUT_CLS} value={form.planned_for} onChange={e => setForm(f => ({ ...f, planned_for: e.target.value }))} />
+              </div>
+            </>
+          )}
+          {form.type !== "purchasing" && !isRecurring && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={LABEL_CLS}>Deadline</label>
