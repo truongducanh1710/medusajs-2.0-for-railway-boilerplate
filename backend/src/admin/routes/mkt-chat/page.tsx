@@ -96,7 +96,7 @@ function renderMarkdownLite(escapedText: string): string {
       }
       const thead = `<tr>${header.map(c => `<th class="mkt-md-th">${inline(c)}</th>`).join("")}</tr>`
       const tbody = bodyRows.map(row => `<tr>${row.map(c => `<td class="mkt-md-td">${inline(c)}</td>`).join("")}</tr>`).join("")
-      htmlBlocks.push(`<table class="mkt-md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`)
+      htmlBlocks.push(`<div class="mkt-md-table-wrap"><table class="mkt-md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`)
       i = j
       continue
     }
@@ -288,9 +288,12 @@ function PageStyles() {
       .mkt-md em { font-style: italic }
       .mkt-md-list { margin: 4px 0; padding-left: 20px }
       .mkt-md-list li { margin: 2px 0 }
-      .mkt-md-table { margin: 6px 0; border-collapse: collapse; font-size: 12px; width: 100%; overflow-x: auto; display: block }
-      .mkt-md-table thead { display: table; width: 100%; table-layout: fixed }
-      .mkt-md-table tbody { display: table; width: 100%; table-layout: fixed }
+      /* Bảng nhiều cột (7+) trong bong bóng chat hẹp (max-w 400px) không đủ chỗ chia
+         đều — table-layout: fixed trước đây ép mọi cột bằng nhau, làm số tiền dài vỡ
+         dòng dính chữ. Giờ: table-layout: auto (cột tự co theo nội dung dài nhất),
+         wrapper riêng cuộn ngang khi bảng rộng hơn khung, KHÔNG ép table full width. */
+      .mkt-md-table-wrap { margin: 6px 0; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch }
+      .mkt-md-table { border-collapse: collapse; font-size: 12px; table-layout: auto; white-space: nowrap }
       .mkt-md-th, .mkt-md-td { border: 1px solid rgb(0 0 0 / 0.1); padding: 4px 8px; text-align: left }
       .dark .mkt-md-th, .dark .mkt-md-td { border-color: rgb(255 255 255 / 0.15) }
       .mkt-md-th { font-weight: 700; background: rgb(0 0 0 / 0.04) }
