@@ -155,8 +155,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         params.push(term); p++
       }
       if (product_q && product_q.trim()) {
+        // Cột "items" (JSON) chứa trực tiếp [{name, qty, price}] — KHÔNG phải raw->'items'.
+        // "raw" là JSON riêng chứa toàn bộ response Pancake gốc (xem models/pancake-order.ts).
         const term = `%${product_q.trim()}%`
-        conditions.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(raw->'items') item WHERE item->>'name' ILIKE $${p++})`)
+        conditions.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(items) item WHERE item->>'name' ILIKE $${p++})`)
         params.push(term)
       }
       return { conditions, params, nextIndex: p }
