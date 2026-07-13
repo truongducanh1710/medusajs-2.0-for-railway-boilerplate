@@ -46,6 +46,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       min_total,
       max_total,
       q,
+      product_q,
       sort_by,
       sort_dir,
       offset = "0",
@@ -125,37 +126,70 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       "created_at",
     ]
 
-    const [orders, [, count], aggRows] = await Promise.all([
-      syncService.listPancakeOrders(filters, { take, skip, select: fields, order }),
-      syncService.listAndCountPancakeOrders(filters, { take, skip, select: ["id"] }),
+    // product_q: tìm theo tên sản phẩm trong items (JSONB array) — không biểu diễn được
+    // qua ORM filter object của syncService, nên khi có product_q chuyển hẳn sang raw
+    // SQL cho cả 3 truy vấn (list/count/aggregate) để dùng chung 1 bộ điều kiện, tránh
+    // lặp lại logic filter 2 lần theo 2 cách khác nhau (đây chính là kiểu lệch logic đã
+    // gây bug ở product-profit — endpoint report riêng tự viết lại điều kiện và sai field).
+    function buildRawConditions(startParamIndex: number) {
+      const conditions: string[] = []
+      const params: any[] = []
+      let p = startParamIndex
+      if (from)   { conditions.push(`pancake_created_at >= $${p++}`); params.push(new Date(from)) }
+      if (to)     { conditions.push(`pancake_created_at <= $${p++}`); params.push(new Date(to)) }
+      if (source && source !== "all") { conditions.push(`source ${source_exclude === "1" ? "!=" : "="} $${p++}`); params.push(source) }
+      if (sale && sale !== "all")     { conditions.push(`sale_name = $${p++}`); params.push(sale) }
+      if (marketer && marketer !== "all") { conditions.push(`marketer_name = $${p++}`); params.push(marketer) }
+      if (care && care !== "all")     { conditions.push(`care_name = $${p++}`); params.push(care) }
+      if (province && province !== "all") { conditions.push(`province = $${p++}`); params.push(province) }
+      if (min_total) { conditions.push(`total >= $${p++}`); params.push(Number(min_total)) }
+      if (max_total) { conditions.push(`total <= $${p++}`); params.push(Number(max_total)) }
+      if (status !== undefined && status !== "" && status !== "all") {
+        const parts = status.split(",").map((s) => Number(s.trim())).filter((n) => !isNaN(n))
+        if (parts.length === 1) { conditions.push(`status = $${p++}`); params.push(parts[0]) }
+        else if (parts.length > 1) { conditions.push(`status = ANY($${p++}::int[])`); params.push(parts) }
+      }
+      if (q && q.trim()) {
+        const term = `%${q.trim()}%`
+        conditions.push(`(customer_phone ILIKE $${p} OR customer_name ILIKE $${p} OR id ILIKE $${p} OR tracking_code ILIKE $${p})`)
+        params.push(term); p++
+      }
+      if (product_q && product_q.trim()) {
+        const term = `%${product_q.trim()}%`
+        conditions.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(raw->'items') item WHERE item->>'name' ILIKE $${p++})`)
+        params.push(term)
+      }
+      return { conditions, params, nextIndex: p }
+    }
+
+    const usingProductFilter = !!(product_q && product_q.trim())
+
+    const [orders, count, aggRows] = await Promise.all([
+      usingProductFilter
+        ? (async () => {
+            const { conditions, params } = buildRawConditions(1)
+            const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+            return sql(
+              `SELECT ${fields.join(", ")} FROM pancake_order ${where} ORDER BY ${sortField} ${sortDir} LIMIT ${take} OFFSET ${skip}`,
+              params
+            )
+          })()
+        : syncService.listPancakeOrders(filters, { take, skip, select: fields, order }),
+      usingProductFilter
+        ? (async () => {
+            const { conditions, params } = buildRawConditions(1)
+            const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+            const rows = await sql(`SELECT COUNT(*)::int AS count FROM pancake_order ${where}`, params)
+            return rows[0]?.count ?? 0
+          })()
+        : syncService.listAndCountPancakeOrders(filters, { take, skip, select: ["id"] }).then(([, c]: any) => c),
       (async () => {
         try {
-          const conditions: string[] = []
-          const aggParams: any[] = []
-          let p = 1
-          if (from)   { conditions.push(`pancake_created_at >= $${p++}`); aggParams.push(new Date(from)) }
-          if (to)     { conditions.push(`pancake_created_at <= $${p++}`); aggParams.push(new Date(to)) }
-          if (source && source !== "all") { conditions.push(`source ${source_exclude === "1" ? "!=" : "="} $${p++}`); aggParams.push(source) }
-          if (sale && sale !== "all")     { conditions.push(`sale_name = $${p++}`); aggParams.push(sale) }
-          if (marketer && marketer !== "all") { conditions.push(`marketer_name = $${p++}`); aggParams.push(marketer) }
-          if (care && care !== "all")     { conditions.push(`care_name = $${p++}`); aggParams.push(care) }
-          if (province && province !== "all") { conditions.push(`province = $${p++}`); aggParams.push(province) }
-          if (min_total) { conditions.push(`total >= $${p++}`); aggParams.push(Number(min_total)) }
-          if (max_total) { conditions.push(`total <= $${p++}`); aggParams.push(Number(max_total)) }
-          if (status !== undefined && status !== "" && status !== "all") {
-            const parts = status.split(",").map((s) => Number(s.trim())).filter((n) => !isNaN(n))
-            if (parts.length === 1) { conditions.push(`status = $${p++}`); aggParams.push(parts[0]) }
-            else if (parts.length > 1) { conditions.push(`status = ANY($${p++}::int[])`); aggParams.push(parts) }
-          }
-          if (q && q.trim()) {
-            const term = `%${q.trim()}%`
-            conditions.push(`(customer_phone ILIKE $${p} OR customer_name ILIKE $${p} OR id ILIKE $${p} OR tracking_code ILIKE $${p})`)
-            aggParams.push(term); p++
-          }
+          const { conditions, params } = buildRawConditions(1)
           const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
           const rows = await sql(
             `SELECT SUM(total)::bigint AS total_sum, SUM(cod_amount)::bigint AS cod_sum FROM pancake_order ${where}`,
-            aggParams
+            params
           )
           return rows[0] ?? null
         } catch { return null }
