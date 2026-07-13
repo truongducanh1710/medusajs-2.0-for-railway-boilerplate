@@ -914,17 +914,24 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
           <div><label className={LABEL_CLS}>Tiêu đề *</label>
             <input className={INPUT_CLS} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Tiêu đề task..." autoFocus /></div>
           <div><label className={LABEL_CLS}>Loại</label>
-            <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+            <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, deadline: e.target.value === "purchasing" ? "" : f.deadline }))}>
               <option value="ads_camp">Chạy Ads / Camp</option>
               <option value="content_post">Nội dung / Bài FB</option>
+              <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
             </select></div>
           <div><label className={LABEL_CLS}>Giao cho *</label>
             <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
               <option value="">-- Chọn --</option>
               {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
             </select></div>
-          <div><label className={LABEL_CLS}>Deadline</label>
-            <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
+          {form.type === "purchasing" ? (
+            <div className="rounded-lg bg-cyan-50/60 px-2.5 py-2 text-[11px] text-cyan-700 dark:bg-cyan-500/5 dark:text-cyan-300">
+              🛒 Việc mua hàng theo dõi qua giai đoạn quy trình, không cần deadline cố định.
+            </div>
+          ) : (
+            <div><label className={LABEL_CLS}>Deadline</label>
+              <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
+          )}
         </div>
         {err && <div className="mt-2 text-xs text-rose-500">{err}</div>}
         <div className="mt-4 flex justify-end gap-2">
