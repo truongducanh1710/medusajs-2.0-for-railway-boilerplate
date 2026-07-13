@@ -471,16 +471,19 @@ function OrderCard({ order }: { order: SourceOrder }) {
   )
 }
 
-function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommentAdded, onToast }: {
+function DetailDrawer({ task, users, canRate, currentEmail, onClose, onPatch, onRate, onCommentAdded, onToast }: {
   task: Task
   users: MktUser[]
   canRate: boolean
+  currentEmail: string
   onClose: () => void
   onPatch: (fields: Record<string, any>) => void
   onRate: (rating: number) => void
   onCommentAdded: (comment: Comment) => void
   onToast: (msg: string, type: "success" | "error") => void
 }) {
+  const isOwnTask = currentEmail && task.assignee_id &&
+    currentEmail.trim().toLowerCase() === task.assignee_id.trim().toLowerCase()
   const [order, setOrder] = useState<SourceOrder | null>(null)
   const [loadingOrder, setLoadingOrder] = useState(false)
   const [noteDraft, setNoteDraft] = useState("")
@@ -557,7 +560,8 @@ function DetailDrawer({ task, users, canRate, onClose, onPatch, onRate, onCommen
             <div className="flex items-center gap-2">
               <span className="text-ui-fg-subtle">SĐT:</span>
               <span className="font-mono">{task.customer_phone}</span>
-              <button onClick={callCustomer} disabled={calling || !task.customer_phone}
+              <button onClick={callCustomer} disabled={calling || !task.customer_phone || !isOwnTask}
+                title={!isOwnTask ? `Chỉ ${task.assignee_name} (người phụ trách) mới gọi được việc này` : undefined}
                 className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-blue-700 disabled:opacity-50">
                 {calling ? "Đang gọi..." : "📞 Gọi"}
               </button>
@@ -986,7 +990,7 @@ function CskhGoiKhachPage() {
           onCreated={loadTasks} onToast={onToast} />
       )}
       {selectedTask && (
-        <DetailDrawer task={selectedTask} users={users} canRate={isManager} onToast={onToast}
+        <DetailDrawer task={selectedTask} users={users} canRate={isManager} currentEmail={email} onToast={onToast}
           onClose={() => setSelectedTask(null)}
           onPatch={fields => patchTask(selectedTask.id, fields)}
           onRate={rating => rateTask(selectedTask.id, rating)}
