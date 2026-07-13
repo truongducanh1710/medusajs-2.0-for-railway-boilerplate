@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { resolveUserPerms } from "../../../middlewares"
 
 /** GET /admin/mkt-tasks/cskh-users
  * Danh sách user có quyền page.mkt-tasks.view (bao gồm role cskh + marketing + manager)
@@ -20,7 +21,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const users = allUsers
     .filter(u => {
       if (u.email === superEmail) return true
-      const perms: string[] = Array.isArray((u.metadata as any)?.permissions) ? (u.metadata as any).permissions : []
+      const perms = resolveUserPerms(u.metadata)
       return perms.includes(perm)
     })
     .map(u => ({

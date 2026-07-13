@@ -2,6 +2,7 @@ import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { Pool } from "pg"
 import { fetchAllPageTokens } from "../../../lib/fb-graph"
+import { resolveUserPerms } from "../../middlewares"
 
 let _pool: Pool | null = null
 export function getPool(): Pool {
@@ -421,7 +422,7 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   const userModule = req.scope.resolve(Modules.USER)
   const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions) ? (user.metadata as any).permissions : []
+  const perms = resolveUserPerms(user.metadata)
   const isAdmin = isSuper || perms.includes("users.manage")
   const raw = (user.metadata as any)?.fb_page_ids
   const fbPageIds = isAdmin ? null : (Array.isArray(raw) ? raw.map(String) : [])

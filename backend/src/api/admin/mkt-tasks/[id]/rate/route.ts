@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
+import { resolveUserPerms } from "../../../../middlewares"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -13,8 +14,7 @@ async function isManager(req: MedusaRequest): Promise<boolean> {
   const userModule = req.scope.resolve(Modules.USER)
   const user = await userModule.retrieveUser(uid, { select: ["email", "metadata"] })
   if (user.email === superEmail) return true
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-    ? (user.metadata as any).permissions : []
+  const perms = resolveUserPerms(user.metadata)
   return perms.includes("page.mkt-tasks.manage")
 }
 

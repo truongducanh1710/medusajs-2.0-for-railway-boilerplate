@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { Pool } from "pg"
 import { notifyTelegramByEmail } from "../../../../lib/notify"
+import { resolveUserPerms } from "../../../middlewares"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -38,8 +39,7 @@ async function isManager(req: MedusaRequest): Promise<boolean> {
   const userModule = req.scope.resolve(Modules.USER)
   const user = await userModule.retrieveUser(uid, { select: ["email", "metadata"] })
   if (user.email === superEmail) return true
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-    ? (user.metadata as any).permissions : []
+  const perms = resolveUserPerms(user.metadata)
   return perms.includes("page.mkt-tasks.manage")
 }
 
@@ -49,7 +49,7 @@ async function getManagerEmails(req: MedusaRequest): Promise<string[]> {
   const allUsers = await userModule.listUsers({}, { select: ["email", "metadata"] })
   const managers = allUsers.filter((u: any) => {
     if (u.email === superEmail) return true
-    const perms: string[] = Array.isArray(u.metadata?.permissions) ? u.metadata.permissions : []
+    const perms = resolveUserPerms(u.metadata)
     return perms.includes("page.mkt-tasks.manage")
   })
   return managers.map((u: any) => u.email).filter(Boolean)

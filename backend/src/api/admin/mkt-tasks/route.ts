@@ -8,6 +8,7 @@ import {
   spawnInstanceForPeriod,
 } from "../../../modules/mkt-task/recurring-helpers"
 import { notifyTelegramByEmail } from "../../../lib/notify"
+import { resolveUserPerms } from "../../middlewares"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -18,6 +19,12 @@ function normalizeEmail(value: any): string {
   return typeof value === "string" ? value.trim().toLowerCase() : ""
 }
 
+// Trước đây đọc thẳng metadata.permissions (explicit-only) — bỏ sót quyền cấp qua
+// role preset (metadata.role), khiến user chỉ có role (không có permissions thủ công
+// trùng lặp) bị coi là không phải manager dù preset của họ có page.mkt-tasks.manage.
+// resolveUserPerms() union cả role preset + explicit, đúng cách mọi route khác qua
+// requirePerm() đã dùng — phát hiện khi ai-agent (role="ai-agent", permissions=[])
+// không thấy được task nào dù preset có page.mkt-tasks.manage.
 async function isManager(req: MedusaRequest): Promise<boolean> {
   const uid = actorId(req)
   if (!uid) return false
@@ -25,8 +32,7 @@ async function isManager(req: MedusaRequest): Promise<boolean> {
   const userModule = req.scope.resolve(Modules.USER)
   const user = await userModule.retrieveUser(uid, { select: ["email", "metadata"] })
   if (user.email === superEmail) return true
-  const perms: string[] = Array.isArray((user.metadata as any)?.permissions)
-    ? (user.metadata as any).permissions : []
+  const perms = resolveUserPerms(user.metadata)
   return perms.includes("page.mkt-tasks.manage")
 }
 
