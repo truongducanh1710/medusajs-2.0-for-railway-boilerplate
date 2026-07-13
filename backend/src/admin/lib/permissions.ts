@@ -43,6 +43,8 @@ export const PERMISSIONS = {
   "page.mkt-chat.manage": "Tạo/quản lý channel chat MKT (manager)",
   "page.live-view.view": "Xem Live View (visitor tracking storefront)",
   "page.ai-settings.manage": "Cấu hình AI Settings (model, exchange rate)",
+  "page.dohana-sync.view": "Xem theo dõi video đóng gói (Dohana)",
+  "page.dohana-sync.run": "Trigger sync Dohana thủ công",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -54,6 +56,7 @@ export const ROLE_PRESETS: Record<string, string[]> = {
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage", "page.mkt-chat.view"],
+  "kho-van": ["page.dohana-sync.view", "medusa.orders.view"],
   // Tài khoản AI Agent. Mặc định chỉ đọc. Các quyền .post/.edit/.manage chỉ được thêm
   // vào đây SAU KHI đã có write tool tương ứng đi qua approval flow (agent/approval-flow.mjs
   // trong phanviet-agent-mcp) — permission ở đây không thay thế approval, cả hai đều

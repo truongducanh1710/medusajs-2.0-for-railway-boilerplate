@@ -60,6 +60,14 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     ],
   },
   {
+    label: "📦 Kho Vận — Theo dõi đóng gói",
+    note: "Xem video quay đóng gói (Dohana), theo dõi năng suất nhân viên kho",
+    color: "bg-orange-50 border-orange-200",
+    keys: [
+      "page.dohana-sync.view",
+    ],
+  },
+  {
     label: "⚙️ Hệ thống & Admin",
     note: "Chỉ cấp cho admin / kỹ thuật",
     color: "bg-gray-50 border-gray-200",
@@ -67,6 +75,7 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
       "users.manage",
       "page.pancake-sync.view",
       "page.pancake-sync.run",
+      "page.dohana-sync.run",
       "page.pages.view",
       "page.pages.edit",
       "medusa.inventory.view",
@@ -84,6 +93,7 @@ const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "sale", label: "Sale (đơn hàng, chat)" },
   { value: "cskh", label: "CSKH (vận đơn, chat)" },
   { value: "ketoan", label: "Kế toán (giá vốn)" },
+  { value: "kho-van", label: "Kho Vận (theo dõi video đóng gói)" },
   { value: "ai-agent", label: "AI Agent (đọc báo cáo/KPI, đăng FB cần duyệt — không sửa/xóa dữ liệu)" },
 ]
 
@@ -100,6 +110,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
       ? (data.metadata.mkt_codes as string[]).join(", ")
       : ""
   )
+  const [dohanaEmail, setDohanaEmail] = useState<string>((data?.metadata?.dohana_email as string) ?? "")
   const [ggAdsSheetUrl, setGgAdsSheetUrl] = useState<string>((data?.metadata?.gg_ads_sheet_url as string) ?? "")
   const [ggAdsSheetToken, setGgAdsSheetToken] = useState<string>((data?.metadata?.gg_ads_sheet_token as string) ?? "")
   const [saving, setSaving] = useState(false)
@@ -150,6 +161,7 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
               .filter(Boolean),
             gg_ads_sheet_url: ggAdsSheetUrl.trim() || null,
             gg_ads_sheet_token: ggAdsSheetToken.trim() || null,
+            dohana_email: dohanaEmail.trim().toLowerCase() || null,
           },
         }),
       })
@@ -231,6 +243,21 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
         />
         <span className="text-xs text-gray-500">
           User care được camp của tất cả codes này (kể cả code bàn giao từ người khác)
+        </span>
+      </div>
+
+      {/* Dohana Email — chỉ cần khi email tài khoản Dohana khác email Medusa */}
+      <div className="flex items-center gap-3 pb-3 border-b">
+        <label className="text-sm font-medium whitespace-nowrap">Dohana Email:</label>
+        <input
+          type="text"
+          value={dohanaEmail}
+          onChange={(e) => setDohanaEmail(e.target.value)}
+          placeholder="Để trống nếu email Dohana trùng email tài khoản này"
+          className="px-2 py-1 text-sm border rounded flex-1 max-w-sm"
+        />
+        <span className="text-xs text-gray-500">
+          Map thủ công user Medusa ↔ tài khoản Dohana khi email không trùng
         </span>
       </div>
 

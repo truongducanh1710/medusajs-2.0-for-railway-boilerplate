@@ -134,6 +134,10 @@ const medusaConfig = {
       key: "pancakeSyncModule",
     },
     {
+      resolve: "./src/modules/dohana-sync",
+      key: "dohanaSyncModule",
+    },
+    {
       resolve: "./src/modules/ity-cdr-sync",
       key: "ityCdrSyncModule",
     },
