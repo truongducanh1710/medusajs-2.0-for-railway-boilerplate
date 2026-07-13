@@ -166,7 +166,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const usingProductFilter = !!(product_q && product_q.trim())
 
-    const [orders, count, aggRows] = await Promise.all([
+    const [orders, count, aggRows, productQtySum] = await Promise.all([
       usingProductFilter
         ? (async () => {
             const { conditions, params } = buildRawConditions(1)
@@ -196,11 +196,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           return rows[0] ?? null
         } catch { return null }
       })(),
+      // Khi product_q có mặt: tổng qty của ĐÚNG sản phẩm đó (chỉ item khớp tên, không
+      // phải mọi item trong đơn) trên TOÀN BỘ đơn khớp filter (không giới hạn 50 dòng)
+      // — để agent không phải tự cộng qty từ "orders" (bị cắt ở take/skip) khi câu hỏi
+      // cần tổng số lượng sản phẩm, không chỉ tổng tiền.
+      // buildRawConditions() đã tự thêm điều kiện product_q vào "conditions" qua EXISTS
+      // (đơn có ÍT NHẤT 1 item khớp tên) — ở đây join thêm item->>'name' ILIKE để chỉ
+      // cộng qty của item khớp, không cộng nhầm các item khác cùng đơn.
+      usingProductFilter
+        ? (async () => {
+            try {
+              const { conditions, params } = buildRawConditions(1)
+              const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+              const term = `%${(product_q as string).trim()}%`
+              const qtyParamIndex = params.length + 1
+              const rows = await sql(
+                `SELECT SUM((item->>'qty')::int) AS qty_sum
+                 FROM pancake_order po, jsonb_array_elements(po.items) item
+                 ${where}
+                 AND item->>'name' ILIKE $${qtyParamIndex}`,
+                [...params, term]
+              )
+              return rows[0]?.qty_sum != null ? Number(rows[0].qty_sum) : null
+            } catch { return null }
+          })()
+        : Promise.resolve(null),
     ])
 
     return res.json({
       orders,
       count,
+      product_qty_sum: usingProductFilter ? productQtySum : undefined,
       hasMore: skip + take < count,
       totals: aggRows,
     })
