@@ -25,8 +25,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       SELECT
         item->>'name' as name,
         item->'variation_info'->>'display_id' as display_id,
-        SUM((item->>'quantity')::int) as qty_sold,
-        SUM((item->>'price')::numeric * (item->>'quantity')::int) as revenue,
+        SUM((item->>'qty')::int) as qty_sold,
+        SUM((item->>'price')::numeric * (item->>'qty')::int) as revenue,
         pc.avg_cost,
         pc.stock_qty,
         pc.pancake_display_id
@@ -39,7 +39,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         AND po.source IN ('manual','facebook','zalo','unknown','medusa')
         AND po.market = $3
         AND po.raw->'items' IS NOT NULL
-        AND (item->>'quantity') IS NOT NULL
+        AND (item->>'qty') IS NOT NULL
         AND (item->>'price') IS NOT NULL
       GROUP BY name, display_id, pc.avg_cost, pc.stock_qty, pc.pancake_display_id
       ORDER BY revenue DESC
