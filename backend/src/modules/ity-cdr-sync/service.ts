@@ -219,20 +219,59 @@ class ItyCdrSyncService extends MedusaService({ ItyCdrCall, ItyCdrSyncJob, ItyEx
 
       if (records.length === 0) break
 
-      for (const raw of records) {
-        try {
-          if (!raw.uniqueid) continue
-          const mapped = mapCdr(raw)
-          const existing = await this.listItyCdrCalls({ id: mapped.id }, { take: 1 })
-          if (existing.length > 0) {
-            await this.updateItyCdrCalls(mapped as any)
-            updated++
-          } else {
-            await this.createItyCdrCalls([mapped] as any)
-            imported++
+      // Bulk upsert cả trang: 1 SELECT IN + 1 bulk create + 1 bulk update
+      // thay vì 2 query/bản ghi (nguyên nhân chính khiến cron chậm dần trong ngày).
+      const mapped = records.filter((r) => r.uniqueid).map(mapCdr)
+      const ids = mapped.map((m) => m.id)
+      const existing = ids.length
+        ? await this.listItyCdrCalls({ id: ids } as any, { take: ids.length })
+        : []
+      const existingById = new Map((existing as any[]).map((e) => [e.id, e]))
+
+      const toCreate: any[] = []
+      const toUpdate: any[] = []
+      for (const m of mapped) {
+        const ex = existingById.get(m.id)
+        if (!ex) {
+          toCreate.push(m)
+          continue
+        }
+        // Chỉ update khi field chốt muộn thay đổi (recording gắn sau khi cuộc gọi
+        // kết thúc, disposition/billsec có thể cập nhật) — bỏ qua bản ghi không đổi.
+        if (
+          ex.disposition !== m.disposition ||
+          Number(ex.billsec) !== m.billsec ||
+          Number(ex.duration) !== m.duration ||
+          (ex.recording_url ?? null) !== (m.recording_url ?? null)
+        ) {
+          toUpdate.push(m)
+        }
+      }
+
+      try {
+        if (toCreate.length > 0) {
+          await this.createItyCdrCalls(toCreate as any)
+          imported += toCreate.length
+        }
+        if (toUpdate.length > 0) {
+          await this.updateItyCdrCalls(toUpdate as any)
+          updated += toUpdate.length
+        }
+      } catch (batchErr: any) {
+        // Bulk fail (vd 1 bản ghi lỗi kéo cả batch) → fallback từng bản ghi để không mất cả trang
+        console.warn(`[ItyCdrSync] Bulk upsert failed (${batchErr.message}), falling back to per-record`)
+        for (const m of mapped) {
+          try {
+            if (existingById.has(m.id)) {
+              await this.updateItyCdrCalls(m as any)
+              updated++
+            } else {
+              await this.createItyCdrCalls([m] as any)
+              imported++
+            }
+          } catch (recErr: any) {
+            console.error(`[ItyCdrSync] Error upserting call ${m.id}:`, recErr.message)
           }
-        } catch (recErr: any) {
-          console.error(`[ItyCdrSync] Error upserting call ${raw.uniqueid}:`, recErr.message)
         }
       }
 

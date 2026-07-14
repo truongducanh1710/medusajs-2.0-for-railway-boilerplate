@@ -56,35 +56,44 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
           break
         }
 
-        const campaigns: any[] = data.data ?? []
-        for (const c of campaigns) {
-          const spend = Math.round(Number(c.spend ?? 0))
-          if (spend <= 0) continue
-
-          const mktName = extractMkt(c.campaign_name ?? "")
-          const impressions = Number(c.impressions ?? 0)
-          const clicks = Number(c.clicks ?? 0)
-
+        // Gom cả trang thành 1 câu upsert (unnest) thay vì 1 SQL/camp —
+        // dedupe theo campaign_id vì ON CONFLICT không cho trùng trong cùng 1 câu
+        const byId = new Map<string, any>()
+        for (const c of (data.data ?? [])) {
+          if (Math.round(Number(c.spend ?? 0)) > 0 && c.campaign_id) byId.set(String(c.campaign_id), c)
+        }
+        const rows = [...byId.values()]
+        if (rows.length > 0) {
           await cskhService.sql(`
             INSERT INTO mkt_ads_cost (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks)
-            VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8)
+            SELECT $1::date, u.mkt_name, $2, u.campaign_id, u.campaign_name, u.spend, u.impressions, u.clicks
+            FROM unnest($3::text[], $4::text[], $5::text[], $6::bigint[], $7::bigint[], $8::bigint[])
+              AS u(mkt_name, campaign_id, campaign_name, spend, impressions, clicks)
             ON CONFLICT (date, campaign_id) DO UPDATE SET
               spend = EXCLUDED.spend,
               impressions = EXCLUDED.impressions,
               clicks = EXCLUDED.clicks,
               mkt_name = EXCLUDED.mkt_name,
               updated_at = now()
-          `, [today, mktName, actId, c.campaign_id, c.campaign_name, spend, impressions, clicks])
-
-          totalSynced++
+          `, [
+            today, actId,
+            rows.map((c) => extractMkt(c.campaign_name ?? "")),
+            rows.map((c) => String(c.campaign_id)),
+            rows.map((c) => c.campaign_name ?? ""),
+            rows.map((c) => Math.round(Number(c.spend ?? 0))),
+            rows.map((c) => Number(c.impressions ?? 0)),
+            rows.map((c) => Number(c.clicks ?? 0)),
+          ])
+          totalSynced += rows.length
         }
 
         nextUrl = data.paging?.next ?? null
       }
 
       // Pull meta: 2 bước tách biệt để giữ DB gọn
-      // 1) UPDATE status/budget cho camps đã có row hôm nay (từ insights)
-      // 2) UPSERT chỉ camps đang ACTIVE mà chưa có row (spend=0 nhưng đang chạy)
+      // 1) ACTIVE: UPSERT cả batch — tạo row spend=0 nếu chưa có (camp bật nhưng chưa tiêu)
+      // 2) PAUSED/khác: 1 câu UPDATE...FROM unnest — chỉ chạm row đã có hôm nay,
+      //    camp cũ không có row tự động bị bỏ qua (trước đây mỗi camp 1 UPDATE rỗng vô ích)
       const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=500&access_token=${FB_TOKEN}`
       try {
         let nextMeta: string | null = metaUrl
@@ -94,31 +103,53 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
             logger?.warn?.(`[MktCostIntraday] Meta error ${actId}: ${metaData.error.message}`)
             break
           }
+          const metaById = new Map<string, any>()
           for (const camp of (metaData.data ?? [])) {
-            const budget = camp.daily_budget || camp.lifetime_budget
-            const budgetValue = budget ? Math.round(Number(budget)) : null
-            const mktName = extractMkt(camp.name ?? "")
-
-            if (camp.status === "ACTIVE") {
-              // ACTIVE: UPSERT — tạo row spend=0 nếu chưa có (camp bật nhưng chưa tiêu)
-              await cskhService.sql(`
-                INSERT INTO mkt_ads_cost
-                  (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
-                VALUES ($1::date, $2, $3, $4, $5, 0, 0, 0, $6, $7)
-                ON CONFLICT (date, campaign_id) DO UPDATE SET
-                  effective_status = EXCLUDED.effective_status,
-                  daily_budget     = EXCLUDED.daily_budget,
-                  updated_at       = now()
-              `, [today, mktName, actId, camp.id, camp.name ?? "", camp.status, budgetValue])
-            } else {
-              // PAUSED/khác: chỉ UPDATE nếu đã có row — không tạo row mới
-              await cskhService.sql(`
-                UPDATE mkt_ads_cost
-                SET effective_status = $1, daily_budget = $2, updated_at = now()
-                WHERE campaign_id = $3 AND date = $4::date
-              `, [camp.status ?? null, budgetValue, camp.id, today])
-            }
+            if (camp.id) metaById.set(String(camp.id), camp)
           }
+          const camps = [...metaById.values()]
+          const budgetOf = (camp: any) => {
+            const budget = camp.daily_budget || camp.lifetime_budget
+            return budget ? Math.round(Number(budget)) : null
+          }
+
+          const active = camps.filter((c) => c.status === "ACTIVE")
+          if (active.length > 0) {
+            await cskhService.sql(`
+              INSERT INTO mkt_ads_cost
+                (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks, effective_status, daily_budget)
+              SELECT $1::date, u.mkt_name, $2, u.campaign_id, u.campaign_name, 0, 0, 0, u.status, u.daily_budget
+              FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::bigint[])
+                AS u(mkt_name, campaign_id, campaign_name, status, daily_budget)
+              ON CONFLICT (date, campaign_id) DO UPDATE SET
+                effective_status = EXCLUDED.effective_status,
+                daily_budget     = EXCLUDED.daily_budget,
+                updated_at       = now()
+            `, [
+              today, actId,
+              active.map((c) => extractMkt(c.name ?? "")),
+              active.map((c) => String(c.id)),
+              active.map((c) => c.name ?? ""),
+              active.map((c) => c.status),
+              active.map(budgetOf),
+            ])
+          }
+
+          const inactive = camps.filter((c) => c.status !== "ACTIVE")
+          if (inactive.length > 0) {
+            await cskhService.sql(`
+              UPDATE mkt_ads_cost m
+              SET effective_status = u.status, daily_budget = u.daily_budget, updated_at = now()
+              FROM unnest($2::text[], $3::text[], $4::bigint[]) AS u(campaign_id, status, daily_budget)
+              WHERE m.campaign_id = u.campaign_id AND m.date = $1::date
+            `, [
+              today,
+              inactive.map((c) => String(c.id)),
+              inactive.map((c) => c.status ?? null),
+              inactive.map(budgetOf),
+            ])
+          }
+
           nextMeta = metaData.paging?.next ?? null
         }
       } catch (metaErr: any) {
