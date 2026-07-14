@@ -186,12 +186,12 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
               const mapped = mapDohanaVideo(raw)
               if (!mapped.id) continue
 
-              const existing = await this.listDohanaVideos({ id: mapped.id }, { take: 1 })
+              const existing = await (this as any).listDohanaVideos({ id: mapped.id }, { take: 1 })
               if (existing.length > 0) {
-                await this.updateDohanaVideos(mapped as any)
+                await (this as any).updateDohanaVideos(mapped)
                 updated++
               } else {
-                await this.createDohanaVideos([mapped] as any)
+                await (this as any).createDohanaVideos([mapped])
                 imported++
               }
             } catch (videoErr: any) {
@@ -291,11 +291,11 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
     if (!raw?.id) return
 
     const mapped = mapDohanaVideo(raw)
-    const existing = await this.listDohanaVideos({ id: mapped.id }, { take: 1 })
+    const existing = await (this as any).listDohanaVideos({ id: mapped.id }, { take: 1 })
     if (existing.length > 0) {
-      await this.updateDohanaVideos(mapped as any)
+      await (this as any).updateDohanaVideos(mapped)
     } else {
-      await this.createDohanaVideos([mapped] as any)
+      await (this as any).createDohanaVideos([mapped])
     }
   }
 
