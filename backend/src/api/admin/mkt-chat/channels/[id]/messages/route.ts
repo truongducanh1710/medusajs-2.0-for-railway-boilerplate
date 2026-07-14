@@ -13,38 +13,36 @@ function normalizeMentionText(value: string): string {
 function parseMentions(content: string, memberEmails: string[], nameByEmail: Record<string, string>): string[] {
   const mentioned = new Set<string>()
   const normalizedContent = normalizeMentionText(content)
-  const tokenMatches = content.match(/@[^\s,;:]+/g) || []
   if (/(^|[\s.,!?;:()\[\]{}])@all(?=$|[\s.,!?;:()\[\]{}])/i.test(normalizedContent)) {
     return memberEmails
   }
 
+  // Chỉ khớp @mention CHÍNH XÁC theo token (email / localpart / tên có gạch nối).
+  // KHÔNG dùng substring/fuzzy match — nó bắn thông báo sai khi tin nhắn chứa
+  // email người khác, URL, hay @ai... dù không hề tag ai. Nguồn chính xác về
+  // người được tag là mảng `mentions` explicit do client (mention-picker) gửi lên.
   for (const email of memberEmails) {
     const name = nameByEmail[email] || ""
     const candidates = [
       email,
       email.split("@")[0],
-      name,
       name.replace(/\s+/g, "_"),
     ]
       .map(normalizeMentionText)
-      .filter(candidate => candidate && candidate !== "ai")
+      .filter(candidate => candidate && candidate !== "ai" && candidate.length >= 2)
 
-    if (candidates.some(candidate => normalizedContent.includes(`@${candidate}`))) {
+    if (candidates.some(candidate =>
+      new RegExp(`(^|[\\s.,!?;:()\\[\\]{}])@${escapeRegExp(candidate)}(?=$|[\\s.,!?;:()\\[\\]{}])`).test(normalizedContent)
+    )) {
       mentioned.add(email)
-      continue
-    }
-
-    for (const match of tokenMatches) {
-      const token = normalizeMentionText(match.slice(1))
-      if (!token || token === "ai" || token.length < 2) continue
-      if (candidates.some(candidate => candidate.includes(token) || token.includes(candidate))) {
-        mentioned.add(email)
-        break
-      }
     }
   }
 
   return [...mentioned]
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function normalizeExplicitMentions(input: any, memberEmails: string[]): string[] {
