@@ -23,6 +23,13 @@ async function actorEmail(req: MedusaRequest): Promise<string | null> {
   return user?.email ?? null
 }
 
+function toDateString(value: any): string | undefined {
+  if (!value) return undefined
+  if (typeof value === "string") return value.slice(0, 10)
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  return undefined
+}
+
 function normalizeEmail(value: any): string {
   return typeof value === "string" ? value.trim().toLowerCase() : ""
 }
@@ -266,9 +273,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       activityLogs.push({ author_id: email, text: `Đổi độ ưu tiên: ${PRIORITY_LABEL[task.priority] ?? task.priority} → ${PRIORITY_LABEL[body.priority] ?? body.priority}`, created_at: now, type: "system" })
     if (body.assignee_id !== undefined && body.assignee_id !== task.assignee_id)
       activityLogs.push({ author_id: email, text: `Chuyển giao cho: ${body.assignee_id}`, created_at: now, type: "system" })
-    if (body.deadline !== undefined && body.deadline !== task.deadline?.slice(0, 10))
+    if (body.deadline !== undefined && body.deadline !== toDateString(task.deadline))
       activityLogs.push({ author_id: email, text: body.deadline ? `Đặt deadline: ${body.deadline}` : "Xóa deadline", created_at: now, type: "system" })
-    if (body.planned_for !== undefined && body.planned_for !== task.planned_for?.slice(0, 10))
+    if (body.planned_for !== undefined && body.planned_for !== toDateString(task.planned_for))
       activityLogs.push({ author_id: email, text: body.planned_for ? `Dự định làm: ${body.planned_for}` : "Xóa ngày dự định làm", created_at: now, type: "system" })
     if (body.purchase_stage !== undefined && body.purchase_stage !== task.purchase_stage)
       activityLogs.push({ author_id: email, text: `Giai đoạn mua hàng: ${PURCHASE_STAGE_LABEL[body.purchase_stage] ?? body.purchase_stage}`, created_at: now, type: "system" })
