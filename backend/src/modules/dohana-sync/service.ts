@@ -10,10 +10,17 @@ function delay(ms: number) {
 }
 
 /**
- * Dohana free tier: 2 RPS / 100 req ngày — cần backoff dài hơn nhiều so với Pancake.
+ * Dohana free tier: 2 RPS / 100 req ngày — 429 rất dễ gặp khi phân trang nhanh,
+ * nên dùng budget retry riêng cho rate-limit (không tính chung với lỗi network).
  */
-export async function fetchWithRetry(url: string, apiKey: string, retries = 3): Promise<Response> {
+export async function fetchWithRetry(
+  url: string,
+  apiKey: string,
+  retries = 3,
+  maxRateLimitRetries = 10
+): Promise<Response> {
   let lastErr: Error | undefined
+  let rateLimitAttempts = 0
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15_000)
@@ -23,9 +30,16 @@ export async function fetchWithRetry(url: string, apiKey: string, retries = 3): 
         headers: { "x-api-key": apiKey },
       }).finally(() => clearTimeout(timeout))
       if (res.status === 429) {
-        const retryAfter = parseInt(res.headers.get("Retry-After") || "5", 10)
-        console.warn(`[DohanaSync] Rate limited, waiting ${retryAfter}s...`)
+        rateLimitAttempts++
+        if (rateLimitAttempts > maxRateLimitRetries) {
+          throw new Error(`HTTP 429: rate limited quá ${maxRateLimitRetries} lần liên tiếp`)
+        }
+        // Free tier Dohana trả Retry-After rất ngắn (1s) — không đủ nếu request kế tiếp
+        // lại dồn dập ngay khi hết cửa sổ. Đặt sàn tối thiểu 3s để tránh 429 liên tục.
+        const retryAfter = Math.max(parseInt(res.headers.get("Retry-After") || "5", 10), 3)
+        console.warn(`[DohanaSync] Rate limited (${rateLimitAttempts}/${maxRateLimitRetries}), waiting ${retryAfter}s...`)
         await delay(retryAfter * 1000)
+        attempt-- // không tính 429 vào budget retry lỗi network
         continue
       }
       if (!res.ok) {
@@ -37,12 +51,12 @@ export async function fetchWithRetry(url: string, apiKey: string, retries = 3): 
       lastErr = err
       if (attempt < retries) {
         const backoff = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 500, 10_000)
-        console.warn(`[DohanaSync] Request failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${backoff}ms`)
+        console.warn(`[DohanaSync] Request failed (attempt ${attempt + 1}/${retries + 1}): ${err.message} — retrying in ${backoff}ms`)
         await delay(backoff)
       }
     }
   }
-  throw lastErr ?? new Error("Unknown fetch error")
+  throw lastErr ?? new Error(`Hết ${retries + 1} lần thử, không rõ nguyên nhân`)
 }
 
 export function mapDohanaVideo(raw: any): Record<string, any> {
@@ -218,7 +232,7 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
           console.log(`[DohanaSync] Page ${page}/${totalPages - 1} done — imported=${imported} updated=${updated}`)
 
           if (page < totalPages - 1) {
-            await delay(600) // rate limit buffer — Dohana free tier chỉ 2 RPS
+            await delay(1500) // rate limit buffer — Dohana free tier chỉ 2 RPS, cần buffer rộng
           }
         } catch (pageErr: any) {
           console.error(`[DohanaSync] Page ${page} failed:`, pageErr.message)
