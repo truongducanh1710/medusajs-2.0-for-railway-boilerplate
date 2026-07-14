@@ -1368,6 +1368,24 @@ function MktChatPage() {
       })
       .catch(() => {})
   }, [stopMentionSoundReminder])
+
+  // Clear mention notifications thuộc 1 channel khi user mở/đọc channel đó —
+  // để chuông ngừng ting ting mà không cần bấm nút chuông.
+  const markChannelNotificationsRead = useCallback((channelId: string) => {
+    apiFetch("/admin/mkt-chat/notifications/read", {
+      method: "PATCH",
+      body: JSON.stringify({ channel_id: channelId }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        const unread = Number(d?.unread_count || 0)
+        setNotificationUnread(unread)
+        if (unread <= 0) stopMentionSoundReminder()
+        setNotifications(prev => prev.filter(n => n.channel_id !== channelId))
+      })
+      .catch(() => {})
+  }, [stopMentionSoundReminder])
+
   useEffect(() => {
     loadChannels()
     loadTemplates()
@@ -1476,7 +1494,8 @@ function MktChatPage() {
     if (!activeChannel) return
     atBottomRef.current = true
     loadMessages(activeChannel.id, { markRead: true })
-  }, [activeChannel?.id, loadMessages])
+    markChannelNotificationsRead(activeChannel.id)
+  }, [activeChannel?.id, loadMessages, markChannelNotificationsRead])
 
   // SSE realtime: receive pushed events instead of 4s polling
   useEffect(() => {
