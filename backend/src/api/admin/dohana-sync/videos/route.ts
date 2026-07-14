@@ -59,8 +59,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ]
 
     const [videos, count] = await Promise.all([
-      syncService.listDohanaVideoes(filters, { take, skip, select: fields, order: { [sortField]: sortDir } }),
-      syncService.listAndCountDohanaVideoes(filters, { take, skip, select: ["id"] }).then(([, c]: any) => c),
+      syncService.listDohanaVideos(filters, { take, skip, select: fields, order: { [sortField]: sortDir } }),
+      syncService.listAndCountDohanaVideos(filters, { take, skip, select: ["id"] }).then(([, c]: any) => c),
     ])
 
     return res.json({ videos, count, hasMore: skip + take < count })
