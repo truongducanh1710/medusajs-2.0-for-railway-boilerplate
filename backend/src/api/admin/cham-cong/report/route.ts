@@ -21,7 +21,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const userModule = req.scope.resolve(Modules.USER)
     const users = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name", "metadata"] })
 
-    const [presence, live, messages, tasks, calls] = await Promise.all([
+    const [presence, live, messages, tasks, calls, telegram] = await Promise.all([
       // active_seconds/idle_seconds được cộng dồn ở nhịp KẾ TIẾP, nên phần "đuôi" từ last_seen_at
       // tới hiện tại của session đang mở chưa được ghi. Deploy giữa ngày kill server → mất luôn
       // phần đuôi đó (session không chạy endPresenceSession). Cộng bù tại đây theo status hiện tại,
@@ -79,6 +79,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          GROUP BY u.email`,
         [fromTs, toTs]
       ).catch(() => ({ rows: [] as any[] })), // tổng đài chưa map extension → bỏ qua, không vỡ report
+      // Số thông báo Telegram hệ thống đã gửi cho mỗi người (giao task, nhắc mention...).
+      // Bảng tự tạo lần đầu khi có tin gửi → chưa có tin nào thì bảng chưa tồn tại → catch trả rỗng.
+      pool.query(
+        `SELECT recipient_email AS email, COUNT(*)::int AS n
+         FROM mkt_telegram_log
+         WHERE sent_at BETWEEN $1 AND $2 AND ok = true
+         GROUP BY recipient_email`,
+        [fromTs, toTs]
+      ).catch(() => ({ rows: [] as any[] })),
     ])
 
     const byEmail = <T extends { email?: string; user_email?: string }>(rows: T[]) =>
@@ -88,6 +97,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const mMap = byEmail(messages.rows)
     const tMap = byEmail(tasks.rows)
     const cMap = byEmail(calls.rows)
+    const tgMap = byEmail(telegram.rows)
 
     const rows = users
       .filter((u: any) => !u.deleted_at)
@@ -97,6 +107,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const m = mMap[u.email] || {}
         const t = tMap[u.email] || {}
         const c = cMap[u.email] || {}
+        const tg = tgMap[u.email] || {}
         return {
           email: u.email,
           name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email,
@@ -114,6 +125,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           calls: Number(c.total || 0),
           calls_answered: Number(c.answered || 0),
           talk_seconds: Number(c.talk_seconds || 0),
+          telegram: Number(tg.n || 0),
         }
       })
       .sort((a, b) => b.active_seconds - a.active_seconds || a.name.localeCompare(b.name))

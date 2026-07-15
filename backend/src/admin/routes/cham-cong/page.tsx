@@ -20,6 +20,7 @@ type Row = {
   calls: number
   calls_answered: number
   talk_seconds: number
+  telegram: number
 }
 
 type TimelineItem = {
@@ -167,6 +168,7 @@ function ChamCongPage() {
               <th className="px-3 py-2 text-right">Tin nhắn</th>
               <th className="px-3 py-2 text-right">Task xong</th>
               <th className="px-3 py-2 text-right">Cuộc gọi</th>
+              <th className="px-3 py-2 text-right">Tin Tele</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -202,6 +204,7 @@ function ChamCongPage() {
                     {r.calls || "—"}
                     {r.talk_seconds > 0 && <span className="ml-1 text-xs text-gray-400">{fmtDur(r.talk_seconds)}</span>}
                   </td>
+                  <td className="px-3 py-2 text-right">{r.telegram || "—"}</td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => openTimeline(r)} className="text-xs text-blue-600 hover:underline">
                       Nhật ký
@@ -211,7 +214,7 @@ function ChamCongPage() {
               )
             })}
             {rows.length === 0 && !loading && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-gray-400">Chưa có dữ liệu</td></tr>
+              <tr><td colSpan={11} className="px-3 py-8 text-center text-gray-400">Chưa có dữ liệu</td></tr>
             )}
           </tbody>
         </table>

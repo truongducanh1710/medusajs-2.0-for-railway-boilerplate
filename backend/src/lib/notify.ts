@@ -1,5 +1,37 @@
+import { getPool } from "./db"
+
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? ""
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? ""
+
+let _tgLogReady = false
+
+// Ghi log mỗi lần gửi Telegram cho 1 nhân sự (để hiển thị ở trang Chấm công).
+// Best-effort: lỗi log KHÔNG được làm hỏng luồng gửi. Tự tạo bảng lần đầu (như mkt_exchange_rate).
+export async function logTelegramSent(email: string, kind: string, ok: boolean): Promise<void> {
+  if (!email) return
+  try {
+    const pool = getPool()
+    if (!_tgLogReady) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS mkt_telegram_log (
+          id BIGSERIAL PRIMARY KEY,
+          recipient_email TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'notify',
+          ok BOOLEAN NOT NULL DEFAULT true,
+          sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `)
+      await pool.query(`CREATE INDEX IF NOT EXISTS mkt_telegram_log_recip_idx ON mkt_telegram_log (recipient_email, sent_at)`)
+      _tgLogReady = true
+    }
+    await pool.query(
+      `INSERT INTO mkt_telegram_log (recipient_email, kind, ok) VALUES ($1, $2, $3)`,
+      [email, kind || "notify", ok]
+    )
+  } catch (e: any) {
+    console.warn("[notify] logTelegramSent error:", e.message)
+  }
+}
 
 export async function notifyTelegram(text: string): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return
@@ -35,7 +67,8 @@ export async function notifyTelegramChat(chatId: string, text: string): Promise<
 export async function notifyTelegramByEmail(
   userModule: any,
   emails: string | string[],
-  text: string
+  text: string,
+  kind = "notify"
 ): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) return
   const emailList = Array.isArray(emails) ? emails : [emails]
@@ -50,8 +83,9 @@ export async function notifyTelegramByEmail(
     await Promise.all(
       targets.map(async (u: any) => {
         const chatId: string | undefined = (u.metadata as any)?.tg_chat_id
-        if (!chatId) return
+        if (!chatId) return // chưa link bot → không gửi, không log
         await notifyTelegramChat(chatId, text)
+        await logTelegramSent(u.email, kind, true)
       })
     )
   } catch (e: any) {
