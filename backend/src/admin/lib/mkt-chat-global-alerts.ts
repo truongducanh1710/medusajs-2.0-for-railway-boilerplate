@@ -37,6 +37,26 @@ const MENTION_SOUND_REPEAT_LIMIT = 8
 const TELEGRAM_ALERT_AT_REPEAT_COUNT = 3
 const MKT_CHAT_PENDING_JUMP_KEY = "mkt-chat:pending-jump"
 
+// Presence: mọi tab api.phanviet.vn ghi timestamp thao tác vào localStorage (chung domain),
+// nên "đang gõ ở tab Báo cáo" vẫn tính là online cho tab mkt-chat. Heartbeat lấy MAX timestamp.
+const PRESENCE_ACTIVITY_KEY = "mkt-chat:last-activity"
+const PRESENCE_IDLE_MS = 5 * 60 * 1000
+const PRESENCE_BEAT_MS = 45_000
+
+export function markGlobalActivity() {
+  if (!isBrowser()) return
+  try { localStorage.setItem(PRESENCE_ACTIVITY_KEY, String(Date.now())) } catch { /* quota/private mode */ }
+}
+
+// Có thao tác ở BẤT KỲ tab admin nào trong 5 phút qua? (đọc localStorage chung)
+export function hasRecentGlobalActivity(): boolean {
+  if (!isBrowser()) return false
+  try {
+    const raw = Number(localStorage.getItem(PRESENCE_ACTIVITY_KEY) || 0)
+    return Date.now() - raw < PRESENCE_IDLE_MS
+  } catch { return false }
+}
+
 function isBrowser() {
   return typeof window !== "undefined" && typeof document !== "undefined"
 }
@@ -291,7 +311,38 @@ function closeConnection(state = getState()) {
     state.retryTimer = null
   }
   stopReminder(state)
+  stopPresenceHeartbeat()
   state.started = false
+}
+
+// ── Presence heartbeat ───────────────────────────────────────────────────────
+// Chỉ tab-chủ (tab đầu tiên mở SSE global) gửi heartbeat cho session của nó.
+// mkt-chat route có SSE + heartbeat riêng trong page.tsx nên không chạy ở đây.
+let presenceTimer: number | null = null
+let presenceSessionId: string | null = null
+
+function beatPresence() {
+  if (!presenceSessionId) return
+  // active = cửa sổ đang hiện VÀ có thao tác ở bất kỳ tab admin nào trong 5 phút.
+  const active = document.visibilityState === "visible" && hasRecentGlobalActivity()
+  fetch("/admin/mkt-chat/presence", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: presenceSessionId, active }),
+  }).catch(() => {})
+}
+
+function startPresenceHeartbeat(sessionId: string) {
+  presenceSessionId = sessionId
+  if (presenceTimer !== null) window.clearInterval(presenceTimer)
+  presenceTimer = window.setInterval(beatPresence, PRESENCE_BEAT_MS)
+}
+
+function stopPresenceHeartbeat() {
+  if (presenceTimer !== null) window.clearInterval(presenceTimer)
+  presenceTimer = null
+  presenceSessionId = null
 }
 
 function openEventStream(state = getState()) {
@@ -299,6 +350,11 @@ function openEventStream(state = getState()) {
 
   const es = new EventSource("/admin/mkt-chat/events")
   state.es = es
+
+  es.addEventListener("connected", (event: MessageEvent) => {
+    const data = JSON.parse(event.data || "{}")
+    if (data.session_id) startPresenceHeartbeat(data.session_id)
+  })
 
   es.addEventListener("mention.notification.created", (event: MessageEvent) => {
     const data = JSON.parse(event.data || "{}")
@@ -316,6 +372,7 @@ function openEventStream(state = getState()) {
     current.es?.close()
     current.es = null
     current.started = false
+    stopPresenceHeartbeat() // reconnect sẽ nhận session_id mới qua event "connected"
     if (current.retryTimer !== null) window.clearTimeout(current.retryTimer)
     current.retryTimer = window.setTimeout(connect, 5000)
   }
@@ -378,6 +435,12 @@ export function ensureMktChatGlobalMentionAlerts() {
     state.listenersInstalled = true
     window.addEventListener("pointerdown", unlockAudio, { passive: true })
     window.addEventListener("keydown", unlockAudio)
+    // Ghi thao tác vào localStorage chung → mọi tab admin cùng đóng góp tín hiệu "còn làm việc".
+    const onActivity = () => markGlobalActivity()
+    ;["pointerdown", "keydown", "wheel", "touchstart"].forEach(ev =>
+      window.addEventListener(ev, onActivity, { passive: true })
+    )
+    markGlobalActivity() // load trang = một lần thao tác
   }
   if (shouldRunGlobalAlert()) connect()
 }
