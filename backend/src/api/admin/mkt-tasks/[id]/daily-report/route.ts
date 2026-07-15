@@ -158,6 +158,46 @@ async function buildDailyMktRows(date: string) {
   return Object.values(mergedMap)
 }
 
+/**
+ * Đếm bài đăng + video của 1 marketer trong ngày.
+ *
+ * Hai bảng gắn với người khác nhau nên phải resolve riêng:
+ * - fb_scheduled_post.created_by = email → đếm theo email assignee, chỉ status='published'.
+ * - mkt_video.maker = tên hiển thị ("Hậu"), KHÔNG phải mkt_name → map qua
+ *   metadata.mkt_code của user (cùng cách marketing-hub backfill ad_name).
+ */
+async function buildContentCounts(
+  date: string,
+  email: string,
+  makerNames: string[]
+): Promise<{ posts_published: number; videos_made: number }> {
+  const [postRow] = await sql(
+    `SELECT COUNT(*)::int AS n
+       FROM fb_scheduled_post
+      WHERE status = 'published'
+        AND lower(created_by) = lower($2)
+        AND published_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND published_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`,
+    [date, email]
+  )
+
+  // Không có maker nào map sang mkt_name này → không đếm nhầm toàn bộ bảng.
+  const [videoRow] = makerNames.length
+    ? await sql(
+        `SELECT COUNT(*)::int AS n
+           FROM mkt_video
+          WHERE post_date = $1::date
+            AND maker = ANY($2::text[])`,
+        [date, makerNames]
+      )
+    : [{ n: 0 }]
+
+  return {
+    posts_published: Number(postRow?.n || 0),
+    videos_made: Number(videoRow?.n || 0),
+  }
+}
+
 function emptyReport(date: string, mktName: string) {
   return {
     date,
@@ -173,6 +213,8 @@ function emptyReport(date: string, mktName: string) {
     cod_total: 0,
     ads_cost: 0,
     care_pct: 0,
+    posts_published: 0,
+    videos_made: 0,
   }
 }
 
@@ -216,8 +258,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(403).json({ error: `Nhân sự phụ trách task (${task.assignee_id}) chưa được gán mkt_name, liên hệ quản lý` })
     }
 
+    // maker trong mkt_video là tên hiển thị — gom mọi user có mkt_code/mkt_name
+    // khớp marketer này để biết những tên nào thuộc về họ.
+    const allUsers = await userModule.listUsers(
+      {},
+      { select: ["email", "first_name", "last_name", "metadata"] }
+    )
+    const makerNames = allUsers
+      .filter((u: any) => {
+        const meta = (u.metadata || {}) as any
+        return normalizeMktName(meta.mkt_name || meta.mkt_code) === mktName
+      })
+      .map((u: any) => [u.first_name, u.last_name].filter(Boolean).join(" ").trim())
+      .filter(Boolean)
+
     const rows = await buildDailyMktRows(dateKey)
     const report = rows.find((r: any) => normalizeMktName(r.mkt_name) === mktName) || emptyReport(dateKey, mktName)
+    Object.assign(report, await buildContentCounts(dateKey, task.assignee_id, makerNames))
 
     return res.json({ report, date: dateKey, mkt_name: mktName })
   } catch (err: any) {

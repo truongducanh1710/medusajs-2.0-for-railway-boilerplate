@@ -386,6 +386,8 @@ type DailyMktReportRow = {
   cod_total: number | string
   ads_cost: number | string
   care_pct: number | string | null
+  posts_published: number
+  videos_made: number
 }
 
 function normalizeReportTitle(value: string): string {
@@ -439,6 +441,8 @@ function buildDailyMktReportText(row: DailyMktReportRow, note: string): string {
     `Doanh số đã giao: ${formatVND(row.revenue_delivered)}`,
     `Chi phí ads: ${formatVND(row.ads_cost)}`,
     `Tỷ lệ chi phí/doanh số: ${formatPercent(row.care_pct)}`,
+    `Bài đăng: ${Number(row.posts_published || 0)}`,
+    `Video: ${Number(row.videos_made || 0)}`,
     "",
     "📝 Nhận xét:",
     note.trim() || "(Không có)",
@@ -510,6 +514,8 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
     ["Doanh số đã giao", formatVND(report.revenue_delivered)],
     ["Chi phí ads", formatVND(report.ads_cost)],
     ["Tỷ lệ chi phí/doanh số", formatPercent(report.care_pct)],
+    ["Bài đăng", Number(report.posts_published || 0)],
+    ["Video", Number(report.videos_made || 0)],
   ] : []
 
   return (
