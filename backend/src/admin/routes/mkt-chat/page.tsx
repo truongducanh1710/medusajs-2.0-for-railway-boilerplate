@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
+import { markGlobalActivity, hasRecentGlobalActivity } from "../../lib/mkt-chat-global-alerts"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -238,6 +239,23 @@ function emitMentionTone(ctx: AudioContext) {
   })
 
   window.setTimeout(() => gain.disconnect(), 1300)
+}
+function emitMessageTone(ctx: AudioContext) {
+  const now = ctx.currentTime
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.22, now + 0.015)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28)
+  gain.connect(ctx.destination)
+
+  const osc = ctx.createOscillator()
+  osc.type = "sine"
+  osc.frequency.setValueAtTime(880, now)
+  osc.connect(gain)
+  osc.start(now)
+  osc.stop(now + 0.28)
+
+  window.setTimeout(() => gain.disconnect(), 400)
 }
 
 const AVATAR_COLORS = [
@@ -1286,6 +1304,7 @@ function MktChatPage() {
   const notificationBtnRef = useRef<HTMLButtonElement>(null)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
   const [notificationRepeatSoundEnabled, setNotificationRepeatSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:repeat-sound") !== "0")
+  const [allMessageSoundEnabled, setAllMessageSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:all-sound") === "1")
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -1296,7 +1315,6 @@ function MktChatPage() {
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
   const presenceSessionRef = useRef<string | null>(null)
-  const lastInteractionRef = useRef(Date.now())
   const pendingJumpRef = useRef<string | null>(null)
   const mentionEntityRef = useRef<Record<string, string>>({})
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1439,6 +1457,16 @@ function MktChatPage() {
     return play()
   }, [notificationSoundEnabled])
 
+  const playMessageSound = useCallback(() => {
+    if (!allMessageSoundEnabled || typeof window === "undefined") return
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextCtor) return
+    const ctx = audioContextRef.current || new AudioContextCtor()
+    audioContextRef.current = ctx
+    if (ctx.state === "suspended") return
+    emitMessageTone(ctx)
+  }, [allMessageSoundEnabled])
+
   useEffect(() => {
     clearMentionRepeatTimer()
     if (!notificationSoundEnabled || !notificationRepeatSoundEnabled || notificationUnread <= 0 || notificationOpen) {
@@ -1560,6 +1588,10 @@ function MktChatPage() {
         const msg = data.message as Message | undefined
         if (!msg?.id || !data.channel_id) return
 
+        if (msg.author_id !== currentUserId && msg.msg_type !== "system_notify") {
+          playMessageSound()
+        }
+
         if (activeChannel?.id === data.channel_id) {
           setMessages(prev => {
             const withoutMatchingOptimistic = prev.filter(m => !(m.id.startsWith("opt-") && m.author_id === msg.author_id && m.content === msg.content))
@@ -1652,21 +1684,21 @@ function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, stopMentionSoundReminder])
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, playMessageSound, stopMentionSoundReminder])
 
   // Chấm công: heartbeat 45s báo tab còn sống + có đang thao tác thật không.
   // Effect riêng, deps rỗng — không gắn vào effect SSE (effect đó re-run mỗi lần đổi channel).
   useEffect(() => {
-    const IDLE_MS = 5 * 60 * 1000
-    const markInteraction = () => { lastInteractionRef.current = Date.now() }
+    // Thao tác ghi vào localStorage chung (markGlobalActivity) → mọi tab admin cùng đóng góp.
+    const markInteraction = () => markGlobalActivity()
     const events = ["mousedown", "keydown", "wheel", "touchstart"]
     events.forEach(ev => window.addEventListener(ev, markInteraction, { passive: true }))
 
     const beat = () => {
       const sessionId = presenceSessionRef.current
       if (!sessionId) return
-      // Tab ẩn hoặc không thao tác >5 phút = idle. Backend tự cộng dồn, client chỉ báo trạng thái.
-      const active = document.visibilityState === "visible" && Date.now() - lastInteractionRef.current < IDLE_MS
+      // active = cửa sổ đang hiện VÀ có thao tác ở BẤT KỲ tab admin nào trong 5 phút.
+      const active = document.visibilityState === "visible" && hasRecentGlobalActivity()
       apiJson("/admin/mkt-chat/presence", "POST", { session_id: sessionId, active }).catch(() => {})
     }
 
@@ -1928,6 +1960,14 @@ function MktChatPage() {
     mentionRepeatCountRef.current = 0
     if (!next) stopMentionSoundReminder()
   }
+
+  const toggleAllMessageSound = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    const next = !allMessageSoundEnabled
+    setAllMessageSoundEnabled(next)
+    localStorage.setItem("mkt-chat:all-sound", next ? "1" : "0")
+    if (next) unlockNotificationAudio()
+  }
   const jumpToNotification = (notification: MktNotification) => {
     stopMentionSoundReminder()
     setNotificationOpen(false)
@@ -2135,6 +2175,11 @@ function MktChatPage() {
               {totalUnread > 0 && (
                 <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
               )}
+              <button onClick={toggleAllMessageSound} title={allMessageSoundEnabled ? "Tắt âm báo mọi tin nhắn" : "Bật âm báo mọi tin nhắn"}
+                className={cn("grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                  allMessageSoundEnabled ? "border-emerald-300 bg-emerald-500/10 text-emerald-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
+                {allMessageSoundEnabled ? "🔊" : "🔇"}
+              </button>
               <button ref={notificationBtnRef} onClick={toggleNotifications} title="Thông báo nhắc đến"
                 className={cn("relative grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                   notificationOpen ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>🔔
