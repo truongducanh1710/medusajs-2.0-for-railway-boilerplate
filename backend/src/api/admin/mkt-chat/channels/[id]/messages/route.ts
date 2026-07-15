@@ -211,8 +211,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const formattedMessage = formatMktMessage(message, nameByEmail, replySnippet)
 
     if (messageType === "text" && channel.name === ADS_EXPENSE_CHANNEL_NAME) {
-      const parsed = parseAdsExpenseText(text)
-      if (parsed) {
+      const parsedList = parseAdsExpenseText(text)
+      for (const parsed of parsedList) {
         svc.createAdsExpenseTransactions({
           source_message_id: message.id,
           channel_id: id,
@@ -223,7 +223,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           txn_at: parsed.txn_at,
           raw_text: parsed.raw_text,
           parsed_by: "regex",
-        }).catch(console.error)
+        }).catch((e: any) => {
+          if (e?.code !== "23505") console.error(e) // 23505 = trùng giao dịch (đã bắt trước đó), bỏ qua
+        })
       }
     }
 

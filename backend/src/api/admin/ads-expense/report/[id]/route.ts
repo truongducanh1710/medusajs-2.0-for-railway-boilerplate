@@ -21,6 +21,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const row = await svc.updateAdsExpenseTransactions(data)
     res.json({ row })
   } catch (e: any) {
+    if (e?.code === "23505") {
+      return res.status(409).json({ error: "Giao dịch trùng (cùng thẻ, số tiền, thời điểm) đã tồn tại" })
+    }
     res.status(500).json({ error: e.message })
   }
 }
