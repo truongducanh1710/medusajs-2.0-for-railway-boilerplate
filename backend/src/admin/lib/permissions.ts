@@ -42,6 +42,7 @@ export const PERMISSIONS = {
   "page.mkt-chat.view": "Xem chat group MKT",
   "page.mkt-chat.manage": "Tạo/quản lý channel chat MKT (manager)",
   "page.live-view.view": "Xem Live View (visitor tracking storefront)",
+  "page.cham-cong.view": "Xem chấm công: giờ online + việc đã làm của nhân sự (lead/manager)",
   "page.ai-settings.manage": "Cấu hình AI Settings (model, exchange rate)",
   "page.dohana-sync.view": "Xem theo dõi video đóng gói (Dohana)",
   "page.dohana-sync.run": "Trigger sync Dohana thủ công",
@@ -51,7 +52,7 @@ export type PermissionKey = keyof typeof PERMISSIONS
 
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
-  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call"],
+  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call", "page.cham-cong.view"],
   marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view"],

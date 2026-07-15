@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
 import { broadcastToUser, getMktChatAuthInfo, isMktChannelMember, syncSseClientChannel } from "../_lib"
+import { getLivePresence } from "../_presence"
 
 // GET /admin/mkt-chat/channels - list visible channels
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -62,15 +63,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       } catch { /* best-effort */ }
     }
 
+    // Nguồn thật: presence session (tab đang mở). Bảng mkt_channel_read chỉ suy ra gián tiếp từ
+    // lúc đọc/gõ nên người mở tab đọc im lặng bị coi là offline — chỉ dùng làm fallback.
     let onlineEmails: string[] = []
+    let presenceMap: Record<string, string> = {}
     try {
-      const onlineRows = await getPool().query(
-        `SELECT user_email FROM mkt_channel_read
-         GROUP BY user_email
-         HAVING MAX(updated_at) > now() - interval '2 minutes'`
+      presenceMap = Object.fromEntries(
+        Object.entries(await getLivePresence()).map(([email, v]) => [email, v.status])
       )
-      onlineEmails = onlineRows.rows.map((r: any) => r.user_email)
+      onlineEmails = Object.keys(presenceMap)
     } catch { /* best-effort */ }
+
+    if (onlineEmails.length === 0) {
+      try {
+        const onlineRows = await getPool().query(
+          `SELECT user_email FROM mkt_channel_read
+           GROUP BY user_email
+           HAVING MAX(updated_at) > now() - interval '2 minutes'`
+        )
+        onlineEmails = onlineRows.rows.map((r: any) => r.user_email)
+      } catch { /* best-effort */ }
+    }
 
     const enriched = channels.map((c: any) => {
       const last = lastMsgMap[c.id]
@@ -101,7 +114,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return tb - ta
     })
 
-    res.json({ channels: enriched, online_emails: onlineEmails })
+    res.json({ channels: enriched, online_emails: onlineEmails, presence: presenceMap })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }

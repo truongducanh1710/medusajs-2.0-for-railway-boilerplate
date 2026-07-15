@@ -1,6 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { apiFetch } from "../../lib/api-client"
+import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -304,13 +304,20 @@ function PageStyles() {
 
 // ─── Small components ────────────────────────────────────────────────────────
 
-function Avatar({ name, online, className }: { name: string; online?: boolean; className?: string }) {
+// status ưu tiên hơn online (boolean) — online giữ lại cho các chỗ gọi cũ.
+function Avatar({ name, online, status, className }: {
+  name: string; online?: boolean; status?: "online" | "idle" | "offline"; className?: string
+}) {
+  const dot = status
+    ? status === "online" ? "bg-emerald-500" : status === "idle" ? "bg-amber-400" : "bg-gray-300 dark:bg-gray-600"
+    : online !== undefined
+      ? online ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"
+      : null
+  const title = status === "idle" ? "Mở tab nhưng không thao tác" : status === "online" ? "Đang online" : undefined
   return (
     <span className={cn("relative inline-flex shrink-0 items-center justify-center rounded-full font-bold uppercase", avatarClass(name), className || "size-7 text-[11px]")}>
       {(name || "?").charAt(0)}
-      {online !== undefined && (
-        <span className={cn("absolute -bottom-px -right-px size-2 rounded-full ring-2 ring-ui-bg-base", online ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
-      )}
+      {dot && <span title={title} className={cn("absolute -bottom-px -right-px size-2 rounded-full ring-2 ring-ui-bg-base", dot)} />}
     </span>
   )
 }
@@ -948,10 +955,11 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
 
 // ─── Context Panel (cột 3) ───────────────────────────────────────────────────
 
-function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
+function ContextPanel({ channel, mktUsers, onlineEmails, presence, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
   channel: Channel
   mktUsers: MktUser[]
   onlineEmails: string[]
+  presence: Record<string, string>
   isManager: boolean
   isSuper: boolean
   mobileVisible: boolean
@@ -987,11 +995,18 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, mob
     }
   }, [tab, channel.id, fileType, fileAuthor, fileFrom, fileTo])
 
-  const members = (channel.member_ids || []).map(email => ({
-    email,
-    name: mktUsers.find(u => u.email === email)?.name || email.split("@")[0],
-    online: onlineEmails.includes(email),
-  })).sort((a, b) => Number(b.online) - Number(a.online))
+  const members = (channel.member_ids || []).map(email => {
+    const status = (presence[email] || (onlineEmails.includes(email) ? "online" : "offline")) as "online" | "idle" | "offline"
+    return {
+      email,
+      name: mktUsers.find(u => u.email === email)?.name || email.split("@")[0],
+      status,
+      online: status !== "offline",
+    }
+  }).sort((a, b) => {
+    const w = (s: string) => (s === "online" ? 0 : s === "idle" ? 1 : 2)
+    return w(a.status) - w(b.status) || a.name.localeCompare(b.name)
+  })
 
   const tabBtn = (t: typeof tab, label: string) => (
     <button key={t} onClick={() => setTab(t)}
@@ -1042,10 +1057,12 @@ function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, mob
               <div className="flex flex-col gap-0.5">
                 {members.map(m => (
                   <div key={m.email} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-ui-bg-base-hover">
-                    <Avatar name={m.name} online={m.online} className="size-7 text-[11px]" />
+                    <Avatar name={m.name} status={m.status} className="size-7 text-[11px]" />
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-medium text-ui-fg-base">{m.name}</div>
-                      <div className="text-[10px] text-ui-fg-muted">{m.online ? "Đang hoạt động" : "Ngoại tuyến"}</div>
+                      <div className="text-[10px] text-ui-fg-muted">
+                        {m.status === "online" ? "Đang hoạt động" : m.status === "idle" ? "Mở tab, không thao tác" : "Ngoại tuyến"}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1223,6 +1240,7 @@ function MktChatPage() {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingNames, setTypingNames] = useState<string[]>([])
+  const [presence, setPresence] = useState<Record<string, string>>({}) // email → online | idle
   const [input, setInput] = useState("")
   const [composerMode, setComposerMode] = useState<"message" | "note">("message")
   const [sending, setSending] = useState(false)
@@ -1277,6 +1295,8 @@ function MktChatPage() {
   const atBottomRef = useRef(true)
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
+  const presenceSessionRef = useRef<string | null>(null)
+  const lastInteractionRef = useRef(Date.now())
   const pendingJumpRef = useRef<string | null>(null)
   const mentionEntityRef = useRef<Record<string, string>>({})
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1317,6 +1337,7 @@ function MktChatPage() {
       const list: Channel[] = d.channels || []
       setChannels(list)
       setOnlineEmails(d.online_emails || [])
+      if (d.presence) setPresence(d.presence)
       setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || prev) : prev)
     })
   }, [])
@@ -1517,6 +1538,23 @@ function MktChatPage() {
     const connect = () => {
       es = new EventSource("/admin/mkt-chat/events")
 
+      // Backend mở presence session theo chính kết nối SSE này; heartbeat cần session_id đó.
+      es.addEventListener("connected", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        if (data.session_id) presenceSessionRef.current = data.session_id
+      })
+
+      es.addEventListener("presence.changed", (e: MessageEvent) => {
+        const data = JSON.parse(e.data || "{}")
+        if (!data.email) return
+        setPresence(prev => {
+          const next = { ...prev }
+          if (data.status === "offline") delete next[data.email]
+          else next[data.email] = data.status
+          return next
+        })
+      })
+
       es.addEventListener("message.created", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
         const msg = data.message as Message | undefined
@@ -1615,6 +1653,35 @@ function MktChatPage() {
       typingTimersRef.current = {}
     }
   }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, stopMentionSoundReminder])
+
+  // Chấm công: heartbeat 45s báo tab còn sống + có đang thao tác thật không.
+  // Effect riêng, deps rỗng — không gắn vào effect SSE (effect đó re-run mỗi lần đổi channel).
+  useEffect(() => {
+    const IDLE_MS = 5 * 60 * 1000
+    const markInteraction = () => { lastInteractionRef.current = Date.now() }
+    const events = ["mousedown", "keydown", "wheel", "touchstart"]
+    events.forEach(ev => window.addEventListener(ev, markInteraction, { passive: true }))
+
+    const beat = () => {
+      const sessionId = presenceSessionRef.current
+      if (!sessionId) return
+      // Tab ẩn hoặc không thao tác >5 phút = idle. Backend tự cộng dồn, client chỉ báo trạng thái.
+      const active = document.visibilityState === "visible" && Date.now() - lastInteractionRef.current < IDLE_MS
+      apiJson("/admin/mkt-chat/presence", "POST", { session_id: sessionId, active }).catch(() => {})
+    }
+
+    const timer = window.setInterval(beat, 45000)
+    apiJson("/admin/mkt-chat/presence")
+      .then((d: any) => setPresence(
+        Object.fromEntries(Object.entries(d?.presence || {}).map(([k, v]: any) => [k, v.status]))
+      ))
+      .catch(() => {})
+
+    return () => {
+      clearInterval(timer)
+      events.forEach(ev => window.removeEventListener(ev, markInteraction))
+    }
+  }, [])
 
   // Cuộn trong khung tin nhắn thôi — KHÔNG dùng scrollIntoView vì nó cuộn
   // cả các scroll container cha (trang admin), làm layout mobile bị đẩy lệch/hở đáy.
@@ -2461,6 +2528,7 @@ function MktChatPage() {
           channel={activeChannel}
           mktUsers={mktUsers}
           onlineEmails={onlineEmails}
+          presence={presence}
           isManager={isManager}
           isSuper={isSuper}
           mobileVisible={mobilePanelOpen}

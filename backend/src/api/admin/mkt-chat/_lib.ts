@@ -97,6 +97,22 @@ export function broadcastToChannel(channelId: string, event: string, data: Recor
   }
 }
 
+// Chấm xanh/vàng cạnh tên trong chat. Không gửi tới chính người đó — họ tự biết mình online.
+export function broadcastPresenceChange(email: string, status: string) {
+  const payload = `event: presence.changed\ndata: ${JSON.stringify({ email, status })}\n\n`
+  for (const client of _sseClients) {
+    if (client.email === email) continue
+    try { client.res.write(payload) } catch { _sseClients.delete(client) }
+  }
+}
+
+/** User còn tab nào khác đang mở không — tránh báo offline khi họ chỉ đóng 1 trong 2 tab. */
+export function hasOtherSseConnection(email: string): boolean {
+  let count = 0
+  for (const client of _sseClients) if (client.email === email) count++
+  return count > 0
+}
+
 export function broadcastToUser(email: string, event: string, data: Record<string, any>) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
   for (const client of _sseClients) {

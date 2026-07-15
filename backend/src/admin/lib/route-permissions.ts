@@ -20,6 +20,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/media": "page.san-pham.edit",
   "/uu-tien-goi": "page.don-hang.view",
   "/live-view": "page.live-view.view",
+  "/cham-cong": "page.cham-cong.view",
   "/1688-import": "page.san-pham.edit",
 }
 

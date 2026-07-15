@@ -181,6 +181,11 @@ export default defineMiddlewares({
     { matcher: "/admin/mkt-chat/channels/*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
     // Quick Reply templates: handler tự check manage cho write, perm view đủ để vào route
     { matcher: "/admin/mkt-chat/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
+    // Heartbeat presence: mọi user vào được chat đều phải ping được, handler tự chặn session_id người khác
+    { matcher: "/admin/mkt-chat/presence", method: ["POST"], middlewares: [requirePerm("page.mkt-chat.view")] },
+
+    // Chấm công — báo cáo giờ online + việc đã làm. Chỉ lead/manager/admin.
+    { matcher: "/admin/cham-cong*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
 
     // permissions/check: guard nằm trong chính route handler (chỉ cho phép actor
     // ai-agent hoặc actor có page.mkt-tasks.manage) — không dùng requirePerm chung vì
