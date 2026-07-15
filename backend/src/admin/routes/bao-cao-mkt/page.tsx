@@ -926,12 +926,21 @@ function BaoCaoMktPage() {
                 </div>
               </>
               {bonusDays.length > 0 && (
-                <div onClick={() => setBonusPopupMkt(mkt)} style={{
-                  marginTop: 6, fontSize: 11, fontWeight: 700, color: "#7c3aed",
-                  background: dark ? "#3b0764" : "#f3e8ff", borderRadius: 6, padding: "3px 8px",
-                  cursor: "pointer", display: "inline-block",
-                }}>
-                  🏆 {fmtMoney(bonusTotal)} · {bonusDays.length} ngày
+                <div onClick={() => setBonusPopupMkt(mkt)} title="Xem chi tiết ngày đạt thưởng" style={{
+                  marginTop: 8, fontSize: 12, fontWeight: 700, color: dark ? "#e9d5ff" : "#7c3aed",
+                  background: dark ? "linear-gradient(135deg, #4c1d95, #6d28d9)" : "linear-gradient(135deg, #f3e8ff, #ede9fe)",
+                  border: `1px solid ${dark ? "#7c3aed88" : "#c4b5fd"}`,
+                  borderRadius: 20, padding: "5px 12px",
+                  cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
+                  boxShadow: dark ? "none" : "0 1px 2px rgba(124,58,237,0.15)",
+                  transition: "transform 0.12s, box-shadow 0.12s",
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 3px 8px rgba(124,58,237,0.25)" }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = dark ? "none" : "0 1px 2px rgba(124,58,237,0.15)" }}
+                >
+                  <span>🏆</span>
+                  <span>{fmtMoney(bonusTotal)}</span>
+                  <span style={{ opacity: 0.7, fontWeight: 500 }}>· {bonusDays.length} ngày</span>
                 </div>
               )}
             </div>
@@ -945,42 +954,78 @@ function BaoCaoMktPage() {
         const total = days.reduce((sum, d) => sum + d.amount, 0)
         return (
           <div onClick={() => setBonusPopupMkt(null)} style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
-            display: "flex", alignItems: "center", justifyContent: "center",
+            position: "fixed", inset: 0, background: "rgba(15,10,25,0.55)", zIndex: 1000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
           }}>
             <div onClick={e => e.stopPropagation()} style={{
-              background: t.card, borderRadius: 10, padding: 20, minWidth: 380, maxWidth: 480,
-              maxHeight: "70vh", overflowY: "auto", border: `1px solid ${t.cardBorder}`,
+              background: t.card, borderRadius: 14, minWidth: 380, maxWidth: 480, width: "100%",
+              maxHeight: "80vh", overflow: "hidden", border: `1px solid ${t.cardBorder}`,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.35)", display: "flex", flexDirection: "column",
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>🏆 Thưởng doanh số — {bonusPopupMkt}</div>
-                <button onClick={() => setBonusPopupMkt(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: t.textMuted }}>×</button>
+              {/* Header */}
+              <div style={{
+                background: "linear-gradient(135deg, #7c3aed, #a855f7)",
+                padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: "50%", background: "rgba(255,255,255,0.2)",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+                  }}>🏆</div>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>Thưởng doanh số — {bonusPopupMkt}</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.85)" }}>{days.length} ngày đạt điều kiện</div>
+                  </div>
+                </div>
+                <button onClick={() => setBonusPopupMkt(null)} style={{
+                  background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer",
+                  fontSize: 16, color: "#fff", width: 28, height: 28, borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+                }}>×</button>
               </div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
-                Điều kiện: doanh số ≥25tr/40tr/70tr &amp; chi phí/doanh số ≤28% → thưởng 300k/500k/1000k mỗi ngày
-              </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${t.cardBorder}`, color: t.textMuted, textAlign: "left" }}>
-                    <th style={{ padding: "4px 6px" }}>Ngày</th>
-                    <th style={{ padding: "4px 6px", textAlign: "right" }}>Doanh số</th>
-                    <th style={{ padding: "4px 6px", textAlign: "right" }}>% Chi phí</th>
-                    <th style={{ padding: "4px 6px", textAlign: "right" }}>Thưởng</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {days.map(d => (
-                    <tr key={d.date} style={{ borderBottom: `1px solid ${t.cardBorder}44` }}>
-                      <td style={{ padding: "4px 6px" }}>{fmtDate(d.date)}</td>
-                      <td style={{ padding: "4px 6px", textAlign: "right", color: t.blue }}>{fmtMoney(d.revenue)}</td>
-                      <td style={{ padding: "4px 6px", textAlign: "right", color: carePctColor(d.carePct) }}>{d.carePct}%</td>
-                      <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmtMoney(d.amount)}</td>
+
+              <div style={{ padding: 20, overflowY: "auto" }}>
+                <div style={{
+                  fontSize: 12, color: t.textMuted, marginBottom: 14, padding: "8px 12px",
+                  background: dark ? "#1f1530" : "#f9f5ff", borderRadius: 8, border: `1px solid ${dark ? "#3b0764" : "#ede9fe"}`,
+                }}>
+                  Điều kiện: doanh số ≥25tr/40tr/70tr &amp; chi phí/doanh số ≤28% → thưởng <b>300k/500k/1000k</b> mỗi ngày
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ color: t.textMuted, textAlign: "left" }}>
+                      <th style={{ padding: "6px 8px", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>Ngày</th>
+                      <th style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>Doanh số</th>
+                      <th style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>% Chi phí</th>
+                      <th style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>Thưởng</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div style={{ marginTop: 12, textAlign: "right", fontSize: 14, fontWeight: 700 }}>
-                Tổng thưởng: <span style={{ color: "#7c3aed" }}>{fmtMoney(total)}</span>
+                  </thead>
+                  <tbody>
+                    {days.map((d, i) => (
+                      <tr key={d.date} style={{ background: i % 2 === 0 ? "transparent" : (dark ? "#ffffff08" : "#00000004") }}>
+                        <td style={{ padding: "8px", borderRadius: "6px 0 0 6px", fontWeight: 600 }}>{fmtDate(d.date)}</td>
+                        <td style={{ padding: "8px", textAlign: "right", color: t.blue }}>{fmtMoney(d.revenue)}</td>
+                        <td style={{ padding: "8px", textAlign: "right", color: carePctColor(d.carePct), fontWeight: 600 }}>{d.carePct}%</td>
+                        <td style={{ padding: "8px", textAlign: "right", borderRadius: "0 6px 6px 0" }}>
+                          <span style={{
+                            fontWeight: 700, color: "#7c3aed", background: dark ? "#3b0764" : "#f3e8ff",
+                            borderRadius: 6, padding: "2px 8px", fontSize: 12,
+                          }}>{fmtMoney(d.amount)}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer tổng thưởng */}
+              <div style={{
+                padding: "14px 20px", borderTop: `1px solid ${t.cardBorder}`,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                background: dark ? "#1f1530" : "#f9f5ff",
+              }}>
+                <span style={{ fontSize: 13, color: t.textMuted }}>Tổng thưởng</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: "#7c3aed" }}>{fmtMoney(total)}</span>
               </div>
             </div>
           </div>
