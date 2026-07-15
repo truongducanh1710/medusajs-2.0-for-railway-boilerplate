@@ -46,17 +46,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       END
     `
 
-    // Fallback UTM nếu marketer name null
+    // Fallback UTM nếu marketer name null.
+    // Format camp: MÃSP_DD/MM_MKTCODE_... — token số 2 là NGÀY, không phải mã MKT.
+    // Phải quét từng token và chỉ nhận token khớp pattern mã MKT (3-8 chữ in hoa),
+    // giữ đồng bộ với extractMkt() trong lib/mkt-code.ts (KHÔNG copy lại logic khác ở đây).
+    const mktCodePattern = `^[A-Z]{3,8}$`
     const mktRaw = `
       COALESCE(
         ${mktExpr},
-        CASE
-          WHEN raw->>'p_utm_campaign' LIKE '%\\_%\\_%'
-            THEN split_part(raw->>'p_utm_campaign', '_', 2)
-          WHEN raw->>'p_utm_source' LIKE '%\\_%\\_%'
-            THEN split_part(raw->>'p_utm_source', '_', 2)
-          ELSE 'KHÁC'
-        END
+        (
+          SELECT UPPER(t.tok)
+          FROM unnest(string_to_array(COALESCE(raw->>'p_utm_campaign', ''), '_')) WITH ORDINALITY AS t(tok, ord)
+          WHERE t.ord > 1 AND UPPER(TRIM(t.tok)) ~ '${mktCodePattern}'
+          ORDER BY t.ord
+          LIMIT 1
+        ),
+        (
+          SELECT UPPER(t.tok)
+          FROM unnest(string_to_array(COALESCE(raw->>'p_utm_source', ''), '_')) WITH ORDINALITY AS t(tok, ord)
+          WHERE t.ord > 1 AND UPPER(TRIM(t.tok)) ~ '${mktCodePattern}'
+          ORDER BY t.ord
+          LIMIT 1
+        ),
+        'KHÁC'
       )
     `
 
