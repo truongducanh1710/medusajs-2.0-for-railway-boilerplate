@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
 import { broadcastToChannel, canAccessMktChannel, canPostInMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
+import { ADS_EXPENSE_CHANNEL_NAME, parseAdsExpenseText } from "../../../_ads-expense-parser"
 
 function normalizeMentionText(value: string): string {
   return String(value || "")
@@ -208,6 +209,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       author_name: rootReply.author_id === "ai" ? "AI Assistant" : (nameByEmail[rootReply.author_id] || rootReply.author_id),
     } : null
     const formattedMessage = formatMktMessage(message, nameByEmail, replySnippet)
+
+    if (messageType === "text" && channel.name === ADS_EXPENSE_CHANNEL_NAME) {
+      const parsed = parseAdsExpenseText(text)
+      if (parsed) {
+        svc.createAdsExpenseTransactions({
+          source_message_id: message.id,
+          channel_id: id,
+          card_last4: parsed.card_last4,
+          merchant: parsed.merchant,
+          amount: parsed.amount,
+          currency: parsed.currency,
+          txn_at: parsed.txn_at,
+          raw_text: parsed.raw_text,
+          parsed_by: "regex",
+        }).catch(console.error)
+      }
+    }
 
     broadcastToChannel(id, "message.created", { message: formattedMessage })
     if (rootReplyId) {

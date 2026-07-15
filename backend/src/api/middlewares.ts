@@ -112,6 +112,7 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
     { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/ads-expense/report*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/call-board*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders/*", method: ["POST", "PUT", "PATCH"], middlewares: [requirePerm("page.don-hang.edit")] },
