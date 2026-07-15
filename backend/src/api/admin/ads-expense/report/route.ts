@@ -21,3 +21,31 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     res.status(500).json({ error: e.message })
   }
 }
+
+// POST /admin/ads-expense/report — thêm giao dịch thủ công
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const svc = req.scope.resolve("mktTaskModule") as any
+    const { merchant, amount, currency, txn_at, card_last4, channel_id } = req.body as any
+
+    const amountNum = Number(amount)
+    if (!amountNum || Number.isNaN(amountNum)) {
+      return res.status(400).json({ error: "amount khong hop le" })
+    }
+
+    const row = await svc.createAdsExpenseTransactions({
+      channel_id: channel_id || "manual",
+      card_last4: card_last4 || null,
+      merchant: merchant || null,
+      amount: amountNum,
+      currency: currency || "VND",
+      txn_at: txn_at ? new Date(txn_at) : new Date(),
+      raw_text: null,
+      parsed_by: "manual",
+    })
+
+    res.json({ row })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}

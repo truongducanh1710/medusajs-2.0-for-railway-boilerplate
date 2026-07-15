@@ -113,6 +113,8 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/ads-expense/report*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/ads-expense/report", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
+    { matcher: "/admin/ads-expense/report/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/call-board*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders/*", method: ["POST", "PUT", "PATCH"], middlewares: [requirePerm("page.don-hang.edit")] },
