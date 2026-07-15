@@ -163,8 +163,12 @@ async function buildDailyMktRows(date: string) {
  *
  * Hai bảng gắn với người khác nhau nên phải resolve riêng:
  * - fb_scheduled_post.created_by = email → đếm theo email assignee, chỉ status='published'.
- * - mkt_video.maker = tên hiển thị ("Hậu"), KHÔNG phải mkt_name → map qua
+ * - mkt_video.maker = tên hiển thị ("Lê Bá Kiên"), KHÔNG phải mkt_name → map qua
  *   metadata.mkt_code của user (cùng cách marketing-hub backfill ad_name).
+ *
+ * Video đếm theo created_at (ngày up), KHÔNG phải post_date: cột NGÀY trên
+ * marketing-hub render created_at, và post_date thường bỏ trống → đếm theo
+ * post_date sẽ ra 0 dù video đã up.
  */
 async function buildContentCounts(
   date: string,
@@ -186,8 +190,9 @@ async function buildContentCounts(
     ? await sql(
         `SELECT COUNT(*)::int AS n
            FROM mkt_video
-          WHERE post_date = $1::date
-            AND maker = ANY($2::text[])`,
+          WHERE maker = ANY($2::text[])
+            AND created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+            AND created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`,
         [date, makerNames]
       )
     : [{ n: 0 }]
@@ -269,7 +274,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const meta = (u.metadata || {}) as any
         return normalizeMktName(meta.mkt_name || meta.mkt_code) === mktName
       })
-      .map((u: any) => [u.first_name, u.last_name].filter(Boolean).join(" ").trim())
+      // Cùng công thức name của /admin/permissions/mkt-users — nguồn ghi ra
+      // mkt_video.maker, kể cả fallback email khi user chưa có tên.
+      .map((u: any) => {
+        const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ").trim()
+        return fullName || u.email
+      })
       .filter(Boolean)
 
     const rows = await buildDailyMktRows(dateKey)
