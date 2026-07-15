@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../lib/db"
-import { reapStalePresenceSessions, PRESENCE_IDLE_MS, vnDayKey } from "../../mkt-chat/_presence"
+import { reapStalePresenceSessions, PRESENCE_IDLE_MS, PRESENCE_STALE_MS, vnDayKey } from "../../mkt-chat/_presence"
 
 // GET /admin/cham-cong/report?from=2026-07-15&to=2026-07-15
 // Tổng hợp: giờ online/idle (từ presence session) + việc đã làm thật (tin nhắn, task, cuộc gọi).
@@ -22,17 +22,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const users = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name", "metadata"] })
 
     const [presence, live, messages, tasks, calls] = await Promise.all([
+      // active_seconds/idle_seconds được cộng dồn ở nhịp KẾ TIẾP, nên phần "đuôi" từ last_seen_at
+      // tới hiện tại của session đang mở chưa được ghi. Deploy giữa ngày kill server → mất luôn
+      // phần đuôi đó (session không chạy endPresenceSession). Cộng bù tại đây theo status hiện tại,
+      // chặn trần stale_cap để không tính khoảng chết. tail chỉ áp cho session còn mở (ended_at NULL).
       pool.query(
         `SELECT user_email,
-                SUM(active_seconds)::int AS active_seconds,
-                SUM(idle_seconds)::int AS idle_seconds,
+                SUM(active_seconds + CASE WHEN ended_at IS NULL AND status = 'online'
+                  THEN FLOOR(LEAST(EXTRACT(EPOCH FROM (now() - last_seen_at)), $3))::int ELSE 0 END)::int AS active_seconds,
+                SUM(idle_seconds + CASE WHEN ended_at IS NULL AND status <> 'online'
+                  THEN FLOOR(LEAST(EXTRACT(EPOCH FROM (now() - last_seen_at)), $3))::int ELSE 0 END)::int AS idle_seconds,
                 MIN(started_at) AS first_seen,
                 MAX(COALESCE(ended_at, last_seen_at)) AS last_seen,
                 COUNT(*)::int AS session_count
          FROM mkt_presence_session
          WHERE day_key >= $1 AND day_key <= $2
          GROUP BY user_email`,
-        [from, to]
+        [from, to, Math.floor(PRESENCE_STALE_MS / 1000)]
       ),
       pool.query(
         `SELECT user_email,
