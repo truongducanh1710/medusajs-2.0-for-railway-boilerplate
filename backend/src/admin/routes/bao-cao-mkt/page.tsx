@@ -925,7 +925,7 @@ function BaoCaoMktPage() {
                   {pct !== null ? pct + "%" : "—"}
                 </div>
               </>
-              {bonusDays.length > 0 && (
+              {bonusDays.length > 0 && mkt !== "XUANLT" && (
                 <div onClick={() => setBonusPopupMkt(mkt)} title="Xem chi tiết ngày đạt thưởng" style={{
                   marginTop: 8, fontSize: 12, fontWeight: 700, color: dark ? "#e9d5ff" : "#7c3aed",
                   background: dark ? "linear-gradient(135deg, #4c1d95, #6d28d9)" : "linear-gradient(135deg, #f3e8ff, #ede9fe)",
