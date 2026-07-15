@@ -2762,7 +2762,10 @@ function MktTasksPage() {
   }, [permsLoading, isManager])
 
   useEffect(() => {
-    apiFetch("/admin/permissions/mkt-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
+    // Dùng cskh-users (lọc theo page.mkt-tasks.view) thay vì permissions/mkt-users
+    // (lọc theo page.marketing-video.view) — assignee của task gồm cả user CSKH/task-only
+    // không làm marketing-video; endpoint cũ đá 403 + thiếu người trong dropdown.
+    apiFetch("/admin/mkt-tasks/cskh-users").then(r => r.json()).then(d => setMktUsers(d.users || []))
   }, [])
 
   // Deep-link ?task=ID (từ chat context panel)
