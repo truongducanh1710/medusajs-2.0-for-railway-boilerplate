@@ -1315,6 +1315,11 @@ function MktChatPage() {
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
   const presenceSessionRef = useRef<string | null>(null)
+  // Đọc trong handler SSE mà KHÔNG đưa vào dependency array của effect SSE — nếu không,
+  // mỗi lần đổi kênh/mở thread sẽ đóng-mở lại kết nối, phá luôn presence session (giữa chừng
+  // mất active_seconds vì session chết trước khi kịp tích lũy ở nhịp heartbeat kế tiếp).
+  const activeChannelIdRef = useRef<string | null>(null)
+  const openThreadIdRef = useRef<string | null>(null)
   const pendingJumpRef = useRef<string | null>(null)
   const mentionEntityRef = useRef<Record<string, string>>({})
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1546,6 +1551,10 @@ function MktChatPage() {
     markChannelNotificationsRead(activeChannel.id)
   }, [activeChannel?.id, loadMessages, markChannelNotificationsRead])
 
+  // Đồng bộ ref cho effect SSE đọc — xem giải thích ở khai báo activeChannelIdRef phía trên.
+  useEffect(() => { activeChannelIdRef.current = activeChannel?.id ?? null }, [activeChannel?.id])
+  useEffect(() => { openThreadIdRef.current = openThread?.id ?? null }, [openThread?.id])
+
   // SSE realtime: receive pushed events instead of 4s polling
   useEffect(() => {
     let es: EventSource | null = null
@@ -1553,7 +1562,8 @@ function MktChatPage() {
     let loadChannelsDebounceTimer: any = null
 
     const refreshActive = () => {
-      if (activeChannel?.id) loadMessages(activeChannel.id, { scroll: false, markRead: true })
+      const id = activeChannelIdRef.current
+      if (id) loadMessages(id, { scroll: false, markRead: true })
     }
 
     // Gộp nhiều sự kiện dồn dập (nhiều tin nhắn liên tiếp trong channel đông người)
@@ -1592,7 +1602,7 @@ function MktChatPage() {
           playMessageSound()
         }
 
-        if (activeChannel?.id === data.channel_id) {
+        if (activeChannelIdRef.current === data.channel_id) {
           setMessages(prev => {
             const withoutMatchingOptimistic = prev.filter(m => !(m.id.startsWith("opt-") && m.author_id === msg.author_id && m.content === msg.content))
             if (withoutMatchingOptimistic.some(m => m.id === msg.id)) return withoutMatchingOptimistic
@@ -1608,18 +1618,18 @@ function MktChatPage() {
 
       es.addEventListener("message.updated", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        if (activeChannel?.id !== data.channel_id || !data.message_id) return
+        if (activeChannelIdRef.current !== data.channel_id || !data.message_id) return
         setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}) } : m))
       })
 
       es.addEventListener("thread.reply.created", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        if (activeChannel?.id !== data.channel_id || !data.root_message_id) return
+        if (activeChannelIdRef.current !== data.channel_id || !data.root_message_id) return
         setMessages(prev => prev.map(m => m.id === data.root_message_id
           ? { ...m, reply_count: Number(data.root_reply_count ?? ((m.reply_count || 0) + 1)) }
           : m
         ))
-        if (openThread?.id === data.root_message_id) setThreadRefreshKey(k => k + 1)
+        if (openThreadIdRef.current === data.root_message_id) setThreadRefreshKey(k => k + 1)
       })
 
       es.addEventListener("channel.updated", () => loadChannelsDebounced())
@@ -1646,7 +1656,7 @@ function MktChatPage() {
 
       es.addEventListener("typing.started", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        if (activeChannel?.id !== data.channel_id || data.email === currentUserId) return
+        if (activeChannelIdRef.current !== data.channel_id || data.email === currentUserId) return
         const label = data.name || data.email
         setTypingNames(prev => prev.includes(label) ? prev : [...prev, label])
         if (typingTimersRef.current[data.email]) clearTimeout(typingTimersRef.current[data.email])
@@ -1684,7 +1694,10 @@ function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, playMessageSound, stopMentionSoundReminder])
+  // KHÔNG đưa activeChannel?.id / openThread?.id vào đây — effect này chỉ nên chạy lại khi đổi
+  // user, không phải khi đổi kênh/thread (mỗi lần re-run là đóng-mở SSE, phá presence session).
+  // Handler bên trong đọc activeChannelIdRef/openThreadIdRef để luôn thấy giá trị mới nhất.
+  }, [currentUserId, loadChannels, loadMessages, loadNotifications, playMentionSound, playMessageSound, stopMentionSoundReminder])
 
   // Chấm công: heartbeat 45s báo tab còn sống + có đang thao tác thật không.
   // Effect riêng, deps rỗng — không gắn vào effect SSE (effect đó re-run mỗi lần đổi channel).
