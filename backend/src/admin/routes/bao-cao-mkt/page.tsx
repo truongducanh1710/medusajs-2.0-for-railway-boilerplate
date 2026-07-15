@@ -22,6 +22,21 @@ function carePctColor(pct: number | null): string {
   return "#dc2626"
 }
 
+// Thưởng ngày: doanh số >=25tr/40tr/70tr VÀ %chi phí <=28% → 300k/500k/1000k
+const BONUS_TIERS = [
+  { min: 70_000_000, amount: 1_000_000 },
+  { min: 40_000_000, amount: 500_000 },
+  { min: 25_000_000, amount: 300_000 },
+]
+
+function bonusForDay(revenue: number, carePct: number | null): { amount: number; min: number } | null {
+  if (carePct === null || carePct > 28) return null
+  for (const tier of BONUS_TIERS) {
+    if (revenue >= tier.min) return { amount: tier.amount, min: tier.min }
+  }
+  return null
+}
+
 
 function todayVN(): string {
   return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
@@ -43,6 +58,7 @@ function BaoCaoMktPage() {
   const [groupBy, setGroupBy] = useState<"day" | "month">("day")
   const [rows, setRows] = useState<any[]>([])
   const [summary, setSummary] = useState<Record<string, any>>({})
+  const [bonusPopupMkt, setBonusPopupMkt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
@@ -774,6 +790,16 @@ function BaoCaoMktPage() {
   const totalCost = Object.values(summary).reduce((s: number, m: any) => s + (m.ads_cost || 0), 0)
   const totalCarePct = totalRevenue > 0 ? Math.round(totalCost / totalRevenue * 10000) / 100 : null
 
+  const bonusByMkt: Record<string, { date: string; revenue: number; carePct: number | null; amount: number }[]> = {}
+  for (const row of rows) {
+    if (groupBy !== "day") continue
+    const bonus = bonusForDay(row.revenue_total || 0, row.care_pct ?? null)
+    if (!bonus) continue
+    if (!bonusByMkt[row.mkt_name]) bonusByMkt[row.mkt_name] = []
+    bonusByMkt[row.mkt_name].push({ date: row.date, revenue: row.revenue_total || 0, carePct: row.care_pct ?? null, amount: bonus.amount })
+  }
+  for (const mkt in bonusByMkt) bonusByMkt[mkt].sort((a, b) => b.date.localeCompare(a.date))
+
   return (
     <div style={{ padding: "24px 32px", background: t.bg, minHeight: "100vh", color: t.text, transition: "background 0.2s, color 0.2s" }}>
       {/* Header */}
@@ -878,6 +904,8 @@ function BaoCaoMktPage() {
         {mktNames.filter(m => m !== "KHÁC").map(mkt => {
           const s = summary[mkt] || {}
           const pct = s.care_pct ?? null
+          const bonusDays = bonusByMkt[mkt] || []
+          const bonusTotal = bonusDays.reduce((sum, d) => sum + d.amount, 0)
           return (
             <div key={mkt} style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderRadius: 8, padding: "10px 20px", minWidth: 150 }}>
               <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>{mkt}</div>
@@ -897,10 +925,67 @@ function BaoCaoMktPage() {
                   {pct !== null ? pct + "%" : "—"}
                 </div>
               </>
+              {bonusDays.length > 0 && (
+                <div onClick={() => setBonusPopupMkt(mkt)} style={{
+                  marginTop: 6, fontSize: 11, fontWeight: 700, color: "#7c3aed",
+                  background: dark ? "#3b0764" : "#f3e8ff", borderRadius: 6, padding: "3px 8px",
+                  cursor: "pointer", display: "inline-block",
+                }}>
+                  🏆 {fmtMoney(bonusTotal)} · {bonusDays.length} ngày
+                </div>
+              )}
             </div>
           )
         })}
       </div>}
+
+      {/* Popup danh sách ngày đạt thưởng */}
+      {bonusPopupMkt && (() => {
+        const days = bonusByMkt[bonusPopupMkt] || []
+        const total = days.reduce((sum, d) => sum + d.amount, 0)
+        return (
+          <div onClick={() => setBonusPopupMkt(null)} style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              background: t.card, borderRadius: 10, padding: 20, minWidth: 380, maxWidth: 480,
+              maxHeight: "70vh", overflowY: "auto", border: `1px solid ${t.cardBorder}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>🏆 Thưởng doanh số — {bonusPopupMkt}</div>
+                <button onClick={() => setBonusPopupMkt(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: t.textMuted }}>×</button>
+              </div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
+                Điều kiện: doanh số ≥25tr/40tr/70tr &amp; chi phí/doanh số ≤28% → thưởng 300k/500k/1000k mỗi ngày
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${t.cardBorder}`, color: t.textMuted, textAlign: "left" }}>
+                    <th style={{ padding: "4px 6px" }}>Ngày</th>
+                    <th style={{ padding: "4px 6px", textAlign: "right" }}>Doanh số</th>
+                    <th style={{ padding: "4px 6px", textAlign: "right" }}>% Chi phí</th>
+                    <th style={{ padding: "4px 6px", textAlign: "right" }}>Thưởng</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {days.map(d => (
+                    <tr key={d.date} style={{ borderBottom: `1px solid ${t.cardBorder}44` }}>
+                      <td style={{ padding: "4px 6px" }}>{fmtDate(d.date)}</td>
+                      <td style={{ padding: "4px 6px", textAlign: "right", color: t.blue }}>{fmtMoney(d.revenue)}</td>
+                      <td style={{ padding: "4px 6px", textAlign: "right", color: carePctColor(d.carePct) }}>{d.carePct}%</td>
+                      <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>{fmtMoney(d.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 12, textAlign: "right", fontSize: 14, fontWeight: 700 }}>
+                Tổng thưởng: <span style={{ color: "#7c3aed" }}>{fmtMoney(total)}</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Camp tab content */}
       {activeTab === "camp" && (
