@@ -7,7 +7,7 @@ import { BoostCampModal, type BoostTarget } from "../../components/marketing-hub
 import { withRouteGuard } from "../../components/route-guard"
 
 function fmtMoney(n: number): string {
-  return n.toLocaleString("vi-VN") + "đ"
+  return Number(n || 0).toLocaleString("vi-VN") + "đ"
 }
 
 function fmtDate(iso: string): string {
