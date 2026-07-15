@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../../../lib/db"
 import { broadcastToChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap, canAccessMktChannel } from "../../../../../_lib"
 
@@ -173,7 +174,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         preview: text,
         mentions,
         source: "thread",
-      }).catch(console.error)
+      }, req.scope.resolve(Modules.USER)).catch(console.error)
     }
 
     // Không broadcast "message.created" ở đây: reply thread không phải tin nhắn độc lập trong

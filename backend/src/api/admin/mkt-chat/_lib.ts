@@ -2,6 +2,7 @@ import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { ROLE_PRESETS } from "../../../admin/lib/permissions"
 import { getPool } from "../../../lib/db"
+import { notifyTelegramByEmail } from "../../../lib/notify"
 
 type SseClient = {
   res: any
@@ -160,7 +161,13 @@ export type CreateMentionNotificationOptions = {
   source?: "message" | "thread"
 }
 
-export async function createMentionNotifications(svc: any, opts: CreateMentionNotificationOptions) {
+// userModule optional để không phá call site cũ chưa cập nhật; nhưng thiếu nó thì KHÔNG gửi Telegram
+// được — mọi call site nên truyền vào vì đây là kênh nhắc duy nhất không phụ thuộc client mở tab đúng chỗ.
+export async function createMentionNotifications(
+  svc: any,
+  opts: CreateMentionNotificationOptions,
+  userModule?: any
+) {
   const recipients = [...new Set((opts.mentions || []).filter(email => email && email !== opts.senderEmail))]
   if (recipients.length === 0) return
 
@@ -197,6 +204,18 @@ export async function createMentionNotifications(svc: any, opts: CreateMentionNo
           created_at: notification.created_at || createdAt,
         },
       })
+    }
+
+    // Gửi Telegram NGAY khi có mention — không chờ client tự phát hiện "chưa đọc rồi mới nhắc".
+    // Đây là kênh duy nhất đảm bảo cả 2 trường hợp: tab đóng/ẩn nền, HOẶC đang mở tab chat
+    // nhưng xem nhóm khác (route/visibility của client không phản ánh việc đã thấy tin này).
+    if (userModule) {
+      const text = [
+        `🔔 <b>${opts.senderName} nhắc bạn</b>`,
+        `#${opts.channelName || ""}`,
+        opts.preview ? `"${String(opts.preview).slice(0, 160)}"` : "",
+      ].filter(Boolean).join("\n")
+      notifyTelegramByEmail(userModule, recipient, text, "mention").catch(() => {})
     }
   }
 }

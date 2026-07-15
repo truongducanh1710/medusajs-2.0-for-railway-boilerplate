@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
 import { broadcastToChannel, canAccessMktChannel, canPostInMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
 
@@ -229,7 +230,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         preview: text,
         mentions,
         source: rootReplyId ? "thread" : "message",
-      }).catch(console.error)
+      }, req.scope.resolve(Modules.USER)).catch(console.error)
     }
     // Nhánh @ai cũ (Claude Haiku single-shot, không tool) đã bị thay bằng ai-agent
     // service riêng (Railway, tool-calling + permission thật) — service đó tự poll

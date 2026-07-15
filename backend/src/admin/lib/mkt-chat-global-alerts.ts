@@ -22,7 +22,6 @@ type MktChatGlobalAlertState = {
   pendingSound: boolean
   lastPath: string
   listenersInstalled: boolean
-  telegramAlertSent: boolean
 }
 
 declare global {
@@ -34,7 +33,6 @@ declare global {
 
 const MENTION_SOUND_REPEAT_MS = 20_000
 const MENTION_SOUND_REPEAT_LIMIT = 8
-const TELEGRAM_ALERT_AT_REPEAT_COUNT = 3
 const MKT_CHAT_PENDING_JUMP_KEY = "mkt-chat:pending-jump"
 
 // Presence: mọi tab api.phanviet.vn ghi timestamp thao tác vào localStorage (chung domain),
@@ -118,17 +116,9 @@ function getState(): MktChatGlobalAlertState {
       pendingSound: false,
       lastPath: window.location.pathname,
       listenersInstalled: false,
-      telegramAlertSent: false,
     }
   }
   return window.__mktChatGlobalAlert
-}
-
-function sendTelegramAlert() {
-  fetch("/admin/mkt-chat/notifications/telegram-alert", {
-    method: "POST",
-    credentials: "include",
-  }).catch(() => {})
 }
 
 function clearRepeatTimer(state = getState()) {
@@ -142,7 +132,6 @@ function stopReminder(state = getState()) {
   clearRepeatTimer(state)
   state.repeatCount = 0
   state.pendingSound = false
-  state.telegramAlertSent = false
 }
 
 function playMentionSound(force = false) {
@@ -198,15 +187,14 @@ function scheduleReminder(state = getState()) {
     return
   }
 
+  // Telegram giờ gửi ngay từ backend lúc tạo mention (createMentionNotifications), không chờ
+  // client tự đếm "chưa đọc đủ lâu" nữa — đảm bảo gửi cả khi tab đóng/ẩn nền/xem nhóm khác.
+  // Chuông lặp lại vẫn giữ nguyên để nhắc người đang có mặt nhưng chưa mở panel thông báo.
   state.repeatTimer = window.setTimeout(() => {
     state.repeatTimer = null
     if (!shouldRunGlobalAlert() || state.repeatCount >= MENTION_SOUND_REPEAT_LIMIT) return
     state.repeatCount += 1
     playMentionSound()
-    if (!state.telegramAlertSent && state.repeatCount >= TELEGRAM_ALERT_AT_REPEAT_COUNT) {
-      state.telegramAlertSent = true
-      sendTelegramAlert()
-    }
     scheduleReminder(state)
   }, MENTION_SOUND_REPEAT_MS)
 }

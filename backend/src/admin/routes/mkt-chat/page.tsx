@@ -210,10 +210,6 @@ function collectMentionEntityEmails(text: string, entities: Record<string, strin
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🔥"]
 const MENTION_SOUND_REPEAT_MS = 20_000
 const MENTION_SOUND_REPEAT_LIMIT = 8
-const TELEGRAM_ALERT_AT_REPEAT_COUNT = 3
-function sendTelegramAlert() {
-  apiFetch("/admin/mkt-chat/notifications/telegram-alert", { method: "POST" }).catch(() => {})
-}
 function emitMentionTone(ctx: AudioContext) {
   const now = ctx.currentTime
   const gain = ctx.createGain()
@@ -1327,7 +1323,6 @@ function MktChatPage() {
   const pendingMentionSoundRef = useRef(false)
   const mentionRepeatTimerRef = useRef<number | null>(null)
   const mentionRepeatCountRef = useRef(0)
-  const telegramAlertSentRef = useRef(false)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -1399,7 +1394,6 @@ function MktChatPage() {
     clearMentionRepeatTimer()
     mentionRepeatCountRef.current = 0
     pendingMentionSoundRef.current = false
-    telegramAlertSentRef.current = false
   }, [clearMentionRepeatTimer])
 
   const markNotificationsRead = useCallback(() => {
@@ -1479,16 +1473,14 @@ function MktChatPage() {
       return
     }
 
+    // Telegram giờ gửi ngay từ backend lúc tạo mention — không chờ đếm ở đây nữa.
+    // Chuông lặp lại vẫn giữ để nhắc người đang có mặt nhưng chưa mở panel thông báo.
     const scheduleReminder = () => {
       mentionRepeatTimerRef.current = window.setTimeout(() => {
         mentionRepeatTimerRef.current = null
         if (mentionRepeatCountRef.current >= MENTION_SOUND_REPEAT_LIMIT) return
         mentionRepeatCountRef.current += 1
         playMentionSound()
-        if (!telegramAlertSentRef.current && mentionRepeatCountRef.current >= TELEGRAM_ALERT_AT_REPEAT_COUNT) {
-          telegramAlertSentRef.current = true
-          sendTelegramAlert()
-        }
         scheduleReminder()
       }, MENTION_SOUND_REPEAT_MS)
     }
