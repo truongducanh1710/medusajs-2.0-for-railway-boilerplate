@@ -63,7 +63,7 @@ async function resolveReplyRoot(channelId: string, replyToId?: string | null) {
   const parent = result.rows[0]
   if (!parent) return { error: "Khong tim thay tin nhan can tra loi" }
   const rootId = parent.reply_to_id || parent.id
-  if (rootId === parent.id) return { rootId, root: parent }
+  if (rootId === parent.id) return { rootId, root: parent, parent }
 
   const rootResult = await getPool().query(
     `SELECT id, reply_to_id, author_id, content, msg_type
@@ -71,7 +71,7 @@ async function resolveReplyRoot(channelId: string, replyToId?: string | null) {
      WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL`,
     [rootId, channelId]
   )
-  return { rootId, root: rootResult.rows[0] || parent }
+  return { rootId, root: rootResult.rows[0] || parent, parent }
 }
 
 // GET /admin/mkt-chat/channels/:id/messages
@@ -173,14 +173,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const nameByEmail = await getMktUserNameMap(req)
     const memberEmails: string[] = Array.isArray(channel.members) ? channel.members.map((m: any) => m.user_id) : []
     const explicitMentions = normalizeExplicitMentions((req.body as any)?.mentions, memberEmails)
-    const mentions = [...new Set([...explicitMentions, ...parseMentions(text, memberEmails, nameByEmail)])].filter(mentionEmail => mentionEmail !== email)
-    const isAiCommand = messageType === "text" && text.toLowerCase().startsWith("@ai ")
-    const question = isAiCommand ? text.slice(4).trim() : ""
 
     const resolvedReply = await resolveReplyRoot(id, reply_to_id)
     if ((resolvedReply as any)?.error) return res.status(400).json({ error: (resolvedReply as any).error })
     const rootReplyId = (resolvedReply as any)?.rootId || null
     const rootReply = (resolvedReply as any)?.root || null
+    const replyParent = (resolvedReply as any)?.parent || null
+
+    // Tra loi truc tiep mot tin nhan cua ai do -> coi nhu tag nguoi do,
+    // ke ca khi noi dung khong go @ten (parent la nguoi dang duoc reply,
+    // khac voi root la tin dau thread).
+    const replyTargetMentions = (replyParent && memberEmails.includes(replyParent.author_id))
+      ? [replyParent.author_id]
+      : []
+
+    const mentions = [...new Set([
+      ...explicitMentions,
+      ...parseMentions(text, memberEmails, nameByEmail),
+      ...replyTargetMentions,
+    ])].filter(mentionEmail => mentionEmail !== email)
+    const isAiCommand = messageType === "text" && text.toLowerCase().startsWith("@ai ")
+    const question = isAiCommand ? text.slice(4).trim() : ""
 
     const message = await svc.createMktMessages({
       channel_id: id,
