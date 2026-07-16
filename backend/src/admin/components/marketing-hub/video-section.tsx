@@ -8,6 +8,7 @@ const BANG_TAB_COLS = [
   { id: "stt",      label: "#",           default: 36,  min: 36  },
   { id: "vd",       label: "VD",          default: 72,  min: 50  },
   { id: "ngay",     label: "Ngày",        default: 84,  min: 60  },
+  { id: "ngaydrive",label: "Up Drive",    default: 90,  min: 70  },
   { id: "nguon",    label: "Nguồn",       default: 64,  min: 50  },
   { id: "nguoilam", label: "Người làm",   default: 130, min: 80  },
   { id: "deadline", label: "Deadline",    default: 80,  min: 60  },
@@ -67,7 +68,7 @@ type FbPostLink = { page_id: string; page_name: string; post_url: string; posted
 
 type VideoRow = {
   id: string; vdCode: string; ngayDang: string; postDate?: string | null
-  createdAt?: string; adName?: string; script?: string
+  createdAt?: string; adName?: string; script?: string; driveUploadedAt?: string | null
   nguon: string; nguoiLam: string; sp: string; productCode?: string
   loaiVideo: string; link: string; trangThai: string; ghiChu: string; createdBy?: string
   fbPostLinks?: FbPostLink[]
@@ -663,6 +664,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   <td style={{ padding: "10px 12px", color: "#9CA3AF", fontSize: 12, textAlign: "center" }}>✦</td>
                   <td style={{ padding: "10px 12px", color: "#93C5FD", fontSize: 11, fontFamily: "monospace" }}>mới</td>
                   <td style={{ padding: "10px 12px", color: "#9CA3AF", fontSize: 12 }}>hôm nay</td>
+                  <td style={{ padding: "10px 12px", color: "#D1D5DB", fontSize: 11 }}>{isSuper ? "—" : ""}</td>
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ background: "#DBEAFE", color: "#1e40af", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>Team</span>
                   </td>
@@ -744,6 +746,10 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   {/* Ngày tạo — cố định, không cho sửa */}
                   <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
                     <span style={{ color: "#4B5563", fontSize: 12 }}>{fmtDate(row.createdAt, true) || "—"}</span>
+                  </td>
+                  {/* Ngày up Drive — chỉ admin thấy, backend trả null cho non-admin */}
+                  <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
+                    <span style={{ color: "#4B5563", fontSize: 12 }}>{isSuper ? (fmtDate(row.driveUploadedAt, true) || "—") : ""}</span>
                   </td>
                   <td style={{ padding: "9px 12px" }}>
                     <span style={{ background: row.nguon === "Team" ? "#DBEAFE" : "#F0F1F5", color: row.nguon === "Team" ? "#1e40af" : "#4B5563", fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>{row.nguon}</span>
