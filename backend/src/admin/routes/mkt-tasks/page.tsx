@@ -860,7 +860,6 @@ function TaskDrawer({
     type: initialTask.type,
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [tab, setTab] = useState<"detail" | "work">("detail")
   const [checklist, setChecklist] = useState<ChecklistItem[]>(
     Array.isArray(initialTask.checklist) ? initialTask.checklist : []
   )
@@ -1075,34 +1074,9 @@ function TaskDrawer({
           </div>
         </div>
 
-        {/* Tabs: Chi tiết (đề bài) | Checklist & Kết quả (bài làm) */}
-        <div className="flex border-b border-ui-border-base bg-ui-bg-subtle px-5">
-          {([
-            ["detail", "📋 Chi tiết"],
-            ["work", "☑️ Checklist & Kết quả"],
-          ] as const).map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)}
-              className={cn("-mb-px border-b-2 px-4 py-2.5 text-[13px] font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
-                tab === key
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-ui-fg-muted hover:text-ui-fg-subtle")}>
-              {label}
-              {key === "work" && checklist.length > 0 && (
-                <span className={cn("ml-1.5 rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums",
-                  checklist.every(i => i.done)
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                    : "bg-ui-bg-component text-ui-fg-subtle")}>
-                  {checklist.filter(i => i.done).length}/{checklist.length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col gap-5 px-5 py-4">
 
-            {tab === "detail" && (<>
             {/* Edit form */}
             {editMode && canEditDetails && (
               <div className="mkt-anim-fadeup flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 dark:border-blue-500/30 dark:bg-blue-500/5">
@@ -1307,9 +1281,7 @@ function TaskDrawer({
                 </div>
               )}
             </div>
-            </>)}
 
-            {tab === "work" && (<>
             {/* Checklist — assignee tự quản sub-steps, lưu ngay khi thao tác */}
             <div>
               <div className={LABEL_CLS}>
@@ -1415,9 +1387,7 @@ function TaskDrawer({
                 </div>
               </div>
             )}
-            </>)}
 
-            {tab === "detail" && (<>
             {/* Comments */}
             <div>
               <div className={LABEL_CLS}>Trao đổi ({comments.length})</div>
@@ -1479,7 +1449,6 @@ function TaskDrawer({
             <div className="pt-1 text-[11px] text-ui-fg-disabled">
               Tạo lúc {new Date(task.created_at).toLocaleString("vi-VN")}
             </div>
-            </>)}
           </div>
         </div>
       </div>
@@ -2473,11 +2442,11 @@ function HuongDanTab({ isManager }: { isManager: boolean }) {
         <ol className="flex flex-col gap-3">
           {[
             ["Nhận task", "Bạn thấy task mới trong danh sách (mặc định nhóm theo người nhận). Click để xem chi tiết."],
-            ["Đọc đề bài", "Tab \"Chi tiết\": xem Output cần có, Ghi chú / Yêu cầu của manager, Deadline."],
-            ["Tự quản tiến độ", "Tab \"Checklist & Kết quả\": thêm các bước nhỏ, tick từng bước khi xong. Tự quản, không cần báo manager."],
+            ["Đọc đề bài", "Xem Output cần có, Ghi chú / Yêu cầu của manager, Deadline ở đầu trang chi tiết."],
+            ["Tự quản tiến độ", "Phần Checklist: thêm các bước nhỏ, tick từng bước khi xong. Tự quản, không cần báo manager."],
             ["Cập nhật trạng thái", "Bấm Đang làm khi bắt đầu, bấm Hoàn thành khi xong."],
-            ["Điền kết quả", "Sau khi xong, điền Kết quả thực tế (tab Checklist & Kết quả) — số liệu cụ thể, hành động đã làm."],
-            ["Trao đổi", "Dùng phần Trao đổi (tab Chi tiết) để nhắn tin với manager nếu cần làm rõ yêu cầu."],
+            ["Điền kết quả", "Sau khi xong, điền Kết quả thực tế — số liệu cụ thể, hành động đã làm."],
+            ["Trao đổi", "Cuộn xuống cuối để dùng phần Trao đổi, nhắn tin với manager nếu cần làm rõ yêu cầu."],
           ].map(([step, desc], i) => (
             <li key={i} className={li}>
               <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">{i + 1}</span>
@@ -2499,7 +2468,7 @@ function HuongDanTab({ isManager }: { isManager: boolean }) {
               ["Tạo task", "Bấm + Tạo task → điền tiêu đề, loại, người nhận, deadline, output cần có. Có thể đặt task lặp (hằng ngày / tuần / tháng)."],
               ["Theo dõi", "List / Board hiện trạng thái toàn team. Badge ☑3/5 cho biết checklist tiến độ. 💬 hiện số trao đổi."],
               ["Giao tiếp", "Mở task → Trao đổi để nhắn tin trực tiếp. Hệ thống báo khi status thay đổi."],
-              ["Đánh giá", "Khi task Hoàn thành, tab Chi tiết hiện mục Đánh giá (⭐ 1–5 sao). Đánh giá giúp MKT biết chất lượng."],
+              ["Đánh giá", "Khi task Hoàn thành, trang chi tiết hiện mục Đánh giá (⭐ 1–5 sao). Đánh giá giúp MKT biết chất lượng."],
               ["Xem báo cáo", "Tab Báo cáo: tỉ lệ hoàn thành, đúng hạn, điểm trung bình theo từng người. Xem riêng task lặp."],
             ].map(([step, desc], i) => (
               <li key={i} className={li}>
@@ -2519,7 +2488,7 @@ function HuongDanTab({ isManager }: { isManager: boolean }) {
         <div className={h2}>☑️ Checklist — tự quản bước làm</div>
         <div className="flex flex-col gap-2">
           {[
-            "Mở task → bấm tab Checklist & Kết quả",
+            "Mở task → cuộn xuống phần Checklist",
             "Gõ tên bước vào ô \"+Thêm bước...\" rồi nhấn Enter (hoặc nút +)",
             "Tick checkbox khi hoàn thành bước đó — lưu ngay lập tức",
             "Hover vào bước → bấm ✕ để xoá",
