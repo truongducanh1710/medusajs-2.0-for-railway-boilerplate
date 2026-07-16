@@ -151,3 +151,26 @@ export async function cleanupTmp(tmpPath: string | null): Promise<void> {
   if (!tmpPath) return
   try { await fs.promises.unlink(tmpPath) } catch { /* ignore */ }
 }
+
+/**
+ * Lấy createdTime (ngày file được tải lên Drive) qua Drive API v3.
+ * Cần GOOGLE_DRIVE_API_KEY + file share "Anyone with the link" (API key không đọc được file nội bộ/private).
+ * Trả null nếu thiếu key, không phải link Drive, hoặc file không public — không throw để không chặn luồng tạo video.
+ */
+export async function getDriveFileCreatedTime(url: string): Promise<string | null> {
+  const apiKey = process.env.GOOGLE_DRIVE_API_KEY
+  if (!apiKey) return null
+  const fileId = extractDriveFileId(url)
+  if (!fileId) return null
+
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=createdTime&key=${apiKey}`
+    )
+    if (!res.ok) return null
+    const data: any = await res.json().catch(() => null)
+    return data?.createdTime || null
+  } catch {
+    return null
+  }
+}

@@ -84,6 +84,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS deadline DATE`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS starred BOOLEAN DEFAULT false`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ai_status VARCHAR(20) DEFAULT NULL`)
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS drive_uploaded_at TIMESTAMPTZ`)
   // Reset stale jobs (Railway restart giữa chừng)
   await pool.query(`
     UPDATE mkt_video SET ai_status = 'error'

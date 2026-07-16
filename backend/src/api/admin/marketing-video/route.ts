@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, ensureTables, nextVdCode, pushNotification, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
+import { getDriveFileCreatedTime } from "../../../lib/fb-drive"
 
 const VIDEO_TYPE_CODE: Record<string, string> = {
   "Video AI": "VIDEOAI",
@@ -18,8 +19,8 @@ function computeAdName(r: any, mktCode?: string): string {
   return `${mkCode}_${spCode}_${vtCode}_${r.vd_code}`
 }
 
-/** Map 1 DB row → shape UI design (field tiếng Việt). */
-function toUiRow(r: any) {
+/** Map 1 DB row → shape UI design (field tiếng Việt). isSuper: chỉ admin mới thấy driveUploadedAt. */
+function toUiRow(r: any, isSuper = false) {
   return {
     id: r.id,
     vdCode: r.vd_code,
@@ -43,6 +44,7 @@ function toUiRow(r: any) {
     aiReview: r.ai_review || null,
     aiStatus: r.ai_status ?? null,
     starred: !!r.starred,
+    driveUploadedAt: isSuper && r.drive_uploaded_at ? new Date(r.drive_uploaded_at).toISOString() : null,
   }
 }
 
@@ -109,7 +111,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         return pool.query(`UPDATE mkt_video SET ad_name = $1, product_code = $2 WHERE id = $3`, [r.ad_name, resolvedCode || r.product_code, r.id])
       }))
     }
-    return res.json({ rows: rows.map(toUiRow), total: rows.length })
+    return res.json({ rows: rows.map(r => toUiRow(r, auth.isSuper)), total: rows.length })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
@@ -146,11 +148,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const productCode: string = b.productCode ?? b.product_code ?? ""
     const videoType: string = b.loaiVideo ?? b.video_type ?? "Video AI"
     const adName = computeAdName({ product_code: productCode, video_type: videoType, vd_code: vdCode }, mktCode)
+    const link: string = b.link ?? ""
+    const driveUploadedAt = link ? await getDriveFileCreatedTime(link) : null
 
     const { rows: [row] } = await pool.query(
       `INSERT INTO mkt_video
-        (vd_code, post_date, source, maker, product, product_code, video_type, link, status, note, ad_name, script, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        (vd_code, post_date, source, maker, product, product_code, video_type, link, status, note, ad_name, script, created_by, drive_uploaded_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         vdCode,
@@ -160,12 +164,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         spRaw,
         b.productCode ?? b.product_code ?? null,
         b.loaiVideo ?? b.video_type ?? "Video AI",
-        b.link ?? "",
+        link,
         status,
         b.ghiChu ?? b.note ?? "",
         adName,
         b.script ?? "",
         auth.email,
+        driveUploadedAt,
       ]
     )
     // Push notification vào panel admin
@@ -175,7 +180,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       description: `Người làm: ${row.maker} · Loại: ${row.video_type} · Trạng thái: ${STATUS_KEY_TO_VI[row.status] || row.status}`,
     })
 
-    return res.json({ row: toUiRow(row) })
+    return res.json({ row: toUiRow(row, auth.isSuper) })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

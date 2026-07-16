@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo, STATUS_VI_TO_KEY, STATUS_KEY_TO_VI } from "../_lib"
+import { getDriveFileCreatedTime } from "../../../../lib/fb-drive"
 
 /**
  * GET /admin/marketing-video/:id
@@ -41,7 +42,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       const vi = b.trangThai ?? STATUS_KEY_TO_VI[b.status] ?? b.status
       set("status", STATUS_VI_TO_KEY[vi] || b.status || "todo")
     }
-    if (b.link !== undefined)       set("link", b.link)
+    if (b.link !== undefined) {
+      set("link", b.link)
+      const driveUploadedAt = b.link ? await getDriveFileCreatedTime(b.link) : null
+      if (driveUploadedAt) set("drive_uploaded_at", driveUploadedAt)
+    }
     if (b.ghiChu !== undefined || b.note !== undefined) set("note", b.ghiChu ?? b.note)
     if (b.nguoiLam !== undefined || b.maker !== undefined) set("maker", b.nguoiLam ?? b.maker)
     if (b.sp !== undefined || b.product !== undefined)     set("product", b.sp ?? b.product)

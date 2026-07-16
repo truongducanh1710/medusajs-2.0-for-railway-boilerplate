@@ -209,7 +209,7 @@ const LOAI_LIST = ["Video AI", "Real", "Review", "RAW"]
 const TEST_SP_VALUE = "__TEST__"
 const TEST_SP_LABEL = "🧪 TEST — Sản phẩm ngoài POS"
 
-type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string }
+type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string; script: string }
 
 type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string; script: string }
 
@@ -236,7 +236,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
   const [spList, setSpList] = useState<{ name: string; code: string }[]>([])
-  const [draft, setDraft] = useState<QuickAdd>({ sp: "", nguoiLam: "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
+  const [draft, setDraft] = useState<QuickAdd>({ sp: "", nguoiLam: "", loaiVideo: LOAI_LIST[0], link: "", ghiChu: "", script: "" })
   const spRef = useRef<HTMLSelectElement>(null)
   const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } = useResizableColumns("mkt-video-bang.col-widths.v1", BANG_TAB_COLS)
 
@@ -265,7 +265,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const openAdd = () => {
     const defaultPerson = (!isSuper && mktCode) ? mktCodeToName(mktCode) : (mktUsers[0]?.name || "")
-    setDraft({ sp: spList[0]?.name || "", nguoiLam: defaultPerson, loaiVideo: LOAI_LIST[0], link: "", ghiChu: "" })
+    setDraft({ sp: spList[0]?.name || "", nguoiLam: defaultPerson, loaiVideo: LOAI_LIST[0], link: "", ghiChu: "", script: "" })
     setAdding(true)
   }
 
@@ -712,7 +712,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                     <span style={{ color: "#9CA3AF", fontSize: 11, fontStyle: "italic" }}>tự sinh…</span>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    <span style={{ color: "#9CA3AF", fontSize: 11, fontStyle: "italic" }}>thêm sau…</span>
+                    <textarea value={draft.script} onChange={e => setDraft(p => ({ ...p, script: e.target.value }))} placeholder="Lời thoại…" rows={2} style={{ ...cellInp, fontSize: 13, padding: "6px 8px", resize: "vertical", fontFamily: "inherit" }} />
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     <input value={draft.ghiChu} onChange={e => setDraft(p => ({ ...p, ghiChu: e.target.value }))} placeholder="Ghi chú…" style={{ ...cellInp, fontSize: 13, padding: "6px 8px" }} />
