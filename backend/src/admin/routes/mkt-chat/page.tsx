@@ -312,6 +312,8 @@ function PageStyles() {
       .dark .mkt-md-th, .dark .mkt-md-td { border-color: rgb(255 255 255 / 0.15) }
       .mkt-md-th { font-weight: 700; background: rgb(0 0 0 / 0.04) }
       .dark .mkt-md-th { background: rgb(255 255 255 / 0.06) }
+      .mkt-chat-fontsize .text-\\[13px\\] { font-size: var(--mkt-chat-font-size, 13px) }
+      .mkt-chat-fontsize .text-\\[11px\\] { font-size: max(9px, calc(var(--mkt-chat-font-size, 13px) - 2px)) }
     `}</style>
   )
 }
@@ -434,12 +436,13 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         {!isMine && <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name}</div>}
 
         {msg.reply_to && (
-          <div className={cn("rounded-t-lg border-l-2 px-2 py-1 text-[11px]",
+          <button type="button" onClick={() => onOpenThread(msg)} title="Xem thread"
+            className={cn("block w-full cursor-pointer rounded-t-lg border-l-2 px-2 py-1 text-left text-[11px] transition-colors",
             isMine
-              ? "border-blue-300 bg-blue-500/10 text-ui-fg-subtle"
-              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted")}>
+              ? "border-blue-300 bg-blue-500/10 text-ui-fg-subtle hover:bg-blue-500/20"
+              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted hover:bg-ui-bg-component-hover")}>
             <span className="font-semibold">{msg.reply_to.author_name}</span>: {msg.reply_to.content}
-          </div>
+          </button>
         )}
 
         <div className={cn("relative whitespace-pre-wrap px-3 py-2 text-[13px] leading-relaxed transition-opacity",
@@ -1301,6 +1304,17 @@ function MktChatPage() {
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
   const [notificationRepeatSoundEnabled, setNotificationRepeatSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:repeat-sound") !== "0")
   const [allMessageSoundEnabled, setAllMessageSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:all-sound") === "1")
+  const [chatFontSize, setChatFontSize] = useState(() => {
+    const saved = Number(localStorage.getItem("mkt-chat:font-size"))
+    return saved >= 12 && saved <= 20 ? saved : 13
+  })
+  const changeChatFontSize = useCallback((delta: number) => {
+    setChatFontSize(prev => {
+      const next = Math.min(20, Math.max(12, prev + delta))
+      localStorage.setItem("mkt-chat:font-size", String(next))
+      return next
+    })
+  }, [])
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -2167,7 +2181,7 @@ function MktChatPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div ref={rootRef} className="relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base">
+    <div ref={rootRef} className="mkt-chat-fontsize relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base" style={{ "--mkt-chat-font-size": `${chatFontSize}px` } as Record<string, string>}>
       <PageStyles />
 
       {/* ── Cột 1: Sidebar ── */}
@@ -2180,6 +2194,13 @@ function MktChatPage() {
               {totalUnread > 0 && (
                 <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
               )}
+              <div className="flex items-center overflow-hidden rounded-lg border border-ui-border-base">
+                <button onClick={() => changeChatFontSize(-1)} disabled={chatFontSize <= 12} title="Chữ nhỏ hơn"
+                  className="grid size-7 place-items-center text-[13px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A-</button>
+                <span className="px-1 text-[10px] tabular-nums text-ui-fg-muted">{chatFontSize}</span>
+                <button onClick={() => changeChatFontSize(1)} disabled={chatFontSize >= 20} title="Chữ to hơn"
+                  className="grid size-7 place-items-center text-[13px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A+</button>
+              </div>
               <button onClick={toggleAllMessageSound} title={allMessageSoundEnabled ? "Tắt âm báo mọi tin nhắn" : "Bật âm báo mọi tin nhắn"}
                 className={cn("grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                   allMessageSoundEnabled ? "border-emerald-300 bg-emerald-500/10 text-emerald-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
