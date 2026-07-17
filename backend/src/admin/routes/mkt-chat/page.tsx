@@ -1681,7 +1681,7 @@ function MktChatPage() {
         setNotifications(prev => [notification, ...prev.filter(n => n.id !== notification.id)].slice(0, 30))
         setNotificationUnread(c => c + 1)
         playMentionSound()
-        if (desktopNotifyRef.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted" && document.hidden) {
+        if (desktopNotifyRef.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
           try {
             const n = new Notification(`${notification.sender_name} @${notification.channel_name}`, {
               body: notification.preview || "Bạn được nhắc đến trong một tin nhắn",
@@ -1693,7 +1693,9 @@ function MktChatPage() {
               jumpToNotificationRef.current(notification)
               n.close()
             }
-          } catch { /* best-effort, khong chan luong chinh */ }
+          } catch (err) { console.error("[mkt-chat] desktop notification failed:", err) }
+        } else if (desktopNotifyRef.current) {
+          console.warn("[mkt-chat] desktop notification skipped — permission:", typeof Notification !== "undefined" ? Notification.permission : "unsupported")
         }
       })
       es.addEventListener("mention.notifications.read", () => {
