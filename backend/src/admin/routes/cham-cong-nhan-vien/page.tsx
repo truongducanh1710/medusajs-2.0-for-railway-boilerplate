@@ -16,12 +16,21 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" })
 }
 
-function getPosition(): Promise<GeolocationPosition | null> {
-  return new Promise((resolve) => {
-    if (!("geolocation" in navigator)) return resolve(null)
+const GEO_ERROR_MESSAGE: Record<number, string> = {
+  1: "Bạn đã từ chối quyền vị trí. Vào cài đặt trình duyệt để bật lại quyền vị trí cho trang này rồi thử lại.",
+  2: "Không lấy được vị trí (thiết bị không xác định được GPS). Vui lòng bật định vị (Location/GPS) rồi thử lại.",
+  3: "Lấy vị trí quá lâu, vui lòng thử lại.",
+}
+
+function getPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("Trình duyệt này không hỗ trợ định vị GPS, không thể chấm công."))
+      return
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
-      () => resolve(null),
+      (err) => reject(new Error(GEO_ERROR_MESSAGE[err.code] || "Không lấy được vị trí, vui lòng thử lại.")),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     )
   })
@@ -58,9 +67,9 @@ function ChamCongNhanVienPage() {
       const pos = await getPosition()
       await apiJson("/admin/cham-cong/checkin", "POST", {
         action: nextAction,
-        lat: pos?.coords.latitude,
-        lng: pos?.coords.longitude,
-        accuracy_m: pos?.coords.accuracy,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy_m: pos.coords.accuracy,
       })
       await load()
     } catch (e: any) {
@@ -74,7 +83,7 @@ function ChamCongNhanVienPage() {
     <div className="mx-auto max-w-lg p-6">
       <h1 className="mb-1 text-xl font-semibold">Chấm công</h1>
       <p className="mb-5 text-sm text-gray-500">
-        Bấm nút bên dưới để chấm công, hệ thống sẽ ghi nhận vị trí nếu trình duyệt cho phép.
+        Bấm nút bên dưới để chấm công. Bắt buộc cho phép truy cập vị trí (GPS) — nếu từ chối sẽ không chấm công được.
       </p>
 
       {err && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}

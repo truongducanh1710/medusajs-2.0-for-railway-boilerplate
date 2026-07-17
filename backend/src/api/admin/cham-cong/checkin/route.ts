@@ -31,6 +31,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (action !== "in" && action !== "out") {
       return res.status(400).json({ error: "action phải là 'in' hoặc 'out'" })
     }
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      return res.status(400).json({ error: "Bắt buộc phải có vị trí GPS để chấm công. Vui lòng cho phép truy cập vị trí." })
+    }
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const today = vnDayKey()
@@ -38,8 +41,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const log = await svc.createChamCongLogs({
       user_email: email,
       action,
-      lat: typeof lat === "number" ? lat : null,
-      lng: typeof lng === "number" ? lng : null,
+      lat,
+      lng,
       accuracy_m: typeof accuracy_m === "number" ? accuracy_m : null,
       address: address ? String(address).slice(0, 255) : null,
       day_key: today,
