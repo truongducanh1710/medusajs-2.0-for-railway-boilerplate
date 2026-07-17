@@ -5,7 +5,7 @@ import { vnDayKey } from "../../mkt-chat/_presence"
 
 type TimelineItem = {
   at: string
-  kind: "session" | "message" | "task" | "call"
+  kind: "session" | "message" | "task" | "call" | "mention"
   label: string
   detail?: string
   meta?: Record<string, any>
@@ -28,7 +28,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const user = users[0]
     if (!user) return res.status(404).json({ error: "Không tìm thấy nhân sự" })
 
-    const [sessions, messages, tasks, calls] = await Promise.all([
+    const [sessions, messages, tasks, calls, mentions] = await Promise.all([
       pool.query(
         `SELECT started_at, ended_at, last_seen_at, active_seconds, idle_seconds, status
          FROM mkt_presence_session
@@ -37,7 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         [email, date]
       ),
       pool.query(
-        `SELECT m.created_at, m.content, m.msg_type, c.name AS channel_name
+        `SELECT m.created_at, m.content, m.msg_type, m.device, c.name AS channel_name
          FROM mkt_message m
          LEFT JOIN mkt_channel c ON c.id = m.channel_id
          WHERE m.author_id = $1 AND m.created_at BETWEEN $2 AND $3
@@ -61,6 +61,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          WHERE m.user_id = $1 AND c.calldate BETWEEN $2 AND $3 AND c.direction = 'outgoing'
          ORDER BY c.calldate`,
         [user.id, fromTs, toTs]
+      ).catch(() => ({ rows: [] as any[] })),
+      // Mention nhận được trong ngày + có phản hồi (message thật) trong 15p hay không.
+      pool.query(
+        `SELECT m.created_at, (m.content::json->>'sender_name') AS sender_name,
+                (m.content::json->>'channel_name') AS channel_name,
+                (m.content::json->>'preview') AS preview,
+                reply.created_at AS replied_at
+         FROM mkt_message m
+         LEFT JOIN LATERAL (
+           SELECT r.created_at
+           FROM mkt_message r
+           WHERE r.author_id = $1 AND r.channel_id <> '__notify__' AND r.deleted_at IS NULL
+             AND r.created_at > m.created_at
+           ORDER BY r.created_at ASC
+           LIMIT 1
+         ) reply ON true
+         WHERE m.channel_id = '__notify__' AND m.msg_type = 'system_notify'
+           AND (m.content::json->>'type') = 'mention'
+           AND (m.content::json->>'recipient') = $1
+           AND m.created_at BETWEEN $2 AND $3
+         ORDER BY m.created_at`,
+        [email, fromTs, toTs]
       ).catch(() => ({ rows: [] as any[] })),
     ])
 
@@ -89,6 +111,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         kind: "message",
         label: `Nhắn tin ở #${m.channel_name || "?"}`,
         detail: String(m.content || "").slice(0, 120),
+        meta: { device: m.device || null },
       })
     }
     for (const t of tasks.rows) {
@@ -108,6 +131,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         detail: `${c.disposition === "ANSWERED" ? "Nghe máy" : c.disposition} · ${fmtDur(c.billsec)}`,
       })
     }
+    for (const mt of mentions.rows) {
+      const onTime = mt.replied_at && new Date(mt.replied_at).getTime() - new Date(mt.created_at).getTime() <= 15 * 60_000
+      items.push({
+        at: mt.created_at,
+        kind: "mention",
+        label: `Bị nhắc bởi ${mt.sender_name || "?"} ở #${mt.channel_name || "?"}`,
+        detail: onTime ? "Đã phản hồi trong 15p" : "⚠ Không phản hồi trong 15p",
+        meta: { on_time: !!onTime, preview: mt.preview },
+      })
+    }
 
     items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 
@@ -121,6 +154,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         messages: messages.rows.length,
         tasks_done: tasks.rows.filter((t: any) => t.status === "done").length,
         calls: calls.rows.length,
+        mention_total: mentions.rows.length,
+        mention_late: mentions.rows.filter((mt: any) =>
+          !mt.replied_at || new Date(mt.replied_at).getTime() - new Date(mt.created_at).getTime() > 15 * 60_000
+        ).length,
       },
       items,
     })

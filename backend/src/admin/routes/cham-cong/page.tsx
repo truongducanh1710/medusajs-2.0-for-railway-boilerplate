@@ -32,6 +32,7 @@ type TimelineItem = {
   kind: "session" | "message" | "task" | "call" | "mention"
   label: string
   detail?: string
+  meta?: { device?: string | null }
 }
 
 function todayVN(): string {
@@ -251,7 +252,14 @@ function ChamCongPage() {
                     <span className="w-11 shrink-0 text-xs text-gray-400">{fmtTime(it.at)}</span>
                     <span className={`shrink-0 ${k.cls}`}>{k.icon}</span>
                     <div className="min-w-0">
-                      <div className="break-words">{it.label}</div>
+                      <div className="break-words">
+                        {it.label}
+                        {it.meta?.device && (
+                          <span className="ml-1" title={it.meta.device === "mobile" ? "Gửi từ điện thoại" : "Gửi từ máy tính"}>
+                            {it.meta.device === "mobile" ? "📱" : "💻"}
+                          </span>
+                        )}
+                      </div>
                       {it.detail && <div className="truncate text-xs text-gray-400">{it.detail}</div>}
                     </div>
                   </li>
