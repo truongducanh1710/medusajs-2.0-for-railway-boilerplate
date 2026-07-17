@@ -44,6 +44,7 @@ type ChamCongConfig = {
   shift_end: string
   work_days: number[]
   late_grace_min: number
+  half_day_saturdays: string[]
 }
 
 type LeaveMini = { start_at: string; end_at: string }
@@ -67,10 +68,11 @@ function classifyDay(
   leaves: LeaveMini[],
   config: ChamCongConfig,
   today: string
-): { status: DayStatus; firstIn: string | null; lastOut: string | null; lateMin: number } {
+): { status: DayStatus; firstIn: string | null; lastOut: string | null; lateMin: number; isHalfDay: boolean } {
   const dt = new Date(`${dayKey}T00:00:00Z`)
   const dow = new Date(dayKey + "T12:00:00").getDay() // giờ trưa tránh lệch DST/UTC offset
   const isWorkDay = config.work_days.includes(dow)
+  const isHalfDay = (config.half_day_saturdays || []).includes(dayKey)
   const onLeave = leaves.some((l) => new Date(l.start_at) <= new Date(`${dayKey}T23:59:59`) && new Date(l.end_at) >= dt)
 
   const logs = logsByDay[dayKey] || []
@@ -84,11 +86,11 @@ function classifyDay(
     lateMin = Math.max(0, actualMin - hhmmToMinutes(config.shift_start) - config.late_grace_min)
   }
 
-  if (onLeave) return { status: "leave", firstIn, lastOut, lateMin }
-  if (!isWorkDay) return { status: "off", firstIn, lastOut, lateMin }
-  if (dayKey > today) return { status: "future", firstIn, lastOut, lateMin }
-  if (!firstIn) return { status: dayKey === today ? "future" : "missing", firstIn, lastOut, lateMin }
-  return { status: lateMin > 0 ? "late" : "worked", firstIn, lastOut, lateMin }
+  if (onLeave) return { status: "leave", firstIn, lastOut, lateMin, isHalfDay }
+  if (!isWorkDay) return { status: "off", firstIn, lastOut, lateMin, isHalfDay }
+  if (dayKey > today) return { status: "future", firstIn, lastOut, lateMin, isHalfDay }
+  if (!firstIn) return { status: dayKey === today ? "future" : "missing", firstIn, lastOut, lateMin, isHalfDay }
+  return { status: lateMin > 0 ? "late" : "worked", firstIn, lastOut, lateMin, isHalfDay }
 }
 
 const DAY_STATUS_STYLE: Record<DayStatus, string> = {
@@ -112,7 +114,7 @@ function ChamCongSection() {
   const [cursor, setCursor] = useState(() => new Date())
   const [monthLogs, setMonthLogs] = useState<ChamCongLog[]>([])
   const [monthLeaves, setMonthLeaves] = useState<LeaveMini[]>([])
-  const [config, setConfig] = useState<ChamCongConfig>({ shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5 })
+  const [config, setConfig] = useState<ChamCongConfig>({ shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [] })
   const [monthLoading, setMonthLoading] = useState(false)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
@@ -278,7 +280,8 @@ function ChamCongSection() {
               <button
                 key={c.dayKey}
                 onClick={() => setSelectedDay(c.dayKey)}
-                className={`aspect-square rounded text-xs font-medium transition-opacity hover:opacity-80 ${DAY_STATUS_STYLE[info.status]}`}
+                title={info.isHalfDay ? "Thứ 7 làm nửa ngày (buổi sáng)" : undefined}
+                className={`relative aspect-square rounded text-xs font-medium transition-opacity hover:opacity-80 ${DAY_STATUS_STYLE[info.status]} ${info.isHalfDay ? "ring-2 ring-offset-1 ring-violet-400" : ""}`}
               >
                 {c.dayNum}
               </button>
@@ -290,6 +293,7 @@ function ChamCongSection() {
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-amber-500" />Đi muộn</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-blue-500" />Nghỉ phép</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-red-500" />Chưa chấm công</span>
+          <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-gray-300 ring-2 ring-offset-1 ring-violet-400" />T7 nửa ngày</span>
         </div>
       </div>
 
@@ -301,6 +305,7 @@ function ChamCongSection() {
               <button onClick={() => setSelectedDay(null)} className="text-gray-400 hover:text-gray-700">✕</button>
             </div>
             <div className="space-y-1 text-sm">
+              {selectedInfo.isHalfDay && <div className="text-violet-600">🕐 Thứ 7 làm nửa ngày (buổi sáng)</div>}
               <div>Vào: {selectedInfo.firstIn ? fmtTime(selectedInfo.firstIn) : "—"}{selectedInfo.lateMin > 0 && <span className="ml-1 text-amber-600">(muộn {selectedInfo.lateMin} phút)</span>}</div>
               <div>Ra: {selectedInfo.lastOut ? fmtTime(selectedInfo.lastOut) : "—"}</div>
               {selectedInfo.firstIn && (
@@ -651,6 +656,8 @@ function QuanLySection() {
   const [cfgShiftEnd, setCfgShiftEnd] = useState("17:30")
   const [cfgWorkDays, setCfgWorkDays] = useState<number[]>([1, 2, 3, 4, 5, 6])
   const [cfgGrace, setCfgGrace] = useState(5)
+  const [cfgHalfDaySaturdays, setCfgHalfDaySaturdays] = useState<string[]>([])
+  const [newHalfDay, setNewHalfDay] = useState("")
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -662,6 +669,7 @@ function QuanLySection() {
       setCfgShiftEnd(d.config.shift_end)
       setCfgWorkDays(d.config.work_days)
       setCfgGrace(d.config.late_grace_min)
+      setCfgHalfDaySaturdays(d.config.half_day_saturdays || [])
     } catch (e: any) {
       setErr(e.message || "Lỗi tải dữ liệu")
     } finally {
@@ -676,6 +684,7 @@ function QuanLySection() {
     try {
       await apiJson("/admin/cham-cong/checkin/config", "PATCH", {
         shift_start: cfgShiftStart, shift_end: cfgShiftEnd, work_days: cfgWorkDays, late_grace_min: cfgGrace,
+        half_day_saturdays: cfgHalfDaySaturdays,
       })
       await load()
     } catch (e: any) {
@@ -687,6 +696,17 @@ function QuanLySection() {
 
   const toggleWorkDay = (dow: number) => {
     setCfgWorkDays((prev) => prev.includes(dow) ? prev.filter((d) => d !== dow) : [...prev, dow].sort())
+  }
+
+  const addHalfDaySaturday = () => {
+    if (!newHalfDay) return
+    const dow = new Date(newHalfDay + "T12:00:00").getDay()
+    if (dow !== 6) { setErr("Ngày chọn phải là Thứ 7"); return }
+    setCfgHalfDaySaturdays((prev) => [...new Set([...prev, newHalfDay])].sort())
+    setNewHalfDay("")
+  }
+  const removeHalfDaySaturday = (day: string) => {
+    setCfgHalfDaySaturdays((prev) => prev.filter((d) => d !== day))
   }
 
   if (loading && !data) return <div className="py-8 text-center text-sm text-gray-400">Đang tải...</div>
@@ -917,6 +937,27 @@ function QuanLySection() {
               <span className="mb-1 block text-gray-500">Phút du di trước khi tính đi muộn</span>
               <input type="number" min={0} max={60} value={cfgGrace} onChange={(e) => setCfgGrace(Number(e.target.value))} className="w-24 rounded border px-2 py-1.5" />
             </label>
+
+            <div className="mb-4">
+              <span className="mb-1 block text-sm text-gray-500">Thứ 7 làm nửa ngày (chọn thủ công từng ngày, không theo quy luật cố định)</span>
+              <div className="mb-2 flex gap-2">
+                <input type="date" value={newHalfDay} onChange={(e) => setNewHalfDay(e.target.value)} className="rounded border px-2 py-1.5 text-sm" />
+                <button type="button" onClick={addHalfDaySaturday} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">+ Thêm</button>
+              </div>
+              {cfgHalfDaySaturdays.length === 0 ? (
+                <div className="text-xs text-gray-400">Chưa có ngày T7 nửa buổi nào trong tháng này</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {cfgHalfDaySaturdays.map((day) => (
+                    <span key={day} className="flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-xs text-violet-700">
+                      {fmtDdMm(day)}/{day.slice(0, 4)}
+                      <button type="button" onClick={() => removeHalfDaySaturday(day)} className="text-violet-400 hover:text-violet-700">✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button onClick={saveConfig} disabled={savingConfig} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
               {savingConfig ? "Đang lưu..." : "Lưu cài đặt"}
             </button>

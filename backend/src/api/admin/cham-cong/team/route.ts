@@ -10,6 +10,13 @@ function resolvePerms(metadata: any): string[] {
   return [...new Set([...fromRole, ...explicit])]
 }
 
+// T7 nửa ngày (HR chọn thủ công đầu tháng) kết thúc buổi sáng — mặc định 12:00 nếu
+// công ty chưa cấu hình giờ ra riêng, giữ nguyên giờ ra full-day cho các ngày khác.
+const HALF_DAY_SHIFT_END = "12:00"
+function effectiveShiftEnd(dateKey: string, config: { shift_end: string; half_day_saturdays?: string[] }): string {
+  return (config.half_day_saturdays || []).includes(dateKey) ? HALF_DAY_SHIFT_END : config.shift_end
+}
+
 function minutesLate(firstInIso: string | null, shiftStart: string, graceMin: number): number {
   if (!firstInIso) return 0
   const d = new Date(firstInIso)
@@ -42,7 +49,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       svc.listChamCongLogs({}, { order: { created_at: "ASC" }, take: 5000 }),
     ])
 
-    const config = configRows[0] || { shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5 }
+    const config = configRows[0] || { shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [] }
 
     // ── Bảng chi tiết ngày đã chọn ──────────────────────────────────────────
     const byUserDay: Record<string, any[]> = {}
@@ -100,7 +107,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // ── Top check-in sớm nhất / về sớm hôm nay ─────────────────────────────
     const topEarly = dayRows.filter((r: any) => r.first_in).sort((a: any, b: any) => a.first_in.localeCompare(b.first_in)).slice(0, 5)
-    const [eh, em] = config.shift_end.split(":").map(Number)
+    const [eh, em] = effectiveShiftEnd(date, config).split(":").map(Number)
     const earlyLeavers = dayRows.filter((r: any) => {
       if (!r.last_out) return false
       const vn = new Date(new Date(r.last_out).getTime() + 7 * 3600_000)
