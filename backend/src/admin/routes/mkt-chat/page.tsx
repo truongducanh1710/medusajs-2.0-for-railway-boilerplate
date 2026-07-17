@@ -1333,6 +1333,7 @@ function MktChatPage() {
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
   const [notificationRepeatSoundEnabled, setNotificationRepeatSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:repeat-sound") !== "0")
   const [allMessageSoundEnabled, setAllMessageSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:all-sound") === "1")
+  const [desktopNotifyEnabled, setDesktopNotifyEnabled] = useState(() => localStorage.getItem("mkt-chat:desktop-notify") === "1")
   const [chatFontSize, setChatFontSize] = useState(() => {
     const saved = Number(localStorage.getItem("mkt-chat:font-size"))
     return saved >= 12 && saved <= 20 ? saved : 13
@@ -1366,6 +1367,8 @@ function MktChatPage() {
   const pendingMentionSoundRef = useRef(false)
   const mentionRepeatTimerRef = useRef<number | null>(null)
   const mentionRepeatCountRef = useRef(0)
+  const desktopNotifyRef = useRef(false)
+  const jumpToNotificationRef = useRef<(notification: MktNotification) => void>(() => {})
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
@@ -1589,6 +1592,7 @@ function MktChatPage() {
   // Đồng bộ ref cho effect SSE đọc — xem giải thích ở khai báo activeChannelIdRef phía trên.
   useEffect(() => { activeChannelIdRef.current = activeChannel?.id ?? null }, [activeChannel?.id])
   useEffect(() => { openThreadIdRef.current = openThread?.id ?? null }, [openThread?.id])
+  useEffect(() => { desktopNotifyRef.current = desktopNotifyEnabled }, [desktopNotifyEnabled])
 
   // SSE realtime: receive pushed events instead of 4s polling
   useEffect(() => {
@@ -1677,6 +1681,20 @@ function MktChatPage() {
         setNotifications(prev => [notification, ...prev.filter(n => n.id !== notification.id)].slice(0, 30))
         setNotificationUnread(c => c + 1)
         playMentionSound()
+        if (desktopNotifyRef.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted" && document.hidden) {
+          try {
+            const n = new Notification(`${notification.sender_name} @${notification.channel_name}`, {
+              body: notification.preview || "Bạn được nhắc đến trong một tin nhắn",
+              icon: "/favicon.ico",
+              tag: `mkt-chat-mention-${notification.id}`,
+            })
+            n.onclick = () => {
+              window.focus()
+              jumpToNotificationRef.current(notification)
+              n.close()
+            }
+          } catch { /* best-effort, khong chan luong chinh */ }
+        }
       })
       es.addEventListener("mention.notifications.read", () => {
         stopMentionSoundReminder()
@@ -1994,6 +2012,21 @@ function MktChatPage() {
     if (nextOpen && notificationUnread > 0) markNotificationsRead()
   }
 
+  const toggleDesktopNotify = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    const next = !desktopNotifyEnabled
+    if (next) {
+      const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission()
+      if (perm !== "granted") {
+        alert("Trình duyệt chưa cấp quyền thông báo. Vào cài đặt trình duyệt để bật lại.")
+        return
+      }
+    }
+    setDesktopNotifyEnabled(next)
+    localStorage.setItem("mkt-chat:desktop-notify", next ? "1" : "0")
+  }
+
   const toggleNotificationSound = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     const next = !notificationSoundEnabled
@@ -2038,6 +2071,7 @@ function MktChatPage() {
     }
     requestAnimationFrame(() => jumpToMessage(notification.message_id))
   }
+  useEffect(() => { jumpToNotificationRef.current = jumpToNotification })
   useEffect(() => {
     const pendingId = pendingJumpRef.current
     if (!pendingId || !messages.some(m => m.id === pendingId)) return
@@ -2225,23 +2259,23 @@ function MktChatPage() {
       <aside className={cn("w-full shrink-0 flex-col border-r border-ui-border-base bg-ui-bg-subtle md:flex md:w-[260px]",
         mobileChatOpen ? "hidden" : "flex")}>
         <div className="px-3 pb-1 pt-3">
-          <div className="relative mb-2 flex items-center justify-between px-1">
-            <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
-            <div className="flex items-center gap-1.5">
+          <div className="relative mb-2 flex items-center justify-between gap-1 px-1">
+            <span className="shrink-0 text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
+            <div className="flex shrink-0 items-center gap-1">
               <div className="flex items-center overflow-hidden rounded-lg border border-ui-border-base">
                 <button onClick={() => changeChatFontSize(-1)} disabled={chatFontSize <= 12} title="Chữ nhỏ hơn"
-                  className="grid size-7 place-items-center text-[13px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A-</button>
-                <span className="px-1 text-[10px] tabular-nums text-ui-fg-muted">{chatFontSize}</span>
+                  className="grid size-6 place-items-center text-[12px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A-</button>
+                <span className="px-0.5 text-[10px] tabular-nums text-ui-fg-muted">{chatFontSize}</span>
                 <button onClick={() => changeChatFontSize(1)} disabled={chatFontSize >= 20} title="Chữ to hơn"
-                  className="grid size-7 place-items-center text-[13px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A+</button>
+                  className="grid size-6 place-items-center text-[12px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A+</button>
               </div>
               <button onClick={toggleAllMessageSound} title={allMessageSoundEnabled ? "Tắt âm báo mọi tin nhắn" : "Bật âm báo mọi tin nhắn"}
-                className={cn("grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                className={cn("grid size-6 place-items-center rounded-lg border text-[12px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                   allMessageSoundEnabled ? "border-emerald-300 bg-emerald-500/10 text-emerald-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
                 {allMessageSoundEnabled ? "🔊" : "🔇"}
               </button>
               <button ref={notificationBtnRef} onClick={toggleNotifications} title="Thông báo nhắc đến"
-                className={cn("relative grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                className={cn("relative grid size-6 place-items-center rounded-lg border text-[12px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                   notificationOpen ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>🔔
                 {notificationUnread > 0 && (
                   <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-4 text-white shadow-sm">
@@ -2261,6 +2295,10 @@ function MktChatPage() {
                         {notificationSoundEnabled ? "Âm bật" : "Âm tắt"}
                       </button>
                       <button onClick={toggleNotificationRepeatSound} className={cn("text-[11px] font-medium", notificationRepeatSoundEnabled ? "text-amber-600 hover:text-amber-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>{notificationRepeatSoundEnabled ? "Nhắc lại" : "Không nhắc"}</button>
+                      <button onClick={toggleDesktopNotify} title="Thông báo trên Chrome khi có người tag bạn"
+                        className={cn("text-[11px] font-medium", desktopNotifyEnabled ? "text-emerald-600 hover:text-emerald-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>
+                        {desktopNotifyEnabled ? "Desktop bật" : "Desktop tắt"}
+                      </button>
                       <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
                       <button onClick={() => setNotificationOpen(false)} title="Đóng"
                         className="grid size-6 place-items-center rounded-md text-sm text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">✕</button>
