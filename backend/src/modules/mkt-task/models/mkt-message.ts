@@ -18,6 +18,7 @@ const MktMessage = model.define("mkt_message", {
   reactions: model.json().default({}),
   is_pinned: model.boolean().default(false),
   mentions: model.json().default([] as any),
+  recalled_at: model.dateTime().nullable(),
 })
 
 export default MktMessage

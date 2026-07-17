@@ -25,6 +25,7 @@ type Message = {
   file_expires_at: string | null
   reactions: Record<string, string[]>; is_pinned: boolean; mentions: string[]
   reply_count: number; channel_name?: string
+  recalled_at?: string | null
   created_at: string
 }
 type MktUser = { email: string; name: string }
@@ -368,7 +369,9 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine, users: m
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread }: {
+const RECALL_WINDOW_MS = 24 * 60 * 60 * 1000
+
+function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread, onRecall }: {
   msg: Message; users: MktUser[]; isMine: boolean; currentUserEmail: string; isManager: boolean
   isOptimistic: boolean
   onTaskClick?: (taskId: string) => void
@@ -376,6 +379,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
   onReact: (msgId: string, emoji: string) => void
   onPin: (msgId: string) => void
   onOpenThread: (msg: Message) => void
+  onRecall: (msgId: string) => void
 }) {
   const isNote = msg.msg_type === "internal_note"
   const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
@@ -427,6 +431,23 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
       </div>
     )
   }
+
+  if (msg.recalled_at) {
+    return (
+      <div className={cn("group/msg relative my-0.5 flex gap-2", isMine && "flex-row-reverse")}>
+        {!isMine && <Avatar name={msg.author_name} className="mt-4 size-7 text-[11px]" />}
+        <div className="max-w-[82%] min-w-0 md:max-w-[400px]">
+          {!isMine && <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name}</div>}
+          <div className="rounded-xl border border-dashed border-ui-border-base px-3 py-2 text-[13px] italic text-ui-fg-muted">
+            {isMine ? "Bạn đã thu hồi một tin nhắn" : `${msg.author_name} đã thu hồi một tin nhắn`}
+          </div>
+          <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>{fmtTime(msg.created_at)}</div>
+        </div>
+      </div>
+    )
+  }
+
+  const canRecall = isMine && !isOptimistic && (Date.now() - new Date(msg.created_at).getTime() < RECALL_WINDOW_MS)
 
   return (
     <div tabIndex={0} className={cn("group/msg relative my-0.5 flex gap-2 outline-none", isMine && "flex-row-reverse")}>
@@ -494,6 +515,10 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
             className="grid size-6 place-items-center rounded-md text-xs transition-colors hover:bg-ui-bg-base-hover">
             {msg.is_pinned ? "📌" : "📍"}
           </button>
+        )}
+        {canRecall && (
+          <button onClick={() => { if (confirm("Thu hồi tin nhắn này?")) onRecall(msg.id) }} title="Thu hồi"
+            className="grid size-6 place-items-center rounded-md text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">🗑</button>
         )}
       </div>
     </div>
@@ -1210,7 +1235,11 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
           <span className="font-semibold text-ui-fg-base">{m.author_name}</span>
           <span>{fmtTime(m.created_at)}</span>
         </div>
-        <div className="mkt-md whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users, undefined, AI_AGENT_AUTHOR_IDS.has(m.author_id)) }} />
+        {m.recalled_at ? (
+          <div className="text-[13px] italic text-ui-fg-muted">Tin nhắn đã được thu hồi</div>
+        ) : (
+          <div className="mkt-md whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users, undefined, AI_AGENT_AUTHOR_IDS.has(m.author_id)) }} />
+        )}
       </div>
     </div>
   )
@@ -1625,7 +1654,7 @@ function MktChatPage() {
       es.addEventListener("message.updated", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
         if (activeChannelIdRef.current !== data.channel_id || !data.message_id) return
-        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}) } : m))
+        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}), ...("recalled_at" in data ? { recalled_at: data.recalled_at } : {}) } : m))
       })
 
       es.addEventListener("thread.reply.created", (e: MessageEvent) => {
@@ -1906,6 +1935,14 @@ function MktChatPage() {
     const data = await r.json()
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_pinned: data.is_pinned } : m))
     loadChannels()
+  }
+
+  const handleRecall = async (msgId: string) => {
+    if (!activeChannel) return
+    const r = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages/${msgId}`, { method: "DELETE" })
+    const data = await r.json().catch(() => null)
+    if (!r.ok) { alert(data?.error || "Khong thu hoi duoc tin nhan"); return }
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, recalled_at: data.recalled_at } : m))
   }
 
   const jumpToMessage = (msgId: string) => {
@@ -2424,6 +2461,7 @@ function MktChatPage() {
                       onReply={setReplyTo}
                       onReact={handleReact}
                       onPin={handlePin}
+                      onRecall={handleRecall}
                       onOpenThread={setOpenThread}
                     />
                   </div>
