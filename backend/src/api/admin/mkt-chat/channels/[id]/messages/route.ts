@@ -101,7 +101,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
 
     const nameByEmail = await getMktUserNameMap(req)
-    const replyIds = [...new Set(messages.map((m: any) => m.reply_to_id).filter(Boolean))]
+    const replyIds = [...new Set(messages.map((m: any) => m.reply_parent_id || m.reply_to_id).filter(Boolean))]
     const replyMap: Record<string, any> = {}
     if (replyIds.length > 0) {
       const replies = await svc.listMktMessages({ id: { $in: replyIds } }, { select: ["id", "content", "author_id", "msg_type"] })
@@ -114,7 +114,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
-    const enriched = messages.reverse().map((m: any) => formatMktMessage(m, nameByEmail, m.reply_to_id ? replyMap[m.reply_to_id] : null))
+    const enriched = messages.reverse().map((m: any) => {
+      const parentId = m.reply_parent_id || m.reply_to_id
+      return formatMktMessage(m, nameByEmail, parentId ? replyMap[parentId] : null)
+    })
 
     let online: string[] = []
     let typing: string[] = []
@@ -201,6 +204,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       content: text,
       msg_type: messageType,
       reply_to_id: rootReplyId,
+      reply_parent_id: reply_to_id || null,
       reactions: {},
       mentions,
       reply_count: 0,
@@ -216,10 +220,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       rootReplyCount = Number(updated.rows[0]?.reply_count || 0)
     }
 
-    const replySnippet = rootReply ? {
-      id: rootReply.id,
-      content: String(rootReply.content || "").slice(0, 80),
-      author_name: rootReply.author_id === "ai" ? "AI Assistant" : (nameByEmail[rootReply.author_id] || rootReply.author_id),
+    const replySnippet = replyParent ? {
+      id: replyParent.id,
+      content: String(replyParent.content || "").slice(0, 80),
+      author_name: replyParent.author_id === "ai" ? "AI Assistant" : (nameByEmail[replyParent.author_id] || replyParent.author_id),
     } : null
     const formattedMessage = formatMktMessage(message, nameByEmail, replySnippet)
 

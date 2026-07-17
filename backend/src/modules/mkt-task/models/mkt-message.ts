@@ -9,6 +9,7 @@ const MktMessage = model.define("mkt_message", {
   msg_type: model.text().default("text"),
   metadata: model.json().nullable(),
   reply_to_id: model.text().nullable(),
+  reply_parent_id: model.text().nullable(),
   reply_count: model.number().default(0),
   file_url: model.text().nullable(),
   file_type: model.text().nullable(),
