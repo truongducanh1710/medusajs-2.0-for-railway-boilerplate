@@ -4,7 +4,20 @@ import { Modules } from "@medusajs/framework/utils"
 import multer from "multer"
 import { ROLE_PRESETS } from "../admin/lib/permissions"
 
-const mktChatUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } })
+const MKT_CHAT_MAX_SIZE = 50 * 1024 * 1024
+const mktChatUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MKT_CHAT_MAX_SIZE } })
+
+function mktChatUploadHandler(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  mktChatUpload.single("file")(req as any, res as any, (err: any) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "File vượt quá 50MB. Vui lòng chọn file nhỏ hơn." })
+      }
+      return res.status(400).json({ error: err.message || "Upload file thất bại" })
+    }
+    next()
+  })
+}
 
 export function resolveUserPerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
@@ -76,7 +89,7 @@ export default defineMiddlewares({
     {
       matcher: "/admin/mkt-chat/channels/*/upload",
       method: ["POST"],
-      middlewares: [mktChatUpload.single("file")],
+      middlewares: [mktChatUploadHandler],
     },
     // CORS cho Chrome Extension — phải đứng trước auth middleware
     {

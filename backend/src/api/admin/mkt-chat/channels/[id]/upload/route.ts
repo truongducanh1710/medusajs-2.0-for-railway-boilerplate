@@ -8,7 +8,7 @@ const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
   "application/pdf", "video/mp4", "video/quicktime",
 ])
-const MAX_SIZE = 20 * 1024 * 1024 // 20MB
+const MAX_SIZE = 50 * 1024 * 1024 // 50MB
 
 function getUploadName(file: any): string {
   return String(file?.originalname || file?.name || file?.filename || "upload")
@@ -38,7 +38,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const file = (req as any).file
-    if (!file) return res.status(400).json({ error: "Khong tim thay file upload. Hay thu lai voi anh nho hon 20MB." })
+    if (!file) return res.status(400).json({ error: "Khong tim thay file upload. Hay thu lai voi anh nho hon 50MB." })
 
     const mimeType: string = file.mimetype || file.type || file.mimeType || "application/octet-stream"
     if (!ALLOWED_TYPES.has(mimeType)) {
@@ -48,7 +48,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const content = readUploadContent(file)
     const actualSize = Number(file.size || content.length || 0)
     if (actualSize > MAX_SIZE) {
-      return res.status(400).json({ error: "File vuot qua 20MB" })
+      return res.status(400).json({ error: "File vuot qua 50MB" })
     }
 
     const originalName = getUploadName(file)
