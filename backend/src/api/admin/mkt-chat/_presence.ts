@@ -11,6 +11,12 @@ export function vnDayKey(d: Date = new Date()): string {
   return new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10)
 }
 
+/** Chỉ phân loại desktop/mobile — không suy ra máy vật lý cụ thể, UA có thể giả mạo. */
+export function parseDeviceFromUA(userAgent?: string | null): "mobile" | "desktop" {
+  if (!userAgent) return "desktop"
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent) ? "mobile" : "desktop"
+}
+
 export async function startPresenceSession(email: string, userAgent?: string): Promise<string> {
   const id = ulid()
   const now = new Date().toISOString()
@@ -81,20 +87,26 @@ export async function reapStalePresenceSessions(): Promise<number> {
   return rowCount || 0
 }
 
-/** Trạng thái live của mọi người — cho chấm xanh trong chat. */
-export async function getLivePresence(): Promise<Record<string, { status: string; since: string }>> {
+/** Trạng thái live của mọi người — cho chấm xanh trong chat. `devices` liệt kê MỌI thiết bị
+ * đang mở tab cùng lúc (vd laptop + mobile), không chỉ thiết bị hoạt động gần nhất. */
+export async function getLivePresence(): Promise<Record<string, { status: string; since: string; devices: string[] }>> {
   await reapStalePresenceSessions()
   const { rows } = await getPool().query(
     `SELECT user_email,
             CASE WHEN bool_or(last_active_at > now() - ($1 || ' milliseconds')::interval)
                  THEN 'online' ELSE 'idle' END AS status,
-            MIN(started_at) AS since
+            MIN(started_at) AS since,
+            array_agg(DISTINCT user_agent) AS user_agents
      FROM mkt_presence_session
      WHERE ended_at IS NULL
      GROUP BY user_email`,
     [PRESENCE_IDLE_MS]
   )
-  const out: Record<string, { status: string; since: string }> = {}
-  for (const r of rows) out[r.user_email] = { status: r.status, since: r.since }
+  const out: Record<string, { status: string; since: string; devices: string[] }> = {}
+  for (const r of rows) {
+    const rawAgents: (string | null)[] = r.user_agents || []
+    const devices: string[] = [...new Set(rawAgents.map(ua => parseDeviceFromUA(ua)))] as string[]
+    out[r.user_email] = { status: r.status, since: r.since, devices }
+  }
   return out
 }

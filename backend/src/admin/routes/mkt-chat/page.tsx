@@ -26,6 +26,7 @@ type Message = {
   reactions: Record<string, string[]>; is_pinned: boolean; mentions: string[]
   reply_count: number; channel_name?: string
   recalled_at?: string | null
+  device?: string | null
   created_at: string
 }
 type MktUser = { email: string; name: string }
@@ -490,7 +491,12 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} users={users} />
 
         <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>
-          {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
+          {isOptimistic ? "Đang gửi..." : (
+            <>
+              {fmtTime(msg.created_at)}
+              {msg.device && <span className="ml-1" title={msg.device === "mobile" ? "Gửi từ điện thoại" : "Gửi từ máy tính"}>{msg.device === "mobile" ? "📱" : "💻"}</span>}
+            </>
+          )}
         </div>
         {Number(msg.reply_count || 0) > 0 && (
           <button onClick={() => onOpenThread(msg)}
@@ -997,11 +1003,12 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
 
 // ─── Context Panel (cột 3) ───────────────────────────────────────────────────
 
-function ContextPanel({ channel, mktUsers, onlineEmails, presence, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
+function ContextPanel({ channel, mktUsers, onlineEmails, presence, presenceDevices, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
   channel: Channel
   mktUsers: MktUser[]
   onlineEmails: string[]
   presence: Record<string, string>
+  presenceDevices: Record<string, string[]>
   isManager: boolean
   isSuper: boolean
   mobileVisible: boolean
@@ -1044,6 +1051,7 @@ function ContextPanel({ channel, mktUsers, onlineEmails, presence, isManager, is
       name: mktUsers.find(u => u.email === email)?.name || email.split("@")[0],
       status,
       online: status !== "offline",
+      devices: presenceDevices[email] || [],
     }
   }).sort((a, b) => {
     const w = (s: string) => (s === "online" ? 0 : s === "idle" ? 1 : 2)
@@ -1101,7 +1109,14 @@ function ContextPanel({ channel, mktUsers, onlineEmails, presence, isManager, is
                   <div key={m.email} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-ui-bg-base-hover">
                     <Avatar name={m.name} status={m.status} className="size-7 text-[11px]" />
                     <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium text-ui-fg-base">{m.name}</div>
+                      <div className="flex items-center gap-1 truncate text-[13px] font-medium text-ui-fg-base">
+                        <span className="truncate">{m.name}</span>
+                        {m.devices.length > 0 && (
+                          <span className="shrink-0 text-[11px]" title={m.devices.join(", ")}>
+                            {m.devices.map(d => d === "mobile" ? "📱" : "💻").join("")}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-ui-fg-muted">
                         {m.status === "online" ? "Đang hoạt động" : m.status === "idle" ? "Mở tab, không thao tác" : "Ngoại tuyến"}
                       </div>
@@ -1287,6 +1302,7 @@ function MktChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [typingNames, setTypingNames] = useState<string[]>([])
   const [presence, setPresence] = useState<Record<string, string>>({}) // email → online | idle
+  const [presenceDevices, setPresenceDevices] = useState<Record<string, string[]>>({}) // email → ["desktop","mobile"]
   const [input, setInput] = useState("")
   const [composerMode, setComposerMode] = useState<"message" | "note">("message")
   const [sending, setSending] = useState(false)
@@ -1402,6 +1418,7 @@ function MktChatPage() {
       setChannels(list)
       setOnlineEmails(d.online_emails || [])
       if (d.presence) setPresence(d.presence)
+      if (d.presence_devices) setPresenceDevices(d.presence_devices)
       setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || prev) : prev)
     })
   }, [])
@@ -1772,9 +1789,11 @@ function MktChatPage() {
 
     const timer = window.setInterval(beat, 45000)
     apiJson("/admin/mkt-chat/presence")
-      .then((d: any) => setPresence(
-        Object.fromEntries(Object.entries(d?.presence || {}).map(([k, v]: any) => [k, v.status]))
-      ))
+      .then((d: any) => {
+        const entries = Object.entries(d?.presence || {})
+        setPresence(Object.fromEntries(entries.map(([k, v]: any) => [k, v.status])))
+        setPresenceDevices(Object.fromEntries(entries.map(([k, v]: any) => [k, v.devices || []])))
+      })
       .catch(() => {})
 
     return () => {
@@ -2684,6 +2703,7 @@ function MktChatPage() {
           mktUsers={mktUsers}
           onlineEmails={onlineEmails}
           presence={presence}
+          presenceDevices={presenceDevices}
           isManager={isManager}
           isSuper={isSuper}
           mobileVisible={mobilePanelOpen}

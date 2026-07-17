@@ -3,6 +3,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { ulid } from "ulid"
 import { getPool } from "../../../../../../lib/db"
 import { broadcastToChannel, formatMktMessage, getMktChatAuthInfo, canAccessMktChannel, canPostInMktChannel } from "../../../_lib"
+import { parseDeviceFromUA } from "../../../_presence"
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -77,6 +78,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       file_expires_at: expiresAt,
       reactions: {},
       mentions: [],
+      device: parseDeviceFromUA(req.headers["user-agent"]),
     })
 
     // Ghi key + expires vào DB để cleanup job dùng

@@ -3,6 +3,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
 import { broadcastToChannel, canAccessMktChannel, canPostInMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
 import { ADS_EXPENSE_CHANNEL_NAME, parseAdsExpenseText } from "../../../_ads-expense-parser"
+import { parseDeviceFromUA } from "../../../_presence"
 
 function normalizeMentionText(value: string): string {
   return String(value || "")
@@ -208,6 +209,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       reactions: {},
       mentions,
       reply_count: 0,
+      device: parseDeviceFromUA(req.headers["user-agent"]),
     })
 
     let rootReplyCount: number | null = null

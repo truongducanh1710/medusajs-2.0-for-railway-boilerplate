@@ -67,10 +67,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // lúc đọc/gõ nên người mở tab đọc im lặng bị coi là offline — chỉ dùng làm fallback.
     let onlineEmails: string[] = []
     let presenceMap: Record<string, string> = {}
+    let presenceDevices: Record<string, string[]> = {}
     try {
-      presenceMap = Object.fromEntries(
-        Object.entries(await getLivePresence()).map(([email, v]) => [email, v.status])
-      )
+      const live = await getLivePresence()
+      presenceMap = Object.fromEntries(Object.entries(live).map(([email, v]) => [email, v.status]))
+      presenceDevices = Object.fromEntries(Object.entries(live).map(([email, v]) => [email, v.devices]))
       onlineEmails = Object.keys(presenceMap)
     } catch { /* best-effort */ }
 
@@ -114,7 +115,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return tb - ta
     })
 
-    res.json({ channels: enriched, online_emails: onlineEmails, presence: presenceMap })
+    res.json({ channels: enriched, online_emails: onlineEmails, presence: presenceMap, presence_devices: presenceDevices })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
