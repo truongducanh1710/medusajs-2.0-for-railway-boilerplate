@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../lib/db"
-import { reapStalePresenceSessions, PRESENCE_IDLE_MS, PRESENCE_STALE_MS, vnDayKey } from "../../mkt-chat/_presence"
+import { reapStalePresenceSessions, PRESENCE_IDLE_MS, PRESENCE_STALE_MS, vnDayKey, parseDeviceFromUA } from "../../mkt-chat/_presence"
 
 // GET /admin/cham-cong/report?from=2026-07-15&to=2026-07-15
 // Tổng hợp: giờ online/idle (từ presence session) + việc đã làm thật (tin nhắn, task, cuộc gọi).
@@ -21,7 +21,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const userModule = req.scope.resolve(Modules.USER)
     const users = await userModule.listUsers({}, { select: ["id", "email", "first_name", "last_name", "metadata"] })
 
-    const [presence, live, messages, tasks, calls, telegram] = await Promise.all([
+    const [presence, live, messages, tasks, calls, telegram, mentionResponse] = await Promise.all([
       // active_seconds/idle_seconds được cộng dồn ở nhịp KẾ TIẾP, nên phần "đuôi" từ last_seen_at
       // tới hiện tại của session đang mở chưa được ghi. Deploy giữa ngày kill server → mất luôn
       // phần đuôi đó (session không chạy endPresenceSession). Cộng bù tại đây theo status hiện tại,
@@ -42,7 +42,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ),
       pool.query(
         `SELECT user_email,
-                bool_or(last_active_at > now() - ($1 || ' milliseconds')::interval) AS is_active
+                bool_or(last_active_at > now() - ($1 || ' milliseconds')::interval) AS is_active,
+                array_agg(DISTINCT user_agent) AS user_agents
          FROM mkt_presence_session WHERE ended_at IS NULL GROUP BY user_email`,
         [PRESENCE_IDLE_MS]
       ),
@@ -88,6 +89,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          GROUP BY recipient_email`,
         [fromTs, toTs]
       ).catch(() => ({ rows: [] as any[] })),
+      // Phản hồi mention ≤15p: mỗi lần bị @nhắc, tìm message thật kế tiếp của người đó sau mốc bị nhắc.
+      // Không có message nào trong 15p → tính trễ (chỉ cảnh báo, không trừ giờ công).
+      pool.query(
+        `SELECT (m.content::json->>'recipient') AS email,
+                COUNT(*)::int AS mention_total,
+                COUNT(*) FILTER (
+                  WHERE reply.created_at IS NOT NULL
+                    AND reply.created_at <= m.created_at + interval '15 minutes'
+                )::int AS mention_answered
+         FROM mkt_message m
+         LEFT JOIN LATERAL (
+           SELECT r.created_at
+           FROM mkt_message r
+           WHERE r.author_id = (m.content::json->>'recipient')
+             AND r.channel_id <> '__notify__'
+             AND r.deleted_at IS NULL
+             AND r.created_at > m.created_at
+           ORDER BY r.created_at ASC
+           LIMIT 1
+         ) reply ON true
+         WHERE m.channel_id = '__notify__' AND m.msg_type = 'system_notify'
+           AND m.created_at BETWEEN $1 AND $2
+           AND (m.content::json->>'type') = 'mention'
+         GROUP BY (m.content::json->>'recipient')`,
+        [fromTs, toTs]
+      ).catch(() => ({ rows: [] as any[] })),
     ])
 
     const byEmail = <T extends { email?: string; user_email?: string }>(rows: T[]) =>
@@ -98,6 +125,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const tMap = byEmail(tasks.rows)
     const cMap = byEmail(calls.rows)
     const tgMap = byEmail(telegram.rows)
+    const mrMap = byEmail(mentionResponse.rows)
 
     const rows = users
       .filter((u: any) => !u.deleted_at)
@@ -108,11 +136,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const t = tMap[u.email] || {}
         const c = cMap[u.email] || {}
         const tg = tgMap[u.email] || {}
+        const mr = mrMap[u.email] || {}
         return {
           email: u.email,
           name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email,
           role: (u.metadata as any)?.role || "",
           status: l ? (l.is_active ? "online" : "idle") : "offline",
+          devices: l ? [...new Set(((l.user_agents || []) as (string | null)[]).map(ua => parseDeviceFromUA(ua)))] : [],
           active_seconds: Number(p.active_seconds || 0),
           idle_seconds: Number(p.idle_seconds || 0),
           first_seen: p.first_seen || null,
@@ -126,6 +156,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           calls_answered: Number(c.answered || 0),
           talk_seconds: Number(c.talk_seconds || 0),
           telegram: Number(tg.n || 0),
+          mention_total: Number(mr.mention_total || 0),
+          mention_answered: Number(mr.mention_answered || 0),
+          mention_late: Number(mr.mention_total || 0) - Number(mr.mention_answered || 0),
         }
       })
       .sort((a, b) => b.active_seconds - a.active_seconds || a.name.localeCompare(b.name))

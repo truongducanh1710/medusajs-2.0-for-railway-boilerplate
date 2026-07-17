@@ -491,12 +491,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} users={users} />
 
         <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>
-          {isOptimistic ? "Đang gửi..." : (
-            <>
-              {fmtTime(msg.created_at)}
-              {msg.device && <span className="ml-1" title={msg.device === "mobile" ? "Gửi từ điện thoại" : "Gửi từ máy tính"}>{msg.device === "mobile" ? "📱" : "💻"}</span>}
-            </>
-          )}
+          {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
         </div>
         {Number(msg.reply_count || 0) > 0 && (
           <button onClick={() => onOpenThread(msg)}
@@ -1109,14 +1104,7 @@ function ContextPanel({ channel, mktUsers, onlineEmails, presence, presenceDevic
                   <div key={m.email} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-ui-bg-base-hover">
                     <Avatar name={m.name} status={m.status} className="size-7 text-[11px]" />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1 truncate text-[13px] font-medium text-ui-fg-base">
-                        <span className="truncate">{m.name}</span>
-                        {m.devices.length > 0 && (
-                          <span className="shrink-0 text-[11px]" title={m.devices.join(", ")}>
-                            {m.devices.map(d => d === "mobile" ? "📱" : "💻").join("")}
-                          </span>
-                        )}
-                      </div>
+                      <div className="truncate text-[13px] font-medium text-ui-fg-base">{m.name}</div>
                       <div className="text-[10px] text-ui-fg-muted">
                         {m.status === "online" ? "Đang hoạt động" : m.status === "idle" ? "Mở tab, không thao tác" : "Ngoại tuyến"}
                       </div>

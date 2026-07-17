@@ -8,6 +8,7 @@ type Row = {
   name: string
   role: string
   status: "online" | "idle" | "offline"
+  devices: string[]
   active_seconds: number
   idle_seconds: number
   first_seen: string | null
@@ -21,11 +22,14 @@ type Row = {
   calls_answered: number
   talk_seconds: number
   telegram: number
+  mention_total: number
+  mention_answered: number
+  mention_late: number
 }
 
 type TimelineItem = {
   at: string
-  kind: "session" | "message" | "task" | "call"
+  kind: "session" | "message" | "task" | "call" | "mention"
   label: string
   detail?: string
 }
@@ -187,6 +191,11 @@ function ChamCongPage() {
                     <span className="inline-flex items-center gap-1.5">
                       <span className={`inline-block size-2 rounded-full ${st.dot}`} />
                       {st.label}
+                      {r.devices.length > 0 && (
+                        <span className="text-xs" title={r.devices.join(", ")}>
+                          {r.devices.map(d => d === "mobile" ? "📱" : "💻").join("")}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right font-medium">{fmtDur(r.active_seconds)}</td>
