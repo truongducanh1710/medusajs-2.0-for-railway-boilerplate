@@ -2228,9 +2228,6 @@ function MktChatPage() {
           <div className="relative mb-2 flex items-center justify-between px-1">
             <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
             <div className="flex items-center gap-1.5">
-              {totalUnread > 0 && (
-                <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
-              )}
               <div className="flex items-center overflow-hidden rounded-lg border border-ui-border-base">
                 <button onClick={() => changeChatFontSize(-1)} disabled={chatFontSize <= 12} title="Chữ nhỏ hơn"
                   className="grid size-7 place-items-center text-[13px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A-</button>
@@ -2302,11 +2299,20 @@ function MktChatPage() {
 
         {/* Filter tabs */}
         <div className="mx-3 my-2 grid grid-cols-3 gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
-          {([["all", "Tất cả"], ["unread", "Chưa đọc"], ["mentioned", "Nhắc đến"]] as const).map(([v, l]) => (
+          {([
+            ["all", "Tất cả", 0],
+            ["unread", "Chưa đọc", channels.filter(c => c.unread_count > 0).length],
+            ["mentioned", "Nhắc đến", channels.filter(c => c.mention_count > 0).length],
+          ] as const).map(([v, l, badge]) => (
             <button key={v} onClick={() => setSidebarTab(v)}
-              className={cn("h-7 rounded-md text-xs font-semibold transition-all",
+              className={cn("flex h-7 items-center justify-center gap-1 rounded-md text-xs font-semibold transition-all",
                 sidebarTab === v ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
               {l}
+              {badge > 0 && (
+                <span className="grid min-w-[16px] place-items-center rounded-full bg-blue-600 px-1 text-[10px] font-bold tabular-nums text-white">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
