@@ -22,7 +22,6 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/live-view": "page.live-view.view",
   "/cham-cong": "page.cham-cong.view",
   "/cham-cong-nhan-vien": "page.cham-cong-nv.checkin",
-  "/xin-nghi": "page.leave-request.view",
   "/chi-phi-ke-toan": "page.bao-cao.view",
   "/1688-import": "page.san-pham.edit",
 }
