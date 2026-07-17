@@ -200,8 +200,17 @@ export default defineMiddlewares({
     // Heartbeat presence: mọi user vào được chat đều phải ping được, handler tự chặn session_id người khác
     { matcher: "/admin/mkt-chat/presence", method: ["POST"], middlewares: [requirePerm("page.mkt-chat.view")] },
 
+    // Chấm công GPS chủ động — mọi nhân viên tự bấm vào/ra. Matcher cụ thể phải đứng
+    // TRƯỚC wildcard /admin/cham-cong* bên dưới, nếu không wildcard nuốt mất route này.
+    { matcher: "/admin/cham-cong/checkin*", method: ["GET", "POST"], middlewares: [requirePerm("page.cham-cong-nv.checkin")] },
     // Chấm công — báo cáo giờ online + việc đã làm. Chỉ lead/manager/admin.
     { matcher: "/admin/cham-cong*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
+
+    // Xin nghỉ phép — mọi nhân viên xem/tạo đơn của mình; duyệt đơn người khác cần
+    // page.leave-request.approve (handler tự check thêm cho action decision).
+    { matcher: "/admin/leave-request*", method: ["GET"], middlewares: [requirePerm("page.leave-request.view")] },
+    { matcher: "/admin/leave-request", method: ["POST"], middlewares: [requirePerm("page.leave-request.view")] },
+    { matcher: "/admin/leave-request/*", method: ["PATCH"], middlewares: [requirePerm("page.leave-request.view")] },
 
     // permissions/check: guard nằm trong chính route handler (chỉ cho phép actor
     // ai-agent hoặc actor có page.mkt-tasks.manage) — không dùng requirePerm chung vì
