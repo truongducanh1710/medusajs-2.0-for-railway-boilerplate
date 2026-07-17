@@ -98,8 +98,8 @@ const DAY_STATUS_STYLE: Record<DayStatus, string> = {
   late: "bg-amber-500 text-white",
   leave: "bg-blue-500 text-white",
   missing: "bg-red-500 text-white",
-  off: "bg-gray-100 text-gray-400",
-  future: "bg-gray-50 text-gray-400",
+  off: "bg-ui-bg-component text-ui-fg-muted",
+  future: "bg-ui-bg-subtle text-ui-fg-muted",
   empty: "",
 }
 
@@ -210,11 +210,11 @@ function ChamCongSection() {
 
   return (
     <div>
-      <p className="mb-4 text-sm text-gray-500">
+      <p className="mb-4 text-sm text-ui-fg-muted">
         Bấm nút bên dưới để chấm công. Bắt buộc cho phép truy cập vị trí (GPS) — nếu từ chối sẽ không chấm công được.
       </p>
 
-      {err && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+      {err && <div className="mb-4 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
 
       <button
         onClick={handleCheckin}
@@ -226,20 +226,20 @@ function ChamCongSection() {
         {submitting ? "Đang xử lý..." : nextAction === "in" ? "Chấm công vào" : "Chấm công ra"}
       </button>
 
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Lịch sử hôm nay</h2>
-      <div className="mb-6 rounded border">
-        {loading && <div className="px-3 py-4 text-center text-sm text-gray-400">Đang tải...</div>}
+      <h2 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Lịch sử hôm nay</h2>
+      <div className="mb-6 rounded border border-ui-border-base">
+        {loading && <div className="px-3 py-4 text-center text-sm text-ui-fg-muted">Đang tải...</div>}
         {!loading && logs.length === 0 && (
-          <div className="px-3 py-4 text-center text-sm text-gray-400">Chưa chấm công lần nào hôm nay</div>
+          <div className="px-3 py-4 text-center text-sm text-ui-fg-muted">Chưa chấm công lần nào hôm nay</div>
         )}
         {logs.map((log, i) => (
-          <div key={log.id} className={`flex items-center justify-between px-3 py-2 text-sm ${i > 0 ? "border-t" : ""}`}>
+          <div key={log.id} className={`flex items-center justify-between px-3 py-2 text-sm ${i > 0 ? "border-t border-ui-border-base" : ""}`}>
             <span className="flex items-center gap-2">
               <span className={`inline-block size-2 rounded-full ${log.action === "in" ? "bg-green-500" : "bg-rose-500"}`} />
               {log.action === "in" ? "Vào ca" : "Ra ca"}
             </span>
-            <span className="text-gray-500">{fmtTime(log.created_at)}</span>
-            <span className="text-xs text-gray-400">
+            <span className="text-ui-fg-muted">{fmtTime(log.created_at)}</span>
+            <span className="text-xs text-ui-fg-muted">
               {log.lat != null && log.lng != null ? "📍 Có GPS" : "Không GPS"}
             </span>
           </div>
@@ -248,28 +248,28 @@ function ChamCongSection() {
 
       {/* Stat tiles */}
       <div className="mb-5 grid grid-cols-3 gap-3">
-        <div className="rounded-lg bg-green-50 p-3 text-center">
-          <div className="text-lg font-bold text-green-700">{workedDays}/{workDaysTotal}</div>
-          <div className="text-xs text-green-700">Công làm</div>
+        <div className="rounded-lg bg-green-50 dark:bg-green-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-green-700 dark:text-green-400">{workedDays}/{workDaysTotal}</div>
+          <div className="text-xs text-green-700 dark:text-green-400">Công làm</div>
         </div>
-        <div className="rounded-lg bg-amber-50 p-3 text-center">
-          <div className="text-lg font-bold text-amber-700">{lateDays}</div>
-          <div className="text-xs text-amber-700">Đi muộn</div>
+        <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-amber-700 dark:text-amber-400">{lateDays}</div>
+          <div className="text-xs text-amber-700 dark:text-amber-400">Đi muộn</div>
         </div>
-        <div className="rounded-lg bg-blue-50 p-3 text-center">
-          <div className="text-lg font-bold text-blue-700">{leaveDaysTotal.toFixed(2)}</div>
-          <div className="text-xs text-blue-700">Ngày nghỉ</div>
+        <div className="rounded-lg bg-blue-50 dark:bg-blue-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{leaveDaysTotal.toFixed(2)}</div>
+          <div className="text-xs text-blue-700 dark:text-blue-400">Ngày nghỉ</div>
         </div>
       </div>
 
       {/* Lịch tháng */}
-      <div className="rounded border p-3">
+      <div className="rounded border border-ui-border-base p-3">
         <div className="mb-3 flex items-center justify-between">
-          <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="rounded px-2 py-1 text-sm hover:bg-gray-100">‹</button>
+          <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="rounded px-2 py-1 text-sm hover:bg-ui-bg-base-hover">‹</button>
           <div className="text-sm font-semibold">Tháng {month + 1}/{year}</div>
-          <button onClick={() => setCursor(new Date(year, month + 1, 1))} className="rounded px-2 py-1 text-sm hover:bg-gray-100">›</button>
+          <button onClick={() => setCursor(new Date(year, month + 1, 1))} className="rounded px-2 py-1 text-sm hover:bg-ui-bg-base-hover">›</button>
         </div>
-        <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[11px] text-gray-400">
+        <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[11px] text-ui-fg-muted">
           {WEEKDAY_LABELS.map((w) => <div key={w}>{w}</div>)}
         </div>
         <div className={`grid grid-cols-7 gap-1 ${monthLoading ? "opacity-50" : ""}`}>
@@ -281,38 +281,38 @@ function ChamCongSection() {
                 key={c.dayKey}
                 onClick={() => setSelectedDay(c.dayKey)}
                 title={info.isHalfDay ? "Thứ 7 làm nửa ngày (buổi sáng)" : undefined}
-                className={`relative aspect-square rounded text-xs font-medium transition-opacity hover:opacity-80 ${DAY_STATUS_STYLE[info.status]} ${info.isHalfDay ? "ring-2 ring-offset-1 ring-violet-400" : ""}`}
+                className={`relative aspect-square rounded text-xs font-medium transition-opacity hover:opacity-80 ${DAY_STATUS_STYLE[info.status]} ${info.isHalfDay ? "ring-2 ring-violet-400" : ""}`}
               >
                 {c.dayNum}
               </button>
             )
           })}
         </div>
-        <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-gray-500">
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-ui-fg-muted">
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-green-500" />Đủ công</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-amber-500" />Đi muộn</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-blue-500" />Nghỉ phép</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-red-500" />Chưa chấm công</span>
-          <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-gray-300 ring-2 ring-offset-1 ring-violet-400" />T7 nửa ngày</span>
+          <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-gray-300 dark:bg-gray-600 ring-2 ring-violet-400" />T7 nửa ngày</span>
         </div>
       </div>
 
       {selectedDay && selectedInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setSelectedDay(null)}>
-          <div className="w-full max-w-xs rounded-lg bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setSelectedDay(null)}>
+          <div className="w-full max-w-xs rounded-lg bg-ui-bg-base p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="font-semibold">{selectedDay}</h3>
-              <button onClick={() => setSelectedDay(null)} className="text-gray-400 hover:text-gray-700">✕</button>
+              <button onClick={() => setSelectedDay(null)} className="text-ui-fg-muted hover:text-ui-fg-base">✕</button>
             </div>
             <div className="space-y-1 text-sm">
-              {selectedInfo.isHalfDay && <div className="text-violet-600">🕐 Thứ 7 làm nửa ngày (buổi sáng)</div>}
-              <div>Vào: {selectedInfo.firstIn ? fmtTime(selectedInfo.firstIn) : "—"}{selectedInfo.lateMin > 0 && <span className="ml-1 text-amber-600">(muộn {selectedInfo.lateMin} phút)</span>}</div>
+              {selectedInfo.isHalfDay && <div className="text-violet-600 dark:text-violet-400">🕐 Thứ 7 làm nửa ngày (buổi sáng)</div>}
+              <div>Vào: {selectedInfo.firstIn ? fmtTime(selectedInfo.firstIn) : "—"}{selectedInfo.lateMin > 0 && <span className="ml-1 text-amber-600 dark:text-amber-400">(muộn {selectedInfo.lateMin} phút)</span>}</div>
               <div>Ra: {selectedInfo.lastOut ? fmtTime(selectedInfo.lastOut) : "—"}</div>
               {selectedInfo.firstIn && (
                 <a
                   href={`https://maps.google.com/?q=${(logsByDay[selectedDay]?.find((l) => l.action === "in")?.lat) ?? ""},${(logsByDay[selectedDay]?.find((l) => l.action === "in")?.lng) ?? ""}`}
                   target="_blank" rel="noreferrer"
-                  className="text-blue-600 hover:underline"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   📍 Xem vị trí chấm công
                 </a>
@@ -348,10 +348,10 @@ const LEAVE_TYPE_LABEL: Record<string, string> = {
 }
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  pending: { text: "Chờ duyệt", cls: "text-amber-600" },
-  approved: { text: "Đã duyệt", cls: "text-green-600" },
-  rejected: { text: "Từ chối", cls: "text-red-600" },
-  cancelled: { text: "Đã hủy", cls: "text-gray-400" },
+  pending: { text: "Chờ duyệt", cls: "text-amber-600 dark:text-amber-400" },
+  approved: { text: "Đã duyệt", cls: "text-green-600 dark:text-green-400" },
+  rejected: { text: "Từ chối", cls: "text-red-600 dark:text-red-400" },
+  cancelled: { text: "Đã hủy", cls: "text-ui-fg-muted" },
 }
 
 function fmtDateTime(iso: string): string {
@@ -464,53 +464,53 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
 
   return (
     <div className="relative">
-      <div className="mb-4 flex gap-4 border-b text-sm">
-        <button onClick={() => setTab("mine")} className={`pb-2 ${tab === "mine" ? "border-b-2 border-green-600 font-semibold text-green-700" : "text-gray-500"}`}>
+      <div className="mb-4 flex gap-4 border-b border-ui-border-base text-sm">
+        <button onClick={() => setTab("mine")} className={`pb-2 ${tab === "mine" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
           Đơn của tôi
         </button>
         {canApprove && (
           <>
-            <button onClick={() => setTab("pending")} className={`pb-2 ${tab === "pending" ? "border-b-2 border-green-600 font-semibold text-green-700" : "text-gray-500"}`}>
+            <button onClick={() => setTab("pending")} className={`pb-2 ${tab === "pending" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
               Chờ duyệt
             </button>
-            <button onClick={() => setTab("approved")} className={`pb-2 ${tab === "approved" ? "border-b-2 border-green-600 font-semibold text-green-700" : "text-gray-500"}`}>
+            <button onClick={() => setTab("approved")} className={`pb-2 ${tab === "approved" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
               Đã duyệt
             </button>
           </>
         )}
       </div>
 
-      {err && <div className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+      {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
 
-      {loading && <div className="py-6 text-center text-sm text-gray-400">Đang tải...</div>}
+      {loading && <div className="py-6 text-center text-sm text-ui-fg-muted">Đang tải...</div>}
       {!loading && requests.length === 0 && (
-        <div className="py-6 text-center text-sm text-gray-400">Không có đơn nào</div>
+        <div className="py-6 text-center text-sm text-ui-fg-muted">Không có đơn nào</div>
       )}
 
       <div className="space-y-3">
         {requests.map((r) => {
           const st = STATUS_LABEL[r.status] || STATUS_LABEL.pending
           return (
-            <div key={r.id} className="rounded border p-3">
+            <div key={r.id} className="rounded border border-ui-border-base p-3">
               <div className="mb-1 flex items-center justify-between">
                 <span className="font-medium">{LEAVE_TYPE_LABEL[r.leave_type] || r.leave_type}</span>
                 <span className={`text-xs font-semibold ${st.cls}`}>{st.text}</span>
               </div>
-              {tab !== "mine" && <div className="mb-1 text-xs text-gray-500">Người gửi: {r.requester_email}</div>}
-              <div className="text-sm text-gray-600">Bắt đầu: {fmtDateTime(r.start_at)}</div>
-              <div className="text-sm text-gray-600">Kết thúc: {fmtDateTime(r.end_at)}</div>
-              <div className="text-sm text-gray-600">Thời gian: {diffDays(r.start_at, r.end_at)} ngày</div>
-              {r.reason && <div className="mt-1 text-sm text-gray-500 italic">Lý do: {r.reason}</div>}
+              {tab !== "mine" && <div className="mb-1 text-xs text-ui-fg-muted">Người gửi: {r.requester_email}</div>}
+              <div className="text-sm text-ui-fg-subtle">Bắt đầu: {fmtDateTime(r.start_at)}</div>
+              <div className="text-sm text-ui-fg-subtle">Kết thúc: {fmtDateTime(r.end_at)}</div>
+              <div className="text-sm text-ui-fg-subtle">Thời gian: {diffDays(r.start_at, r.end_at)} ngày</div>
+              {r.reason && <div className="mt-1 text-sm text-ui-fg-muted italic">Lý do: {r.reason}</div>}
 
               {tab === "pending" && r.status === "pending" && (
-                <div className="mt-2 flex gap-4 border-t pt-2 text-sm">
-                  <button onClick={() => decide(r.id, "rejected")} className="font-medium text-red-600 hover:underline">Từ chối</button>
-                  <button onClick={() => decide(r.id, "approved")} className="font-medium text-green-600 hover:underline">Đồng ý</button>
+                <div className="mt-2 flex gap-4 border-t border-ui-border-base pt-2 text-sm">
+                  <button onClick={() => decide(r.id, "rejected")} className="font-medium text-red-600 dark:text-red-400 hover:underline">Từ chối</button>
+                  <button onClick={() => decide(r.id, "approved")} className="font-medium text-green-600 dark:text-green-400 hover:underline">Đồng ý</button>
                 </div>
               )}
               {tab === "mine" && r.status === "pending" && (
-                <div className="mt-2 border-t pt-2 text-sm">
-                  <button onClick={() => cancelRequest(r.id)} className="font-medium text-gray-500 hover:underline">Hủy đơn</button>
+                <div className="mt-2 border-t border-ui-border-base pt-2 text-sm">
+                  <button onClick={() => cancelRequest(r.id)} className="font-medium text-ui-fg-muted hover:underline">Hủy đơn</button>
                 </div>
               )}
             </div>
@@ -526,19 +526,19 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
       </button>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setShowForm(false)}>
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg bg-ui-bg-base p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="mb-3 font-semibold">Tạo đơn báo nghỉ</h2>
             <label className="mb-3 block text-sm">
-              <span className="mb-1 block text-gray-500">Loại ngày nghỉ</span>
-              <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="w-full rounded border px-2 py-1.5">
+              <span className="mb-1 block text-ui-fg-muted">Loại ngày nghỉ</span>
+              <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base">
                 {Object.entries(LEAVE_TYPE_LABEL).map(([k, label]) => (
                   <option key={k} value={k}>{label}</option>
                 ))}
               </select>
             </label>
             <label className="mb-3 block text-sm">
-              <span className="mb-1 block text-gray-500">Ngày nghỉ</span>
+              <span className="mb-1 block text-ui-fg-muted">Ngày nghỉ</span>
               <input
                 type="date"
                 value={startDate}
@@ -546,20 +546,20 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
                   setStartDate(e.target.value)
                   if (endDate < e.target.value) setEndDate(e.target.value)
                 }}
-                className="w-full rounded border px-2 py-1.5"
+                className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base"
               />
             </label>
 
             <div className="mb-3">
-              <span className="mb-1 block text-sm text-gray-500">Buổi nghỉ</span>
+              <span className="mb-1 block text-sm text-ui-fg-muted">Buổi nghỉ</span>
               <div className="grid grid-cols-3 gap-2">
                 {DAY_PRESETS.map((p) => (
                   <button
                     key={p.key}
                     type="button"
                     onClick={() => applyPreset(p)}
-                    className={`rounded border py-1.5 text-sm font-medium transition-colors ${
-                      activePreset === p.key ? "border-green-600 bg-green-50 text-green-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    className={`rounded border border-ui-border-base py-1.5 text-sm font-medium transition-colors ${
+                      activePreset === p.key ? "border-green-600 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover"
                     }`}
                   >
                     {p.label}
@@ -570,21 +570,21 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
 
             <div className="mb-3 grid grid-cols-2 gap-3">
               <label className="block text-sm">
-                <span className="mb-1 block text-gray-500">Giờ bắt đầu</span>
+                <span className="mb-1 block text-ui-fg-muted">Giờ bắt đầu</span>
                 <select
                   value={startTime}
                   onChange={(e) => { setStartTime(e.target.value); setActivePreset(null) }}
-                  className="w-full rounded border px-2 py-1.5"
+                  className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base"
                 >
                   {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
               <label className="block text-sm">
-                <span className="mb-1 block text-gray-500">Giờ kết thúc</span>
+                <span className="mb-1 block text-ui-fg-muted">Giờ kết thúc</span>
                 <select
                   value={endTime}
                   onChange={(e) => { setEndTime(e.target.value); setActivePreset(null) }}
-                  className="w-full rounded border px-2 py-1.5"
+                  className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base"
                 >
                   {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -592,21 +592,21 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
             </div>
 
             <label className="mb-3 block text-sm">
-              <span className="mb-1 block text-gray-500">Ngày kết thúc (nếu nghỉ nhiều ngày)</span>
+              <span className="mb-1 block text-ui-fg-muted">Ngày kết thúc (nếu nghỉ nhiều ngày)</span>
               <input
                 type="date"
                 value={endDate}
                 min={startDate}
                 onChange={(e) => { setEndDate(e.target.value); setActivePreset(null) }}
-                className="w-full rounded border px-2 py-1.5"
+                className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base"
               />
             </label>
             <label className="mb-4 block text-sm">
-              <span className="mb-1 block text-gray-500">Lý do</span>
-              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="w-full rounded border px-2 py-1.5" />
+              <span className="mb-1 block text-ui-fg-muted">Lý do</span>
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
             </label>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowForm(false)} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">Hủy</button>
+              <button onClick={() => setShowForm(false)} className="rounded border border-ui-border-base px-3 py-1.5 text-sm hover:bg-ui-bg-base-hover">Hủy</button>
               <button onClick={submitRequest} disabled={submitting} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
                 {submitting ? "Đang gửi..." : "Gửi đơn"}
               </button>
@@ -709,50 +709,50 @@ function QuanLySection() {
     setCfgHalfDaySaturdays((prev) => prev.filter((d) => d !== day))
   }
 
-  if (loading && !data) return <div className="py-8 text-center text-sm text-gray-400">Đang tải...</div>
-  if (!data) return err ? <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div> : null
+  if (loading && !data) return <div className="py-8 text-center text-sm text-ui-fg-muted">Đang tải...</div>
+  if (!data) return err ? <div className="rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div> : null
 
   const maxLast7 = Math.max(1, ...data.last7days.map((d) => d.on_time + d.late + d.missing))
 
   return (
     <div>
-      {err && <div className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+      {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
 
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">Thống kê chấm công</h2>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded border px-2 py-1 text-sm" />
+        <h2 className="text-sm font-semibold text-ui-fg-subtle">Thống kê chấm công</h2>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1 text-sm text-ui-fg-base" />
       </div>
 
       {/* Stat cards — status palette cố định: xanh=đúng giờ, đỏ=chưa checkin, vàng=đến muộn */}
       <div className="mb-5 grid grid-cols-3 gap-3">
-        <div className="rounded-lg bg-green-50 p-3">
+        <div className="rounded-lg bg-green-50 dark:bg-green-500/10 p-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-green-700">Đúng giờ</span>
+            <span className="text-xs font-medium text-green-700 dark:text-green-400">Đúng giờ</span>
             <span className="grid size-6 place-items-center rounded-full bg-green-600 text-xs text-white">✓</span>
           </div>
-          <div className="mt-1 text-2xl font-bold text-green-700">{data.stats.on_time}</div>
+          <div className="mt-1 text-2xl font-bold text-green-700 dark:text-green-400">{data.stats.on_time}</div>
         </div>
-        <div className="rounded-lg bg-red-50 p-3">
+        <div className="rounded-lg bg-red-50 dark:bg-red-500/10 p-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-red-700">Chưa checkin</span>
+            <span className="text-xs font-medium text-red-700 dark:text-red-400">Chưa checkin</span>
             <span className="grid size-6 place-items-center rounded-full bg-red-600 text-xs text-white">✕</span>
           </div>
-          <div className="mt-1 text-2xl font-bold text-red-700">{data.stats.missing}</div>
+          <div className="mt-1 text-2xl font-bold text-red-700 dark:text-red-400">{data.stats.missing}</div>
         </div>
-        <div className="rounded-lg bg-amber-50 p-3">
+        <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 p-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-700">Đến muộn</span>
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Đến muộn</span>
             <span className="grid size-6 place-items-center rounded-full bg-amber-500 text-xs text-white">⏱</span>
           </div>
-          <div className="mt-1 text-2xl font-bold text-amber-700">{data.stats.late}</div>
+          <div className="mt-1 text-2xl font-bold text-amber-700 dark:text-amber-400">{data.stats.late}</div>
         </div>
       </div>
 
       {/* Stacked bar 7 ngày — legend luôn hiện, số đếm in trực tiếp trên mỗi khúc */}
-      <div className="mb-5 rounded border p-4">
+      <div className="mb-5 rounded border border-ui-border-base p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">Check-in 7 ngày</h3>
-          <div className="flex gap-3 text-[11px] text-gray-500">
+          <h3 className="text-sm font-semibold text-ui-fg-subtle">Check-in 7 ngày</h3>
+          <div className="flex gap-3 text-[11px] text-ui-fg-muted">
             <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-green-500" />Đúng giờ</span>
             <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-amber-500" />Đi muộn</span>
             <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-red-500" />Không checkin</span>
@@ -781,7 +781,7 @@ function QuanLySection() {
                     </div>
                   )}
                 </div>
-                <span className="text-[11px] text-gray-400">{fmtDdMm(d.date)}</span>
+                <span className="text-[11px] text-ui-fg-muted">{fmtDdMm(d.date)}</span>
               </div>
             )
           })}
@@ -789,48 +789,48 @@ function QuanLySection() {
       </div>
 
       <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded border p-4">
-          <h3 className="mb-2 text-sm font-semibold text-gray-700">Đi muộn hôm nay</h3>
+        <div className="rounded border border-ui-border-base p-4">
+          <h3 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Đi muộn hôm nay</h3>
           {data.day_rows.filter((r) => r.late_minutes > 0).length === 0 ? (
-            <div className="py-3 text-center text-xs text-gray-400">Không có dữ liệu</div>
+            <div className="py-3 text-center text-xs text-ui-fg-muted">Không có dữ liệu</div>
           ) : (
             <div className="space-y-2">
               {data.day_rows.filter((r) => r.late_minutes > 0).sort((a, b) => b.late_minutes - a.late_minutes).map((r) => (
                 <div key={r.email} className="flex items-center justify-between text-sm">
                   <span>{r.name}</span>
-                  <span className="font-medium text-amber-600">{r.late_minutes} phút</span>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">{r.late_minutes} phút</span>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <div className="rounded border p-4">
-          <h3 className="mb-2 text-sm font-semibold text-gray-700">Top check-in sớm nhất</h3>
+        <div className="rounded border border-ui-border-base p-4">
+          <h3 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Top check-in sớm nhất</h3>
           {data.top_early.length === 0 ? (
-            <div className="py-3 text-center text-xs text-gray-400">Không có dữ liệu</div>
+            <div className="py-3 text-center text-xs text-ui-fg-muted">Không có dữ liệu</div>
           ) : (
             <div className="space-y-2">
               {data.top_early.map((r) => (
                 <div key={r.email} className="flex items-center justify-between text-sm">
                   <span>{r.name}</span>
-                  <span className="text-gray-500">{r.first_in ? fmtTime(r.first_in) : "—"}</span>
+                  <span className="text-ui-fg-muted">{r.first_in ? fmtTime(r.first_in) : "—"}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <div className="rounded border p-4 md:col-span-2">
-          <h3 className="mb-2 text-sm font-semibold text-gray-700">Về sớm hôm nay</h3>
+        <div className="rounded border border-ui-border-base p-4 md:col-span-2">
+          <h3 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Về sớm hôm nay</h3>
           {data.early_leavers.length === 0 ? (
-            <div className="py-3 text-center text-xs text-gray-400">Không có dữ liệu</div>
+            <div className="py-3 text-center text-xs text-ui-fg-muted">Không có dữ liệu</div>
           ) : (
             <div className="space-y-2">
               {data.early_leavers.map((r) => (
                 <div key={r.email} className="flex items-center justify-between text-sm">
                   <span>{r.name}</span>
-                  <span className="text-gray-500">{r.last_out ? fmtTime(r.last_out) : "—"}</span>
+                  <span className="text-ui-fg-muted">{r.last_out ? fmtTime(r.last_out) : "—"}</span>
                 </div>
               ))}
             </div>
@@ -839,9 +839,9 @@ function QuanLySection() {
       </div>
 
       {/* Bảng chi tiết ngày */}
-      <div className="mb-5 overflow-x-auto rounded border">
+      <div className="mb-5 overflow-x-auto rounded border border-ui-border-base">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+          <thead className="bg-ui-bg-subtle text-left text-xs uppercase text-ui-fg-muted">
             <tr>
               <th className="px-3 py-2">Nhân viên</th>
               <th className="px-3 py-2">Vào</th>
@@ -852,15 +852,15 @@ function QuanLySection() {
           </thead>
           <tbody>
             {data.day_rows.map((r) => (
-              <tr key={r.email} className="border-t">
+              <tr key={r.email} className="border-t border-ui-border-base">
                 <td className="px-3 py-2">{r.name}</td>
-                <td className={`px-3 py-2 ${r.late_minutes > 0 ? "font-medium text-red-600" : ""}`}>
+                <td className={`px-3 py-2 ${r.late_minutes > 0 ? "font-medium text-red-600 dark:text-red-400" : ""}`}>
                   {r.first_in ? fmtTime(r.first_in) : "—"}
                 </td>
                 <td className="px-3 py-2">{r.last_out ? fmtTime(r.last_out) : "—"}</td>
                 <td className="px-3 py-2">
                   {r.lat != null && r.lng != null ? (
-                    <a href={`https://maps.google.com/?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Xem vị trí</a>
+                    <a href={`https://maps.google.com/?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Xem vị trí</a>
                   ) : "—"}
                 </td>
                 <td className="px-3 py-2 text-xs">
@@ -873,10 +873,10 @@ function QuanLySection() {
       </div>
 
       {/* Tổng hợp tháng */}
-      <div className="mb-5 rounded border p-4">
+      <div className="mb-5 rounded border border-ui-border-base p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">Tổng hợp tháng</h3>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded border px-2 py-1 text-sm" />
+          <h3 className="text-sm font-semibold text-ui-fg-subtle">Tổng hợp tháng</h3>
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1 text-sm text-ui-fg-base" />
         </div>
         <div className="space-y-2">
           {data.month_summary.map((m) => {
@@ -885,9 +885,9 @@ function QuanLySection() {
               <div key={m.email} className="text-sm">
                 <div className="mb-0.5 flex items-center justify-between">
                   <span>{m.name}</span>
-                  <span className="text-gray-500">{m.worked_days} công · {m.late_days} muộn · {m.leave_days} nghỉ</span>
+                  <span className="text-ui-fg-muted">{m.worked_days} công · {m.late_days} muộn · {m.leave_days} nghỉ</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded bg-gray-100">
+                <div className="h-2 overflow-hidden rounded bg-ui-bg-component">
                   <div className="h-full bg-green-500" style={{ width: `${(m.worked_days / maxDays) * 100}%` }} />
                 </div>
               </div>
@@ -897,25 +897,25 @@ function QuanLySection() {
       </div>
 
       {/* Cài đặt ca */}
-      <div className="rounded border">
-        <button onClick={() => setShowConfig((s) => !s)} className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700">
+      <div className="rounded border border-ui-border-base">
+        <button onClick={() => setShowConfig((s) => !s)} className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-ui-fg-subtle">
           Cài đặt ca làm việc
           <span>{showConfig ? "▲" : "▼"}</span>
         </button>
         {showConfig && (
-          <div className="border-t p-4">
+          <div className="border-t border-ui-border-base p-4">
             <div className="mb-3 grid grid-cols-2 gap-3">
               <label className="block text-sm">
-                <span className="mb-1 block text-gray-500">Giờ vào</span>
-                <input type="time" value={cfgShiftStart} onChange={(e) => setCfgShiftStart(e.target.value)} className="w-full rounded border px-2 py-1.5" />
+                <span className="mb-1 block text-ui-fg-muted">Giờ vào</span>
+                <input type="time" value={cfgShiftStart} onChange={(e) => setCfgShiftStart(e.target.value)} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
               </label>
               <label className="block text-sm">
-                <span className="mb-1 block text-gray-500">Giờ ra</span>
-                <input type="time" value={cfgShiftEnd} onChange={(e) => setCfgShiftEnd(e.target.value)} className="w-full rounded border px-2 py-1.5" />
+                <span className="mb-1 block text-ui-fg-muted">Giờ ra</span>
+                <input type="time" value={cfgShiftEnd} onChange={(e) => setCfgShiftEnd(e.target.value)} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
               </label>
             </div>
             <div className="mb-3">
-              <span className="mb-1 block text-sm text-gray-500">Ngày làm việc</span>
+              <span className="mb-1 block text-sm text-ui-fg-muted">Ngày làm việc</span>
               <div className="flex gap-1.5">
                 {WEEKDAY_LABELS.map((label, i) => {
                   const dow = i === 6 ? 0 : i + 1 // WEEKDAY_LABELS = T2..CN, dow 0=CN
@@ -925,7 +925,7 @@ function QuanLySection() {
                       key={label}
                       type="button"
                       onClick={() => toggleWorkDay(dow)}
-                      className={`flex-1 rounded border py-1.5 text-xs font-medium ${active ? "border-green-600 bg-green-50 text-green-700" : "border-gray-200 text-gray-500"}`}
+                      className={`flex-1 rounded border border-ui-border-base py-1.5 text-xs font-medium ${active ? "border-green-600 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "border-ui-border-base text-ui-fg-muted"}`}
                     >
                       {label}
                     </button>
@@ -934,24 +934,24 @@ function QuanLySection() {
               </div>
             </div>
             <label className="mb-4 block text-sm">
-              <span className="mb-1 block text-gray-500">Phút du di trước khi tính đi muộn</span>
-              <input type="number" min={0} max={60} value={cfgGrace} onChange={(e) => setCfgGrace(Number(e.target.value))} className="w-24 rounded border px-2 py-1.5" />
+              <span className="mb-1 block text-ui-fg-muted">Phút du di trước khi tính đi muộn</span>
+              <input type="number" min={0} max={60} value={cfgGrace} onChange={(e) => setCfgGrace(Number(e.target.value))} className="w-24 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
             </label>
 
             <div className="mb-4">
-              <span className="mb-1 block text-sm text-gray-500">Thứ 7 làm nửa ngày (chọn thủ công từng ngày, không theo quy luật cố định)</span>
+              <span className="mb-1 block text-sm text-ui-fg-muted">Thứ 7 làm nửa ngày (chọn thủ công từng ngày, không theo quy luật cố định)</span>
               <div className="mb-2 flex gap-2">
-                <input type="date" value={newHalfDay} onChange={(e) => setNewHalfDay(e.target.value)} className="rounded border px-2 py-1.5 text-sm" />
-                <button type="button" onClick={addHalfDaySaturday} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">+ Thêm</button>
+                <input type="date" value={newHalfDay} onChange={(e) => setNewHalfDay(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-sm text-ui-fg-base" />
+                <button type="button" onClick={addHalfDaySaturday} className="rounded border border-ui-border-base px-3 py-1.5 text-sm hover:bg-ui-bg-base-hover">+ Thêm</button>
               </div>
               {cfgHalfDaySaturdays.length === 0 ? (
-                <div className="text-xs text-gray-400">Chưa có ngày T7 nửa buổi nào trong tháng này</div>
+                <div className="text-xs text-ui-fg-muted">Chưa có ngày T7 nửa buổi nào trong tháng này</div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {cfgHalfDaySaturdays.map((day) => (
-                    <span key={day} className="flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-xs text-violet-700">
+                    <span key={day} className="flex items-center gap-1 rounded-full bg-violet-50 dark:bg-violet-500/10 px-2 py-1 text-xs text-violet-700 dark:text-violet-400">
                       {fmtDdMm(day)}/{day.slice(0, 4)}
-                      <button type="button" onClick={() => removeHalfDaySaturday(day)} className="text-violet-400 hover:text-violet-700">✕</button>
+                      <button type="button" onClick={() => removeHalfDaySaturday(day)} className="text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 dark:text-violet-400">✕</button>
                     </span>
                   ))}
                 </div>
@@ -1089,14 +1089,14 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
 
   return (
     <div>
-      {err && <div className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+      {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm tên/mã NV/SĐT..."
-          className="flex-1 rounded border px-3 py-1.5 text-sm"
+          className="min-w-[160px] flex-1 rounded border border-ui-border-base bg-ui-bg-field px-3 py-1.5 text-sm text-ui-fg-base"
         />
-        <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="rounded border px-2 py-1.5 text-sm">
+        <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-sm text-ui-fg-base">
           <option value="">Tất cả team</option>
           {teams.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -1111,26 +1111,26 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-3">
-        <div className="rounded-lg bg-gray-50 p-3 text-center">
-          <div className="text-lg font-bold text-gray-800">{employees.length}</div>
-          <div className="text-xs text-gray-500">Tổng NV</div>
+        <div className="rounded-lg bg-ui-bg-subtle p-3 text-center">
+          <div className="text-lg font-bold text-ui-fg-base">{employees.length}</div>
+          <div className="text-xs text-ui-fg-muted">Tổng NV</div>
         </div>
-        <div className="rounded-lg bg-green-50 p-3 text-center">
-          <div className="text-lg font-bold text-green-700">{activeCount}</div>
-          <div className="text-xs text-green-700">Đang làm việc</div>
+        <div className="rounded-lg bg-green-50 dark:bg-green-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-green-700 dark:text-green-400">{activeCount}</div>
+          <div className="text-xs text-green-700 dark:text-green-400">Đang làm việc</div>
         </div>
-        <div className="rounded-lg bg-red-50 p-3 text-center">
-          <div className="text-lg font-bold text-red-700">{expiringSoon}</div>
-          <div className="text-xs text-red-700">Sắp hết hạn HĐLĐ</div>
+        <div className="rounded-lg bg-red-50 dark:bg-red-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-red-700 dark:text-red-400">{expiringSoon}</div>
+          <div className="text-xs text-red-700 dark:text-red-400">Sắp hết hạn HĐLĐ</div>
         </div>
       </div>
 
-      {loading && <div className="py-6 text-center text-sm text-gray-400">Đang tải...</div>}
+      {loading && <div className="py-6 text-center text-sm text-ui-fg-muted">Đang tải...</div>}
 
       {!loading && (
-        <div className="overflow-x-auto rounded border">
+        <div className="overflow-x-auto rounded border border-ui-border-base">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <thead className="bg-ui-bg-subtle text-left text-xs uppercase text-ui-fg-muted">
               <tr>
                 <th className="px-3 py-2">Mã NV</th>
                 <th className="px-3 py-2">Họ tên</th>
@@ -1143,9 +1143,9 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
             <tbody>
               {employees.map((e) => {
                 const days = daysUntil(e.ngay_het_han_hdld)
-                const expiryCls = days !== null && days <= 30 ? "font-medium text-red-600" : days !== null && days <= 90 ? "font-medium text-amber-600" : ""
+                const expiryCls = days !== null && days <= 30 ? "font-medium text-red-600 dark:text-red-400" : days !== null && days <= 90 ? "font-medium text-amber-600 dark:text-amber-400" : ""
                 return (
-                  <tr key={e.id} onClick={() => setDetail(e)} className="cursor-pointer border-t hover:bg-gray-50">
+                  <tr key={e.id} onClick={() => setDetail(e)} className="cursor-pointer border-t border-ui-border-base hover:bg-ui-bg-base-hover">
                     <td className="px-3 py-2 font-mono text-xs">{e.ma_nv}</td>
                     <td className="px-3 py-2">{e.ho_ten}</td>
                     <td className="px-3 py-2">{e.team || "—"}</td>
@@ -1156,7 +1156,7 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
                 )
               })}
               {employees.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">Không tìm thấy nhân sự</td></tr>
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-ui-fg-muted">Không tìm thấy nhân sự</td></tr>
               )}
             </tbody>
           </table>
@@ -1165,13 +1165,13 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
 
       {detail && !editing && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setDetail(null)}>
-          <div className="h-full w-full max-w-md overflow-y-auto bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="h-full w-full max-w-md overflow-y-auto bg-ui-bg-base p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <h2 className="font-semibold">{detail.ho_ten}</h2>
-                <p className="text-xs text-gray-500">{detail.ma_nv} · {detail.chuc_vu || "—"}</p>
+                <p className="text-xs text-ui-fg-muted">{detail.ma_nv} · {detail.chuc_vu || "—"}</p>
               </div>
-              <button onClick={() => setDetail(null)} className="text-gray-400 hover:text-gray-700">✕</button>
+              <button onClick={() => setDetail(null)} className="text-ui-fg-muted hover:text-ui-fg-base">✕</button>
             </div>
             <div className="space-y-3 text-sm">
               <Field label="Giới tính" value={detail.gioi_tinh} />
@@ -1206,17 +1206,17 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setEditing(null)}>
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-ui-bg-base p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="mb-3 font-semibold">{editing.id ? "Sửa hồ sơ" : "Thêm nhân viên"}</h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {EMPLOYEE_FORM_FIELDS.map((f) => (
                 <label key={String(f.key)} className="block text-sm">
-                  <span className="mb-1 block text-gray-500">{f.label}</span>
+                  <span className="mb-1 block text-ui-fg-muted">{f.label}</span>
                   <input
                     type={f.type === "date" ? "date" : "text"}
                     value={f.type === "date" ? String(editing[f.key] || "").slice(0, 10) : String(editing[f.key] ?? "")}
                     onChange={(e) => setEditing((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                    className="w-full rounded border px-2 py-1.5"
+                    className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base"
                   />
                 </label>
               ))}
@@ -1226,7 +1226,7 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setEditing(null)} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">Hủy</button>
+              <button onClick={() => setEditing(null)} className="rounded border border-ui-border-base px-3 py-1.5 text-sm hover:bg-ui-bg-base-hover">Hủy</button>
               <button onClick={saveEmployee} disabled={saving} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
                 {saving ? "Đang lưu..." : "Lưu"}
               </button>
@@ -1241,7 +1241,7 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div>
-      <div className="text-xs text-gray-400">{label}</div>
+      <div className="text-xs text-ui-fg-muted">{label}</div>
       <div>{value || "—"}</div>
     </div>
   )
@@ -1260,23 +1260,23 @@ function AcheckinPage() {
   const isWide = section === "quan-ly" || section === "nhan-su"
 
   return (
-    <div className={`mx-auto p-6 ${isWide ? "max-w-5xl" : "max-w-2xl"}`}>
+    <div className={`mx-auto p-4 text-ui-fg-base md:p-6 ${isWide ? "max-w-5xl" : "max-w-2xl"}`}>
       <h1 className="mb-1 text-xl font-semibold">Acheckin</h1>
-      <p className="mb-4 text-sm text-gray-500">Chấm công vị trí + báo nghỉ{(canViewQuanLy || canViewNhanSu) ? " + quản lý nhân sự" : ""}</p>
+      <p className="mb-4 text-sm text-ui-fg-muted">Chấm công vị trí + báo nghỉ{(canViewQuanLy || canViewNhanSu) ? " + quản lý nhân sự" : ""}</p>
 
-      <div className="mb-5 flex flex-wrap gap-2 rounded-lg bg-gray-100 p-1">
+      <div className="mb-5 flex flex-wrap gap-2 rounded-lg bg-ui-bg-component p-1">
         <button
           onClick={() => setSection("cham-cong")}
-          className={`flex-1 rounded-md py-2 text-sm font-semibold transition-colors ${
-            section === "cham-cong" ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          className={`min-w-fit flex-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+            section === "cham-cong" ? "bg-ui-bg-base text-green-700 dark:text-green-400 shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base"
           }`}
         >
           Chấm công
         </button>
         <button
           onClick={() => setSection("xin-nghi")}
-          className={`flex-1 rounded-md py-2 text-sm font-semibold transition-colors ${
-            section === "xin-nghi" ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          className={`min-w-fit flex-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+            section === "xin-nghi" ? "bg-ui-bg-base text-green-700 dark:text-green-400 shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base"
           }`}
         >
           Đơn báo nghỉ
@@ -1284,8 +1284,8 @@ function AcheckinPage() {
         {canViewQuanLy && (
           <button
             onClick={() => setSection("quan-ly")}
-            className={`flex-1 rounded-md py-2 text-sm font-semibold transition-colors ${
-              section === "quan-ly" ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            className={`min-w-fit flex-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+              section === "quan-ly" ? "bg-ui-bg-base text-green-700 dark:text-green-400 shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base"
             }`}
           >
             Quản lý
@@ -1294,8 +1294,8 @@ function AcheckinPage() {
         {canViewNhanSu && (
           <button
             onClick={() => setSection("nhan-su")}
-            className={`flex-1 rounded-md py-2 text-sm font-semibold transition-colors ${
-              section === "nhan-su" ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            className={`min-w-fit flex-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+              section === "nhan-su" ? "bg-ui-bg-base text-green-700 dark:text-green-400 shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base"
             }`}
           >
             Nhân sự
