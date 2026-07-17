@@ -41,10 +41,27 @@ function diffDays(startIso: string, endIso: string): string {
   return days.toFixed(2)
 }
 
-function toLocalInputValue(d: Date): string {
+function toDateInputValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+
+// Giờ hành chính 08:30-17:30 — dropdown mốc 30 phút, gọn hơn cuộn giờ/phút/AM-PM của datetime-local native.
+const TIME_OPTIONS: string[] = (() => {
+  const out: string[] = []
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      out.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`)
+    }
+  }
+  return out
+})()
+
+const DAY_PRESETS: { key: string; label: string; start: string; end: string }[] = [
+  { key: "full", label: "Cả ngày", start: "08:30", end: "17:30" },
+  { key: "morning", label: "Buổi sáng", start: "08:30", end: "12:00" },
+  { key: "afternoon", label: "Buổi chiều", start: "13:30", end: "17:30" },
+]
 
 function XinNghiPage() {
   const { has } = useCurrentPermissions()
@@ -56,10 +73,20 @@ function XinNghiPage() {
   const [showForm, setShowForm] = useState(false)
 
   const [leaveType, setLeaveType] = useState("phep_nam")
-  const [startAt, setStartAt] = useState(() => toLocalInputValue(new Date()))
-  const [endAt, setEndAt] = useState(() => toLocalInputValue(new Date(Date.now() + 3600 * 1000)))
+  const [startDate, setStartDate] = useState(() => toDateInputValue(new Date()))
+  const [startTime, setStartTime] = useState("08:30")
+  const [endDate, setEndDate] = useState(() => toDateInputValue(new Date()))
+  const [endTime, setEndTime] = useState("17:30")
+  const [activePreset, setActivePreset] = useState<string | null>("full")
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
+
+  const applyPreset = (preset: typeof DAY_PRESETS[number]) => {
+    setActivePreset(preset.key)
+    setStartTime(preset.start)
+    setEndTime(preset.end)
+    setEndDate(startDate)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -82,8 +109,8 @@ function XinNghiPage() {
     try {
       await apiJson("/admin/leave-request", "POST", {
         leave_type: leaveType,
-        start_at: new Date(startAt).toISOString(),
-        end_at: new Date(endAt).toISOString(),
+        start_at: new Date(`${startDate}T${startTime}:00`).toISOString(),
+        end_at: new Date(`${endDate}T${endTime}:00`).toISOString(),
         reason: reason.trim() || null,
       })
       setShowForm(false)
@@ -192,12 +219,68 @@ function XinNghiPage() {
               </select>
             </label>
             <label className="mb-3 block text-sm">
-              <span className="mb-1 block text-gray-500">Bắt đầu</span>
-              <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-full rounded border px-2 py-1.5" />
+              <span className="mb-1 block text-gray-500">Ngày nghỉ</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value)
+                  if (endDate < e.target.value) setEndDate(e.target.value)
+                }}
+                className="w-full rounded border px-2 py-1.5"
+              />
             </label>
+
+            <div className="mb-3">
+              <span className="mb-1 block text-sm text-gray-500">Buổi nghỉ</span>
+              <div className="grid grid-cols-3 gap-2">
+                {DAY_PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => applyPreset(p)}
+                    className={`rounded border py-1.5 text-sm font-medium transition-colors ${
+                      activePreset === p.key ? "border-green-600 bg-green-50 text-green-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-3 grid grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="mb-1 block text-gray-500">Giờ bắt đầu</span>
+                <select
+                  value={startTime}
+                  onChange={(e) => { setStartTime(e.target.value); setActivePreset(null) }}
+                  className="w-full rounded border px-2 py-1.5"
+                >
+                  {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-gray-500">Giờ kết thúc</span>
+                <select
+                  value={endTime}
+                  onChange={(e) => { setEndTime(e.target.value); setActivePreset(null) }}
+                  className="w-full rounded border px-2 py-1.5"
+                >
+                  {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+            </div>
+
             <label className="mb-3 block text-sm">
-              <span className="mb-1 block text-gray-500">Kết thúc</span>
-              <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-full rounded border px-2 py-1.5" />
+              <span className="mb-1 block text-gray-500">Ngày kết thúc (nếu nghỉ nhiều ngày)</span>
+              <input
+                type="date"
+                value={endDate}
+                min={startDate}
+                onChange={(e) => { setEndDate(e.target.value); setActivePreset(null) }}
+                className="w-full rounded border px-2 py-1.5"
+              />
             </label>
             <label className="mb-4 block text-sm">
               <span className="mb-1 block text-gray-500">Lý do</span>
