@@ -6,7 +6,9 @@ import MktPresenceSession from "./models/mkt-presence-session"
 import AdsExpenseTransaction from "./models/ads-expense-transaction"
 import ChamCongLog from "./models/cham-cong-log"
 import LeaveRequest from "./models/leave-request"
+import ChamCongConfig from "./models/cham-cong-config"
+import EmployeeProfile from "./models/employee-profile"
 
-class MktTaskModuleService extends MedusaService({ MktTask, MktChannel, MktMessage, MktPresenceSession, AdsExpenseTransaction, ChamCongLog, LeaveRequest }) {}
+class MktTaskModuleService extends MedusaService({ MktTask, MktChannel, MktMessage, MktPresenceSession, AdsExpenseTransaction, ChamCongLog, LeaveRequest, ChamCongConfig, EmployeeProfile }) {}
 
 export default MktTaskModuleService

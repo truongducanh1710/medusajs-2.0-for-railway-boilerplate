@@ -68,13 +68,15 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     ],
   },
   {
-    label: "🗓 Chấm công & Xin nghỉ",
-    note: "checkin/leave-view mặc định mọi nhân viên đã có qua role — tick approve riêng cho ai được duyệt đơn nghỉ",
+    label: "🗓 Chấm công & Nhân sự",
+    note: "checkin/leave-view mặc định mọi nhân viên đã có qua role — tick approve/nhan-su riêng cho HR hoặc quản lý cụ thể",
     color: "bg-teal-50 border-teal-200",
     keys: [
       "page.cham-cong-nv.checkin",
       "page.leave-request.view",
       "page.leave-request.approve",
+      "page.nhan-su.view",
+      "page.nhan-su.manage",
     ],
   },
   {

@@ -1,21 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
-import { getCurrentUserEmail } from "../cham-cong/_lib"
+import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
 
 const LEAVE_TYPES = new Set(["khong_luong", "phep_nam", "om", "khac"])
 
 export async function userHasApprovePerm(req: MedusaRequest, email: string): Promise<boolean> {
-  const auth = (req as any).auth_context
-  if (email === process.env.SUPER_ADMIN_EMAIL) return true
-  const userModule = req.scope.resolve(Modules.USER)
-  const user = await userModule.retrieveUser(auth.actor_id, { select: ["metadata"] })
-  const metadata: any = user?.metadata || {}
-  const role: string = metadata.role || ""
-  const explicit: string[] = Array.isArray(metadata.permissions) ? metadata.permissions : []
-  // Role admin có mọi quyền (Object.keys(PERMISSIONS)) — không cần import permissions.ts ở đây,
-  // chỉ cần check role admin/manager (2 preset duy nhất đã gán sẵn approve) hoặc quyền thủ công.
-  if (role === "admin" || role === "manager") return true
-  return explicit.includes("page.leave-request.approve")
+  return userHasPerm(req, email, "page.leave-request.approve")
 }
 
 // GET /admin/leave-request?scope=mine|pending|approved

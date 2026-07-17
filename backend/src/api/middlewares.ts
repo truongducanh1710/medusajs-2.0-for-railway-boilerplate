@@ -202,7 +202,7 @@ export default defineMiddlewares({
 
     // Chấm công GPS chủ động — mọi nhân viên tự bấm vào/ra. Matcher cụ thể phải đứng
     // TRƯỚC wildcard /admin/cham-cong* bên dưới, nếu không wildcard nuốt mất route này.
-    { matcher: "/admin/cham-cong/checkin*", method: ["GET", "POST"], middlewares: [requirePerm("page.cham-cong-nv.checkin")] },
+    { matcher: "/admin/cham-cong/checkin*", method: ["GET", "POST", "PATCH"], middlewares: [requirePerm("page.cham-cong-nv.checkin")] },
     // Chấm công — báo cáo giờ online + việc đã làm. Chỉ lead/manager/admin.
     { matcher: "/admin/cham-cong*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
 
@@ -211,6 +211,12 @@ export default defineMiddlewares({
     { matcher: "/admin/leave-request*", method: ["GET"], middlewares: [requirePerm("page.leave-request.view")] },
     { matcher: "/admin/leave-request", method: ["POST"], middlewares: [requirePerm("page.leave-request.view")] },
     { matcher: "/admin/leave-request/*", method: ["PATCH"], middlewares: [requirePerm("page.leave-request.view")] },
+
+    // Hồ sơ nhân sự — dữ liệu nhạy cảm (CCCD, địa chỉ, hợp đồng), chỉ ai được gán riêng
+    // page.nhan-su.view mới vào được; write cần page.nhan-su.manage (handler tự check thêm).
+    { matcher: "/admin/nhan-su*", method: ["GET"], middlewares: [requirePerm("page.nhan-su.view")] },
+    { matcher: "/admin/nhan-su", method: ["POST"], middlewares: [requirePerm("page.nhan-su.view")] },
+    { matcher: "/admin/nhan-su/*", method: ["PATCH"], middlewares: [requirePerm("page.nhan-su.view")] },
 
     // permissions/check: guard nằm trong chính route handler (chỉ cho phép actor
     // ai-agent hoặc actor có page.mkt-tasks.manage) — không dùng requirePerm chung vì

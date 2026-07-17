@@ -46,6 +46,8 @@ export const PERMISSIONS = {
   "page.cham-cong-nv.checkin": "Tự chấm công vào/ra (GPS) — mọi nhân viên",
   "page.leave-request.view": "Xem đơn xin nghỉ của mình + tạo đơn mới",
   "page.leave-request.approve": "Duyệt/từ chối đơn xin nghỉ của người khác",
+  "page.nhan-su.view": "Xem hồ sơ nhân sự (thông tin cá nhân, hợp đồng — nhạy cảm)",
+  "page.nhan-su.manage": "Thêm/sửa hồ sơ nhân sự",
   "page.ai-settings.manage": "Cấu hình AI Settings (model, exchange rate)",
   "page.dohana-sync.view": "Xem theo dõi video đóng gói (Dohana)",
   "page.dohana-sync.run": "Trigger sync Dohana thủ công",
