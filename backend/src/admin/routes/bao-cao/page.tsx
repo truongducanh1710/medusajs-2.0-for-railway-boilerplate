@@ -1305,7 +1305,7 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
         )}
         {perfData && (
           <span className="text-sm text-gray-400">
-            {perfData.summary?.total_orders} đơn · {perfData.summary?.total_confirmed} lên kho · {perfData.summary?.overall_confirm_rate}%
+            {perfData.summary?.total_orders} đơn · {perfData.summary?.total_confirmed} đã xác nhận · {perfData.summary?.overall_confirm_rate}%
           </span>
         )}
       </div>
@@ -1328,7 +1328,7 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
                   <div className="space-y-2">
                     {[
                       { label: "Đơn vào", v: total, pct: 100, color: "bg-blue-500" },
-                      { label: "Lên kho", v: confirmed, pct: Math.round(confirmed / total * 100), color: "bg-green-500" },
+                      { label: "Đã xác nhận", v: confirmed, pct: Math.round(confirmed / total * 100), color: "bg-green-500" },
                       { label: "Hủy/Hoàn", v: cancelled, pct: Math.round(cancelled / total * 100), color: "bg-gray-400" },
                     ].map(st => (
                       <div key={st.label} className="flex items-center gap-3">
@@ -1353,7 +1353,7 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b text-xs">
                 <tr>
-                  {["Sale","Tổng","Còn chờ","KNM 1","KNM 2","KNM 3+","Lên kho","Hủy","Tỷ lệ"].map(h => (
+                  {["Sale","Tổng","Còn chờ","KNM 1","KNM 2","KNM 3+","Đã xác nhận","Hủy","Tỷ lệ XN"].map(h => (
                     <th key={h} className="px-4 py-2.5 font-semibold text-gray-600 text-left last:text-right">{h}</th>
                   ))}
                 </tr>

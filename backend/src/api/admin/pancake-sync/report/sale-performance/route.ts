@@ -2,11 +2,16 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getMyrToVndRate } from "../../../../../lib/db"
 
 // Mapping đúng theo Pancake (verify bằng status_name thật từ API):
+//   0 = mới (chưa xác nhận), 1 = đã xác nhận (sale bấm xác nhận)
 //   2 = shipped (đang giao), 3 = delivered (giao thành công)
 //   4 = returning (đang hoàn về), 5 = returned (đã hoàn về kho)
 //   6 = canceled (đã hủy bởi sale/admin), 7 = deleted
-// "confirmed" = đã chốt sale thực sự = đã đẩy ra VTP và đang/đã giao
-const CONFIRMED_STATUSES = [2, 3]
+//   8 = đang đóng hàng, 9 = chờ chuyển hàng, 11 = chờ hàng
+// "confirmed" (cột "Lên kho") = SALE ĐÃ XÁC NHẬN đơn trong ngày = mọi đơn đã qua bước
+//   xác nhận (Mới→Đã xác nhận trở đi). Status là trạng thái HIỆN TẠI nên đơn đã xác nhận
+//   rồi chuyển tiếp (đóng hàng/gửi/đã nhận) VẪN phải tính — chỉ status 0 (Mới) là chưa
+//   xác nhận. Vì vậy confirmed = [1,2,3,8,9,11] (đã xác nhận trở đi, loại đơn Mới + hủy/hoàn).
+const CONFIRMED_STATUSES = [1, 2, 3, 8, 9, 11]
 const CANCELLED_STATUSES = [-1, -2, 4, 5, 6, 7]
 
 function dayRangeVN(date: string) {
