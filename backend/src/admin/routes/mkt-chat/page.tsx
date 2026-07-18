@@ -58,6 +58,16 @@ function fmtDate(d: string) {
   if (dt.toDateString() === new Date().toDateString()) return "Hôm nay"
   return `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`
 }
+// Friendly label for the date divider in the message list: "Hôm nay" | "Hôm qua" | "Thứ 4, 16/07"
+function fmtDayLabel(dateKey: string, msgs: { created_at: string }[]) {
+  if (dateKey === "Hôm nay") return "Hôm nay"
+  const dt = new Date(msgs[0]?.created_at || "")
+  if (isNaN(dt.getTime())) return dateKey
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+  if (dt.toDateString() === yesterday.toDateString()) return "Hôm qua"
+  const weekday = dt.getDay() === 0 ? "Chủ nhật" : `Thứ ${dt.getDay() + 1}`
+  return `${weekday}, ${dateKey}`
+}
 function fmtSnippetTime(d: string) {
   const dt = new Date(d)
   if (dt.toDateString() === new Date().toDateString()) return fmtTime(d)
@@ -2505,8 +2515,10 @@ function MktChatPage() {
             {loading && <div className="py-5 text-center text-[13px] text-ui-fg-muted">Đang tải...</div>}
             {Object.entries(groupedByDate).map(([date, msgs]) => (
               <div key={date}>
-                <div className="my-2.5 text-center">
-                  <span className="rounded-full bg-ui-bg-base px-2.5 py-0.5 text-[11px] text-ui-fg-muted shadow-sm">{date}</span>
+                <div className="sticky top-0 z-10 my-2.5 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-ui-border-base" />
+                  <span className="rounded-full border border-ui-border-base bg-ui-bg-base px-3 py-0.5 text-[11px] font-semibold text-ui-fg-muted shadow-sm">{fmtDayLabel(date, msgs)}</span>
+                  <span className="h-px flex-1 bg-ui-border-base" />
                 </div>
                 {msgs.map(m => (
                   <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} className="rounded-lg">
