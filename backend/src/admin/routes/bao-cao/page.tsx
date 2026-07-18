@@ -1403,7 +1403,77 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
 
           {/* Bảng tình trạng vận đơn theo Sale (hoàn/hủy/giao) — dùng period chung, khớp tab NV MKT */}
           <SaleStatusTable range={range} market={market} />
+
+          {/* Bảng chỉ số KPI theo Sale (Tổng data, TC, doanh thu, Sale chốt/Up/Cross) */}
+          <SaleKpiTable range={range} market={market} />
         </>
+      )}
+    </div>
+  )
+}
+
+// ---- Bảng chỉ số KPI theo Sale (để tính thưởng hàng tháng) ----
+// Nguồn: report/sale-kpi. Sale chốt/Up/Cross đếm doanh thu đơn giao TC có tag Pancake.
+function SaleKpiTable({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: any[]; summary: any; not_supported?: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const fmt = useFmtMoney()
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/sale-kpi?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) return null
+
+  const cols: { key: string; label: string; money?: boolean }[] = [
+    { key: "tong_data", label: "Tổng data" },
+    { key: "don_thanh_cong", label: "Đơn thành công" },
+    { key: "tong_doanh_thu", label: "Tổng doanh thu", money: true },
+    { key: "doanh_thu_thuc", label: "Doanh thu thực", money: true },
+    { key: "sale_chot", label: "Sale chốt", money: true },
+    { key: "up_sale", label: "Up sale", money: true },
+    { key: "cross_sale", label: "Cross sale", money: true },
+  ]
+
+  const renderRow = (row: any, isTotal = false) => (
+    <tr key={row.sale_name} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium">{row.sale_name}</td>
+      {cols.map(c => (
+        <td key={c.key} className="px-3 py-2 text-sm text-right tabular-nums text-gray-700">
+          {c.money ? fmt(row[c.key]) : fmtNum(row[c.key])}
+        </td>
+      ))}
+    </tr>
+  )
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <h3 className="font-semibold text-gray-800">Chỉ số KPI theo Sale</h3>
+        <div className="flex items-center gap-2">
+          {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+          <span className="text-xs text-gray-400">Sale chốt / Up / Cross = DT đơn giao TC có tag Pancake</span>
+        </div>
+      </div>
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">Sale</th>
+                {cols.map(c => (
+                  <th key={c.key} className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-right">{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {renderRow(data.summary, true)}
+              {data.rows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
