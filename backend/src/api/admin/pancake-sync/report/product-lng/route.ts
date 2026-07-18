@@ -53,8 +53,53 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Tên SP chuẩn theo code (để hiển thị thay vì tên item tự do, vd "Giẻ..." vs "Bộ...").
     const prodNames = await sql(`SELECT code, name FROM mkt_product WHERE active = true`)
     const codeToName: Record<string, string> = {}
+    const codeSet = new Set<string>()
     for (const p of prodNames) {
-      if (p.code) codeToName[String(p.code).trim().toUpperCase()] = p.name
+      if (p.code) {
+        const c = String(p.code).trim().toUpperCase()
+        codeToName[c] = p.name
+        codeSet.add(c)
+      }
+    }
+
+    // ── Chi phí Ads gán về từng SP ─────────────────────────────────────────────
+    // Attribution (tương đối, đủ để biết SP lãi/lỗ):
+    //   1) Camp có mã SP ở ĐẦU tên (vd "PHVVN026CV_...") → gán trực tiếp cho SP đó.
+    //      Tên camp viết mã LIỀN (PHVVN026CV) còn mã chuẩn có gạch (PHVVN026_CV) → chuẩn hoá
+    //      bằng cách bỏ hết gạch/space rồi so khớp codeSet.
+    //   2) Camp KHÔNG có mã đầu tên → gom vào "chưa phân bổ", rồi CHIA theo tỷ lệ % chi phí
+    //      của phần đã map (SP tiêu ads nhiều gánh nhiều hơn) → 100% ads được phân bổ.
+    const stripKey = (s: string) => s.replace(/[_\s]/g, "").toUpperCase()
+    const stripToCode: Record<string, string> = {}
+    for (const c of codeSet) stripToCode[stripKey(c)] = c
+    const reHead = /^(PHVVN\d{2,3}[A-ZĐ]*)/i
+
+    const adsRows = await sql(`
+      SELECT campaign_name, SUM(spend)::bigint AS spend
+      FROM mkt_ads_cost
+      WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+      GROUP BY campaign_name
+    `, [from, to])
+
+    const adsDirect: Record<string, number> = {}  // code → spend (map trực tiếp)
+    let adsUnassigned = 0                          // spend camp không có mã đầu tên
+    let adsMappedTotal = 0
+    for (const r of adsRows) {
+      const spend = Number(r.spend) || 0
+      const m = String(r.campaign_name || "").match(reHead)
+      const code = m ? stripToCode[stripKey(m[1])] : undefined
+      if (code) {
+        adsDirect[code] = (adsDirect[code] || 0) + spend
+        adsMappedTotal += spend
+      } else {
+        adsUnassigned += spend
+      }
+    }
+    // adsByCode = trực tiếp + phần chưa phân bổ chia theo tỷ lệ % của phần đã map.
+    const adsByCode: Record<string, number> = {}
+    for (const [code, direct] of Object.entries(adsDirect)) {
+      const share = adsMappedTotal > 0 ? direct / adsMappedTotal : 0
+      adsByCode[code] = Math.round(direct + adsUnassigned * share)
     }
 
     // SQL alias map display_id (đồng bộ DISPLAY_ID_ALIASES) để gom biến thể mã về code chuẩn.
@@ -199,7 +244,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ? avgCost.costs[g.sp_code]
         : (avgCost.byName[(g.sp_label || "").toUpperCase()] ?? null)
       const cogs = unit != null ? Math.round(unit * g.delivered_qty) : 0
-      const ads_cost = 0  // không gán ads theo SP
+      // Chi phí ads gán theo mã SP (attribution từ tên camp, xem adsByCode). SP không map
+      // được camp nào → 0. Tương đối nhưng đủ để so lãi/lỗ theo SP.
+      const ads_cost = g.sp_code ? (adsByCode[String(g.sp_code).toUpperCase()] ?? 0) : 0
 
       // ── KHỐI THỰC ──
       // Fullfill chỉ tính cho đơn mà SP này là SP chính (mỗi đơn chịu 1 lần fullfill).
