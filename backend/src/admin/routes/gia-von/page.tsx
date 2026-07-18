@@ -279,6 +279,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [showAddCol, setShowAddCol] = useState(false)
   const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
+  const [syncing, setSyncing] = useState(false)
 
   // focusedCell: [rowIdx, colIdx] trong mảng hiển thị
   const [focused, setFocused] = useState<[number, number] | null>(null)
@@ -450,6 +451,22 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     }
   }
 
+  async function syncProducts() {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const res = await apiJson("/admin/gia-von/products", "POST", { action: "sync" })
+      // Reload danh sách SP để cột SP (cột K, autocomplete) hiện SP mới ngay
+      const prod = await apiJson("/admin/gia-von/products", "GET").catch(() => ({ products: [] }))
+      setMktProducts((prod.products ?? []).filter((p: MktProduct) => p.active !== false))
+      alert(`Đã đồng bộ ${res.synced ?? 0}/${res.total ?? 0} sản phẩm từ Pancake POS.`)
+    } catch (e: any) {
+      alert("Lỗi đồng bộ SP: " + e.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   async function addColumn(name: string, type: "text" | "number") {
     setShowAddCol(false)
     try {
@@ -513,6 +530,11 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
             <button onClick={() => addRow(10)}
               style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 12px", cursor: "pointer", fontSize: 12, color: "#6b7280" }}>
               +10 dòng
+            </button>
+            <button onClick={syncProducts} disabled={syncing}
+              title="Kéo danh mục SP mới nhất từ Pancake POS về (cập nhật gợi ý cột Sản phẩm)"
+              style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 7, padding: "7px 14px", cursor: syncing ? "wait" : "pointer", fontSize: 13, fontWeight: 600, color: "#059669" }}>
+              {syncing ? "⏳ Đang đồng bộ…" : "🔄 Đồng bộ SP từ POS"}
             </button>
           </>
         )}
