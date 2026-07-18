@@ -1,6 +1,7 @@
 import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { Pool } from "pg"
+import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID } from "../../../lib/constants"
 
 /**
  * Push thông báo vào Medusa Notifications panel.
@@ -103,6 +104,74 @@ export async function ensureTables(pool: Pool): Promise<void> {
     )
   `)
   _tablesReady = true
+}
+
+/**
+ * Pull danh mục SP từ Pancake POS → upsert vào mkt_product theo pancake_id.
+ * Chỉ thêm/cập nhật (upsert), KHÔNG đụng SP cũ hay set inactive — an toàn cho giá vốn đã nhập.
+ * Dùng chung bởi route POST {action:"sync"} và cron job mkt-product-daily-sync.
+ * @throws nếu chưa cấu hình Pancake API.
+ */
+export async function syncMktProductsFromPancake(pool: Pool): Promise<{ synced: number; total: number }> {
+  if (!PANCAKE_API_KEY || !PANCAKE_SHOP_ID) {
+    throw new Error("Chưa cấu hình PANCAKE_API_KEY")
+  }
+
+  await ensureTables(pool)
+
+  // Đảm bảo unique constraint tồn tại trước khi upsert
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'mkt_product_pancake_id_key'
+      ) THEN
+        ALTER TABLE mkt_product ADD CONSTRAINT mkt_product_pancake_id_key UNIQUE (pancake_id);
+      END IF;
+    END $$
+  `).catch(() => {})
+
+  const fetched: { name: string; code: string; pancake_id: string }[] = []
+  let page = 1
+  while (true) {
+    const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/products?api_key=${PANCAKE_API_KEY}&page=${page}&limit=100`
+    const r = await fetch(url)
+    if (!r.ok) {
+      console.error("[mkt-products sync] Pancake fetch failed:", r.status, r.statusText)
+      break
+    }
+    const data = await r.json()
+    const items: any[] = data.data ?? data.products ?? []
+    if (!items.length) break
+    for (const p of items) {
+      const name = (p.name || "").trim()
+      // Mã SP trong Pancake lưu ở custom_id hoặc variations[0].display_id
+      const code = (p.custom_id || p.variations?.[0]?.display_id || "").trim().toUpperCase()
+      const pancake_id = String(p.id || "")
+      if (name) fetched.push({ name, code, pancake_id })
+    }
+    if (page >= (data.total_pages ?? 1)) break
+    page++
+  }
+
+  let upserted = 0
+  for (const p of fetched) {
+    try {
+      await pool.query(`
+        INSERT INTO mkt_product (name, code, pancake_id, active, updated_at)
+        VALUES ($1, $2, $3, true, now())
+        ON CONFLICT (pancake_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          code = EXCLUDED.code,
+          active = true,
+          updated_at = now()
+      `, [p.name, p.code, p.pancake_id])
+      upserted++
+    } catch (e: any) {
+      console.error("[mkt-products upsert] error:", e.message, p)
+    }
+  }
+
+  return { synced: upserted, total: fetched.length }
 }
 
 /** Sinh vd_code kế tiếp dạng "VD<n>". */
