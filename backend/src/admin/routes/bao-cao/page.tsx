@@ -1400,16 +1400,20 @@ function SaleStatusTable({ range, market }: { range: DateRange; market: Market }
 
   if (data?.not_supported) return null
 
+  // Cột đầy đủ, KHỚP 1-1 với bảng NV MKT.
   const cols: { key: string; label: string; pct?: boolean }[] = [
     { key: "da_nhan", label: "Đã nhận" },
     { key: "da_hoan", label: "Đã hoàn" },
     { key: "dang_hoan", label: "Đang hoàn" },
     { key: "da_huy", label: "Đã huỷ" },
-    { key: "don_nhap_trung", label: "Nháp/trùng hủy" },
+    { key: "don_nhap_trung", label: "Đơn nháp, trùng Hủy" },
+    { key: "da_xoa", label: "Đã xóa" },
     { key: "da_gui_hang", label: "Đã gửi hàng" },
     { key: "moi", label: "Mới" },
     { key: "cho_hang", label: "Chờ hàng" },
     { key: "da_xac_nhan", label: "Đã xác nhận" },
+    { key: "dang_dong_hang", label: "Đang đóng hàng" },
+    { key: "cho_chuyen_hang", label: "Chờ chuyển hàng" },
     { key: "tong_don_giao", label: "Tổng đơn giao" },
     { key: "ty_le_hoan", label: "Tỷ lệ hoàn", pct: true },
     { key: "ty_le_huy", label: "Tỷ lệ hủy", pct: true },
