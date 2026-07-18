@@ -347,17 +347,20 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
   // Top nhân sự lấy từ marketer-lng (đã chuẩn hoá attribution + handover + LNG). Chỉ VN;
   // MY trả not_supported → ẩn khối. Tách state riêng để không chặn render khối chính nếu chậm.
   const [mkt, setMkt] = useState<any>(null)
+  // Bộ lọc phạm vi đơn: "all" (mọi đơn Pancake, gồm sàn TMĐT) hoặc "core" (chỉ đơn khớp LNG:
+  // loại TikTok/Shopee + nháp/trùng/xóa). Mặc định all để giữ bức tranh toàn DN.
+  const [sourceGroup, setSourceGroup] = useState<"all" | "core">("all")
 
   useEffect(() => {
     setLoading(true)
     const from = toISO(range.from), to = toISO(range.to, true)
-    apiFetch(`/admin/pancake-sync/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}`)
+    apiFetch(`/admin/pancake-sync/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}&source_group=${sourceGroup}`)
       .then(r => r.json()).then(d => {
         setData(d)
         if (d?.myr_to_vnd_rate) onRate?.(d.myr_to_vnd_rate)
       }).catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [range.from, range.to, market])
+  }, [range.from, range.to, market, sourceGroup])
 
   useEffect(() => {
     setMkt(null)
@@ -375,6 +378,26 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
 
   return (
     <div className="space-y-5">
+      {/* Bộ lọc phạm vi đơn */}
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-gray-500">Phạm vi:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+          <button
+            onClick={() => setSourceGroup("all")}
+            className={`px-3 py-1.5 ${sourceGroup === "all" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+            Toàn bộ
+          </button>
+          <button
+            onClick={() => setSourceGroup("core")}
+            className={`px-3 py-1.5 border-l border-gray-200 ${sourceGroup === "core" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+            Khớp LNG
+          </button>
+        </div>
+        <span className="text-xs text-gray-400">
+          {sourceGroup === "all" ? "Mọi đơn Pancake (gồm TikTok/Shopee, cả nháp)" : "Chỉ đơn tính LNG (loại sàn TMĐT + nháp/trùng/xóa)"}
+        </span>
+      </div>
+
       {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard label="Đơn thành công" value={fmtNum(data.success_count)}

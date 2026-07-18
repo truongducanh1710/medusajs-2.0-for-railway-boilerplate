@@ -12,11 +12,33 @@ import { getMyrToVndRate } from "../../../../lib/db"
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const { from, to, market } = req.query as Record<string, string | undefined>
+    const { from, to, market, source_group } = req.query as Record<string, string | undefined>
 
     if (!from || !to) {
       return res.status(400).json({ error: "Missing required query params: from, to (ISO date strings)" })
     }
+
+    // source_group: "all" (mặc định, mọi đơn Pancake — bức tranh toàn DN) hoặc "core"
+    // (chỉ đơn khớp các báo cáo LNG/NV MKT/Sale: loại sàn TMĐT + đơn nháp/trùng/xóa).
+    // Cho phép user đối chiếu Tổng quan với LNG khi cần.
+    const coreOnly = source_group === "core"
+    const CORE_SOURCES = new Set(["manual", "facebook", "medusa", "unknown", "webcake"])
+    // Đơn LOẠI khỏi "core" (khớp excludeCond của marketer-lng):
+    //   - đã xóa (7)
+    //   - đơn nháp chưa xác nhận: tag "Đơn nháp" ở status 0/11
+    //   - đơn nháp/trùng đã huỷ: tag "Đơn nháp"/"Đơn trùng" ở status 6/-1
+    const hasTag = (o: any, name: string): boolean =>
+      Array.isArray(o.tags) && o.tags.some((t: any) => String(t?.name ?? "") === name)
+    const isExcludedCore = (o: any): boolean => {
+      if (o.status === 7) return true
+      const nhap = hasTag(o, "Đơn nháp")
+      const trung = hasTag(o, "Đơn trùng")
+      if (nhap && (o.status === 0 || o.status === 11)) return true
+      if ((o.status === 6 || o.status === -1) && (nhap || trung)) return true
+      return false
+    }
+    const keepOrder = (o: any): boolean =>
+      !coreOnly || (CORE_SOURCES.has(o.source) && !isExcludedCore(o))
 
     const fromDate = new Date(from)
     const toDate = new Date(to)
@@ -42,7 +64,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       new Date(d.getTime() + TZ_OFFSET_HOURS * 3600_000).toISOString().slice(0, 10)
 
     // Fetch all orders in range (without raw column for performance)
-    const allOrders = await syncService.listPancakeOrders(
+    const allOrdersRaw = await syncService.listPancakeOrders(
       {
         pancake_created_at: {
           $gte: fromDate,
@@ -59,6 +81,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "total",
           "cod_amount",
           "items",
+          "tags",
           "pancake_created_at",
           "currency",
           "shop_name",
@@ -66,18 +89,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         order: { pancake_created_at: "ASC" },
       }
     )
+    const allOrders = allOrdersRaw.filter(keepOrder)
 
-    // Kỳ liền trước: chỉ cần source + status + cod_amount để tính totals + bySource (Δ).
-    const prevOrders = await syncService.listPancakeOrders(
+    // Kỳ liền trước: chỉ cần source + status + cod_amount + tags để tính totals + bySource (Δ).
+    const prevOrdersRaw = await syncService.listPancakeOrders(
       {
         pancake_created_at: { $gte: prevFromDate, $lt: prevToDate },
         market: mkt,
       },
       {
         take: 10000,
-        select: ["id", "source", "status", "cod_amount"],
+        select: ["id", "source", "status", "cod_amount", "tags"],
       }
     )
+    const prevOrders = prevOrdersRaw.filter(keepOrder)
 
     // Doanh thu "COD" = SUM(cod_amount) của TẤT CẢ đơn mọi trạng thái, cho cả VN và MY —
     // khớp con số COD Pancake POS. cod_amount là tiền cần thu (sau giảm giá/phí sàn), khác với
@@ -272,6 +297,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       from,
       to,
       market: mkt,
+      source_group: coreOnly ? "core" : "all",
       currency: allOrders[0]?.currency ?? (mkt === "MY" ? "MYR" : "VND"),
       ...(mkt === "MY" ? { myr_to_vnd_rate: await getMyrToVndRate(to) } : {}),
       total_orders: totalOrders,
