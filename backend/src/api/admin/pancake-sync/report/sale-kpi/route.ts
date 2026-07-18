@@ -59,6 +59,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int                       AS tong_data,
         COUNT(*) FILTER (WHERE status = 3 AND NOT ${excludeCond})::int                                AS don_thanh_cong,
         SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN ${rev} ELSE 0 END)::bigint        AS tong_doanh_thu,
+        -- Doanh thu thực = doanh thu đơn ĐÃ NHẬN (status 3) — KHỚP revenue_delivered của tab LNG/NV MKT.
+        SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN ${rev} ELSE 0 END)::bigint                 AS doanh_thu_thuc,
         -- Sale chốt / Up / Cross = doanh thu đơn GIAO TC (status 3) mang tag tương ứng.
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} AND ${hasTag("SALE CHỐT")} THEN ${rev} ELSE 0 END)::bigint AS sale_chot,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} AND ${hasTag("UPSALE")}    THEN ${rev} ELSE 0 END)::bigint AS up_sale,
@@ -72,18 +74,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `, [from, to])
 
     const enriched = rows.map((r: any) => {
-      const tong_doanh_thu = Number(r.tong_doanh_thu)
-      const cross_sale = Number(r.cross_sale)
       return {
         sale_name: r.sale_name,
         tong_data: Number(r.tong_data),
         don_thanh_cong: Number(r.don_thanh_cong),
-        tong_doanh_thu,
-        // Doanh thu thực = Tổng doanh thu − Cross sale (công thức KPI team).
-        doanh_thu_thuc: tong_doanh_thu - cross_sale,
+        tong_doanh_thu: Number(r.tong_doanh_thu),
+        // Doanh thu thực = doanh thu đơn đã nhận (status 3), khớp tab NV MKT/LNG.
+        doanh_thu_thuc: Number(r.doanh_thu_thuc),
         sale_chot: Number(r.sale_chot),
         up_sale: Number(r.up_sale),
-        cross_sale,
+        cross_sale: Number(r.cross_sale),
       }
     }).sort((a, b) => b.tong_doanh_thu - a.tong_doanh_thu)
 
