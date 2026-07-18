@@ -39,6 +39,26 @@ export function resolveDisplayId(displayId: string | null | undefined): string |
   return DISPLAY_ID_ALIASES[upper] ?? upper
 }
 
+/**
+ * Chuẩn hoá tham số from/to của report về NGÀY LỊCH VN (YYYY-MM-DD).
+ *
+ * Các report LNG lọc đơn bằng `$1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'`
+ * theo pancake_created_at (= thời điểm TẠO đơn). Frontend lại gửi `from`/`to` dạng ISO
+ * UTC đã trừ 7h để trỏ mốc 00:00 VN, vd "2026-05-31T17:00:00.000Z" = 00:00 ngày 01/06 VN.
+ * Nếu ép `::date` thẳng, "…T17:00Z" bị PostgreSQL cắt còn 2026-05-31 → query lệch sớm 1
+ * ngày, gộp nhầm đơn tạo ngày hôm trước vào kỳ (giá vốn/doanh thu tăng ảo).
+ *
+ * Fix: nếu chuỗi có phần giờ, cộng lại 7h rồi lấy phần ngày → khôi phục đúng ngày VN;
+ * nếu đã là YYYY-MM-DD thì giữ nguyên.
+ */
+export function toVNDate(s: string | null | undefined): string {
+  const str = String(s ?? "")
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
+  const d = new Date(str)
+  if (isNaN(d.getTime())) return str.slice(0, 10)
+  return new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10)
+}
+
 export interface AvgCostResult {
   costs: Record<string, number>   // code → giá TB
   byName: Record<string, number>  // TÊN SP CHÍNH (upper) → giá TB

@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { computeAvgCost, resolveDisplayId } from "../../../gia-von/avg-cost/route"
+import { computeAvgCost, resolveDisplayId, toVNDate } from "../../../gia-von/avg-cost/route"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -33,10 +33,15 @@ const FULLFILL_PER_ORDER = 5000
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const {
-      from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
-      to = new Date().toISOString().slice(0, 10),
+      from: fromRaw = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+      to: toRaw = new Date().toISOString().slice(0, 10),
       market,
     } = req.query as Record<string, string>
+
+    // Chuẩn hoá from/to về NGÀY LỊCH VN trước khi query (xem toVNDate). Frontend gửi ISO
+    // UTC đã trừ 7h; nếu ép `$1::date` thẳng thì lệch sớm 1 ngày → gộp nhầm đơn hôm trước.
+    const from = toVNDate(fromRaw)
+    const to = toVNDate(toRaw)
 
     // Báo cáo này chưa hỗ trợ market ngoài VN (COGS/fullfill/marketer mapping chỉ đúng cho VN)
     if (market && market !== "VN") {
