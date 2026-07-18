@@ -131,7 +131,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         }
       }
       const leaveDays = approvedLeaves
-        .filter((l: any) => l.requester_email === u.email && l.start_at.slice(0, 7) <= month && l.end_at.slice(0, 7) >= month)
+        .filter((l: any) => {
+          if (l.requester_email !== u.email) return false
+          const startMonth = new Date(l.start_at).toISOString().slice(0, 7)
+          const endMonth = new Date(l.end_at).toISOString().slice(0, 7)
+          return startMonth <= month && endMonth >= month
+        })
         .reduce((s: number, l: any) => s + (new Date(l.end_at).getTime() - new Date(l.start_at).getTime()) / (8 * 3600_000), 0)
       return { email: u.email, name: nameByEmail[u.email], worked_days: workedDays, late_days: lateDays, leave_days: Number(leaveDays.toFixed(2)) }
     })
