@@ -391,7 +391,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
   if (isSystem) {
     return (
       <div className="my-1 text-center">
-        <span className={cn("inline-block max-w-[90%] rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted break-words", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-component")}>
+        <span className={cn("inline-block max-w-[90%] rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted break-words", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-base shadow-sm")}>
           {msg.is_pinned && "📌 "}
           {msg.content}
           {msg.task_id && onTaskClick && (
@@ -462,7 +462,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
             className={cn("block w-full cursor-pointer rounded-t-lg border-l-2 px-2 py-1 text-left text-[11px] transition-colors",
             isMine
               ? "border-blue-300 bg-blue-500/10 text-ui-fg-subtle hover:bg-blue-500/20"
-              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted hover:bg-ui-bg-component-hover")}>
+              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted hover:bg-ui-bg-component-hover shadow-sm")}>
             <span className="font-semibold">{msg.reply_to.author_name}</span>: {msg.reply_to.content}
           </button>
         )}
@@ -472,7 +472,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
           msg.reply_to ? "rounded-b-xl" : "rounded-xl",
           isMine
             ? cn("bg-blue-600 text-white", !msg.reply_to && "rounded-tr-sm")
-            : cn("bg-ui-bg-component text-ui-fg-base", !msg.reply_to && "rounded-tl-sm"))}>
+            : cn("bg-ui-bg-base text-ui-fg-base shadow-sm", !msg.reply_to && "rounded-tl-sm"))}>
           {msg.is_pinned && <span className="mr-1 text-[10px]">📌</span>}
           {isImage && msg.file_url ? (
             <a href={msg.file_url} target="_blank" rel="noreferrer">
@@ -2501,12 +2501,12 @@ function MktChatPage() {
           <PinnedBar channelId={activeChannel.id} onJump={jumpToMessage} />
 
           {/* Messages */}
-          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain bg-ui-bg-subtle px-4 py-3">
             {loading && <div className="py-5 text-center text-[13px] text-ui-fg-muted">Đang tải...</div>}
             {Object.entries(groupedByDate).map(([date, msgs]) => (
               <div key={date}>
                 <div className="my-2.5 text-center">
-                  <span className="rounded-full bg-ui-bg-component px-2.5 py-0.5 text-[11px] text-ui-fg-muted">{date}</span>
+                  <span className="rounded-full bg-ui-bg-base px-2.5 py-0.5 text-[11px] text-ui-fg-muted shadow-sm">{date}</span>
                 </div>
                 {msgs.map(m => (
                   <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} className="rounded-lg">
