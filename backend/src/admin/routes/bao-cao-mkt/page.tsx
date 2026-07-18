@@ -790,6 +790,9 @@ function BaoCaoMktPage() {
   const totalCost = Object.values(summary).reduce((s: number, m: any) => s + (m.ads_cost || 0), 0)
   const totalCarePct = totalRevenue > 0 ? Math.round(totalCost / totalRevenue * 10000) / 100 : null
 
+  const costTooltip = (fb: number, gg: number) =>
+    `Facebook: ${fmtMoney(fb || 0)}\nGoogle: ${fmtMoney(gg || 0)}`
+
   const bonusByMkt: Record<string, { date: string; revenue: number; carePct: number | null; amount: number }[]> = {}
   for (const row of rows) {
     if (groupBy !== "day") continue
@@ -920,7 +923,7 @@ function BaoCaoMktPage() {
                 <span style={{ color: t.red }}>{s.cancelled || 0} hủy</span>
               </div>
               <>
-                <div style={{ fontSize: 11, color: t.amber, marginTop: 3 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
+                <div style={{ fontSize: 11, color: t.amber, marginTop: 3, cursor: "help" }} title={costTooltip(s.fb_cost || 0, s.gg_cost || 0)}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: carePctColor(pct), marginTop: 1 }}>
                   {pct !== null ? pct + "%" : "—"}
                 </div>
@@ -1466,7 +1469,7 @@ function BaoCaoMktPage() {
                                 <span style={{ color: t.red }}>{cell.cancelled ?? 0}&#10007;</span>
                               </div>
                               <div style={{ fontSize: 11, marginTop: 2 }}>
-                                <span style={{ color: t.amber }}>{fmtMoney(Number(cell.ads_cost))}</span>
+                                <span style={{ color: t.amber, cursor: "help" }} title={costTooltip(cell.fb_cost, cell.gg_cost)}>{fmtMoney(Number(cell.ads_cost))}</span>
                                 {" · "}
                                 <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
                                   {pct !== null ? pct + "%" : "—"}
@@ -1482,7 +1485,10 @@ function BaoCaoMktPage() {
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
                       <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(dayRevenue)}</div>
                       <div style={{ fontSize: 11, marginTop: 2 }}>
-                        <span style={{ color: t.amber }}>{fmtMoney(dayCost)}</span>
+                        <span style={{ color: t.amber, cursor: "help" }} title={costTooltip(
+                          mktNames.reduce((s, m) => s + Number(byDate[date][m]?.fb_cost || 0), 0),
+                          mktNames.reduce((s, m) => s + Number(byDate[date][m]?.gg_cost || 0), 0)
+                        )}>{fmtMoney(dayCost)}</span>
                         {" · "}
                         <span style={{ color: carePctColor(dayCarePct), fontWeight: 600 }}>
                           {dayCarePct !== null ? dayCarePct + "%" : "—"}
@@ -1504,7 +1510,7 @@ function BaoCaoMktPage() {
                       <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(s.revenue_total || 0)}</div>
                       <div style={{ fontSize: 11, color: t.textMuted }}>{s.delivered || 0} đơn</div>
                       <div style={{ fontSize: 11, marginTop: 2 }}>
-                        <span style={{ color: t.amber }}>{fmtMoney(s.ads_cost || 0)}</span>
+                        <span style={{ color: t.amber, cursor: "help" }} title={costTooltip(s.fb_cost || 0, s.gg_cost || 0)}>{fmtMoney(s.ads_cost || 0)}</span>
                         {" · "}
                         <span style={{ color: carePctColor(pct), fontWeight: 600 }}>
                           {pct !== null ? pct + "%" : "—"}
@@ -1516,7 +1522,10 @@ function BaoCaoMktPage() {
                 <td style={{ padding: "10px 12px", textAlign: "right" }}>
                   <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(totalRevenue)}</div>
                   <div style={{ fontSize: 11, marginTop: 2 }}>
-                    <span style={{ color: t.amber }}>{fmtMoney(totalCost)}</span>
+                    <span style={{ color: t.amber, cursor: "help" }} title={costTooltip(
+                      Object.values(summary).reduce((s: number, m: any) => s + (m.fb_cost || 0), 0),
+                      Object.values(summary).reduce((s: number, m: any) => s + (m.gg_cost || 0), 0)
+                    )}>{fmtMoney(totalCost)}</span>
                     {" · "}
                     <span style={{ color: carePctColor(totalCarePct), fontWeight: 600 }}>
                       {totalCarePct !== null ? totalCarePct + "%" : "—"}

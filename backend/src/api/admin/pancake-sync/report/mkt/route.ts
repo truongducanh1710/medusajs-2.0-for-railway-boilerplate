@@ -99,6 +99,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COALESCE(r.revenue_delivered, 0) AS revenue_delivered,
         COALESCE(r.cod_total, 0) AS cod_total,
         (COALESCE(c.spend, 0) + COALESCE(g.cost, 0))::bigint AS ads_cost,
+        COALESCE(c.spend, 0)::bigint AS fb_cost,
+        COALESCE(g.cost, 0)::bigint AS gg_cost,
         CASE
           WHEN COALESCE(r.revenue_total, 0) > 0
           THEN ROUND((COALESCE(c.spend, 0) + COALESCE(g.cost, 0))::numeric / r.revenue_total * 100, 2)
@@ -183,6 +185,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         m.revenue_delivered = Number(m.revenue_delivered) + Number(row.revenue_delivered)
         m.cod_total = Number(m.cod_total) + Number(row.cod_total)
         m.ads_cost = Number(m.ads_cost) + Number(row.ads_cost)
+        m.fb_cost = Number(m.fb_cost) + Number(row.fb_cost)
+        m.gg_cost = Number(m.gg_cost) + Number(row.gg_cost)
         m.care_pct = m.revenue_total > 0 ? Math.round(m.ads_cost / m.revenue_total * 10000) / 100 : null
       }
     }
@@ -193,7 +197,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const row of mergedRows) {
       const m = row.mkt_name
       if (!summary[m]) {
-        summary[m] = { total_orders: 0, delivered: 0, new_orders: 0, confirmed: 0, cancelled: 0, revenue_total: 0, revenue_delivered: 0, ads_cost: 0 }
+        summary[m] = { total_orders: 0, delivered: 0, new_orders: 0, confirmed: 0, cancelled: 0, revenue_total: 0, revenue_delivered: 0, ads_cost: 0, fb_cost: 0, gg_cost: 0 }
       }
       summary[m].total_orders += row.total_orders
       summary[m].delivered += row.delivered
@@ -203,6 +207,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       summary[m].revenue_total += Number(row.revenue_total)
       summary[m].revenue_delivered += Number(row.revenue_delivered)
       summary[m].ads_cost += Number(row.ads_cost)
+      summary[m].fb_cost += Number(row.fb_cost)
+      summary[m].gg_cost += Number(row.gg_cost)
     }
 
     // Tính care_pct tổng per MKT (dựa trên revenue_total = tất cả trừ hủy)
