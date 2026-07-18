@@ -114,6 +114,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COALESCE(o.total_orders, 0)       AS total_orders,
         COALESCE(o.revenue_total, 0)      AS revenue_total,
         COALESCE(o.revenue_delivered, 0)  AS revenue_delivered,
+        COALESCE(o.n_nhan, 0)             AS n_nhan,
         COALESCE(o.ship_cost, 0)          AS ship_cost,
         o.delivered_items                 AS delivered_items,
         COALESCE(o.da_hoan, 0)            AS da_hoan,
@@ -121,6 +122,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COALESCE(o.da_huy, 0)             AS da_huy,
         COALESCE(o.don_nhap_trung, 0)     AS don_nhap_trung,
         COALESCE(o.da_gui_hang, 0)        AS da_gui_hang,
+        COALESCE(o.treo_khac, 0)          AS treo_khac,
+        COALESCE(o.revenue_treo, 0)       AS revenue_treo,
         COALESCE(o.da_xoa, 0)             AS da_xoa,
         COALESCE(c.spend, 0)::bigint      AS ads_cost
       FROM (
@@ -130,12 +133,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           COUNT(*) FILTER (WHERE status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
           SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_total,
           SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_delivered,
+          COUNT(*) FILTER (WHERE status = 3 AND NOT ${excludeCond})::int AS n_nhan,
           SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN COALESCE((raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship_cost,
           COUNT(*) FILTER (WHERE status = 5 AND NOT ${excludeCond})::int AS da_hoan,
           COUNT(*) FILTER (WHERE status = 4 AND NOT ${excludeCond})::int AS dang_hoan,
           COUNT(*) FILTER (WHERE status IN (6, -1) AND NOT (${nhapTrungCond}))::int AS da_huy,
           COUNT(*) FILTER (WHERE ${nhapTrungCond})::int AS don_nhap_trung,
           COUNT(*) FILTER (WHERE status = 2 AND NOT ${excludeCond})::int AS da_gui_hang,
+          -- Đơn CÒN TREO chưa "đã gửi hàng": Mới(0)/Đã xác nhận(1)/Chờ hàng(11).
+          -- Dùng cho công thức tạm tính B (ước lượng phần chưa chốt).
+          COUNT(*) FILTER (WHERE status IN (0, 1, 11) AND NOT ${excludeCond})::int AS treo_khac,
+          -- DT đơn còn treo (đã gửi hàng + mới/xác nhận/chờ hàng) — phần sẽ ước lượng tỷ lệ nhận.
+          SUM(CASE WHEN status IN (0, 1, 2, 11) AND NOT ${excludeCond} THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_treo,
           COUNT(*) FILTER (WHERE status = 7)::int AS da_xoa,
           jsonb_agg(raw->'items') FILTER (WHERE status = 3 AND NOT ${excludeCond} AND raw->'items' IS NOT NULL) AS delivered_items
         FROM pancake_order
@@ -204,6 +213,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           mkt_name: m, total_orders: 0, revenue_total: 0, revenue_delivered: 0,
           ship_cost: 0, ads_cost: 0, cogs: 0, item_qty: 0, mapped_qty: 0,
           da_hoan: 0, dang_hoan: 0, da_huy: 0, da_gui_hang: 0,
+          treo_khac: 0, revenue_treo: 0, n_nhan: 0,
         }
       }
       const g = merged[m]
@@ -216,6 +226,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       g.dang_hoan += Number(row.dang_hoan)
       g.da_huy += Number(row.da_huy)
       g.da_gui_hang += Number(row.da_gui_hang)
+      g.treo_khac += Number(row.treo_khac)
+      g.revenue_treo += Number(row.revenue_treo)
+      g.n_nhan += Number(row.n_nhan)
       const { cogs, itemQty, mappedQty } = cogsFromItems(row.delivered_items)
       g.cogs += cogs
       g.item_qty += itemQty
@@ -231,18 +244,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const cogs = Math.round(g.cogs)
       const lng = g.revenue_delivered - (cogs + g.ship_cost + g.ads_cost + fullfill)
 
-      // ── KHỐI TẠM TÍNH ──
-      // N_giao = total_orders (đã loại đơn xóa status 7/-2 + nháp/trùng ở WHERE/FILTER).
-      // Dự kiến hoàn hủy = (đã hoàn + đang hoàn + đã huỷ + đã gửi hàng/3) / N_giao.
-      // Doanh thu tạm tính = doanh số toàn bộ × (1 − dkhh).
-      // Giá vốn/ship tạm tính = doanh thu tạm tính × tỷ lệ vốn/ship THỰC của kỳ.
+      // ── KHỐI TẠM TÍNH (công thức B — tách đơn đã chốt khỏi đơn còn treo) ──
+      // Khác bản cũ (doanh số toàn bộ × (1 − dkhh), không hội tụ về thực khi hết tháng):
+      //   Doanh thu tạm tính = DT đã nhận (CHẮC CHẮN)
+      //                      + DT đơn CÒN TREO × tỷ lệ nhận kỳ vọng.
+      // Đơn đã nhận/hủy/hoàn lấy số thực; chỉ ước lượng phần đơn chưa chốt (status 0/1/2/11).
+      // Khi hết tháng, đơn treo → 0 nên tạm tính tự hội tụ về thực.
+      // Tỷ lệ nhận kỳ vọng = tỷ lệ nhận thành công trong SỐ ĐƠN ĐÃ NGÃ NGŨ (nhận/hủy/hoàn);
+      // fallback 0.8 khi kỳ chưa có đơn nào chốt (đầu kỳ) để tránh dự phóng bằng 0.
       const nGiao = g.total_orders
+      const nDaChot = g.n_nhan + g.da_hoan + g.dang_hoan + g.da_huy
+      const tyLeNhan = nDaChot > 0 ? g.n_nhan / nDaChot : 0.8
+      // dkhh vẫn tính để hiển thị cột "Dự kiến hoàn hủy" (thông tin), không còn dùng cho DT.
       const dkhh = nGiao > 0
         ? (g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang / 3) / nGiao
         : 0
       const pctVon = g.revenue_delivered > 0 ? cogs / g.revenue_delivered : 0
       const pctShip = g.revenue_delivered > 0 ? g.ship_cost / g.revenue_delivered : 0
-      const revenueTamTinh = Math.round(g.revenue_total * (1 - dkhh))
+      const revenueTamTinh = Math.round(g.revenue_delivered + g.revenue_treo * tyLeNhan)
       const cogsTamTinh = Math.round(revenueTamTinh * pctVon)
       const shipTamTinh = Math.round(revenueTamTinh * pctShip)
       const fullfillTamTinh = FULLFILL_PER_ORDER * nGiao

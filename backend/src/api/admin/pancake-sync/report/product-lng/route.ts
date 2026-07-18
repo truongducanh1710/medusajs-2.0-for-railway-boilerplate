@@ -141,6 +141,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE is_main AND status NOT IN (-2) AND NOT ${excludeCond})::int AS total_orders,
         SUM(CASE WHEN status NOT IN (-2) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_total,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_delivered,
+        -- DT đơn còn treo (chưa chốt: mới/xác nhận/đóng hàng/chờ chuyển/gửi hàng/chờ hàng)
+        -- dùng cho công thức tạm tính B (ước lượng phần chưa ngã ngũ).
+        SUM(CASE WHEN status IN (0, 1, 2, 8, 9, 11) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_treo,
         SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
         COUNT(*) FILTER (WHERE is_main AND status NOT IN (-2) AND NOT ${excludeCond})::int AS main_orders,
@@ -173,14 +176,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const stdName = row.sp_code ? codeToName[String(row.sp_code).toUpperCase()] : null
         merged[key] = {
           sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
-          total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, ship_cost: 0,
+          total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, revenue_treo: 0, ship_cost: 0,
           delivered_qty: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
           da_xac_nhan: 0, dang_dong_hang: 0, cho_chuyen_hang: 0,
         }
       }
       const g = merged[key]
-      for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "ship_cost",
+      for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "revenue_treo", "ship_cost",
         "delivered_qty", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
         "da_xoa", "da_gui_hang", "moi", "cho_hang", "da_xac_nhan", "dang_dong_hang",
         "cho_chuyen_hang"]) {
@@ -203,12 +206,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const fullfill = FULLFILL_PER_ORDER * g.main_orders
       const lng = g.revenue_delivered - (cogs + g.ship_cost + ads_cost + fullfill)
 
-      // ── KHỐI TẠM TÍNH ──
+      // ── KHỐI TẠM TÍNH (công thức B — xem giải thích ở marketer-lng) ──
+      // DT tạm tính = DT đã nhận (thực) + DT đơn còn treo × tỷ lệ nhận kỳ vọng.
+      // Hết tháng → đơn treo = 0 → tạm tính hội tụ về thực.
       const nGiao = g.total_orders
+      const nDaChot = g.da_nhan + g.da_hoan + g.dang_hoan + g.da_huy
+      const tyLeNhan = nDaChot > 0 ? g.da_nhan / nDaChot : 0.8
       const dkhh = nGiao > 0 ? (g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang / 3) / nGiao : 0
       const pctVon = g.revenue_delivered > 0 ? cogs / g.revenue_delivered : 0
       const pctShip = g.revenue_delivered > 0 ? g.ship_cost / g.revenue_delivered : 0
-      const revenueTamTinh = Math.round(g.revenue_total * (1 - dkhh))
+      const revenueTamTinh = Math.round(g.revenue_delivered + g.revenue_treo * tyLeNhan)
       const cogsTamTinh = Math.round(revenueTamTinh * pctVon)
       const shipTamTinh = Math.round(revenueTamTinh * pctShip)
       const fullfillTamTinh = FULLFILL_PER_ORDER * g.main_orders
