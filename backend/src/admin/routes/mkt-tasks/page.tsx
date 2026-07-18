@@ -1488,15 +1488,19 @@ function CreateTaskModal({ onClose, onCreated, users, defaults, isManager, curre
     output: "",
   })
   const isRecurring = isManager && form.frequency !== "once"
+  const [customType, setCustomType] = useState("")
+  const isCustomType = form.type === "__custom"
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
   const submit = async () => {
     if (!form.title.trim() || (isManager && !form.assignee_id)) { setErr(isManager ? "Vui lòng nhập tiêu đề và chọn người nhận" : "Vui lòng nhập tiêu đề"); return }
+    if (isCustomType && !customType.trim()) { setErr("Vui lòng nhập tên loại mới"); return }
     setSaving(true); setErr("")
     const { deadlineTime, ...rest } = form
     const payload: Record<string, any> = {
       ...rest,
+      type: isCustomType ? customType.trim() : form.type,
       deadline: form.deadline ? `${form.deadline}T${deadlineTime || "23:59"}:00+07:00` : null,
       planned_for: form.planned_for ? `${form.planned_for}T00:00:00+07:00` : null,
     }
@@ -1533,7 +1537,11 @@ function CreateTaskModal({ onClose, onCreated, users, defaults, isManager, curre
                 <option value="ads_camp">📢 Chạy Ads / Camp</option>
                 <option value="content_post">✍️ Nội dung / Bài đăng</option>
                 <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
+                <option value="__custom">➕ Khác (tự nhập)...</option>
               </select>
+              {isCustomType && (
+                <input className={`${INPUT_CLS} mt-1.5`} value={customType} onChange={e => setCustomType(e.target.value)} placeholder="Tên loại mới, VD: Thiết kế..." />
+              )}
             </div>
             {isManager && (
               <div>

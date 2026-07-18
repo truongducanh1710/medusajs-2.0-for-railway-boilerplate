@@ -935,16 +935,18 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
 
 function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
+  const [customType, setCustomType] = useState("")
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
+  const isCustom = form.type === "__custom"
   const submit = async () => {
-    if (!form.title.trim() || !form.assignee_id) return
+    if (!form.title.trim() || !form.assignee_id || (isCustom && !customType.trim())) return
     setSaving(true); setErr("")
     try {
       const r = await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, type: isCustom ? customType.trim() : form.type }),
       })
       const data = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(data?.error || "Tạo task thất bại")
@@ -968,7 +970,12 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
               <option value="ads_camp">Chạy Ads / Camp</option>
               <option value="content_post">Nội dung / Bài FB</option>
               <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
+              <option value="__custom">➕ Khác (tự nhập)...</option>
             </select></div>
+          {isCustom && (
+            <div><label className={LABEL_CLS}>Tên loại mới *</label>
+              <input className={INPUT_CLS} value={customType} onChange={e => setCustomType(e.target.value)} placeholder="VD: Thiết kế, Livestream..." /></div>
+          )}
           <div><label className={LABEL_CLS}>Giao cho *</label>
             <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
               <option value="">-- Chọn --</option>
@@ -986,7 +993,7 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
         {err && <div className="mt-2 text-xs text-rose-500">{err}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-ui-border-base px-3.5 py-1.5 text-xs text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
-          <button onClick={submit} disabled={saving || !form.title.trim() || !form.assignee_id}
+          <button onClick={submit} disabled={saving || !form.title.trim() || !form.assignee_id || (isCustom && !customType.trim())}
             className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-40">
             {saving ? "Đang tạo..." : "Tạo task"}
           </button>
