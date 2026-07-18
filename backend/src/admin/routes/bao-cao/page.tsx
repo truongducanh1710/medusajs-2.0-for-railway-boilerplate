@@ -1377,7 +1377,86 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
               </tbody>
             </table>
           </div>
+
+          {/* Bảng tình trạng vận đơn theo Sale (hoàn/hủy/giao) — dùng period chung, khớp tab NV MKT */}
+          <SaleStatusTable range={range} market={market} />
         </>
+      )}
+    </div>
+  )
+}
+
+// ---- Bảng tình trạng vận đơn theo Sale (song song NV MKT, gom theo sale_name) ----
+// Nguồn: report/sale-status — CÙNG excludeCond với marketer-performance nên TỔNG khớp tab NV MKT.
+function SaleStatusTable({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: any[]; summary: any; not_supported?: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/sale-status?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) return null
+
+  const cols: { key: string; label: string; pct?: boolean }[] = [
+    { key: "da_nhan", label: "Đã nhận" },
+    { key: "da_hoan", label: "Đã hoàn" },
+    { key: "dang_hoan", label: "Đang hoàn" },
+    { key: "da_huy", label: "Đã huỷ" },
+    { key: "don_nhap_trung", label: "Nháp/trùng hủy" },
+    { key: "da_gui_hang", label: "Đã gửi hàng" },
+    { key: "moi", label: "Mới" },
+    { key: "cho_hang", label: "Chờ hàng" },
+    { key: "da_xac_nhan", label: "Đã xác nhận" },
+    { key: "tong_don_giao", label: "Tổng đơn giao" },
+    { key: "ty_le_hoan", label: "Tỷ lệ hoàn", pct: true },
+    { key: "ty_le_huy", label: "Tỷ lệ hủy", pct: true },
+    { key: "ty_le_giao", label: "Tỷ lệ giao TC", pct: true },
+    { key: "hoan_huy", label: "Hoàn + Hủy", pct: true },
+    { key: "du_kien_hoan_huy", label: "Dự kiến hoàn hủy", pct: true },
+  ]
+
+  const renderRow = (row: any, isTotal = false) => (
+    <tr key={row.sale_name} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium">{row.sale_name}</td>
+      {cols.map(c => {
+        const v = row[c.key] as number
+        const isBad = (c.key === "ty_le_hoan" || c.key === "ty_le_huy") && v > 15
+        const isGood = c.key === "ty_le_giao" && v >= 60
+        return (
+          <td key={c.key} className={`px-3 py-2 text-sm text-right tabular-nums ${isBad ? "text-red-600 font-semibold" : isGood ? "text-green-600" : "text-gray-700"}`}>
+            {c.pct ? `${v}%` : fmtNum(v)}
+          </td>
+        )
+      })}
+    </tr>
+  )
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <h3 className="font-semibold text-gray-800">Tình trạng Vận đơn theo Sale</h3>
+        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+      </div>
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">Sale</th>
+                {cols.map(c => (
+                  <th key={c.key} className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-right">{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {renderRow(data.summary, true)}
+              {data.rows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
