@@ -2515,10 +2515,8 @@ function MktChatPage() {
             {loading && <div className="py-5 text-center text-[13px] text-ui-fg-muted">Đang tải...</div>}
             {Object.entries(groupedByDate).map(([date, msgs]) => (
               <div key={date}>
-                <div className="sticky top-0 z-10 my-2.5 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-ui-border-base" />
+                <div className="sticky top-0 z-10 my-2.5 text-center">
                   <span className="rounded-full border border-ui-border-base bg-ui-bg-base px-3 py-0.5 text-[11px] font-semibold text-ui-fg-muted shadow-sm">{fmtDayLabel(date, msgs)}</span>
-                  <span className="h-px flex-1 bg-ui-border-base" />
                 </div>
                 {msgs.map(m => (
                   <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} className="rounded-lg">
