@@ -8,7 +8,9 @@ import ChamCongLog from "./models/cham-cong-log"
 import LeaveRequest from "./models/leave-request"
 import ChamCongConfig from "./models/cham-cong-config"
 import EmployeeProfile from "./models/employee-profile"
+import QaDailyNote from "./models/qa-daily-note"
+import QaWeeklyScore from "./models/qa-weekly-score"
 
-class MktTaskModuleService extends MedusaService({ MktTask, MktChannel, MktMessage, MktPresenceSession, AdsExpenseTransaction, ChamCongLog, LeaveRequest, ChamCongConfig, EmployeeProfile }) {}
+class MktTaskModuleService extends MedusaService({ MktTask, MktChannel, MktMessage, MktPresenceSession, AdsExpenseTransaction, ChamCongLog, LeaveRequest, ChamCongConfig, EmployeeProfile, QaDailyNote, QaWeeklyScore }) {}
 
 export default MktTaskModuleService

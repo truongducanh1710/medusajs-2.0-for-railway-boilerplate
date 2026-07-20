@@ -24,6 +24,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/cham-cong-nhan-vien": "page.cham-cong-nv.checkin",
   "/chi-phi-ke-toan": "page.bao-cao.view",
   "/1688-import": "page.san-pham.edit",
+  "/qa": "page.qa.view",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {

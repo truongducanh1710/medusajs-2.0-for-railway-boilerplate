@@ -168,6 +168,10 @@ export default defineMiddlewares({
 
     { matcher: "/admin/exchange-rate/list", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
 
+    // QA đánh giá chất lượng (Sale + Vận Đơn): leader chấm, HR/leader xem tổng hợp.
+    { matcher: "/admin/qa/*", method: ["GET"], middlewares: [requirePerm("page.qa.view")] },
+    { matcher: "/admin/qa/*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.qa.score")] },
+
     // Revalidate storefront cache — có side-effect thật, chỉ admin/ai-settings được trigger
     { matcher: "/admin/revalidate", method: ["POST"], middlewares: [requirePerm("page.ai-settings.manage")] },
 
