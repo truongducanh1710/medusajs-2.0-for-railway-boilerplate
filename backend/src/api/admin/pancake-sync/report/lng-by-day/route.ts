@@ -104,6 +104,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return cogs
     }
 
+    // Tỷ lệ nhận TRUNG BÌNH toàn kỳ — dùng làm fallback cho ngày có mẫu quá nhỏ.
+    // Các ngày MỚI TẠO (18-20/07 khi xem trong tháng) chưa đơn nào kịp giao xong nên
+    // n_nhan=0, nhưng đã có vài đơn hủy → tỷ lệ nhận riêng ngày = 0% → dự phóng doanh thu
+    // treo = 0 → LNG âm giả (chỉ còn ads). Sai: đơn treo đó đa số SẼ nhận trong vài ngày
+    // tới. Nguyên tắc thống kê: mẫu nhỏ thì mượn tỷ lệ tổng thể.
+    let sumNhan = 0, sumChot = 0, sumRevDeliv = 0, sumCogs = 0, sumShip = 0
+    for (const r of rows) {
+      sumNhan += r.n_nhan
+      sumChot += r.n_nhan + r.da_hoan + r.dang_hoan + r.da_huy
+      sumRevDeliv += Number(r.revenue_delivered)
+      sumCogs += cogsFromItems(r.delivered_items)
+      sumShip += Number(r.ship_cost)
+    }
+    const tyLeNhanKy = sumChot > 0 ? sumNhan / sumChot : 0.8
+    // Tỷ lệ giá vốn/ship trung bình kỳ — dùng cho ngày chưa có doanh thu nhận (revDeliv=0)
+    // để dự phóng vẫn trừ giá vốn/ship, tránh LNG cao giả.
+    const pctVonKy = sumRevDeliv > 0 ? sumCogs / sumRevDeliv : 0
+    const pctShipKy = sumRevDeliv > 0 ? sumShip / sumRevDeliv : 0
+    const MIN_SAMPLE = 10  // ngày có < 10 đơn đã chốt → dùng tỷ lệ kỳ thay vì tỷ lệ ngày.
+
     const result = rows.map((r: any) => {
       const revDeliv = Number(r.revenue_delivered)
       const revTreo = Number(r.revenue_treo)
@@ -112,12 +132,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const ads = adsByDay[r.date] ?? 0
       const cogs = Math.round(cogsFromItems(r.delivered_items))
 
-      // Công thức B: tỷ lệ nhận kỳ vọng của ngày đó.
+      // Công thức B: tỷ lệ nhận kỳ vọng. Ngày đủ mẫu → dùng tỷ lệ riêng; mẫu nhỏ → mượn
+      // tỷ lệ trung bình kỳ (tránh 0% giả ở các ngày mới tạo chưa kịp giao xong).
       const nDaChot = r.n_nhan + r.da_hoan + r.dang_hoan + r.da_huy
-      const tyLeNhan = nDaChot > 0 ? r.n_nhan / nDaChot : 0.8
+      const tyLeNhan = nDaChot >= MIN_SAMPLE ? r.n_nhan / nDaChot : tyLeNhanKy
       const revTamTinh = Math.round(revDeliv + revTreo * tyLeNhan)
-      const pctVon = revDeliv > 0 ? cogs / revDeliv : 0
-      const pctShip = revDeliv > 0 ? ship / revDeliv : 0
+      // Ngày đã có doanh thu nhận → dùng tỷ lệ vốn/ship riêng; chưa có → mượn tỷ lệ kỳ.
+      const pctVon = revDeliv > 0 ? cogs / revDeliv : pctVonKy
+      const pctShip = revDeliv > 0 ? ship / revDeliv : pctShipKy
       const cogsTamTinh = Math.round(revTamTinh * pctVon)
       const shipTamTinh = Math.round(revTamTinh * pctShip)
       const fullfill = FULLFILL_PER_ORDER * nOrders
