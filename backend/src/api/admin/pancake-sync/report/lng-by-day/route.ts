@@ -145,6 +145,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const fullfill = FULLFILL_PER_ORDER * nOrders
       const lngTamTinh = revTamTinh - (cogsTamTinh + shipTamTinh + ads + fullfill)
 
+      // LNG THỰC: chỉ đơn ĐÃ NHẬN thật (không dự phóng). Các ngày mới tạo (chưa kịp giao
+      // xong) sẽ âm/thấp vì doanh thu chưa về đủ — đó là con số thực tại thời điểm xem,
+      // để cạnh tạm tính cho thấy khoảng cách "đã thu vs dự phóng".
+      const lngThuc = revDeliv - (cogs + ship + ads + fullfill)
+
       return {
         date: r.date,
         total_orders: nOrders,
@@ -152,11 +157,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         revenue_delivered: revDeliv,
         cogs_tam_tinh: cogsTamTinh,
         ship_tam_tinh: shipTamTinh,
+        cogs, ship_cost: ship,
         ads_cost: ads,
         fullfill,
         lng_tam_tinh: lngTamTinh,
+        lng_thuc: lngThuc,
         // Tỷ suất (để so chất lượng, không bị quy mô đánh lừa):
         lng_pct: revTamTinh > 0 ? Math.round(lngTamTinh / revTamTinh * 1000) / 10 : 0,
+        lng_thuc_pct: revDeliv > 0 ? Math.round(lngThuc / revDeliv * 1000) / 10 : 0,
         roas: ads > 0 ? Math.round(revTamTinh / ads * 100) / 100 : null,
       }
     })

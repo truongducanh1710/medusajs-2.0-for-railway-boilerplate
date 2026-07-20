@@ -1879,9 +1879,10 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
   )
 }
 
-// ---- Biểu đồ xu hướng LNG tạm tính theo NGÀY (độc lập, không tích lũy) ----
-// Mỗi ngày 1 cột LNG tạm tính của đơn TẠO ngày đó → thấy trong tháng đang tốt lên/tệ đi.
-// Dùng tạm tính (công thức B) để ngày gần nhất không bị âm giả do đơn chưa kịp giao xong.
+// ---- Bảng LNG THỰC + TẠM TÍNH theo NGÀY (độc lập, không cộng dồn) ----
+// Mỗi dòng = 1 ngày, tính riêng cho đơn TẠO ngày đó. LNG thực = chỉ đơn đã nhận (tiền
+// đã về); LNG tạm tính = thực + dự phóng đơn treo (công thức B). Ngày gần nhất: LNG thực
+// thấp/âm (đơn chưa kịp giao xong) còn tạm tính đã dự phóng nên phản ánh đúng hơn.
 function LngTrendChart({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<{ rows: any[]; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1898,53 +1899,70 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
   if (!rows.length) return null
 
   const maxAbs = Math.max(...rows.map(r => Math.abs(r.lng_tam_tinh)), 1)
-  // Xu hướng: so LNG trung bình nửa cuối kỳ vs nửa đầu → tốt lên hay tệ đi.
+  // Xu hướng: so LNG tạm tính trung bình nửa cuối kỳ vs nửa đầu → tốt lên hay tệ đi.
   const mid = Math.floor(rows.length / 2)
   const avg = (arr: any[]) => arr.length ? arr.reduce((s, r) => s + r.lng_tam_tinh, 0) / arr.length : 0
-  const firstHalf = avg(rows.slice(0, mid)), secondHalf = avg(rows.slice(mid))
-  const trendUp = secondHalf >= firstHalf
+  const trendUp = avg(rows.slice(mid)) >= avg(rows.slice(0, mid))
+
+  const moneyCls = (v: number) => v >= 0 ? "text-green-700" : "text-red-600"
 
   return (
-    <div className="bg-white border rounded-xl p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="font-semibold text-gray-800">Xu hướng LNG tạm tính theo ngày</h3>
-        <span className={`text-xs font-semibold ${trendUp ? "text-green-600" : "text-red-600"}`}>
-          {trendUp ? "↗ Nửa cuối kỳ tốt hơn" : "↘ Nửa cuối kỳ đang giảm"}
-        </span>
+    <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-gray-800">LNG theo ngày (Thực & Tạm tính)</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Mỗi dòng = đơn TẠO ngày đó (độc lập, không cộng dồn). LNG thực = tiền đã về (đơn đã nhận);
+            tạm tính = thực + dự phóng đơn treo.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+          <span className={`text-xs font-semibold ${trendUp ? "text-green-600" : "text-red-600"}`}>
+            {trendUp ? "↗ Nửa cuối kỳ tốt hơn" : "↘ Nửa cuối kỳ đang giảm"}
+          </span>
+        </div>
       </div>
-      <p className="text-xs text-gray-400 mb-4">
-        Mỗi cột = LNG tạm tính của đơn TẠO ngày đó (độc lập, không cộng dồn). Dùng tạm tính nên
-        ngày gần nhất không bị âm giả do đơn chưa kịp giao xong.
-      </p>
-      {loading && <div className="text-xs text-gray-400 animate-pulse">Đang tải...</div>}
-      <div className="max-h-96 overflow-y-auto space-y-1">
-        {rows.map(r => {
-          const neg = r.lng_tam_tinh < 0
-          const w = Math.round(Math.abs(r.lng_tam_tinh) / maxAbs * 100)
-          return (
-            <div key={r.date} className="flex items-center gap-2 text-xs">
-              <span className="text-gray-400 w-12 flex-shrink-0">{r.date.slice(5)}</span>
-              {/* Trục giữa: cột dương sang phải (xanh), âm sang trái (đỏ) */}
-              <div className="flex-1 flex items-center">
-                <div className="w-1/2 flex justify-end">
-                  {neg && <div className="h-4 bg-red-400 rounded-l" style={{ width: `${w}%` }} />}
-                </div>
-                <div className="w-px h-5 bg-gray-300 flex-shrink-0" />
-                <div className="w-1/2 flex justify-start">
-                  {!neg && <div className="h-4 bg-green-500 rounded-r" style={{ width: `${w}%` }} />}
-                </div>
-              </div>
-              <span className={`w-24 text-right flex-shrink-0 font-medium ${neg ? "text-red-600" : "text-green-700"}`}>
-                {fmt(r.lng_tam_tinh)}
-              </span>
-              <span className="w-14 text-right flex-shrink-0 text-gray-400">{r.lng_pct}%</span>
-              <span className="w-14 text-right flex-shrink-0 text-gray-400">{r.roas != null ? `${r.roas}x` : "—"}</span>
-            </div>
-          )
-        })}
+      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+        <table className="min-w-full text-left border-collapse">
+          <thead className="sticky top-0 bg-gray-50 z-10">
+            <tr className="border-b border-gray-200 text-xs text-gray-600 uppercase tracking-wide">
+              <th className="px-3 py-2.5 font-semibold sticky left-0 bg-gray-50 border-r border-gray-100">Ngày</th>
+              <th className="px-3 py-2.5 font-semibold text-right">LNG thực</th>
+              <th className="px-3 py-2.5 font-semibold text-right">%LNG thực</th>
+              <th className="px-3 py-2.5 font-semibold text-right">LNG tạm tính</th>
+              <th className="px-3 py-2.5 font-semibold text-right">%LNG TT</th>
+              <th className="px-3 py-2.5 font-semibold text-right">ROAS</th>
+              <th className="px-3 py-2.5 font-semibold text-right w-40">Xu hướng (tạm tính)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map(r => {
+              const neg = r.lng_tam_tinh < 0
+              const w = Math.round(Math.abs(r.lng_tam_tinh) / maxAbs * 100)
+              return (
+                <tr key={r.date} className="hover:bg-gray-50 text-sm">
+                  <td className="px-3 py-2 whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 font-medium text-gray-700">{r.date.slice(5)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-medium ${moneyCls(r.lng_thuc)}`}>{fmt(r.lng_thuc)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-400">{r.lng_thuc_pct}%</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-semibold ${moneyCls(r.lng_tam_tinh)}`}>{fmt(r.lng_tam_tinh)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-400">{r.lng_pct}%</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">{r.roas != null ? `${r.roas}x` : "—"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center">
+                      <div className="w-1/2 flex justify-end">{neg && <div className="h-3 bg-red-400 rounded-l" style={{ width: `${w}%` }} />}</div>
+                      <div className="w-px h-4 bg-gray-300 flex-shrink-0" />
+                      <div className="w-1/2 flex justify-start">{!neg && <div className="h-3 bg-green-500 rounded-r" style={{ width: `${w}%` }} />}</div>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
-      <div className="flex gap-4 mt-2 text-[10px] text-gray-400 justify-end">
-        <span>Cột: LNG tạm tính/ngày</span><span>%: tỷ suất LNG</span><span>x: ROAS (DT/ads)</span>
+      <div className="px-5 py-2 border-t text-[10px] text-gray-400">
+        LNG thực = DT đã nhận − (giá vốn + vận chuyển + ads + fullfill). Ngày gần nhất LNG thực thấp/âm là bình thường (đơn chưa kịp giao xong) — xem cột tạm tính.
       </div>
     </div>
   )
