@@ -217,7 +217,7 @@ function driveFileId(url?: string): string | null {
   if (!m) m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
   return m ? m[1] : null
 }
-const driveThumbUrl = (id: string) => `https://drive.google.com/thumbnail?id=${id}&sz=w360`
+const driveThumbUrl = (id: string) => `https://drive.google.com/thumbnail?id=${id}&sz=w480`
 
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string; script: string }
 
@@ -553,8 +553,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
       {thumb && (
-        <div style={{ position: "fixed", left: Math.min(thumb.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 340), top: Math.min(thumb.y + 16, (typeof window !== "undefined" ? window.innerHeight : 800) - 220), zIndex: 10000, pointerEvents: "none", background: "#000", border: "1px solid #E5E7EB", borderRadius: 10, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,0.28)", width: 320 }}>
-          <img src={driveThumbUrl(thumb.id)} alt="preview" style={{ display: "block", width: 320, height: 180, objectFit: "cover", background: "#111" }} />
+        <div style={{ position: "fixed", left: Math.min(thumb.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 232), top: Math.min(thumb.y + 16, (typeof window !== "undefined" ? window.innerHeight : 800) - 420), zIndex: 10000, pointerEvents: "none", background: "#000", border: "1px solid #E5E7EB", borderRadius: 10, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,0.28)", width: 216 }}>
+          <img src={driveThumbUrl(thumb.id)} alt="preview" style={{ display: "block", width: 216, height: 384, objectFit: "contain", background: "#111" }} />
           <div style={{ background: "#111", color: "#9CA3AF", fontSize: 10, textAlign: "center", padding: "4px 0" }}>Xem trước · bấm để mở Drive</div>
         </div>
       )}
