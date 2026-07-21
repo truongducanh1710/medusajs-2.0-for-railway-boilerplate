@@ -1036,11 +1036,12 @@ function PhanQuyenTrangTab() {
 // Tab: Lên lịch hàng loạt
 // ============================================================================
 type ScheduleRow = {
+  key: string          // `${videoId}::${pageId}` — unique 1 dòng ma trận
   videoId: string
   vdCode: string
   product: string
   driveUrl: string
-  pageName: string   // page được gán (chọn từ dropdown)
+  pageName: string
   pageId: string
   templateId: string
   message: string
@@ -1048,6 +1049,7 @@ type ScheduleRow = {
 }
 
 function LenLichHangLoatTab() {
+  const { email, isSuper } = useCurrentPermissions()
   const [videos, setVideos]       = useState<any[]>([])
   const [pages, setPages]         = useState<any[]>([])
   const [templates, setTemplates] = useState<any[]>([])
@@ -1057,104 +1059,215 @@ function LenLichHangLoatTab() {
   const [results, setResults]     = useState<{ vd: string; page: string; status: string; error?: string }[]>([])
   const [toast, setToast]         = useState<string | null>(null)
 
-  // Ngày mặc định: sáng mai 8:00
-  const defaultTime = () => {
+  // ── Bước 1: chọn video (multi) + bộ lọc ────────────────────────────────────
+  const [selVideoIds, setSelVideoIds] = useState<Set<string>>(new Set())
+  const [fMaker, setFMaker]     = useState("")   // người làm
+  const [fSp, setFSp]           = useState("")   // sản phẩm
+  const [fType, setFType]       = useState("")   // loại video
+  const [fStatus, setFStatus]   = useState("")   // trạng thái
+  const [fFrom, setFFrom]       = useState("")   // ngày tạo từ
+  const [fTo, setFTo]           = useState("")   // ngày tạo đến
+  const [fStar, setFStar]       = useState(false)
+  const [fSearch, setFSearch]   = useState("")
+  const [minedDefault, setMinedDefault] = useState(false)
+
+  // ── Bước 2: chọn page dùng chung (multi) ───────────────────────────────────
+  const [selPageIds, setSelPageIds] = useState<Set<string>>(new Set())
+  const [pageQ, setPageQ] = useState("")
+
+  // ── Bước 3: giờ giãn cách ──────────────────────────────────────────────────
+  const startTomorrow8 = () => {
     const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0)
     return d.toISOString().slice(0, 16)
   }
+  const [startTime, setStartTime]   = useState(startTomorrow8())
+  const [gapMinutes, setGapMinutes] = useState(30)
 
   useEffect(() => {
     Promise.all([
-      apiJson("/admin/fb-content?all=true"),
+      apiJson("/admin/fb-content"),                // đã lọc theo quyền (bỏ all=true)
       apiJson("/admin/fb-content/templates"),
-      apiJson("/admin/marketing-video?limit=200"),
+      apiJson("/admin/marketing-video?limit=400"),
     ]).then(([pd, td, vd]) => {
+      if (pd.error === "FB_TOKEN_EXPIRED") setToast("Token FB hết hạn — liên hệ admin cập nhật FB_USER_TOKEN")
       setPages(pd.pages || [])
       setTemplates(td.templates || [])
-      // API trả về { rows: [...] }, lọc video có link Drive + chưa đăng (status Xong)
-      const vids = (vd.rows || []).filter((v: any) => v.link && v.trangThai === "Xong")
+      // Base list = mọi video có link Drive; sắp mới nhất trước
+      const vids = (vd.rows || [])
+        .filter((v: any) => v.link)
+        .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       setVideos(vids)
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
 
-  // Tìm template phù hợp nhất với sản phẩm
+  // Mặc định: MKT thường lọc video của mình (createdBy = email); admin/super để trống
+  useEffect(() => {
+    if (minedDefault || loading || !videos.length) return
+    if (!isSuper && email) {
+      const mine = videos.find((v: any) => v.createdBy === email)
+      if (mine?.nguoiLam) setFMaker(mine.nguoiLam)
+    }
+    setMinedDefault(true)
+  }, [videos, loading, isSuper, email, minedDefault])
+
+  // Distinct cho dropdown filter
+  const uniq = (arr: any[]) => Array.from(new Set(arr.filter(Boolean))).sort()
+  const makers   = uniq(videos.map((v: any) => v.nguoiLam))
+  const sps       = uniq(videos.map((v: any) => v.sp))
+  const types     = uniq(videos.map((v: any) => v.loaiVideo))
+  const statuses  = uniq(videos.map((v: any) => v.trangThai))
+
+  const filteredVideos = videos.filter((v: any) => {
+    if (fMaker && v.nguoiLam !== fMaker) return false
+    if (fSp && v.sp !== fSp) return false
+    if (fType && v.loaiVideo !== fType) return false
+    if (fStatus && v.trangThai !== fStatus) return false
+    if (fStar && !v.starred) return false
+    if (fFrom && String(v.createdAt || "") < fFrom) return false
+    if (fTo && String(v.createdAt || "") > fTo) return false
+    if (fSearch) {
+      const q = fSearch.toLowerCase()
+      const hay = `${v.vdCode || ""} ${v.sp || ""} ${v.adName || ""}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+
+  const toggleVideo = (id: string) => setSelVideoIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const selectAllFiltered = () => {
+    const ids = filteredVideos.map((v: any) => v.id)
+    const allSel = ids.every(id => selVideoIds.has(id))
+    setSelVideoIds(prev => {
+      const n = new Set(prev)
+      if (allSel) ids.forEach(id => n.delete(id))
+      else ids.forEach(id => n.add(id))
+      return n
+    })
+  }
+  const resetFilters = () => {
+    setFMaker(""); setFSp(""); setFType(""); setFStatus(""); setFFrom(""); setFTo(""); setFStar(false); setFSearch("")
+  }
+
+  // Page selection
+  const filteredPages = pages.filter((p: any) => !pageQ || p.page_name?.toLowerCase().includes(pageQ.toLowerCase()))
+  const togglePage = (id: string) => setSelPageIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const selectAllPages = () => {
+    const ids = filteredPages.map((p: any) => p.page_id)
+    const allSel = ids.length > 0 && ids.every(id => selPageIds.has(id))
+    setSelPageIds(prev => {
+      const n = new Set(prev)
+      if (allSel) ids.forEach(id => n.delete(id))
+      else ids.forEach(id => n.add(id))
+      return n
+    })
+  }
+
+  // Auto-match template theo sản phẩm (sp). Hụt → null (không gán bừa)
   const findTemplate = (product: string) => {
-    if (!templates.length) return null
+    if (!templates.length || !product) return null
     const p = product.toLowerCase()
-    const match = templates.find(t =>
+    return templates.find(t =>
       (t.tags || []).some((tag: string) => p.includes(tag.replace("#", "").toLowerCase())) ||
       (t.title || "").toLowerCase().split(/\s+/).some((w: string) => w.length > 3 && p.includes(w))
-    )
-    return match || templates[0] || null
+    ) || null
   }
 
-  // Thêm video vào danh sách lên lịch
-  const addVideo = (v: any) => {
-    if (rows.find(r => r.videoId === v.id)) return
-    const tpl = findTemplate(v.product || v.sp || "")
-    // Gán page phù hợp nếu có (so tên)
-    const matchPage = pages.find(p => p.page_name?.toLowerCase().trim() === (v.page_name || "").toLowerCase().trim()) || pages[0]
-    setRows(prev => [...prev, {
-      videoId: v.id,
-      vdCode: v.vd_code || v.vdCode || "",
-      product: v.product || v.sp || "",
-      driveUrl: v.link || v.drive_url || "",
-      pageName: matchPage?.page_name || "",
-      pageId: matchPage?.page_id || "",
-      templateId: tpl?.id || "",
-      message: tpl?.message || "",
-      scheduledFor: defaultTime(),
-    }])
+  // ── Bước 3: sinh ma trận video × page ──────────────────────────────────────
+  const buildMatrix = () => {
+    const selVids  = videos.filter((v: any) => selVideoIds.has(v.id))
+    const selPages = pages.filter((p: any) => selPageIds.has(p.page_id))
+    if (!selVids.length) { setToast("Chưa chọn video nào"); return }
+    if (!selPages.length) { setToast("Chưa chọn page nào"); return }
+
+    const base = new Date(startTime).getTime()
+    const newRows: ScheduleRow[] = []
+    let slot = 0
+    for (const v of selVids) {
+      const tpl = findTemplate(v.sp || "")
+      const when = new Date(base + slot * gapMinutes * 60000)
+      const whenStr = new Date(when.getTime() - when.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      for (const p of selPages) {
+        newRows.push({
+          key: `${v.id}::${p.page_id}`,
+          videoId: v.id,
+          vdCode: v.vdCode || "",
+          product: v.sp || "",
+          driveUrl: v.link || "",
+          pageName: p.page_name || "",
+          pageId: p.page_id,
+          templateId: tpl?.id || "",
+          message: tpl?.message || "",
+          scheduledFor: whenStr,
+        })
+      }
+      slot++
+    }
+    // Giữ dòng cũ đã chỉnh, thêm dòng mới chưa có
+    setRows(prev => {
+      const existing = new Set(prev.map(r => r.key))
+      return [...prev, ...newRows.filter(r => !existing.has(r.key))]
+    })
+    setToast(`Đã tạo ${newRows.length} dòng lịch`)
   }
 
-  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx))
-
-  const updateRow = (idx: number, patch: Partial<ScheduleRow>) => {
-    setRows(prev => prev.map((r, i) => i !== idx ? r : { ...r, ...patch }))
+  const removeRow = (key: string) => setRows(prev => prev.filter(r => r.key !== key))
+  const updateRow = (key: string, patch: Partial<ScheduleRow>) => {
+    setRows(prev => prev.map(r => r.key !== key ? r : { ...r, ...patch }))
   }
-
-  const onTemplateChange = (idx: number, tplId: string) => {
+  const onTemplateChange = (key: string, tplId: string) => {
     const tpl = templates.find(t => t.id === tplId)
-    updateRow(idx, { templateId: tplId, message: tpl?.message || rows[idx].message })
-  }
-
-  const onPageChange = (idx: number, pageId: string) => {
-    const pg = pages.find(p => p.page_id === pageId)
-    updateRow(idx, { pageId, pageName: pg?.page_name || "" })
+    updateRow(key, { templateId: tplId, message: tpl?.message ?? "" })
   }
 
   const handleSubmit = async () => {
     const valid = rows.filter(r => r.pageId && r.message.trim() && r.scheduledFor)
-    if (!valid.length) { setToast("Chưa có hàng hợp lệ nào"); return }
+    if (!valid.length) { setToast("Chưa có dòng hợp lệ nào"); return }
     setSubmitting(true); setResults([])
 
+    // Gom theo video + giờ + message → 1 request nhiều page_ids (backend batch sẵn)
+    const groups = new Map<string, { rows: ScheduleRow[] }>()
+    for (const r of valid) {
+      const gk = `${r.videoId}|${r.scheduledFor}|${r.message}`
+      if (!groups.has(gk)) groups.set(gk, { rows: [] })
+      groups.get(gk)!.rows.push(r)
+    }
+
     const out: typeof results = []
-    for (const row of valid) {
+    for (const { rows: g } of groups.values()) {
+      const first = g[0]
       try {
         const body = {
-          page_ids: [row.pageId],
-          message: row.message,
-          drive_url: row.driveUrl,
+          page_ids: g.map(r => r.pageId),
+          message: first.message,
+          drive_url: first.driveUrl,
           media_type: "video",
-          video_id: row.videoId,
-          scheduled_for: new Date(row.scheduledFor).toISOString(),
+          video_id: first.videoId,
+          scheduled_for: new Date(first.scheduledFor).toISOString(),
         }
         const d = await apiJson("/admin/fb-content/post", "POST", body)
-        out.push({ vd: row.vdCode, page: row.pageName, status: d?.jobId ? "scheduled" : "error", error: d?.error })
+        for (const r of g) out.push({ vd: r.vdCode, page: r.pageName, status: d?.jobId ? "scheduled" : "error", error: d?.error })
       } catch (e: any) {
-        out.push({ vd: row.vdCode, page: row.pageName, status: "error", error: e.message })
+        for (const r of g) out.push({ vd: r.vdCode, page: r.pageName, status: "error", error: e.message })
       }
     }
     setResults(out)
     setSubmitting(false)
     const ok = out.filter(r => r.status === "scheduled").length
     setToast(`Đã lên lịch ${ok}/${out.length} bài`)
+    if (ok > 0) { setRows([]); setSelVideoIds(new Set()) }
   }
 
   const inp: React.CSSProperties = { background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#111827", outline: "none", width: "100%" }
+  const flt: React.CSSProperties = { background: "#fff", border: "1px solid #E5E7EB", borderRadius: 7, padding: "6px 8px", fontSize: 12, color: "#111827", outline: "none" }
 
   if (loading) return <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF" }}>Đang tải…</div>
+
+  const allFilteredSel = filteredVideos.length > 0 && filteredVideos.every((v: any) => selVideoIds.has(v.id))
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1162,34 +1275,121 @@ function LenLichHangLoatTab() {
 
       {/* Hướng dẫn */}
       <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: "#1e40af" }}>
-        <b>Cách dùng:</b> Chọn video bên dưới → hệ thống tự khớp page + template → chỉnh giờ → bấm <b>Lên lịch tất cả</b>.
+        <b>Cách dùng:</b> ① Lọc &amp; tick video → ② tick các page cần đăng → ③ chọn giờ bắt đầu + giãn cách → bấm <b>Tạo lịch</b> → chỉnh nội dung nếu cần → <b>Lên lịch tất cả</b>.
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "flex-start" }}>
+      {/* Bộ lọc video */}
+      <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: "12px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <input value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="🔍 Tìm mã VD / SP / tên ad…" style={{ ...flt, flex: "1 1 200px", minWidth: 160 }} />
+          <select value={fMaker} onChange={e => setFMaker(e.target.value)} style={flt}>
+            <option value="">Người làm: tất cả</option>
+            {makers.map((m: any) => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={fSp} onChange={e => setFSp(e.target.value)} style={flt}>
+            <option value="">Sản phẩm: tất cả</option>
+            {sps.map((s: any) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={fType} onChange={e => setFType(e.target.value)} style={flt}>
+            <option value="">Loại: tất cả</option>
+            {types.map((t: any) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={flt}>
+            <option value="">Trạng thái: tất cả</option>
+            {statuses.map((s: any) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#4B5563" }}>
+            <span style={{ color: "#9CA3AF" }}>Tạo:</span>
+            <input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} style={flt} />
+            <span style={{ color: "#9CA3AF" }}>→</span>
+            <input type="date" value={fTo} onChange={e => setFTo(e.target.value)} style={flt} />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#4B5563", cursor: "pointer" }}>
+            <input type="checkbox" checked={fStar} onChange={e => setFStar(e.target.checked)} style={{ accentColor: "#F59E0B" }} /> ⭐ Gắn sao
+          </label>
+          <button onClick={resetFilters} style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 7, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Xóa lọc</button>
+        </div>
+      </div>
 
-        {/* Cột trái — danh sách video */}
-        <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid #E5E7EB", fontWeight: 700, fontSize: 13, color: "#111827" }}>
-            🎬 Video sẵn sàng ({videos.length})
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, alignItems: "flex-start" }}>
+
+        {/* Cột trái — video (multi-tick) + page (multi-tick) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Video */}
+          <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>🎬 Video ({filteredVideos.length})</span>
+              <button onClick={selectAllFiltered} style={{ color: "#1877F2", background: "none", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {allFilteredSel ? "Bỏ chọn" : "Chọn tất cả"}
+              </button>
+            </div>
+            {selVideoIds.size > 0 && (
+              <div style={{ padding: "6px 14px", background: "#EFF6FF", fontSize: 11, color: "#1e40af", fontWeight: 600 }}>Đã chọn {selVideoIds.size} video</div>
+            )}
+            <div style={{ maxHeight: 420, overflowY: "auto" }}>
+              {filteredVideos.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Không có video khớp lọc</div>}
+              {filteredVideos.map((v: any) => {
+                const sel = selVideoIds.has(v.id)
+                return (
+                  <label key={v.id} onClick={() => toggleVideo(v.id)}
+                    style={{ padding: "9px 14px", borderBottom: "1px solid #F3F4F6", cursor: "pointer", background: sel ? "#F0F6FF" : "transparent", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <input type="checkbox" checked={sel} readOnly style={{ marginTop: 2, accentColor: "#1877F2", width: 15, height: 15, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: "#4338CA", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{v.vdCode || "—"}</span>
+                        {v.starred && <span style={{ fontSize: 11 }}>⭐</span>}
+                        <span style={{ color: "#9CA3AF", fontSize: 10 }}>{v.createdAt}</span>
+                      </div>
+                      <div className="line-clamp-1" style={{ color: "#4B5563", fontSize: 11 }}>{v.sp || "—"}</div>
+                      <div className="line-clamp-1" style={{ color: "#9CA3AF", fontSize: 10 }}>{v.nguoiLam || "—"}{v.loaiVideo ? ` · ${v.loaiVideo}` : ""} · {v.trangThai}</div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
           </div>
-          <div style={{ maxHeight: 520, overflowY: "auto" }}>
-            {videos.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chưa có video nào có Drive URL</div>}
-            {videos.map((v: any) => {
-              const added = !!rows.find(r => r.videoId === v.id)
-              return (
-                <div key={v.id} onClick={() => !added && addVideo(v)}
-                  style={{ padding: "10px 14px", borderBottom: "1px solid #F3F4F6", cursor: added ? "default" : "pointer", background: added ? "#F0FDF4" : "transparent", display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ marginTop: 2, width: 16, height: 16, borderRadius: "50%", background: added ? "#059669" : "#E5E7EB", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {added && <span style={{ color: "#fff", fontSize: 9, fontWeight: 900 }}>✓</span>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: "#111827", fontSize: 12, fontWeight: 600 }}>{v.vd_code || "—"}</div>
-                    <div className="line-clamp-1" style={{ color: "#4B5563", fontSize: 11 }}>{v.product || v.sp || "—"}</div>
-                    <div className="line-clamp-1" style={{ color: "#9CA3AF", fontSize: 10 }}>{v.page_name}</div>
-                  </div>
-                </div>
-              )
-            })}
+
+          {/* Page */}
+          <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>📄 Page ({pages.length})</span>
+              <button onClick={selectAllPages} style={{ color: "#1877F2", background: "none", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {filteredPages.length > 0 && filteredPages.every((p: any) => selPageIds.has(p.page_id)) ? "Bỏ chọn" : "Chọn tất cả"}
+              </button>
+            </div>
+            <div style={{ padding: "8px 14px", borderBottom: "1px solid #F3F4F6" }}>
+              <input value={pageQ} onChange={e => setPageQ(e.target.value)} placeholder="Tìm page…" style={{ ...inp }} />
+            </div>
+            {selPageIds.size > 0 && (
+              <div style={{ padding: "6px 14px", background: "#EFF6FF", fontSize: 11, color: "#1e40af", fontWeight: 600 }}>Đã chọn {selPageIds.size} page</div>
+            )}
+            <div style={{ maxHeight: 240, overflowY: "auto" }}>
+              {pages.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 12 }}>Bạn chưa được phân quyền page nào</div>}
+              {filteredPages.map((p: any) => {
+                const sel = selPageIds.has(p.page_id)
+                return (
+                  <label key={p.page_id} onClick={() => togglePage(p.page_id)}
+                    style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 14px", borderBottom: "1px solid #F3F4F6", cursor: "pointer", background: sel ? "#F0F6FF" : "transparent" }}>
+                    <input type="checkbox" checked={sel} readOnly style={{ accentColor: "#1877F2", width: 15, height: 15, flexShrink: 0 }} />
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: pageColor(p.page_id), flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 }}>{(p.page_name || "?").slice(0, 2).toUpperCase()}</div>
+                    <div className="line-clamp-1" style={{ flex: 1, color: "#111827", fontSize: 12, fontWeight: 500 }}>{p.page_name}</div>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Giờ giãn cách + tạo lịch */}
+          <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827", marginBottom: 8 }}>⏰ Lịch đăng</div>
+            <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 3 }}>Bắt đầu lúc</div>
+            <input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+            <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 3 }}>Giãn cách giữa các video (phút)</div>
+            <input type="number" min={0} value={gapMinutes} onChange={e => setGapMinutes(Math.max(0, Number(e.target.value)))} style={{ ...inp, marginBottom: 12 }} />
+            <button onClick={buildMatrix}
+              style={{ width: "100%", background: "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              ➕ Tạo lịch ({selVideoIds.size} video × {selPageIds.size} page)
+            </button>
           </div>
         </div>
 
@@ -1198,16 +1398,19 @@ function LenLichHangLoatTab() {
           <div style={{ padding: "12px 16px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>📅 Lịch đăng ({rows.length} bài)</span>
             {rows.length > 0 && (
-              <button onClick={handleSubmit} disabled={submitting}
-                style={{ background: submitting ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 700, cursor: submitting ? "wait" : "pointer" }}>
-                {submitting ? "Đang lên lịch…" : `🚀 Lên lịch ${rows.length} bài`}
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setRows([])} style={{ background: "#F0F1F5", color: "#4B5563", border: "1px solid #E5E7EB", borderRadius: 8, padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>Xóa hết</button>
+                <button onClick={handleSubmit} disabled={submitting}
+                  style={{ background: submitting ? "#93C5FD" : "#1877F2", color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 700, cursor: submitting ? "wait" : "pointer" }}>
+                  {submitting ? "Đang lên lịch…" : `🚀 Lên lịch ${rows.length} bài`}
+                </button>
+              </div>
             )}
           </div>
 
           {rows.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
-              ← Click vào video bên trái để thêm vào lịch
+              Tick video + page bên trái rồi bấm <b>Tạo lịch</b>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -1220,38 +1423,30 @@ function LenLichHangLoatTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, idx) => (
-                    <tr key={row.videoId} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                      {/* Video code */}
+                  {rows.map((row) => (
+                    <tr key={row.key} style={{ borderBottom: "1px solid #F3F4F6" }}>
                       <td style={{ padding: "8px 12px" }}>
                         <span style={{ background: "#EEF2FF", color: "#4338CA", borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode || "—"}</span>
                       </td>
-                      {/* SP */}
                       <td style={{ padding: "8px 12px", fontSize: 11, color: "#4B5563", maxWidth: 120 }}>
                         <div className="line-clamp-1">{row.product || "—"}</div>
                       </td>
-                      {/* Page dropdown */}
-                      <td style={{ padding: "8px 12px", minWidth: 160 }}>
-                        <select value={row.pageId} onChange={e => onPageChange(idx, e.target.value)} style={inp}>
-                          {pages.map(p => <option key={p.page_id} value={p.page_id}>{p.page_name}</option>)}
-                        </select>
+                      <td style={{ padding: "8px 12px", fontSize: 12, color: "#111827", maxWidth: 150 }}>
+                        <div className="line-clamp-1">{row.pageName || "—"}</div>
                       </td>
-                      {/* Template + nội dung */}
                       <td style={{ padding: "8px 12px", minWidth: 240 }}>
-                        <select value={row.templateId} onChange={e => onTemplateChange(idx, e.target.value)} style={{ ...inp, marginBottom: 5 }}>
+                        <select value={row.templateId} onChange={e => onTemplateChange(row.key, e.target.value)} style={{ ...inp, marginBottom: 5 }}>
                           <option value="">— Tùy chỉnh —</option>
                           {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
                         </select>
-                        <textarea value={row.message} onChange={e => updateRow(idx, { message: e.target.value })} rows={2}
+                        <textarea value={row.message} onChange={e => updateRow(row.key, { message: e.target.value })} rows={2}
                           style={{ ...inp, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, fontSize: 11 }} />
                       </td>
-                      {/* Giờ đăng */}
                       <td style={{ padding: "8px 12px", minWidth: 170 }}>
-                        <input type="datetime-local" value={row.scheduledFor} onChange={e => updateRow(idx, { scheduledFor: e.target.value })} style={inp} />
+                        <input type="datetime-local" value={row.scheduledFor} onChange={e => updateRow(row.key, { scheduledFor: e.target.value })} style={inp} />
                       </td>
-                      {/* Xóa */}
                       <td style={{ padding: "8px 12px" }}>
-                        <button onClick={() => removeRow(idx)} style={{ background: "#FEE2E2", color: "#DC2626", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
+                        <button onClick={() => removeRow(row.key)} style={{ background: "#FEE2E2", color: "#DC2626", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
                       </td>
                     </tr>
                   ))}
