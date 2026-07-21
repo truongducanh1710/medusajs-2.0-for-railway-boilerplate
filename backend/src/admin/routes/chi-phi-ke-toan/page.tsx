@@ -148,6 +148,9 @@ function ChiPhiKeToanPage() {
         <div style={{ fontSize: 11, color: "#6b7280" }}>{rows.length} giao dịch</div>
       </div>
 
+      {/* Chi phí thực kế toán/tháng → phân bổ về NV → khớp cột "CP thực (KT)" trong tab LNG */}
+      <AccountingAllocation from={from} to={to} canEdit={canEdit} />
+
       {showAddForm && canEdit && (
         <div style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 16, marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
@@ -243,6 +246,153 @@ function ChiPhiKeToanPage() {
           )}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ── Chi phí thực kế toán/tháng + phân bổ về NV MKT ──────────────────────────
+function AccountingAllocation({ from, to, canEdit }: { from: string; to: string; canEdit: boolean }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [draft, setDraft] = useState<any>({ kind: "nap", ads_code: "ADS329", label: "", amount: "", alloc: "ty_le" })
+
+  const month = from.slice(0, 7)
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setData(await apiJson(`/admin/pancake-sync/report/accounting-cost?from=${from}&to=${to}`)) }
+    catch (e: any) { alert(e.message) } finally { setLoading(false) }
+  }, [from, to])
+  useEffect(() => { load() }, [load])
+
+  async function addItem() {
+    if (!draft.amount || Number.isNaN(Number(draft.amount))) { alert("Số tiền không hợp lệ"); return }
+    const body: any = { month, kind: draft.kind, amount: Number(draft.amount) }
+    if (draft.kind === "nap") { body.ads_code = draft.ads_code; body.alloc = "ty_le" }
+    else { body.label = draft.label || "Khác"; body.alloc = draft.alloc }
+    try {
+      await apiJson(`/admin/pancake-sync/report/accounting-cost`, "POST", body)
+      setDraft({ kind: "nap", ads_code: "ADS329", label: "", amount: "", alloc: "ty_le" })
+      setShowForm(false); load()
+    } catch (e: any) { alert(e.message) }
+  }
+  async function delItem(id: number) {
+    if (!confirm("Xóa khoản này?")) return
+    try { await apiJson(`/admin/pancake-sync/report/accounting-cost?id=${id}`, "DELETE"); load() }
+    catch (e: any) { alert(e.message) }
+  }
+
+  const items = data?.items ?? []
+  const rows = data?.rows ?? []
+  const adAccounts = data?.ad_accounts ?? []
+  const nvCodes: string[] = data?.marketer_codes ?? []
+  const allocLabel = (a: string) => a === "deu" ? "Chia đều NV" : a === "ty_le" ? "Theo % tiêu ads" : a?.startsWith("nv:") ? `Gán ${a.slice(3)}` : a
+
+  const box = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 16 } as const
+  const inp = { border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 10px", fontSize: 13 } as const
+
+  return (
+    <div style={box}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Chi phí thực & phân bổ NV — tháng {month}</h2>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>Tiền nạp mỗi tài khoản Ads chia về NV theo % tiêu thực. Khớp cột "CP thực (KT)" trong tab LNG.</div>
+        </div>
+        {canEdit && (
+          <button onClick={() => setShowForm(v => !v)} style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>
+            + Thêm khoản chi phí
+          </button>
+        )}
+      </div>
+
+      {showForm && canEdit && (
+        <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, padding: 14, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Loại</div>
+            <select value={draft.kind} onChange={e => setDraft((d: any) => ({ ...d, kind: e.target.value }))} style={inp}>
+              <option value="nap">Tiền nạp tài khoản Ads</option>
+              <option value="chung">Chi phí chung (NL/ITY/ZALO...)</option>
+            </select>
+          </div>
+          {draft.kind === "nap" ? (
+            <div>
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Tài khoản Ads</div>
+              <select value={draft.ads_code} onChange={e => setDraft((d: any) => ({ ...d, ads_code: e.target.value }))} style={inp}>
+                {adAccounts.map((a: any) => <option key={a.ads_code} value={a.ads_code}>{a.ads_code}</option>)}
+              </select>
+            </div>
+          ) : (
+            <>
+              <div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Tên khoản</div>
+                <input value={draft.label} onChange={e => setDraft((d: any) => ({ ...d, label: e.target.value }))} placeholder="NL / ITY / ZALO" style={{ ...inp, width: 130 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Cách chia</div>
+                <select value={draft.alloc} onChange={e => setDraft((d: any) => ({ ...d, alloc: e.target.value }))} style={inp}>
+                  <option value="deu">Chia đều NV</option>
+                  <option value="ty_le">Theo % tiêu ads</option>
+                  {nvCodes.map(nv => <option key={nv} value={`nv:${nv}`}>Gán {nv}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+          <div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Số tiền (VND)</div>
+            <input value={draft.amount} onChange={e => setDraft((d: any) => ({ ...d, amount: e.target.value }))} placeholder="0" style={{ ...inp, width: 140 }} />
+          </div>
+          <button onClick={addItem} style={{ background: "#059669", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>Lưu</button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        {/* Danh sách khoản đã nhập */}
+        <div style={{ flex: "1 1 340px" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Khoản đã nhập ({items.length})</div>
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: "#f9fafb", textAlign: "left" }}>
+              <th style={{ padding: "6px 8px" }}>Khoản</th><th style={{ padding: "6px 8px" }}>Cách chia</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>Số tiền</th>{canEdit && <th></th>}
+            </tr></thead>
+            <tbody>
+              {items.map((it: any) => (
+                <tr key={it.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "6px 8px", fontWeight: 500 }}>{it.kind === "nap" ? `Nạp ${it.ads_code}` : it.label}</td>
+                  <td style={{ padding: "6px 8px", color: "#6b7280" }}>{it.kind === "nap" ? "Theo % tiêu ads" : allocLabel(it.alloc)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(it.amount)}</td>
+                  {canEdit && <td style={{ padding: "6px 8px", textAlign: "right" }}><button onClick={() => delItem(it.id)} style={{ color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}>Xóa</button></td>}
+                </tr>
+              ))}
+              {items.length === 0 && <tr><td colSpan={canEdit ? 4 : 3} style={{ padding: 16, textAlign: "center", color: "#9ca3af" }}>Chưa nhập khoản nào cho tháng này</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Bảng phân bổ CP thực/NV */}
+        <div style={{ flex: "1 1 300px" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>CP thực phân bổ về NV {loading && <span style={{ color: "#9ca3af" }}>· đang tải...</span>}</div>
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: "#f9fafb", textAlign: "left" }}>
+              <th style={{ padding: "6px 8px" }}>NV MKT</th><th style={{ padding: "6px 8px", textAlign: "right" }}>CP thực</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r: any) => (
+                <tr key={r.nv} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "6px 8px", fontWeight: 500 }}>{r.nv}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#6d28d9", fontWeight: 600 }}>{fmtMoney(r.cp_thuc)}</td>
+                </tr>
+              ))}
+              {rows.length > 0 && (
+                <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 700 }}>
+                  <td style={{ padding: "6px 8px" }}>TỔNG</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(data?.total ?? 0)}</td>
+                </tr>
+              )}
+              {rows.length === 0 && <tr><td colSpan={2} style={{ padding: 16, textAlign: "center", color: "#9ca3af" }}>Nhập khoản chi phí để xem phân bổ</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
