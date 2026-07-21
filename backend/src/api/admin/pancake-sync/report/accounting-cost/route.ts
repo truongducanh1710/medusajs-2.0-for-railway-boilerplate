@@ -46,18 +46,17 @@ async function ensureTable() {
   `)
 }
 
-// Danh sách mã NV MKT (khớp attribution của marketer-lng). Dùng để chia đều chi phí chung.
+// Danh sách NV MKT THỰC = người có phát sinh chi phí ads trong kỳ (từ mkt_ads_cost).
+// Dùng để chia đều chi phí chung (NL...). KHÔNG lấy mọi marketer trong đơn — nhiều tên
+// nhiễu (sale/CSKH lọt vào raw.marketer) sẽ làm chia đều sai cho quá nhiều người.
 async function getMarketerCodes(from: string, to: string): Promise<string[]> {
-  const mktExpr = `
-    CASE UPPER(TRIM(COALESCE(NULLIF(TRIM(raw->'marketer'->>'name'), ''), '')))
-      WHEN 'NAM DV' THEN 'NAMDV' WHEN 'TRUONGAN' THEN 'ANHTD' WHEN '' THEN NULL
-      ELSE UPPER(TRIM(NULLIF(TRIM(raw->'marketer'->>'name'), '')))
-    END`
   const rows = await sql(`
-    SELECT DISTINCT ${mktExpr} AS code FROM pancake_order
-    WHERE deleted_at IS NULL AND ${mktExpr} IS NOT NULL AND ${mktExpr} <> 'KHÁC'
-      AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-      AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+    SELECT UPPER(TRIM(mkt_name)) AS code, SUM(spend)::bigint AS spend
+    FROM mkt_ads_cost
+    WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+      AND mkt_name IS NOT NULL AND TRIM(mkt_name) <> '' AND UPPER(TRIM(mkt_name)) <> 'KHÁC'
+    GROUP BY UPPER(TRIM(mkt_name))
+    HAVING SUM(spend) > 0
   `, [from, to])
   return rows.map(r => r.code).filter(Boolean)
 }
