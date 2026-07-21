@@ -143,9 +143,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const isRipe = nOrders > 0 && nDaChot / nOrders >= RIPE_RATIO
       const tyLeNhan = isRipe ? r.n_nhan / nDaChot : tyLeNhanKy
       const revTamTinh = Math.round(revDeliv + revTreo * tyLeNhan)
-      // Ngày đã có doanh thu nhận → dùng tỷ lệ vốn/ship riêng; chưa có → mượn tỷ lệ kỳ.
-      const pctVon = revDeliv > 0 ? cogs / revDeliv : pctVonKy
-      const pctShip = revDeliv > 0 ? ship / revDeliv : pctShipKy
+      // Tỷ lệ giá vốn/ship: ngày ĐÃ CHÍN → dùng tỷ lệ riêng; chưa chín → mượn tỷ lệ kỳ.
+      // Lý do phải theo isRipe (không chỉ revDeliv>0): ngày mới, revDeliv rất nhỏ (vài đơn
+      // nhận đầu) nhưng `ship` là tổng phí ship MỌI đơn (gồm treo/hủy) → ship/revDeliv thổi
+      // phồng phi lý (vd 20/07: ship = 56% doanh thu). Dùng tỷ lệ kỳ cho ngày chưa chín.
+      const pctVon = isRipe && revDeliv > 0 ? cogs / revDeliv : pctVonKy
+      const pctShip = isRipe && revDeliv > 0 ? ship / revDeliv : pctShipKy
       const cogsTamTinh = Math.round(revTamTinh * pctVon)
       const shipTamTinh = Math.round(revTamTinh * pctShip)
       const fullfill = FULLFILL_PER_ORDER * nOrders
