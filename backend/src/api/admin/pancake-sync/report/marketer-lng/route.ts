@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, resolveDisplayId, toVNDate } from "../../../gia-von/avg-cost/route"
+import { computeAccountingCost } from "../accounting-cost/route"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -238,11 +239,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ── Tính các field dẫn xuất ────────────────────────────────────────────────
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
+    // CP thực kế toán/NV (nếu tháng đã nhập). Rỗng → cột CP thực để trống, không ảnh hưởng LNG cũ.
+    let costByNV: Record<string, number> = {}
+    try { ({ costByNV } = await computeAccountingCost(from, to)) } catch { /* bảng chưa có */ }
+    const hasAccounting = Object.keys(costByNV).length > 0
+
     const result = Object.values(merged).map((g: any) => {
       // ── KHỐI THỰC (giữ nguyên logic cũ) ──
       const fullfill = FULLFILL_PER_ORDER * g.total_orders
       const cogs = Math.round(g.cogs)
       const lng = g.revenue_delivered - (cogs + g.ship_cost + g.ads_cost + fullfill)
+
+      // ── CP THỰC KẾ TOÁN (thay ads API bằng tiền nạp thực đã phân bổ) ──
+      // Chỉ có khi tháng đã nhập chi phí kế toán. LNG thực (KT) = LNG thực nhưng dùng cp_thuc
+      // thay g.ads_cost. Giữ nguyên cột ads API + lng cũ để đối chiếu.
+      const cpThuc = costByNV[String(g.mkt_name).toUpperCase()] ?? null
+      const lngThucKt = cpThuc != null
+        ? g.revenue_delivered - (cogs + g.ship_cost + cpThuc + fullfill)
+        : null
 
       // ── KHỐI TẠM TÍNH (công thức B — tách đơn đã chốt khỏi đơn còn treo) ──
       // Khác bản cũ (doanh số toàn bộ × (1 − dkhh), không hội tụ về thực khi hết tháng):
@@ -278,6 +292,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         fullfill,
         lng,
         lng_thuc: lng,
+        // CP thực kế toán + LNG thực (KT). null khi tháng chưa nhập chi phí.
+        cp_thuc: cpThuc,
+        lng_thuc_kt: lngThucKt,
+        cp_thuc_pct: cpThuc != null ? pct(cpThuc, g.revenue_total) : null,
         cogs_pct: pct(cogs, g.revenue_delivered),
         ship_pct: pct(g.ship_cost, g.revenue_delivered),
         ads_pct: pct(g.ads_cost, g.revenue_total),
@@ -313,6 +331,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       fullfill: sum("fullfill"),
       lng: sum("lng"),
       lng_thuc: sum("lng"),
+      // CP thực kế toán (chỉ khi tháng đã nhập)
+      cp_thuc: hasAccounting ? sum("cp_thuc") : null,
+      lng_thuc_kt: hasAccounting ? sum("lng_thuc_kt") : null,
       // khối tạm tính
       revenue_tam_tinh: totalRevenueTamTinh,
       cogs_tam_tinh: sum("cogs_tam_tinh"),
@@ -333,6 +354,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       mapped_pct: totalItemQty > 0 ? Math.round(totalMappedQty / totalItemQty * 100) : 0,
       cost_mapped: avgCost.mapped,
       cost_total: avgCost.total,
+      has_accounting: hasAccounting,
       from, to,
     })
   } catch (err: any) {

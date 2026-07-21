@@ -1685,10 +1685,13 @@ type LngRow = {
   ads_tt_pct: number | null
   fullfill_tt_pct: number | null
   lng_tt_pct: number | null
+  cp_thuc?: number | null
+  lng_thuc_kt?: number | null
+  cp_thuc_pct?: number | null
 }
 
 function LngTab({ range, market }: { range: DateRange; market: Market }) {
-  const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number; not_supported?: boolean } | null>(null)
+  const [data, setData] = useState<{ rows: LngRow[]; totals: any; mapped_pct: number; cost_mapped: number; cost_total: number; has_accounting?: boolean; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [sub, setSub] = useState<"thuc" | "tam_tinh">("thuc")
   const [sortKey, setSortKey] = useState<keyof LngRow>(sub === "thuc" ? "lng_thuc" : "lng_tam_tinh")
@@ -1714,9 +1717,10 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
 
   // Mỗi sub-tab có bộ cột riêng: định nghĩa value/className để renderRow chạy chung.
   type Cell = { val: string; cls?: string }
+  const hasAcc = !!data?.has_accounting
   const buildCells = (row: LngRow): Cell[] => {
     if (sub === "thuc") {
-      return [
+      const cells: Cell[] = [
         { val: money(row.revenue_total) },
         { val: money(row.revenue_delivered) },
         { val: money(row.cogs) },
@@ -1730,6 +1734,18 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
         { val: money(row.lng_thuc ?? row.lng), cls: `font-bold ${(row.lng_thuc ?? row.lng) >= 0 ? "text-green-600" : "text-red-600"}` },
         { val: pctStr(row.lng_pct), cls: (row.lng_pct ?? 0) >= 0 ? "text-green-600" : "text-red-600" },
       ]
+      // Cột CP thực kế toán (chỉ khi tháng đã nhập chi phí) — chèn ngay sau cột Ads.
+      if (hasAcc) {
+        const lngKt = (row as any).lng_thuc_kt
+        cells.splice(8, 0,
+          { val: (row as any).cp_thuc != null ? money((row as any).cp_thuc) : "—", cls: "text-violet-700 font-medium" },
+          { val: pctStr((row as any).cp_thuc_pct), cls: "text-gray-400" },
+        )
+        cells.push(
+          { val: lngKt != null ? money(lngKt) : "—", cls: `font-bold ${(lngKt ?? 0) >= 0 ? "text-green-700" : "text-red-600"}` },
+        )
+      }
+      return cells
     }
     // tạm tính
     return [
@@ -1770,10 +1786,15 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
         { label: "%VC", key: "ship_pct" },
         { label: "Chi phí Ads", key: "ads_cost" },
         { label: "%Ads", key: "ads_pct" },
+        ...(hasAcc ? [
+          { label: "CP thực (KT)", key: "cp_thuc" as keyof LngRow },
+          { label: "%CP thực", key: "cp_thuc_pct" as keyof LngRow },
+        ] : []),
         { label: "Fullfill", key: "fullfill" },
         { label: "%FF", key: "fullfill_pct" },
         { label: "LNG THỰC", key: "lng_thuc" },
         { label: "%LNG", key: "lng_pct" },
+        ...(hasAcc ? [{ label: "LNG THỰC (KT)", key: "lng_thuc_kt" as keyof LngRow }] : []),
       ]
     : [
         { label: "Doanh số", key: "revenue_total" },
@@ -1815,6 +1836,7 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
       ads_tt_pct: p(t.ads_cost, t.revenue_total),
       fullfill_tt_pct: p(t.fullfill_tam_tinh, t.revenue_tam_tinh),
       lng_tt_pct: p(t.lng_tam_tinh, t.revenue_tam_tinh),
+      cp_thuc_pct: t.cp_thuc != null ? p(t.cp_thuc, t.revenue_total) : null,
     } as LngRow
   })() : null
 

@@ -82,67 +82,76 @@ function monthOf(from: string): string {
   return from.slice(0, 7)
 }
 
+/**
+ * Tính phân bổ CP thực kế toán về từng NV cho kỳ [from,to].
+ * Dùng chung bởi GET (trang chi phí) và marketer-lng (cột CP thực).
+ * Trả costByNV (code → CP thực) — rỗng nếu tháng chưa nhập khoản nào.
+ */
+export async function computeAccountingCost(
+  from: string,
+  to: string
+): Promise<{ costByNV: Record<string, number>; items: any[]; nvCodes: string[]; spendByAcc: Record<string, Record<string, number>> }> {
+  await ensureTable()
+  const month = monthOf(from)
+  const items = await sql(
+    `SELECT id, month, kind, ads_code, label, amount, alloc, note
+     FROM mkt_monthly_cost WHERE deleted_at IS NULL AND month = $1 ORDER BY kind DESC, id ASC`,
+    [month]
+  )
+  const nvCodes = await getMarketerCodes(from, to)
+  const spendByAcc = await getSpendByAccountNV(from, to)
+
+  const costByNV: Record<string, number> = {}
+  const add = (code: string, amt: number) => { costByNV[code] = (costByNV[code] || 0) + amt }
+
+  for (const it of items) {
+    const amount = Number(it.amount)
+    if (it.kind === "nap") {
+      const acc = it.ads_code ? codeToAccount[it.ads_code] : null
+      const spend = acc ? spendByAcc[acc] : null
+      if (spend && Object.keys(spend).length) {
+        const totalSpend = Object.values(spend).reduce((s, v) => s + v, 0)
+        for (const [nv, sp] of Object.entries(spend)) {
+          if (nv === "KHÁC") continue
+          add(nv, totalSpend > 0 ? amount * (sp / totalSpend) : 0)
+        }
+      }
+    } else {
+      if (it.alloc === "deu") {
+        const per = nvCodes.length ? amount / nvCodes.length : 0
+        for (const nv of nvCodes) add(nv, per)
+      } else if (it.alloc?.startsWith("nv:")) {
+        add(it.alloc.slice(3).toUpperCase(), amount)
+      } else if (it.alloc === "ty_le") {
+        const totalByNV: Record<string, number> = {}
+        let grand = 0
+        for (const acc of Object.values(spendByAcc)) for (const [nv, sp] of Object.entries(acc)) {
+          if (nv === "KHÁC") continue
+          totalByNV[nv] = (totalByNV[nv] || 0) + sp; grand += sp
+        }
+        for (const [nv, sp] of Object.entries(totalByNV)) add(nv, grand > 0 ? amount * (sp / grand) : 0)
+      }
+    }
+  }
+  // Làm tròn.
+  for (const k of Object.keys(costByNV)) costByNV[k] = Math.round(costByNV[k])
+  return { costByNV, items, nvCodes, spendByAcc }
+}
+
 // GET: trả các khoản chi phí + bảng phân bổ CP thực về từng NV.
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    await ensureTable()
     const { from, to } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
-    const month = monthOf(from)
 
-    const items = await sql(
-      `SELECT id, month, kind, ads_code, label, amount, alloc, note
-       FROM mkt_monthly_cost WHERE deleted_at IS NULL AND month = $1 ORDER BY kind DESC, id ASC`,
-      [month]
-    )
-
-    const nvCodes = await getMarketerCodes(from, to)
-    const spendByAcc = await getSpendByAccountNV(from, to)
-
-    // Phân bổ về từng NV: costByNV[code] = tiền nạp phân bổ + chi phí chung.
-    const costByNV: Record<string, number> = {}
-    const add = (code: string, amt: number) => { costByNV[code] = (costByNV[code] || 0) + amt }
-
-    for (const it of items) {
-      const amount = Number(it.amount)
-      if (it.kind === "nap") {
-        // Tiền nạp tài khoản ads → chia về NV theo % tiêu thực trên tài khoản đó.
-        const acc = it.ads_code ? codeToAccount[it.ads_code] : null
-        const spend = acc ? spendByAcc[acc] : null
-        if (spend && Object.keys(spend).length) {
-          const totalSpend = Object.values(spend).reduce((s, v) => s + v, 0)
-          for (const [nv, sp] of Object.entries(spend)) {
-            if (nv === "KHÁC") continue  // spend không quy được NV → bỏ khỏi phân bổ
-            add(nv, totalSpend > 0 ? amount * (sp / totalSpend) : 0)
-          }
-        }
-      } else {
-        // Chi phí chung.
-        if (it.alloc === "deu") {
-          const per = nvCodes.length ? amount / nvCodes.length : 0
-          for (const nv of nvCodes) add(nv, per)
-        } else if (it.alloc?.startsWith("nv:")) {
-          add(it.alloc.slice(3).toUpperCase(), amount)
-        } else if (it.alloc === "ty_le") {
-          // theo % tổng tiêu ads toàn kỳ
-          const totalByNV: Record<string, number> = {}
-          let grand = 0
-          for (const acc of Object.values(spendByAcc)) for (const [nv, sp] of Object.entries(acc)) {
-            if (nv === "KHÁC") continue
-            totalByNV[nv] = (totalByNV[nv] || 0) + sp; grand += sp
-          }
-          for (const [nv, sp] of Object.entries(totalByNV)) add(nv, grand > 0 ? amount * (sp / grand) : 0)
-        }
-      }
-    }
-
+    const { costByNV, items, nvCodes, spendByAcc } = await computeAccountingCost(from, to)
     const rows = Object.entries(costByNV)
-      .map(([nv, cp]) => ({ nv, cp_thuc: Math.round(cp) }))
+      .map(([nv, cp]) => ({ nv, cp_thuc: cp }))
       .sort((a, b) => b.cp_thuc - a.cp_thuc)
     const total = rows.reduce((s, r) => s + r.cp_thuc, 0)
 
     return res.json({
-      month, items, rows, total,
+      month: monthOf(from), items, rows, total,
       ad_accounts: AD_ACCOUNTS,
       marketer_codes: nvCodes,
       spend_by_account: spendByAcc,
