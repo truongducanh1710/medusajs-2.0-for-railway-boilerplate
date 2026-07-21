@@ -122,7 +122,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // để dự phóng vẫn trừ giá vốn/ship, tránh LNG cao giả.
     const pctVonKy = sumRevDeliv > 0 ? sumCogs / sumRevDeliv : 0
     const pctShipKy = sumRevDeliv > 0 ? sumShip / sumRevDeliv : 0
-    const MIN_SAMPLE = 10  // ngày có < 10 đơn đã chốt → dùng tỷ lệ kỳ thay vì tỷ lệ ngày.
+    // Ngày được coi là "đủ chín" để tin tỷ lệ nhận RIÊNG khi phần lớn đơn đã ngã ngũ.
+    // Chỉ dựa số đơn đã chốt tuyệt đối (ngưỡng cứng 10) là chưa đủ: ngày 19-20/07 có 12 đơn
+    // đã chốt nhưng 84 đơn còn treo → mẫu 12 đơn KHÔNG đại diện, tỷ lệ riêng dao động mạnh
+    // (58%~83%) làm LNG âm/dương thất thường. Đúng hơn: đơn đã chốt phải chiếm ≥ RIPE_RATIO
+    // tổng đơn ngày; chưa đạt → mượn tỷ lệ nhận trung bình kỳ (ổn định).
+    const RIPE_RATIO = 0.6
 
     const result = rows.map((r: any) => {
       const revDeliv = Number(r.revenue_delivered)
@@ -132,10 +137,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const ads = adsByDay[r.date] ?? 0
       const cogs = Math.round(cogsFromItems(r.delivered_items))
 
-      // Công thức B: tỷ lệ nhận kỳ vọng. Ngày đủ mẫu → dùng tỷ lệ riêng; mẫu nhỏ → mượn
-      // tỷ lệ trung bình kỳ (tránh 0% giả ở các ngày mới tạo chưa kịp giao xong).
+      // Công thức B: tỷ lệ nhận kỳ vọng. Ngày đã chín (≥60% đơn đã ngã ngũ) → dùng tỷ lệ
+      // riêng; chưa chín → mượn tỷ lệ trung bình kỳ (tránh dao động do mẫu nhỏ).
       const nDaChot = r.n_nhan + r.da_hoan + r.dang_hoan + r.da_huy
-      const tyLeNhan = nDaChot >= MIN_SAMPLE ? r.n_nhan / nDaChot : tyLeNhanKy
+      const isRipe = nOrders > 0 && nDaChot / nOrders >= RIPE_RATIO
+      const tyLeNhan = isRipe ? r.n_nhan / nDaChot : tyLeNhanKy
       const revTamTinh = Math.round(revDeliv + revTreo * tyLeNhan)
       // Ngày đã có doanh thu nhận → dùng tỷ lệ vốn/ship riêng; chưa có → mượn tỷ lệ kỳ.
       const pctVon = revDeliv > 0 ? cogs / revDeliv : pctVonKy
