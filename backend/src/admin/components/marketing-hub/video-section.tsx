@@ -210,6 +210,15 @@ const LOAI_LIST = ["Video AI", "Real", "Review", "RAW"]
 const TEST_SP_VALUE = "__TEST__"
 const TEST_SP_LABEL = "🧪 TEST — Sản phẩm ngoài POS"
 
+// Trích FILE_ID từ Google Drive share link để dựng thumbnail preview (không cần token).
+function driveFileId(url?: string): string | null {
+  if (!url) return null
+  let m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+  if (!m) m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+  return m ? m[1] : null
+}
+const driveThumbUrl = (id: string) => `https://drive.google.com/thumbnail?id=${id}&sz=w360`
+
 type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string; ghiChu: string; script: string }
 
 type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string; script: string }
@@ -234,6 +243,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [deadlinePopup, setDeadlinePopup] = useState<{ row: VideoRow } | null>(null)
   const [makerPopup, setMakerPopup] = useState<{ row: VideoRow } | null>(null)
   const [newRowId, setNewRowId] = useState<string | null>(null)
+  // Hover thumbnail cho cột Link (tooltip nổi theo con trỏ)
+  const [thumb, setThumb] = useState<{ id: string; x: number; y: number } | null>(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
   const [spList, setSpList] = useState<{ name: string; code: string }[]>([])
@@ -541,6 +552,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+      {thumb && (
+        <div style={{ position: "fixed", left: Math.min(thumb.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 340), top: Math.min(thumb.y + 16, (typeof window !== "undefined" ? window.innerHeight : 800) - 220), zIndex: 10000, pointerEvents: "none", background: "#000", border: "1px solid #E5E7EB", borderRadius: 10, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,0.28)", width: 320 }}>
+          <img src={driveThumbUrl(thumb.id)} alt="preview" style={{ display: "block", width: 320, height: 180, objectFit: "cover", background: "#111" }} />
+          <div style={{ background: "#111", color: "#9CA3AF", fontSize: 10, textAlign: "center", padding: "4px 0" }}>Xem trước · bấm để mở Drive</div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 8, flex: "1 1 180px" }}>
           <span style={{ margin: "0 0 0 10px", color: "#9CA3AF", fontSize: 13 }}>⌕</span>
@@ -812,8 +829,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         </div>
                       : row.link ? (() => {
                           const isLark = row.link.includes("larksuite") || row.link.includes("feishu") || row.link.includes("lark.suite")
+                          const fid = isLark ? null : driveFileId(row.link)
                           return (
                             <a href={row.link} target="_blank" rel="noopener noreferrer"
+                              onMouseEnter={fid ? e => setThumb({ id: fid, x: e.clientX, y: e.clientY }) : undefined}
+                              onMouseMove={fid ? e => setThumb(t => t && t.id === fid ? { ...t, x: e.clientX, y: e.clientY } : { id: fid, x: e.clientX, y: e.clientY }) : undefined}
+                              onMouseLeave={fid ? () => setThumb(null) : undefined}
                               style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 500, textDecoration: "none",
                                 color: isLark ? "#2E6FD8" : "#1877F2",
                                 background: isLark ? "#EEF4FF" : "#EFF6FF",
