@@ -125,6 +125,8 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
     { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
+    // Chi phí kế toán: đọc = view, ghi (nhập/sửa/xóa khoản chi phí) = camp-control.
+    { matcher: "/admin/pancake-sync/report/accounting-cost*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/ads-expense/report*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/ads-expense/report", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/ads-expense/report/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
