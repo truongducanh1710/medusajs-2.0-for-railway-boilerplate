@@ -1,5 +1,6 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
+import { syncAdsetAndAdLevels } from "../lib/mkt-cost-levels"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 
@@ -47,6 +48,10 @@ async function syncAccountForDate(
 
   const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`
   const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
+
+  // Adset + ad level chạy song song với campaign-level (khác bảng, độc lập nhau).
+  // Không await ở đây — gom kết quả ở cuối để 2 nhánh thực sự chạy cùng lúc.
+  const levelsPromise = syncAdsetAndAdLevels(cskhService, logger, FB_TOKEN, date, rawAccount)
 
   try {
     let nextUrl: string | null = url
@@ -118,6 +123,11 @@ async function syncAccountForDate(
     logger?.error?.(`[MktCostDaily] Error account ${actId} date=${date}: ${err.message}`)
     totalErrors++
   }
+
+  // Chờ nhánh adset/ad (đã chạy song song từ đầu hàm)
+  const levels = await levelsPromise
+  totalSynced += levels.adsets + levels.ads
+  totalErrors += levels.errors
 
   return { synced: totalSynced, errors: totalErrors }
 }

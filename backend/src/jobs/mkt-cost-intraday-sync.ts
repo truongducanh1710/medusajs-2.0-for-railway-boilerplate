@@ -1,5 +1,6 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
+import { syncAdsetAndAdLevels } from "../lib/mkt-cost-levels"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 
@@ -41,10 +42,15 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
 
   let totalSynced = 0
   let totalErrors = 0
+  let totalAdsets = 0
+  let totalAds = 0
 
   for (const { account_id: rawAccount } of dbAccounts) {
     const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`
     const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
+
+    // Adset + ad level chạy song song với campaign-level (khác bảng, độc lập nhau)
+    const levelsPromise = syncAdsetAndAdLevels(cskhService, logger, FB_TOKEN, today, rawAccount)
 
     try {
       let nextUrl: string | null = url
@@ -169,9 +175,15 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
       logger?.error?.(`[MktCostIntraday] Error account ${actId}: ${err.message}`)
       totalErrors++
     }
+
+    // Chờ nhánh adset/ad (đã chạy song song từ đầu vòng lặp)
+    const levels = await levelsPromise
+    totalAdsets += levels.adsets
+    totalAds += levels.ads
+    totalErrors += levels.errors
   }
 
-  logger?.info?.(`[MktCostIntraday] ${today} → synced=${totalSynced} errors=${totalErrors}`)
+  logger?.info?.(`[MktCostIntraday] ${today} → camps=${totalSynced} adsets=${totalAdsets} ads=${totalAds} errors=${totalErrors}`)
 }
 
 export const config = {
