@@ -93,6 +93,12 @@ export async function ensureChatTables(pool = getChatPool()): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_conv_page ON fb_conversation (page_id, last_message_at DESC)`)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fb_conv_assigned ON fb_conversation (assigned_to, last_message_at DESC)`)
   await pool.query(`ALTER TABLE fb_conversation ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`)
+  await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`).catch(() => {})
+  // Conversation list orders by COALESCE(last_message_at, updated_at); without this the
+  // default listing sorts the whole table on every page load.
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_fb_conv_recent ON fb_conversation ((COALESCE(last_message_at, updated_at)) DESC)`
+  )
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS fb_message (
@@ -313,23 +319,49 @@ async function getPageName(pool: Pool, pageId: string): Promise<string> {
  *   - GET /{pageId}/conversations?fields=participants → 200, có participants[].name.
  * Nên phải lấy tên qua endpoint conversations rồi match theo PSID, KHÔNG query /{psid} trực tiếp.
  */
+/**
+ * PSID → name cache, shared across messages of the same burst.
+ *
+ * Without it every inbound message from an unnamed customer refetched the page's whole
+ * conversation list — N identical Graph calls for N new customers.
+ */
+const _nameCache = new Map<string, { names: Map<string, string>; at: number }>()
+const NAME_CACHE_TTL_MS = 60_000
+
+export async function loadPageParticipantNames(pool: Pool, pageId: string): Promise<Map<string, string>> {
+  const cached = _nameCache.get(pageId)
+  if (cached && Date.now() - cached.at < NAME_CACHE_TTL_MS) return cached.names
+
+  const names = new Map<string, string>()
+  const { rows } = await pool.query(`SELECT access_token FROM fb_page_token WHERE page_id = $1`, [pageId])
+  const token = rows[0]?.access_token
+  if (!token) {
+    console.warn(`[chat] no access_token for page ${pageId} — cannot resolve customer names`)
+    return names
+  }
+
+  // Paginated: a busy page has far more than one Graph page of conversations.
+  const convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants&limit=50`, token, 10)
+  for (const conv of convs) {
+    for (const p of conv?.participants?.data || []) {
+      if (p?.id && p.id !== pageId && p?.name) {
+        const n = String(p.name).trim()
+        if (n) names.set(String(p.id), n)
+      }
+    }
+  }
+  _nameCache.set(pageId, { names, at: Date.now() })
+  return names
+}
+
 async function fetchCustomerNameFromGraph(pool: Pool, pageId: string, psid: string): Promise<string | null> {
   try {
-    const { rows } = await pool.query(`SELECT access_token FROM fb_page_token WHERE page_id = $1`, [pageId])
-    const token = rows[0]?.access_token
-    if (!token) return null
-    // Conversation vừa có tin nhắn nằm đầu danh sách (sort updated_time DESC) → limit 25 gần như luôn khớp.
-    const url = `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=participants&limit=25&access_token=${token}`
-    const r = await fetch(url)
-    const d: any = await r.json().catch(() => ({}))
-    if (d?.error || !Array.isArray(d?.data)) return null
-    for (const conv of d.data) {
-      const parts: any[] = conv?.participants?.data || []
-      const match = parts.find((p: any) => p?.id === psid)
-      if (match?.name) return String(match.name).trim() || null
-    }
-    return null
-  } catch {
+    const names = await loadPageParticipantNames(pool, pageId)
+    return names.get(psid) || null
+  } catch (e: any) {
+    // Was silently swallowed before, which turned an expired token or a rate limit into
+    // a permanently NULL customer_name with no trace.
+    console.warn(`[chat] resolve name failed (page ${pageId}, psid ${psid}): ${e.message}`)
     return null
   }
 }
@@ -386,10 +418,33 @@ const FB_GRAPH_VERSION = "v20.0"
 
 async function fbGet(path: string, token: string): Promise<any> {
   const url = `https://graph.facebook.com/${FB_GRAPH_VERSION}${path}${path.includes("?") ? "&" : "?"}access_token=${token}`
+  return fbGetUrl(url)
+}
+
+/** Fetch an absolute Graph URL (used to follow `paging.next`, which already carries the token). */
+async function fbGetUrl(url: string): Promise<any> {
   const r = await fetch(url)
   const d = await r.json()
   if (d?.error) throw new Error(`FB API: ${d.error.message} (code ${d.error.code})`)
   return d
+}
+
+/**
+ * Follow Graph `paging.next` up to `maxPages`, concatenating `data`.
+ *
+ * Without this a busy page only ever exposes its 25 most recent conversations, so
+ * customers further down never get a name and never get their messages pulled.
+ */
+async function fbGetAllPages(path: string, token: string, maxPages = 20): Promise<any[]> {
+  const out: any[] = []
+  let payload = await fbGet(path, token)
+  for (let i = 0; i < maxPages; i++) {
+    out.push(...(payload?.data || []))
+    const next = payload?.paging?.next
+    if (!next) break
+    payload = await fbGetUrl(next)
+  }
+  return out
 }
 
 /**
@@ -411,15 +466,17 @@ export async function pullPageInbox(
   const sinceTs = Math.floor(since.getTime() / 1000)
   const pool = getChatPool()
 
-  let convData: any
+  // `since` bounds the set, so paging terminates quickly on the 3-min cron and only
+  // goes deep on a manual multi-day sync.
+  let convs: any[]
   try {
-    convData = await fbGet(`/${pageId}/conversations?fields=participants,updated_time&limit=25&since=${sinceTs}`, token)
+    convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants,updated_time&limit=50&since=${sinceTs}`, token)
   } catch (e: any) {
     errors.push(`Lấy conversations thất bại: ${e.message}`)
     return { saved, skipped, errors }
   }
 
-  for (const conv of convData?.data || []) {
+  for (const conv of convs) {
     const convId = conv.id
     const participants: any[] = conv.participants?.data || []
     const customer = participants.find((p: any) => p.id !== pageId)

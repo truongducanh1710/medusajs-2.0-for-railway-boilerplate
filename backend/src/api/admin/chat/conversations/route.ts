@@ -17,7 +17,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const hasSearch = !!search
 
     // Only hide disabled inbox-sync pages during normal browsing; search should find any DB chat the user can access.
-    await pool.query(`ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS sync_enabled BOOLEAN DEFAULT true`)
+    // (sync_enabled column is created in ensureChatTables, not per-request.)
     if (!hasSearch) where.push(`c.page_id IN (SELECT page_id FROM fb_page_token WHERE sync_enabled = true)`)
 
     if (auth.fbPageIds && auth.fbPageIds.length) {
@@ -69,8 +69,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const fromSql = `FROM fb_conversation c
        LEFT JOIN fb_conversation_context ctx ON ctx.conversation_id = c.id`
 
+    // COUNT(*) OVER() gets the total from the same scan. The search branch filters on
+    // regexp_replace/EXISTS over fb_message, which cannot use an index — running it twice
+    // (once for rows, once for a separate COUNT) doubled the cost of every phone search.
     const { rows } = await pool.query(
-      `SELECT c.*, ctx.active_phone, ctx.active_address, ctx.active_order_state, a.mode AS bot_mode, a.product_names
+      `SELECT c.*, ctx.active_phone, ctx.active_address, ctx.active_order_state, a.mode AS bot_mode, a.product_names,
+              COUNT(*) OVER()::int AS _total
        ${fromSql}
        LEFT JOIN fb_bot_agent a ON a.page_id = c.page_id
        ${sqlWhere}
@@ -78,8 +82,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     )
-    const count = await pool.query(`SELECT COUNT(*)::int AS total ${fromSql} ${sqlWhere}`, params.slice(0, -2))
-    return res.json({ conversations: rows, total: count.rows[0]?.total || 0 })
+    const total = rows[0]?._total ?? 0
+    for (const r of rows) delete r._total
+    return res.json({ conversations: rows, total })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
