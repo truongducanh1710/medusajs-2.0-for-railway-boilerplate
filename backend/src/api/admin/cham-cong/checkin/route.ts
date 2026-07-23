@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { vnDayKey } from "../../mkt-chat/_presence"
 import { getCurrentUserEmail } from "../_lib"
+import { recomputeOvertimeForDay } from "../overtime/route"
 
 // GET /admin/cham-cong/checkin — lịch sử chấm công hôm nay của người đang đăng nhập
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -47,6 +48,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       address: address ? String(address).slice(0, 255) : null,
       day_key: today,
     })
+
+    if (action === "out") {
+      await recomputeOvertimeForDay(svc, email, today).catch(() => {})
+    }
 
     res.json({ log })
   } catch (e: any) {

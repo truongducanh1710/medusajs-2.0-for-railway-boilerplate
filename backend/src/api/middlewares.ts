@@ -209,7 +209,12 @@ export default defineMiddlewares({
     // Chấm công GPS chủ động — mọi nhân viên tự bấm vào/ra. Matcher cụ thể phải đứng
     // TRƯỚC wildcard /admin/cham-cong* bên dưới, nếu không wildcard nuốt mất route này.
     { matcher: "/admin/cham-cong/checkin*", method: ["GET", "POST", "PATCH"], middlewares: [requirePerm("page.cham-cong-nv.checkin")] },
-    // Chấm công — báo cáo giờ online + việc đã làm. Chỉ lead/manager/admin.
+    // Giờ làm thêm (OT) — mọi nhân viên xem OT của mình; duyệt/sửa người khác cần page.overtime.approve
+    // (handler tự check thêm). Matcher cụ thể cũng phải đứng TRƯỚC wildcard /admin/cham-cong* GET bên dưới.
+    { matcher: "/admin/cham-cong/overtime*", method: ["GET"], middlewares: [requirePerm("page.overtime.view")] },
+    { matcher: "/admin/cham-cong/overtime", method: ["POST"], middlewares: [requirePerm("page.overtime.view")] },
+    { matcher: "/admin/cham-cong/overtime/*", method: ["PATCH"], middlewares: [requirePerm("page.overtime.view")] },
+    // Chấm công — báo cáo giờ online + việc đã làm + export CSV. Chỉ lead/manager/admin.
     { matcher: "/admin/cham-cong*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
 
     // Xin nghỉ phép — mọi nhân viên xem/tạo đơn của mình; duyệt đơn người khác cần
@@ -217,6 +222,10 @@ export default defineMiddlewares({
     { matcher: "/admin/leave-request*", method: ["GET"], middlewares: [requirePerm("page.leave-request.view")] },
     { matcher: "/admin/leave-request", method: ["POST"], middlewares: [requirePerm("page.leave-request.view")] },
     { matcher: "/admin/leave-request/*", method: ["PATCH"], middlewares: [requirePerm("page.leave-request.view")] },
+
+    // Số phép năm còn lại — mọi nhân viên xem của mình; xem người khác/chỉnh tay cần page.nhan-su.manage (handler tự check).
+    { matcher: "/admin/leave-balance*", method: ["GET"], middlewares: [requirePerm("page.leave-request.view")] },
+    { matcher: "/admin/leave-balance/*", method: ["PATCH"], middlewares: [requirePerm("page.nhan-su.manage")] },
 
     // Hồ sơ nhân sự — dữ liệu nhạy cảm (CCCD, địa chỉ, hợp đồng), chỉ ai được gán riêng
     // page.nhan-su.view mới vào được; write cần page.nhan-su.manage (handler tự check thêm).

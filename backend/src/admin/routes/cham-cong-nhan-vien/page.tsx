@@ -45,6 +45,9 @@ type ChamCongConfig = {
   work_days: number[]
   late_grace_min: number
   half_day_saturdays: string[]
+  ot_min_threshold_min: number
+  phep_nam_per_month: number
+  phep_nam_max_per_year: number
 }
 
 type LeaveMini = { start_at: string; end_at: string }
@@ -114,9 +117,11 @@ function ChamCongSection() {
   const [cursor, setCursor] = useState(() => new Date())
   const [monthLogs, setMonthLogs] = useState<ChamCongLog[]>([])
   const [monthLeaves, setMonthLeaves] = useState<LeaveMini[]>([])
-  const [config, setConfig] = useState<ChamCongConfig>({ shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [] })
+  const [config, setConfig] = useState<ChamCongConfig>({ shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [], ot_min_threshold_min: 15, phep_nam_per_month: 1, phep_nam_max_per_year: 12 })
   const [monthLoading, setMonthLoading] = useState(false)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [leaveBalance, setLeaveBalance] = useState<{ remaining_days: number; accrued_days: number; used_days: number } | null>(null)
+  const [otMinutesThisMonth, setOtMinutesThisMonth] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -149,6 +154,21 @@ function ChamCongSection() {
   }, [monthKey])
 
   useEffect(() => { loadMonth() }, [loadMonth])
+
+  useEffect(() => {
+    apiJson(`/admin/leave-balance?year=${cursor.getFullYear()}`).then((d) => setLeaveBalance(d)).catch(() => {})
+  }, [cursor])
+
+  useEffect(() => {
+    apiJson(`/admin/cham-cong/overtime?scope=mine&month=${monthKey}`)
+      .then((d) => {
+        const total = (d?.requests || [])
+          .filter((r: any) => r.status === "approved")
+          .reduce((s: number, r: any) => s + (r.approved_duration_min ?? r.duration_min), 0)
+        setOtMinutesThisMonth(total)
+      })
+      .catch(() => {})
+  }, [monthKey])
 
   const lastAction = logs.length > 0 ? logs[logs.length - 1].action : null
   const nextAction: "in" | "out" = lastAction === "in" ? "out" : "in"
@@ -247,7 +267,7 @@ function ChamCongSection() {
       </div>
 
       {/* Stat tiles */}
-      <div className="mb-5 grid grid-cols-3 gap-3">
+      <div className="mb-5 grid grid-cols-3 gap-3 sm:grid-cols-5">
         <div className="rounded-lg bg-green-50 dark:bg-green-500/10 p-3 text-center">
           <div className="text-lg font-bold text-green-700 dark:text-green-400">{workedDays}/{workDaysTotal}</div>
           <div className="text-xs text-green-700 dark:text-green-400">Công làm</div>
@@ -259,6 +279,18 @@ function ChamCongSection() {
         <div className="rounded-lg bg-blue-50 dark:bg-blue-500/10 p-3 text-center">
           <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{leaveDaysTotal.toFixed(2)}</div>
           <div className="text-xs text-blue-700 dark:text-blue-400">Ngày nghỉ</div>
+        </div>
+        <div className="rounded-lg bg-violet-50 dark:bg-violet-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-violet-700 dark:text-violet-400">
+            {leaveBalance ? leaveBalance.remaining_days.toFixed(1) : "—"}
+          </div>
+          <div className="text-xs text-violet-700 dark:text-violet-400">Phép còn lại</div>
+        </div>
+        <div className="rounded-lg bg-teal-50 dark:bg-teal-500/10 p-3 text-center">
+          <div className="text-lg font-bold text-teal-700 dark:text-teal-400">
+            {(otMinutesThisMonth / 60).toFixed(1)}h
+          </div>
+          <div className="text-xs text-teal-700 dark:text-teal-400">OT đã duyệt</div>
         </div>
       </div>
 
@@ -618,6 +650,130 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
   )
 }
 
+// ─── Làm thêm giờ (OT) ───────────────────────────────────────────────────────
+
+type OvertimeRow = {
+  id: string
+  user_email: string
+  day_key: string
+  duration_min: number
+  approved_duration_min: number | null
+  source: "auto" | "manual"
+  note: string | null
+  status: "pending" | "approved" | "rejected"
+  reviewer_email: string | null
+  reviewed_at: string | null
+}
+
+function fmtHhMm(min: number): string {
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m === 0 ? `${h}h` : `${h}h${m}p`
+}
+
+function OvertimeSection({ canApprove }: { canApprove: boolean }) {
+  const [tab, setTab] = useState<"mine" | "pending" | "approved">("mine")
+  const [rows, setRows] = useState<OvertimeRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState("")
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editMinutes, setEditMinutes] = useState(0)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setErr("")
+    try {
+      const d = await apiJson(`/admin/cham-cong/overtime?scope=${tab}`)
+      setRows(d?.requests || [])
+    } catch (e: any) {
+      setErr(e.message || "Lỗi tải OT")
+    } finally {
+      setLoading(false)
+    }
+  }, [tab])
+
+  useEffect(() => { load() }, [load])
+
+  const decide = async (id: string, decision: "approved" | "rejected", approvedMinutes?: number) => {
+    try {
+      await apiJson(`/admin/cham-cong/overtime/${id}/decision`, "PATCH", {
+        decision,
+        approved_duration_min: approvedMinutes,
+      })
+      setEditingId(null)
+      load()
+    } catch (e: any) {
+      setErr(e.message || "Xử lý OT thất bại")
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex gap-4 border-b border-ui-border-base text-sm">
+        <button onClick={() => setTab("mine")} className={`pb-2 ${tab === "mine" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
+          OT của tôi
+        </button>
+        {canApprove && (
+          <>
+            <button onClick={() => setTab("pending")} className={`pb-2 ${tab === "pending" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
+              Chờ duyệt
+            </button>
+            <button onClick={() => setTab("approved")} className={`pb-2 ${tab === "approved" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
+              Đã xử lý
+            </button>
+          </>
+        )}
+      </div>
+
+      {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
+      {loading && <div className="py-6 text-center text-sm text-ui-fg-muted">Đang tải...</div>}
+      {!loading && rows.length === 0 && <div className="py-6 text-center text-sm text-ui-fg-muted">Không có bản ghi OT nào</div>}
+
+      <div className="space-y-3">
+        {rows.map((r) => {
+          const st = STATUS_LABEL[r.status] || STATUS_LABEL.pending
+          return (
+            <div key={r.id} className="rounded border border-ui-border-base p-3">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-medium">{r.day_key}</span>
+                <span className={`text-xs font-semibold ${st.cls}`}>{st.text}</span>
+              </div>
+              {tab !== "mine" && <div className="mb-1 text-xs text-ui-fg-muted">{r.user_email}</div>}
+              <div className="text-sm text-ui-fg-subtle">
+                Đề xuất: {fmtHhMm(r.duration_min)} {r.source === "auto" ? "(tự động từ checkout)" : "(HR khai báo)"}
+              </div>
+              {r.approved_duration_min != null && (
+                <div className="text-sm text-green-700 dark:text-green-400">Đã duyệt: {fmtHhMm(r.approved_duration_min)}</div>
+              )}
+              {r.note && <div className="mt-1 text-sm italic text-ui-fg-muted">Ghi chú: {r.note}</div>}
+
+              {tab === "pending" && r.status === "pending" && editingId !== r.id && (
+                <div className="mt-2 flex items-center gap-4 border-t border-ui-border-base pt-2 text-sm">
+                  <button onClick={() => decide(r.id, "rejected")} className="font-medium text-red-600 dark:text-red-400 hover:underline">Từ chối</button>
+                  <button onClick={() => decide(r.id, "approved", r.duration_min)} className="font-medium text-green-600 dark:text-green-400 hover:underline">Duyệt đúng đề xuất</button>
+                  <button onClick={() => { setEditingId(r.id); setEditMinutes(r.duration_min) }} className="text-ui-fg-muted hover:underline">Sửa số phút rồi duyệt</button>
+                </div>
+              )}
+              {editingId === r.id && (
+                <div className="mt-2 flex items-center gap-2 border-t border-ui-border-base pt-2 text-sm">
+                  <input
+                    type="number" min={0} value={editMinutes}
+                    onChange={(e) => setEditMinutes(Number(e.target.value))}
+                    className="w-24 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1 text-ui-fg-base"
+                  />
+                  <span className="text-ui-fg-muted">phút</span>
+                  <button onClick={() => decide(r.id, "approved", editMinutes)} className="font-medium text-green-600 dark:text-green-400 hover:underline">Xác nhận duyệt</button>
+                  <button onClick={() => setEditingId(null)} className="text-ui-fg-muted hover:underline">Hủy</button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Quản lý (manager) ───────────────────────────────────────────────────────
 
 type TeamDayRow = {
@@ -658,6 +814,10 @@ function QuanLySection() {
   const [cfgGrace, setCfgGrace] = useState(5)
   const [cfgHalfDaySaturdays, setCfgHalfDaySaturdays] = useState<string[]>([])
   const [newHalfDay, setNewHalfDay] = useState("")
+  const [cfgOtThreshold, setCfgOtThreshold] = useState(15)
+  const [cfgPhepPerMonth, setCfgPhepPerMonth] = useState(1)
+  const [cfgPhepMaxYear, setCfgPhepMaxYear] = useState(12)
+  const [exportMonth, setExportMonth] = useState(() => toDayKey(new Date()).slice(0, 7))
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -670,6 +830,9 @@ function QuanLySection() {
       setCfgWorkDays(d.config.work_days)
       setCfgGrace(d.config.late_grace_min)
       setCfgHalfDaySaturdays(d.config.half_day_saturdays || [])
+      setCfgOtThreshold(d.config.ot_min_threshold_min ?? 15)
+      setCfgPhepPerMonth(d.config.phep_nam_per_month ?? 1)
+      setCfgPhepMaxYear(d.config.phep_nam_max_per_year ?? 12)
     } catch (e: any) {
       setErr(e.message || "Lỗi tải dữ liệu")
     } finally {
@@ -685,6 +848,7 @@ function QuanLySection() {
       await apiJson("/admin/cham-cong/checkin/config", "PATCH", {
         shift_start: cfgShiftStart, shift_end: cfgShiftEnd, work_days: cfgWorkDays, late_grace_min: cfgGrace,
         half_day_saturdays: cfgHalfDaySaturdays,
+        ot_min_threshold_min: cfgOtThreshold, phep_nam_per_month: cfgPhepPerMonth, phep_nam_max_per_year: cfgPhepMaxYear,
       })
       await load()
     } catch (e: any) {
@@ -958,11 +1122,49 @@ function QuanLySection() {
               )}
             </div>
 
+            <div className="mb-4 border-t border-ui-border-base pt-4">
+              <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Làm thêm giờ (OT)</span>
+              <label className="block text-sm">
+                <span className="mb-1 block text-ui-fg-muted">Phút vượt giờ ra ca tối thiểu mới tính OT</span>
+                <input type="number" min={0} max={120} value={cfgOtThreshold} onChange={(e) => setCfgOtThreshold(Number(e.target.value))} className="w-24 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+              </label>
+            </div>
+
+            <div className="mb-4 border-t border-ui-border-base pt-4">
+              <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Tích lũy phép năm</span>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-sm">
+                  <span className="mb-1 block text-ui-fg-muted">Số ngày cộng mỗi tháng làm đủ</span>
+                  <input type="number" min={0} step={0.5} value={cfgPhepPerMonth} onChange={(e) => setCfgPhepPerMonth(Number(e.target.value))} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-ui-fg-muted">Trần tối đa mỗi năm</span>
+                  <input type="number" min={0} value={cfgPhepMaxYear} onChange={(e) => setCfgPhepMaxYear(Number(e.target.value))} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-ui-fg-muted">Chỉ áp dụng cho nhân viên đã qua ngày chính thức (xem tab Nhân sự). Cộng dồn tự động mỗi ngày (idempotent theo tháng).</p>
+            </div>
+
             <button onClick={saveConfig} disabled={savingConfig} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
               {savingConfig ? "Đang lưu..." : "Lưu cài đặt"}
             </button>
           </div>
         )}
+      </div>
+
+      {/* Export báo cáo tháng cho kế toán */}
+      <div className="mt-5 rounded border border-ui-border-base p-4">
+        <h3 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Xuất báo cáo chấm công tháng (CSV)</h3>
+        <div className="flex items-center gap-2">
+          <input type="month" value={exportMonth} onChange={(e) => setExportMonth(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-sm text-ui-fg-base" />
+          <a
+            href={`/admin/cham-cong/export?month=${exportMonth}`}
+            className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
+          >
+            Tải CSV
+          </a>
+        </div>
+        <p className="mt-1 text-xs text-ui-fg-muted">Gồm giờ vào/ra, phút đi muộn, giờ OT đã duyệt, ngày nghỉ có đơn — theo từng ngày làm việc trong tháng.</p>
       </div>
     </div>
   )
@@ -1252,10 +1454,11 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 function AcheckinPage() {
   const { has } = useCurrentPermissions()
   const canApprove = has("page.leave-request.approve")
+  const canApproveOt = has("page.overtime.approve")
   const canViewNhanSu = has("page.nhan-su.view")
   const canManageNhanSu = has("page.nhan-su.manage")
   const canViewQuanLy = has("page.cham-cong.view")
-  const [section, setSection] = useState<"cham-cong" | "xin-nghi" | "quan-ly" | "nhan-su">("cham-cong")
+  const [section, setSection] = useState<"cham-cong" | "xin-nghi" | "ot" | "quan-ly" | "nhan-su">("cham-cong")
 
   const isWide = section === "quan-ly" || section === "nhan-su"
 
@@ -1281,6 +1484,14 @@ function AcheckinPage() {
         >
           Đơn báo nghỉ
         </button>
+        <button
+          onClick={() => setSection("ot")}
+          className={`min-w-fit flex-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+            section === "ot" ? "bg-ui-bg-base text-green-700 dark:text-green-400 shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base"
+          }`}
+        >
+          Làm thêm giờ
+        </button>
         {canViewQuanLy && (
           <button
             onClick={() => setSection("quan-ly")}
@@ -1305,6 +1516,7 @@ function AcheckinPage() {
 
       {section === "cham-cong" && <ChamCongSection />}
       {section === "xin-nghi" && <XinNghiSection canApprove={canApprove} />}
+      {section === "ot" && <OvertimeSection canApprove={canApproveOt} />}
       {section === "quan-ly" && canViewQuanLy && <QuanLySection />}
       {section === "nhan-su" && canViewNhanSu && <NhanSuSection canManage={canManageNhanSu} />}
     </div>

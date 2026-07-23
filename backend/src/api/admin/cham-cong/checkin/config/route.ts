@@ -7,6 +7,7 @@ async function getConfig(svc: any) {
   return svc.createChamCongConfigs({
     id: "default", shift_start: "08:30", shift_end: "17:30",
     work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [],
+    ot_min_threshold_min: 15, phep_nam_per_month: 1, phep_nam_max_per_year: 12,
   })
 }
 
@@ -30,7 +31,10 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       return res.status(403).json({ error: "Ban khong co quyen sua cau hinh cham cong" })
     }
 
-    const { shift_start, shift_end, work_days, late_grace_min, half_day_saturdays } = req.body as any
+    const {
+      shift_start, shift_end, work_days, late_grace_min, half_day_saturdays,
+      ot_min_threshold_min, phep_nam_per_month, phep_nam_max_per_year,
+    } = req.body as any
     if (shift_start && !/^\d{2}:\d{2}$/.test(shift_start)) {
       return res.status(400).json({ error: "shift_start phai dang HH:mm" })
     }
@@ -53,6 +57,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (work_days) update.work_days = work_days
     if (typeof late_grace_min === "number") update.late_grace_min = late_grace_min
     if (half_day_saturdays) update.half_day_saturdays = [...new Set(half_day_saturdays)].sort()
+    if (typeof ot_min_threshold_min === "number") update.ot_min_threshold_min = ot_min_threshold_min
+    if (typeof phep_nam_per_month === "number") update.phep_nam_per_month = phep_nam_per_month
+    if (typeof phep_nam_max_per_year === "number") update.phep_nam_max_per_year = phep_nam_max_per_year
 
     const config = await svc.updateChamCongConfigs(update)
     res.json({ config })

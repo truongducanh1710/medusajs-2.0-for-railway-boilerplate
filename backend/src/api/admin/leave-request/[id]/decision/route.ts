@@ -2,6 +2,20 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail } from "../../../cham-cong/_lib"
 import { userHasApprovePerm } from "../../route"
 
+// Trừ used_days vào leave_balance của năm chứa start_at khi đơn "phep_nam" được duyệt.
+// Best-effort — nếu chưa có bản ghi balance (chưa qua thử việc/chưa từng accrual), tạo mới
+// với accrued_days=0 để used_days không mất, HR có thể điều chỉnh sau qua PATCH /leave-balance.
+async function deductLeaveBalance(svc: any, requesterEmail: string, startAt: string | Date, endAt: string | Date) {
+  const days = (new Date(endAt).getTime() - new Date(startAt).getTime()) / (8 * 3600_000)
+  const year = new Date(startAt).getFullYear()
+  const [existing] = await svc.listLeaveBalances({ user_email: requesterEmail, year, deleted_at: null })
+  if (existing) {
+    await svc.updateLeaveBalances({ id: existing.id, used_days: Number(existing.used_days) + days })
+  } else {
+    await svc.createLeaveBalances({ user_email: requesterEmail, year, accrued_days: 0, used_days: days })
+  }
+}
+
 // PATCH /admin/leave-request/:id/decision — duyệt/từ chối đơn xin nghỉ của người khác
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -31,6 +45,10 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       reviewed_at: new Date(),
       review_note: note ? String(note).slice(0, 500) : null,
     })
+
+    if (decision === "approved" && request.leave_type === "phep_nam") {
+      await deductLeaveBalance(svc, request.requester_email, request.start_at, request.end_at)
+    }
 
     res.json({ request: updated })
   } catch (e: any) {

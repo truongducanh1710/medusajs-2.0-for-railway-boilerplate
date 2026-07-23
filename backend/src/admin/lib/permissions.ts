@@ -46,6 +46,8 @@ export const PERMISSIONS = {
   "page.cham-cong-nv.checkin": "Tự chấm công vào/ra (GPS) — mọi nhân viên",
   "page.leave-request.view": "Xem đơn xin nghỉ của mình + tạo đơn mới",
   "page.leave-request.approve": "Duyệt/từ chối đơn xin nghỉ của người khác",
+  "page.overtime.view": "Xem giờ làm thêm (OT) của mình",
+  "page.overtime.approve": "Duyệt/từ chối/sửa giờ OT của người khác",
   "page.nhan-su.view": "Xem hồ sơ nhân sự (thông tin cá nhân, hợp đồng — nhạy cảm)",
   "page.nhan-su.manage": "Thêm/sửa hồ sơ nhân sự",
   "page.ai-settings.manage": "Cấu hình AI Settings (model, exchange rate)",
@@ -59,12 +61,12 @@ export type PermissionKey = keyof typeof PERMISSIONS
 
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
-  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call", "page.cham-cong.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.leave-request.approve", "page.qa.view", "page.qa.score"],
-  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view"],
-  sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view"],
-  cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view"],
-  ketoan: ["page.gia-von.view", "page.gia-von.manage", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view"],
-  "kho-van": ["page.dohana-sync.view", "medusa.orders.view", "page.cham-cong-nv.checkin", "page.leave-request.view"],
+  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call", "page.cham-cong.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.leave-request.approve", "page.overtime.view", "page.overtime.approve", "page.qa.view", "page.qa.score"],
+  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
+  sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
+  cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
+  ketoan: ["page.gia-von.view", "page.gia-von.manage", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
+  "kho-van": ["page.dohana-sync.view", "medusa.orders.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
   // Tài khoản AI Agent. Mặc định chỉ đọc. Các quyền .post/.edit/.manage chỉ được thêm
   // vào đây SAU KHI đã có write tool tương ứng đi qua approval flow (agent/approval-flow.mjs
   // trong phanviet-agent-mcp) — permission ở đây không thay thế approval, cả hai đều
