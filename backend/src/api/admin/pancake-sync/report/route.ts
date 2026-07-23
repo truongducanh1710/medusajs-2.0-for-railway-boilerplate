@@ -173,6 +173,39 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .map(([date, data]) => ({ date, ...data }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
+    // --- By source + day (để vẽ biểu đồ xu hướng doanh thu từng nguồn theo thời gian) ---
+    // Cùng cấu trúc với by_platform_day (MY) nhưng áp dụng chung cho mọi market, gom theo
+    // `source` thô (manual/facebook/tiktok/shopee/website/...) khớp nhãn "Theo nguồn" trên UI.
+    const sourceDayMap = new Map<string, Map<string, { orders: number; revenue: number }>>()
+    const sourceDaySet = new Set<string>()
+    for (const o of allOrders) {
+      const src = o.source || "unknown"
+      const rev = revenueOf(o)
+      const dateStr = o.pancake_created_at
+        ? localDateStr(new Date(o.pancake_created_at))
+        : "unknown"
+      sourceDaySet.add(dateStr)
+
+      if (!sourceDayMap.has(src)) sourceDayMap.set(src, new Map())
+      const dm = sourceDayMap.get(src)!
+      const d = dm.get(dateStr) || { orders: 0, revenue: 0 }
+      d.orders++; d.revenue += rev
+      dm.set(dateStr, d)
+    }
+    const sourceDays = Array.from(sourceDaySet).filter(d => d !== "unknown").sort()
+    const bySourceDay = {
+      days: sourceDays,
+      sources: bySource.map(s => ({
+        source: s.source,
+        total_orders: s.orders,
+        total_revenue: s.revenue,
+        per_day: sourceDays.map(d => {
+          const cell = sourceDayMap.get(s.source)?.get(d)
+          return { date: d, orders: cell?.orders ?? 0, revenue: cell?.revenue ?? 0 }
+        }),
+      })),
+    }
+
     // --- By product ---
     // MY: gắn thêm shop_name + source (platform: tiktok/shopee) của mỗi SP — mỗi SP chỉ bán ở
     // 1 gian hàng/1 sàn (verify thực tế), dùng để lọc dropdown "Doanh số SP theo gian hàng".
@@ -316,6 +349,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         success_count: prevSuccessCount,
       },
       by_source: bySource,
+      by_source_day: bySourceDay,
       by_day: byDay,
       by_product: byProduct,
       ...(byShop ? { by_shop: byShop, by_shop_day: byShopDay } : {}),

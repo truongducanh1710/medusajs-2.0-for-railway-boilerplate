@@ -465,6 +465,9 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
         </div>
       </div>
 
+      {/* Xu hướng doanh thu từng nguồn theo thời gian (mọi market) */}
+      {data.by_source_day && <SourceTrendBlock data={data.by_source_day} />}
+
       {/* Doanh số theo sàn: TikTok vs Shopee (chỉ MY) */}
       {data.by_platform_day && <PlatformBreakdownBlock data={data.by_platform_day} />}
 
@@ -574,6 +577,115 @@ function OverviewProductBlock({ products, fmt }: { products: any[]; fmt: (n: any
 
 // ---- Doanh số theo sàn: TikTok vs Shopee (bảng đơn giản, không cần biểu đồ theo ngày phức tạp) ----
 const PLATFORM_COLORS: Record<string, string> = { TikTok: "#000000", Shopee: "#ee4d2d" }
+
+// ---- Xu hướng doanh thu theo nguồn theo thời gian (line chart, mọi market) ----
+const SOURCE_LABELS: Record<string, string> = {
+  medusa: "Website", facebook: "Facebook", zalo: "Zalo", tiktok: "TikTok",
+  shopee: "Shopee", manual: "Thủ công", unknown: "Khác",
+}
+const SOURCE_COLORS: Record<string, string> = {
+  medusa: "#2563eb", facebook: "#1877f2", zalo: "#0068ff", tiktok: "#000000",
+  shopee: "#ee4d2d", manual: "#7c3aed", unknown: "#6b7280",
+}
+const sourceColorOf = (src: string, i: number) =>
+  SOURCE_COLORS[src] ?? SHOP_COLORS[i % SHOP_COLORS.length]
+
+function SourceTrendBlock({ data }: { data: any }) {
+  const fmt = useFmtMoney()
+  const days: string[] = data.days ?? []
+  const sources: any[] = (data.sources ?? []).filter((s: any) => Number(s.total_revenue || 0) > 0)
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+
+  const visible = sources.filter(s => !hidden.has(s.source))
+  const maxRev = Math.max(1, ...visible.flatMap(s => s.per_day.map((c: any) => Number(c.revenue || 0))))
+
+  const W = 900, H = 220, PAD_L = 44, PAD_R = 12, PAD_T = 12, PAD_B = 24
+  const plotW = W - PAD_L - PAD_R
+  const plotH = H - PAD_T - PAD_B
+  const xAt = (i: number) => days.length > 1 ? PAD_L + (i / (days.length - 1)) * plotW : PAD_L + plotW / 2
+  const yAt = (v: number) => PAD_T + plotH - (v / maxRev) * plotH
+
+  const toggle = (src: string) => setHidden(prev => {
+    const next = new Set(prev)
+    next.has(src) ? next.delete(src) : next.add(src)
+    return next
+  })
+
+  // Gridlines: 4 mốc ngang
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => f * maxRev)
+
+  return (
+    <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm flex items-center justify-between">
+        <span>Xu hướng doanh thu theo nguồn</span>
+        <span className="text-xs font-normal text-gray-400">theo ngày · click tên nguồn để ẩn/hiện</span>
+      </div>
+      <div className="p-4">
+        {/* Legend */}
+        <div className="flex flex-wrap gap-3 mb-3">
+          {sources.map((s, i) => {
+            const isHidden = hidden.has(s.source)
+            return (
+              <button key={s.source} onClick={() => toggle(s.source)}
+                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition ${
+                  isHidden ? "opacity-40 border-gray-200" : "border-gray-200 hover:bg-gray-50"
+                }`}>
+                <span className="inline-block w-2.5 h-2.5 rounded-full"
+                  style={{ background: sourceColorOf(s.source, i) }} />
+                {SOURCE_LABELS[s.source] ?? s.source}
+                <span className="text-gray-400">· {fmt(s.total_revenue)}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {days.length === 0 || visible.length === 0 ? (
+          <div className="text-xs text-gray-400 text-center py-10">Chưa có dữ liệu</div>
+        ) : (
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-56">
+            {/* Gridlines + Y labels */}
+            {yTicks.map((t, i) => (
+              <g key={i}>
+                <line x1={PAD_L} x2={W - PAD_R} y1={yAt(t)} y2={yAt(t)} stroke="#f1f5f9" strokeWidth={1} />
+                <text x={PAD_L - 6} y={yAt(t) + 3} textAnchor="end" fontSize={9} fill="#9ca3af">
+                  {t >= 1e6 ? `${(t / 1e6).toFixed(0)}tr` : t > 0 ? `${Math.round(t / 1000)}k` : "0"}
+                </text>
+              </g>
+            ))}
+            {/* X labels (thưa để không đè nhau) */}
+            {days.map((d, i) => {
+              const step = Math.ceil(days.length / 8)
+              if (i % step !== 0 && i !== days.length - 1) return null
+              return (
+                <text key={d} x={xAt(i)} y={H - 6} textAnchor="middle" fontSize={9} fill="#9ca3af">
+                  {d.slice(5)}
+                </text>
+              )
+            })}
+            {/* Lines per source */}
+            {visible.map((s, i) => {
+              const color = sourceColorOf(s.source, sources.indexOf(s))
+              const points = s.per_day.map((c: any, idx: number) =>
+                `${xAt(idx)},${yAt(Number(c.revenue || 0))}`
+              ).join(" ")
+              return (
+                <g key={s.source}>
+                  <polyline points={points} fill="none" stroke={color} strokeWidth={2}
+                    strokeLinejoin="round" strokeLinecap="round" />
+                  {s.per_day.map((c: any, idx: number) => (
+                    <circle key={idx} cx={xAt(idx)} cy={yAt(Number(c.revenue || 0))} r={2.5} fill={color}>
+                      <title>{`${SOURCE_LABELS[s.source] ?? s.source} · ${c.date}: ${fmt(c.revenue)} (${c.orders} đơn)`}</title>
+                    </circle>
+                  ))}
+                </g>
+              )
+            })}
+          </svg>
+        )}
+      </div>
+    </div>
+  )
+}
 function PlatformBreakdownBlock({ data }: { data: any }) {
   const fmt = useFmtMoney()
   const days: string[] = data.days ?? []
