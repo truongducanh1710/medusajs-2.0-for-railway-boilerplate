@@ -1,5 +1,24 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
+// Chuẩn hoá from/to về đúng mốc UTC của đầu/cuối ngày GIỜ VN. BUG THẬT đã xảy ra: khi
+// caller gửi "YYYY-MM-DD" thuần (không có phần giờ — đúng cách agent-mcp's
+// get_call_performance luôn gửi, vì model chỉ biết sinh ngày ISO, không tự biết phải
+// thêm "T00:00:00+07:00"), `new Date("2026-07-22")` bị JS parse là UTC 00:00, LỆCH 7
+// TIẾNG so với "00:00 giờ VN" thật (= 2026-07-21T17:00:00Z). Hệ quả: from===to cùng một
+// mốc UTC, khoảng lọc calldate dài 0 giây → BETWEEN gần như không khớp cuộc gọi nào,
+// agent kết luận sai "hôm qua không có dữ liệu" dù DB có đủ. UI/page.tsx không dính vì
+// nó tự thêm "T00:00:00+07:00"/"T23:59:59+07:00" trước khi gọi API (xem admin/routes/
+// ity-cdr/page.tsx's fetchReport) — nhưng route KHÔNG nên ngầm định mọi caller làm vậy;
+// chuẩn hoá ngay tại nguồn để đúng với MỌI client (UI, agent, MCP...), không phải sửa
+// từng nơi gọi. isBareDate dùng đúng regex đã có ở toVNDate() (gia-von/avg-cost/route.ts).
+const isBareDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s)
+function startOfDayVN(dateStr: string): Date {
+  return isBareDate(dateStr) ? new Date(`${dateStr}T00:00:00+07:00`) : new Date(dateStr)
+}
+function endOfDayVN(dateStr: string): Date {
+  return isBareDate(dateStr) ? new Date(`${dateStr}T23:59:59+07:00`) : new Date(dateStr)
+}
+
 /**
  * GET /admin/ity-cdr-sync/report?from=...&to=...
  * Báo cáo so sánh hiệu suất cuộc gọi theo nhân viên (extension) + xu hướng theo giờ.
@@ -12,8 +31,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const nowVN = new Date(Date.now() + 7 * 3600 * 1000)
     const todayStr = nowVN.toISOString().slice(0, 10)
-    const fromDate = from ? new Date(from) : new Date(`${todayStr}T00:00:00+07:00`)
-    const toDate = to ? new Date(to) : new Date(`${todayStr}T23:59:59+07:00`)
+    const fromDate = from ? startOfDayVN(from) : new Date(`${todayStr}T00:00:00+07:00`)
+    const toDate = to ? endOfDayVN(to) : new Date(`${todayStr}T23:59:59+07:00`)
 
     const syncService = req.scope.resolve("ityCdrSyncModule") as any
 
