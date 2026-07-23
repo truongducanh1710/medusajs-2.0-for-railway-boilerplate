@@ -248,6 +248,33 @@ export async function ensureChatTables(pool = getChatPool()): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT now()
     )
   `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_chat_global_setting (
+      key VARCHAR(64) PRIMARY KEY,
+      value JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ DEFAULT now()
+    )
+  `)
+}
+
+const BOT_GLOBAL_KEY = "bot_globally_disabled"
+
+export async function isBotGloballyDisabled(pool = getChatPool()): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT value FROM fb_chat_global_setting WHERE key = $1`,
+    [BOT_GLOBAL_KEY]
+  )
+  return rows[0]?.value?.disabled === true
+}
+
+export async function setBotGloballyDisabled(disabled: boolean, pool = getChatPool()): Promise<void> {
+  await pool.query(
+    `INSERT INTO fb_chat_global_setting (key, value, updated_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [BOT_GLOBAL_KEY, JSON.stringify({ disabled })]
+  )
 }
 export function normalizeText(value: string): string {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim()
@@ -677,6 +704,10 @@ async function processBotDecision(pool: Pool, conversationId: string, messageId:
   const c = conv.rows[0]
   if (!c || c.bot_paused || agent?.mode === "off" || agent?.mode === "paused_by_error") {
     await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, "bot_disabled_or_paused")
+    return
+  }
+  if (await isBotGloballyDisabled(pool)) {
+    await logBotEvent(pool, conversationId, messageId, detectIntent(text), null, false, "bot_globally_disabled")
     return
   }
 

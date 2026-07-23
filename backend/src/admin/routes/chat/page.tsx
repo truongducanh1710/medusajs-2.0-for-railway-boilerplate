@@ -331,6 +331,8 @@ function ChatPage() {
   const [syncDetail, setSyncDetail] = useState<Record<string, any>>({})
   const [showSyncDetail, setShowSyncDetail] = useState(false)
   const [agents, setAgents]       = useState<Agent[]>([])
+  const [botGloballyDisabled, setBotGloballyDisabled] = useState(false)
+  const [botToggleBusy, setBotToggleBusy] = useState(false)
   const [examples, setExamples]   = useState<Example[]>([])
   const [exTab, setExTab]         = useState("pending")
   const [settingPages, setSettingPages] = useState<any[]>([])
@@ -483,6 +485,28 @@ function ChatPage() {
     setAgents(d.agents || [])
   }, [])
 
+  const loadBotGlobalToggle = useCallback(async () => {
+    try {
+      const d = await apiJson("/admin/chat/bot-global-toggle")
+      setBotGloballyDisabled(!!d.disabled)
+    } catch (e: any) {
+      console.error("loadBotGlobalToggle failed:", e?.message)
+    }
+  }, [])
+
+  const toggleBotGlobal = useCallback(async () => {
+    setBotToggleBusy(true)
+    try {
+      const next = !botGloballyDisabled
+      const d = await apiJson("/admin/chat/bot-global-toggle", "PATCH", { disabled: next })
+      setBotGloballyDisabled(!!d.disabled)
+    } catch (e: any) {
+      alert(`Không đổi được cài đặt: ${e.message}`)
+    } finally {
+      setBotToggleBusy(false)
+    }
+  }, [botGloballyDisabled])
+
   const appendPromptLoopLog = useCallback((agentId: string, line: string) => {
     setPromptLoopLogs(prev => ({ ...prev, [agentId]: [...(prev[agentId] || []), `${new Date().toLocaleTimeString("vi-VN")} - ${line}`].slice(-80) }))
   }, [])
@@ -586,7 +610,7 @@ function ChatPage() {
     setDetail(prev => prev ? { ...prev, conversation: { ...prev.conversation, ...fields } } : prev)
   }, [selectedId])
 
-  useEffect(() => { loadConvs(); loadAgents(); loadPageFilterList() }, [])
+  useEffect(() => { loadConvs(); loadAgents(); loadPageFilterList(); loadBotGlobalToggle() }, [])
   useEffect(() => {
     if (view !== "inbox") return
     const handle = setTimeout(() => loadConvs(tab, pageFilter, hasPhone, search), 250)
@@ -1039,6 +1063,30 @@ function ChatPage() {
       {/* ── AGENTS ── */}
       {view === "agents" && (
         <div style={{ padding: 20, overflow: "auto", flex: 1 }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12, marginBottom: 16,
+            background: botGloballyDisabled ? "#fef2f2" : "#f8fafc",
+            border: `1px solid ${botGloballyDisabled ? "#fecaca" : "#e2e8f0"}`,
+            borderRadius: 12, padding: "12px 16px",
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: botGloballyDisabled ? "#b91c1c" : "#0f172a" }}>
+                🔌 Tắt bot toàn bộ page
+              </div>
+              <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>
+                Khi bật, bot sẽ KHÔNG tự trả lời ở bất kỳ page nào (kể cả page đang set Auto 24h/Gợi ý) cho đến khi tắt lại. Không đổi setting riêng từng page.
+              </div>
+            </div>
+            <button onClick={toggleBotGlobal} disabled={botToggleBusy} style={{
+              position: "relative", width: 46, height: 26, borderRadius: 99, border: "none", cursor: botToggleBusy ? "not-allowed" : "pointer",
+              background: botGloballyDisabled ? "#ef4444" : "#cbd5e1", flexShrink: 0, transition: "background 0.15s",
+            }}>
+              <span style={{
+                position: "absolute", top: 3, left: botGloballyDisabled ? 23 : 3, width: 20, height: 20, borderRadius: "50%",
+                background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.25)", transition: "left 0.15s",
+              }} />
+            </button>
+          </div>
           <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
             <Btn variant="primary" onClick={async () => { await apiJson("/admin/chat/agents", "POST"); loadAgents() }}>⚙ Tạo agent từ danh sách Page</Btn>
           </div>
