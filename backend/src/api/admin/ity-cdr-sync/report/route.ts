@@ -32,8 +32,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ---- Aggregate theo giờ (xu hướng thời gian trong ngày) ----
     const byHour: Record<number, { total: number; answered: number }> = {}
     for (let h = 0; h < 24; h++) byHour[h] = { total: 0, answered: 0 }
+    // ---- Aggregate theo giờ × nhân viên (cho heatmap — thấy khoảng "chết" của từng người) ----
+    const byHourExt: Record<string, Record<number, { total: number; answered: number }>> = {}
     // ---- Aggregate theo ngày × nhân viên × trạng thái (cho chart tuần/tháng) ----
     const byDaySale: Record<string, Record<string, { answered: number; no_answer: number; busy: number; other: number }>> = {}
+    // ---- Aggregate theo ngày × nhân viên (tổng cuộc gọi — cho sparkline 7 ngày trong bảng so sánh) ----
+    const byDayExtTotal: Record<string, Record<string, number>> = {}
 
     for (const c of calls as any[]) {
       const ext = c.extension || "unknown"
@@ -48,6 +52,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       byHour[hourVN].total++
       if (c.disposition === "ANSWERED") byHour[hourVN].answered++
 
+      if (!byHourExt[ext]) {
+        byHourExt[ext] = {}
+        for (let h = 0; h < 24; h++) byHourExt[ext][h] = { total: 0, answered: 0 }
+      }
+      byHourExt[ext][hourVN].total++
+      if (c.disposition === "ANSWERED") byHourExt[ext][hourVN].answered++
+
       const dayStr = callDateVN.toISOString().slice(0, 10)
       byExt[ext].activeDays.add(dayStr)
       if (!byDaySale[dayStr]) byDaySale[dayStr] = {}
@@ -57,6 +68,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       else if (c.disposition === "NO ANSWER") bucket.no_answer++
       else if (c.disposition === "BUSY") bucket.busy++
       else bucket.other++
+
+      if (!byDayExtTotal[ext]) byDayExtTotal[ext] = {}
+      byDayExtTotal[ext][dayStr] = (byDayExtTotal[ext][dayStr] || 0) + 1
     }
 
     const bySale = Object.entries(byExt)
@@ -86,6 +100,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       answered: stats.answered,
     }))
 
+    // Heatmap giờ × nhân viên — lộ khoảng "chết" của từng người trong ca, không bị gộp
+    // chung như by_hour (chỉ tính nhân viên có ít nhất 1 cuộc trong khoảng đã chọn).
+    const byHourExtArr = Object.entries(byExt).map(([extension]) => ({
+      extension,
+      name: nameByExtension[extension] || extension,
+      hours: Array.from({ length: 24 }, (_, h) => ({
+        hour: h,
+        total_calls: byHourExt[extension]?.[h]?.total ?? 0,
+        answered: byHourExt[extension]?.[h]?.answered ?? 0,
+      })),
+    }))
+
     // Mảng phẳng theo ngày, mỗi ngày có breakdown từng nhân viên — dùng để vẽ combo chart
     // (cột stacked theo trạng thái + đường tỷ lệ nghe máy, toggle theo nhân viên ở frontend)
     const byDayArr = Object.keys(byDaySale)
@@ -107,14 +133,41 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         }),
       }))
 
+    // Xu hướng 7 ngày gần nhất tính tới `to` — độc lập với khoảng đã chọn (kể cả khi chọn
+    // "Hôm nay"/"Hôm qua" chỉ 1 ngày, sparkline trong bảng so sánh vẫn có đủ 7 điểm để nhìn xu hướng).
+    const trendToDate = toDate
+    const trendFromDate = new Date(trendToDate.getTime() - 6 * 86400_000)
+    const trendCalls = await syncService.listItyCdrCalls(
+      { calldate: { $gte: trendFromDate, $lte: trendToDate } } as any,
+      { take: 100_000, select: ["extension", "calldate"] as any }
+    )
+    const trendByExtDay: Record<string, Record<string, number>> = {}
+    for (const c of trendCalls as any[]) {
+      const ext = c.extension || "unknown"
+      const callDateVN = new Date(new Date(c.calldate).getTime() + 7 * 3600 * 1000)
+      const dayStr = callDateVN.toISOString().slice(0, 10)
+      if (!trendByExtDay[ext]) trendByExtDay[ext] = {}
+      trendByExtDay[ext][dayStr] = (trendByExtDay[ext][dayStr] || 0) + 1
+    }
+    const trendDays = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(trendFromDate.getTime() + i * 86400_000)
+      return d.toISOString().slice(0, 10)
+    })
+    const saleTrend: Record<string, number[]> = {}
+    for (const extension of Object.keys(byExt)) {
+      saleTrend[extension] = trendDays.map((d) => trendByExtDay[extension]?.[d] ?? 0)
+    }
+
     return res.json({
       from: fromDate.toISOString(),
       to: toDate.toISOString(),
       shift_hours: shiftHours,
       total_calls: calls.length,
-      by_sale: bySale,
+      by_sale: bySale.map((s) => ({ ...s, trend_7d: saleTrend[s.extension] ?? [] })),
       by_hour: byHourArr,
+      by_hour_ext: byHourExtArr,
       by_day: byDayArr,
+      trend_days: trendDays,
     })
   } catch (err: any) {
     console.error("[ItyCdrSync Report API] Error:", err.message)

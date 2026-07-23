@@ -4,19 +4,17 @@ import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
 
-function todayVN(): string {
-  const d = new Date()
-  const vn = new Date(d.getTime() + 7 * 3600 * 1000)
-  return vn.toISOString().slice(0, 10)
-}
-
-type RangePreset = "today" | "week" | "month"
+type RangePreset = "today" | "yesterday" | "week" | "month"
 
 // Tính [from, to] theo giờ VN cho các preset — "week" = Thứ 2 tới hôm nay, "month" = ngày 1 tới hôm nay
 function getPresetRange(preset: RangePreset): { from: string; to: string } {
   const nowVN = new Date(Date.now() + 7 * 3600 * 1000)
   const to = nowVN.toISOString().slice(0, 10)
   if (preset === "today") return { from: to, to }
+  if (preset === "yesterday") {
+    const y = new Date(nowVN.getTime() - 86400_000).toISOString().slice(0, 10)
+    return { from: y, to: y }
+  }
   if (preset === "month") {
     const from = `${nowVN.toISOString().slice(0, 7)}-01`
     return { from, to }
@@ -137,11 +135,10 @@ function ExtensionTable({ canManage }: { canManage: boolean }) {
 
 // ---- Bảng danh sách cuộc gọi ----
 
-function CallsTable() {
+function CallsTable({ from, to }: { from: string; to: string }) {
   const [calls, setCalls] = useState<any[]>([])
   const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [date, setDate] = useState(todayVN)
   const [extension, setExtension] = useState("")
   const [extensionOptions, setExtensionOptions] = useState<any[]>([])
   const [disposition, setDisposition] = useState("")
@@ -158,9 +155,10 @@ function CallsTable() {
   const fetchData = async () => {
     setLoading(true)
     try {
+      // +07:00 khớp timezone với ReportSection — tránh lệch "ngày" giữa 2 khối khi ở gần biên ngày.
       const params = new URLSearchParams({
-        from: `${date}T00:00:00`,
-        to: `${date}T23:59:59`,
+        from: `${from}T00:00:00+07:00`,
+        to: `${to}T23:59:59+07:00`,
         limit: String(limit),
         offset: String(offset),
       })
@@ -176,20 +174,14 @@ function CallsTable() {
     }
   }
 
-  useEffect(() => { fetchData() }, [date, extension, disposition, offset])
-  useEffect(() => { setOffset(0) }, [date, extension, disposition])
+  useEffect(() => { fetchData() }, [from, to, extension, disposition, offset])
+  useEffect(() => { setOffset(0) }, [from, to, extension, disposition])
 
   const totalAnswered = calls.filter((c) => c.disposition === "ANSWERED").length
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-3 items-center">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-        />
         <select
           value={extension}
           onChange={(e) => setExtension(e.target.value)}
@@ -211,7 +203,7 @@ function CallsTable() {
           <option value="BUSY">Máy bận</option>
         </select>
         <span className="text-sm text-gray-400">
-          {count} cuộc gọi trong ngày{calls.length > 0 && ` · ${totalAnswered}/${calls.length} đã nghe (trang này)`}
+          {count} cuộc gọi trong khoảng đã chọn{calls.length > 0 && ` · ${totalAnswered}/${calls.length} đã nghe (trang này)`}
         </span>
       </div>
 
@@ -299,11 +291,14 @@ function CallsTable() {
 
 // ---- Báo cáo so sánh sale + xu hướng theo giờ ----
 
-function ReportSection() {
+function ReportSection({
+  preset, onPresetChange, shiftHours, onShiftHoursChange,
+}: {
+  preset: RangePreset; onPresetChange: (p: RangePreset) => void
+  shiftHours: number; onShiftHoursChange: (h: number) => void
+}) {
   const [report, setReport] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [preset, setPreset] = useState<RangePreset>("today")
-  const [shiftHours, setShiftHours] = useState(7)
   const [selectedExt, setSelectedExt] = useState<string | null>(null)
 
   const fetchReport = async () => {
@@ -328,8 +323,17 @@ function ReportSection() {
 
   const bySale: any[] = report?.by_sale ?? []
   const byHour: any[] = report?.by_hour ?? []
+  const byHourExt: any[] = report?.by_hour_ext ?? []
   const byDay: any[] = report?.by_day ?? []
   const maxHourCalls = Math.max(1, ...byHour.map((h) => h.total_calls))
+  const isSingleDay = preset === "today" || preset === "yesterday"
+
+  // Target/ngưỡng cuộc gọi kỳ vọng mỗi giờ — ước lượng đơn giản: tổng cuộc gọi kỳ vọng
+  // cả ca (giờ/ca đã nhập) chia đều cho số giờ ca, dùng làm đường tham chiếu trực quan
+  // trên chart theo giờ (không phải KPI chính thức — chỉ để so lệch nhanh).
+  const hourlyTarget = shiftHours > 0 && bySale.length > 0
+    ? Math.round((bySale.reduce((s, x) => s + x.total_calls, 0) / bySale.length / shiftHours) * bySale.length)
+    : 0
 
   return (
     <div className="space-y-4">
@@ -337,16 +341,17 @@ function ReportSection() {
         <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
           {([
             { label: "Hôm nay", val: "today" },
+            { label: "Hôm qua", val: "yesterday" },
             { label: "Tuần này", val: "week" },
             { label: "Tháng này", val: "month" },
-          ] as { label: string; val: RangePreset }[]).map(({ label, val }) => (
+          ] as { label: string; val: RangePreset }[]).map(({ label, val }, i) => (
             <button
               key={val}
-              onClick={() => setPreset(val)}
+              onClick={() => onPresetChange(val)}
               className={`px-3 py-2 transition-colors ${preset === val
                 ? "bg-violet-600 text-white font-medium"
                 : "bg-white text-gray-600 hover:bg-gray-50"
-              } ${val !== "today" ? "border-l border-gray-200" : ""}`}
+              } ${i !== 0 ? "border-l border-gray-200" : ""}`}
             >
               {label}
             </button>
@@ -359,11 +364,11 @@ function ReportSection() {
             min={1}
             max={24}
             value={shiftHours}
-            onChange={(e) => setShiftHours(Number(e.target.value) || 7)}
+            onChange={(e) => onShiftHoursChange(Number(e.target.value) || 7)}
             className="border rounded-lg px-2 py-1.5 text-sm w-16 focus:outline-none focus:ring-2 focus:ring-violet-500"
           />
         </label>
-        {report && <span className="text-sm text-gray-400">{report.total_calls} cuộc gọi trong ngày</span>}
+        {report && <span className="text-sm text-gray-400">{report.total_calls} cuộc gọi trong khoảng đã chọn</span>}
       </div>
 
       {loading ? (
@@ -387,11 +392,14 @@ function ReportSection() {
                   <th className="text-center px-3 py-2 font-medium text-gray-600" title="Tổng thời gian gọi ÷ (số giờ/ca × số ngày có gọi trong khoảng đã chọn)">
                     % thời gian ca
                   </th>
+                  <th className="text-center px-3 py-2 font-medium text-gray-600" title="Số cuộc gọi mỗi ngày trong 7 ngày gần nhất (tính tới ngày cuối khoảng đã chọn)">
+                    Xu hướng 7 ngày
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {bySale.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-6 text-gray-400">Không có dữ liệu</td></tr>
+                  <tr><td colSpan={9} className="text-center py-6 text-gray-400">Không có dữ liệu</td></tr>
                 ) : bySale.map((s) => (
                   <tr key={s.extension} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium">{s.name}</td>
@@ -418,17 +426,27 @@ function ReportSection() {
                       </span>
                       <span className="text-[10px] text-gray-400 block">/{s.active_days} ngày</span>
                     </td>
+                    <td className="px-3 py-2 text-center">
+                      <Sparkline values={s.trend_7d ?? []} days={report?.trend_days ?? []} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {preset === "today" ? (
+          {isSingleDay ? (
             /* Chart xu hướng theo giờ — chỉ có ý nghĩa khi xem 1 ngày */
             <div className="border rounded-xl p-4">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Số cuộc gọi theo giờ</p>
-              <div className="flex items-end gap-1 h-32">
+              <div className="flex items-end gap-1 h-32 relative">
+                {hourlyTarget > 0 && (
+                  <div
+                    className="absolute left-0 right-0 border-t border-dashed border-orange-400 pointer-events-none"
+                    style={{ bottom: `${Math.min(100, (hourlyTarget / maxHourCalls) * 100)}%` }}
+                    title={`Ngưỡng tham chiếu: ~${hourlyTarget} cuộc/giờ`}
+                  />
+                )}
                 {byHour.map((h) => (
                   <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full group relative">
                     <div className="text-[10px] text-gray-400 mb-0.5">{h.total_calls > 0 ? h.total_calls : ""}</div>
@@ -441,12 +459,92 @@ function ReportSection() {
                   </div>
                 ))}
               </div>
+              {hourlyTarget > 0 && (
+                <p className="text-[10px] text-gray-400 mt-2">--- Ngưỡng tham chiếu ~{hourlyTarget} cuộc/giờ (trung bình tổng ca ÷ số giờ ca)</p>
+              )}
             </div>
           ) : (
             <ComboChart byDay={byDay} selectedExt={selectedExt} onSelectExt={setSelectedExt} />
           )}
+
+          {/* Heatmap giờ × nhân viên — lộ khoảng "chết" của từng người trong ca */}
+          <HourHeatmap byHourExt={byHourExt} />
         </>
       )}
+    </div>
+  )
+}
+
+// ---- Sparkline mini: xu hướng số cuộc gọi 7 ngày gần nhất cho 1 nhân viên ----
+function Sparkline({ values, days }: { values: number[]; days: string[] }) {
+  if (values.length === 0) return <span className="text-gray-300">—</span>
+  const max = Math.max(1, ...values)
+  const W = 84, H = 24
+  const step = values.length > 1 ? W / (values.length - 1) : 0
+  const points = values.map((v, i) => ({ x: i * step, y: H - (v / max) * H, v }))
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="inline-block align-middle">
+      <path d={path} fill="none" stroke="#7c3aed" strokeWidth={1.5} />
+      {points.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={1.6} fill="#7c3aed">
+          <title>{`${days[i] ?? ""}: ${p.v} cuộc`}</title>
+        </circle>
+      ))}
+    </svg>
+  )
+}
+
+// ---- Heatmap giờ × nhân viên: màu đậm nhạt theo số cuộc gọi mỗi giờ ----
+function HourHeatmap({ byHourExt }: { byHourExt: any[] }) {
+  if (byHourExt.length === 0) return null
+  const maxCell = Math.max(1, ...byHourExt.flatMap((e) => e.hours.map((h: any) => h.total_calls)))
+  const cellColor = (v: number) => {
+    if (v === 0) return "#f3f4f6"
+    const t = Math.min(1, v / maxCell)
+    // nội suy từ tím nhạt tới tím đậm (khớp tông violet của trang)
+    const r = Math.round(237 - t * (237 - 91))
+    const g = Math.round(233 - t * (233 - 33))
+    const b = Math.round(254 - t * (254 - 182))
+    return `rgb(${r},${g},${b})`
+  }
+  return (
+    <div className="border rounded-xl p-4 overflow-x-auto">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+        Heatmap cuộc gọi theo giờ × nhân viên
+      </p>
+      <table className="text-xs border-separate" style={{ borderSpacing: 2 }}>
+        <thead>
+          <tr>
+            <th className="text-left pr-2 sticky left-0 bg-white font-medium text-gray-600">Nhân viên</th>
+            {Array.from({ length: 24 }, (_, h) => (
+              <th key={h} className="font-normal text-gray-400 w-6 text-center">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {byHourExt.map((e) => (
+            <tr key={e.extension}>
+              <td className="pr-2 whitespace-nowrap font-medium text-gray-700 sticky left-0 bg-white">{e.name}</td>
+              {e.hours.map((h: any) => (
+                <td key={h.hour} className="p-0">
+                  <div
+                    className="w-6 h-6 rounded flex items-center justify-center"
+                    style={{ background: cellColor(h.total_calls) }}
+                    title={`${e.name} · ${h.hour}h: ${h.total_calls} cuộc, ${h.answered} đã nghe`}
+                  >
+                    {h.total_calls > 0 && (
+                      <span className={h.total_calls / maxCell > 0.5 ? "text-white" : "text-gray-500"} style={{ fontSize: 9 }}>
+                        {h.total_calls}
+                      </span>
+                    )}
+                  </div>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -618,6 +716,12 @@ const ItyCdrPage = () => {
   const { has, loading: permLoading } = useCurrentPermissions()
   const canManage = has("page.ity-cdr.run")
 
+  // Mốc thời gian dùng chung cho "Báo cáo hiệu suất" + "Danh sách cuộc gọi" — tránh 2 khối
+  // hiển thị lệch ngày nhau (trước đây mỗi khối có bộ chọn ngày riêng, dễ đọc nhầm dữ liệu).
+  const [preset, setPreset] = useState<RangePreset>("today")
+  const [shiftHours, setShiftHours] = useState(7)
+  const { from, to } = getPresetRange(preset)
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
@@ -634,12 +738,12 @@ const ItyCdrPage = () => {
 
       <div>
         <h2 className="text-sm font-semibold text-gray-600 mb-2">Báo cáo hiệu suất</h2>
-        <ReportSection />
+        <ReportSection preset={preset} onPresetChange={setPreset} shiftHours={shiftHours} onShiftHoursChange={setShiftHours} />
       </div>
 
       <div>
         <h2 className="text-sm font-semibold text-gray-600 mb-2">Danh sách cuộc gọi</h2>
-        <CallsTable />
+        <CallsTable from={from} to={to} />
       </div>
     </div>
   )
