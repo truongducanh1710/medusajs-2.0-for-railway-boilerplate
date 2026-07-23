@@ -24,6 +24,22 @@ const SORT_WHITELIST = new Set([
   "synced_at",
 ])
 
+// BUG THẬT: find_orders (agent-mcp, tools-registry.mjs) khai báo from/to là "YYYY-MM-DD"
+// và model AI CHỈ sinh được dạng bare date đó — không tự biết thêm giờ/offset. new
+// Date("2026-07-22") bị JS hiểu là UTC 00:00, LỆCH 7 TIẾNG so với "00:00 giờ VN" thật.
+// Với from===to (câu hỏi 1 ngày cụ thể, cách phổ biến nhất agent hỏi), khoảng lọc dài 0
+// giây → BETWEEN gần như không khớp đơn nào, agent kết luận sai "không có đơn" dù DB có
+// đủ dữ liệu. Cùng class lỗi đã fix ở ity-cdr-sync/report,calls,compare/route.ts. UI
+// (don-hang/page.tsx) không dính vì tự thêm "T00:00:00+07:00"/"T23:59:59+07:00" trước
+// khi gọi — nhưng route không nên ngầm định mọi caller làm vậy.
+const isBareDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s)
+function startOfDayVN(dateStr: string): Date {
+  return isBareDate(dateStr) ? new Date(`${dateStr}T00:00:00+07:00`) : new Date(dateStr)
+}
+function endOfDayVN(dateStr: string): Date {
+  return isBareDate(dateStr) ? new Date(`${dateStr}T23:59:59+07:00`) : new Date(dateStr)
+}
+
 /**
  * GET /admin/pancake-sync/orders
  * Filters: from, to, source, status (CSV: "0,1,2"), sale, marketer, province,
@@ -57,8 +73,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const filters: any = {}
 
     // Date range
-    if (from) filters.pancake_created_at = { ...filters.pancake_created_at, $gte: new Date(from) }
-    if (to)   filters.pancake_created_at = { ...filters.pancake_created_at, $lte: new Date(to) }
+    if (from) filters.pancake_created_at = { ...filters.pancake_created_at, $gte: startOfDayVN(from) }
+    if (to)   filters.pancake_created_at = { ...filters.pancake_created_at, $lte: endOfDayVN(to) }
 
     // Source
     if (source && source !== "all") {
@@ -135,8 +151,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const conditions: string[] = []
       const params: any[] = []
       let p = startParamIndex
-      if (from)   { conditions.push(`pancake_created_at >= $${p++}`); params.push(new Date(from)) }
-      if (to)     { conditions.push(`pancake_created_at <= $${p++}`); params.push(new Date(to)) }
+      if (from)   { conditions.push(`pancake_created_at >= $${p++}`); params.push(startOfDayVN(from)) }
+      if (to)     { conditions.push(`pancake_created_at <= $${p++}`); params.push(endOfDayVN(to)) }
       if (source && source !== "all") { conditions.push(`source ${source_exclude === "1" ? "!=" : "="} $${p++}`); params.push(source) }
       if (sale && sale !== "all")     { conditions.push(`sale_name = $${p++}`); params.push(sale) }
       if (marketer && marketer !== "all") { conditions.push(`marketer_name = $${p++}`); params.push(marketer) }

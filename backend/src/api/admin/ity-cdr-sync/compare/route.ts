@@ -1,6 +1,18 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
+// Cùng fix múi giờ đã áp cho ../report/route.ts và ../calls/route.ts: nếu caller gửi
+// "YYYY-MM-DD" thuần, new Date(str) bị hiểu là UTC 00:00 thay vì "00:00 giờ VN" — lệch
+// 7 tiếng. UI hiện tại (cskh-goi-khach/page.tsx) đã tự thêm offset nên không dính, chuẩn
+// hoá tại nguồn để an toàn cho client khác gọi endpoint này sau này.
+const isBareDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s)
+function startOfDayVN(dateStr: string): Date {
+  return isBareDate(dateStr) ? new Date(`${dateStr}T00:00:00+07:00`) : new Date(dateStr)
+}
+function endOfDayVN(dateStr: string): Date {
+  return isBareDate(dateStr) ? new Date(`${dateStr}T23:59:59+07:00`) : new Date(dateStr)
+}
+
 /**
  * GET /admin/ity-cdr-sync/compare?from=...&to=...
  * Đối chiếu số cuộc gọi thật (CDR tổng đài ITY) với số task CSKH đã cập nhật call_stage
@@ -13,8 +25,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const nowVN = new Date(Date.now() + 7 * 3600 * 1000)
     const todayStr = nowVN.toISOString().slice(0, 10)
-    const fromDate = from ? new Date(from) : new Date(`${todayStr}T00:00:00+07:00`)
-    const toDate = to ? new Date(to) : new Date(`${todayStr}T23:59:59+07:00`)
+    const fromDate = from ? startOfDayVN(from) : new Date(`${todayStr}T00:00:00+07:00`)
+    const toDate = to ? endOfDayVN(to) : new Date(`${todayStr}T23:59:59+07:00`)
 
     const syncService = req.scope.resolve("ityCdrSyncModule") as any
     const taskService = req.scope.resolve("mktTaskModule") as any

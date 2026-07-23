@@ -10,9 +10,14 @@ function toISODateString(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+// BUG THẬT: thiếu offset "+07:00" — server Railway chạy UTC, nên
+// new Date("2026-07-22T00:00:00") (không offset) bị hiểu là UTC 00:00, LỆCH 7 TIẾNG
+// so với "00:00 giờ VN" thật mà người dùng chọn trên UI. Khác trường hợp CDR (route
+// nhận YYYY-MM-DD thuần) — ở đây UI tự build chuỗi có phần giờ nhưng quên offset, nên
+// phải fix tại nguồn build chuỗi này, không phải ở route.
 function toISO(dateStr: string, endOfDay = false): string {
-  if (endOfDay) return `${dateStr}T23:59:59`
-  return `${dateStr}T00:00:00`
+  if (endOfDay) return `${dateStr}T23:59:59+07:00`
+  return `${dateStr}T00:00:00+07:00`
 }
 
 function formatDateTime(iso: string | null | undefined): string {

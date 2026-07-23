@@ -1,5 +1,13 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
+// KHÔNG áp fix "chuẩn hoá +07:00" ở đây như report/calls/compare — đã THỬ và XÁC NHẬN
+// nó tạo ra bug khác: _executeSync (service.ts) lặp qua từng ngày bằng toYmd(d), đọc
+// Date theo UTC (d.toISOString().slice(0,10)). Với "YYYY-MM-DD" thuần, new Date(str)
+// hiểu UTC 00:00 và toYmd() cũng đọc UTC — 2 phép đọc UTC KHỚP NHAU, ra đúng ngày. Nếu
+// đổi from sang "T00:00:00+07:00" (=UTC ngày trước, 17:00), toYmd(from) sẽ lùi 1 ngày —
+// pull nhầm ngày. Fix đúng cho route này phải sửa cả toYmd()/_executeSync để nhất quán
+// đọc theo giờ VN, không chỉ sửa route — ngoài phạm vi đang làm, để nguyên hành vi cũ
+// (đã đúng cho input "YYYY-MM-DD" thuần, cách duy nhất route này được gọi hiện tại).
 /**
  * POST /admin/ity-cdr-sync
  * Trigger sync CDR thủ công cho 1 khoảng ngày.
