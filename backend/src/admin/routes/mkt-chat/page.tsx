@@ -26,10 +26,11 @@ type Message = {
   reactions: Record<string, string[]>; is_pinned: boolean; mentions: string[]
   reply_count: number; channel_name?: string
   recalled_at?: string | null
+  edited_at?: string | null
   device?: string | null
   created_at: string
 }
-type MktUser = { email: string; name: string }
+type MktUser = { email: string; name: string; is_ai_agent?: boolean }
 type MentionSuggestion = MktUser & { mentionAll?: boolean }
 const ALL_MENTION_EMAIL = "__all__"
 type Template = { id: string; label: string; content: string; created_by: string }
@@ -136,9 +137,20 @@ function renderMarkdownLite(escapedText: string): string {
 
   return htmlBlocks.join("")
 }
-const AI_AGENT_AUTHOR_IDS = new Set(["ai", "ai-agent@phanviet.vn"])
+// "ai" là author_id legacy (nhánh @ai cũ đã tắt, xem messages/route.ts) — không có
+// user thật đứng sau, không nằm trong danh sách mktUsers nên phải giữ check riêng.
+// Mọi agent AI THẬT (Long AI, sale-agent@, mkt-agent@, camp-agent@, và agent mới sau
+// này) được đánh dấu qua metadata.is_ai_agent=true trên chính user Medusa — tra qua
+// mktUsers thay vì liệt kê tay từng email, nên thêm agent mới không cần sửa file này.
+// CỐ Ý dùng field riêng is_ai_agent, KHÔNG dùng metadata.role — role "ai-agent" có
+// preset quyền RỘNG trong ROLE_PRESETS, gán role sẽ vô tình mở quyền thật của agent
+// (xem comment trong admin/mkt-chat/users/route.ts). is_ai_agent chỉ là nhãn hiển thị.
+function isAiAgentAuthor(authorId: string, users: MktUser[]): boolean {
+  if (authorId === "ai") return true
+  return users.some(u => u.email === authorId && u.is_ai_agent)
+}
 
-// markdown = true chỉ bật cho tin nhắn AI agent (author_id "ai" hoặc "ai-agent@phanviet.vn").
+// markdown = true chỉ bật cho tin nhắn AI agent (author_id "ai" hoặc user có metadata.is_ai_agent=true).
 // Tin nhắn người dùng giữ nguyên hành vi cũ — tránh rủi ro một user gõ "*" hay "|" trong
 // câu bình thường bị parse nhầm thành định dạng.
 function renderMentions(
@@ -394,7 +406,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
 }) {
   const isNote = msg.msg_type === "internal_note"
   const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
-  const isAI = msg.msg_type === "ai_response" || AI_AGENT_AUTHOR_IDS.has(msg.author_id)
+  const isAI = msg.msg_type === "ai_response" || isAiAgentAuthor(msg.author_id, users)
   const isImage = msg.msg_type === "image"
   const isFile = msg.msg_type === "file"
 
@@ -502,6 +514,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
 
         <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>
           {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
+          {msg.edited_at && !isOptimistic && <span className="ml-1 italic">(đã sửa)</span>}
         </div>
         {Number(msg.reply_count || 0) > 0 && (
           <button onClick={() => onOpenThread(msg)}
@@ -1258,7 +1271,7 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
         {m.recalled_at ? (
           <div className="text-[13px] italic text-ui-fg-muted">Tin nhắn đã được thu hồi</div>
         ) : (
-          <div className="mkt-md whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users, undefined, AI_AGENT_AUTHOR_IDS.has(m.author_id)) }} />
+          <div className="mkt-md whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users, undefined, isAiAgentAuthor(m.author_id, users)) }} />
         )}
       </div>
     </div>
@@ -1680,7 +1693,10 @@ function MktChatPage() {
       es.addEventListener("message.updated", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
         if (activeChannelIdRef.current !== data.channel_id || !data.message_id) return
-        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}), ...("recalled_at" in data ? { recalled_at: data.recalled_at } : {}) } : m))
+        // "content"/"edited_at" thêm cho PATCH sửa tin (agent AI cập nhật tiến độ 1 tin
+        // duy nhất thay vì spam nhiều tin) — cùng cơ chế merge field có mặt trong payload
+        // như reactions/is_pinned/recalled_at đã có, không phá các nhánh cũ.
+        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}), ...("recalled_at" in data ? { recalled_at: data.recalled_at } : {}), ...("content" in data ? { content: data.content } : {}), ...("edited_at" in data ? { edited_at: data.edited_at } : {}) } : m))
       })
 
       es.addEventListener("thread.reply.created", (e: MessageEvent) => {

@@ -19,6 +19,7 @@ const MktMessage = model.define("mkt_message", {
   is_pinned: model.boolean().default(false),
   mentions: model.json().default([] as any),
   recalled_at: model.dateTime().nullable(),
+  edited_at: model.dateTime().nullable(), // set khi PATCH sửa content — client hiện nhãn "(đã sửa)"
   device: model.text().nullable(), // "mobile" | "desktop" — suy ra tu User-Agent luc gui tin
 })
 
