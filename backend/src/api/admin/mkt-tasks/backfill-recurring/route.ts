@@ -8,6 +8,7 @@ import {
   shouldSpawnToday,
   spawnInstanceForPeriod,
 } from "../../../../modules/mkt-task/recurring-helpers"
+import { resolveUserPerms } from "../../../middlewares"
 
 // Route tạm one-off: cron mkt-task-recurring không chạy đúng 00:00 VN 24/07/2026
 // (nghi Railway restart trùng thời điểm tick). Sinh lại instance kỳ hôm nay cho
@@ -19,8 +20,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(401).json({ error: "Unauthenticated" })
   }
   const userModule = req.scope.resolve(Modules.USER)
-  const user = await userModule.retrieveUser(auth.actor_id, { select: ["email"] })
-  if (user.email !== process.env.SUPER_ADMIN_EMAIL) {
+  const user = await userModule.retrieveUser(auth.actor_id, { select: ["email", "metadata"] })
+  const isSuper = user.email === process.env.SUPER_ADMIN_EMAIL
+  const isManager = resolveUserPerms(user.metadata).includes("page.mkt-tasks.manage")
+  if (!isSuper && !isManager) {
     return res.status(403).json({ error: "Forbidden" })
   }
 
