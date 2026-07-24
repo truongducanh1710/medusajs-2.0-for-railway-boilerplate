@@ -166,6 +166,8 @@ export default defineMiddlewares({
 
     { matcher: "/admin/ai-usage*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
 
+    { matcher: "/admin/ai-agents*", method: ["GET"], middlewares: [requirePerm("page.ai-settings.manage")] },
+
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
 
     { matcher: "/admin/exchange-rate/list", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },

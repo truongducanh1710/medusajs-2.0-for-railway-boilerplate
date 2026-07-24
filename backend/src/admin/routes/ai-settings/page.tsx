@@ -25,6 +25,12 @@ interface UsageLog {
   cost_usd: number; context: any; created_at: string
 }
 
+interface Agent {
+  id: string; handle: string; display_name: string; avatar: string | null
+  medusa_email: string; tool_groups: string[]; is_generalist: boolean
+  enabled: boolean; created_at: string; updated_at: string
+}
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const FEATURE_META: Record<string, { label: string; desc: string; icon: string; scheduleInfo?: string }> = {
@@ -36,6 +42,20 @@ const FEATURE_META: Record<string, { label: string; desc: string; icon: string; 
 
 const FEATURE_COLORS: Record<string, string> = {
   camp_ai_agent: "#7c3aed", camp_ai_evaluator: "#2563eb", cskh_analysis: "#059669", video_analysis: "#dc6f2a",
+}
+
+// Khớp TOOL_GROUPS trong phanviet-agent-mcp/tools-registry.mjs — mô tả tiếng Việt cho
+// panel chi tiết agent (canvas). Không tự động lấy từ đó vì agent-mcp là service Node
+// riêng, không phải module Medusa — trùng lặp nhỏ này chấp nhận được, hiếm khi đổi.
+const AGENT_TOOL_GROUP_LABELS: Record<string, string> = {
+  dashboard: "Tổng quan doanh thu & vận đơn",
+  reports: "Phân tích hiệu quả marketing",
+  orders: "Đơn hàng & chăm sóc khách hàng",
+  camp: "Campaign & quảng cáo Facebook",
+  content: "Content, video, lên lịch đăng bài",
+  tasks: "Giao việc & theo dõi task marketer",
+  finance: "Giá vốn & đối chiếu lãi lỗ",
+  live_view: "Khách online realtime",
 }
 
 function fmtCost(n: number) {
@@ -379,10 +399,152 @@ function UsageTab() {
   )
 }
 
+// ─── Agent Graph (canvas sơ đồ quan hệ agent) ──────────────────────────────────
+//
+// Topology thật (xem phanviet-agent-mcp/agent/chat-worker.mjs's delegateToAgent):
+// CHỈ agent is_generalist=true (Long AI) được cấp tool delegate_to_agent, và nó chỉ
+// giao được cho agent chuyên trách (is_generalist=false) — agent chuyên trách KHÔNG
+// có tool này nên không đệ quy. Đồ thị luôn là CÂY SAO 1 TẦNG: 1 gốc generalist ở
+// giữa, N agent chuyên trách xếp quanh — không cần layout engine, tính toạ độ bằng
+// lượng giác đơn giản. Không có lib graph nào trong package.json (đã khảo sát), vẽ
+// tay bằng SVG thuần theo đúng pattern DayBarChart ở trên (CSS/SVG inline, zero dep).
+
+const AGENT_NODE_R = 34 // bán kính circle node (px)
+const AGENT_RING_R = 190 // bán kính vòng tròn xếp agent chuyên trách quanh tâm
+
+function agentInitial(a: Agent) {
+  return a.avatar || a.display_name?.slice(0, 1)?.toUpperCase() || "?"
+}
+
+function AgentDetailPanel({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18, minWidth: 260, maxWidth: 320 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 26 }}>{agentInitial(agent)}</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{agent.display_name}</div>
+            <div style={{ fontSize: 12, color: "#7c3aed" }}>@{agent.handle}</div>
+          </div>
+        </div>
+        <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 16, color: "#9ca3af", lineHeight: 1 }}>×</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <span style={{ background: agent.enabled ? "#dcfce7" : "#f3f4f6", color: agent.enabled ? "#16a34a" : "#6b7280",
+          borderRadius: 99, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+          {agent.enabled ? "● BẬT" : "● TẮT"}
+        </span>
+        {agent.is_generalist && (
+          <span style={{ background: "#ede9fe", color: "#7c3aed", borderRadius: 99, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+            ★ Điều phối chung (Long AI)
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Tài khoản Medusa</div>
+      <div style={{ fontSize: 12, color: "#374151", marginBottom: 12, wordBreak: "break-all" }}>{agent.medusa_email}</div>
+
+      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Phạm vi phụ trách</div>
+      {agent.is_generalist ? (
+        <div style={{ fontSize: 12, color: "#374151" }}>Mọi nhóm — hỗ trợ chung, có thể giao việc cho agent chuyên trách.</div>
+      ) : agent.tool_groups?.length ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {agent.tool_groups.map(g => (
+            <div key={g} style={{ fontSize: 12, color: "#374151", background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 6, padding: "4px 8px" }}>
+              {AGENT_TOOL_GROUP_LABELS[g] ?? g}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: "#9ca3af" }}>Chưa gán nhóm nào.</div>
+      )}
+    </div>
+  )
+}
+
+function AgentGraph() {
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<Agent | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      try {
+        const d = await apiJson("/admin/ai-agents", "GET")
+        setAgents(d.agents ?? [])
+      } catch (err: any) {
+        setError(err.message)
+      }
+      setLoading(false)
+    })()
+  }, [])
+
+  if (loading) return <div style={{ color: "#9ca3af", textAlign: "center", padding: 48, fontSize: 14 }}>Đang tải…</div>
+  if (error) return <div style={{ color: "#dc2626", textAlign: "center", padding: 48, fontSize: 13 }}>Lỗi tải danh sách agent: {error}</div>
+  if (!agents.length) return <div style={{ color: "#9ca3af", textAlign: "center", padding: 48, fontSize: 14 }}>Chưa có agent nào trong hệ thống.</div>
+
+  const generalist = agents.find(a => a.is_generalist) ?? null
+  const specialists = agents.filter(a => !a.is_generalist)
+
+  const size = 2 * AGENT_RING_R + 2 * AGENT_NODE_R + 40
+  const center = size / 2
+
+  const positions = specialists.map((a, i) => {
+    const angle = (i * 2 * Math.PI) / Math.max(specialists.length, 1) - Math.PI / 2 // bắt đầu từ trên đỉnh
+    return { agent: a, x: center + AGENT_RING_R * Math.cos(angle), y: center + AGENT_RING_R * Math.sin(angle) }
+  })
+
+  function nodeColor(a: Agent) {
+    if (!a.enabled) return "#d1d5db"
+    return a.is_generalist ? "#7c3aed" : "#2563eb"
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16, overflow: "auto" }}>
+        <svg width={size} height={size} style={{ display: "block" }}>
+          {/* Cạnh: generalist → mỗi agent chuyên trách (hướng giao việc qua delegate_to_agent) */}
+          {generalist && positions.map(({ agent: a, x, y }) => (
+            <line key={`edge-${a.id}`} x1={center} y1={center} x2={x} y2={y}
+              stroke={a.enabled && generalist.enabled ? "#c4b5fd" : "#e5e7eb"} strokeWidth={2} />
+          ))}
+
+          {/* Node generalist ở tâm */}
+          {generalist && (
+            <g style={{ cursor: "pointer" }} onClick={() => setSelected(generalist)}>
+              <circle cx={center} cy={center} r={AGENT_NODE_R + 4} fill={nodeColor(generalist)} opacity={0.15} />
+              <circle cx={center} cy={center} r={AGENT_NODE_R} fill={nodeColor(generalist)} />
+              <text x={center} y={center + 6} textAnchor="middle" fontSize={22} fill="#fff">{agentInitial(generalist)}</text>
+              <text x={center} y={center + AGENT_NODE_R + 18} textAnchor="middle" fontSize={12} fontWeight={700} fill="#111827">{generalist.display_name}</text>
+            </g>
+          )}
+
+          {/* Node agent chuyên trách */}
+          {positions.map(({ agent: a, x, y }) => (
+            <g key={a.id} style={{ cursor: "pointer" }} onClick={() => setSelected(a)}>
+              <circle cx={x} cy={y} r={AGENT_NODE_R} fill={nodeColor(a)} />
+              <text x={x} y={y + 6} textAnchor="middle" fontSize={20} fill="#fff">{agentInitial(a)}</text>
+              <text x={x} y={y + AGENT_NODE_R + 16} textAnchor="middle" fontSize={11} fontWeight={600} fill="#374151">{a.display_name}</text>
+            </g>
+          ))}
+        </svg>
+        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, textAlign: "center" }}>
+          Bấm vào 1 agent để xem chi tiết. Đường nối = hướng giao việc (Long AI → agent chuyên trách).
+        </div>
+      </div>
+
+      {selected && <AgentDetailPanel agent={selected} onClose={() => setSelected(null)} />}
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 function AiSettingsPage() {
-  const [tab, setTab] = useState<"config" | "usage">("config")
+  const [tab, setTab] = useState<"config" | "usage" | "graph">("config")
   const [features, setFeatures] = useState<Feature[]>([])
   const [models, setModels] = useState<ModelOption[]>([])
   const [envStatus, setEnvStatus] = useState<EnvStatus>({ DEEPSEEK_API_KEY: false, OPENROUTER_API_KEY: false, GEMINI_API_KEY: false, MINIMAX_API_KEY: false })
@@ -434,7 +596,7 @@ function AiSettingsPage() {
 
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: "1px solid #e5e7eb" }}>
-        {([["config", "⚙️ Cấu hình"], ["usage", "📊 Log & Chi phí"]] as const).map(([t, label]) => (
+        {([["config", "⚙️ Cấu hình"], ["usage", "📊 Log & Chi phí"], ["graph", "🕸️ Sơ đồ Agent"]] as const).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: "9px 20px", border: "none", background: "none", cursor: "pointer", fontSize: 13, fontWeight: tab === t ? 700 : 400,
               color: tab === t ? "#7c3aed" : "#6b7280", borderBottom: tab === t ? "2px solid #7c3aed" : "2px solid transparent",
@@ -481,6 +643,7 @@ function AiSettingsPage() {
       )}
 
       {tab === "usage" && <UsageTab />}
+      {tab === "graph" && <AgentGraph />}
     </div>
   )
 }
