@@ -238,7 +238,7 @@ function emitMentionTone(ctx: AudioContext) {
   const now = ctx.currentTime
   const gain = ctx.createGain()
   gain.gain.setValueAtTime(0.0001, now)
-  gain.gain.exponentialRampToValueAtTime(0.34, now + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.85, now + 0.02)
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15)
   gain.connect(ctx.destination)
 
@@ -264,7 +264,7 @@ function emitMessageTone(ctx: AudioContext) {
   const now = ctx.currentTime
   const gain = ctx.createGain()
   gain.gain.setValueAtTime(0.0001, now)
-  gain.gain.exponentialRampToValueAtTime(0.22, now + 0.015)
+  gain.gain.exponentialRampToValueAtTime(0.6, now + 0.015)
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28)
   gain.connect(ctx.destination)
 
