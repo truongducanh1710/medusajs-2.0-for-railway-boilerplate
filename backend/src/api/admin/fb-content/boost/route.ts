@@ -4,7 +4,6 @@ import { getPool, getAuthInfo, ensureTables, callFb, getFbAdInfo, createUnpublis
 // ── Naming helpers (mirror src/admin/lib/camp-naming.ts) ────────────────────
 const UTM_STATIC =
   "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
-const OFFLINE_DATASET_ID = "941188901527786" // PX CHUNG VIETNAM
 
 const todayDM = (d = new Date()) => `${d.getDate()}/${d.getMonth() + 1}`
 const buildAdName = (vd: string, postId: string) => `${vd} - ${postId}`
@@ -97,8 +96,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
         targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
-      if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+      const promotedObject: any = {}
+      if (b.pixel_id) {
+        promotedObject.pixel_id = b.pixel_id
+        promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
+        promotedObject.smart_pse_enabled = false
+      }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: b.adset_name || adInfo.adset.name || "Ad Set",
         campaign_id: campaign.id,
@@ -210,8 +213,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
         targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
-      if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+      const promotedObject: any = {}
+      if (b.pixel_id) {
+        promotedObject.pixel_id = b.pixel_id
+        promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
+        promotedObject.smart_pse_enabled = false
+      }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: b.adset_name || vdCode,
         campaign_id: campaign.id,
@@ -304,8 +311,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
         targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
-      if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+      const promotedObject: any = {}
+      if (b.pixel_id) {
+        promotedObject.pixel_id = b.pixel_id
+        promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
+        promotedObject.smart_pse_enabled = false
+      }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: vdCode,
         campaign_id: campaign.id,
@@ -416,8 +427,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
     }
 
-    const promotedObject: any = { offline_conversion_data_set_id: OFFLINE_DATASET_ID }
-    if (b.pixel_id) promotedObject.pixel_id = b.pixel_id
+    const promotedObject: any = {}
+    if (b.pixel_id) {
+      promotedObject.pixel_id = b.pixel_id
+      promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
+      promotedObject.smart_pse_enabled = false
+    }
 
     const adset = await callFb("POST", `/${adAcc}/adsets`, {
       name: vdCode,
