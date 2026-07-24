@@ -22,7 +22,9 @@ const Btn = ({ onClick, disabled, children, variant = "secondary" }: {
   </button>
 )
 
-// Nhóm quyền theo vai trò
+// Nhóm quyền theo bộ phận. Mọi key trong PERMISSIONS nên nằm đúng 1 nhóm ở đây —
+// nhóm "Khác" (tự động fallback bên dưới) chỉ nên xuất hiện khi thêm permission mới
+// mà quên gắn nhóm, không phải nơi chứa cố định cho 1/3 số quyền như trước.
 const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] }[] = [
   {
     label: "📊 MKT — Báo cáo & quảng cáo",
@@ -31,9 +33,35 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     keys: [
       "page.bao-cao.view",
       "page.bao-cao.camp-control",
+      "page.bao-cao.fb-accounts",
+      "page.bao-cao.care-rules",
       "page.san-pham.view",
       "page.san-pham.edit",
       "medusa.products.view",
+    ],
+  },
+  {
+    label: "🎬 MKT — Content & Video",
+    note: "Marketing Hub: nguyên liệu video, đăng bài Facebook, lên camp từ video",
+    color: "bg-indigo-50 border-indigo-200",
+    keys: [
+      "page.marketing-video.view",
+      "page.marketing-video.edit",
+      "page.fb-content.view",
+      "page.fb-content.post",
+      "page.fb-content.boost",
+      "page.fb-content.stats",
+    ],
+  },
+  {
+    label: "💬 MKT — Chat nội bộ & Task",
+    note: "Chat group MKT (khác với inbox Facebook khách hàng) và giao việc trong team",
+    color: "bg-sky-50 border-sky-200",
+    keys: [
+      "page.mkt-chat.view",
+      "page.mkt-chat.manage",
+      "page.mkt-tasks.view",
+      "page.mkt-tasks.manage",
     ],
   },
   {
@@ -51,6 +79,30 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     ],
   },
   {
+    label: "☎️ CSKH — Inbox & Tổng đài",
+    note: "Trả lời khách qua inbox Facebook trong Medusa và tổng đài ITY",
+    color: "bg-lime-50 border-lime-200",
+    keys: [
+      "page.chat.view",
+      "page.chat.reply",
+      "page.chat.manage",
+      "page.chat.bot.manage",
+      "page.chat.order.create",
+      "page.ity-cdr.view",
+      "page.ity-cdr.run",
+      "page.cskh-goi-khach.call",
+    ],
+  },
+  {
+    label: "✅ QA — Đánh giá chất lượng",
+    note: "Chấm điểm QA tuần, ghi chú hàng ngày — dành cho leader",
+    color: "bg-fuchsia-50 border-fuchsia-200",
+    keys: [
+      "page.qa.view",
+      "page.qa.score",
+    ],
+  },
+  {
     label: "💰 Kế toán / Giá vốn",
     note: "Xem hoặc nhập lô hàng giá vốn",
     color: "bg-amber-50 border-amber-200",
@@ -65,14 +117,18 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     color: "bg-orange-50 border-orange-200",
     keys: [
       "page.dohana-sync.view",
+      "page.dohana-sync.run",
     ],
   },
   {
-    label: "🗓 Chấm công & Nhân sự",
-    note: "checkin/leave-view mặc định mọi nhân viên đã có qua role — tick approve/nhan-su riêng cho HR hoặc quản lý cụ thể",
+    label: "🗓 Chấm công, Nghỉ phép & Nhân sự",
+    note: "checkin/leave-view mặc định mọi nhân viên đã có qua role — tick approve/nhan-su/cham-cong riêng cho HR hoặc quản lý cụ thể",
     color: "bg-teal-50 border-teal-200",
     keys: [
       "page.cham-cong-nv.checkin",
+      "page.cham-cong.view",
+      "page.overtime.view",
+      "page.overtime.approve",
       "page.leave-request.view",
       "page.leave-request.approve",
       "page.nhan-su.view",
@@ -87,9 +143,10 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
       "users.manage",
       "page.pancake-sync.view",
       "page.pancake-sync.run",
-      "page.dohana-sync.run",
       "page.pages.view",
       "page.pages.edit",
+      "page.ai-settings.manage",
+      "page.live-view.view",
       "medusa.inventory.view",
       "medusa.promotions.view",
       "medusa.settings.view",
