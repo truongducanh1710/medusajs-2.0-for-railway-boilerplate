@@ -52,7 +52,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const srcCreative = adInfo.creative
       if (!srcCreative?.id) return res.status(400).json({ error: "Không lấy được creative từ ad nguồn" })
 
-      // Clone creative (reuse object_story_id hoặc video_id)
+      // Clone creative — ƯU TIÊN object_story_id (post đã đăng/dark post). Nếu creative
+      // nguồn chỉ có video_id (không có object_story_id, vd creative dựng trực tiếp qua
+      // object_story_spec.video_data như mode dark_post_raw_video), PHẢI dựng lại
+      // object_story_spec — gửi object_story_id rỗng "" khiến FB trả lỗi generic
+      // "An unknown error occurred" (code 1) không rõ nguyên nhân (bug thật đã gặp khi
+      // test clone từ 1 ad có creative dạng video_id thuần).
       const creativeBody: Record<string, any> = {
         name: `${adInfo.ad_name} - clone`,
         url_tags: UTM_STATIC,
@@ -60,7 +65,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       if (srcCreative.object_story_id) {
         creativeBody.object_story_id = srcCreative.object_story_id
       } else if (srcCreative.video_id) {
-        creativeBody.object_story_id = srcCreative.object_story_id || ""
+        if (!adInfo.adset?.promoted_object?.pixel_id && !b.pixel_id) {
+          return res.status(400).json({ error: "Ad nguồn dùng creative dạng video_id không kèm post — cần b.pixel_id để dựng lại creative mới" })
+        }
+        creativeBody.object_story_spec = {
+          page_id: adInfo.page_id,
+          video_data: {
+            video_id: srcCreative.video_id,
+            title: adInfo.ad_name,
+            message: srcCreative.body || adInfo.ad_name,
+            call_to_action: { type: b.cta_type || "SHOP_NOW", value: { link: b.link || srcCreative.object_story_spec?.video_data?.call_to_action?.value?.link } },
+          },
+        }
+      } else {
+        return res.status(400).json({ error: "Creative nguồn không có object_story_id lẫn video_id — không rõ cách clone" })
       }
       const creative = await callFb("POST", `/${adAcc}/adcreatives`, creativeBody)
 
@@ -98,11 +116,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
         targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      const promotedObject: any = {}
-      if (b.pixel_id) {
-        promotedObject.pixel_id = b.pixel_id
-        promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
-        promotedObject.smart_pse_enabled = false
+      // pixel_id bắt buộc: optimization_goal=OFFSITE_CONVERSIONS mà promoted_object rỗng
+      // → FB lỗi #100 subcode 2490408 "không thể dùng mục tiêu hiệu quả đã chọn cho mục
+      // tiêu chiến dịch" (bug thật quan sát khi client gọi thiếu field này).
+      if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
+      const promotedObject: any = {
+        pixel_id: b.pixel_id,
+        custom_event_type: b.custom_event_type || "COMPLETE_REGISTRATION",
+        smart_pse_enabled: false,
       }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: b.adset_name || adInfo.adset.name || "Ad Set",
@@ -216,11 +237,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
         targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      const promotedObject: any = {}
-      if (b.pixel_id) {
-        promotedObject.pixel_id = b.pixel_id
-        promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
-        promotedObject.smart_pse_enabled = false
+      if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
+      const promotedObject: any = {
+        pixel_id: b.pixel_id,
+        custom_event_type: b.custom_event_type || "COMPLETE_REGISTRATION",
+        smart_pse_enabled: false,
       }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: b.adset_name || vdCode,
@@ -315,11 +336,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
       if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
         targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      const promotedObject: any = {}
-      if (b.pixel_id) {
-        promotedObject.pixel_id = b.pixel_id
-        promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
-        promotedObject.smart_pse_enabled = false
+      if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
+      const promotedObject: any = {
+        pixel_id: b.pixel_id,
+        custom_event_type: b.custom_event_type || "COMPLETE_REGISTRATION",
+        smart_pse_enabled: false,
       }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: vdCode,
@@ -432,11 +453,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
     }
 
-    const promotedObject: any = {}
-    if (b.pixel_id) {
-      promotedObject.pixel_id = b.pixel_id
-      promotedObject.custom_event_type = b.custom_event_type || "COMPLETE_REGISTRATION"
-      promotedObject.smart_pse_enabled = false
+    if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
+    const promotedObject: any = {
+      pixel_id: b.pixel_id,
+      custom_event_type: b.custom_event_type || "COMPLETE_REGISTRATION",
+      smart_pse_enabled: false,
     }
 
     const adset = await callFb("POST", `/${adAcc}/adsets`, {

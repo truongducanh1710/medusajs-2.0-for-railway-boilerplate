@@ -2706,6 +2706,8 @@ function MktTasksPage() {
   const [filterType, setFilterType] = useState("")
   const [filterPriority, setFilterPriority] = useState("")
   const [filterTag, setFilterTag] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [mineOnly, setMineOnly] = useState(false)
   const [search, setSearch] = useState("")
   const [tasks, setTasks] = useState<Task[]>([])
@@ -2780,13 +2782,21 @@ function MktTasksPage() {
     if (filterType) list = list.filter(t => t.type === filterType)
     if (filterPriority) list = list.filter(t => t.is_template || t.priority === filterPriority)
     if (filterTag) list = list.filter(t => t.tags.includes(filterTag))
+    if (filterDateFrom) list = list.filter(t => {
+      const k = vnDateKey(t.created_at)
+      return k && k >= filterDateFrom
+    })
+    if (filterDateTo) list = list.filter(t => {
+      const k = vnDateKey(t.created_at)
+      return k && k <= filterDateTo
+    })
     if (mineOnly && currentUserEmail) list = list.filter(t => t.assignee_id === currentUserEmail)
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(t => t.title.toLowerCase().includes(q) || t.assignee_name.toLowerCase().includes(q) || t.tags.some(tag => tag.includes(q)))
     }
     return list
-  }, [normalized, filterStatus, filterType, filterPriority, filterTag, mineOnly, currentUserEmail, search])
+  }, [normalized, filterStatus, filterType, filterPriority, filterTag, filterDateFrom, filterDateTo, mineOnly, currentUserEmail, search])
 
   // Board/Calendar chỉ hiện instance + task lẻ (template không có deadline/cột trạng thái)
   const boardCalTasks = useMemo(() => filtered.filter(t => !t.is_template), [filtered])
@@ -3029,8 +3039,17 @@ function MktTasksPage() {
               </select>
             )}
 
-            {(filterStatus !== "all" || filterType || filterPriority || filterTag || mineOnly || search) && (
-              <button onClick={() => { setFilterStatus("all"); setFilterType(""); setFilterPriority(""); setFilterTag(""); setMineOnly(false); setSearch("") }}
+            {/* Ngày tạo */}
+            <div className="flex items-center gap-1">
+              <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                title="Tạo từ ngày" className={cn(selectCls, "w-[140px]")} />
+              <span className="text-xs text-ui-fg-muted">–</span>
+              <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                title="Tạo đến ngày" className={cn(selectCls, "w-[140px]")} />
+            </div>
+
+            {(filterStatus !== "all" || filterType || filterPriority || filterTag || filterDateFrom || filterDateTo || mineOnly || search) && (
+              <button onClick={() => { setFilterStatus("all"); setFilterType(""); setFilterPriority(""); setFilterTag(""); setFilterDateFrom(""); setFilterDateTo(""); setMineOnly(false); setSearch("") }}
                 className="text-xs font-medium text-ui-fg-muted underline-offset-2 transition-colors hover:text-ui-fg-base hover:underline">
                 Xóa lọc
               </button>

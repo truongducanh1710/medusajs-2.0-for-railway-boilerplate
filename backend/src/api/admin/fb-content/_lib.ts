@@ -262,15 +262,16 @@ export async function getAdsetsPixelMap(accId: string): Promise<Array<{
 
 /** Lấy thông tin 1 ad từ FB: creative, adset, campaign. */
 export async function getFbAdInfo(adId: string): Promise<{
-  ad_id: string; ad_name: string
-  creative: { id: string; object_story_id?: string; video_id?: string; image_hash?: string; name?: string }
-  adset: { id: string; name: string; campaign_id: string }
+  ad_id: string; ad_name: string; page_id?: string
+  creative: { id: string; object_story_id?: string; video_id?: string; image_hash?: string; name?: string; body?: string; object_story_spec?: { page_id?: string; video_data?: { call_to_action?: { value?: { link?: string } } } } }
+  adset: { id: string; name: string; campaign_id: string; promoted_object?: { pixel_id?: string } }
   campaign: { id: string; name: string; objective: string }
 }> {
-  const d = await callFb("GET", `/${adId}?fields=id,name,creative{id,name,object_story_id,video_id,image_hash},adset{id,name,campaign_id},campaign{id,name,objective}`)
+  const d = await callFb("GET", `/${adId}?fields=id,name,creative{id,name,object_story_id,video_id,image_hash,body,object_story_spec},adset{id,name,campaign_id,promoted_object},campaign{id,name,objective}`)
   return {
     ad_id: d.id,
     ad_name: d.name,
+    page_id: d.creative?.object_story_spec?.page_id,
     creative: d.creative || {},
     adset: d.adset || {},
     campaign: d.campaign || {},
