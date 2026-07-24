@@ -250,6 +250,7 @@ export default defineMiddlewares({
     // Marketing Hub — Facebook Content Manager
     // GET (gồm /post/status poll) cần view; mutate cần post
     { matcher: "/admin/fb-content/boost/meta*", method: ["GET"], middlewares: [requirePerm("page.fb-content.boost")] },
+    { matcher: "/admin/fb-content/boost/activity*", method: ["GET"], middlewares: [requirePerm("page.fb-content.boost")] },
     { matcher: "/admin/fb-content/boost", method: ["POST"], middlewares: [requirePerm("page.fb-content.boost")] },
     { matcher: "/admin/fb-content/pixel-map*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/fb-content/audiences*", method: ["GET", "POST"], middlewares: [requirePerm("page.fb-content.boost")] },

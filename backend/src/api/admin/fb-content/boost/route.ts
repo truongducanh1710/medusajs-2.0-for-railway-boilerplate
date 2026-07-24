@@ -87,6 +87,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status: "PAUSED",
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
+        daily_budget: Number(b.daily_budget) || 500000, // CBO — budget ở cấp campaign, không phải adset (theo mẫu camp chạy tốt)
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -105,7 +106,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: b.adset_name || adInfo.adset.name || "Ad Set",
         campaign_id: campaign.id,
-        daily_budget: Number(b.daily_budget) || 500000,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
@@ -204,6 +204,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status: "PAUSED",
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
+        daily_budget: dailyBudget, // CBO — budget ở cấp campaign
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -222,7 +223,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: b.adset_name || vdCode,
         campaign_id: campaign.id,
-        daily_budget: dailyBudget,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
@@ -302,6 +302,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status: "PAUSED",
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
+        daily_budget: dailyBudget, // CBO — budget ở cấp campaign
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -320,7 +321,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: vdCode,
         campaign_id: campaign.id,
-        daily_budget: dailyBudget,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
@@ -407,13 +407,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return `${sku}_${todayDM()}_${mkt}_${sp}_${ads}_${audience}_${vdCode}`
     })()
 
-    // 1. Campaign (PAUSED)
+    // 1. Campaign (PAUSED) — CBO: budget ở cấp campaign
     const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
       name: campaignName,
       objective: "OUTCOME_SALES",
       status: "PAUSED",
       special_ad_categories: [],
-        is_adset_budget_sharing_enabled: false,
+      is_adset_budget_sharing_enabled: false,
+      daily_budget: dailyBudget,
     })
 
     // 2. Ad Set (PAUSED) — targeting + pixel + loại trừ audiences
@@ -437,7 +438,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const adset = await callFb("POST", `/${adAcc}/adsets`, {
       name: vdCode,
       campaign_id: campaign.id,
-      daily_budget: dailyBudget,
       billing_event: "IMPRESSIONS",
       optimization_goal: "OFFSITE_CONVERSIONS",
       bid_strategy: "LOWEST_COST_WITHOUT_CAP",
