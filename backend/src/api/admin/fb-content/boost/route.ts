@@ -88,6 +88,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
         daily_budget: Number(b.daily_budget) || 500000, // CBO — budget ở cấp campaign, không phải adset (theo mẫu camp chạy tốt)
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật, thiếu → tạo adset lỗi "phải nhập giá thầu"
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -108,7 +109,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         campaign_id: campaign.id,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
-        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau, thiếu thì attribution_spec bị rút gọn
         promoted_object: promotedObject,
         targeting,
         status: "PAUSED",
@@ -205,6 +206,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
         daily_budget: dailyBudget, // CBO — budget ở cấp campaign
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -225,7 +227,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         campaign_id: campaign.id,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
-        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau
         promoted_object: promotedObject,
         targeting,
         status: "PAUSED",
@@ -303,6 +305,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
         daily_budget: dailyBudget, // CBO — budget ở cấp campaign
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
       })
       const targeting: any = {
         geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
@@ -323,7 +326,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         campaign_id: campaign.id,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
-        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau
         promoted_object: promotedObject,
         targeting,
         status: "PAUSED",
@@ -415,6 +418,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       special_ad_categories: [],
       is_adset_budget_sharing_enabled: false,
       daily_budget: dailyBudget,
+      bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
     })
 
     // 2. Ad Set (PAUSED) — targeting + pixel + loại trừ audiences
@@ -440,7 +444,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       campaign_id: campaign.id,
       billing_event: "IMPRESSIONS",
       optimization_goal: "OFFSITE_CONVERSIONS",
-      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+      destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau
       promoted_object: promotedObject,
       targeting,
       status: "PAUSED",
