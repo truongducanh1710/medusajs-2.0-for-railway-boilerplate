@@ -12,7 +12,8 @@ import QaDailyNote from "./models/qa-daily-note"
 import QaWeeklyScore from "./models/qa-weekly-score"
 import OvertimeRequest from "./models/overtime-request"
 import LeaveBalance from "./models/leave-balance"
+import JobRunLog from "./models/job-run-log"
 
-class MktTaskModuleService extends MedusaService({ MktTask, MktChannel, MktMessage, MktPresenceSession, AdsExpenseTransaction, ChamCongLog, LeaveRequest, ChamCongConfig, EmployeeProfile, QaDailyNote, QaWeeklyScore, OvertimeRequest, LeaveBalance }) {}
+class MktTaskModuleService extends MedusaService({ MktTask, MktChannel, MktMessage, MktPresenceSession, AdsExpenseTransaction, ChamCongLog, LeaveRequest, ChamCongConfig, EmployeeProfile, QaDailyNote, QaWeeklyScore, OvertimeRequest, LeaveBalance, JobRunLog }) {}
 
 export default MktTaskModuleService

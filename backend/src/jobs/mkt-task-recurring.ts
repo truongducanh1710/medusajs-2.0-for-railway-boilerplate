@@ -19,6 +19,9 @@ export default async function mktTaskRecurring(container: MedusaContainer) {
   const vn = vnDate()
   logger?.info?.(`[MktTaskRecurring] Tick VN=${vn.toISOString()}`)
 
+  let missedCount = 0
+  let spawnedCount = 0
+
   // ── A. Auto-miss instance quá kỳ ──────────────────────────────────────────
   try {
     const openInstances = await svc.listMktTasks(
@@ -44,6 +47,7 @@ export default async function mktTaskRecurring(container: MedusaContainer) {
         missed++
       }
     }
+    missedCount = missed
     logger?.info?.(`[MktTaskRecurring] Auto-missed ${missed} overdue instance(s)`)
   } catch (e: any) {
     logger?.error?.(`[MktTaskRecurring] Auto-miss error: ${e.message}`)
@@ -79,9 +83,22 @@ export default async function mktTaskRecurring(container: MedusaContainer) {
         }
       }
     }
+    spawnedCount = spawned
     logger?.info?.(`[MktTaskRecurring] Spawned ${spawned} instance(s) for current period`)
   } catch (e: any) {
     logger?.error?.(`[MktTaskRecurring] Spawn error: ${e.message}`)
+  }
+
+  // ── C. Ghi job-run-log — kiểm tra job có tick hay không mà không cần log Railway ──
+  try {
+    await svc.createJobRunLogs({
+      job_name: "mkt-task-recurring",
+      ran_at: new Date(),
+      status: "ok",
+      detail: { vn: vn.toISOString(), missed: missedCount, spawned: spawnedCount },
+    })
+  } catch (e: any) {
+    logger?.error?.(`[MktTaskRecurring] job-run-log write error: ${e.message}`)
   }
 }
 
