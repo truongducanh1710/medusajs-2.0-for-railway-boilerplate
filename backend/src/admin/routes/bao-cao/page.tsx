@@ -18,6 +18,13 @@ function fmtVND(n: number | null | undefined) {
   if (v >= 1e6) return `${(v / 1e6).toFixed(1)}tr`
   return new Intl.NumberFormat("vi-VN").format(Math.round(v)) + "đ"
 }
+// Ngưỡng %chi phí ads/doanh số — khớp quy ước ở tab Báo cáo MKT (carePctColor).
+function carePctColor(pct: number | null): string {
+  if (pct === null) return "#6b7280"
+  if (pct < 30) return "#16a34a"
+  if (pct <= 35) return "#d97706"
+  return "#dc2626"
+}
 function fmtMYR(n: number) {
   return `RM ${new Intl.NumberFormat("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`
 }
@@ -2062,6 +2069,8 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
           <thead className="sticky top-0 bg-gray-50 z-10">
             <tr className="border-b border-gray-200 text-xs text-gray-600 uppercase tracking-wide">
               <th className="px-3 py-2.5 font-semibold sticky left-0 bg-gray-50 border-r border-gray-100">Ngày</th>
+              <th className="px-3 py-2.5 font-semibold text-right">Doanh số</th>
+              <th className="px-3 py-2.5 font-semibold text-right">%Chi phí</th>
               <th className="px-3 py-2.5 font-semibold text-right">LNG thực</th>
               <th className="px-3 py-2.5 font-semibold text-right">%LNG thực</th>
               <th className="px-3 py-2.5 font-semibold text-right">LNG tạm tính</th>
@@ -2077,6 +2086,10 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
               return (
                 <tr key={r.date} className="hover:bg-gray-50 text-sm">
                   <td className="px-3 py-2 whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 font-medium text-gray-700">{r.date.slice(5)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(r.revenue_mkt)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: carePctColor(r.ads_pct_of_revenue_mkt) }}>
+                    {r.ads_pct_of_revenue_mkt != null ? `${r.ads_pct_of_revenue_mkt}%` : "—"}
+                  </td>
                   <td className={`px-3 py-2 text-right tabular-nums font-medium ${moneyCls(r.lng_thuc)}`}>{fmt(r.lng_thuc)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-400">{r.lng_thuc_pct}%</td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold ${moneyCls(r.lng_tam_tinh)}`}>{fmt(r.lng_tam_tinh)}</td>

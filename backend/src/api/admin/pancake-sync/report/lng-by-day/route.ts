@@ -84,6 +84,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsByDay: Record<string, number> = {}
     for (const a of adsRows) adsByDay[a.date] = Number(a.spend)
 
+    // Doanh số theo ngày (khớp định nghĩa "Doanh số" ở tab Báo cáo MKT: tổng đơn
+    // KHÔNG trừ hủy, GREATEST(cod_amount, total) — khác revenue_delivered/tam_tinh
+    // ở trên vốn chỉ tính đơn đã nhận/tỷ lệ nhận dự phóng).
+    const mktRevenueRows = await sql(`
+      SELECT
+        to_char(date_trunc('day', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
+        SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_mkt
+      FROM pancake_order
+      WHERE deleted_at IS NULL
+        AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
+        AND NOT (tags @> '[{"name": "Đơn nháp"}]'::jsonb)
+        AND NOT (tags @> '[{"name": "Đơn trùng"}]'::jsonb)
+        AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      GROUP BY date
+    `, [from, to])
+    const mktRevenueByDay: Record<string, number> = {}
+    for (const m of mktRevenueRows) mktRevenueByDay[m.date] = Number(m.revenue_mkt)
+
     function cogsFromItems(deliveredItems: any): number {
       let cogs = 0
       if (!Array.isArray(deliveredItems)) return 0
@@ -136,6 +155,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const nOrders = Number(r.total_orders)
       const ads = adsByDay[r.date] ?? 0
       const cogs = Math.round(cogsFromItems(r.delivered_items))
+      const revenueMkt = mktRevenueByDay[r.date] ?? 0
+      const adsPctOfRevenueMkt = revenueMkt > 0 ? Math.round(ads / revenueMkt * 10000) / 100 : null
 
       // Công thức B: tỷ lệ nhận kỳ vọng. Ngày đã chín (≥60% đơn đã ngã ngũ) → dùng tỷ lệ
       // riêng; chưa chín → mượn tỷ lệ trung bình kỳ (tránh dao động do mẫu nhỏ).
@@ -169,6 +190,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         cogs, ship_cost: ship,
         ads_cost: ads,
         fullfill,
+        revenue_mkt: revenueMkt,
+        ads_pct_of_revenue_mkt: adsPctOfRevenueMkt,
         lng_tam_tinh: lngTamTinh,
         lng_thuc: lngThuc,
         // Tỷ suất (để so chất lượng, không bị quy mô đánh lừa):
