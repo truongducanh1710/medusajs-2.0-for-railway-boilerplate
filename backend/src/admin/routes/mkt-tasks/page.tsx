@@ -2706,8 +2706,8 @@ function MktTasksPage() {
   const [filterType, setFilterType] = useState("")
   const [filterPriority, setFilterPriority] = useState("")
   const [filterTag, setFilterTag] = useState("")
-  const [filterDateFrom, setFilterDateFrom] = useState("")
-  const [filterDateTo, setFilterDateTo] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState(() => addDaysKey(vnDateKey(new Date()) as string, -13))
+  const [filterDateTo, setFilterDateTo] = useState(() => vnDateKey(new Date()) as string)
   const [mineOnly, setMineOnly] = useState(false)
   const [search, setSearch] = useState("")
   const [tasks, setTasks] = useState<Task[]>([])
@@ -3040,7 +3040,34 @@ function MktTasksPage() {
             )}
 
             {/* Ngày tạo */}
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+              <div className="flex gap-1">
+                {[
+                  { l: "7 ngày", days: 6 },
+                  { l: "14 ngày", days: 13 },
+                ].map(({ l, days }) => (
+                  <button key={l} onClick={() => {
+                    const today = vnDateKey(new Date()) as string
+                    setFilterDateFrom(addDaysKey(today, -days))
+                    setFilterDateTo(today)
+                  }} className={chipCls(false)}>{l}</button>
+                ))}
+                <button onClick={() => {
+                  const now = new Date(Date.now() + 7 * 3600 * 1000)
+                  const from = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`
+                  setFilterDateFrom(from)
+                  setFilterDateTo(vnDateKey(new Date()) as string)
+                }} className={chipCls(false)}>Tháng này</button>
+                <button onClick={() => {
+                  const now = new Date(Date.now() + 7 * 3600 * 1000)
+                  const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+                  const from = `${prevMonth.getUTCFullYear()}-${String(prevMonth.getUTCMonth() + 1).padStart(2, "0")}-01`
+                  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
+                  const to = `${lastDay.getUTCFullYear()}-${String(lastDay.getUTCMonth() + 1).padStart(2, "0")}-${String(lastDay.getUTCDate()).padStart(2, "0")}`
+                  setFilterDateFrom(from)
+                  setFilterDateTo(to)
+                }} className={chipCls(false)}>Tháng trước</button>
+              </div>
               <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
                 title="Tạo từ ngày" className={cn(selectCls, "w-[140px]")} />
               <span className="text-xs text-ui-fg-muted">–</span>
