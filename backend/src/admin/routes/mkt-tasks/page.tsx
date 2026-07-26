@@ -2783,10 +2783,12 @@ function MktTasksPage() {
     if (filterPriority) list = list.filter(t => t.is_template || t.priority === filterPriority)
     if (filterTag) list = list.filter(t => t.tags.includes(filterTag))
     if (filterDateFrom) list = list.filter(t => {
+      if (t.is_template) return true
       const k = vnDateKey(t.created_at)
       return k && k >= filterDateFrom
     })
     if (filterDateTo) list = list.filter(t => {
+      if (t.is_template) return true
       const k = vnDateKey(t.created_at)
       return k && k <= filterDateTo
     })
