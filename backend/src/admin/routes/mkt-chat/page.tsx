@@ -82,9 +82,12 @@ function escapeHtml(s: string): string {
 
 // Markdown nhẹ cho tin nhắn (chủ yếu phục vụ AI agent trả lời có cấu trúc) — luôn
 // chạy SAU escapeHtml trên từng dòng/segment nên input không thể chứa HTML thật,
-// chỉ inject các tag cố định (strong/em/table/ul/ol) do chính hàm này tạo ra.
-// Không dùng thư viện ngoài — chỉ hỗ trợ **bold**, *italic*, bullet "- "/"* ",
-// numbered "1. ", và bảng GFM cơ bản (| a | b |).
+// chỉ inject các tag cố định (strong/em/table/ul/ol/div/span) do chính hàm này tạo ra.
+// Không dùng thư viện ngoài — hỗ trợ **bold**, *italic*, bullet "- "/"* ", numbered
+// "1. ", bảng GFM cơ bản (| a | b |), callout ":::warn"/":::danger" (block cảnh báo
+// màu), và badge inline "[[badge:warn:TEXT]]"/"[[badge:danger:TEXT]]" — 2 mức dùng
+// cho Long AI phân biệt "cần chú ý" vs "nghiêm trọng, đã tag người liên quan"
+// (xem long-ai-daily-report-coach-prompt.md).
 function renderMarkdownLite(escapedText: string): string {
   const lines = escapedText.split("\n")
   const htmlBlocks: string[] = []
@@ -94,9 +97,28 @@ function renderMarkdownLite(escapedText: string): string {
     line
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)/g, "<em>$1</em>")
+      .replace(/\[\[badge:(warn|danger):(.+?)\]\]/g, (_m, level, label) =>
+        `<span class="mkt-md-badge mkt-md-badge-${level}">${label}</span>`)
 
   while (i < lines.length) {
     const line = lines[i]
+
+    // Callout ::: warn / ::: danger ... ::: — nội dung bên trong tái sử dụng cùng
+    // vòng lặp block (bảng/list/inline) nên không cần lặp lại logic parse.
+    const calloutStart = line.trim().match(/^:::(warn|danger)\s*$/)
+    if (calloutStart) {
+      const level = calloutStart[1]
+      let j = i + 1
+      const innerLines: string[] = []
+      while (j < lines.length && lines[j].trim() !== ":::") {
+        innerLines.push(lines[j])
+        j += 1
+      }
+      const innerHtml = renderMarkdownLite(innerLines.join("\n"))
+      htmlBlocks.push(`<div class="mkt-md-callout mkt-md-callout-${level}">${innerHtml}</div>`)
+      i = j + 1 // bỏ qua dòng ":::" đóng
+      continue
+    }
 
     // Bảng markdown: dòng header | a | b |, dòng phân cách |---|---|, rồi các dòng dữ liệu
     if (/^\s*\|.+\|\s*$/.test(line) && /^\s*\|[\s|:-]+\|\s*$/.test(lines[i + 1] || "")) {
@@ -336,6 +358,21 @@ function PageStyles() {
       .dark .mkt-md-th, .dark .mkt-md-td { border-color: rgb(255 255 255 / 0.15) }
       .mkt-md-th { font-weight: 700; background: rgb(0 0 0 / 0.04) }
       .dark .mkt-md-th { background: rgb(255 255 255 / 0.06) }
+      /* Callout ::: warn / ::: danger — dùng cho cảnh báo CP cao / leo thang xu hướng
+         trong tin nhắn AI. Chỉ 2 mức, cố ý không thêm "info"/"success" vì AI hiện chỉ
+         cần phân biệt "cần chú ý" (warn, cam) và "nghiêm trọng, đã tag người liên quan"
+         (danger, đỏ) — xem long-ai-daily-report-coach-prompt.md. */
+      .mkt-md-callout { margin: 6px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid; font-size: 12.5px; line-height: 1.55 }
+      .mkt-md-callout > *:first-child { margin-top: 0 }
+      .mkt-md-callout-warn { background: rgb(245 158 11 / 0.08); border-color: rgb(245 158 11 / 0.35) }
+      .dark .mkt-md-callout-warn { background: rgb(245 158 11 / 0.12); border-color: rgb(245 158 11 / 0.4) }
+      .mkt-md-callout-danger { background: rgb(239 68 68 / 0.08); border-color: rgb(239 68 68 / 0.35) }
+      .dark .mkt-md-callout-danger { background: rgb(239 68 68 / 0.14); border-color: rgb(239 68 68 / 0.45) }
+      /* Badge tròn inline [[badge:...]] — nhãn ngắn kiểu "3 NGÀY LIÊN TIẾP", "CP CAO" */
+      .mkt-md-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 1px 8px; border-radius: 999px; margin: 0 2px; vertical-align: middle; white-space: nowrap }
+      .mkt-md-badge-warn { background: rgb(245 158 11 / 0.15); color: rgb(146 64 14); border: 1px solid rgb(245 158 11 / 0.4) }
+      .dark .mkt-md-badge-warn { background: rgb(245 158 11 / 0.2); color: rgb(253 186 116) }
+      .mkt-md-badge-danger { background: rgb(239 68 68); color: #fff }
       .mkt-chat-fontsize .text-\\[13px\\] { font-size: var(--mkt-chat-font-size, 13px) }
       .mkt-chat-fontsize .text-\\[11px\\] { font-size: max(9px, calc(var(--mkt-chat-font-size, 13px) - 2px)) }
     `}</style>
@@ -956,20 +993,30 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
   )
 }
 
-function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
+function CreateTaskModal({ channelId, users, memberIds, onClose, onCreated }: { channelId: string; users: MktUser[]; memberIds: string[]; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({ title: "", type: "ads_camp", deadline: "" })
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([])
   const [customType, setCustomType] = useState("")
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
+  // Chỉ giao cho thành viên của nhóm chat này.
+  const memberSet = useMemo(() => new Set(memberIds.map(e => e.toLowerCase())), [memberIds])
+  const channelUsers = useMemo(() => users.filter(u => memberSet.has(u.email.toLowerCase())), [users, memberSet])
+  const toggleAssignee = (email: string) =>
+    setAssigneeIds(prev => prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email])
+  const allSelected = channelUsers.length > 0 && assigneeIds.length === channelUsers.length
+  const toggleAll = () =>
+    setAssigneeIds(allSelected ? [] : channelUsers.map(u => u.email))
+
   const isCustom = form.type === "__custom"
   const submit = async () => {
-    if (!form.title.trim() || !form.assignee_id || (isCustom && !customType.trim())) return
+    if (!form.title.trim() || assigneeIds.length === 0 || (isCustom && !customType.trim())) return
     setSaving(true); setErr("")
     try {
       const r = await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, type: isCustom ? customType.trim() : form.type }),
+        body: JSON.stringify({ ...form, assignee_ids: assigneeIds, type: isCustom ? customType.trim() : form.type }),
       })
       const data = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(data?.error || "Tạo task thất bại")
@@ -999,11 +1046,26 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
             <div><label className={LABEL_CLS}>Tên loại mới *</label>
               <input className={INPUT_CLS} value={customType} onChange={e => setCustomType(e.target.value)} placeholder="VD: Thiết kế, Livestream..." /></div>
           )}
-          <div><label className={LABEL_CLS}>Giao cho *</label>
-            <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
-              <option value="">-- Chọn --</option>
-              {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
-            </select></div>
+          <div>
+            <div className="flex items-center justify-between">
+              <label className={LABEL_CLS}>Giao cho * {assigneeIds.length > 0 && <span className="font-normal text-ui-fg-muted">({assigneeIds.length})</span>}</label>
+              {channelUsers.length > 0 && (
+                <button type="button" onClick={toggleAll} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">
+                  {allSelected ? "Bỏ chọn" : "Chọn tất cả"}
+                </button>
+              )}
+            </div>
+            <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-ui-border-base">
+              {channelUsers.length === 0 ? (
+                <div className="px-3 py-2 text-[11px] text-ui-fg-muted">Nhóm chưa có thành viên nào.</div>
+              ) : channelUsers.map(u => (
+                <label key={u.email} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[13px] text-ui-fg-base hover:bg-ui-bg-base-hover">
+                  <input type="checkbox" checked={assigneeIds.includes(u.email)} onChange={() => toggleAssignee(u.email)} />
+                  <span>{u.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           {form.type === "purchasing" ? (
             <div className="rounded-lg bg-cyan-50/60 px-2.5 py-2 text-[11px] text-cyan-700 dark:bg-cyan-500/5 dark:text-cyan-300">
               🛒 Việc mua hàng theo dõi qua giai đoạn quy trình, không cần deadline cố định.
@@ -1016,9 +1078,9 @@ function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: 
         {err && <div className="mt-2 text-xs text-rose-500">{err}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-ui-border-base px-3.5 py-1.5 text-xs text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
-          <button onClick={submit} disabled={saving || !form.title.trim() || !form.assignee_id || (isCustom && !customType.trim())}
+          <button onClick={submit} disabled={saving || !form.title.trim() || assigneeIds.length === 0 || (isCustom && !customType.trim())}
             className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-40">
-            {saving ? "Đang tạo..." : "Tạo task"}
+            {saving ? "Đang tạo..." : assigneeIds.length > 1 ? `Tạo ${assigneeIds.length} task` : "Tạo task"}
           </button>
         </div>
       </div>
@@ -2739,7 +2801,7 @@ function MktChatPage() {
       {/* ── Modals ── */}
       {showCreateChannel && <CreateChannelModal onClose={() => setShowCreateChannel(false)} onCreated={loadChannels} users={mktUsers} />}
       {showCreateTask && activeChannel && (
-        <CreateTaskModal channelId={activeChannel.id} users={mktUsers}
+        <CreateTaskModal channelId={activeChannel.id} users={mktUsers} memberIds={activeChannel.member_ids || []}
           onClose={() => setShowCreateTask(false)}
           onCreated={() => apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).then(d => setMessages(d.messages || []))}
         />
