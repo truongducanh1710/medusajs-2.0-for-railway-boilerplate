@@ -699,6 +699,19 @@ function ChatPage() {
     } catch (e: any) { setSyncMsg(`❌ ${e.message}`); setSyncing(false) }
   }
 
+  // Vá tên khách cho các hội thoại đang hiện PSID (customer_name NULL) — kéo lại tên từ Graph.
+  async function backfillNames() {
+    setSyncing(true); setSyncMsg("⏳ Đang vá tên khách...")
+    try {
+      const body: any = {}
+      if (pageFilter) body.page_id = pageFilter
+      const d = await apiJson("/admin/chat/backfill-names", "POST", body)
+      setSyncMsg(`✅ Đã vá tên ${d?.updated || 0} hội thoại (${d?.pages || 0} page)`)
+      loadConvs(tab, pageFilter)
+    } catch (e: any) { setSyncMsg(`❌ ${e.message}`) }
+    finally { setSyncing(false) }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", margin: -24, background: "#f8fafc", fontFamily: "Inter,system-ui,sans-serif", fontSize: 13, color: "#0f172a" }}>
@@ -725,6 +738,7 @@ function ChatPage() {
               {pageList.map(p => <option key={p.page_id} value={p.page_id}>{p.page_name}</option>)}
             </select>
             <Btn onClick={syncInbox} disabled={syncing} size="sm">⬇ {syncing ? "Đang sync..." : "Sync"}</Btn>
+            <Btn onClick={backfillNames} disabled={syncing} size="sm">🏷 Vá tên</Btn>
             <button onClick={() => loadConvs(tab, pageFilter)} style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 15, color: "#64748b" }}>↺</button>
           </div>
         )}

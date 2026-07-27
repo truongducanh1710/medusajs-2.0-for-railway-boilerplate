@@ -368,7 +368,7 @@ export async function loadPageParticipantNames(pool: Pool, pageId: string): Prom
   }
 
   // Paginated: a busy page has far more than one Graph page of conversations.
-  const convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants&limit=50`, token, 10)
+  const convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants{id,name,email}&limit=50`, token, 10)
   for (const conv of convs) {
     for (const p of conv?.participants?.data || []) {
       if (p?.id && p.id !== pageId && p?.name) {
@@ -441,7 +441,11 @@ export async function ensureAgentForPage(pool: Pool, pageId: string, pageName?: 
   return inserted.rows[0]
 }
 
-const FB_GRAPH_VERSION = "v20.0"
+// Dùng chung version với phần còn lại của codebase (constants.FB_GRAPH_VERSION = v25.0).
+// Trước đây hardcode "v20.0" — version này đã hết hạn (FB giữ mỗi version ~2 năm), khiến
+// GET /{pageId}/conversations?fields=participants không còn trả field `name` → customer_name
+// NULL hàng loạt (chat hiện PSID thay vì tên khách).
+const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || "v25.0"
 
 async function fbGet(path: string, token: string): Promise<any> {
   const url = `https://graph.facebook.com/${FB_GRAPH_VERSION}${path}${path.includes("?") ? "&" : "?"}access_token=${token}`
@@ -497,7 +501,9 @@ export async function pullPageInbox(
   // goes deep on a manual multi-day sync.
   let convs: any[]
   try {
-    convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants,updated_time&limit=50&since=${sinceTs}`, token)
+    // Chỉ định rõ participants{id,name} — dù name là field mặc định cho Page messaging,
+    // request tường minh tránh phụ thuộc default behavior giữa các Graph version.
+    convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants{id,name,email},updated_time&limit=50&since=${sinceTs}`, token)
   } catch (e: any) {
     errors.push(`Lấy conversations thất bại: ${e.message}`)
     return { saved, skipped, errors }
@@ -509,7 +515,12 @@ export async function pullPageInbox(
     const customer = participants.find((p: any) => p.id !== pageId)
     if (!customer) { skipped++; continue }
     const psid = customer.id
-    const customerName = customer.name || undefined
+    // Fallback: participant thiếu name (token cũ/thiếu quyền) → tra qua loadPageParticipantNames
+    // (cùng nguồn, nhưng có cache) để không lưu NULL vĩnh viễn như trước.
+    let customerName: string | undefined = customer.name || undefined
+    if (!customerName) {
+      customerName = (await fetchCustomerNameFromGraph(pool, pageId, psid)) || undefined
+    }
 
     let msgsData: any
     try {
@@ -886,7 +897,7 @@ export async function sendFacebookMessage(pageId: string, psid: string, text: st
   const { rows } = await pool.query(`SELECT access_token FROM fb_page_token WHERE page_id = $1`, [pageId])
   const pageToken = rows[0]?.access_token
   if (!pageToken) throw new Error("Khong tim thay Page access token")
-  const res = await fetch(`https://graph.facebook.com/v20.0/me/messages?access_token=${pageToken}`, {
+  const res = await fetch(`https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages?access_token=${pageToken}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
