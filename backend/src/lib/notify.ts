@@ -93,6 +93,52 @@ export async function notifyTelegramByEmail(
   }
 }
 
+/** Gửi 1 push notification qua Expo Push API tới 1 Expo push token. */
+async function sendExpoPush(token: string, title: string, body: string, data?: Record<string, any>): Promise<void> {
+  try {
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ to: token, title, body, data, sound: "default" }),
+    })
+  } catch (e: any) {
+    console.warn("[notify] Expo push error:", e.message)
+  }
+}
+
+/**
+ * Gửi push notification (Expo) tới một hoặc nhiều user theo email.
+ * Lookup expo_push_token từ user.metadata — bỏ qua user chưa đăng ký token
+ * (app chưa cài, chưa đăng nhập lần nào, hoặc từ chối quyền thông báo).
+ */
+export async function notifyExpoPushByEmail(
+  userModule: any,
+  emails: string | string[],
+  title: string,
+  body: string,
+  data?: Record<string, any>
+): Promise<void> {
+  const emailList = Array.isArray(emails) ? emails : [emails]
+  try {
+    const users = await userModule.listUsers(
+      { email: emailList.length === 1 ? emailList[0] : undefined },
+      { select: ["email", "metadata"] }
+    )
+    const targets = emailList.length > 1
+      ? users.filter((u: any) => emailList.includes(u.email))
+      : users
+    await Promise.all(
+      targets.map(async (u: any) => {
+        const token: string | undefined = (u.metadata as any)?.expo_push_token
+        if (!token) return // app chưa đăng ký push token cho user này → không gửi
+        await sendExpoPush(token, title, body, data)
+      })
+    )
+  } catch (e: any) {
+    console.warn("[notify] notifyExpoPushByEmail error:", e.message)
+  }
+}
+
 export function formatRuleAlert(opts: {
   ruleName: string
   mktName: string

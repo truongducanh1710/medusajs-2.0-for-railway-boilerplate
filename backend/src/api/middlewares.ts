@@ -207,6 +207,8 @@ export default defineMiddlewares({
     { matcher: "/admin/mkt-chat/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
     // Heartbeat presence: mọi user vào được chat đều phải ping được, handler tự chặn session_id người khác
     { matcher: "/admin/mkt-chat/presence", method: ["POST"], middlewares: [requirePerm("page.mkt-chat.view")] },
+    // Mobile app đăng ký/gỡ Expo push token của chính mình — mọi user vào được chat đều cần gọi được.
+    { matcher: "/admin/mkt-chat/push-token", method: ["POST", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
 
     // Chấm công GPS chủ động — mọi nhân viên tự bấm vào/ra. Matcher cụ thể phải đứng
     // TRƯỚC wildcard /admin/cham-cong* bên dưới, nếu không wildcard nuốt mất route này.

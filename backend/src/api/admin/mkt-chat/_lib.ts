@@ -2,7 +2,7 @@ import type { MedusaRequest } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { ROLE_PRESETS } from "../../../admin/lib/permissions"
 import { getPool } from "../../../lib/db"
-import { notifyTelegramByEmail } from "../../../lib/notify"
+import { notifyTelegramByEmail, notifyExpoPushByEmail } from "../../../lib/notify"
 
 type SseClient = {
   res: any
@@ -216,6 +216,16 @@ export async function createMentionNotifications(
         opts.preview ? `"${String(opts.preview).slice(0, 160)}"` : "",
       ].filter(Boolean).join("\n")
       notifyTelegramByEmail(userModule, recipient, text, "mention").catch(() => {})
+
+      // Push notification (mobile app) — cùng lý do với Telegram ở trên: kênh
+      // duy nhất đảm bảo nhắc được kể cả khi app đóng hẳn (không có SSE).
+      notifyExpoPushByEmail(
+        userModule,
+        recipient,
+        `${opts.senderName} nhắc bạn`,
+        [`#${opts.channelName || ""}`, opts.preview].filter(Boolean).join(" · "),
+        { type: "mention", channel_id: opts.channelId, message_id: opts.messageId }
+      ).catch(() => {})
     }
   }
 }
