@@ -6,6 +6,7 @@ import {
   periodKeyFor,
   periodDeadline,
   spawnInstanceForPeriod,
+  ensureCurrentPeriodInstances,
 } from "../../../modules/mkt-task/recurring-helpers"
 import { notifyTelegramByEmail } from "../../../lib/notify"
 import { resolveUserPerms } from "../../middlewares"
@@ -44,6 +45,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const { status, type, assignee_id, group_by, priority, tag, channel_id } = req.query as any
+
+    // Catch-up: cron mkt-task-recurring không fire ổn định trên Railway (chỉ tick khi
+    // redeploy) → sinh instance kỳ hiện tại ngay khi có người mở trang. Idempotent nên
+    // gọi mỗi lần GET vẫn an toàn; lỗi ở đây không được chặn việc trả danh sách.
+    await ensureCurrentPeriodInstances(svc).catch(() => {})
 
     const manager = await isManager(req)
 

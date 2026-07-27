@@ -72,6 +72,36 @@ export function isOlderPeriod(a: string | null, b: string): boolean {
 }
 
 /**
+ * Catch-up: đảm bảo mọi template active đã có instance cho kỳ HIỆN TẠI.
+ * Idempotent + rẻ (chỉ tạo khi thiếu) → gọi được ở hot path (GET list) mà không sợ trùng.
+ *
+ * Vì sao cần: cron `mkt-task-recurring` (0 17 * * *) trên Railway KHÔNG fire ổn định theo
+ * lịch — thực tế chỉ tick khi container restart/redeploy (xem job-run-log: ran_at rơi vào
+ * giờ ngẫu nhiên, không phải 17:00 UTC). Hệ quả: sáng sớm chưa có instance ngày mới, "đầu
+ * ngày không thấy task, cuối ngày (sau deploy) mới có". Catch-up ở GET đảm bảo hễ có người
+ * mở trang là instance kỳ hiện tại được sinh, độc lập với thời điểm cron.
+ * Trả về số instance vừa tạo.
+ */
+export async function ensureCurrentPeriodInstances(svc: any): Promise<number> {
+  const vn = vnDate()
+  const templates = await svc.listMktTasks(
+    { is_template: true, deleted_at: null },
+    { select: ["id", "title", "type", "assignee_id", "created_by", "priority", "tags", "notes", "output", "checklist", "frequency", "channel_id"], take: 1000 },
+  )
+  let created = 0
+  for (const tpl of templates) {
+    const freq = (tpl.frequency || "once") as Frequency
+    if (freq === "once") continue
+    if (!shouldSpawnToday(freq, vn)) continue
+    const periodKey = periodKeyFor(freq, vn)
+    const deadline = periodDeadline(freq, vn)
+    const inst = await spawnInstanceForPeriod(svc, tpl, periodKey, deadline).catch(() => null)
+    if (inst) created++
+  }
+  return created
+}
+
+/**
  * Tạo 1 instance từ template cho 1 kỳ. Idempotent: bỏ qua nếu đã có instance cùng (template_id, period_key).
  * Trả về instance vừa tạo, hoặc null nếu đã tồn tại / lỗi.
  */
