@@ -45,6 +45,7 @@ function toUiRow(r: any, isSuper = false) {
     aiStatus: r.ai_status ?? null,
     starred: !!r.starred,
     driveUploadedAt: isSuper && r.drive_uploaded_at ? new Date(r.drive_uploaded_at).toISOString() : null,
+    revisions: Array.isArray(r.revisions) ? r.revisions : [],
   }
 }
 

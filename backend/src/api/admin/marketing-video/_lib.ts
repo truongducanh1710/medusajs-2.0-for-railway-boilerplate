@@ -86,6 +86,8 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS starred BOOLEAN DEFAULT false`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS ai_status VARCHAR(20) DEFAULT NULL`)
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS drive_uploaded_at TIMESTAMPTZ`)
+  // Lịch sử yêu cầu làm lại video: [{ revision_no, requested_by, requested_by_name, reason, at, task_id }]
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS revisions JSONB DEFAULT '[]'`)
   // Reset stale jobs (Railway restart giữa chừng)
   await pool.query(`
     UPDATE mkt_video SET ai_status = 'error'
@@ -185,6 +187,7 @@ export const STATUS_VI_TO_KEY: Record<string, string> = {
   "Cần làm": "todo",
   "Đang làm": "doing",
   "Chờ duyệt": "review",
+  "Cần sửa": "revise",
   "Xong": "done",
   "Đã đăng": "posted",
   "Lỗi": "error",

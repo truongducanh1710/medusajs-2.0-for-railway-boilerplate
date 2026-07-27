@@ -37,11 +37,12 @@ const STATUS_VARS: Record<string, { c: string; bg: string }> = {
   "Cần làm":   { c: "#6B7280",  bg: "#F3F4F6" },
   "Đang làm":  { c: "#2563EB", bg: "#DBEAFE" },
   "Chờ duyệt": { c: "#D97706",  bg: "#FEF3C7" },
+  "Cần sửa":   { c: "#DC2626",  bg: "#FEE2E2" },
   "Xong":      { c: "#16A34A",  bg: "#DCFCE7" },
   "Đã đăng":   { c: "#059669",  bg: "#D1FAE5" },
   "Lỗi":       { c: "#DC2626",   bg: "#FEE2E2" },
 }
-const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Xong", "Đã đăng", "Lỗi"]
+const ALL_STATUSES = ["Cần làm", "Đang làm", "Chờ duyệt", "Cần sửa", "Xong", "Đã đăng", "Lỗi"]
 const PERSON_BADGE_COLORS = [
   { bg: "#DBEAFE", text: "#1D4ED8" }, // blue
   { bg: "#D1FAE5", text: "#047857" }, // green
@@ -77,6 +78,16 @@ type VideoRow = {
   aiReview?: any
   aiStatus?: string | null
   starred?: boolean
+  revisions?: VideoRevision[]
+}
+
+type VideoRevision = {
+  revision_no: number
+  requested_by: string
+  requested_by_name: string
+  reason: string
+  at: string
+  task_id?: string | null
 }
 
 // ============================================================================
@@ -227,6 +238,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [statusDropId, setStatusDropId] = useState<string | null>(null)
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const pollingRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({})
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -242,6 +254,10 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [fbLinkDraft, setFbLinkDraft] = useState<{ page_name: string; post_url: string }>({ page_name: "", post_url: "" })
   const [deadlinePopup, setDeadlinePopup] = useState<{ row: VideoRow } | null>(null)
   const [makerPopup, setMakerPopup] = useState<{ row: VideoRow } | null>(null)
+  const [revisionModal, setRevisionModal] = useState<{ row: VideoRow } | null>(null)
+  const [revisionReason, setRevisionReason] = useState("")
+  const [revisionSaving, setRevisionSaving] = useState(false)
+  const [historyModal, setHistoryModal] = useState<{ row: VideoRow } | null>(null)
   const [newRowId, setNewRowId] = useState<string | null>(null)
   // Hover thumbnail cho cột Link (tooltip nổi theo con trỏ)
   const [thumb, setThumb] = useState<{ id: string; x: number; y: number } | null>(null)
@@ -491,6 +507,21 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     } catch (e: any) { setToast("Lỗi: " + e.message) }
   }
 
+  const submitRevision = async () => {
+    if (!revisionModal || !revisionReason.trim()) return
+    setRevisionSaving(true)
+    try {
+      const res = await apiJson(`/admin/marketing-video/${revisionModal.row.id}/request-revision`, "POST", { reason: revisionReason.trim() })
+      setRevisionModal(null); setRevisionReason("")
+      setToast(res?.task_created ? "Đã yêu cầu sửa + giao task cho nhân sự" : "Đã yêu cầu sửa (không tìm được tài khoản nhân sự để giao task)")
+      reload()
+    } catch (e: any) {
+      setToast("Lỗi: " + e.message)
+    } finally {
+      setRevisionSaving(false)
+    }
+  }
+
   const saveFbLink = async () => {
     if (!fbLinkModal || !fbLinkDraft.post_url.trim()) return
     const row = fbLinkModal.row
@@ -552,6 +583,60 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+
+      {/* Modal: yêu cầu làm lại video */}
+      {revisionModal && (
+        <div onClick={() => !revisionSaving && setRevisionModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: "95vw", background: "#FFF", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 4 }}>🔁 Yêu cầu làm lại video</div>
+            <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 12 }}>
+              {revisionModal.row.vdCode} · {revisionModal.row.sp || "—"} · Nhân sự: <b>{revisionModal.row.nguoiLam}</b>
+            </div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: 0.3 }}>Lý do / yêu cầu chỉnh sửa *</label>
+            <textarea
+              value={revisionReason}
+              onChange={e => setRevisionReason(e.target.value)}
+              autoFocus
+              rows={4}
+              placeholder="VD: Video mờ, âm thanh nhỏ, thiếu CTA cuối, cắt bớt đoạn đầu..."
+              style={{ width: "100%", marginTop: 6, border: "1px solid #D1D5DB", borderRadius: 8, padding: "8px 10px", fontSize: 13, resize: "vertical", boxSizing: "border-box" }}
+            />
+            <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 6 }}>Sẽ tạo 1 task loại Nội dung (deadline ngày mai) giao cho nhân sự làm video này.</div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+              <button onClick={() => setRevisionModal(null)} disabled={revisionSaving} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Hủy</button>
+              <button onClick={submitRevision} disabled={revisionSaving || !revisionReason.trim()} style={{ background: "#DC2626", color: "#FFF", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: revisionReason.trim() ? "pointer" : "default", opacity: revisionReason.trim() ? 1 : 0.5 }}>
+                {revisionSaving ? "Đang gửi..." : "Gửi yêu cầu sửa"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: lịch sử yêu cầu sửa */}
+      {historyModal && (
+        <div onClick={() => setHistoryModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: "95vw", maxHeight: "80vh", overflowY: "auto", background: "#FFF", borderRadius: 12, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 12 }}>📋 Lịch sử sửa — {historyModal.row.vdCode}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {(historyModal.row.revisions || []).slice().reverse().map((rv, i) => (
+                <div key={i} style={{ border: "1px solid #FCA5A5", background: "#FEF2F2", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#B91C1C" }}>Lần {rv.revision_no}</span>
+                    <span style={{ fontSize: 11, color: "#6B7280" }}>{new Date(rv.at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#111827", whiteSpace: "pre-wrap" }}>{rv.reason}</div>
+                  <div style={{ fontSize: 11, color: "#6B7280", marginTop: 6 }}>
+                    Yêu cầu bởi: {rv.requested_by_name}{rv.task_id ? " · đã tạo task" : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setHistoryModal(null)} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
       {thumb && (
         <div style={{ position: "fixed", left: Math.min(thumb.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 232), top: Math.min(thumb.y + 16, (typeof window !== "undefined" ? window.innerHeight : 800) - 420), zIndex: 10000, pointerEvents: "none", background: "#000", border: "1px solid #E5E7EB", borderRadius: 10, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,0.28)", width: 216 }}>
           <img src={driveThumbUrl(thumb.id)} alt="preview" style={{ display: "block", width: 216, height: 384, objectFit: "contain", background: "#111" }} />
@@ -932,6 +1017,16 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                           >
                             {analyzingIds.has(row.id) ? "⏳" : row.aiScore != null ? `★${row.aiScore}` : "🔍"}
                           </button>
+                        )}
+                        {/* Yêu cầu nhân sự làm lại video (ghi lịch sử + tạo task) */}
+                        <button
+                          onClick={e => { e.stopPropagation(); setRevisionReason(""); setRevisionModal({ row }) }}
+                          title="Yêu cầu làm lại video"
+                          style={{ position: "relative", background: (row.revisions && row.revisions.length) ? "#FEE2E2" : "none", border: `1px solid ${(row.revisions && row.revisions.length) ? "#FCA5A5" : "#E5E7EB"}`, borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: (row.revisions && row.revisions.length) ? "#B91C1C" : "#6B7280", fontWeight: 700 }}>
+                          🔁{row.revisions && row.revisions.length ? <span style={{ marginLeft: 2 }}>{row.revisions.length}</span> : null}
+                        </button>
+                        {row.revisions && row.revisions.length > 0 && (
+                          <button onClick={e => { e.stopPropagation(); setHistoryModal({ row }) }} title="Xem lịch sử sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>📋</button>
                         )}
                         <button onClick={e => { e.stopPropagation(); startEdit(row) }} title="Chỉnh sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>✏️</button>
                         <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
