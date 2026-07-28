@@ -2719,24 +2719,53 @@ function StatsTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const VIEW_STORAGE_KEY = "mkt-tasks:view"
+const VIEW_STORAGE_KEY = "mkt-tasks:view" // legacy key — vẫn đọc để migrate 1 lần
+const SETTINGS_STORAGE_KEY = "mkt-tasks:settings"
+const SETTINGS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 1 tháng — quá hạn thì coi như chưa từng lưu
+
+type PersistedSettings = {
+  view?: ViewMode
+  groupBy?: GroupBy
+  filterStatus?: string
+  filterType?: string
+  filterPriority?: string
+  filterTag?: string
+  filterDateFrom?: string
+  filterDateTo?: string
+  mineOnly?: boolean
+}
+
+function loadPersistedSettings(): PersistedSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed?.savedAt || Date.now() - parsed.savedAt > SETTINGS_MAX_AGE_MS) return {}
+    return parsed.data || {}
+  } catch { return {} }
+}
 
 function MktTasksPage() {
   const { has, isSuper, email: currentUserEmail, loading: permsLoading } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-tasks.manage")
 
+  const initialSettingsRef = useRef<PersistedSettings | null>(null)
+  if (initialSettingsRef.current === null) initialSettingsRef.current = loadPersistedSettings()
+  const initialSettings = initialSettingsRef.current
+
   const [view, setView] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem(VIEW_STORAGE_KEY)
-    return (saved === "myday" || saved === "list" || saved === "board" || saved === "calendar") ? saved : "list"
+    if (initialSettings.view) return initialSettings.view
+    const legacy = localStorage.getItem(VIEW_STORAGE_KEY)
+    return (legacy === "myday" || legacy === "list" || legacy === "board" || legacy === "calendar") ? legacy : "list"
   })
-  const [groupBy, setGroupBy] = useState<GroupBy>("assignee")
-  const [filterStatus, setFilterStatus] = useState("all")
-  const [filterType, setFilterType] = useState("")
-  const [filterPriority, setFilterPriority] = useState("")
-  const [filterTag, setFilterTag] = useState("")
-  const [filterDateFrom, setFilterDateFrom] = useState(() => addDaysKey(vnDateKey(new Date()) as string, -13))
-  const [filterDateTo, setFilterDateTo] = useState(() => vnDateKey(new Date()) as string)
-  const [mineOnly, setMineOnly] = useState(false)
+  const [groupBy, setGroupBy] = useState<GroupBy>(initialSettings.groupBy || "assignee")
+  const [filterStatus, setFilterStatus] = useState(initialSettings.filterStatus ?? "all")
+  const [filterType, setFilterType] = useState(initialSettings.filterType ?? "")
+  const [filterPriority, setFilterPriority] = useState(initialSettings.filterPriority ?? "")
+  const [filterTag, setFilterTag] = useState(initialSettings.filterTag ?? "")
+  const [filterDateFrom, setFilterDateFrom] = useState(initialSettings.filterDateFrom ?? (() => addDaysKey(vnDateKey(new Date()) as string, -13))())
+  const [filterDateTo, setFilterDateTo] = useState(initialSettings.filterDateTo ?? (() => vnDateKey(new Date()) as string)())
+  const [mineOnly, setMineOnly] = useState(initialSettings.mineOnly ?? false)
   const [search, setSearch] = useState("")
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -2747,10 +2776,20 @@ function MktTasksPage() {
   const [flashId, setFlashId] = useState<string | null>(null)
 
   const showToast = (msg: string, type: "success" | "error") => setToast({ msg, type })
-  const setViewPersist = (v: ViewMode) => {
-    setView(v)
-    if (v !== "stats") localStorage.setItem(VIEW_STORAGE_KEY, v)
-  }
+  const setViewPersist = (v: ViewMode) => setView(v)
+
+  // Lưu gộp mọi filter/setting phụ mỗi khi đổi — 1 tháng không mở lại thì coi như hết hạn,
+  // tránh giữ mãi 1 khoảng ngày cũ đã vô nghĩa nếu nhân sự nghỉ dài rồi quay lại.
+  useEffect(() => {
+    const data: PersistedSettings = {
+      view: view === "stats" ? undefined : view,
+      groupBy, filterStatus, filterType, filterPriority, filterTag,
+      filterDateFrom, filterDateTo, mineOnly,
+    }
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), data }))
+    } catch { /* quota/private mode */ }
+  }, [view, groupBy, filterStatus, filterType, filterPriority, filterTag, filterDateFrom, filterDateTo, mineOnly])
 
   // Fetch flat — mọi grouping/filter phụ làm client-side để 1 fetch phục vụ cả 3 view
   const load = useCallback(() => {
@@ -2764,9 +2803,9 @@ function MktTasksPage() {
 
   useEffect(() => {
     if (permsLoading) return
-    const saved = localStorage.getItem(VIEW_STORAGE_KEY)
-    if (!saved && !isManager) setView("myday")
-  }, [permsLoading, isManager])
+    const hasSaved = !!initialSettings.view || !!localStorage.getItem(VIEW_STORAGE_KEY)
+    if (!hasSaved && !isManager) setView("myday")
+  }, [permsLoading, isManager, initialSettings.view])
 
   useEffect(() => {
     // Dùng cskh-users (lọc theo page.mkt-tasks.view) thay vì permissions/mkt-users
