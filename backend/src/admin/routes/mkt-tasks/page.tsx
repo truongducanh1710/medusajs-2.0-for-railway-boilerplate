@@ -314,6 +314,33 @@ function DeadlineChip({ task }: { task: Task }) {
   return <span className={cn("inline-block rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums whitespace-nowrap", cls)}>{label}</span>
 }
 
+// Hiện cho manager: assignee đã mở task từ thông báo giao việc chưa (bằng chứng "đã check").
+function TaskReadStatusBadge({ taskId }: { taskId: string }) {
+  const [state, setState] = useState<{ has_notification: boolean; read: boolean | null; read_at: string | null } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch(`/admin/mkt-tasks/${taskId}/read-status`).then(r => r.json()).then(d => {
+      if (!cancelled) setState(d)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [taskId])
+
+  if (!state || !state.has_notification) return null
+
+  return state.read
+    ? (
+      <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+        ✓ Đã xem lúc {new Date(state.read_at!).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", timeZone: "Asia/Ho_Chi_Minh" })}
+      </span>
+    )
+    : (
+      <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+        ⚠ Chưa xem
+      </span>
+    )
+}
+
 function Stars({ value, onChange }: { value: number | null; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0)
   return (
@@ -1048,6 +1075,7 @@ function TaskDrawer({
                 )}
               </div>
               <h2 className="break-words text-[15px] font-bold leading-snug text-ui-fg-base">{task.title}</h2>
+              {isManager && !isPersonal && <TaskReadStatusBadge taskId={task.id} />}
               {task.tags.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">{task.tags.map(t => <TagChip key={t} tag={t} />)}</div>
               )}
