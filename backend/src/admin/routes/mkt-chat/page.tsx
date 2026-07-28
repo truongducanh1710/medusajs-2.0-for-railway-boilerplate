@@ -40,9 +40,14 @@ type LinkedTask = {
 }
 type ChatFile = { id: string; file_url: string; file_type: string | null; file_name: string | null; author_id: string; author_name?: string; created_at: string }
 type MktNotification = {
-  id: string; recipient: string; channel_id: string; channel_name: string; message_id: string
-  sender: string; sender_name: string; preview: string; source?: string; created_at: string; read: boolean
+  id: string; type?: "mention" | "task_assigned"; recipient: string
+  channel_id?: string; channel_name?: string; message_id?: string
+  sender: string; sender_name: string; preview?: string; source?: string
+  created_at: string; read: boolean
+  task_id?: string; task_title?: string; deadline?: string | null
 }
+
+const NOTIFY_CHANNEL_ID = "__notify_channel__"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1678,13 +1683,18 @@ function MktChatPage() {
     }
   }, [])
 
-  // Load messages when channel changes
+  // Load messages when channel changes (bỏ qua pseudo-channel "🔔" — không phải mkt_channel thật)
   useEffect(() => {
-    if (!activeChannel) return
+    if (!activeChannel || activeChannel.id === NOTIFY_CHANNEL_ID) return
     atBottomRef.current = true
     loadMessages(activeChannel.id, { markRead: true })
     markChannelNotificationsRead(activeChannel.id)
   }, [activeChannel?.id, loadMessages, markChannelNotificationsRead])
+
+  // Mở pseudo-channel "🔔" → đánh dấu đã đọc tất cả mention + task_assigned đang chờ.
+  useEffect(() => {
+    if (activeChannel?.id === NOTIFY_CHANNEL_ID) markNotificationsRead()
+  }, [activeChannel?.id, markNotificationsRead])
 
   // Đồng bộ ref cho effect SSE đọc — xem giải thích ở khai báo activeChannelIdRef phía trên.
   useEffect(() => { activeChannelIdRef.current = activeChannel?.id ?? null }, [activeChannel?.id])
@@ -2237,8 +2247,37 @@ function MktChatPage() {
     }
     requestAnimationFrame(() => jumpToMessage(jump.message_id!))
   }, [activeChannel?.id, channels])
+  // Pseudo-channel "🔔 Việc & nhắc của tôi" — không phải mkt_channel thật trong DB,
+  // render từ notifications (mention + task_assigned) đã fetch riêng cho user hiện tại.
+  const notifyPseudoChannel: Channel = useMemo(() => ({
+    id: NOTIFY_CHANNEL_ID,
+    name: "Việc & nhắc của tôi",
+    description: null,
+    is_private: false,
+    is_announcement: false,
+    member_count: 1,
+    unread_count: notificationUnread,
+    mention_count: 0,
+    created_at: "",
+    last_message: notifications[0]
+      ? {
+          content: notifications[0].type === "task_assigned"
+            ? `📋 ${notifications[0].task_title}`
+            : notifications[0].preview || "",
+          author_id: notifications[0].sender,
+          msg_type: "system_notify",
+          created_at: notifications[0].created_at,
+        }
+      : null,
+  }), [notificationUnread, notifications])
+
   const groupedVisibleChannels = useMemo(() => {
     const groups: { key: string; label: string; icon: string; pinned?: boolean; items: Channel[] }[] = []
+    if (sidebarTab !== "unread" || notificationUnread > 0) {
+      if (sidebarTab !== "mentioned" || notifications.length > 0) {
+        groups.push({ key: "__notify", label: "Chuông", icon: "🔔", pinned: true, items: [notifyPseudoChannel] })
+      }
+    }
     const announceItems = visibleChannels.filter(c => c.is_announcement)
     if (announceItems.length > 0) {
       groups.push({ key: "__announcement", label: "Thông báo", icon: "📢", pinned: true, items: announceItems })
@@ -2491,9 +2530,12 @@ function MktChatPage() {
                       className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                         isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
                       <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase",
-                        c.is_announcement ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400" : avatarClass(c.name))}>
-                        {c.is_announcement ? "🔒" : c.name.charAt(0)}
-                        <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+                        c.id === NOTIFY_CHANNEL_ID ? "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400"
+                          : c.is_announcement ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400" : avatarClass(c.name))}>
+                        {c.id === NOTIFY_CHANNEL_ID ? "🔔" : c.is_announcement ? "🔒" : c.name.charAt(0)}
+                        {c.id !== NOTIFY_CHANNEL_ID && (
+                          <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+                        )}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-1">
@@ -2545,6 +2587,53 @@ function MktChatPage() {
               Tạo group đầu tiên
             </button>
           )}
+        </main>
+      ) : activeChannel.id === NOTIFY_CHANNEL_ID ? (
+        <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}>
+          <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-3 py-2.5 md:px-4">
+            <button onClick={() => { setMobileChatOpen(false) }} title="Quay lại danh sách"
+              className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg border border-ui-border-base text-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover md:hidden">←</button>
+            <div className="min-w-0 flex-1">
+              <span className="truncate text-sm font-bold text-ui-fg-base">🔔 Việc & nhắc của tôi</span>
+              <div className="text-[11px] text-ui-fg-muted">Tag trong chat + task được giao cho bạn — chỉ mình bạn thấy</div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto overscroll-contain bg-ui-bg-subtle px-4 py-3">
+            {notifications.length === 0 && (
+              <div className="mt-10 text-center text-[13px] text-ui-fg-muted">Chưa có thông báo nào 🎉</div>
+            )}
+            {notifications.map(n => (
+              <button key={n.id}
+                onClick={() => {
+                  if (n.type === "task_assigned") { window.location.href = `/app/mkt-tasks?task=${n.task_id}`; return }
+                  sessionStorage.setItem("mkt-chat:pending-jump", JSON.stringify({ channel_id: n.channel_id, message_id: n.message_id }))
+                  const target = channels.find(c => c.id === n.channel_id)
+                  if (target) setActiveChannel(target)
+                }}
+                className="mb-2 flex w-full items-start gap-2.5 rounded-lg border border-ui-border-base bg-ui-bg-base px-3 py-2.5 text-left shadow-sm transition-colors hover:bg-ui-bg-base-hover">
+                <span className={cn("grid size-8 shrink-0 place-items-center rounded-full text-[13px] font-bold",
+                  n.type === "task_assigned" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400" : "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400")}>
+                  {n.type === "task_assigned" ? "📋" : "@"}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline justify-between gap-1">
+                    <span className="truncate text-[13px] font-semibold text-ui-fg-base">
+                      {n.type === "task_assigned" ? `${n.sender_name} giao việc mới` : `${n.sender_name} tag bạn`}
+                    </span>
+                    <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(n.created_at)}</span>
+                  </span>
+                  {n.type === "task_assigned" ? (
+                    <span className="block truncate text-[12px] text-ui-fg-subtle">{n.task_title}</span>
+                  ) : (
+                    <>
+                      <span className="block truncate text-[11px] text-ui-fg-muted">#{n.channel_name}{n.source === "thread" ? " · thread" : ""}</span>
+                      <span className="block truncate text-[12px] text-ui-fg-subtle">{n.preview}</span>
+                    </>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
         </main>
       ) : (
         <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}
