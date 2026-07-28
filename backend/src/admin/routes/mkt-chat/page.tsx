@@ -1380,6 +1380,7 @@ const PANEL_STORAGE_KEY = "mkt-chat:panel"
 function MktChatPage() {
   const { has, isSuper, email: currentUserId } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-chat.manage")
+  const isTaskManager = isSuper || has("page.mkt-tasks.manage")
 
   const [channels, setChannels] = useState<Channel[]>([])
   const [onlineEmails, setOnlineEmails] = useState<string[]>([])
@@ -1428,6 +1429,13 @@ function MktChatPage() {
   const [threadRefreshKey, setThreadRefreshKey] = useState(0)
   const [notifications, setNotifications] = useState<MktNotification[]>([])
   const taskNotifications = useMemo(() => notifications.filter(n => n.type === "task_assigned"), [notifications])
+  // Manager xem lại task đã giao cho 1 nhân sự khác + trạng thái đã xem — không đụng
+  // đến "notifications của chính tôi" (không mark-read, không tính unread của mình).
+  const [assigneeViewEmail, setAssigneeViewEmail] = useState<string>("")
+  const [assigneeNotifications, setAssigneeNotifications] = useState<Array<{
+    id: string; task_id: string; task_title: string; sender_name: string
+    created_at: string; read: boolean; read_at: string | null
+  }>>([])
   const [notificationUnread, setNotificationUnread] = useState(0)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notificationPopupPos, setNotificationPopupPos] = useState<{ top: number; right: number } | null>(null)
@@ -1692,10 +1700,12 @@ function MktChatPage() {
     markChannelNotificationsRead(activeChannel.id)
   }, [activeChannel?.id, loadMessages, markChannelNotificationsRead])
 
-  // Mở pseudo-channel "📋 Việc được giao" → chỉ đánh dấu đã đọc các task_assigned đang
-  // chờ (không đụng mention — mention có chuông/toast riêng, không nên tắt chung).
+  // Mở pseudo-channel "📋 Việc được giao" → chỉ đánh dấu đã đọc các task_assigned CỦA
+  // CHÍNH MÌNH đang chờ (không đụng mention). Manager xem hộ task người khác qua
+  // assigneeViewEmail thì KHÔNG mark-read hộ — đó là view chỉ-đọc, không phải "đã xem".
   useEffect(() => {
     if (activeChannel?.id !== NOTIFY_CHANNEL_ID) return
+    if (isTaskManager && assigneeViewEmail && assigneeViewEmail !== currentUserId) return
     const unreadTaskIds = taskNotifications.filter(n => !n.read).map(n => n.task_id).filter(Boolean) as string[]
     if (unreadTaskIds.length === 0) return
     Promise.all(unreadTaskIds.map(taskId =>
@@ -1709,7 +1719,19 @@ function MktChatPage() {
       if (last) setNotificationUnread(Number(last.unread_count || 0))
       setNotifications(prev => prev.map(n => n.type === "task_assigned" ? { ...n, read: true } : n))
     }).catch(() => {})
-  }, [activeChannel?.id, taskNotifications])
+  }, [activeChannel?.id, taskNotifications, isTaskManager, assigneeViewEmail, currentUserId])
+
+  // Manager chọn xem task của 1 nhân sự khác trong pseudo-channel.
+  useEffect(() => {
+    if (activeChannel?.id !== NOTIFY_CHANNEL_ID || !isTaskManager || !assigneeViewEmail || assigneeViewEmail === currentUserId) {
+      setAssigneeNotifications([])
+      return
+    }
+    apiFetch(`/admin/mkt-tasks/assignee-notifications?assignee=${encodeURIComponent(assigneeViewEmail)}`)
+      .then(r => r.json())
+      .then(d => setAssigneeNotifications(d.notifications || []))
+      .catch(() => setAssigneeNotifications([]))
+  }, [activeChannel?.id, isTaskManager, assigneeViewEmail, currentUserId])
 
   // Đồng bộ ref cho effect SSE đọc — xem giải thích ở khai báo activeChannelIdRef phía trên.
   useEffect(() => { activeChannelIdRef.current = activeChannel?.id ?? null }, [activeChannel?.id])
@@ -2602,21 +2624,39 @@ function MktChatPage() {
             </button>
           )}
         </main>
-      ) : activeChannel.id === NOTIFY_CHANNEL_ID ? (
+      ) : activeChannel.id === NOTIFY_CHANNEL_ID ? (() => {
+        const viewingOther = isTaskManager && !!assigneeViewEmail && assigneeViewEmail !== currentUserId
+        const listToShow = viewingOther ? assigneeNotifications : taskNotifications
+        return (
         <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}>
-          <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-3 py-2.5 md:px-4">
-            <button onClick={() => { setMobileChatOpen(false) }} title="Quay lại danh sách"
-              className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg border border-ui-border-base text-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover md:hidden">←</button>
-            <div className="min-w-0 flex-1">
-              <span className="truncate text-sm font-bold text-ui-fg-base">📋 Việc được giao</span>
-              <div className="text-[11px] text-ui-fg-muted">Task được giao cho bạn — chỉ mình bạn thấy</div>
+          <div className="flex shrink-0 flex-col gap-2 border-b border-ui-border-base px-3 py-2.5 md:px-4">
+            <div className="flex items-center justify-between">
+              <button onClick={() => { setMobileChatOpen(false) }} title="Quay lại danh sách"
+                className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg border border-ui-border-base text-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover md:hidden">←</button>
+              <div className="min-w-0 flex-1">
+                <span className="truncate text-sm font-bold text-ui-fg-base">📋 Việc được giao</span>
+                <div className="text-[11px] text-ui-fg-muted">
+                  {viewingOther ? "Xem hộ — không tính là đã xem thay nhân sự" : "Task được giao cho bạn — chỉ mình bạn thấy"}
+                </div>
+              </div>
             </div>
+            {isTaskManager && (
+              <select
+                value={assigneeViewEmail}
+                onChange={e => setAssigneeViewEmail(e.target.value)}
+                className="w-full rounded-lg border border-ui-border-base bg-ui-bg-base px-2.5 py-1.5 text-[12px] text-ui-fg-base outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
+                <option value="">— Việc của tôi —</option>
+                {mktUsers.filter(u => u.email !== currentUserId).map(u => (
+                  <option key={u.email} value={u.email}>{u.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto overscroll-contain bg-ui-bg-subtle px-4 py-3">
-            {taskNotifications.length === 0 && (
+            {listToShow.length === 0 && (
               <div className="mt-10 text-center text-[13px] text-ui-fg-muted">Chưa có việc mới nào 🎉</div>
             )}
-            {taskNotifications.map(n => (
+            {listToShow.map((n: any) => (
               <button key={n.id}
                 onClick={() => { window.location.href = `/app/mkt-tasks?task=${n.task_id}` }}
                 className="mb-2 flex w-full items-start gap-2.5 rounded-lg border border-ui-border-base bg-ui-bg-base px-3 py-2.5 text-left shadow-sm transition-colors hover:bg-ui-bg-base-hover">
@@ -2629,12 +2669,21 @@ function MktChatPage() {
                     <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(n.created_at)}</span>
                   </span>
                   <span className="block truncate text-[12px] text-ui-fg-subtle">{n.task_title}</span>
+                  {viewingOther && (
+                    <span className={cn("mt-1 inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
+                      n.read ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
+                      {n.read
+                        ? `✓ Đã xem${n.read_at ? " lúc " + new Date(n.read_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }) : ""}`
+                        : "⚠ Chưa xem"}
+                    </span>
+                  )}
                 </span>
               </button>
             ))}
           </div>
         </main>
-      ) : (
+        )
+      })() : (
         <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}
           onTouchStart={onChatTouchStart} onTouchEnd={onChatTouchEnd}>
           {/* Header */}
