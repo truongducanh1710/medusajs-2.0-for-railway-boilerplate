@@ -8,19 +8,31 @@ const NOTIFY_CHANNEL_ID = "__notify__"
 function parseNotification(row: any, lastReadAt?: string | null) {
   try {
     const payload = JSON.parse(row.content || "{}")
-    if (payload?.type !== "mention") return null
-    return {
+    if (payload?.type !== "mention" && payload?.type !== "task_assigned") return null
+    const base = {
       id: row.id,
+      type: payload.type,
       recipient: payload.recipient,
-      channel_id: payload.channel_id,
-      channel_name: payload.channel_name,
-      message_id: payload.message_id,
       sender: payload.sender,
       sender_name: payload.sender_name,
-      preview: payload.preview || "",
-      source: payload.source || "message",
       created_at: row.created_at,
       read: lastReadAt ? new Date(row.created_at).getTime() <= new Date(lastReadAt).getTime() : false,
+    }
+    if (payload.type === "mention") {
+      return {
+        ...base,
+        channel_id: payload.channel_id,
+        channel_name: payload.channel_name,
+        message_id: payload.message_id,
+        preview: payload.preview || "",
+        source: payload.source || "message",
+      }
+    }
+    return {
+      ...base,
+      task_id: payload.task_id,
+      task_title: payload.task_title,
+      deadline: payload.deadline || null,
     }
   } catch {
     return null
@@ -55,7 +67,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          WHERE channel_id = '${NOTIFY_CHANNEL_ID}'
            AND msg_type = 'system_notify'
            AND deleted_at IS NULL
-           AND content::jsonb ->> 'type' = 'mention'
+           AND content::jsonb ->> 'type' IN ('mention', 'task_assigned')
            AND content::jsonb ->> 'recipient' = $1
          ORDER BY created_at DESC
          LIMIT 30`,
@@ -67,7 +79,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          WHERE channel_id = '${NOTIFY_CHANNEL_ID}'
            AND msg_type = 'system_notify'
            AND deleted_at IS NULL
-           AND content::jsonb ->> 'type' = 'mention'
+           AND content::jsonb ->> 'type' IN ('mention', 'task_assigned')
            AND content::jsonb ->> 'recipient' = $1
            ${unreadReadClause}`,
         unreadParams

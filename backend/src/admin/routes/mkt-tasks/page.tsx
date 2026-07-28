@@ -2762,6 +2762,12 @@ function MktTasksPage() {
         })
       }
     }).catch(() => {})
+    // Tắt chuông "việc mới" + ghi dấu đã xem (lead xem được qua GET .../read-status)
+    apiFetch("/admin/mkt-chat/notifications/read", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_id: taskId }),
+    }).catch(() => {})
     // Xoá param khỏi URL (không dùng react-router-dom — Vite không resolve được)
     history.replaceState(null, "", window.location.pathname)
   }, [])

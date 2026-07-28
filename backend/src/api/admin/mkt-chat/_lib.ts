@@ -230,6 +230,70 @@ export async function createMentionNotifications(
   }
 }
 
+export type CreateTaskNotificationOptions = {
+  taskId: string
+  taskTitle: string
+  assigneeEmail: string
+  creatorEmail: string
+  creatorName: string
+  deadline?: string | null
+}
+
+// Cùng cơ chế với mention (channel __notify__, payload.type phân biệt) để tái dùng
+// unread-count + SSE + Telegram/push đã verify ổn định, thay vì phụ thuộc Medusa
+// admin feed (to: "admin" — broadcast chung, không lọc theo người, không có API đọc lại trạng thái đã xem).
+export async function createTaskNotification(
+  svc: any,
+  opts: CreateTaskNotificationOptions,
+  userModule?: any
+) {
+  if (!opts.assigneeEmail || opts.assigneeEmail === opts.creatorEmail) return
+
+  const createdAt = new Date().toISOString()
+  const payload = {
+    type: "task_assigned",
+    recipient: opts.assigneeEmail,
+    task_id: opts.taskId,
+    task_title: opts.taskTitle,
+    sender: opts.creatorEmail,
+    sender_name: opts.creatorName,
+    deadline: opts.deadline || null,
+    created_at: createdAt,
+  }
+
+  const notification = await svc.createMktMessages({
+    channel_id: "__notify__",
+    author_id: "system",
+    content: JSON.stringify(payload),
+    msg_type: "system_notify",
+    reactions: {},
+    mentions: [],
+    reply_count: 0,
+  }).catch(() => null)
+
+  if (notification?.id) {
+    broadcastToUser(opts.assigneeEmail, "task.notification.created", {
+      notification: { id: notification.id, ...payload, created_at: notification.created_at || createdAt },
+    })
+  }
+
+  if (userModule) {
+    const text = [
+      `📋 <b>${opts.creatorName} giao việc mới cho bạn</b>`,
+      `"${String(opts.taskTitle).slice(0, 160)}"`,
+    ].join("\n")
+    notifyTelegramByEmail(userModule, opts.assigneeEmail, text, "task_assigned").catch(() => {})
+
+    notifyExpoPushByEmail(
+      userModule,
+      opts.assigneeEmail,
+      `${opts.creatorName} giao việc mới cho bạn`,
+      opts.taskTitle,
+      { type: "task_assigned", task_id: opts.taskId }
+    ).catch(() => {})
+  }
+}
+
 export async function searchMktMessages(req: MedusaRequest, opts: MktMessageSearchOptions) {
   const q = opts.q.trim()
   if (!q || opts.visibleChannelIds.length === 0) return []

@@ -8,8 +8,8 @@ import {
   spawnInstanceForPeriod,
   ensureCurrentPeriodInstances,
 } from "../../../modules/mkt-task/recurring-helpers"
-import { notifyTelegramByEmail } from "../../../lib/notify"
 import { resolveUserPerms } from "../../middlewares"
+import { createTaskNotification } from "../mkt-chat/_lib"
 
 function actorId(req: MedusaRequest): string | null {
   const auth = (req as any).auth_context
@@ -233,27 +233,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
-    // Telegram: thông báo cho assignee
+    // Chuông in-app (SSE + unread count, giống mention) + Telegram + push mobile —
+    // tất cả gói trong 1 hàm dùng chung pattern __notify__ đã verify ổn định.
     if (effectiveAssigneeId && effectiveAssigneeId !== creatorEmail) {
       const userModule = req.scope.resolve(Modules.USER)
-      const deadlineStr = task.deadline
-        ? new Date(task.deadline).toLocaleString("vi-VN", {
-            hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric",
-            timeZone: "Asia/Ho_Chi_Minh",
-          })
-        : "Chưa đặt"
-      const taskUrl = `${process.env.BACKEND_URL || "https://api.phanviet.vn"}/app/mkt-tasks?task=${task.id}`
-      const tgText = [
-        `📋 <b>Bạn có việc mới!</b>`,
-        ``,
-        `<b>${title}</b>`,
-        task.priority === "high" ? `🔴 Độ ưu tiên: <b>Cao</b>` : task.priority === "medium" ? `🟡 Độ ưu tiên: Vừa` : `🟢 Độ ưu tiên: Thấp`,
-        `📅 Deadline: ${deadlineStr}`,
-        `👤 Giao bởi: ${creatorName}`,
-        ``,
-        `🔗 <a href="${taskUrl}">Xem task</a>`,
-      ].filter(Boolean).join("\n")
-      notifyTelegramByEmail(userModule, effectiveAssigneeId, tgText).catch(() => {})
+      const svcForNotify = svc
+      await createTaskNotification(svcForNotify, {
+        taskId: task.id,
+        taskTitle: title,
+        assigneeEmail: effectiveAssigneeId,
+        creatorEmail,
+        creatorName,
+        deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
+      }, userModule).catch(() => {})
     }
 
     res.json({ task })

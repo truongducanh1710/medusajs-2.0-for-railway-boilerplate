@@ -17,8 +17,22 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const pool = getPool()
     const now = new Date().toISOString()
     const channelId = String((req.body as any)?.channel_id || "").trim()
+    const taskId = String((req.body as any)?.task_id || "").trim()
 
-    if (channelId) {
+    if (taskId) {
+      // Soft-delete notify của 1 task cụ thể — dùng khi nhân sự mở chi tiết task đó.
+      await pool.query(
+        `UPDATE mkt_message
+         SET deleted_at = now(), updated_at = now()
+         WHERE channel_id = $1
+           AND msg_type = 'system_notify'
+           AND deleted_at IS NULL
+           AND content::jsonb ->> 'type' = 'task_assigned'
+           AND content::jsonb ->> 'recipient' = $2
+           AND content::jsonb ->> 'task_id' = $3`,
+        [NOTIFY_CHANNEL_ID, auth.email, taskId]
+      )
+    } else if (channelId) {
       // Soft-delete các notify mention của recipient thuộc channel này. Unread
       // count (GET) đếm theo dòng còn sống nên xoá mềm là đủ để tắt chuông.
       await pool.query(
@@ -59,7 +73,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
        WHERE channel_id = '${NOTIFY_CHANNEL_ID}'
          AND msg_type = 'system_notify'
          AND deleted_at IS NULL
-         AND content::jsonb ->> 'type' = 'mention'
+         AND content::jsonb ->> 'type' IN ('mention', 'task_assigned')
          AND content::jsonb ->> 'recipient' = $1
          ${unreadReadClause}`,
       unreadParams

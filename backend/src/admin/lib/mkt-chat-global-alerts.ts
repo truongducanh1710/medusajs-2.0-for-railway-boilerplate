@@ -1,14 +1,18 @@
 type MktChatNotification = {
   id: string
-  channel_id: string
-  channel_name: string
-  message_id: string
+  type?: "mention" | "task_assigned"
+  channel_id?: string
+  channel_name?: string
+  message_id?: string
   sender: string
   sender_name: string
-  preview: string
+  preview?: string
   source?: string
   created_at: string
   read?: boolean
+  task_id?: string
+  task_title?: string
+  deadline?: string | null
 }
 
 type MktChatGlobalAlertState = {
@@ -209,6 +213,10 @@ function removeToast(id: string) {
 
 function openNotification(notification: MktChatNotification) {
   stopReminder()
+  if (notification.type === "task_assigned") {
+    window.location.href = `/app/mkt-tasks?task=${notification.task_id}`
+    return
+  }
   sessionStorage.setItem(MKT_CHAT_PENDING_JUMP_KEY, JSON.stringify({
     channel_id: notification.channel_id,
     message_id: notification.message_id,
@@ -241,13 +249,25 @@ function showToast(notification: MktChatNotification) {
     "font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif",
     "color:#111827",
   ].join(";")
-  wrap.innerHTML = `
+  const isTask = notification.type === "task_assigned"
+  wrap.innerHTML = isTask
+    ? `
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div style="display:grid;place-items:center;width:32px;height:32px;border-radius:999px;background:#dcfce7;color:#15803d;font-weight:800">📋</div>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:12px;font-weight:800;margin-bottom:2px">${escapeText(notification.sender_name || notification.sender)} giao việc mới</div>
+        <div style="font-size:12px;line-height:1.35;color:#374151;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeText(notification.task_title || "")}</div>
+      </div>
+      <span data-close="1" style="padding:0 4px;color:#6b7280;font-size:18px;line-height:18px">x</span>
+    </div>
+  `
+    : `
     <div style="display:flex;align-items:flex-start;gap:10px">
       <div style="display:grid;place-items:center;width:32px;height:32px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-weight:800">@</div>
       <div style="min-width:0;flex:1">
         <div style="font-size:12px;font-weight:800;margin-bottom:2px">${escapeText(notification.sender_name || notification.sender)} tag ban</div>
-        <div style="font-size:11px;color:#6b7280;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">#${escapeText(notification.channel_name)}${notification.source === "thread" ? " - thread" : ""}</div>
-        <div style="font-size:12px;line-height:1.35;color:#374151;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeText(notification.preview)}</div>
+        <div style="font-size:11px;color:#6b7280;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">#${escapeText(notification.channel_name || "")}${notification.source === "thread" ? " - thread" : ""}</div>
+        <div style="font-size:12px;line-height:1.35;color:#374151;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeText(notification.preview || "")}</div>
       </div>
       <span data-close="1" style="padding:0 4px;color:#6b7280;font-size:18px;line-height:18px">x</span>
     </div>
@@ -345,6 +365,11 @@ function openEventStream(state = getState()) {
   })
 
   es.addEventListener("mention.notification.created", (event: MessageEvent) => {
+    const data = JSON.parse(event.data || "{}")
+    handleNotification(data.notification as MktChatNotification | undefined)
+  })
+
+  es.addEventListener("task.notification.created", (event: MessageEvent) => {
     const data = JSON.parse(event.data || "{}")
     handleNotification(data.notification as MktChatNotification | undefined)
   })
