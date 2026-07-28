@@ -920,6 +920,32 @@ function ManageMembersModal({ channel, users, onClose, onSaved }: { channel: Cha
   )
 }
 
+// Chọn nhiều nhân sự để manager xem gộp task đã giao — không phải quản lý thành
+// viên channel thật (đó là ManageMembersModal, dùng để thêm/xoá member mkt_channel).
+function AssigneePickerModal({ users, selected, onClose, onApply }: {
+  users: MktUser[]; selected: string[]; onClose: () => void; onApply: (emails: string[]) => void
+}) {
+  const [picked, setPicked] = useState<Set<string>>(new Set(selected))
+  const toggle = (email: string) => setPicked(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
+
+  return (
+    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
+      <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="mb-1 text-base font-extrabold text-ui-fg-base">Chọn nhân sự</h2>
+        <p className="mb-4 text-xs text-ui-fg-muted">Xem gộp task đã giao cho những người được chọn</p>
+        <UserCheckList users={users} selected={picked} onToggle={toggle} />
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
+          <button onClick={() => { onApply([...picked]); onClose() }}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95">
+            Xem ({picked.size})
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
   channel: Channel; onClose: () => void; onSaved: () => void; onDeleted: () => void
 }) {
@@ -1429,11 +1455,12 @@ function MktChatPage() {
   const [threadRefreshKey, setThreadRefreshKey] = useState(0)
   const [notifications, setNotifications] = useState<MktNotification[]>([])
   const taskNotifications = useMemo(() => notifications.filter(n => n.type === "task_assigned"), [notifications])
-  // Manager xem lại task đã giao cho 1 nhân sự khác + trạng thái đã xem — không đụng
-  // đến "notifications của chính tôi" (không mark-read, không tính unread của mình).
-  const [assigneeViewEmail, setAssigneeViewEmail] = useState<string>("")
+  // Manager xem lại task đã giao cho 1 hoặc nhiều nhân sự khác + trạng thái đã xem —
+  // không đụng đến "notifications của chính tôi" (không mark-read, không tính unread).
+  const [assigneeViewEmails, setAssigneeViewEmails] = useState<string[]>([])
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false)
   const [assigneeNotifications, setAssigneeNotifications] = useState<Array<{
-    id: string; task_id: string; task_title: string; sender_name: string
+    id: string; task_id: string; task_title: string; sender_name: string; recipient: string
     created_at: string; read: boolean; read_at: string | null
   }>>([])
   const [notificationUnread, setNotificationUnread] = useState(0)
@@ -1702,10 +1729,10 @@ function MktChatPage() {
 
   // Mở pseudo-channel "📋 Việc được giao" → chỉ đánh dấu đã đọc các task_assigned CỦA
   // CHÍNH MÌNH đang chờ (không đụng mention). Manager xem hộ task người khác qua
-  // assigneeViewEmail thì KHÔNG mark-read hộ — đó là view chỉ-đọc, không phải "đã xem".
+  // assigneeViewEmails thì KHÔNG mark-read hộ — đó là view chỉ-đọc, không phải "đã xem".
   useEffect(() => {
     if (activeChannel?.id !== NOTIFY_CHANNEL_ID) return
-    if (isTaskManager && assigneeViewEmail && assigneeViewEmail !== currentUserId) return
+    if (isTaskManager && assigneeViewEmails.length > 0) return
     const unreadTaskIds = taskNotifications.filter(n => !n.read).map(n => n.task_id).filter(Boolean) as string[]
     if (unreadTaskIds.length === 0) return
     Promise.all(unreadTaskIds.map(taskId =>
@@ -1719,19 +1746,19 @@ function MktChatPage() {
       if (last) setNotificationUnread(Number(last.unread_count || 0))
       setNotifications(prev => prev.map(n => n.type === "task_assigned" ? { ...n, read: true } : n))
     }).catch(() => {})
-  }, [activeChannel?.id, taskNotifications, isTaskManager, assigneeViewEmail, currentUserId])
+  }, [activeChannel?.id, taskNotifications, isTaskManager, assigneeViewEmails])
 
-  // Manager chọn xem task của 1 nhân sự khác trong pseudo-channel.
+  // Manager chọn xem task của 1 hoặc nhiều nhân sự khác trong pseudo-channel.
   useEffect(() => {
-    if (activeChannel?.id !== NOTIFY_CHANNEL_ID || !isTaskManager || !assigneeViewEmail || assigneeViewEmail === currentUserId) {
+    if (activeChannel?.id !== NOTIFY_CHANNEL_ID || !isTaskManager || assigneeViewEmails.length === 0) {
       setAssigneeNotifications([])
       return
     }
-    apiFetch(`/admin/mkt-tasks/assignee-notifications?assignee=${encodeURIComponent(assigneeViewEmail)}`)
+    apiFetch(`/admin/mkt-tasks/assignee-notifications?assignee=${encodeURIComponent(assigneeViewEmails.join(","))}`)
       .then(r => r.json())
       .then(d => setAssigneeNotifications(d.notifications || []))
       .catch(() => setAssigneeNotifications([]))
-  }, [activeChannel?.id, isTaskManager, assigneeViewEmail, currentUserId])
+  }, [activeChannel?.id, isTaskManager, assigneeViewEmails])
 
   // Đồng bộ ref cho effect SSE đọc — xem giải thích ở khai báo activeChannelIdRef phía trên.
   useEffect(() => { activeChannelIdRef.current = activeChannel?.id ?? null }, [activeChannel?.id])
@@ -2625,8 +2652,9 @@ function MktChatPage() {
           )}
         </main>
       ) : activeChannel.id === NOTIFY_CHANNEL_ID ? (() => {
-        const viewingOther = isTaskManager && !!assigneeViewEmail && assigneeViewEmail !== currentUserId
+        const viewingOther = isTaskManager && assigneeViewEmails.length > 0
         const listToShow = viewingOther ? assigneeNotifications : taskNotifications
+        const nameByEmail = new Map(mktUsers.map(u => [u.email, u.name]))
         return (
         <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}>
           <div className="flex shrink-0 flex-col gap-2 border-b border-ui-border-base px-3 py-2.5 md:px-4">
@@ -2641,20 +2669,28 @@ function MktChatPage() {
               </div>
             </div>
             {isTaskManager && (
-              <select
-                value={assigneeViewEmail}
-                onChange={e => setAssigneeViewEmail(e.target.value)}
-                className="w-full rounded-lg border border-ui-border-base bg-ui-bg-base px-2.5 py-1.5 text-[12px] text-ui-fg-base outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
-                <option value="">— Việc của tôi —</option>
-                {mktUsers.filter(u => u.email !== currentUserId).map(u => (
-                  <option key={u.email} value={u.email}>{u.name}</option>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button onClick={() => setShowAssigneePicker(true)}
+                  className="rounded-lg border border-dashed border-ui-border-strong px-2.5 py-1 text-[12px] font-medium text-ui-fg-muted transition-colors hover:border-blue-300 hover:bg-blue-500/5 hover:text-blue-600">
+                  + Chọn nhân sự
+                </button>
+                {assigneeViewEmails.map(email => (
+                  <span key={email} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                    {nameByEmail.get(email) || email}
+                    <button onClick={() => setAssigneeViewEmails(prev => prev.filter(e => e !== email))} className="text-blue-500 hover:text-blue-700">×</button>
+                  </span>
                 ))}
-              </select>
+                {assigneeViewEmails.length > 0 && (
+                  <button onClick={() => setAssigneeViewEmails([])} className="text-[11px] font-medium text-ui-fg-muted hover:text-ui-fg-base">Bỏ chọn hết</button>
+                )}
+              </div>
             )}
           </div>
           <div className="flex-1 overflow-y-auto overscroll-contain bg-ui-bg-subtle px-4 py-3">
             {listToShow.length === 0 && (
-              <div className="mt-10 text-center text-[13px] text-ui-fg-muted">Chưa có việc mới nào 🎉</div>
+              <div className="mt-10 text-center text-[13px] text-ui-fg-muted">
+                {viewingOther ? "Chưa có việc nào cho những người này 🎉" : "Chưa có việc mới nào 🎉"}
+              </div>
             )}
             {listToShow.map((n: any) => (
               <button key={n.id}
@@ -2669,14 +2705,21 @@ function MktChatPage() {
                     <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(n.created_at)}</span>
                   </span>
                   <span className="block truncate text-[12px] text-ui-fg-subtle">{n.task_title}</span>
-                  {viewingOther && (
-                    <span className={cn("mt-1 inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
-                      n.read ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
-                      {n.read
-                        ? `✓ Đã xem${n.read_at ? " lúc " + new Date(n.read_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }) : ""}`
-                        : "⚠ Chưa xem"}
-                    </span>
-                  )}
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {viewingOther && (
+                      <span className="inline-flex w-fit items-center rounded-md bg-ui-bg-component px-1.5 py-0.5 text-[11px] font-medium text-ui-fg-subtle">
+                        👤 {nameByEmail.get(n.recipient) || n.recipient}
+                      </span>
+                    )}
+                    {viewingOther && (
+                      <span className={cn("inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
+                        n.read ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
+                        {n.read
+                          ? `✓ Đã xem${n.read_at ? " lúc " + new Date(n.read_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }) : ""}`
+                          : "⚠ Chưa xem"}
+                      </span>
+                    )}
+                  </span>
                 </span>
               </button>
             ))}
@@ -2956,6 +2999,14 @@ function MktChatPage() {
       {showTemplatesModal && (
         <TemplatesModal templates={templates} isManager={isManager}
           onClose={() => setShowTemplatesModal(false)} onChanged={loadTemplates} />
+      )}
+      {showAssigneePicker && (
+        <AssigneePickerModal
+          users={mktUsers.filter(u => u.email !== currentUserId)}
+          selected={assigneeViewEmails}
+          onClose={() => setShowAssigneePicker(false)}
+          onApply={setAssigneeViewEmails}
+        />
       )}
     </div>
   )
