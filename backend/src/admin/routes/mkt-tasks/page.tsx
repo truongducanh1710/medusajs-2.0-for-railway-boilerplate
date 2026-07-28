@@ -671,7 +671,7 @@ function PurchaseLotBlock({
   })()
 
   const createLot = async () => {
-    const prod = products.find((p) => p.id === f.product_id)
+    const prod = products.find((p) => String(p.id) === String(f.product_id))
     if (!prod) { onToast("Chọn sản phẩm", "error"); return }
     if (!num(f.qty) || !num(f.price_unit)) { onToast("Nhập số lượng và đơn giá", "error"); return }
     if (!f.received_date) { onToast("Chỉ tạo lô khi hàng đã về — nhập ngày nhận", "error"); return }
