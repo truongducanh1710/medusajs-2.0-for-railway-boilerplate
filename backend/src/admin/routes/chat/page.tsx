@@ -769,7 +769,7 @@ function ChatPage() {
                 ? (r.status === "ok" ? "#10b981" : r.status === "no_match" ? "#94a3b8" : "#ef4444")
                 : "#10b981"
               return (
-                <span key={name} title={isBackfill ? (r.error || `${r.updated}/${r.missing} hội thoại`) : undefined}
+                <span key={name} title={isBackfill ? (r.error || `${r.updated}/${r.missing} hội thoại${r.source ? ` · nguồn: ${r.source}` : ""}`) : undefined}
                   style={{ background: "#fff", border: "1px solid #fde68a", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>
                   {name}{" "}
                   {isBackfill ? (

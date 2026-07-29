@@ -92,6 +92,55 @@ export async function pancakeSendMessage(
   return result.id || ""
 }
 
+/**
+ * Build a PSID → customer name map from Pancake's conversation list.
+ *
+ * Needed because Facebook Graph `/{page}/conversations` returns OAuthException code 2
+ * for every page whose inbox is managed by Pancake (verified 2026-07-29 across 13 pages:
+ * all 9 Pancake-connected pages fail, all Graph-OK pages are not on Pancake). Pancake is
+ * therefore the only source of customer names for those pages.
+ *
+ * @param maxPages pagination depth — conversations missing a name are usually old ones.
+ */
+export async function pancakeLoadParticipantNames(
+  cfg: PancakeConfig,
+  maxPages = 40
+): Promise<Map<string, string>> {
+  const pid = cfg.pancake_page_id
+  const token = cfg.page_access_token
+  const names = new Map<string, string>()
+  let lastId: string | null = null
+
+  for (let page = 0; page < maxPages; page++) {
+    let url = `${PANCAKE_BASE}/v2/pages/${pid}/conversations?page_access_token=${token}&type=INBOX`
+    if (lastId) url += `&last_conversation_id=${lastId}`
+    const r = await fetch(url)
+    const d: any = await r.json().catch(() => ({}))
+    if (d?.success === false) {
+      throw new Error(`Pancake: ${d?.message || "list conversations failed"}`)
+    }
+    const convs: any[] = d?.conversations || []
+    if (!convs.length) break
+
+    for (const c of convs) {
+      // Tên khách nằm ở customers[].name; from.name là fallback cho hội thoại
+      // chưa gắn customer record.
+      for (const cu of c?.customers || []) {
+        const id = cu?.fb_id
+        const nm = String(cu?.name || "").trim()
+        if (id && nm) names.set(String(id), nm)
+      }
+      const fromId = c?.from?.id
+      const fromName = String(c?.from?.name || "").trim()
+      if (fromId && fromName && !names.has(String(fromId))) names.set(String(fromId), fromName)
+    }
+
+    lastId = convs[convs.length - 1]?.id
+    if (!lastId) break
+  }
+  return names
+}
+
 /** Scan the page's INBOX conversations (paginated) to find the one whose customer fb_id == psid. */
 async function findConversationIdByPsid(cfg: PancakeConfig, psid: string): Promise<string | null> {
   const pid = cfg.pancake_page_id

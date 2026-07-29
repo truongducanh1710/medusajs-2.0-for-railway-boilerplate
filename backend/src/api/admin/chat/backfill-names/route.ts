@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ensureChatTables, getChatAuthInfo, getChatPool, loadPageParticipantNames } from "../_lib"
+import { ensurePancakeTable, getPancakeConfig, pancakeLoadParticipantNames } from "../pancake-lib"
 
 /**
  * POST /admin/chat/backfill-names
@@ -24,9 +25,13 @@ import { ensureChatTables, getChatAuthInfo, getChatPool, loadPageParticipantName
  */
 const PLACEHOLDER_NAMES = ["Người dùng Facebook", "Facebook User"]
 
-/** Điều kiện SQL: customer_name coi như trống. $n đầu tiên là mảng placeholder. */
-const MISSING_NAME_SQL = (p: number) =>
-  `(c.customer_name IS NULL OR trim(c.customer_name) = '' OR c.customer_name ~ '^[0-9]+$' OR trim(c.customer_name) = ANY($${p}))`
+/**
+ * Điều kiện SQL: customer_name coi như trống.
+ * @param p  vị trí tham số chứa mảng PLACEHOLDER_NAMES
+ * @param t  tiền tố bảng ("c." khi có alias, "" khi UPDATE không alias)
+ */
+const MISSING_NAME_SQL = (p: number, t = "c.") =>
+  `(${t}customer_name IS NULL OR trim(${t}customer_name) = '' OR ${t}customer_name ~ '^[0-9]+$' OR trim(${t}customer_name) = ANY($${p}))`
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -35,6 +40,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const pool = getChatPool()
     await ensureChatTables(pool)
+    await ensurePancakeTable(pool)
 
     const body = (req.body as any) || {}
     const params: any[] = [PLACEHOLDER_NAMES]
@@ -65,27 +71,54 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       updated: number
       resolved: number
       status: "ok" | "graph_error" | "no_names" | "no_match"
+      source?: "pancake" | "graph"
       error?: string
     }
     const perPage: Record<string, PageResult> = {}
 
     for (const pr of pageRows) {
       const pageId = pr.page_id
-      let names: Map<string, string>
-      try {
-        // fresh: bỏ cache 60s để bấm "Vá tên" lần 2 không dùng lại kết quả rỗng.
-        // maxPages cao: hội thoại thiếu tên thường là hội thoại cũ, nằm sâu trong phân trang.
-        names = await loadPageParticipantNames(pool, pageId, { fresh: true, maxPages: 40 })
-      } catch (e: any) {
-        // Trước đây `catch {}` rỗng — token hỏng biến thành "0 updated" im lặng,
-        // khiến bấm Vá tên mãi không ăn thua mà không biết vì sao.
-        console.warn(`[backfill-names] page ${pageId}: ${e.message}`)
-        perPage[pageId] = { missing: pr.missing, updated: 0, resolved: 0, status: "graph_error", error: e.message }
-        continue
+      let names = new Map<string, string>()
+      let source: "pancake" | "graph" | null = null
+      const errs: string[] = []
+
+      // Pancake trước: page nào đã nối Pancake thì Graph /conversations luôn trả
+      // OAuthException code 2 (Facebook chặn app khác đọc inbox do bên thứ 3 quản lý),
+      // nên Pancake là nguồn tên DUY NHẤT cho các page đó.
+      const pcfg = await getPancakeConfig(pool, pageId).catch(() => null)
+      if (pcfg) {
+        try {
+          names = await pancakeLoadParticipantNames(pcfg)
+          source = "pancake"
+        } catch (e: any) {
+          errs.push(`Pancake: ${e.message}`)
+        }
+      }
+
+      // Graph fallback cho page chưa nối Pancake.
+      if (!names.size) {
+        try {
+          // fresh: bỏ cache 60s để bấm "Vá tên" lần 2 không dùng lại kết quả rỗng.
+          // maxPages cao: hội thoại thiếu tên thường là hội thoại cũ, nằm sâu trong phân trang.
+          names = await loadPageParticipantNames(pool, pageId, { fresh: true, maxPages: 40 })
+          if (names.size) source = "graph"
+        } catch (e: any) {
+          errs.push(`Graph: ${e.message}`)
+        }
       }
 
       if (!names.size) {
-        perPage[pageId] = { missing: pr.missing, updated: 0, resolved: 0, status: "no_names" }
+        // Trước đây `catch {}` rỗng — token hỏng biến thành "0 updated" im lặng,
+        // khiến bấm Vá tên mãi không ăn thua mà không biết vì sao.
+        const msg = errs.join(" · ")
+        if (msg) console.warn(`[backfill-names] page ${pageId}: ${msg}`)
+        perPage[pageId] = {
+          missing: pr.missing,
+          updated: 0,
+          resolved: 0,
+          status: errs.length ? "graph_error" : "no_names",
+          ...(msg ? { error: msg } : {}),
+        }
         continue
       }
 
@@ -93,9 +126,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       for (const [psid, name] of names) {
         if (!name || PLACEHOLDER_NAMES.includes(name.trim())) continue
         const r = await pool.query(
-          `UPDATE fb_conversation c
+          `UPDATE fb_conversation
            SET customer_name = $1, updated_at = now()
-           WHERE c.page_id = $2 AND c.customer_psid = $3 AND ${MISSING_NAME_SQL(4)}`,
+           WHERE page_id = $2 AND customer_psid = $3 AND ${MISSING_NAME_SQL(4, "")}`,
           [name, pageId, psid, PLACEHOLDER_NAMES]
         )
         updated += r.rowCount || 0
@@ -106,6 +139,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         updated,
         resolved: names.size,
         status: updated > 0 ? "ok" : "no_match",
+        ...(source ? { source } : {}),
       }
     }
 
