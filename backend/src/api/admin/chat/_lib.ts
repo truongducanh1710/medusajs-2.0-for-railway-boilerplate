@@ -3,6 +3,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { createHash } from "crypto"
 import { Pool } from "pg"
 import { resolveUserPerms } from "../../middlewares"
+import { getPancakeConfig, pancakeLoadParticipantNames } from "./pancake-lib"
 
 let _pool: Pool | null = null
 
@@ -395,10 +396,39 @@ export async function loadPageParticipantNames(
   return names
 }
 
+/** Tên placeholder Facebook trả khi khách không cho đọc profile — coi như không có tên. */
+const PLACEHOLDER_CUSTOMER_NAMES = ["Người dùng Facebook", "Facebook User"]
+
+export function isPlaceholderName(name: string | null | undefined): boolean {
+  const s = String(name || "").trim()
+  return !s || /^[0-9]+$/.test(s) || PLACEHOLDER_CUSTOMER_NAMES.includes(s)
+}
+
+/**
+ * Tra tên khách theo PSID. Thử Pancake trước rồi mới tới Graph.
+ *
+ * Với page đã nối Pancake, Graph /{page}/conversations luôn trả OAuthException code 2
+ * (Facebook không cho app khác đọc inbox do bên thứ ba quản lý — verify 2026-07-29),
+ * nên nếu chỉ hỏi Graph thì mọi hội thoại mới của các page đó lại lưu tên NULL và
+ * lỗi "chat hiện PSID" sẽ quay lại ngay sau khi vá.
+ */
 async function fetchCustomerNameFromGraph(pool: Pool, pageId: string, psid: string): Promise<string | null> {
   try {
+    const cfg = await getPancakeConfig(pool, pageId).catch(() => null)
+    if (cfg) {
+      // Chỉ cần 2 trang đầu: hội thoại vừa có tin nhắn luôn nằm đầu danh sách Pancake.
+      const names = await pancakeLoadParticipantNames(cfg, 2, new Set([psid]))
+      const n = names.get(psid)
+      if (n && !isPlaceholderName(n)) return n
+    }
+  } catch (e: any) {
+    console.warn(`[chat] pancake name lookup failed (page ${pageId}, psid ${psid}): ${e.message}`)
+  }
+
+  try {
     const names = await loadPageParticipantNames(pool, pageId)
-    return names.get(psid) || null
+    const n = names.get(psid)
+    return n && !isPlaceholderName(n) ? n : null
   } catch (e: any) {
     // Was silently swallowed before, which turned an expired token or a rate limit into
     // a permanently NULL customer_name with no trace.
@@ -532,6 +562,7 @@ export async function pullPageInbox(
     // Fallback: participant thiếu name (token cũ/thiếu quyền) → tra qua loadPageParticipantNames
     // (cùng nguồn, nhưng có cache) để không lưu NULL vĩnh viễn như trước.
     let customerName: string | undefined = customer.name || undefined
+    if (isPlaceholderName(customerName)) customerName = undefined
     if (!customerName) {
       customerName = (await fetchCustomerNameFromGraph(pool, pageId, psid)) || undefined
     }
@@ -660,12 +691,15 @@ export async function upsertIncomingMessage(opts: {
   }
 
   let customerName = opts.customerName
+  if (isPlaceholderName(customerName)) customerName = undefined
   if (!customerName) {
     const existing = await pool.query(
       `SELECT customer_name FROM fb_conversation WHERE page_id = $1 AND customer_psid = $2`,
       [opts.pageId, opts.psid]
     )
-    if (!existing.rows[0]?.customer_name) {
+    // isPlaceholderName thay cho check falsy: tên đang lưu có thể là PSID hoặc
+    // "Người dùng Facebook" — vẫn cần tra lại để có cơ hội lấy tên thật.
+    if (isPlaceholderName(existing.rows[0]?.customer_name)) {
       customerName = (await fetchCustomerNameFromGraph(pool, opts.pageId, opts.psid)) || undefined
     }
   }
@@ -676,7 +710,17 @@ export async function upsertIncomingMessage(opts: {
      VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,$9,$10,$11,$12,$13)
      ON CONFLICT (page_id, customer_psid) DO UPDATE SET
        page_name = EXCLUDED.page_name,
-       customer_name = COALESCE(EXCLUDED.customer_name, fb_conversation.customer_name),
+       -- Chỉ ghi đè khi tên đang lưu là rỗng/PSID/placeholder: COALESCE đơn thuần sẽ
+       -- giữ nguyên "Người dùng Facebook" vĩnh viễn dù sau đó lấy được tên thật.
+       customer_name = CASE
+         WHEN EXCLUDED.customer_name IS NULL THEN fb_conversation.customer_name
+         WHEN fb_conversation.customer_name IS NULL
+           OR trim(fb_conversation.customer_name) = ''
+           OR fb_conversation.customer_name ~ '^[0-9]+$'
+           OR trim(fb_conversation.customer_name) IN ('Người dùng Facebook','Facebook User')
+           THEN EXCLUDED.customer_name
+         ELSE fb_conversation.customer_name
+       END,
        last_message = EXCLUDED.last_message,
        last_message_at = EXCLUDED.last_message_at,
        unread_count = fb_conversation.unread_count + 1,
