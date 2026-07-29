@@ -355,20 +355,34 @@ async function getPageName(pool: Pool, pageId: string): Promise<string> {
 const _nameCache = new Map<string, { names: Map<string, string>; at: number }>()
 const NAME_CACHE_TTL_MS = 60_000
 
-export async function loadPageParticipantNames(pool: Pool, pageId: string): Promise<Map<string, string>> {
-  const cached = _nameCache.get(pageId)
-  if (cached && Date.now() - cached.at < NAME_CACHE_TTL_MS) return cached.names
+/**
+ * @param opts.fresh    bỏ qua cache — dùng cho vá tên thủ công, nếu không lần bấm thứ 2
+ *                      trong vòng 60s sẽ dùng lại đúng kết quả rỗng của lần đầu.
+ * @param opts.maxPages độ sâu phân trang. Mặc định 10 đủ cho đường sync nóng; vá tên
+ *                      thủ công cần sâu hơn vì hội thoại thiếu tên thường là hội thoại cũ.
+ * @throws  Lỗi Graph được ném ra thay vì nuốt, để caller phân biệt "page không có tên nào"
+ *          với "gọi Graph thất bại".
+ */
+export async function loadPageParticipantNames(
+  pool: Pool,
+  pageId: string,
+  opts: { fresh?: boolean; maxPages?: number } = {}
+): Promise<Map<string, string>> {
+  const { fresh = false, maxPages = 10 } = opts
+  if (!fresh) {
+    const cached = _nameCache.get(pageId)
+    if (cached && Date.now() - cached.at < NAME_CACHE_TTL_MS) return cached.names
+  }
 
   const names = new Map<string, string>()
   const { rows } = await pool.query(`SELECT access_token FROM fb_page_token WHERE page_id = $1`, [pageId])
   const token = rows[0]?.access_token
   if (!token) {
-    console.warn(`[chat] no access_token for page ${pageId} — cannot resolve customer names`)
-    return names
+    throw new Error(`Page ${pageId} chưa có access_token trong fb_page_token`)
   }
 
   // Paginated: a busy page has far more than one Graph page of conversations.
-  const convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants{id,name,email}&limit=50`, token, 10)
+  const convs = await fbGetAllPages(`/${pageId}/conversations?fields=participants{id,name,email}&limit=50`, token, maxPages)
   for (const conv of convs) {
     for (const p of conv?.participants?.data || []) {
       if (p?.id && p.id !== pageId && p?.name) {

@@ -706,7 +706,16 @@ function ChatPage() {
       const body: any = {}
       if (pageFilter) body.page_id = pageFilter
       const d = await apiJson("/admin/chat/backfill-names", "POST", body)
-      setSyncMsg(`✅ Đã vá tên ${d?.updated || 0} hội thoại (${d?.pages || 0} page)`)
+      // Hiện chi tiết per-page: trước đây chỉ hiện tổng `updated`, nên page lỗi token
+      // trông giống hệt page không có gì để vá.
+      setSyncDetail(d?.per_page || {})
+      const failed = d?.failed_pages || 0
+      setSyncMsg(
+        failed
+          ? `⚠️ Vá được ${d?.updated || 0} hội thoại · ${failed}/${d?.pages || 0} page lỗi — bấm để xem`
+          : `✅ Đã vá tên ${d?.updated || 0} hội thoại (${d?.pages || 0} page)`
+      )
+      if (failed) setShowSyncDetail(true)
       loadConvs(tab, pageFilter)
     } catch (e: any) { setSyncMsg(`❌ ${e.message}`) }
     finally { setSyncing(false) }
@@ -748,13 +757,32 @@ function ChatPage() {
       {showSyncDetail && Object.keys(syncDetail).length > 0 && (
         <div style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a", padding: "8px 16px", flexShrink: 0 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <b style={{ fontSize: 12 }}>Chi tiết sync:</b>
-            {Object.entries(syncDetail).map(([name, r]: [string, any]) => (
-              <span key={name} style={{ background: "#fff", border: "1px solid #fde68a", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>
-                {name} <b style={{ color: "#10b981" }}>+{r.saved}</b>
-                {r.errors?.length > 0 && <span style={{ color: "#ef4444" }}> ⚠</span>}
-              </span>
-            ))}
+            <b style={{ fontSize: 12 }}>Chi tiết:</b>
+            {Object.entries(syncDetail).map(([name, r]: [string, any]) => {
+              // Panel dùng chung cho 2 nguồn: sync-inbox trả {saved,errors},
+              // backfill-names trả {missing,updated,status,error}.
+              const isBackfill = r?.status !== undefined
+              const label = isBackfill
+                ? { ok: "✓ vá xong", graph_error: "✕ lỗi Graph", no_names: "✕ không có tên", no_match: "· không khớp" }[r.status as string] || r.status
+                : null
+              const tone = isBackfill
+                ? (r.status === "ok" ? "#10b981" : r.status === "no_match" ? "#94a3b8" : "#ef4444")
+                : "#10b981"
+              return (
+                <span key={name} title={isBackfill ? (r.error || `${r.updated}/${r.missing} hội thoại`) : undefined}
+                  style={{ background: "#fff", border: "1px solid #fde68a", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>
+                  {name}{" "}
+                  {isBackfill ? (
+                    <b style={{ color: tone }}>{r.updated}/{r.missing} {label}</b>
+                  ) : (
+                    <>
+                      <b style={{ color: tone }}>+{r.saved}</b>
+                      {r.errors?.length > 0 && <span style={{ color: "#ef4444" }}> ⚠</span>}
+                    </>
+                  )}
+                </span>
+              )
+            })}
             <button onClick={() => setShowSyncDetail(false)} style={{ marginLeft: "auto", border: "none", background: "none", cursor: "pointer", color: "#94a3b8" }}>✕</button>
           </div>
         </div>
