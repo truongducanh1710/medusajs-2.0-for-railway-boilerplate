@@ -85,10 +85,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       // Pancake trước: page nào đã nối Pancake thì Graph /conversations luôn trả
       // OAuthException code 2 (Facebook chặn app khác đọc inbox do bên thứ 3 quản lý),
       // nên Pancake là nguồn tên DUY NHẤT cho các page đó.
+      // PSID còn thiếu tên — dùng để dừng phân trang sớm khi đã tìm đủ.
+      const { rows: wantRows } = await pool.query(
+        `SELECT customer_psid FROM fb_conversation c
+         WHERE c.page_id = $1 AND ${MISSING_NAME_SQL(2)}`,
+        [pageId, PLACEHOLDER_NAMES]
+      )
+      const wanted = new Set<string>(wantRows.map((r: any) => String(r.customer_psid)))
+
       const pcfg = await getPancakeConfig(pool, pageId).catch(() => null)
       if (pcfg) {
         try {
-          names = await pancakeLoadParticipantNames(pcfg)
+          names = await pancakeLoadParticipantNames(pcfg, 40, wanted)
           source = "pancake"
         } catch (e: any) {
           errs.push(`Pancake: ${e.message}`)

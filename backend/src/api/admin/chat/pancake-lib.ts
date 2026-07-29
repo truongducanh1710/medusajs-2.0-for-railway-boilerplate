@@ -16,6 +16,8 @@ import type { Pool } from "pg"
 
 const PANCAKE_BASE = "https://pages.fm/api/public_api"
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 export async function ensurePancakeTable(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pancake_page_token (
@@ -101,10 +103,14 @@ export async function pancakeSendMessage(
  * therefore the only source of customer names for those pages.
  *
  * @param maxPages pagination depth — conversations missing a name are usually old ones.
+ * @param wanted   PSIDs still needing a name. Paging stops as soon as all are found,
+ *                 which keeps a typical backfill to a couple of requests instead of
+ *                 `maxPages` and avoids tripping Pancake's rate limit.
  */
 export async function pancakeLoadParticipantNames(
   cfg: PancakeConfig,
-  maxPages = 40
+  maxPages = 40,
+  wanted?: Set<string>
 ): Promise<Map<string, string>> {
   const pid = cfg.pancake_page_id
   const token = cfg.page_access_token
@@ -114,10 +120,22 @@ export async function pancakeLoadParticipantNames(
   for (let page = 0; page < maxPages; page++) {
     let url = `${PANCAKE_BASE}/v2/pages/${pid}/conversations?page_access_token=${token}&type=INBOX`
     if (lastId) url += `&last_conversation_id=${lastId}`
-    const r = await fetch(url)
-    const d: any = await r.json().catch(() => ({}))
+
+    // Pancake rate-limit khá thấp; vá tên toàn bộ page sẽ đụng trần nếu gọi liên tục.
+    // Retry với backoff tăng dần thay vì bỏ cuộc — nếu không, page bị "Too many requests"
+    // sẽ không vá được tên nào dù dữ liệu vẫn ở đó.
+    let d: any = null
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (page > 0 || attempt > 0) await sleep(attempt ? 1500 * attempt : 350)
+      const r = await fetch(url)
+      d = await r.json().catch(() => ({}))
+      if (d?.success !== false) break
+      const msg = String(d?.message || "")
+      if (!/too many requests|try again later/i.test(msg)) break
+      d = { success: false, message: msg, _retryable: true }
+    }
     if (d?.success === false) {
-      throw new Error(`Pancake: ${d?.message || "list conversations failed"}`)
+      throw new Error(String(d?.message || "list conversations failed"))
     }
     const convs: any[] = d?.conversations || []
     if (!convs.length) break
@@ -134,6 +152,9 @@ export async function pancakeLoadParticipantNames(
       const fromName = String(c?.from?.name || "").trim()
       if (fromId && fromName && !names.has(String(fromId))) names.set(String(fromId), fromName)
     }
+
+    // Đã tìm đủ PSID cần vá → dừng, không quét tiếp cho tốn quota.
+    if (wanted && wanted.size && [...wanted].every(id => names.has(id))) break
 
     lastId = convs[convs.length - 1]?.id
     if (!lastId) break
