@@ -2572,55 +2572,171 @@ function CombinedKpi({ label, value, target, hasTarget, sub, color, dim, days, s
 
 function Sparkline({ days, k, color }: { days: any[]; k: string; color: string }) {
   if (!days.length) return null
+  const W = 200, H = 34
   const vals = days.map(d => Number(d[k] ?? 0))
   const max = Math.max(...vals, 1)
-  const step = days.length > 1 ? 200 / (days.length - 1) : 0
-  const pts = vals.map((v, i) => `${(i * step).toFixed(1)},${(30 - v / max * 26).toFixed(1)}`).join(" ")
+  const step = days.length > 1 ? W / (days.length - 1) : 0
+  const yOf = (v: number) => H - 3 - (v / max) * (H - 9)
+  const pts = vals.map((v, i) => `${(i * step).toFixed(1)},${yOf(v).toFixed(1)}`)
+  const lastX = (vals.length - 1) * step
+  const id = `spark-${k}`
   return (
-    <svg viewBox="0 0 200 32" width="100%" height="32" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={`M0,${H} L${pts.join(" L")} L${lastX.toFixed(1)},${H} Z`} fill={`url(#${id})`} />
+      <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth={1.8}
+        strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
 
 // Area xếp chồng — chiều cao tổng = doanh số ngày.
+// KHÔNG dùng preserveAspectRatio="none": nó kéo giãn ngang làm nét vẽ và chữ méo.
+// Thay bằng viewBox rộng + width 100% để SVG tự co giãn giữ đúng tỉ lệ.
 function StackedAreaChart({ days, series, totalKey }: { days: any[]; series: any[]; totalKey: string }) {
+  const [hover, setHover] = useState<number | null>(null)
   if (!days.length) return <div className="text-center text-gray-400 text-sm py-10">Chưa có dữ liệu</div>
-  const W = 900, H = 220, PAD_B = 22
-  const max = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
-  const step = days.length > 1 ? W / (days.length - 1) : 0
-  const yOf = (v: number) => (H - PAD_B) - (v / max) * (H - PAD_B - 10)
+
+  const W = 900, H = 260
+  const PAD = { t: 14, r: 12, b: 30, l: 58 }
+  const plotW = W - PAD.l - PAD.r
+  const plotH = H - PAD.t - PAD.b
+  const rawMax = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
+  // Làm tròn trần lên "số đẹp" để nhãn trục Y không ra 87.3tr lẻ.
+  const niceMax = (() => {
+    const mag = Math.pow(10, Math.floor(Math.log10(rawMax)))
+    return Math.ceil(rawMax / (mag / 2)) * (mag / 2)
+  })()
+  const xOf = (i: number) => PAD.l + (days.length > 1 ? (i / (days.length - 1)) * plotW : plotW / 2)
+  const yOf = (v: number) => PAD.t + plotH - (v / niceMax) * plotH
 
   // Cộng dồn từ dưới lên: mỗi series là dải giữa đường trước và đường sau.
   let acc = days.map(() => 0)
   const bands = series.map(s => {
     const lower = [...acc]
     acc = acc.map((v, i) => v + Number(days[i][s.key] ?? 0))
-    const top = acc.map((v, i) => `${(i * step).toFixed(1)},${yOf(v).toFixed(1)}`).join(" L")
-    const bottom = [...lower].reverse()
-      .map((v, ri) => {
-        const i = lower.length - 1 - ri
-        return `${(i * step).toFixed(1)},${yOf(v).toFixed(1)}`
-      }).join(" L")
-    return { ...s, d: `M${top} L${bottom} Z` }
+    const upper = [...acc]
+    const top = upper.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" L")
+    const bottom = lower.map((v, i) => ({ v, i })).reverse()
+      .map(({ v, i }) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" L")
+    return {
+      ...s,
+      area: `M${top} L${bottom} Z`,
+      line: `M${top}`,          // viền trên mỗi dải — tách các mảng rõ hơn
+      upper,
+    }
   })
 
-  const labelIdx = [0, Math.floor(days.length / 3), Math.floor(days.length * 2 / 3), days.length - 1]
-    .filter((v, i, a) => a.indexOf(v) === i)
+  // Nhãn trục X: giãn đều ~6 mốc, luôn có ngày đầu và cuối.
+  const tickEvery = Math.max(1, Math.ceil(days.length / 6))
+  const xTicks = days.map((_, i) => i).filter(i => i % tickEvery === 0 || i === days.length - 1)
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map(f => niceMax * f)
+
+  const hv = hover != null ? days[hover] : null
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none"
-      role="img" aria-label="Biểu đồ vùng xếp chồng doanh số theo ngày">
-      {[0.25, 0.5, 0.75, 1].map(f => (
-        <line key={f} x1={0} y1={yOf(max * f)} x2={W} y2={yOf(max * f)} stroke="#ececed" strokeWidth={1} />
-      ))}
-      {bands.map(b => <path key={b.key} d={b.d} fill={b.color} opacity={0.85} />)}
-      {labelIdx.map(i => (
-        <text key={i} x={Math.min(Math.max(i * step, 4), W - 34)} y={H - 6} fontSize={10} fill="#9ca3af">
-          {days[i].date.slice(8)}/{days[i].date.slice(5, 7)}
-        </text>
-      ))}
-    </svg>
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
+        aria-label="Biểu đồ vùng xếp chồng doanh số theo ngày"
+        onMouseLeave={() => setHover(null)}
+        onMouseMove={e => {
+          // Quy đổi toạ độ chuột -> chỉ số ngày gần nhất. Dùng bounding box vì
+          // viewBox co giãn, clientX không khớp trực tiếp toạ độ SVG.
+          const box = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+          const x = ((e.clientX - box.left) / box.width) * W
+          const ratio = (x - PAD.l) / plotW
+          const idx = Math.round(ratio * (days.length - 1))
+          setHover(idx >= 0 && idx < days.length ? idx : null)
+        }}>
+        <defs>
+          {bands.map(b => (
+            <linearGradient key={b.key} id={`grad-${b.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={b.color} stopOpacity={0.95} />
+              <stop offset="100%" stopColor={b.color} stopOpacity={0.55} />
+            </linearGradient>
+          ))}
+        </defs>
+
+        {/* Lưới ngang + nhãn trục Y */}
+        {gridVals.map((v, i) => (
+          <g key={i}>
+            <line x1={PAD.l} y1={yOf(v)} x2={W - PAD.r} y2={yOf(v)}
+              stroke={i === 0 ? "#d4d4d8" : "#f1f1f3"} strokeWidth={1} />
+            <text x={PAD.l - 8} y={yOf(v) + 3.5} fontSize={10} fill="#9ca3af" textAnchor="end">
+              {i === 0 ? "0" : fmtVND(v)}
+            </text>
+          </g>
+        ))}
+
+        {/* Vùng cuối tuần tô nhạt — thấy nhịp T7/CN mà không cần đọc nhãn */}
+        {days.map((d, i) => {
+          if (!isWeekend(d.date)) return null
+          const half = days.length > 1 ? plotW / (days.length - 1) / 2 : 4
+          return <rect key={d.date} x={xOf(i) - half} y={PAD.t} width={half * 2} height={plotH}
+            fill="#f59e0b" opacity={0.06} />
+        })}
+
+        {bands.map(b => <path key={b.key} d={b.area} fill={`url(#grad-${b.key})`} />)}
+        {bands.map(b => (
+          <path key={b.key} d={b.line} fill="none" stroke={b.color} strokeWidth={1.5}
+            strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
+        ))}
+
+        {/* Đường dóng + chấm tại ngày đang hover */}
+        {hover != null && (
+          <g pointerEvents="none">
+            <line x1={xOf(hover)} y1={PAD.t} x2={xOf(hover)} y2={PAD.t + plotH}
+              stroke="#6b7280" strokeWidth={1} strokeDasharray="3 3" />
+            {bands.map(b => (
+              <circle key={b.key} cx={xOf(hover)} cy={yOf(b.upper[hover])} r={3.5}
+                fill="#fff" stroke={b.color} strokeWidth={2} />
+            ))}
+          </g>
+        )}
+
+        {/* Nhãn trục X */}
+        {xTicks.map(i => (
+          <text key={i} x={xOf(i)} y={H - 10} fontSize={10} textAnchor="middle"
+            fill={hover === i ? "#111827" : isWeekend(days[i].date) ? "#d97706" : "#9ca3af"}
+            fontWeight={hover === i ? 700 : 400}>
+            {days[i].date.slice(8)}/{days[i].date.slice(5, 7)}
+          </text>
+        ))}
+      </svg>
+
+      {/* Tooltip — HTML thay vì <text> trong SVG để chữ luôn sắc nét và tự xuống dòng */}
+      {hv && (
+        <div className="absolute pointer-events-none bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs z-10"
+          style={{
+            left: `${(xOf(hover!) / W) * 100}%`,
+            top: 8,
+            transform: `translateX(${hover! > days.length / 2 ? "calc(-100% - 12px)" : "12px"})`,
+            minWidth: 160,
+          }}>
+          <div className="font-semibold text-gray-700 mb-1.5 pb-1.5 border-b border-gray-100">
+            {hv.date.slice(8)}/{hv.date.slice(5, 7)} · {DOW_LABEL[dowOf(hv.date)]}
+            {isWeekend(hv.date) && <span className="text-amber-500 ml-1">cuối tuần</span>}
+          </div>
+          {[...series].reverse().map(s => (
+            <div key={s.key} className="flex items-center justify-between gap-4 py-0.5">
+              <span className="inline-flex items-center gap-1.5 text-gray-500">
+                <i className="w-2 h-2 rounded-sm inline-block" style={{ background: s.color }} />{s.label}
+              </span>
+              <span className="font-medium text-gray-700">{fmtVND(hv[s.key])}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-4 mt-1 pt-1 border-t border-gray-100">
+            <span className="text-gray-500">Tổng</span>
+            <span className="font-bold text-gray-800">{fmtVND(hv[totalKey])}</span>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -2637,35 +2753,56 @@ function DowChart({ days, series }: { days: any[]; series: any[] }) {
     return { dow, avg, total, n: rows.length }
   })
   const max = Math.max(...buckets.map(b => b.total), 1)
-  const W = 620, H = 190, BASE = 150, BW = 52, GAP = 30
+  const best = buckets.reduce((a, b) => (b.total > a.total ? b : a), buckets[0])
+  const W = 620, H = 200, BASE = 150, BW = 52, GAP = 30, PLOT_H = 130
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Doanh số trung bình theo thứ trong tuần">
-      {[0.25, 0.5, 0.75, 1].map(f => (
-        <line key={f} x1={34} y1={BASE - f * 130} x2={W} y2={BASE - f * 130} stroke="#ececed" strokeWidth={1} />
-      ))}
-      {[0.5, 1].map(f => (
-        <text key={f} x={30} y={BASE - f * 130 + 4} fontSize={10} fill="#9ca3af" textAnchor="end">
-          {fmtVND(max * f)}
-        </text>
+      {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
+        <g key={f}>
+          <line x1={40} y1={BASE - f * PLOT_H} x2={W - 6} y2={BASE - f * PLOT_H}
+            stroke={i === 0 ? "#d4d4d8" : "#f1f1f3"} strokeWidth={1} />
+          {(i === 0 || i === 2 || i === 4) && (
+            <text x={36} y={BASE - f * PLOT_H + 3.5} fontSize={10} fill="#9ca3af" textAnchor="end">
+              {i === 0 ? "0" : fmtVND(max * f)}
+            </text>
+          )}
+        </g>
       ))}
       {buckets.map((b, i) => {
-        const x = 44 + i * (BW + GAP)
+        const x = 48 + i * (BW + GAP)
+        const isBest = b.dow === best.dow && b.total > 0
         let y = BASE
+        // Vẽ từ dưới lên; chỉ đoạn trên cùng bo góc để cả cột trông liền một khối.
+        const segs = series.map(s => {
+          const h = (b.avg[s.key] / max) * PLOT_H
+          y -= h
+          return { key: s.key, color: s.color, y, h: Math.max(h, 0) }
+        })
+        const topY = y
         return (
           <g key={b.dow}>
-            {series.map(s => {
-              const h = (b.avg[s.key] / max) * 130
-              y -= h
-              return <rect key={s.key} x={x} y={y} width={BW} height={Math.max(h, 0)} fill={s.color} />
-            })}
-            <text x={x + BW / 2} y={BASE + 18} fontSize={10} textAnchor="middle"
-              fill={b.dow === 0 ? "#d97706" : "#9ca3af"} fontWeight={b.dow === 0 ? 600 : 400}>
+            <title>{`${DOW_LABEL[b.dow]} · TB ${fmtVND(b.total)} · ${b.n} ngày`}</title>
+            {segs.map((sg, si) => (
+              <rect key={sg.key} x={x} y={sg.y} width={BW} height={sg.h} fill={sg.color}
+                rx={si === segs.length - 1 ? 4 : 0}
+                opacity={isBest ? 1 : 0.82} />
+            ))}
+            {/* Ngày mạnh nhất trong tuần: ghi số ngay trên đầu cột */}
+            {isBest && (
+              <text x={x + BW / 2} y={topY - 6} fontSize={10} textAnchor="middle"
+                fill="#111827" fontWeight={700}>{fmtVND(b.total)}</text>
+            )}
+            <text x={x + BW / 2} y={BASE + 18} fontSize={11} textAnchor="middle"
+              fill={isBest ? "#111827" : b.dow === 0 ? "#d97706" : "#9ca3af"}
+              fontWeight={isBest || b.dow === 0 ? 700 : 400}>
               {DOW_LABEL[b.dow]}
             </text>
-            <text x={x + BW / 2} y={BASE + 32} fontSize={9} textAnchor="middle" fill="#c7c7cc">
-              {fmtVND(b.total)}
-            </text>
+            {!isBest && (
+              <text x={x + BW / 2} y={BASE + 32} fontSize={9} textAnchor="middle" fill="#c7c7cc">
+                {fmtVND(b.total)}
+              </text>
+            )}
           </g>
         )
       })}
@@ -2684,16 +2821,22 @@ function DonutChart({ series, totals, total }: { series: any[]; totals: any; tot
     offset += frac * C
     return arc
   })
+  // Khe hở nhỏ giữa các mảng để ranh giới rõ mà không cần viền trắng dày.
+  const GAP = arcs.length > 1 ? 2 : 0
   return (
     <div className="flex flex-col items-center gap-3">
       <svg viewBox="0 0 160 160" width={160} height={160} role="img" aria-label="Tỉ trọng doanh số">
+        <circle cx={80} cy={80} r={R} fill="none" stroke="#f1f1f3" strokeWidth={24} />
         {arcs.map(a => (
-          <circle key={a.key} cx={80} cy={80} r={R} fill="none" stroke={a.color} strokeWidth={26}
-            strokeDasharray={`${a.len.toFixed(2)} ${(C - a.len).toFixed(2)}`}
-            transform={`rotate(${a.rot.toFixed(2)} 80 80)`} />
+          <circle key={a.key} cx={80} cy={80} r={R} fill="none" stroke={a.color} strokeWidth={24}
+            strokeLinecap="butt"
+            strokeDasharray={`${Math.max(a.len - GAP, 0).toFixed(2)} ${(C - Math.max(a.len - GAP, 0)).toFixed(2)}`}
+            transform={`rotate(${a.rot.toFixed(2)} 80 80)`}>
+            <title>{`${a.label}: ${fmtVND(a.v)} · ${Math.round(a.frac * 100)}%`}</title>
+          </circle>
         ))}
-        <text x={80} y={78} textAnchor="middle" fontSize={18} fontWeight={700} fill="#111827">{fmtVND(total)}</text>
-        <text x={80} y={95} textAnchor="middle" fontSize={10} fill="#6b7280">tổng kỳ</text>
+        <text x={80} y={77} textAnchor="middle" fontSize={17} fontWeight={700} fill="#111827">{fmtVND(total)}</text>
+        <text x={80} y={94} textAnchor="middle" fontSize={9.5} fill="#9ca3af">tổng kỳ</text>
       </svg>
       <div className="flex flex-col gap-1.5 w-full">
         {arcs.map(a => (
