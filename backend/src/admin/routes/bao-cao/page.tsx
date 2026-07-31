@@ -2390,6 +2390,20 @@ const SCOPE_HINT: Record<Scope, string> = {
   my: "Malaysia — 2 sàn TikTok Shop và Shopee, đã quy đổi sang VND.",
 }
 const DOW_LABEL = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
+const DOW_FULL = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"]
+
+// Thang đo "số đẹp": chọn bước 1/2/2.5/4/5 × 10^n gần nhất để nhãn trục Y là số tròn
+// (0 · 40 · 80 · 120tr) thay vì chia đều ra 87.3tr lẻ.
+function niceScale(max: number, div = 4): { top: number; ticks: number[] } {
+  const raw = max / div
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)))
+  const n = raw / mag
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 4 ? 4 : n <= 5 ? 5 : 10) * mag
+  const top = Math.ceil(max / step) * step
+  const ticks: number[] = []
+  for (let v = 0; v <= top + step * 0.01; v += step) ticks.push(v)
+  return { top, ticks }
+}
 
 // Thứ trong tuần từ "YYYY-MM-DD". Parse thủ công theo UTC — new Date(chuỗi trần)
 // hiểu là UTC rồi getDay() lại đọc theo giờ máy, lệch 1 ngày ở múi +7.
@@ -2595,151 +2609,175 @@ function Sparkline({ days, k, color }: { days: any[]; k: string; color: string }
   )
 }
 
-// Area xếp chồng — chiều cao tổng = doanh số ngày.
-// KHÔNG dùng preserveAspectRatio="none": nó kéo giãn ngang làm nét vẽ và chữ méo.
-// Thay bằng viewBox rộng + width 100% để SVG tự co giãn giữ đúng tỉ lệ.
+// Vùng xếp chồng "sắc nét" (thiết kế 2a): đỉnh nhọn đúng giá trị ngày thay vì bo mượt,
+// mỗi lớp có viền màu 1.5px và đường phân cách trắng giữa hai lớp, nên ranh giới đọc rõ
+// ngay cả khi lớp dưới mỏng. Vẽ quét trái → phải một lần khi mở tab.
 function StackedAreaChart({ days, series, totalKey }: { days: any[]; series: any[]; totalKey: string }) {
   const [hover, setHover] = useState<number | null>(null)
+  // Đổi key để ép React thay <g>, animation CSS chạy lại từ đầu khi bấm "Chạy lại".
+  const [runId, setRunId] = useState(0)
   if (!days.length) return <div className="text-center text-gray-400 text-sm py-10">Chưa có dữ liệu</div>
 
-  const W = 900, H = 260
-  const PAD = { t: 14, r: 12, b: 30, l: 58 }
-  const plotW = W - PAD.l - PAD.r
-  const plotH = H - PAD.t - PAD.b
-  const rawMax = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
-  // Làm tròn trần lên "số đẹp" để nhãn trục Y không ra 87.3tr lẻ.
-  const niceMax = (() => {
-    const mag = Math.pow(10, Math.floor(Math.log10(rawMax)))
-    return Math.ceil(rawMax / (mag / 2)) * (mag / 2)
-  })()
-  const xOf = (i: number) => PAD.l + (days.length > 1 ? (i / (days.length - 1)) * plotW : plotW / 2)
-  const yOf = (v: number) => PAD.t + plotH - (v / niceMax) * plotH
+  const W = 1190, H = 300, ML = 58, MR = 12, MT = 22, MB = 42
+  const pw = W - ML - MR, ph = H - MT - MB
+  const N = days.length
+  const pitch = pw / N
+  const maxDay = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
+  const sc = niceScale(maxDay, 4)
+  const y = (v: number) => MT + ph - (v / sc.top) * ph
+  // xA trải điểm từ mép trái tới mép phải (biểu đồ vùng), xBar là tâm ô ngày (nhãn/hover).
+  const xA = (i: number) => ML + (N > 1 ? (pw / (N - 1)) * i : pw / 2)
+  const xBar = (i: number) => ML + pitch * i + pitch / 2
+  const poly = (pts: [number, number][]) =>
+    pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ")
 
-  // Cộng dồn từ dưới lên: mỗi series là dải giữa đường trước và đường sau.
-  let acc = days.map(() => 0)
-  const bands = series.map(s => {
-    const lower = [...acc]
-    acc = acc.map((v, i) => v + Number(days[i][s.key] ?? 0))
-    const upper = [...acc]
-    const top = upper.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" L")
-    const bottom = lower.map((v, i) => ({ v, i })).reverse()
-      .map(({ v, i }) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" L")
-    return {
-      ...s,
-      area: `M${top} L${bottom} Z`,
-      line: `M${top}`,          // viền trên mỗi dải — tách các mảng rõ hơn
-      upper,
-    }
+  // Biên tích luỹ của từng lớp — dùng chung cho vùng, viền và chấm hover.
+  const cum = days.map(d => {
+    let acc = 0
+    return series.map(s => (acc += Number(d[s.key] ?? 0)))
   })
 
-  // Nhãn trục X: giãn đều ~6 mốc, luôn có ngày đầu và cuối.
-  const tickEvery = Math.max(1, Math.ceil(days.length / 6))
-  const xTicks = days.map((_, i) => i).filter(i => i % tickEvery === 0 || i === days.length - 1)
-  const gridVals = [0, 0.25, 0.5, 0.75, 1].map(f => niceMax * f)
+  // Vẽ từ lớp trên cùng xuống: lớp sau đè lên lớp trước nên không cần tính hiệu.
+  const areas: any[] = [], lines: any[] = [], seps: any[] = []
+  for (let j = series.length - 1; j >= 0; j--) {
+    const pts = days.map((_, i) => [xA(i), y(cum[i][j])] as [number, number])
+    const p = poly(pts)
+    areas.push({ key: series[j].key, d: `${p} L${xA(N - 1).toFixed(1)} ${y(0)} L${ML} ${y(0)} Z`, fill: series[j].color })
+    if (j > 0) seps.push({ key: series[j].key, d: poly(days.map((_, i) => [xA(i), y(cum[i][j - 1])] as [number, number])) })
+    lines.push({ key: series[j].key, d: p, stroke: series[j].color })
+  }
 
+  const peakI = days.reduce((b, d, i, arr) => (Number(d[totalKey] ?? 0) > Number(arr[b][totalKey] ?? 0) ? i : b), 0)
   const hv = hover != null ? days[hover] : null
 
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
-        aria-label="Biểu đồ vùng xếp chồng doanh số theo ngày"
-        onMouseLeave={() => setHover(null)}
-        onMouseMove={e => {
-          // Quy đổi toạ độ chuột -> chỉ số ngày gần nhất. Dùng bounding box vì
-          // viewBox co giãn, clientX không khớp trực tiếp toạ độ SVG.
-          const box = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
-          const x = ((e.clientX - box.left) / box.width) * W
-          const ratio = (x - PAD.l) / plotW
-          const idx = Math.round(ratio * (days.length - 1))
-          setHover(idx >= 0 && idx < days.length ? idx : null)
-        }}>
-        <defs>
-          {bands.map(b => (
-            <linearGradient key={b.key} id={`grad-${b.key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={b.color} stopOpacity={0.95} />
-              <stop offset="100%" stopColor={b.color} stopOpacity={0.55} />
-            </linearGradient>
+    <div className="relative" style={{ width: "100%" }}>
+      <style>{`
+        @keyframes pvWipeIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        @keyframes pvAnnIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        @media (prefers-reduced-motion: reduce) {
+          .pv-reveal, .pv-ann { animation: none !important; }
+        }
+      `}</style>
+
+      <div className="flex justify-end mb-1">
+        <button onClick={() => setRunId(r => r + 1)}
+          className="text-xs px-2.5 py-1 rounded-md text-violet-600 bg-violet-50 border border-violet-200 hover:bg-violet-100">
+          Chạy lại hiệu ứng
+        </button>
+      </div>
+
+      <div style={{ position: "relative", width: "100%", aspectRatio: `${W} / ${H}` }}
+        onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" shapeRendering="geometricPrecision"
+          style={{ display: "block", position: "absolute", inset: 0 }}
+          role="img" aria-label="Biểu đồ vùng xếp chồng doanh số theo ngày">
+          <defs>
+            <clipPath id={`pvReveal-${runId}`}>
+              <rect x={ML - 2} y={0} width={pw + 4} height={H}
+                style={{ transformBox: "fill-box", transformOrigin: "left center",
+                  animation: "pvWipeIn 900ms cubic-bezier(0.22,0.7,0.2,1) both" }} />
+            </clipPath>
+          </defs>
+
+          {/* Nền: ô cuối tuần ngả vàng, ô đang hover xanh nhạt */}
+          {days.map((d, i) => {
+            const isHover = i === hover
+            if (!isHover && !isWeekend(d.date)) return null
+            return <rect key={d.date} x={ML + pitch * i} y={MT} width={pitch} height={ph}
+              fill={isHover ? "#eef2ff" : "#faf8f4"} />
+          })}
+
+          {sc.ticks.map((v: number) => (
+            <line key={v} x1={ML} y1={y(v)} x2={W - MR} y2={y(v)}
+              stroke={v === 0 ? "#d1d5db" : "#f1f2f4"} strokeWidth={1} shapeRendering="crispEdges" />
           ))}
-        </defs>
 
-        {/* Lưới ngang + nhãn trục Y */}
-        {gridVals.map((v, i) => (
-          <g key={i}>
-            <line x1={PAD.l} y1={yOf(v)} x2={W - PAD.r} y2={yOf(v)}
-              stroke={i === 0 ? "#d4d4d8" : "#f1f1f3"} strokeWidth={1} />
-            <text x={PAD.l - 8} y={yOf(v) + 3.5} fontSize={10} fill="#9ca3af" textAnchor="end">
-              {i === 0 ? "0" : fmtVND(v)}
-            </text>
+          <g key={runId} className="pv-reveal" clipPath={`url(#pvReveal-${runId})`}>
+            {areas.map(a => <path key={a.key} d={a.d} fill={a.fill} />)}
+            {seps.map(s => <path key={s.key} d={s.d} fill="none" stroke="#ffffff" strokeWidth={2.6} strokeLinejoin="round" />)}
+            {lines.map(l => <path key={l.key} d={l.d} fill="none" stroke={l.stroke} strokeWidth={1.5} strokeLinejoin="round" />)}
           </g>
-        ))}
 
-        {/* Vùng cuối tuần tô nhạt — thấy nhịp T7/CN mà không cần đọc nhãn */}
-        {days.map((d, i) => {
-          if (!isWeekend(d.date)) return null
-          const half = days.length > 1 ? plotW / (days.length - 1) / 2 : 4
-          return <rect key={d.date} x={xOf(i) - half} y={PAD.t} width={half * 2} height={plotH}
-            fill="#f59e0b" opacity={0.06} />
-        })}
+          {hover != null && (
+            <g pointerEvents="none">
+              <line x1={xA(hover)} y1={MT} x2={xA(hover)} y2={MT + ph} stroke="#4b5563" strokeWidth={1} shapeRendering="crispEdges" />
+              {series.map((s, j) => (
+                <circle key={s.key} cx={xA(hover)} cy={y(cum[hover][j])} r={3.6} fill="#ffffff" stroke={s.color} strokeWidth={2.2} />
+              ))}
+            </g>
+          )}
 
-        {bands.map(b => <path key={b.key} d={b.area} fill={`url(#grad-${b.key})`} />)}
-        {bands.map(b => (
-          <path key={b.key} d={b.line} fill="none" stroke={b.color} strokeWidth={1.5}
-            strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
-        ))}
+          {/* Vùng bắt chuột phủ kín từng ô ngày */}
+          {days.map((d, i) => (
+            <rect key={d.date} x={ML + pitch * i} y={MT} width={pitch} height={ph}
+              fill="transparent" onMouseEnter={() => setHover(i)} />
+          ))}
+        </svg>
 
-        {/* Đường dóng + chấm tại ngày đang hover */}
-        {hover != null && (
-          <g pointerEvents="none">
-            <line x1={xOf(hover)} y1={PAD.t} x2={xOf(hover)} y2={PAD.t + plotH}
-              stroke="#6b7280" strokeWidth={1} strokeDasharray="3 3" />
-            {bands.map(b => (
-              <circle key={b.key} cx={xOf(hover)} cy={yOf(b.upper[hover])} r={3.5}
-                fill="#fff" stroke={b.color} strokeWidth={2} />
-            ))}
-          </g>
-        )}
-
-        {/* Nhãn trục X */}
-        {xTicks.map(i => (
-          <text key={i} x={xOf(i)} y={H - 10} fontSize={10} textAnchor="middle"
-            fill={hover === i ? "#111827" : isWeekend(days[i].date) ? "#d97706" : "#9ca3af"}
-            fontWeight={hover === i ? 700 : 400}>
-            {days[i].date.slice(8)}/{days[i].date.slice(5, 7)}
-          </text>
-        ))}
-      </svg>
-
-      {/* Tooltip — HTML thay vì <text> trong SVG để chữ luôn sắc nét và tự xuống dòng */}
-      {hv && (
-        <div className="absolute pointer-events-none bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs z-10"
-          style={{
-            left: `${(xOf(hover!) / W) * 100}%`,
-            top: 8,
-            transform: `translateX(${hover! > days.length / 2 ? "calc(-100% - 12px)" : "12px"})`,
-            minWidth: 160,
-          }}>
-          <div className="font-semibold text-gray-700 mb-1.5 pb-1.5 border-b border-gray-100">
-            {hv.date.slice(8)}/{hv.date.slice(5, 7)} · {DOW_LABEL[dowOf(hv.date)]}
-            {isWeekend(hv.date) && <span className="text-amber-500 ml-1">cuối tuần</span>}
+        {/* Trục Y + nhãn ngày đặt bằng HTML để chữ luôn sắc nét, không co giãn theo SVG */}
+        <div style={{ position: "absolute", left: 0, top: 0, width: `${48 / W * 100}%`,
+          textAlign: "right", fontSize: "0.62rem", color: "#c4c9d2" }}>triệu ₫</div>
+        {sc.ticks.map((v: number) => (
+          <div key={v} style={{ position: "absolute", left: 0, top: `${(y(v) - 7) / H * 100}%`,
+            width: `${48 / W * 100}%`, textAlign: "right", fontSize: "0.66rem", lineHeight: "14px", color: "#9ca3af" }}>
+            {(v / 1e6).toFixed(1)}
           </div>
-          {[...series].reverse().map(s => (
-            <div key={s.key} className="flex items-center justify-between gap-4 py-0.5">
-              <span className="inline-flex items-center gap-1.5 text-gray-500">
-                <i className="w-2 h-2 rounded-sm inline-block" style={{ background: s.color }} />{s.label}
-              </span>
-              <span className="font-medium text-gray-700">{fmtVND(hv[s.key])}</span>
+        ))}
+        {days.map((d, i) => (
+          <div key={d.date} style={{ position: "absolute", left: `${(xBar(i) - 18) / W * 100}%`,
+            top: `${(MT + ph + 8) / H * 100}%`, width: `${36 / W * 100}%`, textAlign: "center" }}>
+            <div style={{ fontSize: "0.6rem", lineHeight: "12px",
+              color: isWeekend(d.date) ? "#9ca3af" : "#4b5563", fontWeight: isWeekend(d.date) ? 500 : 550 }}>
+              {d.date.slice(8)}
             </div>
-          ))}
-          <div className="flex items-center justify-between gap-4 mt-1 pt-1 border-t border-gray-100">
-            <span className="text-gray-500">Tổng</span>
-            <span className="font-bold text-gray-800">{fmtVND(hv[totalKey])}</span>
+            <div style={{ fontSize: "0.54rem", lineHeight: "12px", color: isWeekend(d.date) ? "#c0c5cd" : "#9ca3af" }}>
+              {DOW_LABEL[dowOf(d.date)]}
+            </div>
+          </div>
+        ))}
+
+        {/* Badge đỉnh — hiện sau khi nét vẽ quét xong */}
+        <div key={`ann-${runId}`} className="pv-ann" style={{ position: "absolute", inset: 0, pointerEvents: "none",
+          animation: "pvAnnIn 420ms ease 720ms both" }}>
+          <div style={{ position: "absolute", left: `${Math.min(xA(peakI) - 60, W - 150) / W * 100}%`,
+            top: `${(y(Number(days[peakI][totalKey] ?? 0)) - 27) / H * 100}%`,
+            fontSize: "0.66rem", fontWeight: 650, color: "#111827", background: "#ffffff",
+            border: "1px solid #d1d5db", borderRadius: 6, padding: "2px 7px", lineHeight: "15px", whiteSpace: "nowrap" }}>
+            Đỉnh {days[peakI].date.slice(8)}/{days[peakI].date.slice(5, 7)} · {fmtVND(days[peakI][totalKey])}
           </div>
         </div>
-      )}
+
+        {/* Tooltip nền tối */}
+        {hv && (
+          <div style={{ position: "absolute",
+            left: `${(xBar(hover!) + (hover! > N / 2 ? -16 - 210 : 16)) / W * 100}%`,
+            top: `${Math.max(MT, Math.min(y(Number(hv[totalKey] ?? 0)) - 12, MT + ph - (62 + series.length * 21))) / H * 100}%`,
+            width: `${210 / W * 100}%`, minWidth: 168, boxSizing: "border-box", padding: "10px 12px", borderRadius: 8,
+            background: "rgba(17,24,39,0.96)", boxShadow: "0 6px 20px rgba(16,24,40,0.18)", pointerEvents: "none", zIndex: 10 }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#f9fafb", marginBottom: 8 }}>
+              {DOW_FULL[dowOf(hv.date)]}, {hv.date.slice(8)}/{hv.date.slice(5, 7)}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {[...series].reverse().map(s => (
+                <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.7rem" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, display: "inline-block", flex: "none" }} />
+                  <span style={{ color: "#d1d5db", flex: 1 }}>{s.label}</span>
+                  <span style={{ color: "#ffffff", fontWeight: 550 }}>{fmtVND(hv[s.key])}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginTop: 8, paddingTop: 8, borderTop: "1px solid #374151" }}>
+              <span style={{ fontSize: "0.7rem", color: "#9ca3af" }}>Tổng ngày</span>
+              <span style={{ fontSize: "0.76rem", color: "#ffffff", fontWeight: 650 }}>{fmtVND(hv[totalKey])}</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
-
 // Cột xếp chồng theo thứ trong tuần (T2…CN), lấy trung bình mỗi thứ.
 function DowChart({ days, series }: { days: any[]; series: any[] }) {
   const ORDER = [1, 2, 3, 4, 5, 6, 0] // T2 → CN
