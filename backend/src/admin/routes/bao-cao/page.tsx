@@ -380,8 +380,20 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
   if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
   if (!data) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
 
-  const maxDay = Math.max(...(data.by_day ?? []).map((d: any) => d.orders), 1)
   const maxRev  = Math.max(...(data.by_day ?? []).map((d: any) => d.revenue), 1)
+
+  // Doanh thu TikTok / Shopee theo từng ngày — lấy từ by_source_day (có ở mọi market)
+  // để vẽ thanh xếp chồng thay cho số đơn.
+  const platformByDate = new Map<string, { tiktok: number; shopee: number }>()
+  for (const s of (data.by_source_day?.sources ?? [])) {
+    const key = s.source === "tiktok" ? "tiktok" : s.source === "shopee" ? "shopee" : null
+    if (!key) continue
+    for (const cell of (s.per_day ?? [])) {
+      const e = platformByDate.get(cell.date) || { tiktok: 0, shopee: 0 }
+      e[key] += cell.revenue || 0
+      platformByDate.set(cell.date, e)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -427,23 +439,43 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Chart by day */}
         <div className="lg:col-span-2 bg-white border rounded-xl p-5 shadow-sm">
-          <h3 className="font-semibold text-gray-700 mb-4">Đơn hàng theo ngày</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-700">Doanh số theo ngày</h3>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="inline-flex items-center gap-1.5">
+                <i className="w-2.5 h-2.5 rounded-sm bg-slate-800 inline-block" />TikTok
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <i className="w-2.5 h-2.5 rounded-sm bg-orange-500 inline-block" />Shopee
+              </span>
+            </div>
+          </div>
           <div className="max-h-80 overflow-y-auto space-y-1.5">
-            {(data.by_day ?? []).map((d: any) => (
-              <div key={d.date} className="flex items-center gap-2 text-xs">
-                <span className="text-gray-400 w-16 flex-shrink-0">{d.date.slice(5)}</span>
-                <div className="flex-1 relative h-5">
-                  <div className="absolute inset-y-0 left-0 bg-blue-100 rounded"
-                    style={{ width: `${Math.round(d.revenue / maxRev * 100)}%` }} />
-                  <div className="absolute inset-y-0 left-0 bg-blue-500 rounded opacity-80"
-                    style={{ width: `${Math.round(d.orders / maxDay * 100)}%` }} />
-                  <span className="absolute inset-y-0 flex items-center pl-2 text-white text-xs z-10">
-                    {d.orders} đơn
-                  </span>
+            {(data.by_day ?? []).map((d: any) => {
+              const p = platformByDate.get(d.date) ?? { tiktok: 0, shopee: 0 }
+              // Bề rộng thanh tổng tỉ lệ với ngày cao nhất; 2 mục chia theo tỉ trọng doanh thu.
+              const barPct = Math.round(d.revenue / maxRev * 100)
+              const sum = p.tiktok + p.shopee
+              const tkPct = sum > 0 ? p.tiktok / sum * 100 : 0
+              const spPct = sum > 0 ? p.shopee / sum * 100 : 0
+              return (
+                <div key={d.date} className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-400 w-16 flex-shrink-0">{d.date.slice(5)}</span>
+                  <div className="flex-1 h-5">
+                    <div className="flex h-full rounded overflow-hidden bg-gray-100"
+                      style={{ width: `${barPct}%`, minWidth: sum > 0 ? "2px" : undefined }}>
+                      <div className="bg-slate-800 h-full flex items-center overflow-hidden" style={{ width: `${tkPct}%` }}>
+                        {tkPct > 18 && <span className="px-1.5 text-white whitespace-nowrap">{fmt(p.tiktok)}</span>}
+                      </div>
+                      <div className="bg-orange-500 h-full flex items-center overflow-hidden" style={{ width: `${spPct}%` }}>
+                        {spPct > 18 && <span className="px-1.5 text-white whitespace-nowrap">{fmt(p.shopee)}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-gray-500 w-20 text-right flex-shrink-0 font-medium">{fmt(d.revenue)}</span>
                 </div>
-                <span className="text-gray-400 w-20 text-right flex-shrink-0">{fmt(d.revenue)}</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
