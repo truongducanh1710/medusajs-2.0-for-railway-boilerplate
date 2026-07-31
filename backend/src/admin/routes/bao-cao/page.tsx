@@ -382,18 +382,23 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
 
   const maxRev  = Math.max(...(data.by_day ?? []).map((d: any) => d.revenue), 1)
 
-  // Doanh thu TikTok / Shopee theo từng ngày — lấy từ by_source_day (có ở mọi market)
-  // để vẽ thanh xếp chồng thay cho số đơn.
-  const platformByDate = new Map<string, { tiktok: number; shopee: number }>()
-  for (const s of (data.by_source_day?.sources ?? [])) {
-    const key = s.source === "tiktok" ? "tiktok" : s.source === "shopee" ? "shopee" : null
-    if (!key) continue
+  // Doanh thu từng nguồn theo ngày — lấy từ by_source_day (có ở mọi market) để vẽ thanh
+  // xếp chồng thay cho số đơn. Tách theo TOÀN BỘ nguồn (không chỉ TikTok/Shopee) để tổng
+  // các mảnh luôn khớp doanh thu ngày — VN chủ yếu là Thủ công/Facebook.
+  const trendSources: any[] = (data.by_source_day?.sources ?? [])
+    .filter((s: any) => Number(s.total_revenue || 0) > 0)
+    .sort((a: any, b: any) => Number(b.total_revenue) - Number(a.total_revenue))
+  const stackByDate = new Map<string, { source: string; color: string; revenue: number }[]>()
+  trendSources.forEach((s: any, i: number) => {
+    const color = sourceColorOf(s.source, i)
     for (const cell of (s.per_day ?? [])) {
-      const e = platformByDate.get(cell.date) || { tiktok: 0, shopee: 0 }
-      e[key] += cell.revenue || 0
-      platformByDate.set(cell.date, e)
+      const rev = Number(cell.revenue || 0)
+      if (rev <= 0) continue
+      const arr = stackByDate.get(cell.date) ?? []
+      arr.push({ source: s.source, color, revenue: rev })
+      stackByDate.set(cell.date, arr)
     }
-  }
+  })
 
   return (
     <div className="space-y-5">
@@ -441,38 +446,48 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
         <div className="lg:col-span-2 bg-white border rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-700">Doanh số theo ngày</h3>
-            <div className="flex items-center gap-3 text-xs text-gray-500">
-              <span className="inline-flex items-center gap-1.5">
-                <i className="w-2.5 h-2.5 rounded-sm bg-slate-800 inline-block" />TikTok
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <i className="w-2.5 h-2.5 rounded-sm bg-orange-500 inline-block" />Shopee
-              </span>
+            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap justify-end">
+              {trendSources.map((s: any, i: number) => (
+                <span key={s.source} className="inline-flex items-center gap-1.5">
+                  <i className="w-2.5 h-2.5 rounded-sm inline-block"
+                    style={{ background: sourceColorOf(s.source, i) }} />
+                  {SOURCE_LABELS[s.source] ?? s.source}
+                </span>
+              ))}
             </div>
           </div>
           <div className="max-h-80 overflow-y-auto space-y-1.5">
             {(data.by_day ?? []).map((d: any) => {
-              const p = platformByDate.get(d.date) ?? { tiktok: 0, shopee: 0 }
-              // Bề rộng thanh tổng tỉ lệ với ngày cao nhất; 2 mục chia theo tỉ trọng doanh thu.
+              const segs = stackByDate.get(d.date) ?? []
+              const sum = segs.reduce((a, s) => a + s.revenue, 0)
+              // Bề rộng thanh tổng tỉ lệ với ngày cao nhất; các mục chia theo tỉ trọng doanh thu.
               const barPct = Math.round(d.revenue / maxRev * 100)
-              const sum = p.tiktok + p.shopee
-              const tkPct = sum > 0 ? p.tiktok / sum * 100 : 0
-              const spPct = sum > 0 ? p.shopee / sum * 100 : 0
               return (
                 <div key={d.date} className="flex items-center gap-2 text-xs">
                   <span className="text-gray-400 w-16 flex-shrink-0">{d.date.slice(5)}</span>
                   <div className="flex-1 h-5">
                     <div className="flex h-full rounded overflow-hidden bg-gray-100"
                       style={{ width: `${barPct}%`, minWidth: sum > 0 ? "2px" : undefined }}>
-                      <div className="bg-slate-800 h-full flex items-center overflow-hidden" style={{ width: `${tkPct}%` }}>
-                        {tkPct > 18 && <span className="px-1.5 text-white whitespace-nowrap">{fmt(p.tiktok)}</span>}
-                      </div>
-                      <div className="bg-orange-500 h-full flex items-center overflow-hidden" style={{ width: `${spPct}%` }}>
-                        {spPct > 18 && <span className="px-1.5 text-white whitespace-nowrap">{fmt(p.shopee)}</span>}
-                      </div>
+                      {segs.map(seg => {
+                        const pct = sum > 0 ? seg.revenue / sum * 100 : 0
+                        const label = SOURCE_LABELS[seg.source] ?? seg.source
+                        return (
+                          <div key={seg.source} className="h-full flex items-center overflow-hidden"
+                            style={{ width: `${pct}%`, background: seg.color }}
+                            // Mảnh quá nhỏ không đủ chỗ in số → vẫn xem được khi hover.
+                            title={`${label}: ${fmt(seg.revenue)}`}>
+                            {pct > 18 && (
+                              <span className="px-1.5 text-white whitespace-nowrap">{fmt(seg.revenue)}</span>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
-                  <span className="text-gray-500 w-20 text-right flex-shrink-0 font-medium">{fmt(d.revenue)}</span>
+                  <span className="text-gray-500 w-20 text-right flex-shrink-0 font-medium"
+                    title={segs.map(s => `${SOURCE_LABELS[s.source] ?? s.source}: ${fmt(s.revenue)}`).join("\n")}>
+                    {fmt(d.revenue)}
+                  </span>
                 </div>
               )
             })}
