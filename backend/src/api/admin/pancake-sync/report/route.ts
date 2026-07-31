@@ -89,7 +89,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         order: { pancake_created_at: "ASC" },
       }
     )
-    const allOrders = allOrdersRaw.filter(keepOrder)
+    const allOrdersAll = allOrdersRaw.filter(keepOrder)
 
     // Kỳ liền trước: chỉ cần source + status + cod_amount + tags để tính totals + bySource (Δ).
     const prevOrdersRaw = await syncService.listPancakeOrders(
@@ -102,13 +102,31 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         select: ["id", "source", "status", "cod_amount", "tags"],
       }
     )
-    const prevOrders = prevOrdersRaw.filter(keepOrder)
+    const prevOrdersKept = prevOrdersRaw.filter(keepOrder)
 
-    // Doanh thu "COD" = SUM(cod_amount) của TẤT CẢ đơn mọi trạng thái, cho cả VN và MY —
-    // khớp con số COD Pancake POS. cod_amount là tiền cần thu (sau giảm giá/phí sàn), khác với
-    // `total` (giá gốc trước khuyến mãi). Trước đây VN dùng SUM(total) mọi đơn khiến doanh thu
-    // đội lên (vd tháng 6: total=3.18 tỷ vs cod_amount=2.59 tỷ) — đã thống nhất dùng cod_amount.
+    // Đơn RÁC — không phải doanh thu thật, loại khỏi cả doanh thu lẫn mẫu số các tỷ lệ:
+    //   - thẻ "Đơn trùng": loại ở MỌI trạng thái (đơn đã nhân bản, tính vào là đếm tiền 2 lần)
+    //   - thẻ "Đơn nháp":  chỉ loại khi đã hủy/xóa (6/7/-1) — sale tạo nhầm rồi hủy. Đơn nháp
+    //     còn sống vẫn giữ vì có thể được chốt thành đơn thật.
+    // Khác isExcludedCore: hàm này áp cho MỌI source_group, kể cả "all".
+    const isJunkOrder = (o: any): boolean => {
+      if (hasTag(o, "Đơn trùng")) return true
+      const cancelledOrDeleted = o.status === 6 || o.status === 7 || o.status === -1
+      return cancelledOrDeleted && hasTag(o, "Đơn nháp")
+    }
+
+    // Doanh thu "COD" = SUM(cod_amount) của mọi đơn CÒN HIỆU LỰC (loại đơn rác ở trên), cho cả
+    // VN và MY. cod_amount là tiền cần thu (sau giảm giá/phí sàn), khác với `total` (giá gốc
+    // trước khuyến mãi). Trước đây VN dùng SUM(total) mọi đơn khiến doanh thu đội lên
+    // (vd tháng 6: total=3.18 tỷ vs cod_amount=2.59 tỷ) — đã thống nhất dùng cod_amount.
     const revenueOf = (o: any): number => Number(o.cod_amount ?? 0)
+
+    // Loại đơn rác MỘT LẦN ở đây thay vì rải điều kiện ở từng phép tính — mọi thống kê phía
+    // sau (by_source, by_day, by_product, by_shop, tỷ lệ thành công/hoàn...) tự động đúng.
+    const junkCount = allOrdersAll.filter(isJunkOrder).length
+    const allOrders = allOrdersAll.filter((o: any) => !isJunkOrder(o))
+    // Kỳ trước lọc cùng tiêu chí, nếu không Δ% đem 2 thước đo khác nhau ra so.
+    const prevOrders = prevOrdersKept.filter((o: any) => !isJunkOrder(o))
 
     // --- Totals ---
     const totalOrders = allOrders.length
@@ -341,6 +359,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       success_count: successCount,
       return_count: returnCount,
       cancel_count: cancelCount,
+      // Số đơn rác đã loại (đơn trùng mọi trạng thái + đơn nháp đã hủy/xóa) — hiện lên UI
+      // để người xem biết vì sao tổng đơn ở đây lệch với Pancake POS.
+      junk_count: junkCount,
       // Kỳ liền trước cùng độ dài — dùng cho Δ tăng/giảm ở KPI + theo nguồn.
       prev: {
         from: prevFromDate.toISOString(),

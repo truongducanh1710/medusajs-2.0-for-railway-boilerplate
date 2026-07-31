@@ -429,7 +429,9 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
           sub={`/ ${fmtNum(data.total_orders)} tổng đơn`}
           delta={data.prev ? pctDelta(data.success_count, data.prev.success_count) : null} />
         <KpiCard label="Doanh thu COD" value={fmt(data.total_revenue)}
-          sub="gồm mọi trạng thái"
+          sub={data.junk_count > 0
+            ? `đã trừ ${fmtNum(data.junk_count)} đơn nháp hủy / trùng`
+            : "đã trừ đơn nháp hủy / đơn trùng"}
           delta={data.prev ? pctDelta(data.total_revenue, data.prev.total_revenue) : null}
           accent="border-l-4 border-l-green-400" />
         <KpiCard label="Tỷ lệ thành công" value={`${data.success_rate}%`}

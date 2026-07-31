@@ -18,6 +18,17 @@ import { getMyrToVndRate } from "../../../../../lib/db"
 
 const MY_SEN_PER_RM = 100
 
+// Don RAC — giong dinh nghia o report/route.ts, phai khop de 2 tab khong lech nhau:
+//   - the "Don trung": loai o MOI trang thai (dem vao la tinh tien 2 lan)
+//   - the "Don nhap":  chi loai khi da huy/xoa (6/7/-1); don nhap con song van giu
+const hasTag = (o: any, name: string): boolean =>
+  Array.isArray(o.tags) && o.tags.some((t: any) => String(t?.name ?? "") === name)
+const isJunkOrder = (o: any): boolean => {
+  if (hasTag(o, "Đơn trùng")) return true
+  const cancelledOrDeleted = o.status === 6 || o.status === 7 || o.status === -1
+  return cancelledOrDeleted && hasTag(o, "Đơn nháp")
+}
+
 // Ngay dia phuong: VN=UTC+7, MY=UTC+8. Gom theo ngay dia phuong cua chinh thi
 // truong do (khong ep ve 1 mui) — dung voi cach report/route.ts dang lam.
 function localDateStr(d: Date, offsetHours: number): string {
@@ -54,7 +65,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       { pancake_created_at: { $gte: fromDate, $lte: toDate } },
       {
         take: 20000, // 2 thi truong trong 1 lan goi -> gap doi han cua report thuong
-        select: ["id", "source", "status", "cod_amount", "market", "pancake_created_at"],
+        select: ["id", "source", "status", "cod_amount", "market", "tags", "pancake_created_at"],
         order: { pancake_created_at: "ASC" },
       }
     )
@@ -69,9 +80,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const byDay = new Map<string, ReturnType<typeof blank>>()
     for (const d of dayKeys) byDay.set(d, blank())
 
-    let ordersVn = 0, ordersMy = 0
+    let ordersVn = 0, ordersMy = 0, junkCount = 0
     for (const o of orders) {
       if (!o.pancake_created_at) continue
+      if (isJunkOrder(o)) { junkCount++; continue }
       const isMy = o.market === "MY"
       const date = localDateStr(new Date(o.pancake_created_at), isMy ? 8 : 7)
       const cell = byDay.get(date)
@@ -109,6 +121,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       my_tt: sum("my_tt"), my_sp: sum("my_sp"),
       vn: sum("vn"), my: sum("my"), total: sum("total"),
       orders_vn: ordersVn, orders_my: ordersMy, orders: ordersVn + ordersMy,
+      junk_count: junkCount,
     }
 
     // --- Ke hoach (target) trong cung khoang ngay ---
