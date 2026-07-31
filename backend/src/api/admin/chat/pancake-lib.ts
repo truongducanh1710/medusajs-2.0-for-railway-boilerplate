@@ -162,6 +162,132 @@ export async function pancakeLoadParticipantNames(
   return names
 }
 
+/**
+ * Liệt kê hội thoại INBOX có hoạt động từ `since` trở lại đây.
+ *
+ * Pancake sắp xếp mới nhất trước, nên dừng ngay khi gặp trang đã cũ hơn `since` —
+ * cron 3 phút chỉ tốn 1 request thay vì quét cả inbox.
+ */
+export async function pancakeListConversations(
+  cfg: PancakeConfig,
+  since: Date,
+  maxPages = 20
+): Promise<Array<{ psid: string; name?: string }>> {
+  const pid = cfg.pancake_page_id
+  const out: Array<{ psid: string; name?: string }> = []
+  const seen = new Set<string>()
+  let lastId: string | null = null
+
+  for (let page = 0; page < maxPages; page++) {
+    let url = `${PANCAKE_BASE}/v2/pages/${pid}/conversations?page_access_token=${cfg.page_access_token}&type=INBOX`
+    if (lastId) url += `&last_conversation_id=${lastId}`
+
+    let d: any = null
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (page > 0 || attempt > 0) await sleep(attempt ? 1500 * attempt : 350)
+      const r = await fetch(url)
+      d = await r.json().catch(() => ({}))
+      if (d?.success !== false) break
+      if (!/too many requests|try again later/i.test(String(d?.message || ""))) break
+    }
+    if (d?.success === false) throw new Error(String(d?.message || "list conversations failed"))
+
+    const convs: any[] = d?.conversations || []
+    if (!convs.length) break
+
+    let sawOlder = false
+    for (const c of convs) {
+      const ts = c?.updated_at || c?.inserted_at
+      if (ts && new Date(`${ts}Z`) < since) { sawOlder = true; continue }
+      const cust = (c?.customers || [])[0]
+      const psid = String(cust?.fb_id || c?.from?.id || "")
+      if (!psid || seen.has(psid)) continue
+      seen.add(psid)
+      out.push({ psid, name: String(cust?.name || c?.from?.name || "").trim() || undefined })
+    }
+    if (sawOlder) break
+
+    lastId = convs[convs.length - 1]?.id
+    if (!lastId) break
+  }
+  return out
+}
+
+export type PancakeMessage = {
+  id: string
+  text: string
+  fromPage: boolean
+  createdAt: Date
+  attachments: any[]
+  raw: any
+}
+
+/** Pancake trả message dạng HTML ("<div>xin chào</div>") — chat lưu plain text. */
+function stripHtml(html: string): string {
+  return String(html || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+/**
+ * Đọc tin nhắn của 1 hội thoại từ Pancake, gồm CẢ tin page trả lời khách.
+ *
+ * Cần thiết vì: tin page được sale gõ trên Pancake nên Facebook không phát
+ * message_echoes, còn Graph /{page}/conversations lại bị chặn trên chính các page
+ * nối Pancake (OAuthException code 2) — nên Graph không kéo được gì cả. Pancake là
+ * đường duy nhất lấy được tin outbound cho các page này.
+ *
+ * Verify 2026-07-31 (page 693411540511731): conv_id `{pancake_page_id}_{psid}` trả 200
+ * với 30 message, text nằm ở `message` (HTML), `from.id === page_id` là tin của page.
+ */
+export async function pancakeFetchMessages(
+  cfg: PancakeConfig,
+  fbPageId: string,
+  psid: string
+): Promise<PancakeMessage[]> {
+  const pid = cfg.pancake_page_id
+  const cid = `${pid}_${psid}`
+  const url = `${PANCAKE_BASE}/v1/pages/${pid}/conversations/${cid}/messages?page_access_token=${cfg.page_access_token}`
+
+  let d: any = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await sleep(1200 * attempt)
+    const r = await fetch(url)
+    d = await r.json().catch(() => ({}))
+    if (d?.success !== false && r.status < 500) break
+  }
+  if (d?.success === false) throw new Error(String(d?.message || "Pancake messages failed"))
+
+  const out: PancakeMessage[] = []
+  for (const m of d?.messages || []) {
+    const attachments = m?.attachments || []
+    const text = stripHtml(m?.message ?? m?.original_message ?? "")
+    if (!text && !attachments.length) continue
+    // Pancake id có thể thiếu — ghép khoá ổn định để ON CONFLICT chống trùng.
+    const id = String(m?.id || `${cid}_${m?.inserted_at || ""}`)
+    out.push({
+      id,
+      text: text || "[attachment]",
+      fromPage: String(m?.from?.id || "") === String(fbPageId),
+      createdAt: m?.inserted_at ? new Date(`${m.inserted_at}Z`) : new Date(),
+      attachments,
+      raw: m,
+    })
+  }
+  // Cũ trước, mới sau — khớp thứ tự lưu của luồng Graph.
+  out.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  return out
+}
+
 /** Scan the page's INBOX conversations (paginated) to find the one whose customer fb_id == psid. */
 async function findConversationIdByPsid(cfg: PancakeConfig, psid: string): Promise<string | null> {
   const pid = cfg.pancake_page_id

@@ -3,7 +3,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { createHash } from "crypto"
 import { Pool } from "pg"
 import { resolveUserPerms } from "../../middlewares"
-import { getPancakeConfig, pancakeLoadParticipantNames } from "./pancake-lib"
+import { getPancakeConfig, pancakeFetchMessages, pancakeListConversations, pancakeLoadParticipantNames } from "./pancake-lib"
 
 let _pool: Pool | null = null
 
@@ -541,6 +541,14 @@ export async function pullPageInbox(
   const sinceTs = Math.floor(since.getTime() / 1000)
   const pool = getChatPool()
 
+  // Page nối Pancake: Graph /{page}/conversations trả OAuthException code 2 nên
+  // KHÔNG kéo được gì — kể cả tin page trả lời khách (sale gõ trên Pancake nên
+  // Facebook cũng không phát message_echoes về webhook). Pancake là đường duy nhất.
+  const pancakeCfg = await getPancakeConfig(pool, pageId).catch(() => null)
+  if (pancakeCfg) {
+    return pullPageInboxFromPancake(pancakeCfg, pageId, pageName, since, scope)
+  }
+
   // `since` bounds the set, so paging terminates quickly on the 3-min cron and only
   // goes deep on a manual multi-day sync.
   let convs: any[]
@@ -641,6 +649,109 @@ export async function pullPageInbox(
         }
       } catch (e: any) {
         errors.push(`Msg ${msgId}: ${e.message}`)
+        skipped++
+      }
+    }
+  }
+
+  return { saved, skipped, errors }
+}
+
+/**
+ * Bản Pancake của pullPageInbox — dùng cho page mà Graph bị chặn.
+ *
+ * Lưu cả tin khách (inbound) lẫn tin page (outbound), giống hệt luồng Graph, nên
+ * phần hiển thị và realtime không cần biết tin đến từ nguồn nào.
+ */
+async function pullPageInboxFromPancake(
+  cfg: { pancake_page_id: string; page_access_token: string },
+  pageId: string,
+  pageName: string,
+  since: Date,
+  scope?: any
+): Promise<{ saved: number; skipped: number; errors: string[] }> {
+  let saved = 0, skipped = 0
+  const errors: string[] = []
+  const pool = getChatPool()
+  await ensureChatTables(pool)
+
+  let convs: Array<{ psid: string; name?: string }>
+  try {
+    convs = await pancakeListConversations(cfg, since)
+  } catch (e: any) {
+    errors.push(`Lấy conversations Pancake thất bại: ${e.message}`)
+    return { saved, skipped, errors }
+  }
+
+  for (const c of convs) {
+    const psid = c.psid
+    const customerName = isPlaceholderName(c.name) ? undefined : c.name
+
+    let msgs: Awaited<ReturnType<typeof pancakeFetchMessages>>
+    try {
+      msgs = await pancakeFetchMessages(cfg, pageId, psid)
+    } catch (e: any) {
+      errors.push(`Conv ${psid}: ${e.message}`)
+      skipped++
+      continue
+    }
+
+    for (const m of msgs) {
+      // Chỉ lưu tin trong khoảng `since` để cron 3 phút không ghi lại cả lịch sử.
+      if (m.createdAt < since) { skipped++; continue }
+      try {
+        if (m.fromPage) {
+          await pool.query(
+            `INSERT INTO fb_conversation (page_id, page_name, customer_psid, customer_name, status, last_message, last_message_at)
+             VALUES ($1,$2,$3,$4,'new',$5,$6)
+             ON CONFLICT (page_id, customer_psid) DO UPDATE SET
+               page_name = EXCLUDED.page_name,
+               customer_name = COALESCE(EXCLUDED.customer_name, fb_conversation.customer_name),
+               updated_at = now()`,
+            [pageId, pageName, psid, customerName || null, m.text, m.createdAt]
+          )
+          const convRow = await pool.query(
+            `SELECT id FROM fb_conversation WHERE page_id=$1 AND customer_psid=$2`, [pageId, psid]
+          )
+          const dbConvId = convRow.rows[0]?.id
+          if (!dbConvId) { skipped++; continue }
+
+          const inserted = await pool.query(
+            `INSERT INTO fb_message (conversation_id, fb_message_id, direction, sender_type, text, attachments, created_at)
+             VALUES ($1,$2,'outbound','page',$3,$4,$5)
+             ON CONFLICT (fb_message_id) DO NOTHING
+             RETURNING id`,
+            [dbConvId, m.id, m.text, JSON.stringify(m.attachments), m.createdAt]
+          )
+          if (inserted.rowCount) {
+            await pool.query(
+              `UPDATE fb_conversation
+               SET last_message = $2, last_message_at = $3, updated_at = now()
+               WHERE id = $1
+                 AND (last_message_at IS NULL OR last_message_at <= $3)`,
+              [dbConvId, m.text, m.createdAt]
+            )
+            broadcastChatEvent("new_message", { page_id: pageId, conversation_id: dbConvId, direction: "outbound" })
+            saved++
+          } else {
+            skipped++
+          }
+        } else {
+          const result = await upsertIncomingMessage({
+            pageId, psid,
+            customerName,
+            text: m.text,
+            fbMessageId: m.id,
+            attachments: m.attachments,
+            raw: m.raw,
+            createdAt: m.createdAt,
+            scope,
+          })
+          if (result.inserted) saved++
+          else skipped++
+        }
+      } catch (e: any) {
+        errors.push(`Msg ${m.id}: ${e.message}`)
         skipped++
       }
     }
