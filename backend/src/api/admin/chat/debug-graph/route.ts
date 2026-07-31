@@ -55,19 +55,46 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   ).catch(() => ({ rows: [] as any[] }))
   const pc = pcRows[0]
   if (pc && psid) {
-    const cid = `${pc.pancake_page_id}_${psid}`
+    // Lấy conversation id THẬT từ danh sách Pancake thay vì tự ghép — id ghép
+    // `{page}_{psid}` trả 500 với page này.
+    let realCid: string | null = null
+    let listShape: any = null
+    try {
+      const lu = `https://pages.fm/api/public_api/v2/pages/${pc.pancake_page_id}/conversations?page_access_token=${pc.page_access_token}&type=INBOX`
+      const lr = await fetch(lu)
+      const lj: any = await lr.json()
+      const convs: any[] = lj?.conversations || []
+      listShape = {
+        status: lr.status,
+        count: convs.length,
+        first_keys: convs[0] ? Object.keys(convs[0]).slice(0, 25) : null,
+        first_id: convs[0]?.id,
+        first_customers: (convs[0]?.customers || []).map((c: any) => ({ fb_id: c?.fb_id, name: c?.name })),
+      }
+      for (const c of convs) {
+        const ids = [c?.from?.id, ...(c?.customers || []).map((x: any) => x?.fb_id)].map(String)
+        if (ids.includes(psid)) { realCid = c.id; break }
+      }
+    } catch (e: any) {
+      listShape = { error: e.message }
+    }
+    pancakeProbe = { list: listShape, matched_conversation_id: realCid }
+
+    const cid = realCid || `${pc.pancake_page_id}_${psid}`
     try {
       const u = `https://pages.fm/api/public_api/v1/pages/${pc.pancake_page_id}/conversations/${cid}/messages?page_access_token=${pc.page_access_token}`
       const r = await fetch(u)
       const j: any = await r.json()
       const msgs: any[] = j?.messages || j?.data || []
       pancakeProbe = {
+        ...pancakeProbe,
         conversation_id: cid,
         status: r.status,
         success: j?.success,
         message: j?.message,
+        top_keys: Object.keys(j || {}).slice(0, 15),
         count: msgs.length,
-        sample: msgs.slice(-6).map((m: any) => ({
+        sample: msgs.slice(-8).map((m: any) => ({
           from_id: m?.from?.id,
           from_name: m?.from?.name,
           text: String(m?.message ?? m?.original_message ?? "").slice(0, 60),
@@ -75,7 +102,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         })),
       }
     } catch (e: any) {
-      pancakeProbe = { conversation_id: cid, error: e.message }
+      pancakeProbe = { ...pancakeProbe, conversation_id: cid, error: e.message }
     }
   }
 
