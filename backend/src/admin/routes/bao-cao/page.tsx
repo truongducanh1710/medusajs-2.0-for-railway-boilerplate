@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState, useRef, useContext, createContext } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
+import { useCurrentPermissions } from "../../lib/use-permissions"
 
 // ---- Currency display context ----
 // Cho phép mọi Tab format tiền đúng theo market đang chọn (VN → VND, MY → MYR/VND quy đổi)
@@ -2323,10 +2324,665 @@ function pushState(tab: string, range: DateRange, market: string) {
   history.replaceState(null, "", `?${p.toString()}`)
 }
 
-// ---- Main Page ----
-type TabKey = "overview" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "errors" | "marketing"
+// ================= Tab "Tổng 2 thị trường" =================
+// Gộp VN + MY về VND (MY quy đổi sẵn ở API /report/combined). Chiều tách dữ liệu
+// đổi theo phạm vi đang chọn:
+//   all → VN vs Malaysia            (2 mảng, xem bức tranh toàn DN)
+//   vn  → Facebook / TikTok / Shopee (Facebook = phần còn lại sau khi trừ 2 sàn)
+//   my  → TikTok Shop / Shopee
+type Scope = "all" | "vn" | "my"
 
-const VALID_TABS: TabKey[] = ["overview", "shipping", "product", "sale", "nv-mkt", "lng", "errors", "marketing"]
+// Series của từng phạm vi: key trong payload + nhãn + màu. Thứ tự = thứ tự xếp chồng
+// (phần tử đầu nằm dưới cùng của area/bar).
+const SCOPE_SERIES: Record<Scope, { key: string; label: string; color: string }[]> = {
+  all: [
+    { key: "my", label: "Malaysia", color: "#d97706" },
+    { key: "vn", label: "Việt Nam", color: "#2563eb" },
+  ],
+  vn: [
+    { key: "vn_sp", label: "Shopee", color: "#ee4d2d" },
+    { key: "vn_tt", label: "TikTok", color: "#111827" },
+    { key: "vn_fb", label: "Facebook", color: "#1877f2" },
+  ],
+  my: [
+    { key: "my_sp", label: "Shopee", color: "#ee4d2d" },
+    { key: "my_tt", label: "TikTok Shop", color: "#111827" },
+  ],
+}
+const SCOPE_TOTAL_KEY: Record<Scope, string> = { all: "total", vn: "vn", my: "my" }
+const SCOPE_HINT: Record<Scope, string> = {
+  all: "Gộp 2 thị trường — Malaysia đã quy đổi sang VND.",
+  vn: "Việt Nam — Facebook là phần còn lại sau khi trừ TikTok và Shopee.",
+  my: "Malaysia — 2 sàn TikTok Shop và Shopee, đã quy đổi sang VND.",
+}
+const DOW_LABEL = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
+
+// Thứ trong tuần từ "YYYY-MM-DD". Parse thủ công theo UTC — new Date(chuỗi trần)
+// hiểu là UTC rồi getDay() lại đọc theo giờ máy, lệch 1 ngày ở múi +7.
+function dowOf(date: string): number {
+  const [y, m, d] = date.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+}
+function isWeekend(date: string): boolean {
+  const w = dowOf(date)
+  return w === 0 || w === 6
+}
+
+function CombinedTab({ range }: { range: DateRange }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [scope, setScope] = useState<Scope>("all")
+  const [showSetting, setShowSetting] = useState(false)
+  const { has } = useCurrentPermissions()
+  const canEditTarget = has("page.bao-cao.target-edit")
+
+  function load() {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/combined?from=${toISO(range.from)}&to=${toISO(range.to, true)}`)
+      .then(setData).catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }
+  useEffect(load, [range.from, range.to])
+
+  if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
+  if (!data) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
+
+  const days: any[] = data.days ?? []
+  const totals = data.totals ?? {}
+  const tTotals = data.target?.totals ?? {}
+  const hasTarget = !!data.target?.has_target
+  const series = SCOPE_SERIES[scope]
+  const totalKey = SCOPE_TOTAL_KEY[scope]
+  const scopeTotal = Number(totals[totalKey] ?? 0)
+  const scopeTarget = Number(tTotals[totalKey] ?? 0)
+
+  return (
+    <div className="space-y-5">
+      {/* Phạm vi: xem chung hoặc soi riêng từng thị trường */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm text-gray-500">Phạm vi:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden bg-white">
+          {([
+            { k: "all" as Scope, label: "Tổng 2 thị trường", dot: "" },
+            { k: "vn" as Scope, label: "Việt Nam", dot: "#2563eb" },
+            { k: "my" as Scope, label: "Malaysia", dot: "#d97706" },
+          ]).map((s, i) => (
+            <button key={s.k} onClick={() => setScope(s.k)}
+              className={`px-3.5 py-1.5 text-sm inline-flex items-center gap-2 ${i > 0 ? "border-l border-gray-200" : ""} ${
+                scope === s.k ? "bg-violet-600 text-white font-semibold" : "bg-white text-gray-600 hover:bg-gray-50"
+              }`}>
+              {s.dot && <i className="w-2 h-2 rounded-full inline-block"
+                style={{ background: scope === s.k ? "#fff" : s.dot }} />}
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-gray-400">{SCOPE_HINT[scope]}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-gray-400">1 RM = {fmtNum(data.myr_to_vnd_rate)}đ</span>
+          {canEditTarget && (
+            <button onClick={() => setShowSetting(true)}
+              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white hover:bg-gray-50">
+              🎯 Cài kế hoạch
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* KPI 3 thị trường — mờ đi cái không thuộc phạm vi đang chọn */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CombinedKpi label="Việt Nam" value={totals.vn} target={tTotals.vn} hasTarget={hasTarget}
+          sub={`${fmtNum(totals.orders_vn)} đơn`} color="#2563eb"
+          dim={scope === "my"} days={days} seriesKey="vn" />
+        <CombinedKpi label="Malaysia" value={totals.my} target={tTotals.my} hasTarget={hasTarget}
+          sub={`${fmtNum(totals.orders_my)} đơn · quy đổi VND`} color="#d97706"
+          dim={scope === "vn"} days={days} seriesKey="my" />
+        <CombinedKpi label="Tổng 2 thị trường" value={totals.total} target={tTotals.total} hasTarget={hasTarget}
+          sub={`${fmtNum(totals.orders)} đơn · VN ${pctOf(totals.vn, totals.total)}% · MY ${pctOf(totals.my, totals.total)}%`}
+          color="#7c3aed" dim={false} days={days} seriesKey="total" />
+      </div>
+
+      {/* Xu hướng theo ngày (area xếp chồng) */}
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="font-semibold text-gray-700 text-sm">Xu hướng doanh số theo ngày</h3>
+          <SeriesLegend series={series} />
+        </div>
+        <div className="p-4">
+          <StackedAreaChart days={days} series={series} totalKey={totalKey} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Nhịp theo thứ trong tuần */}
+        <div className="lg:col-span-2 bg-white border rounded-xl shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+            <h3 className="font-semibold text-gray-700 text-sm">Doanh số trung bình theo thứ</h3>
+            <span className="text-xs text-gray-400">tìm ngày mạnh / ngày yếu</span>
+          </div>
+          <div className="p-4">
+            <DowChart days={days} series={series} />
+          </div>
+        </div>
+
+        {/* Cơ cấu */}
+        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b">
+            <h3 className="font-semibold text-gray-700 text-sm">Cơ cấu doanh số</h3>
+          </div>
+          <div className="p-4">
+            <DonutChart series={series} totals={totals} total={scopeTotal} />
+          </div>
+        </div>
+      </div>
+
+      {/* Bảng chi tiết theo ngày */}
+      <CombinedDayTable days={days} series={series} totalKey={totalKey}
+        targetDays={data.target?.days ?? []} hasTarget={hasTarget}
+        totals={totals} targetTotals={tTotals} scopeTotal={scopeTotal} scopeTarget={scopeTarget} />
+
+      {showSetting && (
+        <TargetSettingModal month={range.to.slice(0, 7)}
+          onClose={() => setShowSetting(false)}
+          onSaved={() => { setShowSetting(false); load() }} />
+      )}
+    </div>
+  )
+}
+
+function pctOf(part: any, whole: any): number {
+  const w = Number(whole || 0)
+  if (w <= 0) return 0
+  return Math.round(Number(part || 0) / w * 100)
+}
+
+function SeriesLegend({ series }: { series: { label: string; color: string }[] }) {
+  // Đảo thứ tự để chú thích đọc từ trên xuống khớp thứ tự xếp chồng nhìn thấy.
+  return (
+    <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+      {[...series].reverse().map(s => (
+        <span key={s.label} className="inline-flex items-center gap-1.5">
+          <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: s.color }} />{s.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function CombinedKpi({ label, value, target, hasTarget, sub, color, dim, days, seriesKey }: {
+  label: string; value: any; target: any; hasTarget: boolean; sub: string
+  color: string; dim: boolean; days: any[]; seriesKey: string
+}) {
+  const v = Number(value || 0)
+  const t = Number(target || 0)
+  const pct = t > 0 ? Math.round(v / t * 100) : null
+  const pctColor = pct == null ? "#6b7280" : pct >= 100 ? "#16a34a" : pct >= 80 ? "#d97706" : "#dc2626"
+  return (
+    <div className={`bg-white border rounded-xl p-5 shadow-sm transition-opacity ${dim ? "opacity-40" : ""}`}
+      style={{ borderTop: `3px solid ${color}` }}>
+      <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
+      <div className="text-2xl font-bold mt-1">{fmtVND(v)}</div>
+      <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
+      {hasTarget && (
+        <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex items-center justify-between text-xs">
+          <span className="text-gray-400">KH {t > 0 ? fmtVND(t) : "—"}</span>
+          {pct != null
+            ? <span className="font-semibold" style={{ color: pctColor }}>{pct}% hoàn thành</span>
+            : <span className="text-gray-300">—</span>}
+        </div>
+      )}
+      <div className="mt-2"><Sparkline days={days} k={seriesKey} color={color} /></div>
+    </div>
+  )
+}
+
+function Sparkline({ days, k, color }: { days: any[]; k: string; color: string }) {
+  if (!days.length) return null
+  const vals = days.map(d => Number(d[k] ?? 0))
+  const max = Math.max(...vals, 1)
+  const step = days.length > 1 ? 200 / (days.length - 1) : 0
+  const pts = vals.map((v, i) => `${(i * step).toFixed(1)},${(30 - v / max * 26).toFixed(1)}`).join(" ")
+  return (
+    <svg viewBox="0 0 200 32" width="100%" height="32" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// Area xếp chồng — chiều cao tổng = doanh số ngày.
+function StackedAreaChart({ days, series, totalKey }: { days: any[]; series: any[]; totalKey: string }) {
+  if (!days.length) return <div className="text-center text-gray-400 text-sm py-10">Chưa có dữ liệu</div>
+  const W = 900, H = 220, PAD_B = 22
+  const max = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
+  const step = days.length > 1 ? W / (days.length - 1) : 0
+  const yOf = (v: number) => (H - PAD_B) - (v / max) * (H - PAD_B - 10)
+
+  // Cộng dồn từ dưới lên: mỗi series là dải giữa đường trước và đường sau.
+  let acc = days.map(() => 0)
+  const bands = series.map(s => {
+    const lower = [...acc]
+    acc = acc.map((v, i) => v + Number(days[i][s.key] ?? 0))
+    const top = acc.map((v, i) => `${(i * step).toFixed(1)},${yOf(v).toFixed(1)}`).join(" L")
+    const bottom = [...lower].reverse()
+      .map((v, ri) => {
+        const i = lower.length - 1 - ri
+        return `${(i * step).toFixed(1)},${yOf(v).toFixed(1)}`
+      }).join(" L")
+    return { ...s, d: `M${top} L${bottom} Z` }
+  })
+
+  const labelIdx = [0, Math.floor(days.length / 3), Math.floor(days.length * 2 / 3), days.length - 1]
+    .filter((v, i, a) => a.indexOf(v) === i)
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none"
+      role="img" aria-label="Biểu đồ vùng xếp chồng doanh số theo ngày">
+      {[0.25, 0.5, 0.75, 1].map(f => (
+        <line key={f} x1={0} y1={yOf(max * f)} x2={W} y2={yOf(max * f)} stroke="#ececed" strokeWidth={1} />
+      ))}
+      {bands.map(b => <path key={b.key} d={b.d} fill={b.color} opacity={0.85} />)}
+      {labelIdx.map(i => (
+        <text key={i} x={Math.min(Math.max(i * step, 4), W - 34)} y={H - 6} fontSize={10} fill="#9ca3af">
+          {days[i].date.slice(8)}/{days[i].date.slice(5, 7)}
+        </text>
+      ))}
+    </svg>
+  )
+}
+
+// Cột xếp chồng theo thứ trong tuần (T2…CN), lấy trung bình mỗi thứ.
+function DowChart({ days, series }: { days: any[]; series: any[] }) {
+  const ORDER = [1, 2, 3, 4, 5, 6, 0] // T2 → CN
+  const buckets = ORDER.map(dow => {
+    const rows = days.filter(d => dowOf(d.date) === dow)
+    const avg: Record<string, number> = {}
+    for (const s of series) {
+      avg[s.key] = rows.length ? rows.reduce((a, r) => a + Number(r[s.key] ?? 0), 0) / rows.length : 0
+    }
+    const total = series.reduce((a, s) => a + avg[s.key], 0)
+    return { dow, avg, total, n: rows.length }
+  })
+  const max = Math.max(...buckets.map(b => b.total), 1)
+  const W = 620, H = 190, BASE = 150, BW = 52, GAP = 30
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Doanh số trung bình theo thứ trong tuần">
+      {[0.25, 0.5, 0.75, 1].map(f => (
+        <line key={f} x1={34} y1={BASE - f * 130} x2={W} y2={BASE - f * 130} stroke="#ececed" strokeWidth={1} />
+      ))}
+      {[0.5, 1].map(f => (
+        <text key={f} x={30} y={BASE - f * 130 + 4} fontSize={10} fill="#9ca3af" textAnchor="end">
+          {fmtVND(max * f)}
+        </text>
+      ))}
+      {buckets.map((b, i) => {
+        const x = 44 + i * (BW + GAP)
+        let y = BASE
+        return (
+          <g key={b.dow}>
+            {series.map(s => {
+              const h = (b.avg[s.key] / max) * 130
+              y -= h
+              return <rect key={s.key} x={x} y={y} width={BW} height={Math.max(h, 0)} fill={s.color} />
+            })}
+            <text x={x + BW / 2} y={BASE + 18} fontSize={10} textAnchor="middle"
+              fill={b.dow === 0 ? "#d97706" : "#9ca3af"} fontWeight={b.dow === 0 ? 600 : 400}>
+              {DOW_LABEL[b.dow]}
+            </text>
+            <text x={x + BW / 2} y={BASE + 32} fontSize={9} textAnchor="middle" fill="#c7c7cc">
+              {fmtVND(b.total)}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+// Donut tỉ trọng — dùng stroke-dasharray trên circle, không cần path arc.
+function DonutChart({ series, totals, total }: { series: any[]; totals: any; total: number }) {
+  const R = 58, C = 2 * Math.PI * R
+  let offset = 0
+  const arcs = [...series].reverse().map(s => {
+    const v = Number(totals[s.key] ?? 0)
+    const frac = total > 0 ? v / total : 0
+    const arc = { ...s, v, frac, len: frac * C, rot: -90 + (offset / C) * 360 }
+    offset += frac * C
+    return arc
+  })
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <svg viewBox="0 0 160 160" width={160} height={160} role="img" aria-label="Tỉ trọng doanh số">
+        {arcs.map(a => (
+          <circle key={a.key} cx={80} cy={80} r={R} fill="none" stroke={a.color} strokeWidth={26}
+            strokeDasharray={`${a.len.toFixed(2)} ${(C - a.len).toFixed(2)}`}
+            transform={`rotate(${a.rot.toFixed(2)} 80 80)`} />
+        ))}
+        <text x={80} y={78} textAnchor="middle" fontSize={18} fontWeight={700} fill="#111827">{fmtVND(total)}</text>
+        <text x={80} y={95} textAnchor="middle" fontSize={10} fill="#6b7280">tổng kỳ</text>
+      </svg>
+      <div className="flex flex-col gap-1.5 w-full">
+        {arcs.map(a => (
+          <div key={a.key} className="flex items-center justify-between text-xs">
+            <span className="inline-flex items-center gap-1.5 text-gray-600">
+              <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: a.color }} />{a.label}
+            </span>
+            <span className="text-gray-500">{fmtVND(a.v)} · {Math.round(a.frac * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CombinedDayTable({ days, series, totalKey, targetDays, hasTarget, totals, targetTotals, scopeTotal, scopeTarget }: {
+  days: any[]; series: any[]; totalKey: string; targetDays: any[]; hasTarget: boolean
+  totals: any; targetTotals: any; scopeTotal: number; scopeTarget: number
+}) {
+  const targetByDate = new Map<string, any>(targetDays.map((d: any) => [d.date, d]))
+  const maxTotal = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
+  const best = days.reduce((a, d) => (Number(d[totalKey] ?? 0) > Number(a?.[totalKey] ?? -1) ? d : a), null as any)
+  const worst = days.reduce((a, d) => (Number(d[totalKey] ?? 0) < Number(a?.[totalKey] ?? Infinity) ? d : a), null as any)
+  const pctDone = (v: number, t: number) => (t > 0 ? Math.round(v / t * 100) : null)
+  const doneColor = (p: number | null) => p == null ? "#9ca3af" : p >= 100 ? "#16a34a" : p >= 80 ? "#d97706" : "#dc2626"
+
+  return (
+    <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+        <h3 className="font-semibold text-gray-700 text-sm">Chi tiết theo ngày</h3>
+        <div className="flex gap-2 text-xs text-gray-500">
+          {best && <span className="border rounded-full px-2.5 py-0.5">Cao nhất: {best.date.slice(8)}/{best.date.slice(5, 7)} · {fmtVND(best[totalKey])}</span>}
+          {worst && <span className="border rounded-full px-2.5 py-0.5">Thấp nhất: {worst.date.slice(8)}/{worst.date.slice(5, 7)} · {fmtVND(worst[totalKey])}</span>}
+        </div>
+      </div>
+      <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+        <table className="w-full text-sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <thead className="sticky top-0 bg-white z-10">
+            <tr className="text-xs uppercase tracking-wide text-gray-500 border-b">
+              <th className="text-left px-3 py-2 font-semibold">Ngày</th>
+              {[...series].reverse().map(s => (
+                <th key={s.key} className="text-right px-3 py-2 font-semibold" style={{ color: s.color }}>{s.label}</th>
+              ))}
+              <th className="text-right px-3 py-2 font-semibold">Tổng ngày</th>
+              {hasTarget && <th className="text-right px-3 py-2 font-semibold">Kế hoạch</th>}
+              {hasTarget && <th className="text-right px-3 py-2 font-semibold">% HT</th>}
+              <th className="text-right px-3 py-2 font-semibold w-48">Cơ cấu</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map(d => {
+              const dayTotal = Number(d[totalKey] ?? 0)
+              const t = Number(targetByDate.get(d.date)?.[totalKey] ?? 0)
+              const p = pctDone(dayTotal, t)
+              const barPct = Math.round(dayTotal / maxTotal * 100)
+              return (
+                <tr key={d.date} className={`border-b border-gray-50 hover:bg-violet-50/40 ${isWeekend(d.date) ? "bg-amber-50/40" : ""}`}>
+                  <td className={`px-3 py-1.5 text-xs ${isWeekend(d.date) ? "text-amber-600 font-semibold" : "text-gray-500"}`}>
+                    {d.date.slice(8)}/{d.date.slice(5, 7)} · {DOW_LABEL[dowOf(d.date)]}
+                  </td>
+                  {[...series].reverse().map(s => (
+                    <td key={s.key} className="text-right px-3 py-1.5">{fmtVND(d[s.key])}</td>
+                  ))}
+                  <td className="text-right px-3 py-1.5 font-semibold">{fmtVND(dayTotal)}</td>
+                  {hasTarget && <td className="text-right px-3 py-1.5 text-gray-400">{t > 0 ? fmtVND(t) : "—"}</td>}
+                  {hasTarget && (
+                    <td className="text-right px-3 py-1.5 font-semibold" style={{ color: doneColor(p) }}>
+                      {p != null ? `${p}%` : "—"}
+                    </td>
+                  )}
+                  <td className="px-3 py-1.5">
+                    <div className="flex justify-end">
+                      <span className="flex h-4 rounded overflow-hidden bg-gray-100"
+                        style={{ width: `${barPct}%`, minWidth: dayTotal > 0 ? "2px" : undefined }}>
+                        {series.map(s => {
+                          const v = Number(d[s.key] ?? 0)
+                          const w = dayTotal > 0 ? v / dayTotal * 100 : 0
+                          return <i key={s.key} className="h-full block" style={{ width: `${w}%`, background: s.color }}
+                            title={`${s.label}: ${fmtVND(v)}`} />
+                        })}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot className="sticky bottom-0">
+            <tr className="bg-violet-50 font-bold border-t-2 border-gray-200">
+              <td className="px-3 py-2 text-xs">Tổng kỳ</td>
+              {[...series].reverse().map(s => (
+                <td key={s.key} className="text-right px-3 py-2">{fmtVND(totals[s.key])}</td>
+              ))}
+              <td className="text-right px-3 py-2">{fmtVND(scopeTotal)}</td>
+              {hasTarget && <td className="text-right px-3 py-2">{scopeTarget > 0 ? fmtVND(scopeTarget) : "—"}</td>}
+              {hasTarget && (
+                <td className="text-right px-3 py-2" style={{ color: doneColor(pctDone(scopeTotal, scopeTarget)) }}>
+                  {pctDone(scopeTotal, scopeTarget) != null ? `${pctDone(scopeTotal, scopeTarget)}%` : "—"}
+                </td>
+              )}
+              <td className="px-3 py-2">
+                <div className="flex justify-end">
+                  <span className="flex h-4 rounded overflow-hidden bg-gray-100 w-full">
+                    {series.map(s => {
+                      const w = scopeTotal > 0 ? Number(totals[s.key] ?? 0) / scopeTotal * 100 : 0
+                      return <i key={s.key} className="h-full block" style={{ width: `${w}%`, background: s.color }} />
+                    })}
+                  </span>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {!hasTarget && (
+        <div className="px-5 py-2.5 text-xs text-gray-400 border-t">
+          Chưa đặt kế hoạch cho kỳ này — bấm <b>Cài kế hoạch</b> ở trên để nhập target theo ngày.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---- Modal cài kế hoạch doanh số theo ngày × nền tảng ----
+const TARGET_FIELDS: { key: string; market: "VN" | "MY"; label: string; color: string }[] = [
+  { key: "vn_fb", market: "VN", label: "Facebook", color: "#1877f2" },
+  { key: "vn_tt", market: "VN", label: "TikTok", color: "#111827" },
+  { key: "vn_sp", market: "VN", label: "Shopee", color: "#ee4d2d" },
+  { key: "my_tt", market: "MY", label: "TikTok Shop", color: "#111827" },
+  { key: "my_sp", market: "MY", label: "Shopee", color: "#ee4d2d" },
+]
+
+function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClose: () => void; onSaved: () => void }) {
+  const [m, setM] = useState(month)
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [quick, setQuick] = useState<Record<string, string>>({ vn_fb: "", vn_tt: "", vn_sp: "", my_tt: "", my_sp: "" })
+  const [skipWeekend, setSkipWeekend] = useState(false)
+
+  useEffect(() => {
+    setLoading(true); setDirty(false); setMsg(null)
+    apiJson(`/admin/pancake-sync/report/targets?month=${m}`)
+      .then(d => setRows(d.days ?? []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
+  }, [m])
+
+  const parseMoney = (s: string) => Number(String(s).replace(/[^\d]/g, "")) || 0
+  const colTotal = (k: string) => rows.reduce((a, r) => a + Number(r[k] ?? 0), 0)
+  const vnTotal = colTotal("vn_fb") + colTotal("vn_tt") + colTotal("vn_sp")
+  const myTotal = colTotal("my_tt") + colTotal("my_sp")
+
+  function setCell(date: string, k: string, val: string) {
+    setRows(rs => rs.map(r => (r.date === date ? { ...r, [k]: parseMoney(val) } : r)))
+    setDirty(true)
+  }
+
+  function applyQuick() {
+    const vals: Record<string, number> = {}
+    for (const f of TARGET_FIELDS) vals[f.key] = parseMoney(quick[f.key] ?? "")
+    let n = 0
+    setRows(rs => rs.map(r => {
+      if (skipWeekend && isWeekend(r.date)) return r
+      n++
+      return { ...r, ...vals }
+    }))
+    setDirty(true)
+    setMsg(`Đã điền ${skipWeekend ? "ngày thường" : "toàn bộ ngày"} — chưa lưu.`)
+  }
+
+  async function save() {
+    setSaving(true); setMsg(null)
+    try {
+      await apiJson("/admin/pancake-sync/report/targets", "PUT", { month: m, days: rows })
+      setDirty(false)
+      setMsg("Đã lưu kế hoạch.")
+      onSaved()
+    } catch (e: any) {
+      setMsg(e?.message ?? "Lưu thất bại")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget && !dirty) onClose() }}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col">
+        <div className="px-5 py-4 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-bold text-gray-800">Cài đặt kế hoạch doanh số</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Target theo ngày × nền tảng · Malaysia nhập bằng VND đã quy đổi
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="month" value={m} onChange={e => setM(e.target.value)}
+              className="border rounded-lg px-2.5 py-1.5 text-sm" />
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2">×</button>
+          </div>
+        </div>
+
+        {/* Nhập nhanh */}
+        <div className="px-5 py-4 border-b bg-gray-50/60 space-y-3">
+          <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nhập nhanh — điền đều cả tháng</div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {TARGET_FIELDS.map(f => (
+              <div key={f.key}>
+                <label className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+                  <span className={`text-[10px] font-bold px-1.5 rounded ${f.market === "VN" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                    {f.market}
+                  </span>
+                  <i className="w-2 h-2 rounded-sm inline-block" style={{ background: f.color }} />
+                  {f.label}
+                </label>
+                <input type="text" inputMode="numeric" value={quick[f.key]}
+                  onChange={e => setQuick(q => ({ ...q, [f.key]: e.target.value }))}
+                  placeholder="0"
+                  className="w-full border rounded-lg px-2 py-1.5 text-sm text-right" />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <label className="inline-flex items-center gap-2 text-xs text-gray-500">
+              <input type="checkbox" checked={skipWeekend} onChange={e => setSkipWeekend(e.target.checked)} />
+              Bỏ qua T7 &amp; CN (chỉ điền ngày thường)
+            </label>
+            <button onClick={applyQuick}
+              className="px-4 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700">
+              Áp dụng cho cả tháng
+            </button>
+          </div>
+        </div>
+
+        {/* Bảng nhập theo ngày */}
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="text-center py-16 text-gray-400">Đang tải…</div>
+          ) : (
+            <table className="w-full text-sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <thead className="sticky top-0 bg-white z-10 shadow-sm">
+                <tr className="text-[11px] uppercase tracking-wide text-gray-500 border-b">
+                  <th className="text-left px-3 py-2 font-semibold">Ngày</th>
+                  <th className="text-center px-3 py-1 font-semibold text-blue-600" colSpan={3}>Việt Nam</th>
+                  <th className="text-center px-3 py-1 font-semibold text-amber-600 border-l" colSpan={2}>Malaysia</th>
+                  <th className="text-right px-3 py-2 font-semibold border-l">Tổng ngày</th>
+                </tr>
+                <tr className="text-[11px] text-gray-400 border-b">
+                  <th />
+                  <th className="text-right px-3 pb-1.5 font-medium">Facebook</th>
+                  <th className="text-right px-3 pb-1.5 font-medium">TikTok</th>
+                  <th className="text-right px-3 pb-1.5 font-medium">Shopee</th>
+                  <th className="text-right px-3 pb-1.5 font-medium border-l">TikTok Shop</th>
+                  <th className="text-right px-3 pb-1.5 font-medium">Shopee</th>
+                  <th className="border-l" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => {
+                  const rowTotal = TARGET_FIELDS.reduce((a, f) => a + Number(r[f.key] ?? 0), 0)
+                  return (
+                    <tr key={r.date} className={`border-b border-gray-50 ${isWeekend(r.date) ? "bg-amber-50/40" : ""}`}>
+                      <td className={`px-3 py-1 text-xs whitespace-nowrap ${isWeekend(r.date) ? "text-amber-600 font-semibold" : "text-gray-500"}`}>
+                        {r.date.slice(8)}/{r.date.slice(5, 7)} · {DOW_LABEL[dowOf(r.date)]}
+                      </td>
+                      {TARGET_FIELDS.map(f => (
+                        <td key={f.key} className={`px-2 py-1 ${f.key === "my_tt" ? "border-l" : ""}`}>
+                          <input type="text" inputMode="numeric"
+                            value={Number(r[f.key] ?? 0) ? fmtNum(r[f.key]) : ""}
+                            placeholder="0"
+                            onChange={e => setCell(r.date, f.key, e.target.value)}
+                            className="w-full border rounded px-1.5 py-1 text-xs text-right" />
+                        </td>
+                      ))}
+                      <td className="text-right px-3 py-1 text-xs font-semibold border-l">{fmtVND(rowTotal)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot className="sticky bottom-0">
+                <tr className="bg-violet-50 font-bold border-t-2 text-xs">
+                  <td className="px-3 py-2">Tổng tháng</td>
+                  {TARGET_FIELDS.map(f => (
+                    <td key={f.key} className={`text-right px-3 py-2 ${f.key === "my_tt" ? "border-l" : ""}`}>
+                      {fmtVND(colTotal(f.key))}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-2 border-l">{fmtVND(vnTotal + myTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+
+        {/* Thanh lưu */}
+        <div className="px-5 py-3 border-t flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs">
+            <span className="text-gray-400">
+              VN {fmtVND(vnTotal)} · MY {fmtVND(myTotal)} · Tổng <b className="text-gray-700">{fmtVND(vnTotal + myTotal)}</b>
+            </span>
+            {msg && <span className="ml-3 text-violet-600">{msg}</span>}
+            {dirty && !msg && <span className="ml-3 text-amber-600">Có thay đổi chưa lưu.</span>}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-1.5 border rounded-lg text-sm hover:bg-gray-50">Đóng</button>
+            <button onClick={save} disabled={saving || !dirty}
+              className="px-4 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 disabled:opacity-50">
+              {saving ? "Đang lưu…" : "Lưu kế hoạch"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---- Main Page ----
+type TabKey = "overview" | "combined" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "errors" | "marketing"
+
+const VALID_TABS: TabKey[] = ["overview", "combined", "shipping", "product", "sale", "nv-mkt", "lng", "errors", "marketing"]
 
 const BaoCaoPage = () => {
   const initParams = getSearchParams()
@@ -2358,6 +3014,7 @@ const BaoCaoPage = () => {
 
   const tabs: { key: TabKey; label: string; icon: string }[] = [
     { key: "overview",  label: "Tổng quan",   icon: "📊" },
+    { key: "combined",  label: "Tổng 2 TT",   icon: "🌏" },
     { key: "shipping",  label: "Vận đơn",     icon: "🚚" },
     { key: "product",   label: "Sản phẩm & Lợi nhuận", icon: "💰" },
     { key: "sale",      label: "Sale & Funnel", icon: "🎯" },
@@ -2416,6 +3073,8 @@ const BaoCaoPage = () => {
 
       <CurrencyCtx.Provider value={{ market, currencyMode, rate: myrRate }}>
         {tab === "overview"  && <OverviewTab range={range} market={market} onRate={setMyrRate} />}
+        {/* Gộp 2 thị trường → luôn hiển thị VND, không phụ thuộc dropdown market. */}
+        {tab === "combined"  && <CombinedTab range={range} />}
         {tab === "shipping"  && <ShippingTab range={range} market={market} />}
         {tab === "product"   && <ProductTab range={range} market={market} />}
         {tab === "sale"      && <SaleTab range={range} market={market} />}

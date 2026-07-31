@@ -127,6 +127,9 @@ export default defineMiddlewares({
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
     // Chi phí kế toán: đọc = view, ghi (nhập/sửa/xóa khoản chi phí) = camp-control.
     { matcher: "/admin/pancake-sync/report/accounting-cost*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
+    // Kế hoạch doanh số: ai xem báo cáo cũng đọc được target (để thấy % hoàn thành),
+    // nhưng chỉ admin/lãnh đạo mới sửa được con số giao.
+    { matcher: "/admin/pancake-sync/report/targets", method: ["PUT"], middlewares: [requirePerm("page.bao-cao.target-edit")] },
     { matcher: "/admin/ads-expense/report*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/ads-expense/report", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/ads-expense/report/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
