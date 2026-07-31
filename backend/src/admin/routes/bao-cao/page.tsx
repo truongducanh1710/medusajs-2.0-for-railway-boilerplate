@@ -258,6 +258,35 @@ function AISummaryBlock({ range }: { range: DateRange }) {
 }
 
 // ---- Exchange rate editor (tỷ giá MYR→VND theo tháng) ----
+// Chọn thị trường + (chỉ khi Malaysia) đơn vị tiền và tỷ giá. Gom vào 1 chỗ để mọi tab
+// đặt cạnh bộ lọc riêng của mình — VN không phải nhìn thấy tuỳ chọn MYR/tỷ giá vô nghĩa.
+function MarketPicker({ market, onMarket, currencyMode, onCurrencyMode, month, rate, onRate }: {
+  market: Market; onMarket: (m: Market) => void
+  currencyMode: CurrencyMode; onCurrencyMode: (c: CurrencyMode) => void
+  month: string; rate: number; onRate: (r: number) => void
+}) {
+  return (
+    <>
+      <select value={market} onChange={e => onMarket(e.target.value as Market)}
+        className="border rounded-lg px-3 py-1.5 text-sm font-medium bg-white">
+        <option value="VN">🇻🇳 Việt Nam</option>
+        <option value="MY">🇲🇾 Malaysia (TikTok)</option>
+      </select>
+      {market === "MY" && (
+        <>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button onClick={() => onCurrencyMode("MYR")}
+              className={`px-2 py-1 text-xs rounded ${currencyMode === "MYR" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>MYR</button>
+            <button onClick={() => onCurrencyMode("VND")}
+              className={`px-2 py-1 text-xs rounded ${currencyMode === "VND" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>VND (quy đổi)</button>
+          </div>
+          <ExchangeRateEditor month={month} rate={rate} onSaved={onRate} />
+        </>
+      )}
+    </>
+  )
+}
+
 function ExchangeRateEditor({ month, rate, onSaved }: { month: string; rate: number; onSaved: (rate: number) => void }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(String(rate))
@@ -349,7 +378,9 @@ function ExchangeRateHistory({ onClose }: { onClose: () => void }) {
 }
 
 // ---- Overview Tab ----
-function OverviewTab({ range, market, onRate }: { range: DateRange; market: Market; onRate?: (rate: number) => void }) {
+function OverviewTab({ range, market, onRate, marketPicker }: {
+  range: DateRange; market: Market; onRate?: (rate: number) => void; marketPicker?: React.ReactNode
+}) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   // Top nhân sự lấy từ marketer-lng (đã chuẩn hoá attribution + handover + LNG). Chỉ VN;
@@ -403,9 +434,10 @@ function OverviewTab({ range, market, onRate }: { range: DateRange; market: Mark
 
   return (
     <div className="space-y-5">
-      {/* Bộ lọc phạm vi đơn */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-gray-500">Phạm vi:</span>
+      {/* Chọn thị trường + bộ lọc phạm vi đơn */}
+      <div className="flex items-center gap-2 text-sm flex-wrap">
+        {marketPicker}
+        <span className="text-gray-500 ml-1">Phạm vi:</span>
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
           <button
             onClick={() => setSourceGroup("all")}
@@ -3014,6 +3046,14 @@ const BaoCaoPage = () => {
     pushState(tab, range, m)
   }
 
+  const marketPicker = (
+    <MarketPicker
+      market={market} onMarket={changeMarket}
+      currencyMode={currencyMode} onCurrencyMode={setCurrencyMode}
+      month={range.to.slice(0, 7)} rate={myrRate} onRate={setMyrRate}
+    />
+  )
+
   const tabs: { key: TabKey; label: string; icon: string }[] = [
     { key: "overview",  label: "Tổng quan",   icon: "📊" },
     { key: "combined",  label: "Tổng 2 TT",   icon: "🌏" },
@@ -3035,25 +3075,10 @@ const BaoCaoPage = () => {
         </div>
       </div>
 
-      {/* Period selector + Market selector */}
+      {/* Period selector. Chọn thị trường nằm trong từng tab (cạnh bộ lọc Phạm vi) —
+          gần chỗ số liệu đổi theo nó, thay vì tách rời trên đầu trang. */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <PeriodSelector range={range} onChange={changeRange} />
-        <select value={market} onChange={e => changeMarket(e.target.value as Market)}
-          className="border rounded-lg px-3 py-1.5 text-sm font-medium bg-white">
-          <option value="VN">🇻🇳 Việt Nam</option>
-          <option value="MY">🇲🇾 Malaysia (TikTok)</option>
-        </select>
-        {market === "MY" && (
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            <button onClick={() => setCurrencyMode("MYR")}
-              className={`px-2 py-1 text-xs rounded ${currencyMode === "MYR" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>MYR</button>
-            <button onClick={() => setCurrencyMode("VND")}
-              className={`px-2 py-1 text-xs rounded ${currencyMode === "VND" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>VND (quy đổi)</button>
-          </div>
-        )}
-        {market === "MY" && (
-          <ExchangeRateEditor month={range.to.slice(0, 7)} rate={myrRate} onSaved={setMyrRate} />
-        )}
       </div>
 
       {/* AI Summary */}
@@ -3074,7 +3099,13 @@ const BaoCaoPage = () => {
       </div>
 
       <CurrencyCtx.Provider value={{ market, currencyMode, rate: myrRate }}>
-        {tab === "overview"  && <OverviewTab range={range} market={market} onRate={setMyrRate} />}
+        {/* Tổng quan nhúng picker vào hàng "Phạm vi"; các tab khác chưa có hàng lọc
+            riêng nên hiện picker ở đây. "Tổng 2 TT" gộp cả 2 thị trường và MKT là
+            trang riêng → không cần chọn thị trường. */}
+        {tab !== "overview" && tab !== "combined" && tab !== "marketing" && (
+          <div className="mb-4 flex flex-wrap items-center gap-3">{marketPicker}</div>
+        )}
+        {tab === "overview"  && <OverviewTab range={range} market={market} onRate={setMyrRate} marketPicker={marketPicker} />}
         {/* Gộp 2 thị trường → luôn hiển thị VND, không phụ thuộc dropdown market. */}
         {tab === "combined"  && <CombinedTab range={range} />}
         {tab === "shipping"  && <ShippingTab range={range} market={market} />}
