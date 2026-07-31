@@ -45,6 +45,40 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     [pageId]
   )
 
+  // Pancake: xem có đọc được tin nhắn (kể cả tin page trả lời) không.
+  let pancakeProbe: any = null
+  const psid = String((req.query as any).psid || dbSample[0]?.customer_psid || "")
+  const { rows: pcRows } = await pool.query(
+    `SELECT pancake_page_id, page_access_token FROM pancake_page_token
+     WHERE fb_page_id = $1 AND enabled = true`,
+    [pageId]
+  ).catch(() => ({ rows: [] as any[] }))
+  const pc = pcRows[0]
+  if (pc && psid) {
+    const cid = `${pc.pancake_page_id}_${psid}`
+    try {
+      const u = `https://pages.fm/api/public_api/v1/pages/${pc.pancake_page_id}/conversations/${cid}/messages?page_access_token=${pc.page_access_token}`
+      const r = await fetch(u)
+      const j: any = await r.json()
+      const msgs: any[] = j?.messages || j?.data || []
+      pancakeProbe = {
+        conversation_id: cid,
+        status: r.status,
+        success: j?.success,
+        message: j?.message,
+        count: msgs.length,
+        sample: msgs.slice(-6).map((m: any) => ({
+          from_id: m?.from?.id,
+          from_name: m?.from?.name,
+          text: String(m?.message ?? m?.original_message ?? "").slice(0, 60),
+          inserted_at: m?.inserted_at,
+        })),
+      }
+    } catch (e: any) {
+      pancakeProbe = { conversation_id: cid, error: e.message }
+    }
+  }
+
   return res.json({
     version,
     page_id: pageId,
@@ -54,5 +88,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     conversations_with_fields: { status: convs.status, error: convs.data?.error, count: convs.data?.data?.length },
     conversations_plain: { status: convsPlain.status, error: convsPlain.data?.error, count: convsPlain.data?.data?.length },
     db_sample: dbSample,
+    pancake_probe: pancakeProbe,
   })
 }
