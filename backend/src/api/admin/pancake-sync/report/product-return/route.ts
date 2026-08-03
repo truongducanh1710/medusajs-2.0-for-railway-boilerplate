@@ -18,15 +18,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         p.id,
         p.sku,
         p.name,
-        COUNT(DISTINCT o.id) as total_qty,
-        COUNT(DISTINCT CASE WHEN po.status = 'returned' THEN o.id END) as returned_qty,
-        COUNT(DISTINCT CASE WHEN po.status = 'cancelled' THEN o.id END) as cancelled_qty,
-        COALESCE(SUM(o.total), 0) as total_revenue,
+        COUNT(DISTINCT po.order_id) as total_qty,
+        COUNT(DISTINCT CASE WHEN po.status = 'returned' THEN po.order_id END) as returned_qty,
+        COUNT(DISTINCT CASE WHEN po.status = 'cancelled' THEN po.order_id END) as cancelled_qty,
+        COALESCE(SUM(po.unit_price * po.quantity), 0) as total_revenue,
         COALESCE(
           ROUND(
             100.0 * (
-              COUNT(DISTINCT CASE WHEN po.status = 'returned' OR po.status = 'cancelled' THEN o.id END) ::NUMERIC
-            ) / NULLIF(COUNT(DISTINCT o.id)::NUMERIC, 0),
+              COUNT(DISTINCT CASE WHEN po.status IN ('returned', 'cancelled') THEN po.order_id END) ::NUMERIC
+            ) / NULLIF(COUNT(DISTINCT po.order_id)::NUMERIC, 0),
             1
           ),
           0
@@ -34,12 +34,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM mkt_product p
       LEFT JOIN pancake_order po ON po.product_id = p.id
         AND po.created_at >= $1 AND po.created_at <= $2
-      LEFT JOIN "order" o ON o.id = po.order_id
-      WHERE o.market = $3
       GROUP BY p.id, p.sku, p.name
-      HAVING COUNT(DISTINCT o.id) > 0
+      HAVING COUNT(DISTINCT po.order_id) > 0
       ORDER BY total_revenue DESC
-    `, [from, to, market])
+    `, [from, to])
 
     const rows = result.rows.map(r => ({
       product_id: r.id,
