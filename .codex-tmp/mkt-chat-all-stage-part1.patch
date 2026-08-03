@@ -1,0 +1,47 @@
+diff --git a/backend/src/admin/routes/mkt-chat/page.tsx b/backend/src/admin/routes/mkt-chat/page.tsx
+--- a/backend/src/admin/routes/mkt-chat/page.tsx
++++ b/backend/src/admin/routes/mkt-chat/page.tsx
+@@ -25,6 +25,8 @@ type Message = {
+   created_at: string
+ }
+ type MktUser = { email: string; name: string }
++type MentionSuggestion = MktUser & { mentionAll?: boolean }
++const ALL_MENTION_EMAIL = "__all__"
+ type Template = { id: string; label: string; content: string; created_by: string }
+ type LinkedTask = {
+   id: string; title: string; status: string; priority?: string
+@@ -69,8 +71,10 @@ function renderMentions(
+ ): string {
+   if (mentions.length > 0) {
+     const nameByEmail = new Map(users.map(user => [user.email, user.name]))
+-    const labels = mentions
+-      .map(email => nameByEmail.get(email) || email.split("@")[0])
++    const labels = [
++      ...mentions.map(email => nameByEmail.get(email) || email.split("@")[0]),
++      ...(hasMentionEntity(text, "all") ? ["all", "ALL"] : []),
++    ]
+       .filter(Boolean)
+       .sort((a, b) => b.length - a.length)
+ 
+@@ -1152,13 +1156,17 @@ export default function MktChatPage() {
+   const [mentionQuery, setMentionQuery] = useState("")
+   const [mentionOpen, setMentionOpen] = useState(false)
+   const [mentionIndex, setMentionIndex] = useState(0)
+-  const mentionSuggestions = useMemo(() => {
++  const mentionSuggestions = useMemo<MentionSuggestion[]>(() => {
+     const memberEmails = new Set(activeChannel?.member_ids || [])
+     const scopedUsers = mktUsers.filter(u => memberEmails.has(u.email))
+     const q = mentionQuery.toLowerCase()
+-    return scopedUsers.filter(u =>
+-      !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+-    ).slice(0, 5)
++    const allSuggestion: MentionSuggestion = { email: ALL_MENTION_EMAIL, name: "ALL", mentionAll: true }
++    return [
++      ...(!q || "all".includes(q) ? [allSuggestion] : []),
++      ...scopedUsers.filter(u =>
++        !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
++      ),
++    ].slice(0, 6)
+   }, [activeChannel?.member_ids, mentionQuery, mktUsers])
+   // Template picker (slash command)
+   const [templateOpen, setTemplateOpen] = useState(false)

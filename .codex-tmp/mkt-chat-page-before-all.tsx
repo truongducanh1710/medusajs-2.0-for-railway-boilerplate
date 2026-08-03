@@ -1,9 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { apiFetch, apiJson } from "../../lib/api-client"
-import { markGlobalActivity, hasRecentGlobalActivity } from "../../lib/mkt-chat-global-alerts"
+import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
-import { withRouteGuard } from "../../components/route-guard"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -11,7 +9,6 @@ type LastMessage = { content: string; author_id: string; msg_type: string; creat
 type Channel = {
   id: string; name: string; description: string | null
   is_private: boolean
-  is_announcement: boolean
   member_count: number; member_ids?: string[]
   unread_count: number; mention_count: number; created_at: string
   last_message?: LastMessage | null
@@ -25,14 +22,9 @@ type Message = {
   file_expires_at: string | null
   reactions: Record<string, string[]>; is_pinned: boolean; mentions: string[]
   reply_count: number; channel_name?: string
-  recalled_at?: string | null
-  edited_at?: string | null
-  device?: string | null
   created_at: string
 }
-type MktUser = { email: string; name: string; is_ai_agent?: boolean }
-type MentionSuggestion = MktUser & { mentionAll?: boolean }
-const ALL_MENTION_EMAIL = "__all__"
+type MktUser = { email: string; name: string }
 type Template = { id: string; label: string; content: string; created_by: string }
 type LinkedTask = {
   id: string; title: string; status: string; priority?: string
@@ -40,14 +32,9 @@ type LinkedTask = {
 }
 type ChatFile = { id: string; file_url: string; file_type: string | null; file_name: string | null; author_id: string; author_name?: string; created_at: string }
 type MktNotification = {
-  id: string; type?: "mention" | "task_assigned"; recipient: string
-  channel_id?: string; channel_name?: string; message_id?: string
-  sender: string; sender_name: string; preview?: string; source?: string
-  created_at: string; read: boolean
-  task_id?: string; task_title?: string; deadline?: string | null
+  id: string; recipient: string; channel_id: string; channel_name: string; message_id: string
+  sender: string; sender_name: string; preview: string; source?: string; created_at: string; read: boolean
 }
-
-const NOTIFY_CHANNEL_ID = "__notify_channel__"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -64,16 +51,6 @@ function fmtDate(d: string) {
   if (dt.toDateString() === new Date().toDateString()) return "Hôm nay"
   return `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`
 }
-// Friendly label for the date divider in the message list: "Hôm nay" | "Hôm qua" | "Thứ 4, 16/07"
-function fmtDayLabel(dateKey: string, msgs: { created_at: string }[]) {
-  if (dateKey === "Hôm nay") return "Hôm nay"
-  const dt = new Date(msgs[0]?.created_at || "")
-  if (isNaN(dt.getTime())) return dateKey
-  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
-  if (dt.toDateString() === yesterday.toDateString()) return "Hôm qua"
-  const weekday = dt.getDay() === 0 ? "Chủ nhật" : `Thứ ${dt.getDay() + 1}`
-  return `${weekday}, ${dateKey}`
-}
 function fmtSnippetTime(d: string) {
   const dt = new Date(d)
   if (dt.toDateString() === new Date().toDateString()) return fmtTime(d)
@@ -84,126 +61,23 @@ function fmtSnippetTime(d: string) {
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
-
-// Markdown nhẹ cho tin nhắn (chủ yếu phục vụ AI agent trả lời có cấu trúc) — luôn
-// chạy SAU escapeHtml trên từng dòng/segment nên input không thể chứa HTML thật,
-// chỉ inject các tag cố định (strong/em/table/ul/ol/div/span) do chính hàm này tạo ra.
-// Không dùng thư viện ngoài — hỗ trợ **bold**, *italic*, bullet "- "/"* ", numbered
-// "1. ", bảng GFM cơ bản (| a | b |), callout ":::warn"/":::danger" (block cảnh báo
-// màu), và badge inline "[[badge:warn:TEXT]]"/"[[badge:danger:TEXT]]" — 2 mức dùng
-// cho Long AI phân biệt "cần chú ý" vs "nghiêm trọng, đã tag người liên quan"
-// (xem long-ai-daily-report-coach-prompt.md).
-function renderMarkdownLite(escapedText: string): string {
-  const lines = escapedText.split("\n")
-  const htmlBlocks: string[] = []
-  let i = 0
-
-  const inline = (line: string) =>
-    line
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)/g, "<em>$1</em>")
-      .replace(/\[\[badge:(warn|danger):(.+?)\]\]/g, (_m, level, label) =>
-        `<span class="mkt-md-badge mkt-md-badge-${level}">${label}</span>`)
-
-  while (i < lines.length) {
-    const line = lines[i]
-
-    // Callout ::: warn / ::: danger ... ::: — nội dung bên trong tái sử dụng cùng
-    // vòng lặp block (bảng/list/inline) nên không cần lặp lại logic parse.
-    const calloutStart = line.trim().match(/^:::(warn|danger)\s*$/)
-    if (calloutStart) {
-      const level = calloutStart[1]
-      let j = i + 1
-      const innerLines: string[] = []
-      while (j < lines.length && lines[j].trim() !== ":::") {
-        innerLines.push(lines[j])
-        j += 1
-      }
-      const innerHtml = renderMarkdownLite(innerLines.join("\n"))
-      htmlBlocks.push(`<div class="mkt-md-callout mkt-md-callout-${level}">${innerHtml}</div>`)
-      i = j + 1 // bỏ qua dòng ":::" đóng
-      continue
-    }
-
-    // Bảng markdown: dòng header | a | b |, dòng phân cách |---|---|, rồi các dòng dữ liệu
-    if (/^\s*\|.+\|\s*$/.test(line) && /^\s*\|[\s|:-]+\|\s*$/.test(lines[i + 1] || "")) {
-      const parseRow = (row: string) => row.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim())
-      const header = parseRow(line)
-      const bodyRows: string[][] = []
-      let j = i + 2
-      while (j < lines.length && /^\s*\|.+\|\s*$/.test(lines[j])) {
-        bodyRows.push(parseRow(lines[j]))
-        j += 1
-      }
-      const thead = `<tr>${header.map(c => `<th class="mkt-md-th">${inline(c)}</th>`).join("")}</tr>`
-      const tbody = bodyRows.map(row => `<tr>${row.map(c => `<td class="mkt-md-td">${inline(c)}</td>`).join("")}</tr>`).join("")
-      htmlBlocks.push(`<div class="mkt-md-table-wrap"><table class="mkt-md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`)
-      i = j
-      continue
-    }
-
-    // Danh sách gạch đầu dòng hoặc đánh số liên tiếp
-    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
-      const ordered = /^\s*\d+\.\s+/.test(line)
-      const items: string[] = []
-      let j = i
-      const itemRe = ordered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[-*]\s+(.*)$/
-      while (j < lines.length && itemRe.test(lines[j])) {
-        items.push(inline(lines[j].replace(itemRe, "$1")))
-        j += 1
-      }
-      const tag = ordered ? "ol" : "ul"
-      htmlBlocks.push(`<${tag} class="mkt-md-list">${items.map(it => `<li>${it}</li>`).join("")}</${tag}>`)
-      i = j
-      continue
-    }
-
-    htmlBlocks.push(line.trim() ? `<div>${inline(line)}</div>` : "<br/>")
-    i += 1
-  }
-
-  return htmlBlocks.join("")
-}
-// "ai" là author_id legacy (nhánh @ai cũ đã tắt, xem messages/route.ts) — không có
-// user thật đứng sau, không nằm trong danh sách mktUsers nên phải giữ check riêng.
-// Mọi agent AI THẬT (Long AI, sale-agent@, mkt-agent@, camp-agent@, và agent mới sau
-// này) được đánh dấu qua metadata.is_ai_agent=true trên chính user Medusa — tra qua
-// mktUsers thay vì liệt kê tay từng email, nên thêm agent mới không cần sửa file này.
-// CỐ Ý dùng field riêng is_ai_agent, KHÔNG dùng metadata.role — role "ai-agent" có
-// preset quyền RỘNG trong ROLE_PRESETS, gán role sẽ vô tình mở quyền thật của agent
-// (xem comment trong admin/mkt-chat/users/route.ts). is_ai_agent chỉ là nhãn hiển thị.
-function isAiAgentAuthor(authorId: string, users: MktUser[]): boolean {
-  if (authorId === "ai") return true
-  return users.some(u => u.email === authorId && u.is_ai_agent)
-}
-
-// markdown = true chỉ bật cho tin nhắn AI agent (author_id "ai" hoặc user có metadata.is_ai_agent=true).
-// Tin nhắn người dùng giữ nguyên hành vi cũ — tránh rủi ro một user gõ "*" hay "|" trong
-// câu bình thường bị parse nhầm thành định dạng.
 function renderMentions(
   text: string,
   mentions: string[] = [],
   users: MktUser[] = [],
-  className = "font-semibold text-blue-600 dark:text-blue-400",
-  markdown = false
+  className = "font-semibold text-blue-600 dark:text-blue-400"
 ): string {
-  const html = (() => {
-    if (mentions.length > 0) {
-      const nameByEmail = new Map(users.map(user => [user.email, user.name]))
-      const labels = [
-        ...mentions.map(email => nameByEmail.get(email) || email.split("@")[0]),
-        ...(hasMentionEntity(text, "all") ? ["all", "ALL"] : []),
-      ]
-        .filter(Boolean)
-        .sort((a, b) => b.length - a.length)
+  if (mentions.length > 0) {
+    const nameByEmail = new Map(users.map(user => [user.email, user.name]))
+    const labels = mentions
+      .map(email => nameByEmail.get(email) || email.split("@")[0])
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)
 
-      return renderMentionEntities(text, labels, className)
-    }
+    return renderMentionEntities(text, labels, className)
+  }
 
-    return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="${className}">${m}</span>`)
-  })()
-
-  return markdown ? renderMarkdownLite(html) : html
+  return escapeHtml(text).replace(/@[\w.@-]+/g, m => `<span class="${className}">${m}</span>`)
 }
 
 function normalizeMentionEntityText(value: string): string {
@@ -261,11 +135,15 @@ function collectMentionEntityEmails(text: string, entities: Record<string, strin
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🔥"]
 const MENTION_SOUND_REPEAT_MS = 20_000
 const MENTION_SOUND_REPEAT_LIMIT = 8
+const TELEGRAM_ALERT_AT_REPEAT_COUNT = 3
+function sendTelegramAlert() {
+  apiFetch("/admin/mkt-chat/notifications/telegram-alert", { method: "POST" }).catch(() => {})
+}
 function emitMentionTone(ctx: AudioContext) {
   const now = ctx.currentTime
   const gain = ctx.createGain()
   gain.gain.setValueAtTime(0.0001, now)
-  gain.gain.exponentialRampToValueAtTime(0.85, now + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.34, now + 0.02)
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15)
   gain.connect(ctx.destination)
 
@@ -286,23 +164,6 @@ function emitMentionTone(ctx: AudioContext) {
   })
 
   window.setTimeout(() => gain.disconnect(), 1300)
-}
-function emitMessageTone(ctx: AudioContext) {
-  const now = ctx.currentTime
-  const gain = ctx.createGain()
-  gain.gain.setValueAtTime(0.0001, now)
-  gain.gain.exponentialRampToValueAtTime(0.6, now + 0.015)
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28)
-  gain.connect(ctx.destination)
-
-  const osc = ctx.createOscillator()
-  osc.type = "sine"
-  osc.frequency.setValueAtTime(880, now)
-  osc.connect(gain)
-  osc.start(now)
-  osc.stop(now + 0.28)
-
-  window.setTimeout(() => gain.disconnect(), 400)
 }
 
 const AVATAR_COLORS = [
@@ -349,81 +210,40 @@ function PageStyles() {
       @media (prefers-reduced-motion: reduce) {
         .chat-anim-msgin, .chat-anim-pop, .chat-anim-fadein, .chat-anim-fadeup, .chat-anim-panel, .chat-anim-highlight, .chat-typing-dot { animation: none }
       }
-      .mkt-md strong { font-weight: 700 }
-      .mkt-md em { font-style: italic }
-      .mkt-md-list { margin: 4px 0; padding-left: 20px }
-      .mkt-md-list li { margin: 2px 0 }
-      /* Bảng nhiều cột (7+) trong bong bóng chat hẹp (max-w 400px) không đủ chỗ chia
-         đều — table-layout: fixed trước đây ép mọi cột bằng nhau, làm số tiền dài vỡ
-         dòng dính chữ. Giờ: table-layout: auto (cột tự co theo nội dung dài nhất),
-         wrapper riêng cuộn ngang khi bảng rộng hơn khung, KHÔNG ép table full width. */
-      .mkt-md-table-wrap { margin: 6px 0; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch }
-      .mkt-md-table { border-collapse: collapse; font-size: 12px; table-layout: auto; white-space: nowrap }
-      .mkt-md-th, .mkt-md-td { border: 1px solid rgb(0 0 0 / 0.1); padding: 4px 8px; text-align: left }
-      .dark .mkt-md-th, .dark .mkt-md-td { border-color: rgb(255 255 255 / 0.15) }
-      .mkt-md-th { font-weight: 700; background: rgb(0 0 0 / 0.04) }
-      .dark .mkt-md-th { background: rgb(255 255 255 / 0.06) }
-      /* Callout ::: warn / ::: danger — dùng cho cảnh báo CP cao / leo thang xu hướng
-         trong tin nhắn AI. Chỉ 2 mức, cố ý không thêm "info"/"success" vì AI hiện chỉ
-         cần phân biệt "cần chú ý" (warn, cam) và "nghiêm trọng, đã tag người liên quan"
-         (danger, đỏ) — xem long-ai-daily-report-coach-prompt.md. */
-      .mkt-md-callout { margin: 6px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid; font-size: 12.5px; line-height: 1.55 }
-      .mkt-md-callout > *:first-child { margin-top: 0 }
-      .mkt-md-callout-warn { background: rgb(245 158 11 / 0.08); border-color: rgb(245 158 11 / 0.35) }
-      .dark .mkt-md-callout-warn { background: rgb(245 158 11 / 0.12); border-color: rgb(245 158 11 / 0.4) }
-      .mkt-md-callout-danger { background: rgb(239 68 68 / 0.08); border-color: rgb(239 68 68 / 0.35) }
-      .dark .mkt-md-callout-danger { background: rgb(239 68 68 / 0.14); border-color: rgb(239 68 68 / 0.45) }
-      /* Badge tròn inline [[badge:...]] — nhãn ngắn kiểu "3 NGÀY LIÊN TIẾP", "CP CAO" */
-      .mkt-md-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 1px 8px; border-radius: 999px; margin: 0 2px; vertical-align: middle; white-space: nowrap }
-      .mkt-md-badge-warn { background: rgb(245 158 11 / 0.15); color: rgb(146 64 14); border: 1px solid rgb(245 158 11 / 0.4) }
-      .dark .mkt-md-badge-warn { background: rgb(245 158 11 / 0.2); color: rgb(253 186 116) }
-      .mkt-md-badge-danger { background: rgb(239 68 68); color: #fff }
-      .mkt-chat-fontsize .text-\\[13px\\] { font-size: var(--mkt-chat-font-size, 13px) }
-      .mkt-chat-fontsize .text-\\[11px\\] { font-size: max(9px, calc(var(--mkt-chat-font-size, 13px) - 2px)) }
     `}</style>
   )
 }
 
 // ─── Small components ────────────────────────────────────────────────────────
 
-// status ưu tiên hơn online (boolean) — online giữ lại cho các chỗ gọi cũ.
-function Avatar({ name, online, status, className }: {
-  name: string; online?: boolean; status?: "online" | "idle" | "offline"; className?: string
-}) {
-  const dot = status
-    ? status === "online" ? "bg-emerald-500" : status === "idle" ? "bg-amber-400" : "bg-gray-300 dark:bg-gray-600"
-    : online !== undefined
-      ? online ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"
-      : null
-  const title = status === "idle" ? "Mở tab nhưng không thao tác" : status === "online" ? "Đang online" : undefined
+function Avatar({ name, online, className }: { name: string; online?: boolean; className?: string }) {
   return (
     <span className={cn("relative inline-flex shrink-0 items-center justify-center rounded-full font-bold uppercase", avatarClass(name), className || "size-7 text-[11px]")}>
       {(name || "?").charAt(0)}
-      {dot && <span title={title} className={cn("absolute -bottom-px -right-px size-2 rounded-full ring-2 ring-ui-bg-base", dot)} />}
+      {online !== undefined && (
+        <span className={cn("absolute -bottom-px -right-px size-2 rounded-full ring-2 ring-ui-bg-base", online ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+      )}
     </span>
   )
 }
 
-function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine, users: mktUsers }: {
+function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine }: {
   reactions: Record<string, string[]>; msgId: string; currentEmail: string
   onReact: (msgId: string, emoji: string) => void
   isMine?: boolean
-  users?: MktUser[]
 }) {
   const entries = Object.entries(reactions || {}).filter(([, users]) => users.length > 0)
   if (entries.length === 0) return null
-  const nameByEmail = new Map((mktUsers || []).map(u => [u.email, u.name]))
   return (
-    <div className={cn("mt-0.5 mb-0.5 flex flex-wrap gap-1", isMine ? "justify-end pr-1" : "pl-1")}>
+    <div className={cn("mt-1 flex flex-wrap gap-1", isMine && "justify-end")}>
       {entries.map(([emoji, users]) => {
         const mine = users.includes(currentEmail)
         return (
           <button key={emoji} onClick={() => onReact(msgId, emoji)}
-            title={users.map(email => nameByEmail.get(email) || email.split("@")[0]).join(", ")}
-            className={cn("chat-anim-pop rounded-full border bg-ui-bg-base px-1.5 py-px text-xs leading-relaxed shadow-sm transition-all active:scale-90",
+            className={cn("chat-anim-pop rounded-full border px-1.5 py-px text-xs leading-relaxed transition-all active:scale-90",
               mine
                 ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-300"
-                : "border-ui-border-base text-ui-fg-subtle hover:border-ui-border-strong")}>
+                : "border-ui-border-base bg-ui-bg-component text-ui-fg-subtle hover:border-ui-border-strong")}>
             {emoji} {users.length}
           </button>
         )
@@ -434,9 +254,7 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine, users: m
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
-const RECALL_WINDOW_MS = 24 * 60 * 60 * 1000
-
-function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread, onRecall }: {
+function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOptimistic, onTaskClick, onReply, onReact, onPin, onOpenThread }: {
   msg: Message; users: MktUser[]; isMine: boolean; currentUserEmail: string; isManager: boolean
   isOptimistic: boolean
   onTaskClick?: (taskId: string) => void
@@ -444,18 +262,17 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
   onReact: (msgId: string, emoji: string) => void
   onPin: (msgId: string) => void
   onOpenThread: (msg: Message) => void
-  onRecall: (msgId: string) => void
 }) {
   const isNote = msg.msg_type === "internal_note"
   const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
-  const isAI = msg.msg_type === "ai_response" || isAiAgentAuthor(msg.author_id, users)
+  const isAI = msg.msg_type === "ai_response"
   const isImage = msg.msg_type === "image"
   const isFile = msg.msg_type === "file"
 
   if (isSystem) {
     return (
       <div className="my-1 text-center">
-        <span className={cn("inline-block max-w-[90%] rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted break-words", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-base shadow-sm")}>
+        <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-xs text-ui-fg-muted", msg.is_pinned ? "bg-amber-50 dark:bg-amber-500/10" : "bg-ui-bg-component")}>
           {msg.is_pinned && "📌 "}
           {msg.content}
           {msg.task_id && onTaskClick && (
@@ -478,7 +295,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         </div>
         <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base"
           dangerouslySetInnerHTML={{ __html: renderMentions(msg.content, msg.mentions, users) }} />
-        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} users={users} />
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
       </div>
     )
   }
@@ -488,31 +305,15 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
       <div className="chat-anim-msgin my-2 flex gap-2">
         <span className="grid size-7 shrink-0 place-items-center rounded-full bg-violet-500 text-xs text-white">🤖</span>
         <div className="min-w-0">
-          <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name || "AI"} · {fmtTime(msg.created_at)}</div>
-          <div className="mkt-md max-w-[85%] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 md:max-w-[400px] bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10"
-            dangerouslySetInnerHTML={{ __html: renderMentions(msg.content, msg.mentions, users, "font-semibold text-blue-600 dark:text-blue-400", true) }} />
-          <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} users={users} />
-        </div>
-      </div>
-    )
-  }
-
-  if (msg.recalled_at) {
-    return (
-      <div className={cn("group/msg relative my-0.5 flex gap-2", isMine && "flex-row-reverse")}>
-        {!isMine && <Avatar name={msg.author_name} className="mt-4 size-7 text-[11px]" />}
-        <div className="max-w-[82%] min-w-0 md:max-w-[400px]">
-          {!isMine && <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name}</div>}
-          <div className="rounded-xl border border-dashed border-ui-border-base px-3 py-2 text-[13px] italic text-ui-fg-muted">
-            {isMine ? "Bạn đã thu hồi một tin nhắn" : `${msg.author_name} đã thu hồi một tin nhắn`}
+          <div className="mb-0.5 text-[11px] text-ui-fg-muted">AI · {fmtTime(msg.created_at)}</div>
+          <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-tl-sm border border-violet-200 md:max-w-[400px] bg-violet-50 px-3 py-2 text-[13px] leading-relaxed text-ui-fg-base dark:border-violet-500/30 dark:bg-violet-500/10">
+            {msg.content}
           </div>
-          <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>{fmtTime(msg.created_at)}</div>
+          <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} />
         </div>
       </div>
     )
   }
-
-  const canRecall = isMine && !isOptimistic && (Date.now() - new Date(msg.created_at).getTime() < RECALL_WINDOW_MS)
 
   return (
     <div tabIndex={0} className={cn("group/msg relative my-0.5 flex gap-2 outline-none", isMine && "flex-row-reverse")}>
@@ -522,13 +323,12 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
         {!isMine && <div className="mb-0.5 text-[11px] text-ui-fg-muted">{msg.author_name}</div>}
 
         {msg.reply_to && (
-          <button type="button" onClick={() => onOpenThread(msg)} title="Xem thread"
-            className={cn("block w-full cursor-pointer rounded-t-lg border-l-2 px-2 py-1 text-left text-[11px] transition-colors",
+          <div className={cn("rounded-t-lg border-l-2 px-2 py-1 text-[11px]",
             isMine
-              ? "border-blue-300 bg-blue-500/10 text-ui-fg-subtle hover:bg-blue-500/20"
-              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted hover:bg-ui-bg-component-hover shadow-sm")}>
+              ? "border-blue-300 bg-blue-500/10 text-ui-fg-subtle"
+              : "border-ui-border-strong bg-ui-bg-component text-ui-fg-muted")}>
             <span className="font-semibold">{msg.reply_to.author_name}</span>: {msg.reply_to.content}
-          </button>
+          </div>
         )}
 
         <div className={cn("relative whitespace-pre-wrap px-3 py-2 text-[13px] leading-relaxed transition-opacity",
@@ -536,7 +336,7 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
           msg.reply_to ? "rounded-b-xl" : "rounded-xl",
           isMine
             ? cn("bg-blue-600 text-white", !msg.reply_to && "rounded-tr-sm")
-            : cn("bg-ui-bg-base text-ui-fg-base shadow-sm", !msg.reply_to && "rounded-tl-sm"))}>
+            : cn("bg-ui-bg-component text-ui-fg-base", !msg.reply_to && "rounded-tl-sm"))}>
           {msg.is_pinned && <span className="mr-1 text-[10px]">📌</span>}
           {isImage && msg.file_url ? (
             <a href={msg.file_url} target="_blank" rel="noreferrer">
@@ -552,12 +352,11 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
           )}
         </div>
 
-        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} users={users} />
-
         <div className={cn("mt-0.5 text-[10px] text-ui-fg-muted", isMine && "text-right")}>
           {isOptimistic ? "Đang gửi..." : fmtTime(msg.created_at)}
-          {msg.edited_at && !isOptimistic && <span className="ml-1 italic">(đã sửa)</span>}
         </div>
+
+        <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} isMine={isMine} />
         {Number(msg.reply_count || 0) > 0 && (
           <button onClick={() => onOpenThread(msg)}
             className={cn("mt-1 block text-[11px] font-semibold transition-colors", isMine ? "ml-auto text-blue-100 hover:text-white" : "text-blue-600 hover:text-blue-700 dark:text-blue-400")}>
@@ -581,10 +380,6 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
             className="grid size-6 place-items-center rounded-md text-xs transition-colors hover:bg-ui-bg-base-hover">
             {msg.is_pinned ? "📌" : "📍"}
           </button>
-        )}
-        {canRecall && (
-          <button onClick={() => { if (confirm("Thu hồi tin nhắn này?")) onRecall(msg.id) }} title="Thu hồi"
-            className="grid size-6 place-items-center rounded-md text-xs text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover">🗑</button>
         )}
       </div>
     </div>
@@ -839,7 +634,6 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
   const [isPrivate, setIsPrivate] = useState(false)
-  const [isAnnouncement, setIsAnnouncement] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
@@ -849,7 +643,7 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
     setSaving(true)
     await apiFetch("/admin/mkt-chat/channels", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description: desc, member_ids: [...selected], is_private: isPrivate, is_announcement: isAnnouncement }),
+      body: JSON.stringify({ name, description: desc, member_ids: [...selected], is_private: isPrivate }),
     })
     setSaving(false); onCreated(); onClose()
   }
@@ -866,10 +660,6 @@ function CreateChannelModal({ onClose, onCreated, users }: { onClose: () => void
           <label className="flex items-center gap-2 rounded-lg border border-ui-border-base bg-ui-bg-subtle px-3 py-2 text-[13px] text-ui-fg-base">
             <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
             <span>Riêng tư</span>
-          </label>
-          <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-[13px] text-ui-fg-base dark:border-amber-500/30 dark:bg-amber-500/5">
-            <input type="checkbox" checked={isAnnouncement} onChange={e => setIsAnnouncement(e.target.checked)} />
-            <span>📢 Channel thông báo <span className="text-ui-fg-muted">(chỉ quản trị viên được đăng bài, còn lại chỉ đọc)</span></span>
           </label>
           <div><label className={LABEL_CLS}>Thêm thành viên</label>
             <UserCheckList users={users} selected={selected} onToggle={toggle} /></div>
@@ -920,39 +710,12 @@ function ManageMembersModal({ channel, users, onClose, onSaved }: { channel: Cha
   )
 }
 
-// Chọn nhiều nhân sự để manager xem gộp task đã giao — không phải quản lý thành
-// viên channel thật (đó là ManageMembersModal, dùng để thêm/xoá member mkt_channel).
-function AssigneePickerModal({ users, selected, onClose, onApply }: {
-  users: MktUser[]; selected: string[]; onClose: () => void; onApply: (emails: string[]) => void
-}) {
-  const [picked, setPicked] = useState<Set<string>>(new Set(selected))
-  const toggle = (email: string) => setPicked(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
-
-  return (
-    <div className="chat-anim-fadein fixed inset-0 z-[200] flex items-center justify-center bg-black/45" onClick={onClose}>
-      <div className="chat-anim-fadeup w-[440px] max-w-[95vw] rounded-xl bg-ui-bg-base p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h2 className="mb-1 text-base font-extrabold text-ui-fg-base">Chọn nhân sự</h2>
-        <p className="mb-4 text-xs text-ui-fg-muted">Xem gộp task đã giao cho những người được chọn</p>
-        <UserCheckList users={users} selected={picked} onToggle={toggle} />
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-ui-border-base px-4 py-2 text-[13px] text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
-          <button onClick={() => { onApply([...picked]); onClose() }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700 active:scale-95">
-            Xem ({picked.size})
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
   channel: Channel; onClose: () => void; onSaved: () => void; onDeleted: () => void
 }) {
   const [name, setName] = useState(channel.name)
   const [description, setDescription] = useState(channel.description || "")
   const [isPrivate, setIsPrivate] = useState(channel.is_private)
-  const [isAnnouncement, setIsAnnouncement] = useState(channel.is_announcement)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -962,7 +725,7 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
     setSaving(true)
     await apiFetch(`/admin/mkt-chat/channels/${channel.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), description: description || null, is_private: isPrivate, is_announcement: isAnnouncement }),
+      body: JSON.stringify({ name: name.trim(), description: description || null, is_private: isPrivate }),
     })
     setSaving(false); onSaved(); onClose()
   }
@@ -985,10 +748,6 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
           <label className="flex items-center gap-2 text-[13px] text-ui-fg-base">
             <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
             Nhóm riêng tư
-          </label>
-          <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-[13px] text-ui-fg-base dark:border-amber-500/30 dark:bg-amber-500/5">
-            <input type="checkbox" checked={isAnnouncement} onChange={e => setIsAnnouncement(e.target.checked)} />
-            <span>📢 Channel thông báo <span className="text-ui-fg-muted">(chỉ quản trị viên được đăng bài)</span></span>
           </label>
         </div>
 
@@ -1024,39 +783,18 @@ function EditChannelModal({ channel, onClose, onSaved, onDeleted }: {
   )
 }
 
-function CreateTaskModal({ channelId, users, memberIds, onClose, onCreated }: { channelId: string; users: MktUser[]; memberIds: string[]; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ title: "", type: "ads_camp", deadline: "" })
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([])
-  const [customType, setCustomType] = useState("")
+function CreateTaskModal({ channelId, users, onClose, onCreated }: { channelId: string; users: MktUser[]; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({ title: "", type: "ads_camp", assignee_id: "", deadline: "" })
   const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState("")
 
-  // Chỉ giao cho thành viên của nhóm chat này.
-  const memberSet = useMemo(() => new Set(memberIds.map(e => e.toLowerCase())), [memberIds])
-  const channelUsers = useMemo(() => users.filter(u => memberSet.has(u.email.toLowerCase())), [users, memberSet])
-  const toggleAssignee = (email: string) =>
-    setAssigneeIds(prev => prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email])
-  const allSelected = channelUsers.length > 0 && assigneeIds.length === channelUsers.length
-  const toggleAll = () =>
-    setAssigneeIds(allSelected ? [] : channelUsers.map(u => u.email))
-
-  const isCustom = form.type === "__custom"
   const submit = async () => {
-    if (!form.title.trim() || assigneeIds.length === 0 || (isCustom && !customType.trim())) return
-    setSaving(true); setErr("")
-    try {
-      const r = await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, assignee_ids: assigneeIds, type: isCustom ? customType.trim() : form.type }),
-      })
-      const data = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(data?.error || "Tạo task thất bại")
-      onCreated(); onClose()
-    } catch (e: any) {
-      setErr(e?.message || "Tạo task thất bại")
-    } finally {
-      setSaving(false)
-    }
+    if (!form.title.trim() || !form.assignee_id) return
+    setSaving(true)
+    await apiFetch(`/admin/mkt-chat/channels/${channelId}/create-task`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    })
+    setSaving(false); onCreated(); onClose()
   }
 
   return (
@@ -1067,51 +805,23 @@ function CreateTaskModal({ channelId, users, memberIds, onClose, onCreated }: { 
           <div><label className={LABEL_CLS}>Tiêu đề *</label>
             <input className={INPUT_CLS} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Tiêu đề task..." autoFocus /></div>
           <div><label className={LABEL_CLS}>Loại</label>
-            <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, deadline: e.target.value === "purchasing" ? "" : f.deadline }))}>
+            <select className={INPUT_CLS} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
               <option value="ads_camp">Chạy Ads / Camp</option>
               <option value="content_post">Nội dung / Bài FB</option>
-              <option value="purchasing">🛒 Mua hàng / Nhập hàng</option>
-              <option value="__custom">➕ Khác (tự nhập)...</option>
             </select></div>
-          {isCustom && (
-            <div><label className={LABEL_CLS}>Tên loại mới *</label>
-              <input className={INPUT_CLS} value={customType} onChange={e => setCustomType(e.target.value)} placeholder="VD: Thiết kế, Livestream..." /></div>
-          )}
-          <div>
-            <div className="flex items-center justify-between">
-              <label className={LABEL_CLS}>Giao cho * {assigneeIds.length > 0 && <span className="font-normal text-ui-fg-muted">({assigneeIds.length})</span>}</label>
-              {channelUsers.length > 0 && (
-                <button type="button" onClick={toggleAll} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">
-                  {allSelected ? "Bỏ chọn" : "Chọn tất cả"}
-                </button>
-              )}
-            </div>
-            <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-ui-border-base">
-              {channelUsers.length === 0 ? (
-                <div className="px-3 py-2 text-[11px] text-ui-fg-muted">Nhóm chưa có thành viên nào.</div>
-              ) : channelUsers.map(u => (
-                <label key={u.email} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[13px] text-ui-fg-base hover:bg-ui-bg-base-hover">
-                  <input type="checkbox" checked={assigneeIds.includes(u.email)} onChange={() => toggleAssignee(u.email)} />
-                  <span>{u.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          {form.type === "purchasing" ? (
-            <div className="rounded-lg bg-cyan-50/60 px-2.5 py-2 text-[11px] text-cyan-700 dark:bg-cyan-500/5 dark:text-cyan-300">
-              🛒 Việc mua hàng theo dõi qua giai đoạn quy trình, không cần deadline cố định.
-            </div>
-          ) : (
-            <div><label className={LABEL_CLS}>Deadline</label>
-              <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
-          )}
+          <div><label className={LABEL_CLS}>Giao cho *</label>
+            <select className={INPUT_CLS} value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}>
+              <option value="">-- Chọn --</option>
+              {users.map(u => <option key={u.email} value={u.email}>{u.name}</option>)}
+            </select></div>
+          <div><label className={LABEL_CLS}>Deadline</label>
+            <input type="date" className={INPUT_CLS} value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></div>
         </div>
-        {err && <div className="mt-2 text-xs text-rose-500">{err}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-ui-border-base px-3.5 py-1.5 text-xs text-ui-fg-base transition-colors hover:bg-ui-bg-base-hover">Hủy</button>
-          <button onClick={submit} disabled={saving || !form.title.trim() || assigneeIds.length === 0 || (isCustom && !customType.trim())}
+          <button onClick={submit} disabled={saving || !form.title.trim() || !form.assignee_id}
             className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-40">
-            {saving ? "Đang tạo..." : assigneeIds.length > 1 ? `Tạo ${assigneeIds.length} task` : "Tạo task"}
+            {saving ? "Đang tạo..." : "Tạo task"}
           </button>
         </div>
       </div>
@@ -1121,12 +831,10 @@ function CreateTaskModal({ channelId, users, memberIds, onClose, onCreated }: { 
 
 // ─── Context Panel (cột 3) ───────────────────────────────────────────────────
 
-function ContextPanel({ channel, mktUsers, onlineEmails, presence, presenceDevices, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
+function ContextPanel({ channel, mktUsers, onlineEmails, isManager, isSuper, mobileVisible, desktopVisible, onManageMembers, onEditChannel, onCreateTask, onClose }: {
   channel: Channel
   mktUsers: MktUser[]
   onlineEmails: string[]
-  presence: Record<string, string>
-  presenceDevices: Record<string, string[]>
   isManager: boolean
   isSuper: boolean
   mobileVisible: boolean
@@ -1162,19 +870,11 @@ function ContextPanel({ channel, mktUsers, onlineEmails, presence, presenceDevic
     }
   }, [tab, channel.id, fileType, fileAuthor, fileFrom, fileTo])
 
-  const members = (channel.member_ids || []).map(email => {
-    const status = (presence[email] || (onlineEmails.includes(email) ? "online" : "offline")) as "online" | "idle" | "offline"
-    return {
-      email,
-      name: mktUsers.find(u => u.email === email)?.name || email.split("@")[0],
-      status,
-      online: status !== "offline",
-      devices: presenceDevices[email] || [],
-    }
-  }).sort((a, b) => {
-    const w = (s: string) => (s === "online" ? 0 : s === "idle" ? 1 : 2)
-    return w(a.status) - w(b.status) || a.name.localeCompare(b.name)
-  })
+  const members = (channel.member_ids || []).map(email => ({
+    email,
+    name: mktUsers.find(u => u.email === email)?.name || email.split("@")[0],
+    online: onlineEmails.includes(email),
+  })).sort((a, b) => Number(b.online) - Number(a.online))
 
   const tabBtn = (t: typeof tab, label: string) => (
     <button key={t} onClick={() => setTab(t)}
@@ -1225,12 +925,10 @@ function ContextPanel({ channel, mktUsers, onlineEmails, presence, presenceDevic
               <div className="flex flex-col gap-0.5">
                 {members.map(m => (
                   <div key={m.email} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-ui-bg-base-hover">
-                    <Avatar name={m.name} status={m.status} className="size-7 text-[11px]" />
+                    <Avatar name={m.name} online={m.online} className="size-7 text-[11px]" />
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-medium text-ui-fg-base">{m.name}</div>
-                      <div className="text-[10px] text-ui-fg-muted">
-                        {m.status === "online" ? "Đang hoạt động" : m.status === "idle" ? "Mở tab, không thao tác" : "Ngoại tuyến"}
-                      </div>
+                      <div className="text-[10px] text-ui-fg-muted">{m.online ? "Đang hoạt động" : "Ngoại tuyến"}</div>
                     </div>
                   </div>
                 ))}
@@ -1361,11 +1059,7 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
           <span className="font-semibold text-ui-fg-base">{m.author_name}</span>
           <span>{fmtTime(m.created_at)}</span>
         </div>
-        {m.recalled_at ? (
-          <div className="text-[13px] italic text-ui-fg-muted">Tin nhắn đã được thu hồi</div>
-        ) : (
-          <div className="mkt-md whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users, undefined, isAiAgentAuthor(m.author_id, users)) }} />
-        )}
+        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ui-fg-base" dangerouslySetInnerHTML={{ __html: renderMentions(m.content, m.mentions, users) }} />
       </div>
     </div>
   )
@@ -1403,18 +1097,15 @@ function ThreadPanel({ channelId, root, users, refreshKey, onClose }: {
 }
 const PANEL_STORAGE_KEY = "mkt-chat:panel"
 
-function MktChatPage() {
+export default function MktChatPage() {
   const { has, isSuper, email: currentUserId } = useCurrentPermissions()
   const isManager = isSuper || has("page.mkt-chat.manage")
-  const isTaskManager = isSuper || has("page.mkt-tasks.manage")
 
   const [channels, setChannels] = useState<Channel[]>([])
   const [onlineEmails, setOnlineEmails] = useState<string[]>([])
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [typingNames, setTypingNames] = useState<string[]>([])
-  const [presence, setPresence] = useState<Record<string, string>>({}) // email → online | idle
-  const [presenceDevices, setPresenceDevices] = useState<Record<string, string[]>>({}) // email → ["desktop","mobile"]
   const [input, setInput] = useState("")
   const [composerMode, setComposerMode] = useState<"message" | "note">("message")
   const [sending, setSending] = useState(false)
@@ -1425,18 +1116,6 @@ function MktChatPage() {
   const [sidebarTab, setSidebarTab] = useState<"all" | "unread" | "mentioned">("all")
   // Mobile: false = show channel list, true = show chat area (desktop shows both)
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("mkt-chat:collapsed-groups") || "[]")) }
-    catch { return new Set() }
-  })
-  const toggleGroupCollapsed = (key: string) => {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      localStorage.setItem("mkt-chat:collapsed-groups", JSON.stringify([...next]))
-      return next
-    })
-  }
   const [channelSearch, setChannelSearch] = useState("")
   const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_STORAGE_KEY) !== "0")
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
@@ -1454,34 +1133,10 @@ function MktChatPage() {
   const [newMsgCount, setNewMsgCount] = useState(0)
   const [threadRefreshKey, setThreadRefreshKey] = useState(0)
   const [notifications, setNotifications] = useState<MktNotification[]>([])
-  const taskNotifications = useMemo(() => notifications.filter(n => n.type === "task_assigned"), [notifications])
-  // Manager xem lại task đã giao cho 1 hoặc nhiều nhân sự khác + trạng thái đã xem —
-  // không đụng đến "notifications của chính tôi" (không mark-read, không tính unread).
-  const [assigneeViewEmails, setAssigneeViewEmails] = useState<string[]>([])
-  const [showAssigneePicker, setShowAssigneePicker] = useState(false)
-  const [assigneeNotifications, setAssigneeNotifications] = useState<Array<{
-    id: string; task_id: string; task_title: string; sender_name: string; recipient: string
-    created_at: string; read: boolean; read_at: string | null
-  }>>([])
   const [notificationUnread, setNotificationUnread] = useState(0)
   const [notificationOpen, setNotificationOpen] = useState(false)
-  const [notificationPopupPos, setNotificationPopupPos] = useState<{ top: number; right: number } | null>(null)
-  const notificationBtnRef = useRef<HTMLButtonElement>(null)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:sound") !== "0")
   const [notificationRepeatSoundEnabled, setNotificationRepeatSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:repeat-sound") !== "0")
-  const [allMessageSoundEnabled, setAllMessageSoundEnabled] = useState(() => localStorage.getItem("mkt-chat:all-sound") === "1")
-  const [desktopNotifyEnabled, setDesktopNotifyEnabled] = useState(() => localStorage.getItem("mkt-chat:desktop-notify") === "1")
-  const [chatFontSize, setChatFontSize] = useState(() => {
-    const saved = Number(localStorage.getItem("mkt-chat:font-size"))
-    return saved >= 12 && saved <= 20 ? saved : 13
-  })
-  const changeChatFontSize = useCallback((delta: number) => {
-    setChatFontSize(prev => {
-      const next = Math.min(20, Math.max(12, prev + delta))
-      localStorage.setItem("mkt-chat:font-size", String(next))
-      return next
-    })
-  }, [])
 
   const messagesBoxRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -1491,12 +1146,6 @@ function MktChatPage() {
   const atBottomRef = useRef(true)
   const lastTypingPingRef = useRef(0)
   const typingTimersRef = useRef<Record<string, any>>({})
-  const presenceSessionRef = useRef<string | null>(null)
-  // Đọc trong handler SSE mà KHÔNG đưa vào dependency array của effect SSE — nếu không,
-  // mỗi lần đổi kênh/mở thread sẽ đóng-mở lại kết nối, phá luôn presence session (giữa chừng
-  // mất active_seconds vì session chết trước khi kịp tích lũy ở nhịp heartbeat kế tiếp).
-  const activeChannelIdRef = useRef<string | null>(null)
-  const openThreadIdRef = useRef<string | null>(null)
   const pendingJumpRef = useRef<string | null>(null)
   const mentionEntityRef = useRef<Record<string, string>>({})
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1504,24 +1153,19 @@ function MktChatPage() {
   const pendingMentionSoundRef = useRef(false)
   const mentionRepeatTimerRef = useRef<number | null>(null)
   const mentionRepeatCountRef = useRef(0)
-  const desktopNotifyRef = useRef(false)
-  const jumpToNotificationRef = useRef<(notification: MktNotification) => void>(() => {})
+  const telegramAlertSentRef = useRef(false)
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionIndex, setMentionIndex] = useState(0)
-  const mentionSuggestions = useMemo<MentionSuggestion[]>(() => {
+  const mentionSuggestions = useMemo(() => {
     const memberEmails = new Set(activeChannel?.member_ids || [])
     const scopedUsers = mktUsers.filter(u => memberEmails.has(u.email))
     const q = mentionQuery.toLowerCase()
-    const allSuggestion: MentionSuggestion = { email: ALL_MENTION_EMAIL, name: "ALL", mentionAll: true }
-    return [
-      ...(!q || "all".includes(q) ? [allSuggestion] : []),
-      ...scopedUsers.filter(u =>
-        !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-      ),
-    ].slice(0, 6)
+    return scopedUsers.filter(u =>
+      !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+    ).slice(0, 5)
   }, [activeChannel?.member_ids, mentionQuery, mktUsers])
   // Template picker (slash command)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -1538,8 +1182,6 @@ function MktChatPage() {
       const list: Channel[] = d.channels || []
       setChannels(list)
       setOnlineEmails(d.online_emails || [])
-      if (d.presence) setPresence(d.presence)
-      if (d.presence_devices) setPresenceDevices(d.presence_devices)
       setActiveChannel(prev => prev ? (list.find(c => c.id === prev.id) || prev) : prev)
     })
   }, [])
@@ -1578,6 +1220,7 @@ function MktChatPage() {
     clearMentionRepeatTimer()
     mentionRepeatCountRef.current = 0
     pendingMentionSoundRef.current = false
+    telegramAlertSentRef.current = false
   }, [clearMentionRepeatTimer])
 
   const markNotificationsRead = useCallback(() => {
@@ -1590,24 +1233,6 @@ function MktChatPage() {
       })
       .catch(() => {})
   }, [stopMentionSoundReminder])
-
-  // Clear mention notifications thuộc 1 channel khi user mở/đọc channel đó —
-  // để chuông ngừng ting ting mà không cần bấm nút chuông.
-  const markChannelNotificationsRead = useCallback((channelId: string) => {
-    apiFetch("/admin/mkt-chat/notifications/read", {
-      method: "PATCH",
-      body: JSON.stringify({ channel_id: channelId }),
-    })
-      .then(r => r.json())
-      .then(d => {
-        const unread = Number(d?.unread_count || 0)
-        setNotificationUnread(unread)
-        if (unread <= 0) stopMentionSoundReminder()
-        setNotifications(prev => prev.filter(n => n.channel_id !== channelId))
-      })
-      .catch(() => {})
-  }, [stopMentionSoundReminder])
-
   useEffect(() => {
     loadChannels()
     loadTemplates()
@@ -1640,16 +1265,6 @@ function MktChatPage() {
     return play()
   }, [notificationSoundEnabled])
 
-  const playMessageSound = useCallback(() => {
-    if (!allMessageSoundEnabled || typeof window === "undefined") return
-    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
-    if (!AudioContextCtor) return
-    const ctx = audioContextRef.current || new AudioContextCtor()
-    audioContextRef.current = ctx
-    if (ctx.state === "suspended") return
-    emitMessageTone(ctx)
-  }, [allMessageSoundEnabled])
-
   useEffect(() => {
     clearMentionRepeatTimer()
     if (!notificationSoundEnabled || !notificationRepeatSoundEnabled || notificationUnread <= 0 || notificationOpen) {
@@ -1657,14 +1272,16 @@ function MktChatPage() {
       return
     }
 
-    // Telegram giờ gửi ngay từ backend lúc tạo mention — không chờ đếm ở đây nữa.
-    // Chuông lặp lại vẫn giữ để nhắc người đang có mặt nhưng chưa mở panel thông báo.
     const scheduleReminder = () => {
       mentionRepeatTimerRef.current = window.setTimeout(() => {
         mentionRepeatTimerRef.current = null
         if (mentionRepeatCountRef.current >= MENTION_SOUND_REPEAT_LIMIT) return
         mentionRepeatCountRef.current += 1
         playMentionSound()
+        if (!telegramAlertSentRef.current && mentionRepeatCountRef.current >= TELEGRAM_ALERT_AT_REPEAT_COUNT) {
+          telegramAlertSentRef.current = true
+          sendTelegramAlert()
+        }
         scheduleReminder()
       }, MENTION_SOUND_REPEAT_MS)
     }
@@ -1702,75 +1319,26 @@ function MktChatPage() {
       window.removeEventListener("keydown", unlock)
     }
   }, [unlockNotificationAudio])
-  const loadMessages = useCallback((channelId: string, opts?: { scroll?: boolean; markRead?: boolean; before?: string }) => {
+  const loadMessages = useCallback((channelId: string, opts?: { scroll?: boolean; markRead?: boolean }) => {
     setLoading(true)
     if (opts?.scroll !== false) setNewMsgCount(0)
-    const url = new URL(`/admin/mkt-chat/channels/${channelId}/messages`, window.location.origin)
-    url.searchParams.set("limit", "50")
-    if (opts?.before) url.searchParams.set("before", opts.before)
-    apiFetch(url.toString())
+    apiFetch(`/admin/mkt-chat/channels/${channelId}/messages`)
       .then(r => r.json()).then(d => {
-        if (opts?.before) {
-          setMessages(prev => [...d.messages || [], ...prev])
-        } else {
-          setMessages(d.messages || [])
-        }
+        setMessages(d.messages || [])
         setTypingNames(d.presence?.typing || [])
-        if (opts?.scroll !== false) requestAnimationFrame(() => {
-          const el = messagesBoxRef.current
-          if (el) el.scrollTop = el.scrollHeight
-        })
+        if (opts?.scroll !== false) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView())
       }).finally(() => setLoading(false))
     if (opts?.markRead) {
       apiFetch(`/admin/mkt-chat/channels/${channelId}/last-read`, { method: "PATCH" }).catch(() => {})
     }
   }, [])
 
-  // Load messages when channel changes (bỏ qua pseudo-channel "🔔" — không phải mkt_channel thật)
+  // Load messages when channel changes
   useEffect(() => {
-    if (!activeChannel || activeChannel.id === NOTIFY_CHANNEL_ID) return
+    if (!activeChannel) return
     atBottomRef.current = true
     loadMessages(activeChannel.id, { markRead: true })
-    markChannelNotificationsRead(activeChannel.id)
-  }, [activeChannel?.id, loadMessages, markChannelNotificationsRead])
-
-  // Mở pseudo-channel "📋 Việc được giao" → chỉ đánh dấu đã đọc các task_assigned CỦA
-  // CHÍNH MÌNH đang chờ (không đụng mention). Manager xem hộ task người khác qua
-  // assigneeViewEmails thì KHÔNG mark-read hộ — đó là view chỉ-đọc, không phải "đã xem".
-  useEffect(() => {
-    if (activeChannel?.id !== NOTIFY_CHANNEL_ID) return
-    if (isTaskManager && assigneeViewEmails.length > 0) return
-    const unreadTaskIds = taskNotifications.filter(n => !n.read).map(n => n.task_id).filter(Boolean) as string[]
-    if (unreadTaskIds.length === 0) return
-    Promise.all(unreadTaskIds.map(taskId =>
-      apiFetch("/admin/mkt-chat/notifications/read", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId }),
-      }).then(r => r.json())
-    )).then(results => {
-      const last = results[results.length - 1]
-      if (last) setNotificationUnread(Number(last.unread_count || 0))
-      setNotifications(prev => prev.map(n => n.type === "task_assigned" ? { ...n, read: true } : n))
-    }).catch(() => {})
-  }, [activeChannel?.id, taskNotifications, isTaskManager, assigneeViewEmails])
-
-  // Manager chọn xem task của 1 hoặc nhiều nhân sự khác trong pseudo-channel.
-  useEffect(() => {
-    if (activeChannel?.id !== NOTIFY_CHANNEL_ID || !isTaskManager || assigneeViewEmails.length === 0) {
-      setAssigneeNotifications([])
-      return
-    }
-    apiFetch(`/admin/mkt-tasks/assignee-notifications?assignee=${encodeURIComponent(assigneeViewEmails.join(","))}`)
-      .then(r => r.json())
-      .then(d => setAssigneeNotifications(d.notifications || []))
-      .catch(() => setAssigneeNotifications([]))
-  }, [activeChannel?.id, isTaskManager, assigneeViewEmails])
-
-  // Đồng bộ ref cho effect SSE đọc — xem giải thích ở khai báo activeChannelIdRef phía trên.
-  useEffect(() => { activeChannelIdRef.current = activeChannel?.id ?? null }, [activeChannel?.id])
-  useEffect(() => { openThreadIdRef.current = openThread?.id ?? null }, [openThread?.id])
-  useEffect(() => { desktopNotifyRef.current = desktopNotifyEnabled }, [desktopNotifyEnabled])
+  }, [activeChannel?.id, loadMessages])
 
   // SSE realtime: receive pushed events instead of 4s polling
   useEffect(() => {
@@ -1779,8 +1347,7 @@ function MktChatPage() {
     let loadChannelsDebounceTimer: any = null
 
     const refreshActive = () => {
-      const id = activeChannelIdRef.current
-      if (id) loadMessages(id, { scroll: false, markRead: true })
+      if (activeChannel?.id) loadMessages(activeChannel.id, { scroll: false, markRead: true })
     }
 
     // Gộp nhiều sự kiện dồn dập (nhiều tin nhắn liên tiếp trong channel đông người)
@@ -1793,33 +1360,12 @@ function MktChatPage() {
     const connect = () => {
       es = new EventSource("/admin/mkt-chat/events")
 
-      // Backend mở presence session theo chính kết nối SSE này; heartbeat cần session_id đó.
-      es.addEventListener("connected", (e: MessageEvent) => {
-        const data = JSON.parse(e.data || "{}")
-        if (data.session_id) presenceSessionRef.current = data.session_id
-      })
-
-      es.addEventListener("presence.changed", (e: MessageEvent) => {
-        const data = JSON.parse(e.data || "{}")
-        if (!data.email) return
-        setPresence(prev => {
-          const next = { ...prev }
-          if (data.status === "offline") delete next[data.email]
-          else next[data.email] = data.status
-          return next
-        })
-      })
-
       es.addEventListener("message.created", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
         const msg = data.message as Message | undefined
         if (!msg?.id || !data.channel_id) return
 
-        if (msg.author_id !== currentUserId && msg.msg_type !== "system_notify") {
-          playMessageSound()
-        }
-
-        if (activeChannelIdRef.current === data.channel_id) {
+        if (activeChannel?.id === data.channel_id) {
           setMessages(prev => {
             const withoutMatchingOptimistic = prev.filter(m => !(m.id.startsWith("opt-") && m.author_id === msg.author_id && m.content === msg.content))
             if (withoutMatchingOptimistic.some(m => m.id === msg.id)) return withoutMatchingOptimistic
@@ -1835,21 +1381,18 @@ function MktChatPage() {
 
       es.addEventListener("message.updated", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        if (activeChannelIdRef.current !== data.channel_id || !data.message_id) return
-        // "content"/"edited_at" thêm cho PATCH sửa tin (agent AI cập nhật tiến độ 1 tin
-        // duy nhất thay vì spam nhiều tin) — cùng cơ chế merge field có mặt trong payload
-        // như reactions/is_pinned/recalled_at đã có, không phá các nhánh cũ.
-        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}), ...("recalled_at" in data ? { recalled_at: data.recalled_at } : {}), ...("content" in data ? { content: data.content } : {}), ...("edited_at" in data ? { edited_at: data.edited_at } : {}) } : m))
+        if (activeChannel?.id !== data.channel_id || !data.message_id) return
+        setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, ...("reactions" in data ? { reactions: data.reactions } : {}), ...("is_pinned" in data ? { is_pinned: data.is_pinned } : {}) } : m))
       })
 
       es.addEventListener("thread.reply.created", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        if (activeChannelIdRef.current !== data.channel_id || !data.root_message_id) return
+        if (activeChannel?.id !== data.channel_id || !data.root_message_id) return
         setMessages(prev => prev.map(m => m.id === data.root_message_id
           ? { ...m, reply_count: Number(data.root_reply_count ?? ((m.reply_count || 0) + 1)) }
           : m
         ))
-        if (openThreadIdRef.current === data.root_message_id) setThreadRefreshKey(k => k + 1)
+        if (openThread?.id === data.root_message_id) setThreadRefreshKey(k => k + 1)
       })
 
       es.addEventListener("channel.updated", () => loadChannelsDebounced())
@@ -1862,22 +1405,6 @@ function MktChatPage() {
         setNotifications(prev => [notification, ...prev.filter(n => n.id !== notification.id)].slice(0, 30))
         setNotificationUnread(c => c + 1)
         playMentionSound()
-        if (desktopNotifyRef.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-          try {
-            const n = new Notification(`${notification.sender_name} @${notification.channel_name}`, {
-              body: notification.preview || "Bạn được nhắc đến trong một tin nhắn",
-              icon: "/favicon.ico",
-              tag: `mkt-chat-mention-${notification.id}`,
-            })
-            n.onclick = () => {
-              window.focus()
-              jumpToNotificationRef.current(notification)
-              n.close()
-            }
-          } catch (err) { console.error("[mkt-chat] desktop notification failed:", err) }
-        } else if (desktopNotifyRef.current) {
-          console.warn("[mkt-chat] desktop notification skipped — permission:", typeof Notification !== "undefined" ? Notification.permission : "unsupported")
-        }
       })
       es.addEventListener("mention.notifications.read", () => {
         stopMentionSoundReminder()
@@ -1892,7 +1419,7 @@ function MktChatPage() {
 
       es.addEventListener("typing.started", (e: MessageEvent) => {
         const data = JSON.parse(e.data || "{}")
-        if (activeChannelIdRef.current !== data.channel_id || data.email === currentUserId) return
+        if (activeChannel?.id !== data.channel_id || data.email === currentUserId) return
         const label = data.name || data.email
         setTypingNames(prev => prev.includes(label) ? prev : [...prev, label])
         if (typingTimersRef.current[data.email]) clearTimeout(typingTimersRef.current[data.email])
@@ -1930,57 +1457,15 @@ function MktChatPage() {
       Object.values(typingTimersRef.current).forEach(clearTimeout)
       typingTimersRef.current = {}
     }
-  // KHÔNG đưa activeChannel?.id / openThread?.id vào đây — effect này chỉ nên chạy lại khi đổi
-  // user, không phải khi đổi kênh/thread (mỗi lần re-run là đóng-mở SSE, phá presence session).
-  // Handler bên trong đọc activeChannelIdRef/openThreadIdRef để luôn thấy giá trị mới nhất.
-  }, [currentUserId, loadChannels, loadMessages, loadNotifications, playMentionSound, playMessageSound, stopMentionSoundReminder])
-
-  // Chấm công: heartbeat 45s báo tab còn sống + có đang thao tác thật không.
-  // Effect riêng, deps rỗng — không gắn vào effect SSE (effect đó re-run mỗi lần đổi channel).
-  useEffect(() => {
-    // Thao tác ghi vào localStorage chung (markGlobalActivity) → mọi tab admin cùng đóng góp.
-    const markInteraction = () => markGlobalActivity()
-    const events = ["mousedown", "keydown", "wheel", "touchstart"]
-    events.forEach(ev => window.addEventListener(ev, markInteraction, { passive: true }))
-
-    const beat = () => {
-      const sessionId = presenceSessionRef.current
-      if (!sessionId) return
-      // active = cửa sổ đang hiện VÀ có thao tác ở BẤT KỲ tab admin nào trong 5 phút.
-      const active = document.visibilityState === "visible" && hasRecentGlobalActivity()
-      apiJson("/admin/mkt-chat/presence", "POST", { session_id: sessionId, active }).catch(() => {})
-    }
-
-    const timer = window.setInterval(beat, 45000)
-    apiJson("/admin/mkt-chat/presence")
-      .then((d: any) => {
-        const entries = Object.entries(d?.presence || {})
-        setPresence(Object.fromEntries(entries.map(([k, v]: any) => [k, v.status])))
-        setPresenceDevices(Object.fromEntries(entries.map(([k, v]: any) => [k, v.devices || []])))
-      })
-      .catch(() => {})
-
-    return () => {
-      clearInterval(timer)
-      events.forEach(ev => window.removeEventListener(ev, markInteraction))
-    }
-  }, [])
-
-  // Cuộn trong khung tin nhắn thôi — KHÔNG dùng scrollIntoView vì nó cuộn
-  // cả các scroll container cha (trang admin), làm layout mobile bị đẩy lệch/hở đáy.
-  const scrollMessagesToEnd = useCallback((smooth = false) => {
-    const el = messagesBoxRef.current
-    if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" })
-  }, [])
+  }, [activeChannel?.id, currentUserId, loadChannels, loadMessages, loadNotifications, openThread?.id, playMentionSound, stopMentionSoundReminder])
 
   // Smart autoscroll: chỉ cuộn khi user đang ở đáy
   useEffect(() => {
     if (atBottomRef.current) {
-      scrollMessagesToEnd(true)
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
       setNewMsgCount(0)
     }
-  }, [messages, scrollMessagesToEnd])
+  }, [messages])
 
   const handleScroll = () => {
     const el = messagesBoxRef.current
@@ -1988,17 +1473,11 @@ function MktChatPage() {
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80
     atBottomRef.current = atBottom
     if (atBottom) setNewMsgCount(0)
-
-    if (!activeChannel || loading) return
-    if (el.scrollTop < 50 && messages.length > 0) {
-      const oldestMsg = messages[0]
-      loadMessages(activeChannel.id, { scroll: false, before: oldestMsg.created_at })
-    }
   }
 
   const scrollToBottom = () => {
     atBottomRef.current = true
-    scrollMessagesToEnd(true)
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     setNewMsgCount(0)
   }
 
@@ -2067,17 +1546,10 @@ function MktChatPage() {
     }
   }
 
-  const insertMention = (user: MentionSuggestion) => {
+  const insertMention = (user: MktUser) => {
     const atIdx = input.lastIndexOf("@")
-    if (user.mentionAll) {
-      for (const email of activeChannel?.member_ids || []) {
-        if (email !== currentUserId) mentionEntityRef.current[email] = "all"
-      }
-      setInput(input.slice(0, atIdx) + "@all ")
-    } else {
-      mentionEntityRef.current[user.email] = user.name
-      setInput(input.slice(0, atIdx) + `@${user.name} `)
-    }
+    mentionEntityRef.current[user.email] = user.name
+    setInput(input.slice(0, atIdx) + `@${user.name} `)
     setMentionOpen(false)
     textareaRef.current?.focus()
   }
@@ -2118,7 +1590,7 @@ function MktChatPage() {
       if (data?.message) {
         atBottomRef.current = true
         setMessages(prev => prev.some(m => m.id === data.message.id) ? prev : [...prev, data.message])
-        requestAnimationFrame(() => scrollMessagesToEnd(true))
+        requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }))
         return
       }
       const refreshed = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).catch(() => null)
@@ -2146,29 +1618,12 @@ function MktChatPage() {
     loadChannels()
   }
 
-  const handleRecall = async (msgId: string) => {
-    if (!activeChannel) return
-    const r = await apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages/${msgId}`, { method: "DELETE" })
-    const data = await r.json().catch(() => null)
-    if (!r.ok) { alert(data?.error || "Khong thu hoi duoc tin nhan"); return }
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, recalled_at: data.recalled_at } : m))
-  }
-
   const jumpToMessage = (msgId: string) => {
     pendingJumpRef.current = null
     setShowSearch(false)
     const el = messageRefs.current[msgId]
     if (el) {
-      // Cuộn thủ công trong khung tin nhắn để không kéo scroll của trang admin bên ngoài
-      const box = messagesBoxRef.current
-      if (box) {
-        const elRect = el.getBoundingClientRect()
-        const boxRect = box.getBoundingClientRect()
-        box.scrollTo({
-          top: box.scrollTop + (elRect.top - boxRect.top) - box.clientHeight / 2 + elRect.height / 2,
-          behavior: "smooth",
-        })
-      }
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
       el.classList.remove("chat-anim-highlight")
       void el.offsetWidth // restart animation
       el.classList.add("chat-anim-highlight")
@@ -2192,30 +1647,8 @@ function MktChatPage() {
 
   const toggleNotifications = () => {
     const nextOpen = !notificationOpen
-    if (nextOpen && notificationBtnRef.current) {
-      const rect = notificationBtnRef.current.getBoundingClientRect()
-      setNotificationPopupPos({
-        top: rect.bottom + 6,
-        right: Math.max(12, window.innerWidth - rect.right),
-      })
-    }
     setNotificationOpen(nextOpen)
     if (nextOpen && notificationUnread > 0) markNotificationsRead()
-  }
-
-  const toggleDesktopNotify = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation()
-    if (typeof window === "undefined" || !("Notification" in window)) return
-    const next = !desktopNotifyEnabled
-    if (next) {
-      const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission()
-      if (perm !== "granted") {
-        alert("Trình duyệt chưa cấp quyền thông báo. Vào cài đặt trình duyệt để bật lại.")
-        return
-      }
-    }
-    setDesktopNotifyEnabled(next)
-    localStorage.setItem("mkt-chat:desktop-notify", next ? "1" : "0")
   }
 
   const toggleNotificationSound = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -2240,14 +1673,6 @@ function MktChatPage() {
     mentionRepeatCountRef.current = 0
     if (!next) stopMentionSoundReminder()
   }
-
-  const toggleAllMessageSound = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation()
-    const next = !allMessageSoundEnabled
-    setAllMessageSoundEnabled(next)
-    localStorage.setItem("mkt-chat:all-sound", next ? "1" : "0")
-    if (next) unlockNotificationAudio()
-  }
   const jumpToNotification = (notification: MktNotification) => {
     stopMentionSoundReminder()
     setNotificationOpen(false)
@@ -2262,7 +1687,6 @@ function MktChatPage() {
     }
     requestAnimationFrame(() => jumpToMessage(notification.message_id))
   }
-  useEffect(() => { jumpToNotificationRef.current = jumpToNotification })
   useEffect(() => {
     const pendingId = pendingJumpRef.current
     if (!pendingId || !messages.some(m => m.id === pendingId)) return
@@ -2324,50 +1748,16 @@ function MktChatPage() {
     }
     requestAnimationFrame(() => jumpToMessage(jump.message_id!))
   }, [activeChannel?.id, channels])
-  // Pseudo-channel "🔔 Việc được giao" — không phải mkt_channel thật trong DB, chỉ
-  // hiện task_assigned (mention đã có chuông dropdown + toast riêng, không lặp lại ở đây).
-  const taskNotificationUnread = useMemo(() => taskNotifications.filter(n => !n.read).length, [taskNotifications])
-  const notifyPseudoChannel: Channel = useMemo(() => ({
-    id: NOTIFY_CHANNEL_ID,
-    name: "Việc được giao",
-    description: null,
-    is_private: false,
-    is_announcement: false,
-    member_count: 1,
-    unread_count: taskNotificationUnread,
-    mention_count: 0,
-    created_at: "",
-    last_message: taskNotifications[0]
-      ? {
-          content: `📋 ${taskNotifications[0].task_title}`,
-          author_id: taskNotifications[0].sender,
-          msg_type: "system_notify",
-          created_at: taskNotifications[0].created_at,
-        }
-      : null,
-  }), [taskNotificationUnread, taskNotifications])
-
   const groupedVisibleChannels = useMemo(() => {
-    const groups: { key: string; label: string; icon: string; pinned?: boolean; items: Channel[] }[] = []
-    if (sidebarTab !== "unread" || taskNotificationUnread > 0) {
-      if (sidebarTab !== "mentioned") {
-        groups.push({ key: "__notify", label: "Việc được giao", icon: "📋", pinned: true, items: [notifyPseudoChannel] })
-      }
-    }
-    const announceItems = visibleChannels.filter(c => c.is_announcement)
-    if (announceItems.length > 0) {
-      groups.push({ key: "__announcement", label: "Thông báo", icon: "📢", pinned: true, items: announceItems })
-    }
-
+    const groups: { label: string; items: Channel[] }[] = []
     const byLabel = new Map<string, Channel[]>()
     for (const channel of visibleChannels) {
-      if (channel.is_announcement) continue
       const dash = channel.name.indexOf("-")
       const label = dash > 0 ? channel.name.slice(0, dash).trim() : "Khac"
       const key = label || "Khac"
       if (!byLabel.has(key)) {
         byLabel.set(key, [])
-        groups.push({ key, label: key, icon: "", items: byLabel.get(key)! })
+        groups.push({ label: key, items: byLabel.get(key)! })
       }
       byLabel.get(key)!.push(channel)
     }
@@ -2387,114 +1777,25 @@ function MktChatPage() {
     : 0
 
   const totalUnread = channels.reduce((s, c) => s + c.unread_count, 0)
-  const canPostInActiveChannel = !activeChannel?.is_announcement || isManager
-
-  // Nhấp nháy tiêu đề tab khi có tin/nhắc đến chưa đọc và người dùng đang ở tab khác,
-  // để nhận ra tin mới mà không cần quay lại tab mkt-chat.
-  const baseTabTitleRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (baseTabTitleRef.current === null) baseTabTitleRef.current = document.title
-    const baseTitle = baseTabTitleRef.current
-    const pendingCount = totalUnread + notificationUnread
-
-    let timer: number | null = null
-    const stopBlinking = () => {
-      if (timer !== null) { window.clearInterval(timer); timer = null }
-      document.title = baseTitle
-    }
-    const startBlinking = () => {
-      if (timer !== null) return
-      const badge = `(${pendingCount > 99 ? "99+" : pendingCount}) `
-      let showBadge = true
-      document.title = badge + baseTitle
-      timer = window.setInterval(() => {
-        showBadge = !showBadge
-        document.title = showBadge ? badge + baseTitle : "💬 Tin nhắn mới!"
-      }, 1200)
-    }
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") stopBlinking()
-      else if (pendingCount > 0) startBlinking()
-    }
-
-    if (pendingCount > 0 && document.visibilityState !== "visible") startBlinking()
-    else stopBlinking()
-
-    document.addEventListener("visibilitychange", onVisibilityChange)
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange)
-      stopBlinking()
-    }
-  }, [totalUnread, notificationUnread])
-
-  // Mobile: chiều cao container đo theo vị trí thực tế thay vì trừ cứng 64px
-  // (header admin cao khác nhau giữa desktop/mobile, trừ sai gây hở đáy)
-  const rootRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const el = rootRef.current
-    if (!el) return
-    const update = () => {
-      const top = el.getBoundingClientRect().top
-      el.style.height = `calc(100dvh - ${Math.max(0, top)}px)`
-    }
-    update()
-    window.addEventListener("resize", update)
-    window.visualViewport?.addEventListener("resize", update)
-    return () => {
-      window.removeEventListener("resize", update)
-      window.visualViewport?.removeEventListener("resize", update)
-    }
-  }, [])
-
-  // Mobile: vuốt từ mép trái sang phải để quay lại danh sách channel
-  const swipeRef = useRef<{ x: number; y: number; edge: boolean } | null>(null)
-  const onChatTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0]
-    swipeRef.current = { x: t.clientX, y: t.clientY, edge: t.clientX < 28 }
-  }
-  const onChatTouchEnd = (e: React.TouchEvent) => {
-    const start = swipeRef.current
-    swipeRef.current = null
-    if (!start?.edge) return
-    const t = e.changedTouches[0]
-    const dx = t.clientX - start.x
-    const dy = Math.abs(t.clientY - start.y)
-    if (dx > 70 && dy < 60) {
-      setMobileChatOpen(false)
-      setMobilePanelOpen(false)
-      setShowSearch(false)
-      setOpenThread(null)
-    }
-  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div ref={rootRef} className="mkt-chat-fontsize relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base" style={{ "--mkt-chat-font-size": `${chatFontSize}px` } as Record<string, string>}>
+    <div className="relative flex h-[calc(100dvh-64px)] overflow-hidden bg-ui-bg-base">
       <PageStyles />
 
       {/* ── Cột 1: Sidebar ── */}
       <aside className={cn("w-full shrink-0 flex-col border-r border-ui-border-base bg-ui-bg-subtle md:flex md:w-[260px]",
         mobileChatOpen ? "hidden" : "flex")}>
         <div className="px-3 pb-1 pt-3">
-          <div className="relative mb-2 flex items-center justify-between gap-1 px-1">
-            <span className="shrink-0 text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
-            <div className="flex shrink-0 items-center gap-1">
-              <div className="flex items-center overflow-hidden rounded-lg border border-ui-border-base">
-                <button onClick={() => changeChatFontSize(-1)} disabled={chatFontSize <= 12} title="Chữ nhỏ hơn"
-                  className="grid size-6 place-items-center text-[12px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A-</button>
-                <span className="px-0.5 text-[10px] tabular-nums text-ui-fg-muted">{chatFontSize}</span>
-                <button onClick={() => changeChatFontSize(1)} disabled={chatFontSize >= 20} title="Chữ to hơn"
-                  className="grid size-6 place-items-center text-[12px] font-bold text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover disabled:opacity-30">A+</button>
-              </div>
-              <button onClick={toggleAllMessageSound} title={allMessageSoundEnabled ? "Tắt âm báo mọi tin nhắn" : "Bật âm báo mọi tin nhắn"}
-                className={cn("grid size-6 place-items-center rounded-lg border text-[12px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
-                  allMessageSoundEnabled ? "border-emerald-300 bg-emerald-500/10 text-emerald-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>
-                {allMessageSoundEnabled ? "🔊" : "🔇"}
-              </button>
-              <button ref={notificationBtnRef} onClick={toggleNotifications} title="Thông báo nhắc đến"
-                className={cn("relative grid size-6 place-items-center rounded-lg border text-[12px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="text-sm font-extrabold text-ui-fg-base">💬 Chat MKT</span>
+            <div className="relative flex items-center gap-1.5">
+              {totalUnread > 0 && (
+                <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>
+              )}
+              <button onClick={toggleNotifications} title="Thông báo nhắc đến"
+                className={cn("relative grid size-7 place-items-center rounded-lg border text-[13px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
                   notificationOpen ? "border-blue-300 bg-blue-500/10 text-blue-600" : "border-ui-border-base text-ui-fg-subtle hover:bg-ui-bg-base-hover")}>🔔
                 {notificationUnread > 0 && (
                   <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-4 text-white shadow-sm">
@@ -2502,11 +1803,8 @@ function MktChatPage() {
                   </span>
                 )}
               </button>
-              {notificationOpen && notificationPopupPos && (
-                <>
-                <div className="fixed inset-0 z-[75] bg-black/20 md:bg-transparent" onClick={() => setNotificationOpen(false)} />
-                <div className="chat-anim-fadeup fixed z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl"
-                  style={{ top: notificationPopupPos.top, right: notificationPopupPos.right, width: "min(calc(100vw - 24px), 300px)" }}>
+              {notificationOpen && (
+                <div className="chat-anim-fadeup fixed inset-x-2 top-16 z-[80] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-2xl md:absolute md:inset-x-auto md:right-0 md:top-8 md:w-[320px]">
                   <div className="flex items-center justify-between border-b border-ui-border-base px-3 py-2">
                     <span className="text-xs font-bold text-ui-fg-base">Nhắc đến bạn</span>
                     <span className="flex items-center gap-2">
@@ -2514,13 +1812,7 @@ function MktChatPage() {
                         {notificationSoundEnabled ? "Âm bật" : "Âm tắt"}
                       </button>
                       <button onClick={toggleNotificationRepeatSound} className={cn("text-[11px] font-medium", notificationRepeatSoundEnabled ? "text-amber-600 hover:text-amber-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>{notificationRepeatSoundEnabled ? "Nhắc lại" : "Không nhắc"}</button>
-                      <button onClick={toggleDesktopNotify} title="Thông báo trên Chrome khi có người tag bạn"
-                        className={cn("text-[11px] font-medium", desktopNotifyEnabled ? "text-emerald-600 hover:text-emerald-700" : "text-ui-fg-muted hover:text-ui-fg-base")}>
-                        {desktopNotifyEnabled ? "Desktop bật" : "Desktop tắt"}
-                      </button>
                       <button onClick={markNotificationsRead} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">Đã đọc</button>
-                      <button onClick={() => setNotificationOpen(false)} title="Đóng"
-                        className="grid size-6 place-items-center rounded-md text-sm text-ui-fg-muted transition-colors hover:bg-ui-bg-base-hover hover:text-ui-fg-base">✕</button>
                     </span>
                   </div>
                   <div className="max-h-[360px] overflow-y-auto py-1">
@@ -2542,7 +1834,6 @@ function MktChatPage() {
                     ))}
                   </div>
                 </div>
-                </>
               )}
             </div>
           </div>
@@ -2556,20 +1847,11 @@ function MktChatPage() {
 
         {/* Filter tabs */}
         <div className="mx-3 my-2 grid grid-cols-3 gap-0.5 rounded-lg bg-ui-bg-component p-0.5">
-          {([
-            ["all", "Tất cả", 0],
-            ["unread", "Chưa đọc", channels.filter(c => c.unread_count > 0).length],
-            ["mentioned", "Nhắc đến", channels.filter(c => c.mention_count > 0).length],
-          ] as const).map(([v, l, badge]) => (
+          {([["all", "Tất cả"], ["unread", "Chưa đọc"], ["mentioned", "Nhắc đến"]] as const).map(([v, l]) => (
             <button key={v} onClick={() => setSidebarTab(v)}
-              className={cn("flex h-7 items-center justify-center gap-1 rounded-md text-xs font-semibold transition-all",
+              className={cn("h-7 rounded-md text-xs font-semibold transition-all",
                 sidebarTab === v ? "bg-ui-bg-base text-ui-fg-base shadow-sm" : "text-ui-fg-muted hover:text-ui-fg-base")}>
               {l}
-              {badge > 0 && (
-                <span className="grid min-w-[16px] place-items-center rounded-full bg-blue-600 px-1 text-[10px] font-bold tabular-nums text-white">
-                  {badge > 99 ? "99+" : badge}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -2581,64 +1863,46 @@ function MktChatPage() {
               {sidebarTab === "unread" ? "Không có tin chưa đọc 🎉" : sidebarTab === "mentioned" ? "Chưa có ai nhắc đến bạn 🎉" : channelSearch ? "Không tìm thấy group" : "Chưa có group nào"}
             </div>
           )}
-          {groupedVisibleChannels.map(group => {
-            const isCollapsed = collapsedGroups.has(group.key)
-            const groupUnread = group.items.reduce((s, c) => s + c.unread_count, 0)
-            return (
-              <div key={group.key} className="mb-2">
-                <button onClick={() => toggleGroupCollapsed(group.key)}
-                  className={cn("flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-[10px] font-bold uppercase tracking-wide transition-colors hover:bg-ui-bg-base-hover active:bg-ui-bg-base-hover md:py-1.5",
-                    group.pinned ? "text-amber-600 dark:text-amber-400" : "text-ui-fg-muted")}>
-                  <span className={cn("text-[9px] transition-transform", isCollapsed && "-rotate-90")}>▾</span>
-                  {group.icon && <span>{group.icon}</span>}
-                  <span className="truncate">{group.label}</span>
-                  <span className="ml-auto rounded-full bg-ui-bg-component px-1.5 py-px text-[9.5px] font-bold text-ui-fg-muted">{group.items.length}</span>
-                  {groupUnread > 0 && isCollapsed && (
-                    <span className="rounded-full bg-blue-600 px-1.5 py-px text-[9.5px] font-bold text-white">{groupUnread > 99 ? "99+" : groupUnread}</span>
-                  )}
-                </button>
-                {!isCollapsed && group.items.map(c => {
-                  const isActive = activeChannel?.id === c.id
-                  const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
-                  const last = c.last_message
-                  return (
-                    <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null); setMobilePanelOpen(false); setMobileChatOpen(true) }}
-                      className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
-                        isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
-                      <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase",
-                        c.id === NOTIFY_CHANNEL_ID ? "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400"
-                          : c.is_announcement ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400" : avatarClass(c.name))}>
-                        {c.id === NOTIFY_CHANNEL_ID ? "🔔" : c.is_announcement ? "🔒" : c.name.charAt(0)}
-                        {c.id !== NOTIFY_CHANNEL_ID && (
-                          <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+          {groupedVisibleChannels.map(group => (
+            <div key={group.label} className="mb-2">
+              <div className="px-2 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-ui-fg-muted">{group.label}</div>
+              {group.items.map(c => {
+                const isActive = activeChannel?.id === c.id
+                const anyOnline = (c.member_ids || []).some(e => e !== currentUserId && onlineEmails.includes(e))
+                const last = c.last_message
+                return (
+                  <button key={c.id} onClick={() => { setActiveChannel(c); setShowSearch(false); setOpenThread(null); setMobilePanelOpen(false); setMobileChatOpen(true) }}
+                    className={cn("group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40",
+                      isActive ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+                    <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-lg text-[13px] font-bold uppercase", avatarClass(c.name))}>
+                      {c.name.charAt(0)}
+                      <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-ui-bg-subtle", anyOnline ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600")} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-1">
+                        <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>
+                          {c.is_private && <span className="mr-1">🔒</span>}{c.name}
+                        </span>
+                        {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
+                      </span>
+                      <span className="flex items-center justify-between gap-1">
+                        <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
+                          {last
+                            ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${last.content}`
+                            : c.description || `${c.member_count} thành viên`}
+                        </span>
+                        {c.unread_count > 0 && (
+                          <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
+                            {c.unread_count > 99 ? "99+" : c.unread_count}
+                          </span>
                         )}
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline justify-between gap-1">
-                          <span className={cn("truncate text-[13px]", c.unread_count > 0 ? "font-bold text-ui-fg-base" : "font-medium text-ui-fg-base")}>
-                            {c.is_private && <span className="mr-1">🔒</span>}{c.name}
-                          </span>
-                          {last && <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(last.created_at)}</span>}
-                        </span>
-                        <span className="flex items-center justify-between gap-1">
-                          <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
-                            {last
-                              ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${last.content}`
-                              : c.description || `${c.member_count} thành viên`}
-                          </span>
-                          {c.unread_count > 0 && (
-                            <span className="shrink-0 rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white">
-                              {c.unread_count > 99 ? "99+" : c.unread_count}
-                            </span>
-                          )}
-                        </span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            )
-          })}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </div>
 
         {isManager && (
@@ -2664,84 +1928,8 @@ function MktChatPage() {
             </button>
           )}
         </main>
-      ) : activeChannel.id === NOTIFY_CHANNEL_ID ? (() => {
-        const viewingOther = isTaskManager && assigneeViewEmails.length > 0
-        const listToShow = viewingOther ? assigneeNotifications : taskNotifications
-        const nameByEmail = new Map(mktUsers.map(u => [u.email, u.name]))
-        return (
+      ) : (
         <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}>
-          <div className="flex shrink-0 flex-col gap-2 border-b border-ui-border-base px-3 py-2.5 md:px-4">
-            <div className="flex items-center justify-between">
-              <button onClick={() => { setMobileChatOpen(false) }} title="Quay lại danh sách"
-                className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg border border-ui-border-base text-base text-ui-fg-subtle transition-colors hover:bg-ui-bg-base-hover md:hidden">←</button>
-              <div className="min-w-0 flex-1">
-                <span className="truncate text-sm font-bold text-ui-fg-base">📋 Việc được giao</span>
-                <div className="text-[11px] text-ui-fg-muted">
-                  {viewingOther ? "Xem hộ — không tính là đã xem thay nhân sự" : "Task được giao cho bạn — chỉ mình bạn thấy"}
-                </div>
-              </div>
-            </div>
-            {isTaskManager && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button onClick={() => setShowAssigneePicker(true)}
-                  className="rounded-lg border border-dashed border-ui-border-strong px-2.5 py-1 text-[12px] font-medium text-ui-fg-muted transition-colors hover:border-blue-300 hover:bg-blue-500/5 hover:text-blue-600">
-                  + Chọn nhân sự
-                </button>
-                {assigneeViewEmails.map(email => (
-                  <span key={email} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                    {nameByEmail.get(email) || email}
-                    <button onClick={() => setAssigneeViewEmails(prev => prev.filter(e => e !== email))} className="text-blue-500 hover:text-blue-700">×</button>
-                  </span>
-                ))}
-                {assigneeViewEmails.length > 0 && (
-                  <button onClick={() => setAssigneeViewEmails([])} className="text-[11px] font-medium text-ui-fg-muted hover:text-ui-fg-base">Bỏ chọn hết</button>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="flex-1 overflow-y-auto overscroll-contain bg-ui-bg-subtle px-4 py-3">
-            {listToShow.length === 0 && (
-              <div className="mt-10 text-center text-[13px] text-ui-fg-muted">
-                {viewingOther ? "Chưa có việc nào cho những người này 🎉" : "Chưa có việc mới nào 🎉"}
-              </div>
-            )}
-            {listToShow.map((n: any) => (
-              <button key={n.id}
-                onClick={() => { window.location.href = `/app/mkt-tasks?task=${n.task_id}` }}
-                className="mb-2 flex w-full items-start gap-2.5 rounded-lg border border-ui-border-base bg-ui-bg-base px-3 py-2.5 text-left shadow-sm transition-colors hover:bg-ui-bg-base-hover">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-[13px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
-                  📋
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline justify-between gap-1">
-                    <span className="truncate text-[13px] font-semibold text-ui-fg-base">{n.sender_name} giao việc mới</span>
-                    <span className="shrink-0 text-[10px] tabular-nums text-ui-fg-muted">{fmtSnippetTime(n.created_at)}</span>
-                  </span>
-                  <span className="block truncate text-[12px] text-ui-fg-subtle">{n.task_title}</span>
-                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {viewingOther && (
-                      <span className="inline-flex w-fit items-center rounded-md bg-ui-bg-component px-1.5 py-0.5 text-[11px] font-medium text-ui-fg-subtle">
-                        👤 {nameByEmail.get(n.recipient) || n.recipient}
-                      </span>
-                    )}
-                    {viewingOther && (
-                      <span className={cn("inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
-                        n.read ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300")}>
-                        {n.read
-                          ? `✓ Đã xem${n.read_at ? " lúc " + new Date(n.read_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }) : ""}`
-                          : "⚠ Chưa xem"}
-                      </span>
-                    )}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </main>
-        )
-      })() : (
-        <main className={cn("relative min-w-0 flex-1 flex-col md:flex", mobileChatOpen ? "flex" : "hidden")}
-          onTouchStart={onChatTouchStart} onTouchEnd={onChatTouchEnd}>
           {/* Header */}
           <div className="flex shrink-0 items-center justify-between border-b border-ui-border-base px-3 py-2.5 md:px-4">
             <button onClick={() => { setMobileChatOpen(false); setMobilePanelOpen(false); setShowSearch(false); setOpenThread(null) }} title="Quay lại danh sách"
@@ -2762,12 +1950,6 @@ function MktChatPage() {
                 )}
                 {activeChannel.description && <><span>·</span><span className="truncate">{activeChannel.description}</span></>}
               </div>
-              {activeChannel.is_announcement && (
-                <span className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
-                  <span className="md:hidden">📢 Chỉ quản trị viên đăng bài</span>
-                  <span className="hidden md:inline">📢 Channel thông báo — chỉ quản trị viên đăng bài</span>
-                </span>
-              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button onClick={() => setShowSearch(s => !s)} title="Tìm kiếm"
@@ -2782,12 +1964,12 @@ function MktChatPage() {
           <PinnedBar channelId={activeChannel.id} onJump={jumpToMessage} />
 
           {/* Messages */}
-          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain bg-ui-bg-subtle px-4 py-3">
+          <div ref={messagesBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
             {loading && <div className="py-5 text-center text-[13px] text-ui-fg-muted">Đang tải...</div>}
             {Object.entries(groupedByDate).map(([date, msgs]) => (
               <div key={date}>
-                <div className="sticky top-0 z-10 my-2.5 text-center">
-                  <span className="rounded-full border border-ui-border-base bg-ui-bg-base px-3 py-0.5 text-[11px] font-semibold text-ui-fg-muted shadow-sm">{fmtDayLabel(date, msgs)}</span>
+                <div className="my-2.5 text-center">
+                  <span className="rounded-full bg-ui-bg-component px-2.5 py-0.5 text-[11px] text-ui-fg-muted">{date}</span>
                 </div>
                 {msgs.map(m => (
                   <div key={m.id} ref={el => { messageRefs.current[m.id] = el }} className="rounded-lg">
@@ -2802,7 +1984,6 @@ function MktChatPage() {
                       onReply={setReplyTo}
                       onReact={handleReact}
                       onPin={handlePin}
-                      onRecall={handleRecall}
                       onOpenThread={setOpenThread}
                     />
                   </div>
@@ -2841,15 +2022,7 @@ function MktChatPage() {
           )}
 
           {/* Composer */}
-          {!canPostInActiveChannel ? (
-            <div className="shrink-0 border-t border-ui-border-base p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-              <div className="rounded-xl border border-dashed border-ui-border-strong bg-ui-bg-subtle px-4 py-3 text-center text-[12px] text-ui-fg-muted">
-                🔒 Bạn chỉ có thể <b className="text-ui-fg-base">đọc</b> channel này.<br />
-                Chỉ quản trị viên được đăng thông báo mới.
-              </div>
-            </div>
-          ) : (
-          <div className="relative shrink-0 border-t border-ui-border-base p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="relative shrink-0 border-t border-ui-border-base p-3">
             {/* Mention autocomplete */}
             {mentionOpen && mentionSuggestions.length > 0 && (
               <div className="chat-anim-fadeup absolute bottom-full left-3 z-50 mb-1 min-w-[230px] overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-xl">
@@ -2859,8 +2032,8 @@ function MktChatPage() {
                       i === mentionIndex ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
                     <Avatar name={u.name} className="size-6 text-[10px]" />
                     <span>
-                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.mentionAll ? "ALL" : u.name}</span>
-                      <span className="block text-[11px] text-ui-fg-muted">{u.mentionAll ? "Tag tat ca thanh vien trong group" : u.email}</span>
+                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.name}</span>
+                      <span className="block text-[11px] text-ui-fg-muted">{u.email}</span>
                     </span>
                   </button>
                 ))}
@@ -2910,12 +2083,6 @@ function MktChatPage() {
                 value={input}
                 onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                onPaste={e => {
-                  const file = Array.from(e.clipboardData?.items || [])
-                    .find(item => item.type.startsWith("image/"))
-                    ?.getAsFile()
-                  if (file) { e.preventDefault(); handleUpload(file) }
-                }}
                 rows={2}
                 placeholder={composerMode === "note"
                   ? "Note nội bộ — chỉ thành viên channel thấy..."
@@ -2958,7 +2125,6 @@ function MktChatPage() {
               </div>
             </div>
           </div>
-          )}
 
           {showSearch && <SearchPanel currentChannelId={activeChannel.id} channels={channels} users={mktUsers} onClose={() => setShowSearch(false)} onJump={jumpToSearchResult} />}
         </main>
@@ -2978,8 +2144,6 @@ function MktChatPage() {
           channel={activeChannel}
           mktUsers={mktUsers}
           onlineEmails={onlineEmails}
-          presence={presence}
-          presenceDevices={presenceDevices}
           isManager={isManager}
           isSuper={isSuper}
           mobileVisible={mobilePanelOpen}
@@ -2994,7 +2158,7 @@ function MktChatPage() {
       {/* ── Modals ── */}
       {showCreateChannel && <CreateChannelModal onClose={() => setShowCreateChannel(false)} onCreated={loadChannels} users={mktUsers} />}
       {showCreateTask && activeChannel && (
-        <CreateTaskModal channelId={activeChannel.id} users={mktUsers} memberIds={activeChannel.member_ids || []}
+        <CreateTaskModal channelId={activeChannel.id} users={mktUsers}
           onClose={() => setShowCreateTask(false)}
           onCreated={() => apiFetch(`/admin/mkt-chat/channels/${activeChannel.id}/messages`).then(r => r.json()).then(d => setMessages(d.messages || []))}
         />
@@ -3013,18 +2177,8 @@ function MktChatPage() {
         <TemplatesModal templates={templates} isManager={isManager}
           onClose={() => setShowTemplatesModal(false)} onChanged={loadTemplates} />
       )}
-      {showAssigneePicker && (
-        <AssigneePickerModal
-          users={mktUsers.filter(u => u.email !== currentUserId)}
-          selected={assigneeViewEmails}
-          onClose={() => setShowAssigneePicker(false)}
-          onApply={setAssigneeViewEmails}
-        />
-      )}
     </div>
   )
 }
 
 export const config = defineRouteConfig({ label: "Chat MKT", rank: 6 })
-
-export default withRouteGuard(MktChatPage)

@@ -1,0 +1,79 @@
+diff --git a/backend/src/admin/routes/mkt-chat/page.tsx b/backend/src/admin/routes/mkt-chat/page.tsx
+--- a/backend/src/admin/routes/mkt-chat/page.tsx
++++ b/backend/src/admin/routes/mkt-chat/page.tsx
+@@ -25,6 +25,8 @@ type Message = {
+   created_at: string
+ }
+ type MktUser = { email: string; name: string }
++type MentionSuggestion = MktUser & { mentionAll?: boolean }
++const ALL_MENTION_EMAIL = "__all__"
+ type Template = { id: string; label: string; content: string; created_by: string }
+ type LinkedTask = {
+   id: string; title: string; status: string; priority?: string
+@@ -69,8 +71,10 @@ function renderMentions(
+ ): string {
+   if (mentions.length > 0) {
+     const nameByEmail = new Map(users.map(user => [user.email, user.name]))
+-    const labels = mentions
+-      .map(email => nameByEmail.get(email) || email.split("@")[0])
++    const labels = [
++      ...mentions.map(email => nameByEmail.get(email) || email.split("@")[0]),
++      ...(hasMentionEntity(text, "all") ? ["all", "ALL"] : []),
++    ]
+       .filter(Boolean)
+       .sort((a, b) => b.length - a.length)
+ 
+@@ -1152,13 +1163,17 @@ export default function MktChatPage() {
+   const [mentionQuery, setMentionQuery] = useState("")
+   const [mentionOpen, setMentionOpen] = useState(false)
+   const [mentionIndex, setMentionIndex] = useState(0)
+-  const mentionSuggestions = useMemo(() => {
++  const mentionSuggestions = useMemo<MentionSuggestion[]>(() => {
+     const memberEmails = new Set(activeChannel?.member_ids || [])
+     const scopedUsers = mktUsers.filter(u => memberEmails.has(u.email))
+     const q = mentionQuery.toLowerCase()
+-    return scopedUsers.filter(u =>
+-      !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+-    ).slice(0, 5)
++    const allSuggestion: MentionSuggestion = { email: ALL_MENTION_EMAIL, name: "ALL", mentionAll: true }
++    return [
++      ...(!q || "all".includes(q) ? [allSuggestion] : []),
++      ...scopedUsers.filter(u =>
++        !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
++      ),
++    ].slice(0, 6)
+   }, [activeChannel?.member_ids, mentionQuery, mktUsers])
+   // Template picker (slash command)
+   const [templateOpen, setTemplateOpen] = useState(false)
+@@ -1539,10 +1554,17 @@ export default function MktChatPage() {
+     }
+   }
+ 
+-  const insertMention = (user: MktUser) => {
++  const insertMention = (user: MentionSuggestion) => {
+     const atIdx = input.lastIndexOf("@")
+-    mentionEntityRef.current[user.email] = user.name
+-    setInput(input.slice(0, atIdx) + `@${user.name} `)
++    if (user.mentionAll) {
++      for (const email of activeChannel?.member_ids || []) {
++        if (email !== currentUserId) mentionEntityRef.current[email] = "all"
++      }
++      setInput(input.slice(0, atIdx) + "@all ")
++    } else {
++      mentionEntityRef.current[user.email] = user.name
++      setInput(input.slice(0, atIdx) + `@${user.name} `)
++    }
+     setMentionOpen(false)
+     textareaRef.current?.focus()
+   }
+@@ -2015,8 +2047,8 @@ export default function MktChatPage() {
+                       i === mentionIndex ? "bg-blue-500/10" : "hover:bg-ui-bg-base-hover")}>
+                     <Avatar name={u.name} className="size-6 text-[10px]" />
+                     <span>
+-                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.name}</span>
+-                      <span className="block text-[11px] text-ui-fg-muted">{u.email}</span>
++                      <span className="block text-[13px] font-semibold text-ui-fg-base">{u.mentionAll ? "ALL" : u.name}</span>
++                      <span className="block text-[11px] text-ui-fg-muted">{u.mentionAll ? "Tag tat ca thanh vien trong group" : u.email}</span>
+                     </span>
+                   </button>
+                 ))}
