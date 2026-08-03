@@ -1609,9 +1609,73 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
           {/* Bảng tình trạng vận đơn theo Sale (hoàn/hủy/giao) — dùng period chung, khớp tab NV MKT */}
           <SaleStatusTable range={range} market={market} />
 
+          {/* Bảng hoàn hủy tạm tính theo sản phẩm */}
+          <ProductReturnTable range={range} market={market} />
+
           {/* Bảng chỉ số KPI theo Sale (Tổng data, TC, doanh thu, Sale chốt/Up/Cross) */}
           <SaleKpiTable range={range} market={market} />
         </>
+      )}
+    </div>
+  )
+}
+
+// ---- Bảng hoàn hủy tạm tính theo sản phẩm ----
+// Nguồn: report/product-return — tính % DK hoàn hủy từ trạng thái Pancake
+function ProductReturnTable({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<{ rows: any[]; summary: any; not_supported?: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const fmt = useFmtMoney()
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/product-return?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) return null
+
+  const renderRow = (row: any, isTotal = false) => (
+    <tr key={row.sku} className={isTotal ? "bg-amber-50 font-semibold border-t-2 border-amber-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10">
+        <div className="font-medium text-gray-800">{row.name}</div>
+        <div className="text-xs text-gray-400">{row.sku}</div>
+      </td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums">{fmtNum(row.total_qty)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-red-600">{fmtNum(row.returned_qty)}</td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums text-red-600">{fmtNum(row.cancelled_qty)}</td>
+      <td className={`px-3 py-2 text-sm text-right tabular-nums font-semibold ${row.expected_return_rate > 15 ? "text-red-600" : row.expected_return_rate > 10 ? "text-orange-600" : "text-gray-700"}`}>
+        {row.expected_return_rate}%
+      </td>
+      <td className="px-3 py-2 text-sm text-right">{fmt(row.total_revenue)}</td>
+    </tr>
+  )
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <h3 className="font-semibold text-gray-800">Hoàn hủy tạm tính theo Sản phẩm</h3>
+        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+      </div>
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide sticky left-0 bg-gray-50 border-r border-gray-100 z-10">Sản phẩm</th>
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide text-right">Tổng SL</th>
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide text-right">Hoàn</th>
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide text-right">Hủy</th>
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide text-right">% DK HH</th>
+                <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide text-right">Doanh thu</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.summary && renderRow(data.summary, true)}
+              {data.rows.map(r => renderRow(r))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
