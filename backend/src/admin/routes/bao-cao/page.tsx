@@ -1636,10 +1636,9 @@ function ProductReturnTable({ range, market }: { range: DateRange; market: Marke
   if (data?.not_supported) return null
 
   const renderRow = (row: any, isTotal = false) => (
-    <tr key={row.sku} className={isTotal ? "bg-amber-50 font-semibold border-t-2 border-amber-200" : "hover:bg-gray-50"}>
-      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10">
-        <div className="font-medium text-gray-800">{row.name}</div>
-        <div className="text-xs text-gray-400">{row.sku}</div>
+    <tr key={row.name || "total"} className={isTotal ? "bg-amber-50 font-semibold border-t-2 border-amber-200" : "hover:bg-gray-50"}>
+      <td className="px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium">
+        {isTotal ? "TỔNG" : row.name}
       </td>
       <td className="px-3 py-2 text-sm text-right tabular-nums">{fmtNum(row.total_qty)}</td>
       <td className="px-3 py-2 text-sm text-right tabular-nums text-red-600">{fmtNum(row.returned_qty)}</td>
