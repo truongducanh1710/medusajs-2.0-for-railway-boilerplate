@@ -2098,6 +2098,94 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
         </div>
       )}
     </div>
+    <PlatformLngTable range={range} market={market} sub={sub} heads={heads} buildCells={buildCells} />
+    </div>
+  )
+}
+
+// ---- Bảng LNG theo NỀN TẢNG chạy ads (Facebook / Google) ----
+// Dùng LẠI heads + buildCells của LngTab để 2 bảng cùng bộ cột và cùng cách hiển thị;
+// chỉ đổi nguồn API (platform-lng) và nhãn cột đầu. Backend tính 2 báo cáo trên cùng
+// grain (MKT × nền tảng) nên TỔNG của bảng này khớp tuyệt đối với bảng theo NV MKT.
+function PlatformLngTable({ range, market, sub, heads, buildCells }: {
+  range: DateRange
+  market: Market
+  sub: "thuc" | "tam_tinh"
+  heads: { label: string; key: keyof LngRow }[]
+  buildCells: (row: LngRow) => { val: string; cls?: string }[]
+}) {
+  const [data, setData] = useState<{ rows: any[]; totals: any; not_supported?: boolean } | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/platform-lng?from=${toISO(range.from)}&to=${toISO(range.to, true)}&market=${market}`)
+      .then(setData).finally(() => setLoading(false))
+  }, [range.from, range.to, market])
+
+  if (data?.not_supported) return null
+
+  const PLATFORM_STYLE: Record<string, string> = {
+    facebook: "text-blue-600",
+    google: "text-red-500",
+  }
+
+  const renderRow = (row: any, isTotal = false) => (
+    <tr key={isTotal ? "__total" : row.platform} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
+      <td className={`px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium ${isTotal ? "" : PLATFORM_STYLE[row.platform] ?? ""}`}>
+        {isTotal ? "TỔNG" : row.platform_label}
+      </td>
+      {buildCells(row as LngRow).map((c, i) => (
+        <td key={i} className={`px-3 py-2 text-sm text-right tabular-nums ${c.cls ?? "text-gray-700"}`}>{c.val}</td>
+      ))}
+    </tr>
+  )
+
+  const totalRow = data ? { ...data.totals, platform: "__total" } : null
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-gray-800">Lợi nhuận gộp (LNG) theo nền tảng</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Cùng công thức và cùng tập đơn với bảng trên, chỉ đổi chiều gom nhóm — tổng 2 bảng luôn khớp.
+            Chi phí Ads: Facebook lấy từ FB Ads API, Google từ sheet GG Ads.
+          </p>
+        </div>
+        {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
+      </div>
+      {!data && !loading && <div className="p-8 text-center text-gray-400 text-sm">Chọn khoảng thời gian để xem dữ liệu</div>}
+      {data && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-3 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap sticky left-0 bg-gray-50 border-r border-gray-100 z-10">NỀN TẢNG</th>
+                  {heads.map(h => (
+                    <th key={h.key as string}
+                      className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap text-right text-gray-600">
+                      {h.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {totalRow && renderRow(totalRow, true)}
+                {(data.rows ?? []).map(r => renderRow(r))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-5 py-2 border-t bg-gray-50 text-xs text-gray-500">
+            Đơn có marker Google (gclid, gad_campaignid…) tính vào Google Ads; phần còn lại — kể cả đơn
+            không xác định được nguồn — tính vào Facebook Ads.
+            {sub === "thuc"
+              ? " Cột CP thực (KT) không có ở bảng này vì chi phí kế toán chỉ phân bổ được theo nhân sự, không theo nền tảng."
+              : ""}
+          </div>
+        </>
+      )}
     </div>
   )
 }

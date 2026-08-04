@@ -74,12 +74,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY date
     `, [from, to])
 
-    // Ads theo ngày.
+    // Ads theo ngày = Facebook (mkt_ads_cost) + Google (mkt_ads_cost_gg).
+    // Phải gồm cả 2 nguồn để biểu đồ theo ngày khớp với 2 bảng LNG bên dưới
+    // (marketer-lng / platform-lng đều trừ cả chi phí Google).
     const adsRows = await sql(`
-      SELECT to_char(date_trunc('day', date), 'YYYY-MM-DD') AS date, SUM(spend)::bigint AS spend
-      FROM mkt_ads_cost
-      WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
-      GROUP BY date_trunc('day', date)
+      SELECT date, SUM(spend)::bigint AS spend FROM (
+        SELECT to_char(date_trunc('day', date), 'YYYY-MM-DD') AS date, spend
+        FROM mkt_ads_cost WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+        UNION ALL
+        SELECT to_char(date_trunc('day', date), 'YYYY-MM-DD') AS date, cost AS spend
+        FROM mkt_ads_cost_gg WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+      ) u GROUP BY date
     `, [from, to])
     const adsByDay: Record<string, number> = {}
     for (const a of adsRows) adsByDay[a.date] = Number(a.spend)
