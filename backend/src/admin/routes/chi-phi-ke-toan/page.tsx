@@ -269,6 +269,9 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
     if (!draft.amount || Number.isNaN(Number(draft.amount))) { alert("Số tiền không hợp lệ"); return }
     const body: any = { month, kind: draft.kind, amount: Number(draft.amount) }
     if (draft.kind === "nap") { body.ads_code = draft.ads_code; body.alloc = "ty_le" }
+    // Nạp Google: không có mã tài khoản (sheet GG chỉ có tổng/ngày theo NV),
+    // chia về NV theo % tiêu Google thực trong kỳ.
+    else if (draft.kind === "nap_gg") { body.label = "Nạp Google Ads"; body.alloc = "ty_le" }
     else { body.label = draft.label || "Khác"; body.alloc = draft.alloc }
     try {
       await apiJson(`/admin/pancake-sync/report/accounting-cost`, "POST", body)
@@ -310,7 +313,8 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
           <div>
             <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Loại</div>
             <select value={draft.kind} onChange={e => setDraft((d: any) => ({ ...d, kind: e.target.value }))} style={inp}>
-              <option value="nap">Tiền nạp tài khoản Ads</option>
+              <option value="nap">Tiền nạp tài khoản Ads (Facebook)</option>
+              <option value="nap_gg">Tiền nạp Google Ads</option>
               <option value="chung">Chi phí chung (NL/ITY/ZALO...)</option>
             </select>
           </div>
@@ -320,6 +324,10 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
               <select value={draft.ads_code} onChange={e => setDraft((d: any) => ({ ...d, ads_code: e.target.value }))} style={inp}>
                 {adAccounts.map((a: any) => <option key={a.ads_code} value={a.ads_code}>{a.ads_code}</option>)}
               </select>
+            </div>
+          ) : draft.kind === "nap_gg" ? (
+            <div style={{ fontSize: 12, color: "#6b7280", alignSelf: "center", maxWidth: 260 }}>
+              Chia về NV theo % tiêu Google Ads thực trong tháng.
             </div>
           ) : (
             <>
@@ -357,8 +365,12 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
             <tbody>
               {items.map((it: any) => (
                 <tr key={it.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "6px 8px", fontWeight: 500 }}>{it.kind === "nap" ? `Nạp ${it.ads_code}` : it.label}</td>
-                  <td style={{ padding: "6px 8px", color: "#6b7280" }}>{it.kind === "nap" ? "Theo % tiêu ads" : allocLabel(it.alloc)}</td>
+                  <td style={{ padding: "6px 8px", fontWeight: 500 }}>
+                    {it.kind === "nap" ? `Nạp ${it.ads_code}` : it.kind === "nap_gg" ? "Nạp Google Ads" : it.label}
+                  </td>
+                  <td style={{ padding: "6px 8px", color: "#6b7280" }}>
+                    {it.kind === "nap" ? "Theo % tiêu FB" : it.kind === "nap_gg" ? "Theo % tiêu GG" : allocLabel(it.alloc)}
+                  </td>
                   <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(it.amount)}</td>
                   {canEdit && <td style={{ padding: "6px 8px", textAlign: "right" }}><button onClick={() => delItem(it.id)} style={{ color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}>Xóa</button></td>}
                 </tr>

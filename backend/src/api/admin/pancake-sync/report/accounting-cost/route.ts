@@ -50,12 +50,21 @@ async function ensureTable() {
 // Dùng để chia đều chi phí chung (NL...). KHÔNG lấy mọi marketer trong đơn — nhiều tên
 // nhiễu (sale/CSKH lọt vào raw.marketer) sẽ làm chia đều sai cho quá nhiều người.
 async function getMarketerCodes(from: string, to: string): Promise<string[]> {
+  // Gồm cả người chỉ chạy Google — nếu chỉ lấy từ mkt_ads_cost (FB) thì marketer
+  // chạy thuần GG bị bỏ sót khỏi danh sách chia đều chi phí chung.
   const rows = await sql(`
-    SELECT UPPER(TRIM(mkt_name)) AS code, SUM(spend)::bigint AS spend
-    FROM mkt_ads_cost
-    WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
-      AND mkt_name IS NOT NULL AND TRIM(mkt_name) <> '' AND UPPER(TRIM(mkt_name)) <> 'KHÁC'
-    GROUP BY UPPER(TRIM(mkt_name))
+    SELECT code, SUM(spend)::bigint AS spend FROM (
+      SELECT UPPER(TRIM(mkt_name)) AS code, spend
+      FROM mkt_ads_cost
+      WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+        AND mkt_name IS NOT NULL AND TRIM(mkt_name) <> '' AND UPPER(TRIM(mkt_name)) <> 'KHÁC'
+      UNION ALL
+      SELECT UPPER(TRIM(mkt_name)) AS code, cost AS spend
+      FROM mkt_ads_cost_gg
+      WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+        AND mkt_name IS NOT NULL AND TRIM(mkt_name) <> '' AND UPPER(TRIM(mkt_name)) <> 'KHÁC'
+    ) u
+    GROUP BY code
     HAVING SUM(spend) > 0
   `, [from, to])
   return rows.map(r => r.code).filter(Boolean)
@@ -78,6 +87,22 @@ async function getSpendByAccountNV(from: string, to: string): Promise<Record<str
   return map
 }
 
+// % tiêu Google Ads của mỗi NV (từ mkt_ads_cost_gg) — để phân bổ tiền nạp GG.
+// Google không tách theo tài khoản như FB (sheet mỗi marketer chỉ có tổng/ngày),
+// nên gom thẳng theo NV.
+async function getGgSpendByNV(from: string, to: string): Promise<Record<string, number>> {
+  const rows = await sql(`
+    SELECT UPPER(TRIM(mkt_name)) AS nv, SUM(cost)::bigint AS spend
+    FROM mkt_ads_cost_gg
+    WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+    GROUP BY UPPER(TRIM(mkt_name))
+    HAVING SUM(cost) > 0
+  `, [from, to]).catch(() => [])
+  const map: Record<string, number> = {}
+  for (const r of rows) map[r.nv || "KHÁC"] = Number(r.spend)
+  return map
+}
+
 function monthOf(from: string): string {
   return from.slice(0, 7)
 }
@@ -90,7 +115,14 @@ function monthOf(from: string): string {
 export async function computeAccountingCost(
   from: string,
   to: string
-): Promise<{ costByNV: Record<string, number>; items: any[]; nvCodes: string[]; spendByAcc: Record<string, Record<string, number>> }> {
+): Promise<{
+  costByNV: Record<string, number>
+  costByPlatform: Record<string, number>
+  items: any[]
+  nvCodes: string[]
+  spendByAcc: Record<string, Record<string, number>>
+  ggSpendByNV: Record<string, number>
+}> {
   await ensureTable()
   const month = monthOf(from)
   const items = await sql(
@@ -100,13 +132,20 @@ export async function computeAccountingCost(
   )
   const nvCodes = await getMarketerCodes(from, to)
   const spendByAcc = await getSpendByAccountNV(from, to)
+  const ggSpendByNV = await getGgSpendByNV(from, to)
 
   const costByNV: Record<string, number> = {}
   const add = (code: string, amt: number) => { costByNV[code] = (costByNV[code] || 0) + amt }
 
+  // Phân bổ song song theo NỀN TẢNG — cho cột CP thực (KT) ở bảng LNG theo nền tảng.
+  // 'nap' (tài khoản FB) → facebook, 'nap_gg' → google; chi phí chung (NL/ITY/ZALO...)
+  // không thuộc nền tảng nào nên vào 'chung', bảng nền tảng hiển thị riêng.
+  const costByPlatform: Record<string, number> = { facebook: 0, google: 0, chung: 0 }
+
   for (const it of items) {
     const amount = Number(it.amount)
     if (it.kind === "nap") {
+      costByPlatform.facebook += amount
       const acc = it.ads_code ? codeToAccount[it.ads_code] : null
       const spend = acc ? spendByAcc[acc] : null
       if (spend && Object.keys(spend).length) {
@@ -116,16 +155,32 @@ export async function computeAccountingCost(
           add(nv, totalSpend > 0 ? amount * (sp / totalSpend) : 0)
         }
       }
+    } else if (it.kind === "nap_gg") {
+      // Tiền nạp Google Ads — chia về NV theo % tiêu Google thực trong kỳ.
+      costByPlatform.google += amount
+      const totalGg = Object.entries(ggSpendByNV)
+        .filter(([nv]) => nv !== "KHÁC")
+        .reduce((s, [, v]) => s + v, 0)
+      for (const [nv, sp] of Object.entries(ggSpendByNV)) {
+        if (nv === "KHÁC") continue
+        add(nv, totalGg > 0 ? amount * (sp / totalGg) : 0)
+      }
     } else {
+      costByPlatform.chung += amount
       if (it.alloc === "deu") {
         const per = nvCodes.length ? amount / nvCodes.length : 0
         for (const nv of nvCodes) add(nv, per)
       } else if (it.alloc?.startsWith("nv:")) {
         add(it.alloc.slice(3).toUpperCase(), amount)
       } else if (it.alloc === "ty_le") {
+        // % tiêu ads = FB + Google, để NV chạy Google cũng gánh phần chi phí chung.
         const totalByNV: Record<string, number> = {}
         let grand = 0
         for (const acc of Object.values(spendByAcc)) for (const [nv, sp] of Object.entries(acc)) {
+          if (nv === "KHÁC") continue
+          totalByNV[nv] = (totalByNV[nv] || 0) + sp; grand += sp
+        }
+        for (const [nv, sp] of Object.entries(ggSpendByNV)) {
           if (nv === "KHÁC") continue
           totalByNV[nv] = (totalByNV[nv] || 0) + sp; grand += sp
         }
@@ -135,7 +190,8 @@ export async function computeAccountingCost(
   }
   // Làm tròn.
   for (const k of Object.keys(costByNV)) costByNV[k] = Math.round(costByNV[k])
-  return { costByNV, items, nvCodes, spendByAcc }
+  for (const k of Object.keys(costByPlatform)) costByPlatform[k] = Math.round(costByPlatform[k])
+  return { costByNV, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV }
 }
 
 // GET: trả các khoản chi phí + bảng phân bổ CP thực về từng NV.
@@ -144,7 +200,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const { from, to } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
 
-    const { costByNV, items, nvCodes, spendByAcc } = await computeAccountingCost(from, to)
+    const { costByNV, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV } =
+      await computeAccountingCost(from, to)
     const rows = Object.entries(costByNV)
       .map(([nv, cp]) => ({ nv, cp_thuc: cp }))
       .sort((a, b) => b.cp_thuc - a.cp_thuc)
@@ -152,6 +209,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({
       month: monthOf(from), items, rows, total,
+      cost_by_platform: costByPlatform,
+      gg_spend_by_nv: ggSpendByNV,
       ad_accounts: AD_ACCOUNTS,
       marketer_codes: nvCodes,
       spend_by_account: spendByAcc,
@@ -168,6 +227,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     await ensureTable()
     const { month, kind, ads_code = null, label = null, amount, alloc = "ty_le", note = "" } = req.body as any
     if (!month || !kind || amount == null) return res.status(400).json({ error: "Thiếu month/kind/amount" })
+    // kind là TEXT tự do trong DB — chặn ở đây để sai chính tả không tạo ra khoản
+    // không bao giờ được phân bổ (computeAccountingCost chỉ hiểu 3 giá trị này).
+    if (!["nap", "nap_gg", "chung"].includes(kind)) {
+      return res.status(400).json({ error: `kind không hợp lệ: ${kind}` })
+    }
     const rows = await sql(
       `INSERT INTO mkt_monthly_cost (month, kind, ads_code, label, amount, alloc, note)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,

@@ -1,8 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { toVNDate } from "../../../gia-von/avg-cost/route"
+import { computeAccountingCost } from "../accounting-cost/route"
 import {
   applyHandover, computeLngMetrics, fetchLngRows, loadHandoverRules,
-  mergeLngRows, splitMktPlatformKey, sumMetrics,
+  mergeLngRows, pctOf, splitMktPlatformKey, sumMetrics,
 } from "../_lng-core"
 
 /**
@@ -50,16 +51,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ;(byPlatform[platform] ??= []).push(computeLngMetrics(g))
     }
 
+    // CP thực kế toán quy về nền tảng: tiền nạp tài khoản FB → facebook,
+    // tiền nạp Google Ads → google. Chi phí chung (NL/ITY/ZALO...) không thuộc nền
+    // tảng nào nên trả riêng ở cost_chung, KHÔNG cộng vào dòng nào.
+    let costByPlatform: Record<string, number> = {}
+    try { ({ costByPlatform } = await computeAccountingCost(from, to)) } catch { /* bảng chưa có */ }
+    const hasAccounting = (costByPlatform.facebook ?? 0) + (costByPlatform.google ?? 0) + (costByPlatform.chung ?? 0) > 0
+
     const LABELS: Record<string, string> = { facebook: "Facebook Ads", google: "Google Ads" }
     const ORDER = ["facebook", "google"]
 
     const result = ORDER
       .filter(p => byPlatform[p])
-      .map(p => ({
-        platform: p,
-        platform_label: LABELS[p] ?? p,
-        ...sumMetrics(byPlatform[p]),
-      }))
+      .map(p => {
+        const m = sumMetrics(byPlatform[p])
+        const cpThuc = hasAccounting ? (costByPlatform[p] ?? 0) : null
+        return {
+          platform: p,
+          platform_label: LABELS[p] ?? p,
+          ...m,
+          cp_thuc: cpThuc,
+          cp_thuc_pct: cpThuc != null ? pctOf(cpThuc, m.revenue_total) : null,
+          lng_thuc_kt: cpThuc != null
+            ? m.revenue_delivered - (m.cogs + m.ship_cost + cpThuc + m.fullfill)
+            : null,
+        }
+      })
 
     const sum = (k: string) => result.reduce((s, r: any) => s + (r[k] ?? 0), 0)
     const totalRevenueTamTinh = sum("revenue_tam_tinh")
@@ -83,9 +100,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       du_kien_hoan_huy: sum("revenue_total") > 0
         ? Math.round((1 - totalRevenueTamTinh / sum("revenue_total")) * 10000) / 100
         : 0,
+      // CP thực (KT) của 2 nền tảng — CHƯA gồm chi phí chung (xem cost_chung).
+      cp_thuc: hasAccounting ? sum("cp_thuc") : null,
+      lng_thuc_kt: hasAccounting ? sum("lng_thuc_kt") : null,
     }
 
-    return res.json({ rows: result, totals, from, to })
+    return res.json({
+      rows: result,
+      totals,
+      has_accounting: hasAccounting,
+      // Chi phí chung không quy được về nền tảng (NL/ITY/ZALO/thuê...) — hiển thị
+      // riêng để người xem biết vì sao tổng CP thực ở bảng này nhỏ hơn bảng theo NV.
+      cost_chung: hasAccounting ? (costByPlatform.chung ?? 0) : null,
+      from, to,
+    })
   } catch (err: any) {
     console.error("[report/platform-lng]", err.message)
     return res.status(500).json({ error: err.message })

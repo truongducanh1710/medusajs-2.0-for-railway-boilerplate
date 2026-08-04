@@ -2114,8 +2114,9 @@ function PlatformLngTable({ range, market, sub, heads, buildCells }: {
   heads: { label: string; key: keyof LngRow }[]
   buildCells: (row: LngRow) => { val: string; cls?: string }[]
 }) {
-  const [data, setData] = useState<{ rows: any[]; totals: any; not_supported?: boolean } | null>(null)
+  const [data, setData] = useState<{ rows: any[]; totals: any; cost_chung?: number | null; has_accounting?: boolean; not_supported?: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
+  const fmt = useFmtMoney()
 
   useEffect(() => {
     setLoading(true)
@@ -2180,9 +2181,12 @@ function PlatformLngTable({ range, market, sub, heads, buildCells }: {
           <div className="px-5 py-2 border-t bg-gray-50 text-xs text-gray-500">
             Đơn có marker Google (gclid, gad_campaignid…) tính vào Google Ads; phần còn lại — kể cả đơn
             không xác định được nguồn — tính vào Facebook Ads.
-            {sub === "thuc"
-              ? " Cột CP thực (KT) không có ở bảng này vì chi phí kế toán chỉ phân bổ được theo nhân sự, không theo nền tảng."
-              : ""}
+            {sub === "thuc" && data.has_accounting && (data.cost_chung ?? 0) > 0 && (
+              <> Cột CP thực (KT) ở đây chỉ gồm tiền nạp tài khoản (FB + Google); chi phí chung
+                (NL/ITY/ZALO…) <b>{fmt(data.cost_chung ?? 0)}</b> không thuộc nền tảng nào nên không
+                được chia vào 2 dòng — vì vậy tổng CP thực bảng này nhỏ hơn bảng theo NV MKT đúng bằng
+                khoản đó.</>
+            )}
           </div>
         </>
       )}
