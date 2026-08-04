@@ -67,10 +67,10 @@ function BaoCaoMktPage() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("bao-cao-mkt-theme") !== "light" } catch { return true }
   })
-  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming" | "pixelmap" | "handover">(() => {
+  const [activeTab, setActiveTab] = useState<"mkt" | "camp" | "platform" | "spProduct" | "jobs" | "rules" | "fbaccounts" | "ai" | "naming" | "pixelmap" | "handover">(() => {
     try {
       const saved = localStorage.getItem("bao-cao-mkt-tab")
-      const valid = ["mkt", "camp", "spProduct", "jobs", "rules", "fbaccounts", "ai", "naming", "pixelmap", "handover"]
+      const valid = ["mkt", "camp", "platform", "spProduct", "jobs", "rules", "fbaccounts", "ai", "naming", "pixelmap", "handover"]
       return (valid.includes(saved!) ? saved : "mkt") as any
     } catch { return "mkt" }
   })
@@ -151,6 +151,15 @@ function BaoCaoMktPage() {
   const [spSortDir, setSpSortDir] = useState<"asc" | "desc">("desc")
   const [spFrom, setSpFrom] = useState(from)
   const [spTo, setSpTo] = useState(to)
+
+  // Tab Nền tảng — COD + chi phí theo Facebook / Google
+  const [platRows, setPlatRows] = useState<any[]>([])
+  const [platSummary, setPlatSummary] = useState<Record<string, any>>({})
+  const [platTotal, setPlatTotal] = useState<any>(null)
+  const [platLoading, setPlatLoading] = useState(false)
+  // syncCost được khai báo TRƯỚC fetchPlatformData → dùng ref để tránh TDZ + stale closure
+  const activeTabRef = useRef<string>("mkt")
+  const fetchPlatformDataRef = useRef<() => Promise<void>>(async () => {})
 
   const { isSuper, mktCode, mktCodes, has } = useCurrentPermissions()
 
@@ -350,6 +359,8 @@ function BaoCaoMktPage() {
       if (data.ok) {
         alert(`✓ Đã sync ${data.synced} campaigns cho ngày ${data.date}${ggMsg}`)
         await fetchData()
+        // Tab Nền tảng đọc cùng 2 bảng chi phí → phải reload sau sync
+        if (activeTabRef.current === "platform") await fetchPlatformDataRef.current()
       } else {
         alert("Lỗi sync: " + (data.error ?? "unknown"))
       }
@@ -404,6 +415,22 @@ function BaoCaoMktPage() {
       setSpLoading(false)
     }
   }, [spFrom, spTo, spMktFilter])
+
+  // Tab Nền tảng dùng chung bộ lọc ngày + group_by với tab MKT
+  const fetchPlatformData = useCallback(async () => {
+    setPlatLoading(true)
+    try {
+      const res = await apiFetch(`/admin/pancake-sync/report/mkt-platform?from=${from}&to=${to}&group_by=${groupBy}`)
+      const data = await res.json()
+      setPlatRows(data.rows ?? [])
+      setPlatSummary(data.summary ?? {})
+      setPlatTotal(data.total ?? null)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setPlatLoading(false)
+    }
+  }, [from, to, groupBy])
 
   const toggleStatus = useCallback(async (camp: any) => {
     const action = camp.effective_status === "ACTIVE" ? "pause" : "activate"
@@ -729,6 +756,9 @@ function BaoCaoMktPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
+  useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+  useEffect(() => { fetchPlatformDataRef.current = fetchPlatformData }, [fetchPlatformData])
+  useEffect(() => { if (activeTab === "platform") fetchPlatformData() }, [activeTab, fetchPlatformData])
   useEffect(() => { if (activeTab === "spProduct") fetchSpData() }, [activeTab, fetchSpData])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [activeTab, jobsSubTab, fetchSchedules])
   useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
@@ -828,7 +858,7 @@ function BaoCaoMktPage() {
           }}>
             {dark ? "☀ Sáng" : "☾ Tối"}
           </button>
-          <button onClick={fetchData} disabled={loading} style={{
+          <button onClick={() => { fetchData(); if (activeTab === "platform") fetchPlatformData() }} disabled={loading} style={{
             background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 6,
             padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13, opacity: loading ? 0.6 : 1
           }}>
@@ -869,6 +899,7 @@ function BaoCaoMktPage() {
         {([
           ["mkt", "Theo MKT"],
           ["camp", "Theo Camp"],
+          ["platform", "🌐 Theo nền tảng"],
           ["spProduct", "Chi phí SP"],
           ["jobs", "⏰ Lịch hẹn Camp"],
           ...(has("page.bao-cao.care-rules") ? [["rules", "⚙️ Rule chăm sóc"]] : []),
@@ -1589,6 +1620,204 @@ function BaoCaoMktPage() {
                 style={{ padding: "12px 0", borderRadius: 10, border: `1px solid ${t.cardBorder}`, background: "transparent", color: t.textMuted, fontSize: 14, cursor: "pointer" }}>
                 Huỷ
               </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ===== TAB THEO NỀN TẢNG ===== */}
+      {activeTab === "platform" && (() => {
+        const PLATFORM_META: Record<string, { label: string; color: string; icon: string; note?: string }> = {
+          facebook: { label: "Facebook Ads", color: "#3b82f6", icon: "f" },
+          google:   { label: "Google Ads",   color: "#ea4335", icon: "G" },
+          other:    { label: "Không xác định", color: "#9ca3af", icon: "?", note: "Đơn không detect được nguồn ads (organic, inbox, CSKH gọi lại...). Có COD nhưng không có chi phí ads." },
+        }
+        const ORDER = ["facebook", "google", "other"]
+        // Chỉ hiện cột nền tảng thực sự có số liệu trong kỳ
+        const shown = ORDER.filter(p => {
+          const s = platSummary[p]
+          return s && (Number(s.ads_cost || 0) > 0 || Number(s.cod_total || 0) > 0 || Number(s.total_orders || 0) > 0)
+        })
+
+        if (platLoading && !platRows.length) {
+          return <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Đang tải…</div>
+        }
+        if (!platRows.length) {
+          return (
+            <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🌐</div>
+              <div>Không có dữ liệu trong khoảng thời gian này</div>
+            </div>
+          )
+        }
+
+        return (
+          <div>
+            {/* Cards tổng quan theo nền tảng */}
+            <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+              {shown.map(p => {
+                const s = platSummary[p] || {}
+                const meta = PLATFORM_META[p]
+                return (
+                  <div key={p} style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: "12px 20px", minWidth: 200, flex: "1 1 200px" }}>
+                    <div style={{ fontSize: 12, color: meta.color, fontWeight: 700, marginBottom: 6 }} title={meta.note}>
+                      {meta.label}{meta.note ? " ⓘ" : ""}
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textMuted }}>Tổng COD</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: t.green }}>{fmtMoney(s.cod_total || 0)}</div>
+                    <div style={{ fontSize: 12, color: t.amber, marginTop: 4 }}>Chi phí: {fmtMoney(s.ads_cost || 0)}</div>
+                    <div style={{ fontSize: 12, marginTop: 2 }}>
+                      <span style={{ color: t.textMuted }}>%CP: </span>
+                      <span style={{ color: carePctColor(s.cost_pct ?? null), fontWeight: 700 }}>
+                        {s.cost_pct !== null && s.cost_pct !== undefined ? s.cost_pct + "%" : "—"}
+                      </span>
+                      {s.cpo ? <span style={{ color: t.textMuted }}> · CPO {fmtMoney(s.cpo)}</span> : null}
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
+                      {s.total_orders || 0} đơn · <span style={{ color: t.green }}>{s.delivered || 0}&#10003;</span> · <span style={{ color: t.red }}>{s.cancelled || 0}&#10007;</span>
+                    </div>
+                  </div>
+                )
+              })}
+              {platTotal && (
+                <div style={{ background: t.card, border: `1px solid ${t.cardBorder}`, borderLeft: `3px solid ${t.green}`, borderRadius: 8, padding: "12px 20px", minWidth: 200, flex: "1 1 200px" }}>
+                  <div style={{ fontSize: 12, color: t.green, fontWeight: 700, marginBottom: 6 }}>TỔNG TẤT CẢ</div>
+                  <div style={{ fontSize: 11, color: t.textMuted }}>Tổng COD</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: t.green }}>{fmtMoney(platTotal.cod_total || 0)}</div>
+                  <div style={{ fontSize: 12, color: t.amber, marginTop: 4 }}>Chi phí: {fmtMoney(platTotal.ads_cost || 0)}</div>
+                  <div style={{ fontSize: 12, marginTop: 2 }}>
+                    <span style={{ color: t.textMuted }}>%CP: </span>
+                    <span style={{ color: carePctColor(platTotal.cost_pct ?? null), fontWeight: 700 }}>
+                      {platTotal.cost_pct !== null ? platTotal.cost_pct + "%" : "—"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>{platTotal.total_orders || 0} đơn</div>
+                </div>
+              )}
+            </div>
+
+            {/* Tỷ trọng chi phí giữa các nền tảng */}
+            {platTotal && platTotal.ads_cost > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Tỷ trọng chi phí ads</div>
+                <div style={{ display: "flex", height: 22, borderRadius: 6, overflow: "hidden", border: `1px solid ${t.cardBorder}` }}>
+                  {shown.filter(p => (platSummary[p]?.ads_cost || 0) > 0).map(p => {
+                    const pct = (platSummary[p].ads_cost / platTotal.ads_cost) * 100
+                    return (
+                      <div key={p} title={`${PLATFORM_META[p].label}: ${fmtMoney(platSummary[p].ads_cost)} (${pct.toFixed(1)}%)`}
+                        style={{ width: `${pct}%`, background: PLATFORM_META[p].color, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", overflow: "hidden" }}>
+                        {pct >= 8 ? `${PLATFORM_META[p].label} ${pct.toFixed(0)}%` : ""}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Bảng chi tiết theo ngày × nền tảng */}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${t.thead}`, color: t.theadText }}>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, whiteSpace: "nowrap" }}>Ngày</th>
+                    {shown.map(p => (
+                      <th key={p} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", color: PLATFORM_META[p].color }}>
+                        {PLATFORM_META[p].label}
+                      </th>
+                    ))}
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: t.green }}>TỔNG</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {platRows.map(row => {
+                    const dayCod = shown.reduce((s, p) => s + Number(row.platforms[p]?.cod_total || 0), 0)
+                    const dayCost = shown.reduce((s, p) => s + Number(row.platforms[p]?.ads_cost || 0), 0)
+                    const dayPct = dayCod > 0 && dayCost > 0 ? Math.round(dayCost / dayCod * 10000) / 100 : null
+                    return (
+                      <tr key={row.date} style={{ borderBottom: `1px solid ${t.rowBorder}` }}
+                        onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <td style={{ padding: "10px 12px", color: t.text, fontWeight: 600 }}>
+                          {groupBy === "month" ? row.date.slice(0, 7) : fmtDate(row.date)}
+                        </td>
+                        {shown.map(p => {
+                          const cell = row.platforms[p]
+                          if (!cell) return <td key={p} style={{ padding: "10px 12px", textAlign: "right", color: t.empty }}>—</td>
+                          return (
+                            <td key={p} style={{ padding: "10px 12px", textAlign: "right" }}>
+                              <div style={{ color: t.green, fontWeight: 600 }}>{fmtMoney(cell.cod_total)}</div>
+                              <div style={{ fontSize: 11, marginTop: 2 }}>
+                                <span style={{ color: t.green }}>{cell.delivered}&#10003;</span>
+                                {" · "}
+                                <span style={{ color: t.blue }}>{cell.new_orders}&#9675;</span>
+                                {" · "}
+                                <span style={{ color: t.purple }}>{cell.confirmed}&#9654;</span>
+                                {" · "}
+                                <span style={{ color: t.red }}>{cell.cancelled}&#10007;</span>
+                              </div>
+                              <div style={{ fontSize: 11, marginTop: 2 }}>
+                                <span style={{ color: t.amber }}>{fmtMoney(cell.ads_cost)}</span>
+                                {" · "}
+                                <span style={{ color: carePctColor(cell.cost_pct ?? null), fontWeight: 600 }}>
+                                  {cell.cost_pct !== null ? cell.cost_pct + "%" : "—"}
+                                </span>
+                              </div>
+                            </td>
+                          )
+                        })}
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(dayCod)}</div>
+                          <div style={{ fontSize: 11, marginTop: 2 }}>
+                            <span style={{ color: t.amber }}>{fmtMoney(dayCost)}</span>
+                            {" · "}
+                            <span style={{ color: carePctColor(dayPct), fontWeight: 600 }}>
+                              {dayPct !== null ? dayPct + "%" : "—"}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${t.thead}`, background: t.tfoot }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 700, color: t.text }}>TỔNG</td>
+                    {shown.map(p => {
+                      const s = platSummary[p] || {}
+                      return (
+                        <td key={p} style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(s.cod_total || 0)}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{s.total_orders || 0} đơn</div>
+                          <div style={{ fontSize: 11, marginTop: 2 }}>
+                            <span style={{ color: t.amber }}>{fmtMoney(s.ads_cost || 0)}</span>
+                            {" · "}
+                            <span style={{ color: carePctColor(s.cost_pct ?? null), fontWeight: 600 }}>
+                              {s.cost_pct !== null && s.cost_pct !== undefined ? s.cost_pct + "%" : "—"}
+                            </span>
+                          </div>
+                        </td>
+                      )
+                    })}
+                    <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                      <div style={{ color: t.green, fontWeight: 700 }}>{fmtMoney(platTotal?.cod_total || 0)}</div>
+                      <div style={{ fontSize: 11, marginTop: 2 }}>
+                        <span style={{ color: t.amber }}>{fmtMoney(platTotal?.ads_cost || 0)}</span>
+                        {" · "}
+                        <span style={{ color: carePctColor(platTotal?.cost_pct ?? null), fontWeight: 600 }}>
+                          {platTotal?.cost_pct !== null && platTotal?.cost_pct !== undefined ? platTotal.cost_pct + "%" : "—"}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 12, fontSize: 11, color: t.textMuted, lineHeight: 1.6 }}>
+              Chi phí Facebook lấy từ <code>mkt_ads_cost</code> (sync FB Ads API), Google từ <code>mkt_ads_cost_gg</code> (sync sheet Google Ads của từng marketer).
+              Đơn phân loại theo <code>ad_platform</code>, fallback detect gclid/gbraid/gad_campaignid trên link đơn — cùng logic với trang <code>/api/google-orders</code>.
+              %CP tính trên COD (đã trừ đơn hủy/xóa). Bấm “↓ Sync chi phí hôm nay” ở đầu trang để kéo chi phí mới nhất của cả 2 nền tảng.
             </div>
           </div>
         )
