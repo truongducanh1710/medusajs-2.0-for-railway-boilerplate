@@ -1627,12 +1627,11 @@ function BaoCaoMktPage() {
 
       {/* ===== TAB THEO NỀN TẢNG ===== */}
       {activeTab === "platform" && (() => {
-        const PLATFORM_META: Record<string, { label: string; color: string; icon: string; note?: string }> = {
-          facebook: { label: "Facebook Ads", color: "#3b82f6", icon: "f" },
-          google:   { label: "Google Ads",   color: "#ea4335", icon: "G" },
-          other:    { label: "Không xác định", color: "#9ca3af", icon: "?", note: "Đơn không detect được nguồn ads (organic, inbox, CSKH gọi lại...). Có COD nhưng không có chi phí ads." },
+        const PLATFORM_META: Record<string, { label: string; color: string; note?: string }> = {
+          facebook: { label: "Facebook Ads", color: "#3b82f6", note: "Gồm cả đơn không detect được nguồn (organic, inbox, CSKH gọi lại...) — Google Ads luôn để lại marker gclid/gad_campaignid trên link nên đơn không marker được tính về Facebook. %CP Facebook vì vậy là cận dưới." },
+          google:   { label: "Google Ads",   color: "#ea4335" },
         }
-        const ORDER = ["facebook", "google", "other"]
+        const ORDER = ["facebook", "google"]
         // Chỉ hiện cột nền tảng thực sự có số liệu trong kỳ
         const shown = ORDER.filter(p => {
           const s = platSummary[p]
@@ -1816,7 +1815,8 @@ function BaoCaoMktPage() {
 
             <div style={{ marginTop: 12, fontSize: 11, color: t.textMuted, lineHeight: 1.6 }}>
               Chi phí Facebook lấy từ <code>mkt_ads_cost</code> (sync FB Ads API), Google từ <code>mkt_ads_cost_gg</code> (sync sheet Google Ads của từng marketer).
-              Đơn phân loại theo <code>ad_platform</code>, fallback detect gclid/gbraid/gad_campaignid trên link đơn — cùng logic với trang <code>/api/google-orders</code>.
+              Đơn nhận diện Google qua <code>ad_platform</code> + marker gclid/gbraid/gad_campaignid trên link đơn (cùng logic với <code>/api/google-orders</code>);
+              phần còn lại — kể cả đơn không xác định được nguồn — tính vào Facebook.
               %CP tính trên COD (đã trừ đơn hủy/xóa). Bấm “↓ Sync chi phí hôm nay” ở đầu trang để kéo chi phí mới nhất của cả 2 nền tảng.
             </div>
           </div>

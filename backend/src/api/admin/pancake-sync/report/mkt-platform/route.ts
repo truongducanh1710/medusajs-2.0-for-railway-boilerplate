@@ -20,36 +20,41 @@ async function sql(query: string, params?: any[]): Promise<any[]> {
  * Phân loại nền tảng cho 1 đơn Pancake.
  * ad_platform là cột chính thức, nhưng fallback detect trực tiếp trên raw JSON phòng
  * trường hợp sync chưa kịp ghi field (đã từng xảy ra — xem Migration20260708080000).
- * Giữ đồng bộ với detectAdPlatform() trong modules/pancake-sync/service.ts và
- * storefront /api/google-orders — sửa 1 chỗ phải sửa cả 3.
+ * Logic detect giữ đồng bộ với detectAdPlatform() trong modules/pancake-sync/service.ts
+ * và storefront /api/google-orders — sửa 1 chỗ phải sửa cả 3.
+ *
+ * KHÁC 2 chỗ kia ở nhánh cuối: đơn không detect được nguồn được gộp vào 'facebook'
+ * thay vì trả null/'other'. Lý do: Google Ads luôn để lại marker rõ ràng trên link
+ * (gclid/gbraid/gad_campaignid), nên đơn không marker gần như chắc chắn không phải
+ * Google — chủ yếu là FB (organic/inbox/CSKH gọi lại từ traffic FB) mất UTM.
  */
 const PLATFORM_EXPR = `
   CASE
-    WHEN ad_platform IN ('facebook', 'google') THEN ad_platform
-    WHEN raw::text ILIKE '%"ads_source":"Google"%'
+    WHEN ad_platform = 'google' THEN 'google'
+    WHEN ad_platform IS DISTINCT FROM 'facebook' AND (
+         raw::text ILIKE '%"ads_source":"Google"%'
       OR raw::text ILIKE '%gclid=%'
       OR raw::text ILIKE '%gbraid=%'
       OR raw::text ILIKE '%wbraid=%'
       OR raw::text ILIKE '%gad_source=%'
-      OR raw::text ILIKE '%gad_campaignid=%'  THEN 'google'
-    WHEN fb_campaign_id IS NOT NULL           THEN 'facebook'
-    WHEN COALESCE(raw->>'p_utm_source', '') ILIKE '%facebook%'
-      OR COALESCE(raw->>'p_utm_source', '') ILIKE '%fb%'  THEN 'facebook'
-    WHEN COALESCE(raw->>'p_utm_source', '') ILIKE '%google%' THEN 'google'
-    ELSE 'other'
+      OR raw::text ILIKE '%gad_campaignid=%'
+      OR COALESCE(raw->>'p_utm_source', '') ILIKE '%google%'
+    ) THEN 'google'
+    ELSE 'facebook'
   END
 `
 
 /**
  * GET /admin/pancake-sync/report/mkt-platform?from=YYYY-MM-DD&to=YYYY-MM-DD&group_by=day
  *
- * Tổng COD + chi phí ads theo NỀN TẢNG (facebook / google / other).
+ * Tổng COD + chi phí ads theo NỀN TẢNG (facebook / google).
  * - COD: pancake_order, phân loại theo ad_platform (fallback detect trên raw).
  * - Chi phí FB: mkt_ads_cost (sync từ FB Ads API).
  * - Chi phí Google: mkt_ads_cost_gg (sync từ sheet Google Ads của từng marketer).
  *
- * "other" = đơn không xác định được nguồn ads (organic/inbox/CSKH...) — có COD nhưng
- * không có chi phí, nên tách riêng để %chi phí của FB/GG không bị pha loãng.
+ * Chỉ 2 nền tảng — đơn không detect được nguồn gộp vào facebook (xem PLATFORM_EXPR).
+ * Nghĩa là COD facebook = COD tổng trừ COD google, nên %CP facebook là cận DƯỚI
+ * (mẫu số gồm cả đơn organic không tốn phí ads).
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -110,7 +115,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `, [from, to])
 
     // ---- Gộp thành ma trận date × platform ----
-    const PLATFORMS = ["facebook", "google", "other"] as const
+    const PLATFORMS = ["facebook", "google"] as const
     const emptyCell = () => ({
       total_orders: 0, delivered: 0, new_orders: 0, confirmed: 0, cancelled: 0,
       revenue_total: 0, revenue_delivered: 0, cod_total: 0, cod_delivered: 0,
