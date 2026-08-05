@@ -141,7 +141,10 @@ function evalSmartRule(rule: any, metrics: any, threshold: any): { matched: bool
 
 export default async function campRuleEvaluator(container: MedusaContainer) {
   const logger = container.resolve("logger") as any
-  const sql = container.resolve("cskhAnalysisModule") as any
+  // cskhAnalysisModule là service object — phải gọi .sql(), không phải gọi thẳng.
+  // Wrap lại thành hàm vì cả file dùng sql(...) như callable.
+  const cskhService = container.resolve("cskhAnalysisModule") as any
+  const sql = (query: string, params?: any[]) => cskhService.sql(query, params)
 
   const hourVN = nowVN().getHours()
 

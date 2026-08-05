@@ -17,28 +17,41 @@ async function fetchJson(url: string): Promise<any> {
 }
 
 export default async function mktCostIntradaySync(container: MedusaContainer) {
+  // console.log thay vì logger?.x?.() ở các nhánh thoát sớm: optional chaining
+  // nuốt luôn dòng log nếu logger thiếu method → job im lặng, không để lại dấu vết.
+  console.log("[MktCostIntraday] start")
+
   const logger = container.resolve("logger") as any
   const cskhService = container.resolve("cskhAnalysisModule") as any
 
   const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
   if (!FB_TOKEN) {
-    logger?.warn?.("[MktCostIntraday] FB_SYSTEM_TOKEN/FB_ACCESS_TOKEN chưa cấu hình — bỏ qua")
+    console.log("[MktCostIntraday] FB_SYSTEM_TOKEN/FB_ACCESS_TOKEN chưa cấu hình — bỏ qua")
     return
   }
 
   const today = todayVN()
   const timeRange = encodeURIComponent(JSON.stringify({ since: today, until: today }))
 
-  const dbAccounts = await cskhService.sql(`
-    SELECT account_id FROM fb_ad_account
-    WHERE deleted_at IS NULL AND active = true
-    ORDER BY created_at ASC
-  `).catch(() => [])
+  // KHÔNG .catch(() => []) ở đây: lỗi SQL từng bị nuốt thành mảng rỗng rồi
+  // return im lặng, khiến job trông như chưa từng chạy.
+  let dbAccounts: any[]
+  try {
+    dbAccounts = await cskhService.sql(`
+      SELECT account_id FROM fb_ad_account
+      WHERE deleted_at IS NULL AND active = true
+      ORDER BY created_at ASC
+    `)
+  } catch (err: any) {
+    console.error("[MktCostIntraday] Query fb_ad_account failed:", err?.message, err?.stack)
+    throw err
+  }
 
   if (!dbAccounts.length) {
-    logger?.warn?.("[MktCostIntraday] Không có FB ad account nào active")
+    console.log("[MktCostIntraday] Không có FB ad account nào active")
     return
   }
+  console.log(`[MktCostIntraday] ${dbAccounts.length} account(s), date=${today}`)
 
   let totalSynced = 0
   let totalErrors = 0
@@ -183,7 +196,7 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
     totalErrors += levels.errors
   }
 
-  logger?.info?.(`[MktCostIntraday] ${today} → camps=${totalSynced} adsets=${totalAdsets} ads=${totalAds} errors=${totalErrors}`)
+  console.log(`[MktCostIntraday] done ${today} → camps=${totalSynced} adsets=${totalAdsets} ads=${totalAds} errors=${totalErrors}`)
 }
 
 export const config = {
