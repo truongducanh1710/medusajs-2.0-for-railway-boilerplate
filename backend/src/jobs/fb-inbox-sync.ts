@@ -42,7 +42,18 @@ export default async function fbInboxSync(container: MedusaContainer) {
   const since = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000)
   let totalSaved = 0, totalErrors = 0
 
+  // Trần thời gian: chạy */3 với concurrency "forbid" nhưng không có timeout, nên một
+  // lần chạy chậm (page nhiều, FB Graph treo) giữ slot worker duy nhất và làm mọi cron
+  // khác xếp hàng — đúng cách pancake-incremental-sync từng chặn cả queue 40+ phút.
+  const deadline = Date.now() + 2 * 60_000
+  let scanned = 0
+
   for (const page of pages) {
+    if (Date.now() > deadline) {
+      logger?.warn?.(`[fb-inbox-sync] Quá 2 phút — dừng, bỏ qua ${pages.length - scanned} page còn lại`)
+      break
+    }
+    scanned++
     try {
       const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since, container)
       totalSaved += r.saved
@@ -56,7 +67,7 @@ export default async function fbInboxSync(container: MedusaContainer) {
     }
   }
 
-  logger?.info?.(`[fb-inbox-sync] Done: ${pages.length} pages, ${totalSaved} saved, ${totalErrors} errors`)
+  logger?.info?.(`[fb-inbox-sync] Done: ${scanned}/${pages.length} pages, ${totalSaved} saved, ${totalErrors} errors`)
 }
 
 export const config = {
