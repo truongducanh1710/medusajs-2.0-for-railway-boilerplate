@@ -568,7 +568,17 @@ export async function pullPageInbox(
     return { saved, skipped, errors }
   }
 
+  // Ngân sách thời gian cho 1 page. Mỗi hội thoại tốn 1 request /messages, cộng
+  // 1 lượt tra tên nếu participant thiếu name — page nhiều hội thoại lạ vì thế
+  // chạy hàng chục giây và ăn hết ngân sách của cả lần cron. Hết giờ thì dừng,
+  // phần còn lại để lần sau (cron 3 phút, `since` 10 phút nên không mất dữ liệu).
+  const pageDeadline = Date.now() + 30_000
+
   for (const conv of convs) {
+    if (Date.now() > pageDeadline) {
+      errors.push(`Hết ngân sách 30s, còn lại để lần sau`)
+      break
+    }
     const convId = conv.id
     const participants: any[] = conv.participants?.data || []
     const customer = participants.find((p: any) => p.id !== pageId)
@@ -685,12 +695,37 @@ async function pullPageInboxFromPancake(
   let convs: Array<{ psid: string; name?: string }>
   try {
     convs = await pancakeListConversations(cfg, since)
+    await pool.query(
+      `UPDATE pancake_page_token SET last_tested_at = now(), last_test_ok = true, last_test_error = NULL
+       WHERE fb_page_id = $1`, [pageId]
+    ).catch(() => {})
   } catch (e: any) {
-    errors.push(`Lấy conversations Pancake thất bại: ${e.message}`)
+    // Token hỏng thì thử lại mỗi 3 phút cũng không bao giờ thành công — ghi lại lỗi
+    // và tắt sync cho page này để nó thôi ăn thời gian của mọi lần chạy. Bật lại
+    // bằng cách cập nhật token trong Settings (route test sẽ set enabled = true).
+    const isAuthError = /invalid access_token|invalid token|unauthorized|permission/i.test(e.message || "")
+    await pool.query(
+      `UPDATE pancake_page_token
+       SET last_tested_at = now(), last_test_ok = false, last_test_error = $2,
+           enabled = CASE WHEN $3 THEN false ELSE enabled END
+       WHERE fb_page_id = $1`,
+      [pageId, String(e.message).slice(0, 500), isAuthError]
+    ).catch(() => {})
+    errors.push(
+      `Lấy conversations Pancake thất bại: ${e.message}` +
+      (isAuthError ? " — đã tắt sync page này, cập nhật lại token trong Settings để bật lại" : "")
+    )
     return { saved, skipped, errors }
   }
 
+  // Cùng lý do như nhánh Graph: 1 request /messages cho mỗi hội thoại, không giới hạn.
+  const pageDeadline = Date.now() + 30_000
+
   for (const c of convs) {
+    if (Date.now() > pageDeadline) {
+      errors.push(`Hết ngân sách 30s, còn lại để lần sau`)
+      break
+    }
     const psid = c.psid
     const customerName = isPlaceholderName(c.name) ? undefined : c.name
 

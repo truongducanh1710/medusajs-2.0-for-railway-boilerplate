@@ -17,16 +17,24 @@ export default async function fbInboxSync(container: MedusaContainer) {
   const logger = container.resolve("logger") as any
   const pool = getChatPool()
 
+  // Cột con trỏ để xoay vòng page. Không có nó, câu SELECT trả về thứ tự cố định
+  // của Postgres nên 5 page đầu bị quét lại mỗi lần còn 27 page sau KHÔNG BAO GIỜ
+  // tới lượt — quan sát trên production: "Done: 5/32 pages" lặp lại mọi lần chạy.
+  await pool.query(
+    `ALTER TABLE fb_page_token ADD COLUMN IF NOT EXISTS last_inbox_sync_at TIMESTAMPTZ`
+  ).catch(() => {})
+
   let pages: Array<{ page_id: string; page_name: string; access_token: string }> = []
   try {
     const { rows } = await pool.query(
       `SELECT page_id, page_name, access_token FROM fb_page_token
        WHERE access_token IS NOT NULL AND access_token != ''
-         AND sync_enabled = true`
+         AND sync_enabled = true
+       ORDER BY last_inbox_sync_at ASC NULLS FIRST`
     )
     pages = rows
   } catch {
-    // sync_enabled có thể chưa tồn tại ở môi trường cũ — fallback không lọc cột đó
+    // sync_enabled/last_inbox_sync_at có thể chưa tồn tại ở môi trường cũ — fallback
     const { rows } = await pool.query(
       `SELECT page_id, page_name, access_token FROM fb_page_token
        WHERE access_token IS NOT NULL AND access_token != ''`
@@ -65,6 +73,14 @@ export default async function fbInboxSync(container: MedusaContainer) {
       break
     }
     scanned++
+    // Đánh dấu TRƯỚC khi quét, và cả khi lỗi: page hỏng phải bị đẩy xuống cuối
+    // hàng đợi thay vì chặn mãi ở đầu. Hai page timeout 45s liên tục từng ăn
+    // 90/120 giây ngân sách mỗi lần chạy.
+    await pool.query(
+      `UPDATE fb_page_token SET last_inbox_sync_at = now() WHERE page_id = $1`,
+      [page.page_id]
+    ).catch(() => {})
+
     try {
       const r = await withCap(
         pullPageInbox(page.page_id, page.page_name, page.access_token, since, container),
