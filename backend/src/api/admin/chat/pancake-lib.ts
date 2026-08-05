@@ -18,6 +18,16 @@ const PANCAKE_BASE = "https://pages.fm/api/public_api"
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// Timeout bắt buộc cho mọi call Pancake: fetch của Node không có timeout mặc định,
+// và các hàm dưới đây gọi trong vòng lồng nhau (tới 4 lần thử × 10-20 trang) từ
+// fb-inbox-sync (cron */3, concurrency "forbid"). Một request treo là job treo,
+// giữ slot worker duy nhất và chặn mọi cron khác — gồm mkt-cost-intraday-sync.
+const PANCAKE_TIMEOUT_MS = 20_000
+
+function pancakeFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(PANCAKE_TIMEOUT_MS) })
+}
+
 export async function ensurePancakeTable(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pancake_page_token (
@@ -67,7 +77,7 @@ export async function pancakeSendMessage(
 
   const post = async (cid: string) => {
     const url = `${PANCAKE_BASE}/v1/pages/${pid}/conversations/${cid}/messages?page_access_token=${token}`
-    const r = await fetch(url, {
+    const r = await pancakeFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ action: "reply_inbox", message: text }),
@@ -127,7 +137,7 @@ export async function pancakeLoadParticipantNames(
     let d: any = null
     for (let attempt = 0; attempt < 4; attempt++) {
       if (page > 0 || attempt > 0) await sleep(attempt ? 1500 * attempt : 350)
-      const r = await fetch(url)
+      const r = await pancakeFetch(url)
       d = await r.json().catch(() => ({}))
       if (d?.success !== false) break
       const msg = String(d?.message || "")
@@ -185,7 +195,7 @@ export async function pancakeListConversations(
     let d: any = null
     for (let attempt = 0; attempt < 4; attempt++) {
       if (page > 0 || attempt > 0) await sleep(attempt ? 1500 * attempt : 350)
-      const r = await fetch(url)
+      const r = await pancakeFetch(url)
       d = await r.json().catch(() => ({}))
       if (d?.success !== false) break
       if (!/too many requests|try again later/i.test(String(d?.message || ""))) break
@@ -261,7 +271,7 @@ export async function pancakeFetchMessages(
   let d: any = null
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt) await sleep(1200 * attempt)
-    const r = await fetch(url)
+    const r = await pancakeFetch(url)
     d = await r.json().catch(() => ({}))
     if (d?.success !== false && r.status < 500) break
   }
@@ -296,7 +306,7 @@ async function findConversationIdByPsid(cfg: PancakeConfig, psid: string): Promi
   for (let page = 0; page < 10; page++) {
     let url = `${PANCAKE_BASE}/v2/pages/${pid}/conversations?page_access_token=${token}&type=INBOX`
     if (lastId) url += `&last_conversation_id=${lastId}`
-    const r = await fetch(url)
+    const r = await pancakeFetch(url)
     const d: any = await r.json().catch(() => ({}))
     const convs: any[] = d?.conversations || []
     if (!convs.length) break
