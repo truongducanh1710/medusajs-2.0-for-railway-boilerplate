@@ -48,6 +48,17 @@ export default async function fbInboxSync(container: MedusaContainer) {
   const deadline = Date.now() + 2 * 60_000
   let scanned = 0
 
+  // Trần cứng cho MỘT page. Deadline kiểm giữa các page là chưa đủ: pullPageInbox
+  // tra tên khách cho từng hội thoại mới (fetchCustomerNameFromGraph → tối đa
+  // 2 trang × 4 lần thử, kèm backoff sleep), nên một page nhiều hội thoại lạ có thể
+  // chạy rất lâu dù mỗi request đã có timeout 20s. Không có trần này thì job vẫn
+  // giữ slot worker duy nhất và chặn mọi cron khác.
+  const withCap = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`quá ${ms / 1000}s`)), ms)),
+    ])
+
   for (const page of pages) {
     if (Date.now() > deadline) {
       logger?.warn?.(`[fb-inbox-sync] Quá 2 phút — dừng, bỏ qua ${pages.length - scanned} page còn lại`)
@@ -55,7 +66,10 @@ export default async function fbInboxSync(container: MedusaContainer) {
     }
     scanned++
     try {
-      const r = await pullPageInbox(page.page_id, page.page_name, page.access_token, since, container)
+      const r = await withCap(
+        pullPageInbox(page.page_id, page.page_name, page.access_token, since, container),
+        45_000
+      )
       totalSaved += r.saved
       totalErrors += r.errors.length
       if (r.errors.length) {

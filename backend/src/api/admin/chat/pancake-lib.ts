@@ -120,7 +120,11 @@ export async function pancakeSendMessage(
 export async function pancakeLoadParticipantNames(
   cfg: PancakeConfig,
   maxPages = 40,
-  wanted?: Set<string>
+  wanted?: Set<string>,
+  // Backfill thủ công (route backfill-names) chấp nhận chờ để vá bằng được;
+  // đường cron tra tên từng hội thoại thì không — 4 lần thử kèm backoff nhân với
+  // số hội thoại lạ là đủ để fb-inbox-sync chạy quá lâu và chặn queue.
+  maxAttempts = 4
 ): Promise<Map<string, string>> {
   const pid = cfg.pancake_page_id
   const token = cfg.page_access_token
@@ -135,7 +139,7 @@ export async function pancakeLoadParticipantNames(
     // Retry với backoff tăng dần thay vì bỏ cuộc — nếu không, page bị "Too many requests"
     // sẽ không vá được tên nào dù dữ liệu vẫn ở đó.
     let d: any = null
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (page > 0 || attempt > 0) await sleep(attempt ? 1500 * attempt : 350)
       const r = await pancakeFetch(url)
       d = await r.json().catch(() => ({}))

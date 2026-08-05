@@ -417,7 +417,10 @@ async function fetchCustomerNameFromGraph(pool: Pool, pageId: string, psid: stri
     const cfg = await getPancakeConfig(pool, pageId).catch(() => null)
     if (cfg) {
       // Chỉ cần 2 trang đầu: hội thoại vừa có tin nhắn luôn nằm đầu danh sách Pancake.
-      const names = await pancakeLoadParticipantNames(cfg, 2, new Set([psid]))
+      // 1 lần thử thôi — hàm này chạy cho TỪNG hội thoại mới trong cron fb-inbox-sync,
+      // nên retry kèm backoff ở đây nhân lên rất nhanh. Tên thiếu sẽ được vá ở lần
+      // chạy sau, hoặc bằng route backfill-names (nơi vẫn giữ đủ 4 lần thử).
+      const names = await pancakeLoadParticipantNames(cfg, 2, new Set([psid]), 1)
       const n = names.get(psid)
       if (n && !isPlaceholderName(n)) return n
     }
