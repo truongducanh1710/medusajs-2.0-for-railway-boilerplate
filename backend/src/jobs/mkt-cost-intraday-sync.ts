@@ -21,6 +21,10 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
   // nuốt luôn dòng log nếu logger thiếu method → job im lặng, không để lại dấu vết.
   console.log("[MktCostIntraday] start")
 
+  // Giữ độ lệch mà cron "2-59/5" từng có: nhường các cron */5 khác
+  // (ity-cdr, pancake-note, presence-reaper) chạy trước ~20s.
+  await new Promise((r) => setTimeout(r, 20_000))
+
   const logger = container.resolve("logger") as any
   const cskhService = container.resolve("cskhAnalysisModule") as any
 
@@ -201,5 +205,9 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
 
 export const config = {
   name: "mkt-cost-intraday-sync",
-  schedule: "2-59/5 * * * *",
+  // "*/5" chứ không phải "2-59/5": job này là cron duy nhất trong repo dùng
+  // step-trên-range, và là cron duy nhất không bao giờ fire — mọi job đang chạy
+  // đều dùng dạng "*/N". Độ lệch 2 phút so với các cron */5 khác nay lấy bằng
+  // delay ngay đầu hàm thay vì nhét vào cron expression.
+  schedule: "*/5 * * * *",
 }
