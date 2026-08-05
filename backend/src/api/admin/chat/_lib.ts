@@ -498,7 +498,11 @@ async function fbGet(path: string, token: string): Promise<any> {
 
 /** Fetch an absolute Graph URL (used to follow `paging.next`, which already carries the token). */
 async function fbGetUrl(url: string): Promise<any> {
-  const r = await fetch(url)
+  // Timeout bắt buộc: fetch của Node không có timeout mặc định, và hàm này chạy trong
+  // vòng phân trang tới 20 trang của fb-inbox-sync (cron */3, concurrency "forbid").
+  // Một request FB không phản hồi từng treo job vĩnh viễn, giữ slot worker duy nhất
+  // và làm mọi cron khác — gồm mkt-cost-intraday-sync — không bao giờ chạy.
+  const r = await fetch(url, { signal: AbortSignal.timeout(20_000) })
   const d = await r.json()
   if (d?.error) throw new Error(`FB API: ${d.error.message} (code ${d.error.code})`)
   return d
@@ -1068,6 +1072,7 @@ export async function sendFacebookMessage(pageId: string, psid: string, text: st
   if (!pageToken) throw new Error("Khong tim thay Page access token")
   const res = await fetch(`https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages?access_token=${pageToken}`, {
     method: "POST",
+    signal: AbortSignal.timeout(20_000),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       recipient: { id: psid },
