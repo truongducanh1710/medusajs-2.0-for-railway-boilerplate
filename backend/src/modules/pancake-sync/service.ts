@@ -2,6 +2,7 @@ import { MedusaService } from "@medusajs/framework/utils"
 import PancakeOrder from "./models/pancake-order"
 import PancakeSyncJob from "./models/pancake-sync-job"
 import { PANCAKE_API_BASE, getPancakeShop } from "../../lib/constants"
+import { getPool } from "../../lib/db"
 import { extractNotesForOrder, extractTags } from "./extractors"
 
 // ---- Types ----
@@ -871,11 +872,12 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
       const totalCreated = data.statuses.reduce((s, r) => s + r.created, 0)
       const totalErrors = data.statuses.reduce((s, r) => s + r.errors, 0)
       const id = `cron_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      const em = (this as any).__container?.resolve?.("manager") ?? (this as any).manager_
-      if (!em) return
-      await em.execute(
+      // pg pool, không phải MikroORM manager: __container.resolve("manager") và
+      // manager_ đều trả undefined ở đây, nên `if (!em) return` nuốt mọi lần ghi —
+      // bảng rỗng suốt dù job chạy hàng tháng. Placeholder cũng phải là $N, không phải ?.
+      await getPool().query(
         `INSERT INTO pancake_cron_log (id, run_type, started_at, finished_at, duration_ms, statuses, total_orders, total_updated, total_created, total_errors, error_details, success, market, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())`,
         [id, data.run_type, data.started_at, data.finished_at, durationMs,
          JSON.stringify(data.statuses), totalOrders, totalUpdated, totalCreated, totalErrors,
          JSON.stringify(data.error_details ?? []), totalErrors === 0 || totalOrders > 0,
@@ -904,11 +906,11 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   }): Promise<void> {
     try {
       const id = `wh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      const em = (this as any).__container?.resolve?.("manager") ?? (this as any).manager_
-      if (!em) return
-      await em.execute(
+      // Xem ghi chú ở logCronRun: pg pool + $N, không dùng MikroORM manager.
+      // Bảng này đứng im từ 2026-05-21 vì lý do đó.
+      await getPool().query(
         `INSERT INTO pancake_webhook_log (id, received_at, pancake_order_id, pancake_status, status_name, event_type, api_fetch_success, upsert_success, fallback_used, error_message, duration_ms, market, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())`,
         [id, data.received_at, data.pancake_order_id, data.pancake_status ?? null,
          data.status_name ?? "", data.event_type ?? "order",
          data.api_fetch_success ?? null, data.upsert_success ?? null,
