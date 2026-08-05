@@ -14,8 +14,10 @@
 
 import { ExecArgs } from "@medusajs/framework/types"
 import { extractMkt } from "../lib/mkt-code"
+import { fbFetchJson } from "../lib/fb-fetch"
+import { FB_GRAPH_BASE } from "../lib/constants"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = FB_GRAPH_BASE
 const DELAY_MS = 300 // tránh rate limit FB
 
 function parseArg(name: string, fallback: string): string {
@@ -41,11 +43,6 @@ function dateRange(from: string, to: string): string[] {
     cur = addDays(cur, 1)
   }
   return dates
-}
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
 }
 
 function delay(ms: number) {
@@ -110,7 +107,7 @@ export default async function backfillMktCost({ container }: ExecArgs) {
       try {
         let nextUrl: string | null = url
         while (nextUrl) {
-          const data: any = await fetchJson(nextUrl)
+          const data: any = await fbFetchJson(nextUrl)
 
           if (data.error) {
             logger.warn(`[BackfillMktCost] FB API error ${actId} date=${date}: ${data.error.message}`)

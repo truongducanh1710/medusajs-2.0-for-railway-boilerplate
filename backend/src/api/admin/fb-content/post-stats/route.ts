@@ -1,17 +1,13 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo, getPageTokens, ensureTables } from "../_lib"
+import { fbFetchJson } from "../../../../lib/fb-fetch"
 
 const FB_V = "v25.0"
-
-async function fetchJson(url: string) {
-  const r = await fetch(url)
-  return r.json()
-}
 
 async function syncPageStats(pool: any, pageId: string, pageToken: string, pageName: string) {
   // Pull posts từ page feed — thêm full_picture để lấy thumbnail
   const feedUrl = `https://graph.facebook.com/${FB_V}/${pageId}/feed?fields=id,message,created_time,full_picture,likes.summary(true),comments.summary(true),shares,attachments&limit=50&access_token=${pageToken}`
-  const feed = await fetchJson(feedUrl)
+  const feed = await fbFetchJson(feedUrl)
   const posts: any[] = feed.data ?? []
 
   // Lấy post_id từ fb_scheduled_post để join product_code
@@ -50,7 +46,7 @@ async function syncPageStats(pool: any, pageId: string, pageToken: string, pageN
     let reach = 0
     try {
       const insightUrl = `https://graph.facebook.com/${FB_V}/${postId}/insights?metric=post_impressions_unique&access_token=${pageToken}`
-      const insight = await fetchJson(insightUrl)
+      const insight = await fbFetchJson(insightUrl)
       reach = insight.data?.[0]?.values?.[0]?.value ?? 0
     } catch {}
 
@@ -59,7 +55,7 @@ async function syncPageStats(pool: any, pageId: string, pageToken: string, pageN
     if (mediaType === "video") {
       try {
         const vUrl = `https://graph.facebook.com/${FB_V}/${postId}?fields=video_views&access_token=${pageToken}`
-        const vd = await fetchJson(vUrl)
+        const vd = await fbFetchJson(vUrl)
         videoViews = vd.video_views ?? 0
       } catch {}
     }

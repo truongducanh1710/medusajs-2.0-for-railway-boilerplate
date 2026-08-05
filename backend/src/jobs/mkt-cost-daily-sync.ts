@@ -1,6 +1,7 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
 import { syncAdsetAndAdLevels } from "../lib/mkt-cost-levels"
+import { fbFetchJson } from "../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 
@@ -10,11 +11,6 @@ function dateVN(offsetDays = 0): string {
   now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + 420) // +420 = +7h
   now.setDate(now.getDate() + offsetDays)
   return now.toISOString().slice(0, 10)
-}
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
 }
 
 // Chạy các task với giới hạn concurrency để tránh rate-limit FB API
@@ -56,7 +52,7 @@ async function syncAccountForDate(
   try {
     let nextUrl: string | null = url
     while (nextUrl) {
-      const data: any = await fetchJson(nextUrl)
+      const data: any = await fbFetchJson(nextUrl)
       if (data.error) {
         logger?.error?.(`[MktCostDaily] FB API error ${actId} date=${date}: ${data.error.message}`)
         totalErrors++
@@ -93,7 +89,7 @@ async function syncAccountForDate(
     const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=500&access_token=${FB_TOKEN}`
     let nextMeta: string | null = metaUrl
     while (nextMeta) {
-      const metaData: any = await fetchJson(nextMeta)
+      const metaData: any = await fbFetchJson(nextMeta)
       if (metaData.error) break
       for (const camp of (metaData.data ?? [])) {
         const budget = camp.daily_budget || camp.lifetime_budget

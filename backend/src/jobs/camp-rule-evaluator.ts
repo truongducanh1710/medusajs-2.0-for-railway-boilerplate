@@ -1,7 +1,8 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { notifyTelegram, formatRuleAlert } from "../lib/notify"
+import { FB_GRAPH_BASE } from "../lib/constants"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = FB_GRAPH_BASE
 
 // Giờ VN (UTC+7)
 function nowVN(): Date {

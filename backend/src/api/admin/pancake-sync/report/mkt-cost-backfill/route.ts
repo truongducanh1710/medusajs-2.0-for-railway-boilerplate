@@ -1,13 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { extractMkt } from "../../../../../lib/mkt-code"
+import { fbFetchJson } from "../../../../../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const DELAY_MS = 300
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
-}
 
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
@@ -113,7 +109,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         try {
           let nextUrl: string | null = url
           while (nextUrl) {
-            const data: any = await fetchJson(nextUrl)
+            const data: any = await fbFetchJson(nextUrl)
             if (data.error) {
               console.error(`[Backfill] FB error ${actId} ${date}: ${data.error.message}`)
               grandErrors++

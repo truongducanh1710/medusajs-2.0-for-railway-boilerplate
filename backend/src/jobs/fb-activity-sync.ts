@@ -1,7 +1,8 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
+import { FB_GRAPH_BASE } from "../lib/constants"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = FB_GRAPH_BASE
 const KEEP_EVENTS = new Set(["update_campaign_run_status", "update_campaign_budget"])
 
 function actorType(actorName: string): string {

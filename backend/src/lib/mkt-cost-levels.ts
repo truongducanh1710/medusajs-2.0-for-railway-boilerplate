@@ -5,13 +5,9 @@
 // ============================================================================
 
 import { extractMkt } from "./mkt-code"
+import { fbFetchJson } from "./fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
-}
 
 /** Extract VD code từ ad_name (KIENLB_PHVVN026CV_REAL_VD1412 → VD1412) */
 export function extractVdCode(adName: string): string | null {
@@ -35,7 +31,7 @@ async function syncAdsetLevel(
   let synced = 0
 
   while (url) {
-    const data: any = await fetchJson(url)
+    const data: any = await fbFetchJson(url)
     if (data.error) {
       logger?.error?.(`[MktCostAdset] FB API error ${actId} date=${date}: ${data.error.message}`)
       break
@@ -100,7 +96,7 @@ async function syncAdLevel(
   let synced = 0
 
   while (url) {
-    const data: any = await fetchJson(url)
+    const data: any = await fbFetchJson(url)
     if (data.error) {
       logger?.error?.(`[MktCostAd] FB API error ${actId} date=${date}: ${data.error.message}`)
       break

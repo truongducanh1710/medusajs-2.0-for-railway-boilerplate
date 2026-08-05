@@ -1,18 +1,14 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo, getPageTokens, ensureTables } from "../_lib"
+import { fbFetchJson } from "../../../../lib/fb-fetch"
 
 const FB_V = "v25.0"
-
-async function fetchJson(url: string) {
-  const r = await fetch(url)
-  return r.json()
-}
 
 async function syncOnePageStats(pool: any, pageId: string, pageToken: string, pageName: string) {
   // 1. Fan count mới nhất
   let fanCount = 0
   try {
-    const pd = await fetchJson(`https://graph.facebook.com/${FB_V}/${pageId}?fields=fan_count&access_token=${pageToken}`)
+    const pd = await fbFetchJson(`https://graph.facebook.com/${FB_V}/${pageId}?fields=fan_count&access_token=${pageToken}`)
     fanCount = pd.fan_count ?? 0
   } catch {}
 
@@ -20,7 +16,7 @@ async function syncOnePageStats(pool: any, pageId: string, pageToken: string, pa
   let reach7d = 0, engaged7d = 0, newFans7d = 0
   try {
     const insightUrl = `https://graph.facebook.com/${FB_V}/${pageId}/insights?metric=page_impressions_unique,page_post_engagements,page_views_total&period=week&access_token=${pageToken}`
-    const ins = await fetchJson(insightUrl)
+    const ins = await fbFetchJson(insightUrl)
     for (const m of (ins.data ?? [])) {
       const val = m.values?.[m.values.length - 1]?.value ?? 0
       if (m.name === "page_impressions_unique") reach7d = val

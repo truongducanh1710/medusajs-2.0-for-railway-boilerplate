@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { FB_GRAPH_BASE } from "../../../../lib/constants"
 
 function getService(req: MedusaRequest) {
   return req.scope.resolve("cskhAnalysisModule") as any
@@ -8,7 +9,7 @@ function getService(req: MedusaRequest) {
  * GET /admin/pancake-sync/fb-accounts
  * Lấy danh sách tài khoản FB Ads đã cấu hình
  */
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = FB_GRAPH_BASE
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {

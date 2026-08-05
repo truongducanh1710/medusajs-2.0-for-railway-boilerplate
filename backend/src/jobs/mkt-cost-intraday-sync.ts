@@ -1,6 +1,7 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
 import { syncAdsetAndAdLevels } from "../lib/mkt-cost-levels"
+import { fbFetchJson } from "../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 
@@ -9,11 +10,6 @@ function todayVN(): string {
   const now = new Date()
   now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + 420) // +420 = +7h
   return now.toISOString().slice(0, 10)
-}
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
 }
 
 export default async function mktCostIntradaySync(container: MedusaContainer) {
@@ -72,7 +68,7 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
     try {
       let nextUrl: string | null = url
       while (nextUrl) {
-        const data: any = await fetchJson(nextUrl)
+        const data: any = await fbFetchJson(nextUrl)
         if (data.error) {
           logger?.error?.(`[MktCostIntraday] FB API error ${actId}: ${data.error.message}`)
           totalErrors++
@@ -121,7 +117,7 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
       try {
         let nextMeta: string | null = metaUrl
         while (nextMeta) {
-          const metaData: any = await fetchJson(nextMeta)
+          const metaData: any = await fbFetchJson(nextMeta)
           if (metaData.error) {
             logger?.warn?.(`[MktCostIntraday] Meta error ${actId}: ${metaData.error.message}`)
             break
@@ -182,7 +178,7 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
       try {
         const [dbAcc] = await cskhService.sql(`SELECT account_name FROM fb_ad_account WHERE account_id = $1`, [actId])
         if (dbAcc && !dbAcc.account_name) {
-          const accInfo: any = await fetchJson(`${FB_API_BASE}/${actId}?fields=name&access_token=${FB_TOKEN}`)
+          const accInfo: any = await fbFetchJson(`${FB_API_BASE}/${actId}?fields=name&access_token=${FB_TOKEN}`)
           if (accInfo.name) {
             await cskhService.sql(`UPDATE fb_ad_account SET account_name = $1, updated_at = now() WHERE account_id = $2`, [accInfo.name, actId])
           }

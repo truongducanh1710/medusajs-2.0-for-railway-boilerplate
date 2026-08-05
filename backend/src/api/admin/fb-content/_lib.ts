@@ -3,6 +3,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { Pool } from "pg"
 import { fetchAllPageTokens } from "../../../lib/fb-graph"
 import { resolveUserPerms } from "../../middlewares"
+import { FB_GRAPH_BASE } from "../../../lib/constants"
 
 let _pool: Pool | null = null
 export function getPool(): Pool {
@@ -126,7 +127,7 @@ export async function ensureTables(pool: Pool): Promise<void> {
 // ============================================================================
 // FB Graph API helpers cho tính năng Lên Camp
 // ============================================================================
-const FB_GRAPH = "https://graph.facebook.com/v18.0"
+const FB_GRAPH = FB_GRAPH_BASE
 
 /** System User Token (không hết hạn) → fallback FB_ACCESS_TOKEN. */
 export function getSysToken(): string {

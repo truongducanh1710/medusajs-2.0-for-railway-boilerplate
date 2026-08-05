@@ -1,13 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { extractMkt } from "../../../../../lib/mkt-code"
+import { fbFetchJson } from "../../../../../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
-}
 
 /**
  * GET /admin/pancake-sync/report/mkt-cost?from=2026-05-01&to=2026-05-31
@@ -102,7 +98,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       try {
         let nextUrl: string | null = url
         while (nextUrl) {
-          const data: any = await fetchJson(nextUrl)
+          const data: any = await fbFetchJson(nextUrl)
 
           if (data.error) {
             console.error(`[mkt-cost] FB API error ${actId}:`, data.error.message)
@@ -142,7 +138,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         const metaUrl = `${FB_API_BASE}/${actId}/campaigns?fields=id,name,status,daily_budget,lifetime_budget&limit=500&access_token=${FB_TOKEN}`
         let nextMeta: string | null = metaUrl
         while (nextMeta) {
-          const metaData: any = await fetchJson(nextMeta)
+          const metaData: any = await fbFetchJson(nextMeta)
           if (metaData.error) break
           for (const camp of (metaData.data ?? [])) {
             const budget = camp.daily_budget || camp.lifetime_budget

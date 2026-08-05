@@ -1,6 +1,7 @@
 import { MedusaContainer } from "@medusajs/framework"
+import { FB_GRAPH_BASE } from "../lib/constants"
 
-const FB_API_BASE = "https://graph.facebook.com/v18.0"
+const FB_API_BASE = FB_GRAPH_BASE
 
 async function callFb(method: "POST", path: string): Promise<{ ok: boolean; data: any }> {
   const token = process.env.FB_ACCESS_TOKEN || ""

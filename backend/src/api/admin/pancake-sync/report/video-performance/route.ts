@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { fbFetchJson } from "../../../../../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
@@ -7,11 +8,6 @@ const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || "
 function extractVdCode(adName: string): string | null {
   const m = (adName || "").match(/VD\d+/i)
   return m ? m[0].toUpperCase() : null
-}
-
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url)
-  return res.json()
 }
 
 /** Lấy action value theo type từ mảng actions của FB insights. */
@@ -109,7 +105,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       let nextUrl: string | null = `${FB_API_BASE}/${actId}/insights?level=ad&fields=${fields}&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
       try {
         while (nextUrl) {
-          const data: any = await fetchJson(nextUrl)
+          const data: any = await fbFetchJson(nextUrl)
           if (data.error) { console.error(`[video-perf] FB error ${actId}:`, data.error.message); errors++; break }
           for (const ad of data.data ?? []) {
             const spend = Math.round(Number(ad.spend ?? 0))
