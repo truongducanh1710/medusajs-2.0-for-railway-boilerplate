@@ -158,6 +158,10 @@ const medusaConfig = {
       key: "facebookChatModule",
     },
     {
+      resolve: './src/modules/product-test',
+      key: 'productTestModule',
+    },
+    {
       key: Modules.PAYMENT,
       resolve: '@medusajs/payment',
       options: {

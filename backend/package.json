@@ -19,7 +19,8 @@
     "ib": "init-backend",
     "start": "node src/scripts/start-prod.js",
     "dev": "medusa develop",
-    "email:dev": "email dev --dir=./src/modules/email-notifications/templates --port=3002"
+    "email:dev": "email dev --dir=./src/modules/email-notifications/templates --port=3002",
+    "test:product": "jest --config jest.product-test.config.js --runInBand"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.12.1",

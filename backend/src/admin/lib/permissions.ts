@@ -56,14 +56,19 @@ export const PERMISSIONS = {
   "page.dohana-sync.run": "Trigger sync Dohana thủ công",
   "page.qa.view": "Xem đánh giá QA (ghi chú, điểm tuần, tổng hợp) — leader/HR",
   "page.qa.score": "Ghi chú ngày + chấm điểm QA tuần — leader",
+  'page.product-test.view': 'Xem quy trình test sản phẩm',
+  'page.product-test.marketing': 'Tạo đề xuất và nhập kết quả test sản phẩm',
+  'page.product-test.purchasing': 'Kiểm tra giá và thông tin mua hàng',
+  'page.product-test.approve': 'Duyệt quy trình và kết luận test sản phẩm',
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
 
 export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
-  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.bao-cao.target-edit", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call", "page.cham-cong.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.leave-request.approve", "page.overtime.view", "page.overtime.approve", "page.qa.view", "page.qa.score"],
-  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
+  manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.bao-cao.target-edit", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call", "page.cham-cong.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.leave-request.approve", "page.overtime.view", "page.overtime.approve", "page.qa.view", "page.qa.score", "page.product-test.view", "page.product-test.approve"],
+  marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.product-test.view", "page.product-test.marketing", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
+  "mua-hang": ["page.product-test.view", "page.product-test.purchasing", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
   ketoan: ["page.gia-von.view", "page.gia-von.manage", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],

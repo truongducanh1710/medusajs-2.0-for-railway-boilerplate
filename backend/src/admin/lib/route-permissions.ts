@@ -3,6 +3,7 @@ export const ROUTE_PERMS: Record<string, string> = {
   "/xac-nhan-don": "page.don-hang.view",
   "/pancake-orders": "page.don-hang.view",
   "/san-pham": "page.san-pham.view",
+  "/test-san-pham": "page.product-test.view",
   "/bao-cao": "page.bao-cao.view",
   "/pancake-sync": "page.pancake-sync.view",
   "/dohana-sync": "page.dohana-sync.view",
