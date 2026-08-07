@@ -1,4 +1,4 @@
-﻿import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ulid } from "ulid";
 import { getPool } from "../../../lib/db";
 import { aggregateMetrics } from "../../../modules/product-test/kpi";
@@ -166,7 +166,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const body = req.body as any;
     const productName = String(body?.product_name || "").trim();
     if (!productName)
-      return res.status(400).json({ error: "Thiáº¿u tÃªn sáº£n pháº©m" });
+      return res.status(400).json({ error: "Thiếu tên sản phẩm" });
     const id = `pt_${ulid().toLowerCase()}`;
     const code = `TSP-${new Date().toISOString().slice(2, 7).replace("-", "")}-${ulid().slice(-5)}`;
     const marketerEmail =

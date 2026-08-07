@@ -1,4 +1,4 @@
-﻿import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ulid } from "ulid";
 import { getPool } from "../../../../../lib/db";
 import {
@@ -19,26 +19,26 @@ import {
 import { notifyProductTestTransition } from "../../_lib";
 
 const ACTION_LABELS: Record<string, string> = {
-  submit_purchase_check: "ÄÃ£ gá»­i Mua hÃ ng check giÃ¡",
-  approve_purchase_check: "Mua hÃ ng Ä‘Ã£ duyá»‡t thÃ´ng tin giÃ¡",
-  request_purchase_changes: "Mua hÃ ng yÃªu cáº§u bá»• sung",
-  submit_test_proposal: "ÄÃ£ gá»­i Ä‘á» xuáº¥t test",
-  approve_testing: "Leader Ä‘Ã£ duyá»‡t cháº¡y test",
-  request_proposal_changes: "Leader yÃªu cáº§u sá»­a Ä‘á» xuáº¥t",
-  submit_test_results: "ÄÃ£ gá»­i káº¿t quáº£ Ä‘á»ƒ káº¿t luáº­n",
-  request_more_testing: "Leader yÃªu cáº§u test thÃªm",
-  approve_import: "Leader káº¿t luáº­n nháº­p sáº£n pháº©m",
-  reject_import: "Leader káº¿t luáº­n khÃ´ng nháº­p",
-  reassign_marketer: "Leader Ä‘Ã£ chuyá»ƒn ngÆ°á»i phá»¥ trÃ¡ch",
+  submit_purchase_check: "Đã gửi Mua hàng check giá",
+  approve_purchase_check: "Mua hàng đã duyệt thông tin giá",
+  request_purchase_changes: "Mua hàng yêu cầu bổ sung",
+  submit_test_proposal: "Đã gửi đề xuất test",
+  approve_testing: "Leader đã duyệt chạy test",
+  request_proposal_changes: "Leader yêu cầu sửa đề xuất",
+  submit_test_results: "Đã gửi kết quả để kết luận",
+  request_more_testing: "Leader yêu cầu test thêm",
+  approve_import: "Leader kết luận nhập sản phẩm",
+  reject_import: "Leader kết luận không nhập",
+  reassign_marketer: "Leader đã chuyển người phụ trách",
 };
 
 function assertRole(actor: ProductTestActor, role: string, productCase: any) {
   if (role === "marketing") {
     if (!actorHas(actor, PRODUCT_TEST_PERMS.marketing))
-      throw Object.assign(new Error("KhÃ´ng cÃ³ quyá»n MKT"), { status: 403 });
+      throw Object.assign(new Error("Không có quyền MKT"), { status: 403 });
     if (!actor.is_super && productCase.assignee_email !== actor.email)
       throw Object.assign(
-        new Error("Chá»‰ MKT phá»¥ trÃ¡ch Ä‘Æ°á»£c thá»±c hiá»‡n"),
+        new Error("Chỉ MKT phụ trách được thực hiện"),
         { status: 403 },
       );
     return;
@@ -49,7 +49,7 @@ function assertRole(actor: ProductTestActor, role: string, productCase: any) {
       : PRODUCT_TEST_PERMS.approve;
   if (!actorHas(actor, permission))
     throw Object.assign(
-      new Error("KhÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y"),
+      new Error("Không có quyền thực hiện thao tác này"),
       { status: 403 },
     );
 }
@@ -59,6 +59,19 @@ async function assertPrerequisites(
   caseId: string,
   action: ProductTestAction,
 ) {
+  if (action === "submit_purchase_check") {
+    const check = await client.query(
+      `SELECT supplier_link,description FROM product_purchase_check WHERE case_id=$1 AND deleted_at IS NULL`,
+      [caseId],
+    );
+    const row = check.rows[0];
+    if (!row?.supplier_link || !row?.description) {
+      throw Object.assign(
+        new Error("Cần có link nguồn hàng và mô tả trước khi gửi Mua hàng"),
+        { status: 400 },
+      );
+    }
+  }
   if (action === "approve_purchase_check") {
     const check = await client.query(
       `SELECT conclusion,landed_price_per_unit,landed_cost FROM product_purchase_check WHERE case_id=$1 AND deleted_at IS NULL`,
@@ -70,7 +83,7 @@ async function assertPrerequisites(
       (row.landed_price_per_unit === null && row.landed_cost === null)
     ) {
       throw Object.assign(
-        new Error("Cáº§n cÃ³ káº¿t luáº­n vÃ  giÃ¡ vá»‘n trÆ°á»›c khi duyá»‡t"),
+        new Error("Cần có kết luận và giá vốn trước khi duyệt"),
         { status: 400 },
       );
     }
@@ -83,7 +96,7 @@ async function assertPrerequisites(
     const row = proposal.rows[0];
     if (!row?.usp || !row?.combo_json || !row?.landing_url) {
       throw Object.assign(
-        new Error("Äá» xuáº¥t cáº§n Ä‘á»§ USP, Combo vÃ  Landing"),
+        new Error("Đề xuất cần đủ USP, Combo và Landing"),
         { status: 400 },
       );
     }
@@ -108,7 +121,7 @@ async function assertPrerequisites(
     );
     if (!count.rows[0]?.total)
       throw Object.assign(
-        new Error("Cáº§n Ã­t nháº¥t má»™t dÃ²ng káº¿t quáº£ test"),
+        new Error("Cần ít nhất một dòng kết quả test"),
         { status: 400 },
       );
   }
@@ -121,7 +134,7 @@ async function assertPrerequisites(
     if (!count.rows[0]?.total || count.rows[0]?.pending) {
       throw Object.assign(
         new Error(
-          "Leader cáº§n Ä‘Ã¡nh giÃ¡ táº¥t cáº£ dÃ²ng test trÆ°á»›c khi káº¿t luáº­n",
+          "Leader cần đánh giá tất cả dòng test trước khi kết luận",
         ),
         { status: 400 },
       );
@@ -139,7 +152,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const action = String(body.action || "") as ProductTestAction;
     const comment = cleanText(body.comment);
     if (!version)
-      return res.status(400).json({ error: "Thiáº¿u version há»£p lá»‡" });
+      return res.status(400).json({ error: "Thiếu version hợp lệ" });
 
     await client.query("BEGIN");
     const locked = await client.query(
@@ -149,13 +162,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const productCase = locked.rows[0];
     if (!productCase) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y há»“ sÆ¡" });
+      return res.status(404).json({ error: "Không tìm thấy hồ sơ" });
     }
     if (Number(productCase.version) !== version) {
       await client.query("ROLLBACK");
       return res
         .status(409)
-        .json({ error: "Há»“ sÆ¡ Ä‘Ã£ Ä‘Æ°á»£c ngÆ°á»i khÃ¡c cáº­p nháº­t" });
+        .json({ error: "Hồ sơ đã được người khác cập nhật" });
     }
 
     const transition = getTransition(action, productCase.status);
@@ -171,7 +184,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       assigneeName = cleanText(body.assignee_name, 300) || assigneeEmail;
       if (!assigneeEmail)
         throw Object.assign(
-          new Error("Thiáº¿u email ngÆ°á»i phá»¥ trÃ¡ch má»›i"),
+          new Error("Thiếu email người phụ trách mới"),
           { status: 400 },
         );
     }

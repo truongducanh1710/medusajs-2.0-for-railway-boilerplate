@@ -19,6 +19,20 @@ export type ProductTestStatus =
   | "import_approved"
   | "import_rejected";
 
+// Single source of truth for status wording, shared by the list page and drawer.
+export const STATUS_LABELS: Record<ProductTestStatus, string> = {
+  draft: "Nháp",
+  awaiting_purchase_check: "Chờ check giá",
+  purchase_changes_requested: "Cần bổ sung check giá",
+  proposal_draft: "Soạn đề xuất",
+  awaiting_test_approval: "Chờ duyệt test",
+  proposal_changes_requested: "Cần sửa đề xuất",
+  testing: "Đang test",
+  awaiting_final_decision: "Chờ kết luận",
+  import_approved: "Duyệt nhập",
+  import_rejected: "Không nhập",
+};
+
 export type ProductTestDecision = "import_approved" | "import_rejected" | null;
 
 export interface ProductTestPurchaseCheck {

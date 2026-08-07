@@ -50,6 +50,31 @@ function requirePerm(...needed: string[]) {
   }
 }
 
+// Like requirePerm but passes when the user holds ANY of the listed perms.
+// Use when one route serves several roles and the handler enforces the rest.
+function requireAnyPerm(...accepted: string[]) {
+  return async (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+    try {
+      const auth = (req as any).auth_context
+      if (auth?.actor_type !== "user" || !auth?.actor_id) {
+        return res.status(401).json({ error: "Unauthenticated" })
+      }
+      const userModule = req.scope.resolve(Modules.USER)
+      const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
+
+      if (user.email && user.email === process.env.SUPER_ADMIN_EMAIL) return next()
+
+      const perms = resolveUserPerms(user.metadata)
+      if (!accepted.some((p) => perms.includes(p))) {
+        return res.status(403).json({ error: "Forbidden", required: accepted, current: perms })
+      }
+      next()
+    } catch {
+      return res.status(403).json({ error: "Forbidden" })
+    }
+  }
+}
+
 // CORS middleware cho Chrome Extension
 const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
   const origin = req.headers.origin || ""
@@ -146,7 +171,8 @@ export default defineMiddlewares({
     { matcher: "/admin/product-tests/:id/daily-results", method: ["GET"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/product-tests", method: ["POST"], middlewares: [requirePerm("page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id", method: ["PATCH"], middlewares: [requirePerm("page.product-test.marketing")] },
-    { matcher: "/admin/product-tests/:id/purchase-check", method: ["PUT"], middlewares: [requirePerm("page.product-test.purchasing")] },
+    // MKT drafts sourcing info before submitting; Purchasing fills in pricing after. Handler enforces which stage allows whom.
+    { matcher: "/admin/product-tests/:id/purchase-check", method: ["PUT"], middlewares: [requireAnyPerm("page.product-test.purchasing", "page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id/proposal", method: ["PUT"], middlewares: [requirePerm("page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id/daily-results", method: ["POST"], middlewares: [requirePerm("page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id/daily-results/:resultId", method: ["PATCH"], middlewares: [requirePerm("page.product-test.marketing")] },

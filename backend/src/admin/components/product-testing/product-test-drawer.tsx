@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ProductTestingClient } from "./client";
+import { STATUS_LABELS } from "./types";
 import type {
   ProductTestCaseRecord,
   ProductTestDailyResult,
@@ -145,12 +146,23 @@ export function ProductTestDrawer({
     );
   const record = detail.case as ProductTestCaseRecord;
   const permissions = detail.permissions;
+  // MKT drafts sourcing info before submitting; Purchasing owns it afterwards.
+  const marketingDraftStage = ["draft", "purchase_changes_requested"].includes(
+    record.status,
+  );
   const purchaseEditable =
-    permissions.can_edit_purchase &&
-    record.status === "awaiting_purchase_check";
+    (permissions.can_edit_purchase &&
+      record.status === "awaiting_purchase_check") ||
+    (permissions.can_edit_marketing && marketingDraftStage);
   const proposalEditable =
     permissions.can_edit_marketing &&
-    ["proposal_draft", "proposal_changes_requested"].includes(record.status);
+    [
+      "draft",
+      "purchase_changes_requested",
+      "awaiting_purchase_check",
+      "proposal_draft",
+      "proposal_changes_requested",
+    ].includes(record.status);
   const dailyEditable =
     permissions.can_edit_marketing && record.status === "testing";
 
@@ -182,20 +194,38 @@ export function ProductTestDrawer({
             <small>{record.code}</small>
             <h2>{record.product_name}</h2>
             <p>
-              {record.assignee_name} · v{record.version}
+              <span className={`pt-status s-${record.status}`}>
+                {STATUS_LABELS[record.status] || record.status}
+              </span>
+              <span>MKT: {record.assignee_name}</span>
+              <span>v{record.version}</span>
             </p>
           </div>
           <button onClick={onClose}>×</button>
         </header>
         {error && <div className="pt-drawer-error">{error}</div>}
         <div className="pt-drawer-body">
-          <section className="pt-section">
+          <section
+            className={`pt-section${purchaseEditable ? "" : " is-locked"}`}
+          >
             <div className="pt-section-title">
               <div>
-                <span>1</span>
+                <span className="pt-step">1</span>
                 <h3>Check giá</h3>
               </div>
-              <small>Ảnh gốc được quản lý tại bước này</small>
+              <OwnerBadge
+                editable={purchaseEditable}
+                editableLabel={
+                  marketingDraftStage
+                    ? "Bạn đang nhập (MKT)"
+                    : "Bạn đang nhập (Mua hàng)"
+                }
+                lockedLabel={
+                  record.status === "awaiting_purchase_check"
+                    ? "Chờ Mua hàng nhập giá"
+                    : "Đã khoá ở bước này"
+                }
+              />
             </div>
             <div className="pt-images">
               {purchase.image_urls.map((url) => (
@@ -318,13 +348,19 @@ export function ProductTestDrawer({
             )}
           </section>
 
-          <section className="pt-section">
+          <section
+            className={`pt-section${proposalEditable ? "" : " is-locked"}`}
+          >
             <div className="pt-section-title">
               <div>
-                <span>2</span>
+                <span className="pt-step">2</span>
                 <h3>Đề xuất test</h3>
               </div>
-              <small>Không dùng cột ngân sách</small>
+              <OwnerBadge
+                editable={proposalEditable}
+                editableLabel="Bạn đang nhập (MKT)"
+                lockedLabel="Chờ Leader duyệt"
+              />
             </div>
             <TextArea
               label="USP sản phẩm"
@@ -387,13 +423,17 @@ export function ProductTestDrawer({
             )}
           </section>
 
-          <section className="pt-section">
+          <section className={`pt-section${dailyEditable ? "" : " is-locked"}`}>
             <div className="pt-section-title">
               <div>
-                <span>3</span>
+                <span className="pt-step">3</span>
                 <h3>Kết quả test nhiều ngày</h3>
               </div>
-              <small>Một sản phẩm có thể có nhiều dòng cùng ngày</small>
+              <OwnerBadge
+                editable={dailyEditable}
+                editableLabel="Bạn đang nhập (MKT)"
+                lockedLabel="Mở khi camp bắt đầu chạy"
+              />
             </div>
             <div className="pt-linked">
               <LinkedImage
@@ -728,6 +768,23 @@ function TextArea({
     </label>
   );
 }
+// Tells the reader at a glance whether this step is theirs to fill in right
+// now, and if not, who it is waiting on.
+function OwnerBadge({
+  editable,
+  editableLabel,
+  lockedLabel,
+}: {
+  editable: boolean;
+  editableLabel: string;
+  lockedLabel: string;
+}) {
+  return (
+    <span className={`pt-owner ${editable ? "editable" : "locked"}`}>
+      {editable ? `✎ ${editableLabel}` : `🔒 ${lockedLabel}`}
+    </span>
+  );
+}
 function LinkedImage({ url }: { url?: string }) {
   return url ? (
     <img src={url} alt="Ảnh nối từ Check giá" />
@@ -744,6 +801,72 @@ function vnMoney(value: number | null | undefined) {
     : `${new Intl.NumberFormat("vi-VN").format(Math.round(value))}đ`;
 }
 
+// Colours come from Medusa's admin design tokens so the drawer follows the
+// active light/dark theme instead of hardcoding its own palette.
 const DRAWER_CSS = `
-.pt-drawer-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.32);z-index:900;display:flex;justify-content:flex-end}.pt-drawer{height:100%;width:min(900px,94vw);background:#f7f8fa;box-shadow:-10px 0 40px rgba(15,23,42,.18);overflow:auto;color:#1f2937;font:14px Inter,ui-sans-serif,system-ui,sans-serif}.pt-drawer *{box-sizing:border-box}.pt-drawer-head{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid #e5e7eb;padding:17px 20px;display:flex;justify-content:space-between}.pt-drawer-head small,.pt-drawer-head p{color:#6b7280}.pt-drawer-head h2{font-size:20px;margin:2px 0}.pt-drawer-head p{margin:0}.pt-drawer-head>button{border:0;background:#f3f4f6;border-radius:7px;width:34px;height:34px;font-size:22px;cursor:pointer}.pt-drawer-body{padding:16px}.pt-drawer-loading{padding:50px;text-align:center}.pt-drawer-error{position:sticky;top:85px;z-index:3;margin:10px 16px;background:#fef2f2;color:#b91c1c;padding:10px;border-radius:7px}.pt-section{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:14px}.pt-section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.pt-section-title>div{display:flex;align-items:center;gap:8px}.pt-section-title span{display:grid;place-items:center;width:24px;height:24px;border-radius:99px;background:#dbeafe;color:#1d4ed8;font-weight:700}.pt-section-title h3{margin:0;font-size:16px}.pt-section-title small{color:#6b7280}.pt-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pt-form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.pt-field{display:grid;gap:5px;margin:9px 0;color:#4b5563;font-weight:600;font-size:12px}.pt-field input,.pt-field textarea,.pt-evaluate input,.pt-evaluate select{width:100%;border:1px solid #d1d5db;border-radius:7px;background:#fff;color:#111827;padding:8px;font:13px inherit}.pt-field textarea{min-height:74px;resize:vertical}.pt-field input:disabled,.pt-field textarea:disabled{background:#f6f7f8;color:#6b7280}.pt-images{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.pt-images button,.pt-upload{width:64px;height:64px;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;padding:2px;cursor:pointer}.pt-images button.selected{border:2px solid #2563eb}.pt-images img{width:100%;height:100%;object-fit:cover;border-radius:5px}.pt-upload{display:grid;place-items:center;color:#2563eb;font-weight:600}.pt-upload input{display:none}.pt-save-row{display:flex;justify-content:flex-end;margin-top:12px}.pt-drawer-primary{border:0;border-radius:7px;background:#2563eb;color:#fff;padding:9px 13px;font-weight:600;cursor:pointer}.pt-linked{display:grid;grid-template-columns:70px 1fr 1fr auto;gap:12px;align-items:center;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:10px;margin-bottom:14px}.pt-linked img,.pt-linked-image{width:60px;height:60px;border-radius:7px;object-fit:cover;background:#e5e7eb}.pt-linked-image{display:grid;place-items:center;text-align:center;font-size:10px;color:#6b7280}.pt-linked b{display:block;font-size:12px}.pt-linked p,.pt-linked a{display:block;margin:4px 0 0;color:#6b7280;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pt-linked a{color:#2563eb}.pt-linked>span{font-size:11px;background:#e5e7eb;color:#6b7280;border-radius:99px;padding:4px 7px}.pt-daily-form{background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:12px}.pt-daily-form>.pt-drawer-primary{margin-top:8px}.pt-daily-table{overflow:auto}.pt-daily-table table{border-collapse:collapse;width:100%;min-width:780px}.pt-daily-table th,.pt-daily-table td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:12px}.pt-daily-table th{color:#6b7280;background:#f9fafb}.pt-daily-table td:last-child{min-width:250px}.pt-daily-table td small{display:block;color:#6b7280;margin-top:3px}.pt-evaluate{display:grid;grid-template-columns:110px 1fr auto;gap:5px}.pt-evaluate button,.pt-action-buttons button{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:7px 9px;cursor:pointer;font-weight:600}.pt-action-buttons{display:flex;gap:8px;flex-wrap:wrap}.pt-action-buttons button.success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}.pt-action-buttons button.danger{background:#fef2f2;color:#b91c1c;border-color:#fecaca}.pt-action-buttons button:disabled{opacity:.45;cursor:not-allowed}@media(max-width:700px){.pt-form-grid,.pt-form-grid.three{grid-template-columns:1fr}.pt-linked{grid-template-columns:60px 1fr}.pt-linked>span{display:none}}
+@keyframes ptDrawerIn{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}
+.pt-drawer-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.42);z-index:900;display:flex;justify-content:flex-end;backdrop-filter:blur(1px)}
+.pt-drawer{height:100%;width:min(940px,96vw);background:var(--bg-subtle,#f7f8fa);box-shadow:-10px 0 40px rgba(15,23,42,.18);overflow:auto;color:var(--fg-base,#1f2937);font:14px Inter,ui-sans-serif,system-ui,sans-serif;animation:ptDrawerIn .22s cubic-bezier(.21,1.02,.73,1)}
+.pt-drawer *{box-sizing:border-box}
+.pt-drawer-head{position:sticky;top:0;z-index:2;background:var(--bg-base,#fff);border-bottom:1px solid var(--border-base,#e5e7eb);padding:16px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pt-drawer-head small{color:var(--fg-muted,#6b7280);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.pt-drawer-head h2{font-size:19px;margin:3px 0 4px;color:var(--fg-base,#111827);line-height:1.3}
+.pt-drawer-head p{margin:0;color:var(--fg-subtle,#6b7280);font-size:12px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.pt-drawer-head>button{border:0;background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#6b7280);border-radius:7px;width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;flex-shrink:0}
+.pt-drawer-head>button:hover{background:var(--bg-field-hover,#e5e7eb)}
+.pt-drawer-body{padding:16px}
+.pt-drawer-loading{padding:50px;text-align:center;color:var(--fg-muted,#6b7280)}
+.pt-drawer-error{position:sticky;top:88px;z-index:3;margin:10px 16px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:10px 12px;border-radius:8px;font-size:13px}
+.pt-section{background:var(--bg-base,#fff);border:1px solid var(--border-base,#e5e7eb);border-radius:10px;padding:16px;margin-bottom:14px}
+.pt-section.is-locked{opacity:.72}
+.pt-section-title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.pt-section-title>div{display:flex;align-items:center;gap:8px}
+.pt-section-title span.pt-step{display:grid;place-items:center;width:23px;height:23px;border-radius:99px;background:#dbeafe;color:#1d4ed8;font-weight:700;font-size:12px;flex-shrink:0}
+.pt-section-title h3{margin:0;font-size:15px;color:var(--fg-base,#111827)}
+.pt-section-title small{color:var(--fg-muted,#6b7280);font-size:12px}
+.pt-owner{font-size:11px;border-radius:99px;padding:3px 9px;font-weight:600;white-space:nowrap}
+.pt-owner.editable{background:#ecfdf5;color:#047857}
+.pt-owner.locked{background:var(--bg-field,#f3f4f6);color:var(--fg-muted,#6b7280)}
+.pt-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pt-form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pt-field{display:grid;gap:5px;margin:9px 0;color:var(--fg-subtle,#4b5563);font-weight:600;font-size:12px}
+.pt-field input,.pt-field textarea,.pt-evaluate input,.pt-evaluate select{width:100%;border:1px solid var(--border-base,#d1d5db);border-radius:7px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);padding:8px;font:13px inherit;font-weight:400;outline:none;transition:border-color .12s,box-shadow .12s}
+.pt-field input:focus,.pt-field textarea:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
+.pt-field textarea{min-height:74px;resize:vertical;line-height:1.5}
+.pt-field input:disabled,.pt-field textarea:disabled{background:var(--bg-disabled,#f6f7f8);color:var(--fg-muted,#9ca3af);cursor:not-allowed}
+.pt-images{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.pt-images button,.pt-upload{width:64px;height:64px;border:1px solid var(--border-base,#d1d5db);border-radius:8px;background:var(--bg-field,#f9fafb);padding:2px;cursor:pointer}
+.pt-images button.selected{border:2px solid #2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.pt-images img{width:100%;height:100%;object-fit:cover;border-radius:5px;display:block}
+.pt-upload{display:grid;place-items:center;color:#2563eb;font-weight:600;font-size:12px}
+.pt-upload input{display:none}
+.pt-save-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}
+.pt-hint{color:var(--fg-muted,#6b7280);font-size:12px;margin-right:auto}
+.pt-drawer-primary{border:0;border-radius:7px;background:#2563eb;color:#fff;padding:9px 14px;font-weight:600;font-size:13px;cursor:pointer;transition:background .12s}
+.pt-drawer-primary:hover:not(:disabled){background:#1d4ed8}
+.pt-drawer-primary:disabled{opacity:.5;cursor:not-allowed}
+.pt-linked{display:grid;grid-template-columns:70px 1fr 1fr auto;gap:12px;align-items:center;background:var(--bg-subtle,#f8fafc);border:1px dashed var(--border-strong,#cbd5e1);border-radius:8px;padding:10px;margin-bottom:14px}
+.pt-linked img,.pt-linked-image{width:60px;height:60px;border-radius:7px;object-fit:cover;background:var(--bg-field,#e5e7eb)}
+.pt-linked-image{display:grid;place-items:center;text-align:center;font-size:10px;color:var(--fg-muted,#6b7280)}
+.pt-linked b{display:block;font-size:12px;color:var(--fg-base,#374151)}
+.pt-linked p,.pt-linked a{display:block;margin:4px 0 0;color:var(--fg-muted,#6b7280);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-linked a{color:#2563eb}
+.pt-linked>span{font-size:11px;background:var(--bg-field,#e5e7eb);color:var(--fg-muted,#6b7280);border-radius:99px;padding:4px 8px;white-space:nowrap}
+.pt-daily-form{background:var(--bg-subtle,#f8fafc);border:1px solid var(--border-base,#e5e7eb);padding:12px;border-radius:8px;margin-bottom:12px}
+.pt-daily-form>.pt-drawer-primary{margin-top:10px}
+.pt-daily-table{overflow:auto;border:1px solid var(--border-base,#e5e7eb);border-radius:8px}
+.pt-daily-table table{border-collapse:collapse;width:100%;min-width:780px}
+.pt-daily-table th,.pt-daily-table td{padding:9px;border-bottom:1px solid var(--border-base,#eef0f2);text-align:left;font-size:12px}
+.pt-daily-table tr:last-child td{border-bottom:0}
+.pt-daily-table th{color:var(--fg-muted,#6b7280);background:var(--bg-subtle,#f9fafb);font-weight:600;white-space:nowrap}
+.pt-daily-table td:last-child{min-width:250px}
+.pt-daily-table td small{display:block;color:var(--fg-muted,#6b7280);margin-top:3px}
+.pt-evaluate{display:grid;grid-template-columns:110px 1fr auto;gap:5px}
+.pt-evaluate button,.pt-action-buttons button{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:7px;padding:8px 11px;cursor:pointer;font-weight:600;font-size:13px;transition:filter .12s}
+.pt-evaluate button:hover:not(:disabled),.pt-action-buttons button:hover:not(:disabled){filter:brightness(.96)}
+.pt-action-buttons{display:flex;gap:8px;flex-wrap:wrap}
+.pt-action-buttons button.success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.pt-action-buttons button.danger{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.pt-action-buttons button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:700px){.pt-form-grid,.pt-form-grid.three{grid-template-columns:1fr}.pt-linked{grid-template-columns:60px 1fr}.pt-linked>span{display:none}}
 `;

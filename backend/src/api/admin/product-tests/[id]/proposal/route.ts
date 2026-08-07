@@ -53,10 +53,16 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
         .status(403)
         .json({ error: "Chỉ MKT phụ trách được sửa đề xuất" });
     }
+    // MKT may draft the proposal from the very start, so the case can be
+    // submitted with pricing and proposal already filled in.
     if (
-      !["proposal_draft", "proposal_changes_requested"].includes(
-        productCase.status,
-      )
+      ![
+        "draft",
+        "purchase_changes_requested",
+        "awaiting_purchase_check",
+        "proposal_draft",
+        "proposal_changes_requested",
+      ].includes(productCase.status)
     ) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Đề xuất đã bị khóa" });
