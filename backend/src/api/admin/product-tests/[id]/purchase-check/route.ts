@@ -57,37 +57,29 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
     }
-    // Marketing drafts the sourcing info; Purchasing owns it after submission.
-    const MARKETING_EDIT_STATUSES = ["draft", "purchase_changes_requested"];
-    const isMarketingStage = MARKETING_EDIT_STATUSES.includes(
-      productCase.status,
-    );
-    const isPurchasingStage = productCase.status === "awaiting_purchase_check";
-    if (!isMarketingStage && !isPurchasingStage) {
+    // Both the assigned MKT and Purchasing may edit Check giá at any stage;
+    // only the two terminal decisions lock it for good, preserving what the
+    // leader actually saw when they decided.
+    const LOCKED_STATUSES = ["import_approved", "import_rejected"];
+    if (LOCKED_STATUSES.includes(productCase.status)) {
       await client.query("ROLLBACK");
       return res
         .status(400)
-        .json({ error: "Không thể sửa Check giá ở trạng thái hiện tại" });
+        .json({ error: "Hồ sơ đã kết luận, không thể sửa Check giá" });
     }
-    if (isMarketingStage) {
-      if (!actorHas(actor, PRODUCT_TEST_PERMS.marketing)) {
-        await client.query("ROLLBACK");
-        return res
-          .status(403)
-          .json({ error: "Chỉ MKT được sửa Check giá ở bước này" });
-      }
-      if (productCase.assignee_email !== actor.email && !actor.is_super) {
-        await client.query("ROLLBACK");
-        return res
-          .status(403)
-          .json({ error: "Chỉ MKT phụ trách được sửa hồ sơ này" });
-      }
-    } else if (!actorHas(actor, PRODUCT_TEST_PERMS.purchasing)) {
+    const isMarketer =
+      actorHas(actor, PRODUCT_TEST_PERMS.marketing) &&
+      (actor.is_super || productCase.assignee_email === actor.email);
+    const isPurchaser = actorHas(actor, PRODUCT_TEST_PERMS.purchasing);
+    if (!isMarketer && !isPurchaser) {
       await client.query("ROLLBACK");
       return res
         .status(403)
-        .json({ error: "Chỉ Mua hàng được sửa Check giá ở bước này" });
+        .json({ error: "Chỉ MKT phụ trách hoặc Mua hàng được sửa hồ sơ này" });
     }
+    // Attribute "checked" to whichever role actually made this edit, not the
+    // case's current stage — either side can edit at any open stage now.
+    const actsAsPurchaser = isPurchaser;
 
     const images = Array.isArray(body.image_urls)
       ? body.image_urls
@@ -116,8 +108,8 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       cleanText(body.note),
       JSON.stringify(images),
       body.representative_image_url || images[0] || null,
-      // Only a real Purchasing pass counts as "checked"; an MKT draft does not.
-      isPurchasingStage ? actor.email : null,
+      // Only a real Purchasing pass counts as "checked"; an MKT edit does not.
+      actsAsPurchaser ? actor.email : null,
     ];
     const result = await client.query(
       `INSERT INTO product_purchase_check
@@ -140,8 +132,8 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       `UPDATE product_test_case SET purchaser_email=COALESCE($1,purchaser_email),
        purchaser_name=COALESCE($2,purchaser_name),version=version+1,updated_at=now() WHERE id=$3`,
       [
-        isPurchasingStage ? actor.email : null,
-        isPurchasingStage ? actor.name : null,
+        actsAsPurchaser ? actor.email : null,
+        actsAsPurchaser ? actor.name : null,
         req.params.id,
       ],
     );

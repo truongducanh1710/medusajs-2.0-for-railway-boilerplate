@@ -2,6 +2,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ulid } from "ulid";
 import { getPool } from "../../../../../lib/db";
 import {
+  actorHas,
   apiError,
   cleanText,
   getProductTestActor,
@@ -9,7 +10,6 @@ import {
   parseVersion,
   PRODUCT_TEST_PERMS,
   rejectBodyFields,
-  requireActorPermission,
 } from "../../_lib";
 import { mapProposal } from "../../_query";
 
@@ -18,7 +18,14 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   try {
     const actor = await getProductTestActor(req);
     if (!actor) return res.status(401).json({ error: "Unauthenticated" });
-    requireActorPermission(actor, PRODUCT_TEST_PERMS.marketing);
+    if (
+      !actorHas(actor, PRODUCT_TEST_PERMS.marketing) &&
+      !actorHas(actor, PRODUCT_TEST_PERMS.purchasing)
+    ) {
+      return res
+        .status(403)
+        .json({ error: "Không có quyền thực hiện thao tác này" });
+    }
     const body = req.body as any;
     rejectBodyFields(body, [
       "status",
@@ -47,25 +54,22 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
     }
-    if (productCase.assignee_email !== actor.email && !actor.is_super) {
+    const isMarketer =
+      actorHas(actor, PRODUCT_TEST_PERMS.marketing) &&
+      (actor.is_super || productCase.assignee_email === actor.email);
+    const isPurchaser = actorHas(actor, PRODUCT_TEST_PERMS.purchasing);
+    if (!isMarketer && !isPurchaser) {
       await client.query("ROLLBACK");
       return res
         .status(403)
-        .json({ error: "Chỉ MKT phụ trách được sửa đề xuất" });
+        .json({ error: "Chỉ MKT phụ trách hoặc Mua hàng được sửa đề xuất" });
     }
-    // MKT may draft the proposal from the very start, so the case can be
-    // submitted with pricing and proposal already filled in.
-    if (
-      ![
-        "draft",
-        "purchase_changes_requested",
-        "awaiting_purchase_check",
-        "proposal_draft",
-        "proposal_changes_requested",
-      ].includes(productCase.status)
-    ) {
+    // Either role may edit the proposal at any open stage; only the two
+    // terminal decisions lock it, preserving what the leader saw when they
+    // decided.
+    if (["import_approved", "import_rejected"].includes(productCase.status)) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Đề xuất đã bị khóa" });
+      return res.status(400).json({ error: "Hồ sơ đã kết luận, đề xuất đã bị khóa" });
     }
     const values = [
       req.params.id,

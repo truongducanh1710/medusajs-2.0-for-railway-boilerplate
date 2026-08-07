@@ -148,23 +148,17 @@ export function ProductTestDrawer({
     );
   const record = detail.case as ProductTestCaseRecord;
   const permissions = detail.permissions;
-  // MKT drafts sourcing info before submitting; Purchasing owns it afterwards.
-  const marketingDraftStage = ["draft", "purchase_changes_requested"].includes(
+  // MKT phụ trách and Purchasing may both edit Check giá/Đề xuất at any open
+  // stage; only the two terminal decisions lock the case for good.
+  const isConcluded = ["import_approved", "import_rejected"].includes(
     record.status,
   );
   const purchaseEditable =
-    (permissions.can_edit_purchase &&
-      record.status === "awaiting_purchase_check") ||
-    (permissions.can_edit_marketing && marketingDraftStage);
+    !isConcluded &&
+    (permissions.can_edit_purchase || permissions.can_edit_marketing);
   const proposalEditable =
-    permissions.can_edit_marketing &&
-    [
-      "draft",
-      "purchase_changes_requested",
-      "awaiting_purchase_check",
-      "proposal_draft",
-      "proposal_changes_requested",
-    ].includes(record.status);
+    !isConcluded &&
+    (permissions.can_edit_purchase || permissions.can_edit_marketing);
   const dailyEditable =
     permissions.can_edit_marketing && record.status === "testing";
 
@@ -218,15 +212,11 @@ export function ProductTestDrawer({
               <OwnerBadge
                 editable={purchaseEditable}
                 editableLabel={
-                  marketingDraftStage
-                    ? "Bạn đang nhập (MKT)"
-                    : "Bạn đang nhập (Mua hàng)"
+                  permissions.can_edit_purchase
+                    ? "Bạn đang nhập (Mua hàng)"
+                    : "Bạn đang nhập (MKT)"
                 }
-                lockedLabel={
-                  record.status === "awaiting_purchase_check"
-                    ? "Chờ Mua hàng nhập giá"
-                    : "Đã khoá ở bước này"
-                }
+                lockedLabel="Hồ sơ đã kết luận, không sửa được nữa"
               />
             </div>
             <div className="pt-images">
@@ -360,8 +350,12 @@ export function ProductTestDrawer({
               </div>
               <OwnerBadge
                 editable={proposalEditable}
-                editableLabel="Bạn đang nhập (MKT)"
-                lockedLabel="Chờ Leader duyệt"
+                editableLabel={
+                  permissions.can_edit_purchase
+                    ? "Bạn đang nhập (Mua hàng)"
+                    : "Bạn đang nhập (MKT)"
+                }
+                lockedLabel="Hồ sơ đã kết luận, không sửa được nữa"
               />
             </div>
             <TextArea
