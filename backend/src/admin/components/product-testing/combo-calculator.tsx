@@ -1,29 +1,79 @@
 import { useEffect, useMemo, useState } from "react";
 import { money, NumberField } from "./format";
 
+type ComboState = {
+  sale: number[];
+  cost: number[];
+  mix: number[];
+  returnRate: number;
+  shipFee: number;
+  codFee: number;
+  packFee: number;
+  targetLng: number;
+};
+
+function storageKey(caseId: string) {
+  return `pt-combo-calc:${caseId}`;
+}
+
+function loadSaved(caseId: string, seedCost1: number): ComboState {
+  const fallback: ComboState = {
+    sale: [0, 0, 0],
+    cost: [seedCost1, seedCost1 * 2, seedCost1 * 3],
+    mix: [80, 18, 2],
+    returnRate: 15,
+    shipFee: 16000,
+    codFee: 0,
+    packFee: 5300,
+    targetLng: 20,
+  };
+  try {
+    const raw = window.localStorage.getItem(storageKey(caseId));
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw);
+    return { ...fallback, ...saved };
+  } catch {
+    return fallback;
+  }
+}
+
 // This *is* how Giá bán and Combo get decided now — there's no separate
 // manual field for either. sale_price = the weighted-average Giá bán trung
 // bình below; combo_json = an auto-generated three-line summary of the same
-// tiers. Every keystroke recalculates and reports upward via onResult, so
-// the proposal always reflects the calculator's current numbers.
+// tiers. Every keystroke recalculates; onResult only fires once you press
+// Lưu đề xuất (the parent wires it into that save call), so typing here
+// never silently overwrites a value you haven't chosen to commit yet.
 // costHint seeds "Giá vốn đơn 1" from the landed cost Purchasing already
 // entered in Check giá, since that's the real unit cost.
+//
+// State survives a reload: every change is mirrored to localStorage under
+// a key scoped to this case, since these numbers can take a while to dial
+// in and losing them to an accidental refresh would mean redoing the work.
 export function ComboCalculator({
+  caseId,
   costHint,
+  savedSalePrice,
   onResult,
 }: {
+  caseId: string;
   costHint: number | null;
+  savedSalePrice: number | null;
   onResult: (salePrice: number, comboSummary: string) => void;
 }) {
   const seedCost1 = costHint && costHint > 0 ? Math.round(costHint) : 0;
-  const [sale, setSale] = useState([0, 0, 0]);
-  const [cost, setCost] = useState([seedCost1, seedCost1 * 2, seedCost1 * 3]);
-  const [mix, setMix] = useState([80, 18, 2]);
-  const [returnRate, setReturnRate] = useState(15);
-  const [shipFee, setShipFee] = useState(16000);
-  const [codFee, setCodFee] = useState(0);
-  const [packFee, setPackFee] = useState(5300);
-  const [targetLng, setTargetLng] = useState(20);
+  const [state, setState] = useState<ComboState>(() =>
+    loadSaved(caseId, seedCost1),
+  );
+  const { sale, cost, mix, returnRate, shipFee, codFee, packFee, targetLng } =
+    state;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(storageKey(caseId), JSON.stringify(state));
+    } catch {
+      // Best-effort only — a full/blocked localStorage must not break typing.
+    }
+  }, [caseId, state]);
 
   const calc = useMemo(() => {
     const mixSum = mix.reduce((a, b) => a + b, 0) || 1;
@@ -41,33 +91,36 @@ export function ComboCalculator({
   }, [sale, cost, mix, returnRate, shipFee, codFee, packFee, targetLng]);
 
   const tierLabel = ["Đơn 1", "Đơn đôi", "Đơn ba"];
+  const comboSummary = tierLabel
+    .map((label, i) => (sale[i] > 0 ? `${label}: ${money(sale[i])}` : null))
+    .filter(Boolean)
+    .join(" – ");
 
-  useEffect(() => {
-    if (calc.saleAvg <= 0) return;
-    const summary = tierLabel
-      .map((label, i) => (sale[i] > 0 ? `${label}: ${money(sale[i])}` : null))
-      .filter(Boolean)
-      .join(" – ");
-    onResult(Math.round(calc.saleAvg), summary);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calc.saleAvg, sale[0], sale[1], sale[2]]);
+  // "Unsaved" means the calculator currently disagrees with what's on the
+  // proposal — either nothing has been applied yet, or the numbers moved
+  // since the last apply. Comparing computed vs. saved (not a dirty flag)
+  // means a value that happens to match after a reload doesn't false-alarm.
+  const unsaved =
+    calc.saleAvg > 0 &&
+    Math.round(calc.saleAvg) !== Math.round(savedSalePrice || 0);
 
-  const setAt = (
-    arr: number[],
-    setter: (v: number[]) => void,
-    i: number,
-    v: string,
-  ) => {
-    const next = [...arr];
+  const setAt = (key: "sale" | "cost" | "mix", i: number, v: string) => {
+    const next = [...state[key]];
     next[i] = v === "" ? 0 : Number(v);
-    setter(next);
+    setState({ ...state, [key]: next });
   };
 
   return (
     <div className="pt-combo">
       <div className="pt-combo-head">
         <span>🧮 Tạm tính combo</span>
-        <small>Chỉ để tính thử — không lưu vào hồ sơ</small>
+        {unsaved ? (
+          <small className="pt-combo-unsaved">
+            ⚠ Chưa áp dụng vào Giá bán — bấm "Lưu đề xuất" để lưu
+          </small>
+        ) : (
+          <small>Số liệu tự lưu ở máy này, không mất khi tải lại trang</small>
+        )}
       </div>
 
       <div className="pt-combo-tri-head">
@@ -82,7 +135,7 @@ export function ComboCalculator({
           <NumberField
             key={i}
             value={v || ""}
-            onChange={(value) => setAt(sale, setSale, i, value)}
+            onChange={(value) => setAt("sale", i, value)}
           />
         ))}
       </div>
@@ -92,7 +145,7 @@ export function ComboCalculator({
           <NumberField
             key={i}
             value={v || ""}
-            onChange={(value) => setAt(cost, setCost, i, value)}
+            onChange={(value) => setAt("cost", i, value)}
           />
         ))}
       </div>
@@ -103,7 +156,7 @@ export function ComboCalculator({
             key={i}
             type="number"
             value={v || ""}
-            onChange={(e) => setAt(mix, setMix, i, e.target.value)}
+            onChange={(e) => setAt("mix", i, e.target.value)}
           />
         ))}
       </div>
@@ -121,28 +174,36 @@ export function ComboCalculator({
           <input
             type="number"
             value={returnRate || ""}
-            onChange={(e) => setReturnRate(Number(e.target.value) || 0)}
+            onChange={(e) =>
+              setState({ ...state, returnRate: Number(e.target.value) || 0 })
+            }
           />
         </label>
         <label>
           <span>Phí ship (đ)</span>
           <NumberField
             value={shipFee || ""}
-            onChange={(value) => setShipFee(Number(value) || 0)}
+            onChange={(value) =>
+              setState({ ...state, shipFee: Number(value) || 0 })
+            }
           />
         </label>
         <label>
           <span>Phí thu hộ COD (đ)</span>
           <NumberField
             value={codFee || ""}
-            onChange={(value) => setCodFee(Number(value) || 0)}
+            onChange={(value) =>
+              setState({ ...state, codFee: Number(value) || 0 })
+            }
           />
         </label>
         <label>
           <span>Phí đóng gói/lưu kho (đ)</span>
           <NumberField
             value={packFee || ""}
-            onChange={(value) => setPackFee(Number(value) || 0)}
+            onChange={(value) =>
+              setState({ ...state, packFee: Number(value) || 0 })
+            }
           />
         </label>
         <label>
@@ -150,7 +211,9 @@ export function ComboCalculator({
           <input
             type="number"
             value={targetLng || ""}
-            onChange={(e) => setTargetLng(Number(e.target.value) || 0)}
+            onChange={(e) =>
+              setState({ ...state, targetLng: Number(e.target.value) || 0 })
+            }
           />
         </label>
       </div>
@@ -209,9 +272,19 @@ export function ComboCalculator({
         </div>
       </div>
 
-      <p className="pt-combo-sync">
-        ✓ Giá bán và Combo trong đề xuất tự đồng bộ theo bảng này khi bạn Lưu.
-      </p>
+      {calc.saleAvg > 0 && (
+        <div className="pt-combo-apply">
+          <button
+            type="button"
+            className={unsaved ? "pt-drawer-primary" : "pt-ghost"}
+            onClick={() => onResult(Math.round(calc.saleAvg), comboSummary)}
+          >
+            {unsaved
+              ? `Áp dụng ${money(calc.saleAvg)} vào Giá bán ↓`
+              : "Đã áp dụng vào Giá bán ✓"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

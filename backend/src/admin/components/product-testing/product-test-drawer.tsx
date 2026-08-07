@@ -132,6 +132,18 @@ export function ProductTestDrawer({
     load();
   }, [caseId]);
 
+  if (!detail)
+    return (
+      <div className="pt-drawer-backdrop" onMouseDown={onClose}>
+        <aside className="pt-drawer" onMouseDown={(e) => e.stopPropagation()}>
+          <style>{DRAWER_CSS}</style>
+          <div className="pt-drawer-loading">{error || "Đang tải hồ sơ…"}</div>
+        </aside>
+      </div>
+    );
+  const record = detail.case as ProductTestCaseRecord;
+  const permissions = detail.permissions;
+
   async function run(label: string, operation: () => Promise<unknown>) {
     setBusy(label);
     setError("");
@@ -160,18 +172,6 @@ export function ProductTestDrawer({
       setBusy("");
     }
   }
-
-  if (!detail)
-    return (
-      <div className="pt-drawer-backdrop" onMouseDown={onClose}>
-        <aside className="pt-drawer" onMouseDown={(e) => e.stopPropagation()}>
-          <style>{DRAWER_CSS}</style>
-          <div className="pt-drawer-loading">{error || "Đang tải hồ sơ…"}</div>
-        </aside>
-      </div>
-    );
-  const record = detail.case as ProductTestCaseRecord;
-  const permissions = detail.permissions;
   // MKT phụ trách and Purchasing may both edit Check giá/Đề xuất at any open
   // stage; only the two terminal decisions lock the case for good.
   const isConcluded = ["import_approved", "import_rejected"].includes(
@@ -185,6 +185,26 @@ export function ProductTestDrawer({
     (permissions.can_edit_purchase || permissions.can_edit_marketing);
   const dailyEditable =
     permissions.can_edit_marketing && record.status === "testing";
+
+  // proposal.sale_price only reflects what's typed in the form, not what's
+  // saved on record.proposal — comparing against the latter is what makes
+  // "close without saving" catchable, since a re-fetch after Lưu updates
+  // both to match.
+  const hasUnsavedProposal =
+    proposalEditable &&
+    (proposal.sale_price !== (record.proposal?.sale_price ?? null) ||
+      proposal.combo_json !== (record.proposal?.combo_json || ""));
+  function handleClose() {
+    if (
+      hasUnsavedProposal &&
+      !window.confirm(
+        "Đề xuất có thay đổi chưa lưu (Giá bán/Combo). Đóng mà không lưu?",
+      )
+    ) {
+      return;
+    }
+    onClose();
+  }
 
   async function upload(files: FileList | null) {
     if (!files?.length) return;
@@ -206,7 +226,7 @@ export function ProductTestDrawer({
   }
 
   return (
-    <div className="pt-drawer-backdrop" onMouseDown={onClose}>
+    <div className="pt-drawer-backdrop" onMouseDown={handleClose}>
       <aside className="pt-drawer" onMouseDown={(e) => e.stopPropagation()}>
         <style>{DRAWER_CSS}</style>
         <header className="pt-drawer-head">
@@ -240,7 +260,7 @@ export function ProductTestDrawer({
                   🗑
                 </button>
               ))}
-            <button onClick={onClose}>×</button>
+            <button onClick={handleClose}>×</button>
           </div>
         </header>
         {error && <div className="pt-drawer-error">{error}</div>}
@@ -414,7 +434,9 @@ export function ProductTestDrawer({
             />
             {proposalEditable ? (
               <ComboCalculator
+                caseId={record.id}
                 costHint={purchase.landed_price_per_unit}
+                savedSalePrice={proposal.sale_price}
                 onResult={(salePrice, comboSummary) =>
                   setProposal({
                     ...proposal,
@@ -1011,7 +1033,8 @@ const DRAWER_CSS = `
 .pt-combo-hero-num b{display:block;font:800 22px ui-monospace,Menlo,Consolas,monospace;color:#059669}
 .pt-combo-hero.warn .pt-combo-hero-num b{color:#dc2626}
 .pt-combo-hero-num small{font-size:11px;color:#6b7280}
-.pt-combo-sync{font-size:11px;color:var(--fg-muted,#6b7280);text-align:right;margin:8px 0 0}
+.pt-combo-apply{display:flex;justify-content:flex-end;margin-top:10px}
+.pt-combo-unsaved{color:#b45309!important;font-weight:700}
 .pt-combo-locked{background:var(--bg-subtle,#f8fafc);border:1px dashed var(--border-strong,#cbd5e1);border-radius:9px;padding:12px 14px;margin:14px 0;display:grid;gap:3px}
 .pt-combo-locked span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--fg-muted,#9ca3af)}
 .pt-combo-locked b{font-size:13px;color:var(--fg-base,#111827)}
