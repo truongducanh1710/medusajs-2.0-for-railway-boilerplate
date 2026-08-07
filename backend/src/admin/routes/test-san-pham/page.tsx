@@ -11,6 +11,7 @@ import type {
   ProductTestViewMode,
 } from "../../components/product-testing/types";
 import { ProductTestDrawer } from "../../components/product-testing/product-test-drawer";
+import { FormulaCell, money, number, ratio } from "../../components/product-testing/format";
 import { useCurrentPermissions } from "../../lib/use-permissions";
 
 const client = createProductTestingClient();
@@ -42,20 +43,6 @@ const tabStatuses: Record<ProductTestTab, ProductTestStatus[] | null> = {
   results: ["testing", "awaiting_final_decision"],
   concluded: ["import_approved", "import_rejected"],
 };
-
-function money(value: number | null | undefined) {
-  return value == null
-    ? "—"
-    : `${new Intl.NumberFormat("vi-VN").format(Math.round(value))}đ`;
-}
-function number(value: number | null | undefined) {
-  return value == null
-    ? "—"
-    : new Intl.NumberFormat("vi-VN").format(Math.round(value));
-}
-function ratio(value: number | null | undefined) {
-  return value == null ? "—" : `${(value * 100).toFixed(0)}%`;
-}
 
 function ProductTestPage() {
   const { has, isSuper } = useCurrentPermissions();
@@ -319,8 +306,8 @@ function ProductTable({
             <th>Chi phí ads</th>
             <th>Đơn</th>
             <th>Doanh thu</th>
-            <th>CPL</th>
-            <th>% ads</th>
+            <th title="Công thức: Chi phí ads ÷ Số lead">CPL ⨍</th>
+            <th title="Công thức: Chi phí ads ÷ Doanh thu">% ads ⨍</th>
             <th>Đánh giá</th>
             <th>Bước tiếp</th>
           </tr>
@@ -353,8 +340,18 @@ function ProductTable({
               <td>{money(row.spend)}</td>
               <td>{number(row.orders)}</td>
               <td>{money(row.revenue)}</td>
-              <td>{money(row.cpl)}</td>
-              <td>{ratio(row.ad_ratio)}</td>
+              <td>
+                <FormulaCell
+                  formula={`${money(row.spend)} chi phí ads ÷ ${number(row.orders)} lead`}
+                  display={money(row.cpl)}
+                />
+              </td>
+              <td>
+                <FormulaCell
+                  formula={`${money(row.spend)} chi phí ads ÷ ${money(row.revenue)} doanh thu`}
+                  display={ratio(row.ad_ratio)}
+                />
+              </td>
               <td>{row.last_evaluation || "Chưa đánh giá"}</td>
               <td>
                 <b className="pt-next">{row.next_action}</b>
@@ -511,6 +508,8 @@ const PAGE_CSS = `
 .s-import_approved{background:#dcfce7;color:#166534}
 .s-import_rejected,.s-purchase_changes_requested,.s-proposal_changes_requested{background:#fee2e2;color:#991b1b}
 .pt-next{font-size:12px;color:#2563eb}
+.pt-formula{color:#92400e;background:#fef3c7;border-radius:5px;padding:2px 6px;font-weight:600;cursor:help;border-bottom:1px dashed #d97706}
+.pt-table th[title]{cursor:help;border-bottom:1px dashed var(--fg-muted,#9ca3af)}
 .pt-kanban{display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:12px;padding:14px;overflow:auto}
 .pt-column{background:var(--bg-subtle,#f5f6f8);border:1px solid var(--border-base,#e5e7eb);border-radius:9px;padding:10px;min-height:420px}
 .pt-column h3{font-size:13px;margin:2px 2px 10px;color:var(--fg-base,#374151)}

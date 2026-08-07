@@ -7,6 +7,8 @@ import type {
   ProductTestProposal,
   ProductTestPurchaseCheck,
 } from "./types";
+import { FormulaCell, money as vnMoney } from "./format";
+import { calculateKpis } from "../../../modules/product-test/kpi";
 
 const ACTION_LABELS: Record<string, string> = {
   submit_purchase_check: "Gửi Mua hàng check",
@@ -553,7 +555,7 @@ export function ProductTestDrawer({
                     <th>Lead</th>
                     <th>Đơn</th>
                     <th>Doanh thu</th>
-                    <th>CPL</th>
+                    <th title="Công thức: Chi phí ads ÷ Số lead">CPL ⨍</th>
                     <th>Đánh giá leader</th>
                   </tr>
                 </thead>
@@ -668,7 +670,9 @@ function DailyResultRow({
 }) {
   const [evaluation, setEvaluation] = useState(row.evaluation || "");
   const [note, setNote] = useState(row.leader_note || "");
-  const cpl = row.leads ? Number(row.ad_spend || 0) / row.leads : null;
+  // Same formula as the backend's kpi.ts, reused here so a single row can
+  // show its CPL before the whole case is re-fetched from the server.
+  const { cpl } = calculateKpis(row);
   return (
     <tr>
       <td>{new Date(row.test_date).toLocaleDateString("vi-VN")}</td>
@@ -677,7 +681,12 @@ function DailyResultRow({
       <td>{row.leads ?? "—"}</td>
       <td>{row.orders ?? "—"}</td>
       <td>{vnMoney(row.revenue)}</td>
-      <td>{vnMoney(cpl)}</td>
+      <td>
+        <FormulaCell
+          formula={`${vnMoney(row.ad_spend)} chi phí ads ÷ ${row.leads ?? 0} lead`}
+          display={vnMoney(cpl)}
+        />
+      </td>
       <td>
         {canEvaluate ? (
           <div className="pt-evaluate">
@@ -795,11 +804,6 @@ function LinkedImage({ url }: { url?: string }) {
 function toNumber(value: string) {
   return value === "" ? null : Number(value);
 }
-function vnMoney(value: number | null | undefined) {
-  return value == null
-    ? "—"
-    : `${new Intl.NumberFormat("vi-VN").format(Math.round(value))}đ`;
-}
 
 // Colours come from Medusa's admin design tokens so the drawer follows the
 // active light/dark theme instead of hardcoding its own palette.
@@ -861,6 +865,8 @@ const DRAWER_CSS = `
 .pt-daily-table th{color:var(--fg-muted,#6b7280);background:var(--bg-subtle,#f9fafb);font-weight:600;white-space:nowrap}
 .pt-daily-table td:last-child{min-width:250px}
 .pt-daily-table td small{display:block;color:var(--fg-muted,#6b7280);margin-top:3px}
+.pt-formula{color:#92400e;background:#fef3c7;border-radius:5px;padding:2px 6px;font-weight:600;cursor:help;border-bottom:1px dashed #d97706}
+.pt-daily-table th[title]{cursor:help;border-bottom:1px dashed var(--fg-muted,#9ca3af)}
 .pt-evaluate{display:grid;grid-template-columns:110px 1fr auto;gap:5px}
 .pt-evaluate button,.pt-action-buttons button{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:7px;padding:8px 11px;cursor:pointer;font-weight:600;font-size:13px;transition:filter .12s}
 .pt-evaluate button:hover:not(:disabled),.pt-action-buttons button:hover:not(:disabled){filter:brightness(.96)}
