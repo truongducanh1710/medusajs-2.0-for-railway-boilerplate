@@ -29,7 +29,7 @@ describe("product test state machine", () => {
     );
   });
 
-  it("requires comments for return, final and reassignment actions", () => {
+  it("requires comments for return and final actions", () => {
     const required = Object.entries(PRODUCT_TEST_TRANSITIONS)
       .filter(([, value]) => value.comment_required)
       .map(([key]) => key);
@@ -37,12 +37,5 @@ describe("product test state machine", () => {
       expect(() => assertTransitionComment(action, " ")).toThrow(
         "Vui lòng nhập lý do",
       );
-  });
-
-  it("keeps reassignment in the same workflow status", () => {
-    expect(getTransition("reassign_marketer", "testing").to).toBeNull();
-    expect(() =>
-      getTransition("reassign_marketer", "import_approved"),
-    ).toThrow();
   });
 });

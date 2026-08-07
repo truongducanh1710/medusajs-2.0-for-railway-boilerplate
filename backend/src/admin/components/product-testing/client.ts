@@ -171,8 +171,6 @@ export function createProductTestingClient() {
       action: string;
       comment?: string;
       version: number;
-      assignee_email?: string;
-      assignee_name?: string;
     },
   ) {
     return requestJson<{

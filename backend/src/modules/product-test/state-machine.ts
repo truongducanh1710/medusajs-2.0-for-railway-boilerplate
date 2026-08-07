@@ -24,8 +24,7 @@ export type ProductTestAction =
   | "request_proposal_changes"
   | "request_more_testing"
   | "approve_import"
-  | "reject_import"
-  | "reassign_marketer";
+  | "reject_import";
 
 type Transition = {
   from: ProductTestStatus[];
@@ -86,14 +85,6 @@ export const PRODUCT_TEST_TRANSITIONS: Record<ProductTestAction, Transition> = {
   reject_import: {
     from: ["testing"],
     to: "import_rejected",
-    role: "approve",
-    comment_required: true,
-  },
-  reassign_marketer: {
-    from: PRODUCT_TEST_STATUSES.filter(
-      (s) => !["import_approved", "import_rejected"].includes(s),
-    ) as ProductTestStatus[],
-    to: null,
     role: "approve",
     comment_required: true,
   },

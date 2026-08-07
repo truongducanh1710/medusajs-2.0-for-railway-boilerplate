@@ -28,7 +28,6 @@ const ACTION_LABELS: Record<string, string> = {
   request_more_testing: "Yêu cầu test thêm",
   approve_import: "Duyệt nhập",
   reject_import: "Không nhập",
-  reassign_marketer: "Chuyển MKT phụ trách",
 };
 const COMMENT_ACTIONS = new Set([
   "request_purchase_changes",
@@ -36,7 +35,6 @@ const COMMENT_ACTIONS = new Set([
   "request_more_testing",
   "approve_import",
   "reject_import",
-  "reassign_marketer",
 ]);
 
 const emptyPurchase: ProductTestPurchaseCheck = {
@@ -104,8 +102,6 @@ export function ProductTestDrawer({
     revenue: "",
   });
   const [comment, setComment] = useState("");
-  const [assigneeEmail, setAssigneeEmail] = useState("");
-  const [assigneeName, setAssigneeName] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -124,8 +120,6 @@ export function ProductTestDrawer({
         ...current,
         tester_name: data.case.assignee_name || "",
       }));
-      setAssigneeEmail(data.case.assignee_email || "");
-      setAssigneeName(data.case.assignee_name || "");
     } catch (err: any) {
       setError(err?.message || "Không tải được hồ sơ");
     }
@@ -736,22 +730,6 @@ export function ProductTestDrawer({
                 onChange={setComment}
               />
             )}
-            {detail.available_actions.some(
-              (item: any) => item.id === "reassign_marketer",
-            ) && (
-              <div className="pt-form-grid">
-                <Field
-                  label="Email MKT mới"
-                  value={assigneeEmail}
-                  onChange={setAssigneeEmail}
-                />
-                <Field
-                  label="Tên MKT mới"
-                  value={assigneeName}
-                  onChange={setAssigneeName}
-                />
-              </div>
-            )}
             <div className="pt-action-buttons">
               {detail.available_actions.map((action: any) => (
                 <button
@@ -773,12 +751,6 @@ export function ProductTestDrawer({
                         action: action.id,
                         comment,
                         version: record.version,
-                        ...(action.id === "reassign_marketer"
-                          ? {
-                              assignee_email: assigneeEmail,
-                              assignee_name: assigneeName,
-                            }
-                          : {}),
                       }),
                     )
                   }

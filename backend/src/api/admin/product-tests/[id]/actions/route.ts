@@ -11,7 +11,6 @@ import {
   apiError,
   cleanText,
   getProductTestActor,
-  normalizeEmail,
   parseVersion,
   PRODUCT_TEST_PERMS,
   type ProductTestActor,
@@ -29,7 +28,6 @@ const ACTION_LABELS: Record<string, string> = {
   request_more_testing: "Leader yêu cầu test thêm",
   approve_import: "Leader kết luận nhập sản phẩm",
   reject_import: "Leader kết luận không nhập",
-  reassign_marketer: "Leader đã chuyển người phụ trách",
 };
 
 function assertRole(actor: ProductTestActor, role: string, productCase: any) {
@@ -169,18 +167,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     assertRole(actor, transition.role, productCase);
     await assertPrerequisites(client, productCase.id, action);
 
-    let nextStatus = transition.to || productCase.status;
-    let assigneeEmail = productCase.assignee_email;
-    let assigneeName = productCase.assignee_name;
-    if (action === "reassign_marketer") {
-      assigneeEmail = normalizeEmail(body.assignee_email);
-      assigneeName = cleanText(body.assignee_name, 300) || assigneeEmail;
-      if (!assigneeEmail)
-        throw Object.assign(
-          new Error("Thiếu email người phụ trách mới"),
-          { status: 400 },
-        );
-    }
+    const nextStatus = transition.to || productCase.status;
+    const assigneeEmail = productCase.assignee_email;
+    const assigneeName = productCase.assignee_name;
 
     const finalDecision =
       action === "approve_import"
@@ -193,8 +182,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       : productCase.decided_by;
     const result = await client.query(
       `UPDATE product_test_case SET status=$1,assignee_email=$2,assignee_name=$3,
-       marketer_email=CASE WHEN $4='reassign_marketer' THEN $2 ELSE marketer_email END,
-       marketer_name=CASE WHEN $4='reassign_marketer' THEN $3 ELSE marketer_name END,
        final_decision=$5::text,final_note=CASE WHEN $5::text IS NOT NULL THEN $6::text ELSE final_note END,
        decided_by=$7::text,decided_at=CASE WHEN $7::text IS NOT NULL THEN now() ELSE decided_at END,
        version=version+1,updated_at=now() WHERE id=$8 RETURNING *`,
