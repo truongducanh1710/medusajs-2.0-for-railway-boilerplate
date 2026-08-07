@@ -202,8 +202,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       `UPDATE product_test_case SET status=$1,assignee_email=$2,assignee_name=$3,
        marketer_email=CASE WHEN $4='reassign_marketer' THEN $2 ELSE marketer_email END,
        marketer_name=CASE WHEN $4='reassign_marketer' THEN $3 ELSE marketer_name END,
-       final_decision=$5,final_note=CASE WHEN $5 IS NOT NULL THEN $6 ELSE final_note END,
-       decided_by=$7,decided_at=CASE WHEN $7 IS NOT NULL THEN now() ELSE decided_at END,
+       final_decision=$5::text,final_note=CASE WHEN $5::text IS NOT NULL THEN $6::text ELSE final_note END,
+       decided_by=$7::text,decided_at=CASE WHEN $7::text IS NOT NULL THEN now() ELSE decided_at END,
        version=version+1,updated_at=now() WHERE id=$8 RETURNING *`,
       [
         nextStatus,
