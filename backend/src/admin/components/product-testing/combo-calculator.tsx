@@ -1,17 +1,19 @@
-import { useMemo, useState } from "react";
-import { money } from "./format";
+import { useEffect, useMemo, useState } from "react";
+import { money, NumberField } from "./format";
 
-// Scratch pad for the Giá bán / %CPQC decision marketing makes before
-// locking in "Giá bán" on the proposal. Values here are never saved to the
-// case — they only exist to help pick a number, so state resets whenever
-// the drawer remounts. costHint seeds "Giá vốn đơn 1" from the landed cost
-// Purchasing already entered in Check giá, since that's the real unit cost.
+// This *is* how Giá bán and Combo get decided now — there's no separate
+// manual field for either. sale_price = the weighted-average Giá bán trung
+// bình below; combo_json = an auto-generated three-line summary of the same
+// tiers. Every keystroke recalculates and reports upward via onResult, so
+// the proposal always reflects the calculator's current numbers.
+// costHint seeds "Giá vốn đơn 1" from the landed cost Purchasing already
+// entered in Check giá, since that's the real unit cost.
 export function ComboCalculator({
   costHint,
-  onApplySalePrice,
+  onResult,
 }: {
   costHint: number | null;
-  onApplySalePrice: (price: number) => void;
+  onResult: (salePrice: number, comboSummary: string) => void;
 }) {
   const seedCost1 = costHint && costHint > 0 ? Math.round(costHint) : 0;
   const [sale, setSale] = useState([0, 0, 0]);
@@ -39,6 +41,17 @@ export function ComboCalculator({
   }, [sale, cost, mix, returnRate, shipFee, codFee, packFee, targetLng]);
 
   const tierLabel = ["Đơn 1", "Đơn đôi", "Đơn ba"];
+
+  useEffect(() => {
+    if (calc.saleAvg <= 0) return;
+    const summary = tierLabel
+      .map((label, i) => (sale[i] > 0 ? `${label}: ${money(sale[i])}` : null))
+      .filter(Boolean)
+      .join(" – ");
+    onResult(Math.round(calc.saleAvg), summary);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calc.saleAvg, sale[0], sale[1], sale[2]]);
+
   const setAt = (
     arr: number[],
     setter: (v: number[]) => void,
@@ -66,22 +79,20 @@ export function ComboCalculator({
       <div className="pt-combo-row">
         <span>Giá bán / đơn</span>
         {sale.map((v, i) => (
-          <input
+          <NumberField
             key={i}
-            type="number"
             value={v || ""}
-            onChange={(e) => setAt(sale, setSale, i, e.target.value)}
+            onChange={(value) => setAt(sale, setSale, i, value)}
           />
         ))}
       </div>
       <div className="pt-combo-row">
         <span>Giá vốn / đơn</span>
         {cost.map((v, i) => (
-          <input
+          <NumberField
             key={i}
-            type="number"
             value={v || ""}
-            onChange={(e) => setAt(cost, setCost, i, e.target.value)}
+            onChange={(value) => setAt(cost, setCost, i, value)}
           />
         ))}
       </div>
@@ -115,26 +126,23 @@ export function ComboCalculator({
         </label>
         <label>
           <span>Phí ship (đ)</span>
-          <input
-            type="number"
+          <NumberField
             value={shipFee || ""}
-            onChange={(e) => setShipFee(Number(e.target.value) || 0)}
+            onChange={(value) => setShipFee(Number(value) || 0)}
           />
         </label>
         <label>
           <span>Phí thu hộ COD (đ)</span>
-          <input
-            type="number"
+          <NumberField
             value={codFee || ""}
-            onChange={(e) => setCodFee(Number(e.target.value) || 0)}
+            onChange={(value) => setCodFee(Number(value) || 0)}
           />
         </label>
         <label>
           <span>Phí đóng gói/lưu kho (đ)</span>
-          <input
-            type="number"
+          <NumberField
             value={packFee || ""}
-            onChange={(e) => setPackFee(Number(e.target.value) || 0)}
+            onChange={(value) => setPackFee(Number(value) || 0)}
           />
         </label>
         <label>
@@ -201,17 +209,9 @@ export function ComboCalculator({
         </div>
       </div>
 
-      {calc.saleAvg > 0 && (
-        <div className="pt-combo-apply">
-          <button
-            type="button"
-            className="pt-ghost"
-            onClick={() => onApplySalePrice(Math.round(calc.saleAvg))}
-          >
-            Điền {money(calc.saleAvg)} vào ô Giá bán ↑
-          </button>
-        </div>
-      )}
+      <p className="pt-combo-sync">
+        ✓ Giá bán và Combo trong đề xuất tự đồng bộ theo bảng này khi bạn Lưu.
+      </p>
     </div>
   );
 }

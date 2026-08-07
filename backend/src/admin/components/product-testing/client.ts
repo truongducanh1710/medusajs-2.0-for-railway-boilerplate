@@ -101,6 +101,12 @@ export function createProductTestingClient() {
     );
   }
 
+  async function deleteCase(id: string) {
+    return requestJson<{ deleted: true }>(`/admin/product-tests/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   async function updatePurchaseCheck(
     id: string,
     payload: Partial<ProductTestPurchaseCheck> & { version: number },
@@ -205,6 +211,7 @@ export function createProductTestingClient() {
     getFacets,
     createCase,
     updateCase,
+    deleteCase,
     updatePurchaseCheck,
     updateProposal,
     createDailyResult,

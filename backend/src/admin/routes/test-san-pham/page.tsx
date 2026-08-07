@@ -11,7 +11,7 @@ import type {
   ProductTestViewMode,
 } from "../../components/product-testing/types";
 import { ProductTestDrawer } from "../../components/product-testing/product-test-drawer";
-import { FormulaCell, money, number, ratio } from "../../components/product-testing/format";
+import { FormulaCell, formatDate, money, number, ratio } from "../../components/product-testing/format";
 import { useCurrentPermissions } from "../../lib/use-permissions";
 
 const client = createProductTestingClient();
@@ -298,6 +298,7 @@ function ProductTable({
         <thead>
           <tr>
             <th>Sản phẩm</th>
+            <th>Ngày tạo</th>
             <th>Trạng thái</th>
             <th>MKT</th>
             <th>Giá vốn</th>
@@ -328,6 +329,7 @@ function ProductTable({
                   </div>
                 </div>
               </td>
+              <td>{formatDate(row.created_at)}</td>
               <td>
                 <span className={`pt-status s-${row.status}`}>
                   {STATUS[row.status]}
@@ -434,6 +436,10 @@ function ProductKanban({
                   {STATUS[row.status]}
                 </span>
                 <dl>
+                  <div>
+                    <dt>Tạo</dt>
+                    <dd>{formatDate(row.created_at)}</dd>
+                  </div>
                   <div>
                     <dt>MKT</dt>
                     <dd>{row.assignee_name}</dd>

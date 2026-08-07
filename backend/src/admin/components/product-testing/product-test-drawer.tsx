@@ -7,7 +7,14 @@ import type {
   ProductTestProposal,
   ProductTestPurchaseCheck,
 } from "./types";
-import { FormulaCell, money as vnMoney } from "./format";
+import {
+  FormulaCell,
+  LinkField,
+  NumberField,
+  isUrl,
+  money as vnMoney,
+  formatDateTime as vnDateTime,
+} from "./format";
 import { ComboCalculator } from "./combo-calculator";
 import { calculateKpis } from "../../../modules/product-test/kpi";
 
@@ -102,6 +109,7 @@ export function ProductTestDrawer({
   const [assigneeName, setAssigneeName] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function load() {
     try {
@@ -134,6 +142,21 @@ export function ProductTestDrawer({
     } catch (err: any) {
       setError(err?.message || "Không lưu được dữ liệu");
     } finally {
+      setBusy("");
+    }
+  }
+
+  // Deleting closes the drawer, so it must not run() → load() the case that
+  // was just removed — that would 404 right before onClose() unmounts it.
+  async function runDelete() {
+    setBusy("delete");
+    setError("");
+    try {
+      await client.deleteCase(record.id);
+      await onChanged();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || "Không xoá được hồ sơ");
       setBusy("");
     }
   }
@@ -198,7 +221,27 @@ export function ProductTestDrawer({
               <span>v{record.version}</span>
             </p>
           </div>
-          <button onClick={onClose}>×</button>
+          <div className="pt-drawer-head-actions">
+            {permissions.can_approve &&
+              (confirmDelete ? (
+                <div className="pt-delete-confirm">
+                  <span>Xoá hồ sơ này?</span>
+                  <button className="danger" disabled={!!busy} onClick={runDelete}>
+                    Xoá
+                  </button>
+                  <button onClick={() => setConfirmDelete(false)}>Huỷ</button>
+                </div>
+              ) : (
+                <button
+                  className="pt-delete-trigger"
+                  title="Xoá hồ sơ (chỉ Leader)"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  🗑
+                </button>
+              ))}
+            <button onClick={onClose}>×</button>
+          </div>
         </header>
         {error && <div className="pt-drawer-error">{error}</div>}
         <div className="pt-drawer-body">
@@ -257,7 +300,7 @@ export function ProductTestDrawer({
                   setPurchase({ ...purchase, supplier_name: value })
                 }
               />
-              <Field
+              <LinkField
                 label="Link nguồn hàng"
                 value={purchase.supplier_link}
                 disabled={!purchaseEditable}
@@ -325,7 +368,11 @@ export function ProductTestDrawer({
               <div className="pt-save-row">
                 <button
                   className="pt-drawer-primary"
-                  disabled={!!busy}
+                  disabled={
+                    !!busy ||
+                    (!!purchase.supplier_link.trim() &&
+                      !isUrl(purchase.supplier_link))
+                  }
                   onClick={() =>
                     run("purchase", () =>
                       client.updatePurchaseCheck(record.id, {
@@ -365,25 +412,26 @@ export function ProductTestDrawer({
               disabled={!proposalEditable}
               onChange={(value) => setProposal({ ...proposal, usp: value })}
             />
-            <TextArea
-              label="Combo"
-              value={proposal.combo_json}
-              disabled={!proposalEditable}
-              onChange={(value) =>
-                setProposal({ ...proposal, combo_json: value })
-              }
-            />
-            <div className="pt-form-grid">
-              <Field
-                label="Giá bán"
-                type="number"
-                value={proposal.sale_price}
-                disabled={!proposalEditable}
-                onChange={(value) =>
-                  setProposal({ ...proposal, sale_price: toNumber(value) })
+            {proposalEditable ? (
+              <ComboCalculator
+                costHint={purchase.landed_price_per_unit}
+                onResult={(salePrice, comboSummary) =>
+                  setProposal({
+                    ...proposal,
+                    sale_price: salePrice,
+                    combo_json: comboSummary,
+                  })
                 }
               />
-              <Field
+            ) : (
+              <div className="pt-combo-locked">
+                <span>Combo đã chốt</span>
+                <b>{proposal.combo_json || "Chưa có"}</b>
+                <small>Giá bán trung bình: {vnMoney(proposal.sale_price)}</small>
+              </div>
+            )}
+            <div className="pt-form-grid">
+              <LinkField
                 label="Landing page"
                 value={proposal.landing_url}
                 disabled={!proposalEditable}
@@ -391,28 +439,24 @@ export function ProductTestDrawer({
                   setProposal({ ...proposal, landing_url: value })
                 }
               />
-            </div>
-            {proposalEditable && (
-              <ComboCalculator
-                costHint={purchase.landed_price_per_unit}
-                onApplySalePrice={(price) =>
-                  setProposal({ ...proposal, sale_price: price })
+              <TextArea
+                label="Nội dung quảng cáo"
+                value={proposal.ad_content}
+                disabled={!proposalEditable}
+                onChange={(value) =>
+                  setProposal({ ...proposal, ad_content: value })
                 }
               />
-            )}
-            <TextArea
-              label="Nội dung quảng cáo"
-              value={proposal.ad_content}
-              disabled={!proposalEditable}
-              onChange={(value) =>
-                setProposal({ ...proposal, ad_content: value })
-              }
-            />
+            </div>
             {proposalEditable && (
               <div className="pt-save-row">
                 <button
                   className="pt-drawer-primary"
-                  disabled={!!busy}
+                  disabled={
+                    !!busy ||
+                    (!!proposal.landing_url.trim() &&
+                      !isUrl(proposal.landing_url))
+                  }
                   onClick={() =>
                     run("proposal", () =>
                       client.updateProposal(record.id, {
@@ -652,6 +696,34 @@ export function ProductTestDrawer({
               ))}
             </div>
           </section>
+
+          <section className="pt-section">
+            <div className="pt-section-title">
+              <div>
+                <span className="pt-step">🕓</span>
+                <h3>Lịch sử</h3>
+              </div>
+              <small>{record.events.length} sự kiện</small>
+            </div>
+            {record.events.length ? (
+              <ul className="pt-history">
+                {record.events.map((event) => (
+                  <li key={event.id}>
+                    <div className="pt-history-when">
+                      {vnDateTime(event.created_at)}
+                    </div>
+                    <div className="pt-history-body">
+                      <b>{ACTION_LABELS[event.action] || event.action}</b>
+                      <span> · {event.actor}</span>
+                      {event.comment && <p>{event.comment}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="pt-history-empty">Chưa có lịch sử thay đổi.</p>
+            )}
+          </section>
         </div>
       </aside>
     </div>
@@ -733,16 +805,6 @@ function DailyResultRow({
   );
 }
 
-function isUrl(value: unknown): value is string {
-  if (typeof value !== "string" || !value.trim()) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function Field({
   label,
   value,
@@ -775,12 +837,16 @@ function Field({
           </a>
         )}
       </span>
-      <input
-        type={type}
-        value={value ?? ""}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      {type === "number" ? (
+        <NumberField value={value} onChange={onChange} disabled={disabled} />
+      ) : (
+        <input
+          type={type}
+          value={value ?? ""}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
     </label>
   );
 }
@@ -845,8 +911,17 @@ const DRAWER_CSS = `
 .pt-drawer-head small{color:var(--fg-muted,#6b7280);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
 .pt-drawer-head h2{font-size:19px;margin:3px 0 4px;color:var(--fg-base,#111827);line-height:1.3}
 .pt-drawer-head p{margin:0;color:var(--fg-subtle,#6b7280);font-size:12px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.pt-drawer-head>button{border:0;background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#6b7280);border-radius:7px;width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;flex-shrink:0}
-.pt-drawer-head>button:hover{background:var(--bg-field-hover,#e5e7eb)}
+.pt-drawer-head-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.pt-drawer-head-actions>button{border:0;background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#6b7280);border-radius:7px;width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;flex-shrink:0}
+.pt-drawer-head-actions>button:hover{background:var(--bg-field-hover,#e5e7eb)}
+.pt-delete-trigger{font-size:15px!important}
+.pt-delete-trigger:hover{background:#fef2f2!important;color:#dc2626!important}
+.pt-delete-confirm{display:flex;align-items:center;gap:8px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 10px}
+.pt-delete-confirm>span{font-size:12px;color:#991b1b;font-weight:600;white-space:nowrap}
+.pt-delete-confirm button{border:0;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;width:auto!important;height:auto!important}
+.pt-delete-confirm button.danger{background:#dc2626;color:#fff}
+.pt-delete-confirm button.danger:hover{background:#b91c1c}
+.pt-delete-confirm button:not(.danger){background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#4b5563)}
 .pt-drawer-body{padding:16px}
 .pt-drawer-loading{padding:50px;text-align:center;color:var(--fg-muted,#6b7280)}
 .pt-drawer-error{position:sticky;top:88px;z-index:3;margin:10px 16px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:10px 12px;border-radius:8px;font-size:13px}
@@ -866,6 +941,9 @@ const DRAWER_CSS = `
 .pt-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .pt-field-link{color:#2563eb;font-weight:600;text-decoration:none;flex-shrink:0}
 .pt-field-link:hover{text-decoration:underline}
+.pt-field input.pt-field-invalid{border-color:#fca5a5;background:#fef2f2}
+.pt-field input.pt-field-invalid:focus{border-color:#f87171;box-shadow:0 0 0 3px rgba(248,113,113,.16)}
+.pt-field-error{color:#dc2626;font-weight:600;font-size:11px}
 .pt-field input,.pt-field textarea,.pt-evaluate input,.pt-evaluate select{width:100%;border:1px solid var(--border-base,#d1d5db);border-radius:7px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);padding:8px;font:13px inherit;font-weight:400;outline:none;transition:border-color .12s,box-shadow .12s}
 .pt-field input:focus,.pt-field textarea:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
 .pt-field textarea{min-height:74px;resize:vertical;line-height:1.5}
@@ -933,6 +1011,18 @@ const DRAWER_CSS = `
 .pt-combo-hero-num b{display:block;font:800 22px ui-monospace,Menlo,Consolas,monospace;color:#059669}
 .pt-combo-hero.warn .pt-combo-hero-num b{color:#dc2626}
 .pt-combo-hero-num small{font-size:11px;color:#6b7280}
-.pt-combo-apply{display:flex;justify-content:flex-end;margin-top:10px}
+.pt-combo-sync{font-size:11px;color:var(--fg-muted,#6b7280);text-align:right;margin:8px 0 0}
+.pt-combo-locked{background:var(--bg-subtle,#f8fafc);border:1px dashed var(--border-strong,#cbd5e1);border-radius:9px;padding:12px 14px;margin:14px 0;display:grid;gap:3px}
+.pt-combo-locked span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--fg-muted,#9ca3af)}
+.pt-combo-locked b{font-size:13px;color:var(--fg-base,#111827)}
+.pt-combo-locked small{font-size:12px;color:var(--fg-subtle,#4b5563)}
+.pt-history{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.pt-history li{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:9px 0;border-bottom:1px solid var(--border-base,#eef0f2)}
+.pt-history li:last-child{border-bottom:0}
+.pt-history-when{font-size:11.5px;color:var(--fg-muted,#9ca3af);white-space:nowrap;padding-top:1px}
+.pt-history-body b{font-size:12.5px;color:var(--fg-base,#111827)}
+.pt-history-body span{font-size:12px;color:var(--fg-subtle,#6b7280)}
+.pt-history-body p{margin:4px 0 0;font-size:12px;color:var(--fg-subtle,#4b5563);background:var(--bg-subtle,#f8fafc);border-radius:6px;padding:6px 8px}
+.pt-history-empty{color:var(--fg-muted,#9ca3af);font-size:12.5px;margin:0}
 @media(max-width:700px){.pt-form-grid,.pt-form-grid.three{grid-template-columns:1fr}.pt-linked{grid-template-columns:60px 1fr}.pt-linked>span{display:none}.pt-combo-2col{grid-template-columns:1fr}.pt-combo-out{grid-template-columns:1fr}}
 `;

@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import { ulid } from "ulid";
 import { getPool } from "../../../../lib/db";
 import {
   apiError,
@@ -100,6 +101,43 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
     res.json({ case: rows[0] });
+  } catch (error) {
+    return apiError(res, error);
+  }
+}
+
+// Soft delete only — leader-only, any stage. Keeps the row (and its
+// purchase_check/proposal/daily_results/events) for audit, just hidden from
+// every query via the existing deleted_at IS NULL filters.
+export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const actor = await getProductTestActor(req);
+    if (!actor) return res.status(401).json({ error: "Unauthenticated" });
+    requireActorPermission(actor, PRODUCT_TEST_PERMS.approve);
+    const bundle = await getCaseBundle(getPool(), req.params.id);
+    if (!bundle) return res.status(404).json({ error: "Không tìm thấy hồ sơ" });
+
+    const { rows } = await getPool().query(
+      `UPDATE product_test_case SET deleted_at=now(), updated_at=now()
+       WHERE id=$1 AND deleted_at IS NULL RETURNING id`,
+      [req.params.id],
+    );
+    if (!rows.length)
+      return res.status(404).json({ error: "Không tìm thấy hồ sơ" });
+
+    await getPool().query(
+      `INSERT INTO product_test_event (id,case_id,action,from_status,to_status,actor,comment,snapshot)
+       VALUES ($1,$2,'delete_case',$3,$3,$4,$5,$6::jsonb)`,
+      [
+        `pte_${ulid().toLowerCase()}`,
+        req.params.id,
+        bundle.case.status,
+        actor.email,
+        null,
+        JSON.stringify({ product_name: bundle.case.product_name }),
+      ],
+    );
+    res.json({ deleted: true });
   } catch (error) {
     return apiError(res, error);
   }
