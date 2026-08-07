@@ -17,6 +17,7 @@ import {
   type ProductTestActor,
 } from "../../_lib";
 import { notifyProductTestTransition } from "../../_lib";
+import { createPurchasingTask, syncMarketingTask } from "../../_tasks";
 
 const ACTION_LABELS: Record<string, string> = {
   submit_purchase_check: "Đã gửi Mua hàng check giá",
@@ -250,7 +251,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       comment,
     };
     await notifyProductTestTransition(req, notification);
-    return res.json({ case: result.rows[0], action, version: version + 1 });
+    const updatedCase = result.rows[0];
+    await syncMarketingTask(req, {
+      caseId: updatedCase.id,
+      code: updatedCase.code,
+      productName: updatedCase.product_name,
+      status: updatedCase.status,
+      assigneeEmail: updatedCase.assignee_email,
+      assigneeName: updatedCase.assignee_name,
+      actor,
+    });
+    if (action === "submit_purchase_check") {
+      await createPurchasingTask(req, {
+        caseId: updatedCase.id,
+        code: updatedCase.code,
+        productName: updatedCase.product_name,
+        actor,
+      });
+    }
+    return res.json({ case: updatedCase, action, version: version + 1 });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     return apiError(res, error);

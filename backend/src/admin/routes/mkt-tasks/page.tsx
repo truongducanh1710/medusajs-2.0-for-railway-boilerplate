@@ -11,13 +11,14 @@ type ChecklistItem = { id: string; text: string; done: boolean }
 type Task = {
   id: string
   title: string
-  type: "ads_camp" | "content_post" | "purchasing" | "cskh_call"
+  type: "ads_camp" | "content_post" | "purchasing" | "cskh_call" | "product_test" | "product_test_purchasing"
   import_lot_id?: string | null
   purchase_stage?: string | null
   pancake_order_id?: string | null
   customer_name?: string | null
   customer_phone?: string | null
   call_stage?: string | null
+  product_test_case_id?: string | null
   assignee_id: string
   assignee_name: string
   created_by: string
@@ -153,6 +154,8 @@ const TYPE_MAP: Record<string, { label: string; icon: string; chip: string }> = 
   content_post: { label: "Nội dung", icon: "✍️", chip: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
   purchasing:   { label: "Mua hàng", icon: "🛒", chip: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300" },
   cskh_call:    { label: "Gọi CSKH", icon: "📞", chip: "bg-pink-50 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300" },
+  product_test:            { label: "Test SP", icon: "🧪", chip: "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300" },
+  product_test_purchasing: { label: "Check giá SP", icon: "🧪", chip: "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300" },
 }
 
 // 13 giai đoạn quy trình mua hàng TQ (type=purchasing). value → { label, chip }
@@ -1276,6 +1279,23 @@ function TaskDrawer({
                 onLinked={(lotId) => patchTask({ import_lot_id: lotId })}
                 onToast={onToast}
               />
+            )}
+
+            {(task.type === "product_test" || task.type === "product_test_purchasing") && task.product_test_case_id && (
+              <div>
+                <div className={LABEL_CLS}>🧪 Hồ sơ test sản phẩm</div>
+                <a
+                  href={`/app/test-san-pham?case=${task.product_test_case_id}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-ui-border-base bg-ui-bg-base px-3 py-1.5 text-[12.5px] font-semibold text-indigo-600 hover:bg-ui-bg-base-hover dark:text-indigo-300"
+                >
+                  Mở hồ sơ test sản phẩm ↗
+                </a>
+                {task.type === "product_test_purchasing" && task.status !== "done" && (
+                  <p className="mt-1.5 text-[11.5px] text-ui-fg-subtle">
+                    Check xong giá thì bấm "Hoàn thành" bên dưới — hồ sơ vẫn tiếp tục ở các bước sau, task này chỉ theo dõi phần của Mua hàng.
+                  </p>
+                )}
+              </div>
             )}
 
             {isDailyMktReportTask(task) && (

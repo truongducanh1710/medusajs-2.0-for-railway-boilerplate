@@ -41,6 +41,10 @@ const MktTask = model.define("mkt_task", {
   first_called_at: model.dateTime().nullable(),
   // CSKH: tên sản phẩm khách đã mua (chọn ở bước tìm khách hàng khi bulk-create)
   product_name: model.text().nullable(),
+  // product_test (type=product_test): case gốc trong module test sản phẩm.
+  // Dùng để tìm "đã có task mở cho case này chưa" thay vì tạo trùng mỗi
+  // lần chuyển trạng thái, và để deep-link về /app/test-san-pham?case=...
+  product_test_case_id: model.text().nullable(),
 })
 
 export default MktTask

@@ -14,6 +14,7 @@ import {
   mapProposal,
   mapPurchase,
 } from "./_query";
+import { syncMarketingTask } from "./_tasks";
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -200,7 +201,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         JSON.stringify({ product_name: productName }),
       ],
     );
-    res.status(201).json({ case: rows[0] });
+    const created = rows[0];
+    await syncMarketingTask(req, {
+      caseId: created.id,
+      code: created.code,
+      productName: created.product_name,
+      status: created.status,
+      assigneeEmail: created.assignee_email,
+      assigneeName: created.assignee_name,
+      actor,
+    });
+    res.status(201).json({ case: created });
   } catch (error) {
     return apiError(res, error);
   }
