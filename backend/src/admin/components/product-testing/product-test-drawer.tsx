@@ -8,6 +8,7 @@ import type {
   ProductTestPurchaseCheck,
 } from "./types";
 import { FormulaCell, money as vnMoney } from "./format";
+import { ComboCalculator } from "./combo-calculator";
 import { calculateKpis } from "../../../modules/product-test/kpi";
 
 const ACTION_LABELS: Record<string, string> = {
@@ -391,6 +392,14 @@ export function ProductTestDrawer({
                 }
               />
             </div>
+            {proposalEditable && (
+              <ComboCalculator
+                costHint={purchase.landed_price_per_unit}
+                onApplySalePrice={(price) =>
+                  setProposal({ ...proposal, sale_price: price })
+                }
+              />
+            )}
             <TextArea
               label="Nội dung quảng cáo"
               value={proposal.ad_content}
@@ -897,5 +906,33 @@ const DRAWER_CSS = `
 .pt-action-buttons button.success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
 .pt-action-buttons button.danger{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
 .pt-action-buttons button:disabled{opacity:.45;cursor:not-allowed}
-@media(max-width:700px){.pt-form-grid,.pt-form-grid.three{grid-template-columns:1fr}.pt-linked{grid-template-columns:60px 1fr}.pt-linked>span{display:none}}
+.pt-combo{background:var(--bg-subtle,#f8fafc);border:1px solid var(--border-base,#e5e7eb);border-radius:9px;padding:14px;margin:14px 0}
+.pt-combo-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.pt-combo-head>span{font-weight:700;font-size:13px;color:var(--fg-base,#111827)}
+.pt-combo-head>small{color:var(--fg-muted,#6b7280);font-size:11px}
+.pt-combo-tri-head{display:grid;grid-template-columns:38% repeat(3,1fr);gap:8px;padding:0 0 4px}
+.pt-combo-tri-head span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--fg-muted,#9ca3af);text-align:center}
+.pt-combo-row{display:grid;grid-template-columns:38% repeat(3,1fr);gap:8px;align-items:center;margin:6px 0}
+.pt-combo-row>span{color:var(--fg-subtle,#4b5563);font-size:12px;font-weight:600}
+.pt-combo-row input{width:100%;border:1px solid var(--border-base,#d1d5db);border-radius:6px;background:var(--bg-field,#eff6ff);color:#1d4ed8;padding:6px 7px;font:600 12.5px ui-monospace,Menlo,Consolas,monospace;text-align:right;outline:none}
+.pt-combo-row input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
+.pt-combo-warn{font-size:11px;color:#b91c1c;background:#fef2f2;border-radius:6px;padding:6px 9px;margin:6px 0}
+.pt-combo-2col{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 14px;margin:12px 0}
+.pt-combo-2col label{display:grid;gap:4px;font-size:11.5px;font-weight:600;color:var(--fg-subtle,#4b5563)}
+.pt-combo-2col input{border:1px solid var(--border-base,#d1d5db);border-radius:6px;background:var(--bg-field,#eff6ff);color:#1d4ed8;padding:7px 8px;font:600 12.5px ui-monospace,Menlo,Consolas,monospace;text-align:right;outline:none}
+.pt-combo-2col input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
+.pt-combo-out{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}
+.pt-combo-out>div{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--bg-base,#fff);border:1px solid var(--border-base,#e5e7eb);border-radius:7px;padding:8px 10px}
+.pt-combo-out>div>span{font-size:11.5px;color:var(--fg-muted,#6b7280)}
+.pt-combo-out b.pt-formula{font-size:12.5px;padding:4px 8px}
+.pt-combo-hero{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:12px 14px}
+.pt-combo-hero.warn{background:#fef2f2;border-color:#fecaca}
+.pt-combo-hero>div:first-child span{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#374151;margin-bottom:2px}
+.pt-combo-hero>div:first-child small{display:block;font-size:11px;color:#6b7280;max-width:260px}
+.pt-combo-hero-num{text-align:right;flex-shrink:0}
+.pt-combo-hero-num b{display:block;font:800 22px ui-monospace,Menlo,Consolas,monospace;color:#059669}
+.pt-combo-hero.warn .pt-combo-hero-num b{color:#dc2626}
+.pt-combo-hero-num small{font-size:11px;color:#6b7280}
+.pt-combo-apply{display:flex;justify-content:flex-end;margin-top:10px}
+@media(max-width:700px){.pt-form-grid,.pt-form-grid.three{grid-template-columns:1fr}.pt-linked{grid-template-columns:60px 1fr}.pt-linked>span{display:none}.pt-combo-2col{grid-template-columns:1fr}.pt-combo-out{grid-template-columns:1fr}}
 `;
