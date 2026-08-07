@@ -11,15 +11,20 @@ describe("product test state machine", () => {
       ["awaiting_purchase_check", "approve_purchase_check", "proposal_draft"],
       ["proposal_draft", "submit_test_proposal", "awaiting_test_approval"],
       ["awaiting_test_approval", "approve_testing", "testing"],
-      ["testing", "submit_test_results", "awaiting_final_decision"],
-      ["awaiting_final_decision", "approve_import", "import_approved"],
+      ["testing", "approve_import", "import_approved"],
     ] as const;
     for (const [status, action, expected] of path)
       expect(getTransition(action, status).to).toBe(expected);
   });
 
+  it("lets the leader ask for another round of testing without leaving testing", () => {
+    expect(getTransition("request_more_testing", "testing").to).toBe(
+      "testing",
+    );
+  });
+
   it("rejects actions from an invalid status", () => {
-    expect(() => getTransition("approve_import", "testing")).toThrow(
+    expect(() => getTransition("approve_import", "draft")).toThrow(
       "Chuyển trạng thái không hợp lệ",
     );
   });

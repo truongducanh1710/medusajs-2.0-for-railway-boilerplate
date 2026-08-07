@@ -17,7 +17,7 @@ import {
   type ProductTestActor,
 } from "../../_lib";
 import { notifyProductTestTransition } from "../../_lib";
-import { createPurchasingTask, syncMarketingTask } from "../../_tasks";
+import { createImportTask, createPurchasingTask, syncMarketingTask } from "../../_tasks";
 
 const ACTION_LABELS: Record<string, string> = {
   submit_purchase_check: "Đã gửi Mua hàng check giá",
@@ -26,7 +26,6 @@ const ACTION_LABELS: Record<string, string> = {
   submit_test_proposal: "Đã gửi đề xuất test",
   approve_testing: "Leader đã duyệt chạy test",
   request_proposal_changes: "Leader yêu cầu sửa đề xuất",
-  submit_test_results: "Đã gửi kết quả để kết luận",
   request_more_testing: "Leader yêu cầu test thêm",
   approve_import: "Leader kết luận nhập sản phẩm",
   reject_import: "Leader kết luận không nhập",
@@ -115,24 +114,17 @@ async function assertPrerequisites(
       );
     }
   }
-  if (action === "submit_test_results") {
-    const count = await client.query(
-      `SELECT count(*)::int AS total FROM product_test_daily_result WHERE case_id=$1 AND deleted_at IS NULL`,
-      [caseId],
-    );
-    if (!count.rows[0]?.total)
-      throw Object.assign(
-        new Error("Cần ít nhất một dòng kết quả test"),
-        { status: 400 },
-      );
-  }
   if (action === "approve_import" || action === "reject_import") {
     const count = await client.query(
       `SELECT count(*)::int AS total, count(*) FILTER (WHERE evaluation IS NULL OR evaluation='')::int AS pending
        FROM product_test_daily_result WHERE case_id=$1 AND deleted_at IS NULL`,
       [caseId],
     );
-    if (!count.rows[0]?.total || count.rows[0]?.pending) {
+    if (!count.rows[0]?.total)
+      throw Object.assign(new Error("Cần ít nhất một dòng kết quả test"), {
+        status: 400,
+      });
+    if (count.rows[0]?.pending) {
       throw Object.assign(
         new Error(
           "Leader cần đánh giá tất cả dòng test trước khi kết luận",
@@ -263,6 +255,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
     if (action === "submit_purchase_check") {
       await createPurchasingTask(req, {
+        caseId: updatedCase.id,
+        code: updatedCase.code,
+        productName: updatedCase.product_name,
+        actor,
+      });
+    }
+    if (action === "approve_import") {
+      await createImportTask(req, {
         caseId: updatedCase.id,
         code: updatedCase.code,
         productName: updatedCase.product_name,

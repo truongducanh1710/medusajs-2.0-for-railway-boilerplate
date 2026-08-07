@@ -58,6 +58,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         overview: {
           total_cases: 0,
           testing_cases: 0,
+          awaiting_leader_review: 0,
           concluded_cases: 0,
           by_status: emptyStatusCounts(),
           spend: 0,
@@ -109,8 +110,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const byStatus = emptyStatusCounts();
     const marketerMap = new Map<string, any>();
     const assigneeMap = new Map<string, any>();
+    // "Chờ kết luận" no longer maps to a status (Leader now decides
+    // straight from "testing") — it means: currently testing, with at
+    // least one daily row still unevaluated, i.e. something for the
+    // Leader to actually look at right now.
+    let awaitingLeaderReview = 0;
     for (const row of cases) {
       byStatus[row.status] = (byStatus[row.status] || 0) + 1;
+      if (row.status === "testing") {
+        const rows = dailyMap[row.id] || [];
+        if (rows.some((r: any) => !r.evaluation)) awaitingLeaderReview++;
+      }
       const marketer = marketerMap.get(row.marketer_email) || {
         marketer_name: row.marketer_name,
         marketer_email: row.marketer_email,
@@ -139,6 +149,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       overview: {
         total_cases: cases.length,
         testing_cases: byStatus.testing || 0,
+        awaiting_leader_review: awaitingLeaderReview,
         concluded_cases:
           (byStatus.import_approved || 0) + (byStatus.import_rejected || 0),
         by_status: byStatus,

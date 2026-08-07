@@ -122,8 +122,8 @@ function ProductTestPage() {
     ],
     [
       "Chờ kết luận",
-      overview?.by_status?.awaiting_final_decision || 0,
-      "Cần leader đánh giá",
+      overview?.awaiting_leader_review || 0,
+      "Đang test, còn dòng chưa đánh giá",
     ],
     [
       "Đã kết luận",

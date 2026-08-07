@@ -25,7 +25,6 @@ const ACTION_LABELS: Record<string, string> = {
   submit_test_proposal: "Gửi duyệt đề xuất",
   approve_testing: "Duyệt chạy test",
   request_proposal_changes: "Yêu cầu sửa đề xuất",
-  submit_test_results: "Gửi leader kết luận",
   request_more_testing: "Yêu cầu test thêm",
   approve_import: "Duyệt nhập",
   reject_import: "Không nhập",

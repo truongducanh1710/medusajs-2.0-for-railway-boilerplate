@@ -133,3 +133,44 @@ export async function createPurchasingTask(
     // Best-effort — must never block the submit_purchase_check transition.
   }
 }
+
+// Fired once, when the leader approves import. This is the real purchasing
+// workflow (type "purchasing", same as any manually created "Lô nhập hàng"
+// task) — deliberately a different type from product_test_purchasing
+// above, which only ever covered checking the sourcing price before a
+// product was approved to test at all.
+export async function createImportTask(
+  req: MedusaRequest,
+  input: {
+    caseId: string;
+    code: string;
+    productName: string;
+    actor: ProductTestActor;
+  },
+): Promise<void> {
+  try {
+    const taskSvc = await findMktTaskModule(req);
+    const existing = await taskSvc.listMktTasks({
+      product_test_case_id: input.caseId,
+      type: "purchasing",
+    });
+    if (existing.length) return;
+
+    const purchaser = await findUserByRole(req, "mua-hang");
+    if (!purchaser) return;
+
+    await taskSvc.createMktTasks({
+      title: `${input.productName} (${input.code}) — đã duyệt nhập từ test`,
+      type: "purchasing",
+      assignee_id: purchaser.email,
+      created_by: input.actor.email,
+      status: "todo",
+      priority: "high",
+      tags: ["product_test"],
+      comments: [],
+      product_test_case_id: input.caseId,
+    });
+  } catch {
+    // Best-effort — must never block the approve_import transition.
+  }
+}

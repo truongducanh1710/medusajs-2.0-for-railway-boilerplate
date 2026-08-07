@@ -6,6 +6,8 @@ export const PRODUCT_TEST_STATUSES = [
   "awaiting_test_approval",
   "proposal_changes_requested",
   "testing",
+  // Retired from the live transition graph — kept in the type so historical
+  // cases/events created before this change still deserialize and display.
   "awaiting_final_decision",
   "import_approved",
   "import_rejected",
@@ -20,7 +22,6 @@ export type ProductTestAction =
   | "submit_test_proposal"
   | "approve_testing"
   | "request_proposal_changes"
-  | "submit_test_results"
   | "request_more_testing"
   | "approve_import"
   | "reject_import"
@@ -66,25 +67,24 @@ export const PRODUCT_TEST_TRANSITIONS: Record<ProductTestAction, Transition> = {
     role: "approve",
     comment_required: true,
   },
-  submit_test_results: {
-    from: ["testing"],
-    to: "awaiting_final_decision",
-    role: "marketing",
-  },
+  // Leader decides directly from "testing" — MKT only enters daily results,
+  // there is no separate "submit for conclusion" handoff. request_more_testing
+  // is a same-status action (stays "testing") that just records the leader
+  // asked for another round; approve/reject end the case.
   request_more_testing: {
-    from: ["awaiting_final_decision"],
+    from: ["testing"],
     to: "testing",
     role: "approve",
     comment_required: true,
   },
   approve_import: {
-    from: ["awaiting_final_decision"],
+    from: ["testing"],
     to: "import_approved",
     role: "approve",
     comment_required: true,
   },
   reject_import: {
-    from: ["awaiting_final_decision"],
+    from: ["testing"],
     to: "import_rejected",
     role: "approve",
     comment_required: true,

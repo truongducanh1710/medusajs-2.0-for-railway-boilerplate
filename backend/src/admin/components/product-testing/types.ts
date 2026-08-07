@@ -182,6 +182,7 @@ export interface ProductTestSummary extends ProductTestTotals {
 export interface ProductTestOverview {
   total_cases: number;
   testing_cases: number;
+  awaiting_leader_review: number;
   concluded_cases: number;
   by_status: Record<ProductTestStatus, number>;
   spend: number;
