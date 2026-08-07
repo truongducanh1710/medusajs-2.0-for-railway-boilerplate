@@ -26,7 +26,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "Đánh giá không hợp lệ" });
     const result = await getPool().query(
       `UPDATE product_test_daily_result d SET
-       evaluation=$1,leader_note=$2,evaluated_by=$3,evaluated_at=now(),version=version+1,updated_at=now()
+       evaluation=$1,leader_note=$2,evaluated_by=$3,evaluated_at=now(),version=d.version+1,updated_at=now()
        FROM product_test_case c
        WHERE d.id=$4 AND d.case_id=$5 AND d.case_id=c.id AND d.version=$6
        AND d.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status IN ('testing','awaiting_final_decision')

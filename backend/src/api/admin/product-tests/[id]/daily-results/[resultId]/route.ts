@@ -47,7 +47,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
 
     await client.query("BEGIN");
     const locked = await client.query(
-      `SELECT d.*, c.status, c.assignee_email
+      `SELECT d.*, c.status AS case_status, c.assignee_email
        FROM product_test_daily_result d
        JOIN product_test_case c ON c.id=d.case_id
        WHERE d.id=$1 AND d.case_id=$2 AND d.deleted_at IS NULL AND c.deleted_at IS NULL
@@ -65,7 +65,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Kết quả đã được người khác cập nhật" });
     }
-    if (row.status !== "testing") {
+    if (row.case_status !== "testing") {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Kết quả đã bị khóa" });
     }
