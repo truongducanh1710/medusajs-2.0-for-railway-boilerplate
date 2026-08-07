@@ -730,6 +730,16 @@ function DailyResultRow({
   );
 }
 
+function isUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function Field({
   label,
   value,
@@ -743,9 +753,25 @@ function Field({
   disabled?: boolean;
   type?: string;
 }) {
+  // A locked field holding a URL should still be openable — a greyed-out
+  // input isn't clickable, so surface a real link alongside it.
+  const showLink = disabled && isUrl(value);
   return (
     <label className="pt-field">
-      <span>{label}</span>
+      <span>
+        {label}
+        {showLink && (
+          <a
+            className="pt-field-link"
+            href={value}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Mở link ↗
+          </a>
+        )}
+      </span>
       <input
         type={type}
         value={value ?? ""}
@@ -834,6 +860,9 @@ const DRAWER_CSS = `
 .pt-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .pt-form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
 .pt-field{display:grid;gap:5px;margin:9px 0;color:var(--fg-subtle,#4b5563);font-weight:600;font-size:12px}
+.pt-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pt-field-link{color:#2563eb;font-weight:600;text-decoration:none;flex-shrink:0}
+.pt-field-link:hover{text-decoration:underline}
 .pt-field input,.pt-field textarea,.pt-evaluate input,.pt-evaluate select{width:100%;border:1px solid var(--border-base,#d1d5db);border-radius:7px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);padding:8px;font:13px inherit;font-weight:400;outline:none;transition:border-color .12s,box-shadow .12s}
 .pt-field input:focus,.pt-field textarea:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
 .pt-field textarea{min-height:74px;resize:vertical;line-height:1.5}
