@@ -110,6 +110,9 @@ export function ProductTestDrawer({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameError, setNameError] = useState("");
 
   async function load() {
     try {
@@ -185,6 +188,35 @@ export function ProductTestDrawer({
     (permissions.can_edit_purchase || permissions.can_edit_marketing);
   const dailyEditable =
     permissions.can_edit_marketing && record.status === "testing";
+  // Mirrors the backend guard in [id]/route.ts PATCH: only the MKT owner
+  // (or super) can rename, and only while nothing downstream has locked in
+  // yet — the name is what Mua hàng/leader see in every later step.
+  const nameEditable =
+    ["draft", "purchase_changes_requested"].includes(record.status) &&
+    permissions.can_edit_marketing;
+
+  async function saveName() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      setNameError("Tên sản phẩm không được trống");
+      return;
+    }
+    setNameError("");
+    setBusy("name");
+    try {
+      await client.updateCase(record.id, {
+        product_name: trimmed,
+        version: record.version,
+      });
+      await load();
+      await onChanged();
+      setEditingName(false);
+    } catch (err: any) {
+      setNameError(err?.message || "Không lưu được tên sản phẩm");
+    } finally {
+      setBusy("");
+    }
+  }
 
   // proposal.sale_price only reflects what's typed in the form, not what's
   // saved on record.proposal — comparing against the latter is what makes
@@ -232,7 +264,46 @@ export function ProductTestDrawer({
         <header className="pt-drawer-head">
           <div>
             <small>{record.code}</small>
-            <h2>{record.product_name}</h2>
+            {editingName ? (
+              <div className="pt-name-edit">
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  disabled={busy === "name"}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveName();
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                />
+                <button
+                  className="pt-drawer-primary"
+                  disabled={busy === "name"}
+                  onClick={saveName}
+                >
+                  Lưu
+                </button>
+                <button onClick={() => setEditingName(false)}>Huỷ</button>
+                {nameError && <small className="pt-field-error">{nameError}</small>}
+              </div>
+            ) : (
+              <h2>
+                {record.product_name}
+                {nameEditable && (
+                  <button
+                    className="pt-name-trigger"
+                    title="Sửa tên sản phẩm"
+                    onClick={() => {
+                      setNameDraft(record.product_name);
+                      setNameError("");
+                      setEditingName(true);
+                    }}
+                  >
+                    ✎
+                  </button>
+                )}
+              </h2>
+            )}
             <p>
               <span className={`pt-status s-${record.status}`}>
                 {STATUS_LABELS[record.status] || record.status}
@@ -931,7 +1002,14 @@ const DRAWER_CSS = `
 .pt-drawer *{box-sizing:border-box}
 .pt-drawer-head{position:sticky;top:0;z-index:2;background:var(--bg-base,#fff);border-bottom:1px solid var(--border-base,#e5e7eb);padding:16px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .pt-drawer-head small{color:var(--fg-muted,#6b7280);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
-.pt-drawer-head h2{font-size:19px;margin:3px 0 4px;color:var(--fg-base,#111827);line-height:1.3}
+.pt-drawer-head h2{font-size:19px;margin:3px 0 4px;color:var(--fg-base,#111827);line-height:1.3;display:flex;align-items:center;gap:8px}
+.pt-name-trigger{border:0;background:none;color:var(--fg-muted,#9ca3af);font-size:14px;cursor:pointer;padding:2px 4px;border-radius:5px;line-height:1}
+.pt-name-trigger:hover{background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#4b5563)}
+.pt-name-edit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:3px 0 4px}
+.pt-name-edit input{font-size:16px;font-weight:700;border:1px solid #60a5fa;border-radius:6px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);padding:5px 8px;outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.16);min-width:220px}
+.pt-name-edit .pt-drawer-primary{padding:6px 11px;font-size:12px}
+.pt-name-edit>button:not(.pt-drawer-primary){border:0;background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#4b5563);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.pt-name-edit small.pt-field-error{width:100%}
 .pt-drawer-head p{margin:0;color:var(--fg-subtle,#6b7280);font-size:12px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .pt-drawer-head-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .pt-drawer-head-actions>button{border:0;background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#6b7280);border-radius:7px;width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;flex-shrink:0}

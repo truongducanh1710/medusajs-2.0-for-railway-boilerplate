@@ -103,6 +103,11 @@ export function rejectBodyFields(body: unknown, fields: string[]): void {
 }
 
 export function apiError(res: any, error: any) {
+  if (error?.code === "23505" && error?.constraint === "uq_product_test_case_name") {
+    return res
+      .status(409)
+      .json({ error: "Tên sản phẩm này đã có hồ sơ test khác, vui lòng đặt tên khác" });
+  }
   const status = Number(error?.status) || (error?.code === "23505" ? 409 : 500);
   return res.status(status).json({ error: error?.message || "Lỗi hệ thống" });
 }
