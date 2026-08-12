@@ -74,6 +74,17 @@ const emptyProposal: ProductTestProposal = {
   approved_at: "",
 };
 
+// Keeps a null column from overwriting the empty-string default it is merged
+// onto: the form inputs and the URL checks treat these fields as strings.
+function definedOnly(source: Record<string, any> | null | undefined) {
+  if (!source) return {};
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== null && value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
 export function ProductTestDrawer({
   caseId,
   client,
@@ -114,8 +125,11 @@ export function ProductTestDrawer({
       setError("");
       const data = await client.get(caseId);
       setDetail(data);
-      setPurchase({ ...emptyPurchase, ...(data.case.purchase_check || {}) });
-      setProposal({ ...emptyProposal, ...(data.case.proposal || {}) });
+      // Columns that were never filled come back as null, and spreading them
+      // over the empty form replaces the "" defaults the inputs and the
+      // .trim() checks below rely on — so drop null/undefined while merging.
+      setPurchase({ ...emptyPurchase, ...definedOnly(data.case.purchase_check) });
+      setProposal({ ...emptyProposal, ...definedOnly(data.case.proposal) });
       setDaily((current: any) => ({
         ...current,
         tester_name: data.case.assignee_name || "",
@@ -454,7 +468,7 @@ export function ProductTestDrawer({
                   className="pt-drawer-primary"
                   disabled={
                     !!busy ||
-                    (!!purchase.supplier_link.trim() &&
+                    (!!(purchase.supplier_link ?? "").trim() &&
                       !isUrl(purchase.supplier_link))
                   }
                   onClick={() =>
@@ -540,7 +554,7 @@ export function ProductTestDrawer({
                   className="pt-drawer-primary"
                   disabled={
                     !!busy ||
-                    (!!proposal.landing_url.trim() &&
+                    (!!(proposal.landing_url ?? "").trim() &&
                       !isUrl(proposal.landing_url))
                   }
                   onClick={() =>
