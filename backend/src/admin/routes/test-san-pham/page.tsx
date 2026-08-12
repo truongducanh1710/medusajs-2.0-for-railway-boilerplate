@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { withRouteGuard } from "../../components/route-guard";
+import { withDebugBoundary } from "../../components/debug-boundary";
 import { createProductTestingClient } from "../../components/product-testing/client";
 import { STATUS_LABELS } from "../../components/product-testing/types";
 import type {
@@ -67,9 +68,16 @@ function ProductTestPage() {
     setError("");
     try {
       const data = await client.list(filters);
-      setRows(data.cases);
-      setOverview(data.overview);
-      setFacets(data.facets);
+      // Never trust the shape here: an expired session or an error payload
+      // returns JSON without `cases`, and an undefined rows array throws in
+      // visibleRows during render — which the error boundary turns into a
+      // blank page with no clue what went wrong.
+      setRows(Array.isArray(data?.cases) ? data.cases : []);
+      setOverview(data?.overview ?? null);
+      setFacets({
+        by_marketer: Array.isArray(data?.facets?.by_marketer) ? data.facets.by_marketer : [],
+        by_assignee: Array.isArray(data?.facets?.by_assignee) ? data.facets.by_assignee : [],
+      });
     } catch (err: any) {
       setError(err?.message || "Không tải được dữ liệu");
     } finally {
@@ -535,4 +543,6 @@ const PAGE_CSS = `
 `;
 
 export const config = defineRouteConfig({ label: "Test sản phẩm", rank: 6 });
-export default withRouteGuard(ProductTestPage);
+export default withRouteGuard(
+  withDebugBoundary("test-san-pham", ProductTestPage),
+);

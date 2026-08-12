@@ -3,6 +3,7 @@ import { useCurrentPermissions } from "../lib/use-permissions"
 import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
 import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
 import { DEFAULT_ADMIN_APP_ROUTE } from "../lib/default-route"
+import { installAdminDebugHooks } from "../lib/debug-hooks"
 
 const FORBIDDEN_MESSAGE = "B\u1ea1n kh\u00f4ng c\u00f3 quy\u1ec1n truy c\u1eadp trang n\u00e0y"
 
@@ -22,6 +23,7 @@ export function withRouteGuard<P extends object>(Component: ComponentType<P>) {
 export const RouteGuard = () => {
   useEffect(() => {
     ensureMktChatGlobalMentionAlerts()
+    installAdminDebugHooks()
   }, [])
 
   const { perms, loading, has, isSuper, role } = useCurrentPermissions()
