@@ -2986,20 +2986,84 @@ function CombinedDayTable({ days, series, totalKey, targetDays, hasTarget, total
   days: any[]; series: any[]; totalKey: string; targetDays: any[]; hasTarget: boolean
   totals: any; targetTotals: any; scopeTotal: number; scopeTarget: number
 }) {
+  // Lọc theo nền tảng: null = tất cả (dùng totalKey gộp), ngược lại dùng chính key của nền tảng.
+  // days/targetDays đều có sẵn field theo từng key nên chỉ cần đổi key là mọi phép tính chạy theo.
+  const [platform, setPlatform] = useState<string | null>(null)
+  const activeKey = platform ?? totalKey
+  const activeSeries = platform ? series.filter(s => s.key === platform) : series
+  const activeLabel = platform ? series.find(s => s.key === platform)?.label ?? "" : "Tất cả"
+
   const targetByDate = new Map<string, any>(targetDays.map((d: any) => [d.date, d]))
-  const maxTotal = Math.max(...days.map(d => Number(d[totalKey] ?? 0)), 1)
-  const best = days.reduce((a, d) => (Number(d[totalKey] ?? 0) > Number(a?.[totalKey] ?? -1) ? d : a), null as any)
-  const worst = days.reduce((a, d) => (Number(d[totalKey] ?? 0) < Number(a?.[totalKey] ?? Infinity) ? d : a), null as any)
+  const maxTotal = Math.max(...days.map(d => Number(d[activeKey] ?? 0)), 1)
+  const best = days.reduce((a, d) => (Number(d[activeKey] ?? 0) > Number(a?.[activeKey] ?? -1) ? d : a), null as any)
+  const worst = days.reduce((a, d) => (Number(d[activeKey] ?? 0) < Number(a?.[activeKey] ?? Infinity) ? d : a), null as any)
   const pctDone = (v: number, t: number) => (t > 0 ? Math.round(v / t * 100) : null)
   const doneColor = (p: number | null) => p == null ? "#9ca3af" : p >= 100 ? "#16a34a" : p >= 80 ? "#d97706" : "#dc2626"
+
+  const viewTotal = Number(totals[activeKey] ?? 0)
+  const viewTarget = Number(targetTotals[activeKey] ?? 0)
+
+  // Lũy kế chênh lệch: cum(n) = (thực hiện n − kế hoạch n) + cum(n−1).
+  // Chỉ cộng đến hôm nay — ngày tương lai chưa có doanh số nên lũy kế của chúng vô nghĩa.
+  const today = todayVN()
+  const cumByDate = new Map<string, number>()
+  const cumTargetByDate = new Map<string, number>()
+  let running = 0
+  let runningTarget = 0
+  for (const d of days) {
+    if (d.date > today) break
+    running += Number(d[activeKey] ?? 0) - Number(targetByDate.get(d.date)?.[activeKey] ?? 0)
+    runningTarget += Number(targetByDate.get(d.date)?.[activeKey] ?? 0)
+    cumByDate.set(d.date, running)
+    cumTargetByDate.set(d.date, runningTarget)
+  }
+  const cumToDate = running
+  const cumTargetToDate = runningTarget
+
+  // Tô màu lũy kế theo % hoàn thành lũy kế (cùng ngưỡng với cột % HT), không chỉ theo dấu âm/dương.
+  const cumColor = (cum: number | null, target: number) =>
+    cum == null ? "#9ca3af" : doneColor(pctDone(cum + target, target))
+
+  // Tiến độ từng nền tảng tính đến hôm nay — dùng cho nhãn cảnh báo trên nút lọc.
+  const platformPct = new Map<string, number | null>()
+  for (const s of series) {
+    let done = 0, plan = 0
+    for (const d of days) {
+      if (d.date > today) break
+      done += Number(d[s.key] ?? 0)
+      plan += Number(targetByDate.get(d.date)?.[s.key] ?? 0)
+    }
+    platformPct.set(s.key, pctDone(done, plan))
+  }
 
   return (
     <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
       <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="font-semibold text-gray-700 text-sm">Chi tiết theo ngày</h3>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h3 className="font-semibold text-gray-700 text-sm">Chi tiết theo ngày</h3>
+          <div className="flex gap-1 text-xs">
+            {[{ key: null as string | null, label: "Tất cả" }, ...series.map(s => ({ key: s.key as string | null, label: s.label }))].map(opt => {
+              const on = platform === opt.key
+              const pct = opt.key ? platformPct.get(opt.key) ?? null : null
+              return (
+                <button key={opt.key ?? "__all"} type="button" onClick={() => setPlatform(opt.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 border transition-colors ${
+                    on ? "bg-violet-600 border-violet-600 text-white font-semibold" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                  title={opt.key && pct != null ? `Đạt ${pct}% kế hoạch lũy kế đến hôm nay` : undefined}>
+                  {opt.label}
+                  {opt.key && pct != null && (
+                    <i className="w-1.5 h-1.5 rounded-full inline-block"
+                      style={{ background: on ? "#ffffff" : doneColor(pct) }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
         <div className="flex gap-2 text-xs text-gray-500">
-          {best && <span className="border rounded-full px-2.5 py-0.5">Cao nhất: {best.date.slice(8)}/{best.date.slice(5, 7)} · {fmtVND(best[totalKey])}</span>}
-          {worst && <span className="border rounded-full px-2.5 py-0.5">Thấp nhất: {worst.date.slice(8)}/{worst.date.slice(5, 7)} · {fmtVND(worst[totalKey])}</span>}
+          {best && <span className="border rounded-full px-2.5 py-0.5">Cao nhất: {best.date.slice(8)}/{best.date.slice(5, 7)} · {fmtVND(best[activeKey])}</span>}
+          {worst && <span className="border rounded-full px-2.5 py-0.5">Thấp nhất: {worst.date.slice(8)}/{worst.date.slice(5, 7)} · {fmtVND(worst[activeKey])}</span>}
         </div>
       </div>
       <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
@@ -3007,41 +3071,54 @@ function CombinedDayTable({ days, series, totalKey, targetDays, hasTarget, total
           <thead className="sticky top-0 bg-white z-10">
             <tr className="text-xs uppercase tracking-wide text-gray-500 border-b">
               <th className="text-left px-3 py-2 font-semibold">Ngày</th>
-              {[...series].reverse().map(s => (
+              {[...activeSeries].reverse().map(s => (
                 <th key={s.key} className="text-right px-3 py-2 font-semibold" style={{ color: s.color }}>{s.label}</th>
               ))}
-              <th className="text-right px-3 py-2 font-semibold">Tổng ngày</th>
+              {!platform && <th className="text-right px-3 py-2 font-semibold">Tổng ngày</th>}
               {hasTarget && <th className="text-right px-3 py-2 font-semibold">Kế hoạch</th>}
               {hasTarget && <th className="text-right px-3 py-2 font-semibold">% HT</th>}
+              {hasTarget && (
+                <th className="text-right px-3 py-2 font-semibold" title="Lũy kế chênh lệch thực hiện so với kế hoạch, cộng dồn từ đầu kỳ đến ngày đó">
+                  Lũy kế
+                </th>
+              )}
               <th className="text-right px-3 py-2 font-semibold w-48">Cơ cấu</th>
             </tr>
           </thead>
           <tbody>
             {days.map(d => {
-              const dayTotal = Number(d[totalKey] ?? 0)
-              const t = Number(targetByDate.get(d.date)?.[totalKey] ?? 0)
+              const dayTotal = Number(d[activeKey] ?? 0)
+              const t = Number(targetByDate.get(d.date)?.[activeKey] ?? 0)
               const p = pctDone(dayTotal, t)
+              const cum = cumByDate.has(d.date) ? cumByDate.get(d.date)! : null
               const barPct = Math.round(dayTotal / maxTotal * 100)
               return (
                 <tr key={d.date} className={`border-b border-gray-50 hover:bg-violet-50/40 ${isWeekend(d.date) ? "bg-amber-50/40" : ""}`}>
                   <td className={`px-3 py-1.5 text-xs ${isWeekend(d.date) ? "text-amber-600 font-semibold" : "text-gray-500"}`}>
                     {d.date.slice(8)}/{d.date.slice(5, 7)} · {DOW_LABEL[dowOf(d.date)]}
                   </td>
-                  {[...series].reverse().map(s => (
-                    <td key={s.key} className="text-right px-3 py-1.5">{fmtVND(d[s.key])}</td>
+                  {[...activeSeries].reverse().map(s => (
+                    <td key={s.key} className={`text-right px-3 py-1.5${platform ? " font-semibold" : ""}`}>{fmtVND(d[s.key])}</td>
                   ))}
-                  <td className="text-right px-3 py-1.5 font-semibold">{fmtVND(dayTotal)}</td>
+                  {!platform && <td className="text-right px-3 py-1.5 font-semibold">{fmtVND(dayTotal)}</td>}
                   {hasTarget && <td className="text-right px-3 py-1.5 text-gray-400">{t > 0 ? fmtVND(t) : "—"}</td>}
                   {hasTarget && (
                     <td className="text-right px-3 py-1.5 font-semibold" style={{ color: doneColor(p) }}>
                       {p != null ? `${p}%` : "—"}
                     </td>
                   )}
+                  {hasTarget && (
+                    <td className="text-right px-3 py-1.5 font-semibold"
+                      style={{ color: cumColor(cum, cumTargetByDate.get(d.date) ?? 0) }}
+                      title={cum == null ? "Chưa tới ngày" : `Chênh lệch ngày: ${fmtVND(dayTotal - t)} · Đạt ${pctDone(cum + (cumTargetByDate.get(d.date) ?? 0), cumTargetByDate.get(d.date) ?? 0) ?? "—"}% kế hoạch lũy kế`}>
+                      {cum == null ? "—" : `${cum >= 0 ? "+" : "−"}${fmtVND(Math.abs(cum))}`}
+                    </td>
+                  )}
                   <td className="px-3 py-1.5">
                     <div className="flex justify-end">
                       <span className="flex h-4 rounded overflow-hidden bg-gray-100"
                         style={{ width: `${barPct}%`, minWidth: dayTotal > 0 ? "2px" : undefined }}>
-                        {series.map(s => {
+                        {activeSeries.map(s => {
                           const v = Number(d[s.key] ?? 0)
                           const w = dayTotal > 0 ? v / dayTotal * 100 : 0
                           return <i key={s.key} className="h-full block" style={{ width: `${w}%`, background: s.color }}
@@ -3056,22 +3133,29 @@ function CombinedDayTable({ days, series, totalKey, targetDays, hasTarget, total
           </tbody>
           <tfoot className="sticky bottom-0">
             <tr className="bg-violet-50 font-bold border-t-2 border-gray-200">
-              <td className="px-3 py-2 text-xs">Tổng kỳ</td>
-              {[...series].reverse().map(s => (
+              <td className="px-3 py-2 text-xs">Tổng kỳ{platform ? ` · ${activeLabel}` : ""}</td>
+              {[...activeSeries].reverse().map(s => (
                 <td key={s.key} className="text-right px-3 py-2">{fmtVND(totals[s.key])}</td>
               ))}
-              <td className="text-right px-3 py-2">{fmtVND(scopeTotal)}</td>
-              {hasTarget && <td className="text-right px-3 py-2">{scopeTarget > 0 ? fmtVND(scopeTarget) : "—"}</td>}
+              {!platform && <td className="text-right px-3 py-2">{fmtVND(scopeTotal)}</td>}
+              {hasTarget && <td className="text-right px-3 py-2">{viewTarget > 0 ? fmtVND(viewTarget) : "—"}</td>}
               {hasTarget && (
-                <td className="text-right px-3 py-2" style={{ color: doneColor(pctDone(scopeTotal, scopeTarget)) }}>
-                  {pctDone(scopeTotal, scopeTarget) != null ? `${pctDone(scopeTotal, scopeTarget)}%` : "—"}
+                <td className="text-right px-3 py-2" style={{ color: doneColor(pctDone(viewTotal, viewTarget)) }}>
+                  {pctDone(viewTotal, viewTarget) != null ? `${pctDone(viewTotal, viewTarget)}%` : "—"}
+                </td>
+              )}
+              {hasTarget && (
+                <td className="text-right px-3 py-2"
+                  style={{ color: cumColor(cumToDate, cumTargetToDate) }}
+                  title={`Lũy kế tính đến hôm nay — không tính kế hoạch của các ngày chưa tới. Đạt ${pctDone(cumToDate + cumTargetToDate, cumTargetToDate) ?? "—"}% kế hoạch lũy kế.`}>
+                  {`${cumToDate >= 0 ? "+" : "−"}${fmtVND(Math.abs(cumToDate))}`}
                 </td>
               )}
               <td className="px-3 py-2">
                 <div className="flex justify-end">
                   <span className="flex h-4 rounded overflow-hidden bg-gray-100 w-full">
-                    {series.map(s => {
-                      const w = scopeTotal > 0 ? Number(totals[s.key] ?? 0) / scopeTotal * 100 : 0
+                    {activeSeries.map(s => {
+                      const w = viewTotal > 0 ? Number(totals[s.key] ?? 0) / viewTotal * 100 : 0
                       return <i key={s.key} className="h-full block" style={{ width: `${w}%`, background: s.color }} />
                     })}
                   </span>
