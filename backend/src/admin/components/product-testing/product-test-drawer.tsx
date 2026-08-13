@@ -19,19 +19,12 @@ import { ComboCalculator } from "./combo-calculator";
 import { calculateKpis } from "../../../modules/product-test/kpi";
 
 const ACTION_LABELS: Record<string, string> = {
-  submit_purchase_check: "Gửi Mua hàng check",
-  approve_purchase_check: "Duyệt check giá",
-  request_purchase_changes: "Yêu cầu bổ sung",
-  submit_test_proposal: "Gửi duyệt đề xuất",
-  approve_testing: "Duyệt chạy test",
-  request_proposal_changes: "Yêu cầu sửa đề xuất",
   request_more_testing: "Yêu cầu test thêm",
   approve_import: "Duyệt nhập",
   reject_import: "Không nhập",
 };
+// Every remaining action is a leader judgement, so all of them need a reason.
 const COMMENT_ACTIONS = new Set([
-  "request_purchase_changes",
-  "request_proposal_changes",
   "request_more_testing",
   "approve_import",
   "reject_import",
@@ -182,8 +175,8 @@ export function ProductTestDrawer({
       setBusy("");
     }
   }
-  // MKT phụ trách and Purchasing may both edit Check giá/Đề xuất at any open
-  // stage; only the two terminal decisions lock the case for good.
+  // MKT and Purchasing may both edit Check giá/Đề xuất at any open stage;
+  // only the two terminal decisions lock the case for good.
   const isConcluded = ["import_approved", "import_rejected"].includes(
     record.status,
   );
@@ -193,14 +186,19 @@ export function ProductTestDrawer({
   const proposalEditable =
     !isConcluded &&
     (permissions.can_edit_purchase || permissions.can_edit_marketing);
+  // Section 3 unlocks from the data, not from an approval step: a sale price
+  // and a combo are what a campaign needs to run. Reading the live form state
+  // rather than record.proposal means it opens the moment Lưu đề xuất
+  // succeeds, matching deriveStatus() on the backend.
+  // Mirrors deriveStatus(): draft → testing is one-way, so a case already
+  // running stays unlocked even while the combo field is being reworked.
+  const readyForTesting =
+    record.status === "testing" ||
+    (Number(proposal.sale_price) > 0 && !!(proposal.combo_json || "").trim());
   const dailyEditable =
-    permissions.can_edit_marketing && record.status === "testing";
-  // Mirrors the backend guard in [id]/route.ts PATCH: only the MKT owner
-  // (or super) can rename, and only while nothing downstream has locked in
-  // yet — the name is what Mua hàng/leader see in every later step.
-  const nameEditable =
-    ["draft", "purchase_changes_requested"].includes(record.status) &&
-    permissions.can_edit_marketing;
+    permissions.can_edit_marketing && !isConcluded && readyForTesting;
+  // Mirrors the backend guard in [id]/route.ts PATCH — open until concluded.
+  const nameEditable = !isConcluded && permissions.can_edit_marketing;
 
   async function saveName() {
     const trimmed = nameDraft.trim();
@@ -581,7 +579,13 @@ export function ProductTestDrawer({
               <OwnerBadge
                 editable={dailyEditable}
                 editableLabel="Bạn đang nhập (MKT)"
-                lockedLabel="Mở khi camp bắt đầu chạy"
+                lockedLabel={
+                  isConcluded
+                    ? "Hồ sơ đã kết luận, không sửa được nữa"
+                    : !readyForTesting
+                      ? "Điền Giá bán + Combo ở phần 2 để mở"
+                      : "Cần quyền MKT để nhập kết quả"
+                }
               />
             </div>
             <div className="pt-linked">

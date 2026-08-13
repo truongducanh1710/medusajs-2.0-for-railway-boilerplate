@@ -6,14 +6,8 @@ import { normalizeEmail, type ProductTestActor } from "./_lib";
 // than importing the admin-side STATUS_LABELS (that file lives under
 // src/admin and is Vite-bundled, not meant to be required by API routes).
 const STATUS_LABELS: Record<string, string> = {
-  draft: "Nháp",
-  awaiting_purchase_check: "Chờ check giá",
-  purchase_changes_requested: "Cần bổ sung check giá",
-  proposal_draft: "Soạn đề xuất",
-  awaiting_test_approval: "Chờ duyệt test",
-  proposal_changes_requested: "Cần sửa đề xuất",
+  draft: "Đang chuẩn bị",
   testing: "Đang test",
-  awaiting_final_decision: "Chờ kết luận",
   import_approved: "Duyệt nhập",
   import_rejected: "Không nhập",
 };
@@ -94,10 +88,11 @@ export async function syncMarketingTask(
   }
 }
 
-// Fired once, when the case is first submitted to Mua hàng. Purchasing
-// owns closing it themselves (per team decision — checking the price is
-// their own confirmation, not something to infer from a later action), so
-// this never auto-updates or auto-closes afterward.
+// Fired once, when the case is created — there is no longer a "submit to Mua
+// hàng" step, so creation is the earliest point Purchasing can act. They own
+// closing it themselves (per team decision — checking the price is their own
+// confirmation, not something to infer from a later action), so this never
+// auto-updates or auto-closes afterward.
 export async function createPurchasingTask(
   req: MedusaRequest,
   input: {
@@ -130,7 +125,7 @@ export async function createPurchasingTask(
       product_test_case_id: input.caseId,
     });
   } catch {
-    // Best-effort — must never block the submit_purchase_check transition.
+    // Best-effort — must never block case creation.
   }
 }
 

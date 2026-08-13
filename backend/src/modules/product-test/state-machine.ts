@@ -1,27 +1,45 @@
+// The workflow deliberately has no approval gates. A case moves draft →
+// testing on its own once the proposal carries a sale price and a combo, so
+// nobody can leave a case stranded by forgetting to press a button. The only
+// manual actions left are the leader's two terminal decisions.
 export const PRODUCT_TEST_STATUSES = [
   "draft",
+  "testing",
+  "import_approved",
+  "import_rejected",
+  // Retired statuses. The Migration20260813000000 rewrite maps every stored
+  // row onto the four live values, but historical product_test_event rows keep
+  // their original from_status/to_status strings, so the type must still
+  // accept them for the audit trail to deserialize.
   "awaiting_purchase_check",
   "purchase_changes_requested",
   "proposal_draft",
   "awaiting_test_approval",
   "proposal_changes_requested",
-  "testing",
-  // Retired from the live transition graph — kept in the type so historical
-  // cases/events created before this change still deserialize and display.
   "awaiting_final_decision",
+] as const;
+
+export type ProductTestStatus = (typeof PRODUCT_TEST_STATUSES)[number];
+
+/** The four statuses a live case can actually hold. */
+export const ACTIVE_PRODUCT_TEST_STATUSES = [
+  "draft",
+  "testing",
   "import_approved",
   "import_rejected",
 ] as const;
 
-export type ProductTestStatus = (typeof PRODUCT_TEST_STATUSES)[number];
+export const RETIRED_STATUS_MAP: Record<string, ProductTestStatus> = {
+  awaiting_purchase_check: "draft",
+  purchase_changes_requested: "draft",
+  proposal_draft: "draft",
+  awaiting_test_approval: "draft",
+  proposal_changes_requested: "draft",
+  awaiting_final_decision: "testing",
+};
+
 export type ProductTestRole = "marketing" | "purchasing" | "approve";
 export type ProductTestAction =
-  | "submit_purchase_check"
-  | "approve_purchase_check"
-  | "request_purchase_changes"
-  | "submit_test_proposal"
-  | "approve_testing"
-  | "request_proposal_changes"
   | "request_more_testing"
   | "approve_import"
   | "reject_import";
@@ -34,42 +52,8 @@ type Transition = {
 };
 
 export const PRODUCT_TEST_TRANSITIONS: Record<ProductTestAction, Transition> = {
-  submit_purchase_check: {
-    from: ["draft", "purchase_changes_requested"],
-    to: "awaiting_purchase_check",
-    role: "marketing",
-  },
-  approve_purchase_check: {
-    from: ["awaiting_purchase_check"],
-    to: "proposal_draft",
-    role: "purchasing",
-  },
-  request_purchase_changes: {
-    from: ["awaiting_purchase_check"],
-    to: "purchase_changes_requested",
-    role: "purchasing",
-    comment_required: true,
-  },
-  submit_test_proposal: {
-    from: ["proposal_draft", "proposal_changes_requested"],
-    to: "awaiting_test_approval",
-    role: "marketing",
-  },
-  approve_testing: {
-    from: ["awaiting_test_approval"],
-    to: "testing",
-    role: "approve",
-  },
-  request_proposal_changes: {
-    from: ["awaiting_test_approval"],
-    to: "proposal_changes_requested",
-    role: "approve",
-    comment_required: true,
-  },
-  // Leader decides directly from "testing" — MKT only enters daily results,
-  // there is no separate "submit for conclusion" handoff. request_more_testing
-  // is a same-status action (stays "testing") that just records the leader
-  // asked for another round; approve/reject end the case.
+  // Same-status action: it records that the leader asked for another round
+  // rather than moving the case anywhere.
   request_more_testing: {
     from: ["testing"],
     to: "testing",
@@ -89,6 +73,47 @@ export const PRODUCT_TEST_TRANSITIONS: Record<ProductTestAction, Transition> = {
     comment_required: true,
   },
 };
+
+export const CONCLUDED_STATUSES: ProductTestStatus[] = [
+  "import_approved",
+  "import_rejected",
+];
+
+export function isConcluded(status: string): boolean {
+  return CONCLUDED_STATUSES.includes(status as ProductTestStatus);
+}
+
+/**
+ * A case is ready to test once the proposal names a price and a combo — the
+ * two things a campaign cannot run without. This is the whole gate; it is
+ * evaluated from data rather than asserted by an action.
+ */
+export function isReadyForTesting(proposal: {
+  sale_price?: unknown;
+  combo_json?: unknown;
+} | null | undefined): boolean {
+  if (!proposal) return false;
+  const price = Number(proposal.sale_price);
+  const combo =
+    typeof proposal.combo_json === "string" ? proposal.combo_json.trim() : "";
+  return Number.isFinite(price) && price > 0 && combo.length > 0;
+}
+
+/**
+ * Derives the status a non-concluded case should hold given its proposal.
+ *
+ * draft → testing is one-way: once a case has started running, clearing the
+ * combo text must not demote it and strip the daily-results section out from
+ * under numbers that were already entered.
+ */
+export function deriveStatus(
+  current: string,
+  proposal: { sale_price?: unknown; combo_json?: unknown } | null | undefined,
+): ProductTestStatus {
+  if (isConcluded(current) || current === "testing")
+    return current as ProductTestStatus;
+  return isReadyForTesting(proposal) ? "testing" : "draft";
+}
 
 export function getTransition(action: string, status: string): Transition {
   const transition = PRODUCT_TEST_TRANSITIONS[action as ProductTestAction];

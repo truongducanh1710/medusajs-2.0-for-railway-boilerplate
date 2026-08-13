@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { markGlobalActivity, hasRecentGlobalActivity } from "../../lib/mkt-chat-global-alerts"
 import { useCurrentPermissions } from "../../lib/use-permissions"
@@ -78,6 +78,14 @@ function fmtSnippetTime(d: string) {
   const dt = new Date(d)
   if (dt.toDateString() === new Date().toDateString()) return fmtTime(d)
   return fmtDate(d)
+}
+
+// Channel-list preview is a single line. Multi-line messages (product-test
+// cards carry a whole fact block in `content` as a fallback) would otherwise
+// bleed their newlines into the snippet.
+function snippetOf(content: string): string {
+  const first = (content || "").split("\n").find(line => line.trim())
+  return first || ""
 }
 
 // XSS-safe: escape HTML trước, sau đó mới highlight @mention
@@ -432,6 +440,109 @@ function ReactionBar({ reactions, msgId, currentEmail, onReact, isMine, users: m
   )
 }
 
+// ─── Product Test Card ────────────────────────────────────────────────────────
+
+// Accent per milestone. Keyed off metadata.milestone so the palette survives
+// wording changes to the title.
+const PT_ACCENTS: Record<string, { bar: string; chip: string }> = {
+  created:         { bar: "bg-slate-400",  chip: "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-300" },
+  cost_ready:      { bar: "bg-blue-500",   chip: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300" },
+  testing_started: { bar: "bg-emerald-500",chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" },
+  first_result:    { bar: "bg-indigo-500", chip: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300" },
+  more_testing:    { bar: "bg-amber-500",  chip: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" },
+  stalled:         { bar: "bg-orange-500", chip: "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300" },
+  concluded:       { bar: "bg-green-600",  chip: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300" },
+}
+
+function isLikelyUrl(value: string) {
+  return /^https?:\/\//i.test(value)
+}
+
+function ProductTestCard({ msg, currentUserEmail, onReact, users }: {
+  msg: Message; currentUserEmail: string
+  onReact: (msgId: string, emoji: string) => void
+  users: MktUser[]
+}) {
+  const meta = (msg.metadata || {}) as any
+  const accent = PT_ACCENTS[meta.milestone] || PT_ACCENTS.created
+  const facts: Array<{ label: string; value: string }> = Array.isArray(meta.facts) ? meta.facts : []
+  // Pre-milestone messages stored only a text blob; fall back to it so old
+  // history stays readable instead of rendering an empty card.
+  const hasCard = !!meta.milestone
+
+  if (!hasCard) {
+    return (
+      <div className="my-1 text-center">
+        <span className="inline-block max-w-[90%] whitespace-pre-wrap rounded-2xl bg-ui-bg-base px-2.5 py-1 text-xs text-ui-fg-muted shadow-sm">
+          {msg.content}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="chat-anim-msgin my-2">
+      <div className="overflow-hidden rounded-xl border border-ui-border-base bg-ui-bg-base shadow-sm md:max-w-[420px]">
+        <div className={cn("h-1 w-full", accent.bar)} />
+        <div className="p-3">
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", accent.chip)}>
+              {meta.title || "Test sản phẩm"}
+            </span>
+            <span className="shrink-0 font-mono text-[10px] text-ui-fg-muted">{meta.code}</span>
+          </div>
+
+          <div className="flex gap-2.5">
+            {meta.image_url && (
+              <img src={meta.image_url} alt={meta.product_name || ""}
+                className="size-14 shrink-0 rounded-lg object-cover" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="mb-1.5 truncate text-[13px] font-semibold text-ui-fg-base" title={meta.product_name}>
+                {meta.product_name}
+              </div>
+              {facts.length > 0 && (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-0.5 text-[12px]">
+                  {facts.map((fact, i) => (
+                    <Fragment key={i}>
+                      <dt className="text-ui-fg-muted">{fact.label}</dt>
+                      <dd className="min-w-0 truncate font-medium text-ui-fg-base" title={fact.value}>
+                        {isLikelyUrl(fact.value)
+                          ? <a href={fact.value} target="_blank" rel="noreferrer"
+                              className="text-blue-600 underline underline-offset-2 dark:text-blue-400">{fact.value}</a>
+                          : fact.value}
+                      </dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              )}
+            </div>
+          </div>
+
+          {meta.comment && (
+            <div className="mt-2 rounded-md bg-ui-bg-subtle px-2 py-1.5 text-[12px] leading-relaxed text-ui-fg-subtle">
+              {meta.comment}
+            </div>
+          )}
+
+          <div className="mt-2.5 flex items-center justify-between gap-2">
+            <span className="truncate text-[11px] text-ui-fg-muted">
+              {meta.actor_name ? `${meta.actor_name} · ` : ""}{fmtTime(msg.created_at)}
+            </span>
+            {meta.url && (
+              <a href={meta.url}
+                className="shrink-0 rounded-md border border-ui-border-base px-2 py-1 text-[11px] font-semibold text-blue-600 no-underline transition-colors hover:bg-ui-bg-base-hover dark:text-blue-400">
+                Mở hồ sơ →
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+      <ReactionBar reactions={msg.reactions} msgId={msg.id} currentEmail={currentUserEmail} onReact={onReact} users={users} />
+    </div>
+  )
+}
+
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
 const RECALL_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -447,7 +558,14 @@ function MessageBubble({ msg, users, isMine, currentUserEmail, isManager, isOpti
   onRecall: (msgId: string) => void
 }) {
   const isNote = msg.msg_type === "internal_note"
-  const isSystem = !["text", "ai_response", "image", "file", "internal_note"].includes(msg.msg_type)
+  const isProductTest = msg.msg_type === "product_test_event"
+  const isSystem = !["text", "ai_response", "image", "file", "internal_note", "product_test_event"].includes(msg.msg_type)
+
+  // Product-test milestones carry their numbers in metadata, so the card can
+  // show the state of a test without anyone opening the case.
+  if (isProductTest) {
+    return <ProductTestCard msg={msg} currentUserEmail={currentUserEmail} onReact={onReact} users={users} />
+  }
   const isAI = msg.msg_type === "ai_response" || isAiAgentAuthor(msg.author_id, users)
   const isImage = msg.msg_type === "image"
   const isFile = msg.msg_type === "file"
@@ -2623,7 +2741,7 @@ function MktChatPage() {
                         <span className="flex items-center justify-between gap-1">
                           <span className={cn("truncate text-[11px]", c.unread_count > 0 ? "font-medium text-ui-fg-subtle" : "text-ui-fg-muted")}>
                             {last
-                              ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${last.content}`
+                              ? `${last.author_id === currentUserId ? "Bạn: " : ""}${last.msg_type === "internal_note" ? "Note: " : ""}${snippetOf(last.content)}`
                               : c.description || `${c.member_count} thành viên`}
                           </span>
                           {c.unread_count > 0 && (

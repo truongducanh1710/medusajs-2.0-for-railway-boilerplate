@@ -13,6 +13,12 @@ import {
   rejectBodyFields,
 } from "../../_lib";
 import { mapPurchase } from "../../_query";
+import { isConcluded } from "../../../../../modules/product-test/state-machine";
+import {
+  postMilestone,
+  PRODUCT_TEST_MILESTONES,
+  vnd,
+} from "../../_milestones";
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   const client = await getPool().connect();
@@ -57,29 +63,26 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
     }
-    // Both the assigned MKT and Purchasing may edit Check giá at any stage;
-    // only the two terminal decisions lock it for good, preserving what the
-    // leader actually saw when they decided.
-    const LOCKED_STATUSES = ["import_approved", "import_rejected"];
-    if (LOCKED_STATUSES.includes(productCase.status)) {
+    // Anyone holding either role may edit Check giá at any open stage; only
+    // the two terminal decisions lock it for good, preserving what the leader
+    // actually saw when they decided.
+    if (isConcluded(productCase.status)) {
       await client.query("ROLLBACK");
       return res
         .status(400)
         .json({ error: "Hồ sơ đã kết luận, không thể sửa Check giá" });
     }
-    const isMarketer =
-      actorHas(actor, PRODUCT_TEST_PERMS.marketing) &&
-      (actor.is_super || productCase.assignee_email === actor.email);
-    const isPurchaser = actorHas(actor, PRODUCT_TEST_PERMS.purchasing);
-    if (!isMarketer && !isPurchaser) {
-      await client.query("ROLLBACK");
-      return res
-        .status(403)
-        .json({ error: "Chỉ MKT phụ trách hoặc Mua hàng được sửa hồ sơ này" });
-    }
     // Attribute "checked" to whichever role actually made this edit, not the
     // case's current stage — either side can edit at any open stage now.
-    const actsAsPurchaser = isPurchaser;
+    const actsAsPurchaser = actorHas(actor, PRODUCT_TEST_PERMS.purchasing);
+    // Captured before the upsert so the cost milestone fires only the first
+    // time a landed price appears, not on every subsequent save.
+    const previous = await client.query(
+      `SELECT landed_price_per_unit FROM product_purchase_check
+       WHERE case_id=$1 AND deleted_at IS NULL LIMIT 1`,
+      [req.params.id],
+    );
+    const hadCost = Number(previous.rows[0]?.landed_price_per_unit) > 0;
 
     const images = Array.isArray(body.image_urls)
       ? body.image_urls
@@ -138,8 +141,32 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
       ],
     );
     await client.query("COMMIT");
+
+    const saved = result.rows[0];
+    if (!hadCost && Number(saved.landed_price_per_unit) > 0) {
+      const facts: { label: string; value: string }[] = [];
+      const cost = vnd(saved.landed_price_per_unit);
+      if (cost) facts.push({ label: "Giá vốn / sp", value: cost });
+      const total = vnd(saved.landed_cost);
+      if (total) facts.push({ label: "Tổng giá vốn", value: total });
+      if (saved.supplier_name)
+        facts.push({ label: "Nhà cung cấp", value: String(saved.supplier_name) });
+      if (saved.moq) facts.push({ label: "MOQ", value: String(saved.moq) });
+      await postMilestone(req, {
+        case_id: productCase.id,
+        code: productCase.code,
+        product_name: productCase.product_name,
+        milestone: PRODUCT_TEST_MILESTONES.cost_ready,
+        actor,
+        comment: saved.conclusion || null,
+        image_url:
+          saved.representative_image_url ||
+          (Array.isArray(saved.image_urls) ? saved.image_urls[0] : null),
+        facts,
+      });
+    }
     res.json({
-      purchase_check: mapPurchase(result.rows[0]),
+      purchase_check: mapPurchase(saved),
       version: version + 1,
     });
   } catch (error) {

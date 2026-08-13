@@ -13,6 +13,12 @@ import {
   requireActorPermission,
 } from "../../_lib";
 import { mapDaily } from "../../_query";
+import { isConcluded } from "../../../../../modules/product-test/state-machine";
+import {
+  dailyFacts,
+  postMilestone,
+  PRODUCT_TEST_MILESTONES,
+} from "../../_milestones";
 
 function validDate(value: unknown): string | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
@@ -90,18 +96,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
     }
-    if (productCase.status !== "testing") {
+    // Results stay open for the whole run and lock only once the leader has
+    // concluded, so late numbers can still be recorded. Any MKT may enter
+    // them — ownership no longer gates data entry.
+    if (isConcluded(productCase.status)) {
       await client.query("ROLLBACK");
       return res
         .status(400)
-        .json({ error: "Chỉ được nhập kết quả khi đang test" });
+        .json({ error: "Hồ sơ đã kết luận, không nhập thêm kết quả được" });
     }
-    if (productCase.assignee_email !== actor.email && !actor.is_super) {
-      await client.query("ROLLBACK");
-      return res
-        .status(403)
-        .json({ error: "Chỉ MKT phụ trách được nhập kết quả" });
-    }
+    const existing = await client.query(
+      `SELECT count(*)::int AS total FROM product_test_daily_result
+       WHERE case_id=$1 AND deleted_at IS NULL`,
+      [req.params.id],
+    );
+    const isFirstResult = !existing.rows[0]?.total;
 
     const result = await client.query(
       `INSERT INTO product_test_daily_result
@@ -127,12 +136,31 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       [req.params.id],
     );
     await client.query("COMMIT");
+
+    const saved = mapDaily(result.rows[0]);
+    if (isFirstResult) {
+      const image = await getPool().query(
+        `SELECT representative_image_url, image_urls FROM product_purchase_check
+         WHERE case_id=$1 AND deleted_at IS NULL LIMIT 1`,
+        [req.params.id],
+      );
+      const imageRow = image.rows[0];
+      await postMilestone(req, {
+        case_id: productCase.id,
+        code: productCase.code,
+        product_name: productCase.product_name,
+        milestone: PRODUCT_TEST_MILESTONES.first_result,
+        actor,
+        comment: saved.campaign_name || null,
+        image_url:
+          imageRow?.representative_image_url ||
+          (Array.isArray(imageRow?.image_urls) ? imageRow.image_urls[0] : null),
+        facts: dailyFacts(saved),
+      });
+    }
     return res
       .status(201)
-      .json({
-        daily_result: mapDaily(result.rows[0]),
-        version: caseVersion + 1,
-      });
+      .json({ daily_result: saved, version: caseVersion + 1 });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     return apiError(res, error);

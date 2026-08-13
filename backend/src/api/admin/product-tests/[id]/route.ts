@@ -15,6 +15,7 @@ import {
   getCaseBundle,
   permissionsFor,
 } from "../_query";
+import { isConcluded } from "../../../../modules/product-test/state-machine";
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -52,19 +53,13 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     requireActorPermission(actor, PRODUCT_TEST_PERMS.marketing);
     const bundle = await getCaseBundle(getPool(), req.params.id);
     if (!bundle) return res.status(404).json({ error: "Không tìm thấy hồ sơ" });
-    if (
-      !actor.is_super &&
-      bundle.case.assignee_email !== actor.email &&
-      bundle.case.marketer_email !== actor.email
-    ) {
-      return res
-        .status(403)
-        .json({ error: "Chỉ MKT phụ trách được sửa hồ sơ" });
-    }
-    if (!["draft", "purchase_changes_requested"].includes(bundle.case.status)) {
+    // The name stays editable for the whole run — testing is now reached
+    // automatically, so locking on it would freeze names the moment a price
+    // is entered. Only a concluded case is frozen.
+    if (isConcluded(bundle.case.status)) {
       return res
         .status(400)
-        .json({ error: "Thông tin chung đã bị khóa ở bước hiện tại" });
+        .json({ error: "Hồ sơ đã kết luận, không sửa được thông tin chung" });
     }
     const body = req.body as any;
     rejectBodyFields(body, [

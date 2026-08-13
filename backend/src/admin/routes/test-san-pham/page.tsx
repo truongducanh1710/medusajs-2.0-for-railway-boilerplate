@@ -25,18 +25,29 @@ const EMPTY_FILTERS: ProductTestFilters = {
   to: "",
 };
 const STATUS = STATUS_LABELS;
+// Check giá and Đề xuất are one stage now (both happen in draft, in parallel),
+// so they share a single tab instead of two that would list identical rows.
 const TABS: Array<{ id: ProductTestTab; label: string }> = [
   { id: "overview", label: "Tổng quan" },
-  { id: "purchase", label: "Check giá" },
-  { id: "proposal", label: "Đề xuất test" },
-  { id: "results", label: "Kết quả test" },
+  { id: "purchase", label: "Đang chuẩn bị" },
+  { id: "results", label: "Đang test" },
   { id: "concluded", label: "Đã kết luận" },
 ];
 
+// Retired statuses stay listed so any row the migration missed still appears
+// somewhere rather than vanishing from every tab.
 const tabStatuses: Record<ProductTestTab, ProductTestStatus[] | null> = {
   overview: null,
-  purchase: ["draft", "awaiting_purchase_check", "purchase_changes_requested"],
+  purchase: [
+    "draft",
+    "awaiting_purchase_check",
+    "purchase_changes_requested",
+    "proposal_draft",
+    "awaiting_test_approval",
+    "proposal_changes_requested",
+  ],
   proposal: [
+    "draft",
     "proposal_draft",
     "awaiting_test_approval",
     "proposal_changes_requested",
@@ -381,20 +392,15 @@ function ProductKanban({
   rows: ProductTestSummary[];
   onOpen: (id: string) => void;
 }) {
+  // Three columns matching the three real stages of a case.
   const columns = [
     {
-      id: "purchase",
-      label: "Check giá",
+      id: "prepare",
+      label: "Đang chuẩn bị",
       statuses: [
         "draft",
         "awaiting_purchase_check",
         "purchase_changes_requested",
-      ],
-    },
-    {
-      id: "proposal",
-      label: "Đề xuất",
-      statuses: [
         "proposal_draft",
         "awaiting_test_approval",
         "proposal_changes_requested",
@@ -517,6 +523,7 @@ const PAGE_CSS = `
 .pt-product strong,.pt-product small,.pt-card-title strong,.pt-card-title small{display:block;max-width:210px;overflow:hidden;text-overflow:ellipsis}
 .pt-product small,.pt-card-title small{color:var(--fg-muted,#9ca3af);margin-top:2px;font-size:11px}
 .pt-status{display:inline-flex;border-radius:999px;padding:4px 9px;font-size:12px;background:var(--bg-field,#f3f4f6);color:var(--fg-subtle,#4b5563);white-space:nowrap}
+.s-draft{background:#f1f5f9;color:#475569}
 .s-testing{background:#dbeafe;color:#1d4ed8}
 .s-awaiting_final_decision,.s-awaiting_test_approval,.s-awaiting_purchase_check{background:#fef3c7;color:#92400e}
 .s-import_approved{background:#dcfce7;color:#166534}

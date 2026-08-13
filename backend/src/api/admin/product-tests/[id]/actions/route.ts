@@ -13,125 +13,20 @@ import {
   getProductTestActor,
   parseVersion,
   PRODUCT_TEST_PERMS,
-  type ProductTestActor,
 } from "../../_lib";
-import { notifyProductTestTransition } from "../../_lib";
-import { createImportTask, createPurchasingTask, syncMarketingTask } from "../../_tasks";
+import { mapDaily } from "../../_query";
+import {
+  metricsFacts,
+  postMilestone,
+  PRODUCT_TEST_MILESTONES,
+} from "../../_milestones";
+import { createImportTask, syncMarketingTask } from "../../_tasks";
 
 const ACTION_LABELS: Record<string, string> = {
-  submit_purchase_check: "Đã gửi Mua hàng check giá",
-  approve_purchase_check: "Mua hàng đã duyệt thông tin giá",
-  request_purchase_changes: "Mua hàng yêu cầu bổ sung",
-  submit_test_proposal: "Đã gửi đề xuất test",
-  approve_testing: "Leader đã duyệt chạy test",
-  request_proposal_changes: "Leader yêu cầu sửa đề xuất",
   request_more_testing: "Leader yêu cầu test thêm",
   approve_import: "Leader kết luận nhập sản phẩm",
   reject_import: "Leader kết luận không nhập",
 };
-
-function assertRole(actor: ProductTestActor, role: string, productCase: any) {
-  if (role === "marketing") {
-    if (!actorHas(actor, PRODUCT_TEST_PERMS.marketing))
-      throw Object.assign(new Error("Không có quyền MKT"), { status: 403 });
-    if (!actor.is_super && productCase.assignee_email !== actor.email)
-      throw Object.assign(
-        new Error("Chỉ MKT phụ trách được thực hiện"),
-        { status: 403 },
-      );
-    return;
-  }
-  const permission =
-    role === "purchasing"
-      ? PRODUCT_TEST_PERMS.purchasing
-      : PRODUCT_TEST_PERMS.approve;
-  if (!actorHas(actor, permission))
-    throw Object.assign(
-      new Error("Không có quyền thực hiện thao tác này"),
-      { status: 403 },
-    );
-}
-
-async function assertPrerequisites(
-  client: any,
-  caseId: string,
-  action: ProductTestAction,
-) {
-  if (action === "submit_purchase_check") {
-    const check = await client.query(
-      `SELECT supplier_link,description FROM product_purchase_check WHERE case_id=$1 AND deleted_at IS NULL`,
-      [caseId],
-    );
-    const row = check.rows[0];
-    if (!row?.supplier_link || !row?.description) {
-      throw Object.assign(
-        new Error("Cần có link nguồn hàng và mô tả trước khi gửi Mua hàng"),
-        { status: 400 },
-      );
-    }
-  }
-  if (action === "approve_purchase_check") {
-    const check = await client.query(
-      `SELECT conclusion,landed_price_per_unit,landed_cost FROM product_purchase_check WHERE case_id=$1 AND deleted_at IS NULL`,
-      [caseId],
-    );
-    const row = check.rows[0];
-    if (
-      !row?.conclusion ||
-      (row.landed_price_per_unit === null && row.landed_cost === null)
-    ) {
-      throw Object.assign(
-        new Error("Cần có kết luận và giá vốn trước khi duyệt"),
-        { status: 400 },
-      );
-    }
-  }
-  if (action === "submit_test_proposal") {
-    const proposal = await client.query(
-      `SELECT usp,combo_json,landing_url FROM product_test_proposal WHERE case_id=$1 AND deleted_at IS NULL`,
-      [caseId],
-    );
-    const row = proposal.rows[0];
-    if (!row?.usp || !row?.combo_json || !row?.landing_url) {
-      throw Object.assign(
-        new Error("Đề xuất cần đủ USP, Combo và Landing"),
-        { status: 400 },
-      );
-    }
-  }
-  if (action === "approve_testing") {
-    const proposal = await client.query(
-      `SELECT usp,combo_json,landing_url FROM product_test_proposal WHERE case_id=$1 AND deleted_at IS NULL`,
-      [caseId],
-    );
-    const row = proposal.rows[0];
-    if (!row?.usp || !row?.combo_json || !row?.landing_url) {
-      throw Object.assign(
-        new Error("Cần hoàn thiện đề xuất trước khi duyệt test"),
-        { status: 400 },
-      );
-    }
-  }
-  if (action === "approve_import" || action === "reject_import") {
-    const count = await client.query(
-      `SELECT count(*)::int AS total, count(*) FILTER (WHERE evaluation IS NULL OR evaluation='')::int AS pending
-       FROM product_test_daily_result WHERE case_id=$1 AND deleted_at IS NULL`,
-      [caseId],
-    );
-    if (!count.rows[0]?.total)
-      throw Object.assign(new Error("Cần ít nhất một dòng kết quả test"), {
-        status: 400,
-      });
-    if (count.rows[0]?.pending) {
-      throw Object.assign(
-        new Error(
-          "Leader cần đánh giá tất cả dòng test trước khi kết luận",
-        ),
-        { status: 400 },
-      );
-    }
-  }
-}
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const client = await getPool().connect();
@@ -164,13 +59,33 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const transition = getTransition(action, productCase.status);
     assertTransitionComment(action, comment);
-    assertRole(actor, transition.role, productCase);
-    await assertPrerequisites(client, productCase.id, action);
+    // Every remaining action is the leader's; a single permission check covers
+    // all three.
+    if (!actorHas(actor, PRODUCT_TEST_PERMS.approve)) {
+      await client.query("ROLLBACK");
+      return res
+        .status(403)
+        .json({ error: "Không có quyền thực hiện thao tác này" });
+    }
+
+    // The only prerequisite left: concluding a case that has no test data at
+    // all is meaningless. Rows no longer need to be individually evaluated.
+    const dailyRows = await client.query(
+      `SELECT * FROM product_test_daily_result WHERE case_id=$1 AND deleted_at IS NULL
+       ORDER BY test_date DESC, created_at DESC`,
+      [productCase.id],
+    );
+    if (
+      ["approve_import", "reject_import"].includes(action) &&
+      !dailyRows.rows.length
+    ) {
+      await client.query("ROLLBACK");
+      return res
+        .status(400)
+        .json({ error: "Cần ít nhất một dòng kết quả test trước khi kết luận" });
+    }
 
     const nextStatus = transition.to || productCase.status;
-    const assigneeEmail = productCase.assignee_email;
-    const assigneeName = productCase.assignee_name;
-
     const finalDecision =
       action === "approve_import"
         ? "import_approved"
@@ -181,27 +96,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ? actor.email
       : productCase.decided_by;
     const result = await client.query(
-      `UPDATE product_test_case SET status=$1,assignee_email=$2,assignee_name=$3,
-       final_decision=$5::text,final_note=CASE WHEN $5::text IS NOT NULL THEN $6::text ELSE final_note END,
-       decided_by=$7::text,decided_at=CASE WHEN $7::text IS NOT NULL THEN now() ELSE decided_at END,
-       version=version+1,updated_at=now() WHERE id=$8 RETURNING *`,
-      [
-        nextStatus,
-        assigneeEmail,
-        assigneeName,
-        action,
-        finalDecision,
-        comment,
-        decidedBy,
-        productCase.id,
-      ],
+      `UPDATE product_test_case SET status=$1,
+       final_decision=$2::text,final_note=CASE WHEN $2::text IS NOT NULL THEN $3::text ELSE final_note END,
+       decided_by=$4::text,decided_at=CASE WHEN $4::text IS NOT NULL THEN now() ELSE decided_at END,
+       version=version+1,updated_at=now() WHERE id=$5 RETURNING *`,
+      [nextStatus, finalDecision, comment, decidedBy, productCase.id],
     );
-    if (action === "approve_testing") {
-      await client.query(
-        `UPDATE product_test_proposal SET approved_by=$1,approved_at=now(),updated_at=now() WHERE case_id=$2`,
-        [actor.email, productCase.id],
-      );
-    }
     await client.query(
       `INSERT INTO product_test_event (id,case_id,action,from_status,to_status,actor,comment,snapshot)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
@@ -213,24 +113,36 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         nextStatus,
         actor.email,
         comment,
-        JSON.stringify({
-          version: version + 1,
-          assignee_email: assigneeEmail,
-          final_decision: finalDecision,
-        }),
+        JSON.stringify({ version: version + 1, final_decision: finalDecision }),
       ],
     );
     await client.query("COMMIT");
-    const notification = {
-      case_id: productCase.id,
-      code: productCase.code,
-      product_name: productCase.product_name,
-      action: ACTION_LABELS[action] || action,
-      actor,
-      comment,
-    };
-    await notifyProductTestTransition(req, notification);
+
     const updatedCase = result.rows[0];
+    const image = await getPool().query(
+      `SELECT representative_image_url, image_urls FROM product_purchase_check
+       WHERE case_id=$1 AND deleted_at IS NULL LIMIT 1`,
+      [productCase.id],
+    );
+    const imageRow = image.rows[0];
+    const imageUrl =
+      imageRow?.representative_image_url ||
+      (Array.isArray(imageRow?.image_urls) ? imageRow.image_urls[0] : null);
+
+    const isConclusion = ["approve_import", "reject_import"].includes(action);
+    await postMilestone(req, {
+      case_id: updatedCase.id,
+      code: updatedCase.code,
+      product_name: updatedCase.product_name,
+      milestone: isConclusion
+        ? PRODUCT_TEST_MILESTONES.concluded
+        : PRODUCT_TEST_MILESTONES.more_testing,
+      actor,
+      comment: [ACTION_LABELS[action], comment].filter(Boolean).join(" · "),
+      image_url: imageUrl,
+      facts: metricsFacts(dailyRows.rows.map(mapDaily)),
+    });
+
     await syncMarketingTask(req, {
       caseId: updatedCase.id,
       code: updatedCase.code,
@@ -240,14 +152,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       assigneeName: updatedCase.assignee_name,
       actor,
     });
-    if (action === "submit_purchase_check") {
-      await createPurchasingTask(req, {
-        caseId: updatedCase.id,
-        code: updatedCase.code,
-        productName: updatedCase.product_name,
-        actor,
-      });
-    }
     if (action === "approve_import") {
       await createImportTask(req, {
         caseId: updatedCase.id,

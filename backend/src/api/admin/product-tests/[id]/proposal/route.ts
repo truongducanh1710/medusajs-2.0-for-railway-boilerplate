@@ -12,6 +12,15 @@ import {
   rejectBodyFields,
 } from "../../_lib";
 import { mapProposal } from "../../_query";
+import {
+  deriveStatus,
+  isConcluded,
+} from "../../../../../modules/product-test/state-machine";
+import {
+  postMilestone,
+  PRODUCT_TEST_MILESTONES,
+  vnd,
+} from "../../_milestones";
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   const client = await getPool().connect();
@@ -54,20 +63,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
     }
-    const isMarketer =
-      actorHas(actor, PRODUCT_TEST_PERMS.marketing) &&
-      (actor.is_super || productCase.assignee_email === actor.email);
-    const isPurchaser = actorHas(actor, PRODUCT_TEST_PERMS.purchasing);
-    if (!isMarketer && !isPurchaser) {
-      await client.query("ROLLBACK");
-      return res
-        .status(403)
-        .json({ error: "Chỉ MKT phụ trách hoặc Mua hàng được sửa đề xuất" });
-    }
-    // Either role may edit the proposal at any open stage; only the two
-    // terminal decisions lock it, preserving what the leader saw when they
-    // decided.
-    if (["import_approved", "import_rejected"].includes(productCase.status)) {
+    // Anyone holding either role may edit the proposal — case ownership no
+    // longer restricts it, so filling in for a colleague can never leave a
+    // case stuck. Only the two terminal decisions lock it, preserving what the
+    // leader saw when they decided.
+    if (isConcluded(productCase.status)) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Hồ sơ đã kết luận, đề xuất đã bị khóa" });
     }
@@ -91,12 +91,70 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
        landing_url=EXCLUDED.landing_url,note=EXCLUDED.note,updated_at=now() RETURNING *`,
       [`ptpr_${ulid().toLowerCase()}`, ...values],
     );
+    const saved = result.rows[0];
+    // Status follows the data: a proposal carrying a price and a combo means
+    // the case is ready to run, with no approval step in between.
+    const nextStatus = deriveStatus(productCase.status, saved);
+    const startedTesting =
+      nextStatus === "testing" && productCase.status !== "testing";
     await client.query(
-      `UPDATE product_test_case SET version=version+1,updated_at=now() WHERE id=$1`,
-      [req.params.id],
+      `UPDATE product_test_case SET status=$2,version=version+1,updated_at=now() WHERE id=$1`,
+      [req.params.id, nextStatus],
     );
+    if (startedTesting) {
+      await client.query(
+        `INSERT INTO product_test_event (id,case_id,action,from_status,to_status,actor,comment,snapshot)
+         VALUES ($1,$2,'start_testing',$3,$4,$5,NULL,$6::jsonb)`,
+        [
+          `pte_${ulid().toLowerCase()}`,
+          req.params.id,
+          productCase.status,
+          nextStatus,
+          actor.email,
+          JSON.stringify({ version: version + 1 }),
+        ],
+      );
+    }
     await client.query("COMMIT");
-    res.json({ proposal: mapProposal(result.rows[0]), version: version + 1 });
+
+    if (startedTesting) {
+      const image = await getPool().query(
+        `SELECT representative_image_url, image_urls, landed_price_per_unit
+         FROM product_purchase_check WHERE case_id=$1 AND deleted_at IS NULL LIMIT 1`,
+        [req.params.id],
+      );
+      const imageRow = image.rows[0];
+      const facts: { label: string; value: string }[] = [];
+      const cost = vnd(imageRow?.landed_price_per_unit);
+      if (cost) facts.push({ label: "Giá vốn", value: cost });
+      const price = vnd(saved.sale_price);
+      if (price) facts.push({ label: "Giá bán", value: price });
+      const margin =
+        Number(saved.sale_price) - Number(imageRow?.landed_price_per_unit);
+      const marginText = vnd(margin);
+      if (marginText && Number.isFinite(margin))
+        facts.push({ label: "Biên", value: marginText });
+      if (saved.combo_json)
+        facts.push({ label: "Combo", value: String(saved.combo_json) });
+      if (saved.landing_url)
+        facts.push({ label: "Landing", value: String(saved.landing_url) });
+      await postMilestone(req, {
+        case_id: productCase.id,
+        code: productCase.code,
+        product_name: productCase.product_name,
+        milestone: PRODUCT_TEST_MILESTONES.testing_started,
+        actor,
+        image_url:
+          imageRow?.representative_image_url ||
+          (Array.isArray(imageRow?.image_urls) ? imageRow.image_urls[0] : null),
+        facts,
+      });
+    }
+    res.json({
+      proposal: mapProposal(saved),
+      version: version + 1,
+      status: nextStatus,
+    });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     return apiError(res, error);

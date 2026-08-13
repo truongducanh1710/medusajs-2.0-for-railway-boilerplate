@@ -98,19 +98,12 @@ export function permissionsFor(actor: ProductTestActor) {
   };
 }
 
+// Every remaining action belongs to the leader, and case ownership no longer
+// restricts anything — holding the permission is the whole check.
 export function availableActions(actor: ProductTestActor, productCase: any) {
-  const isOwner =
-    productCase.marketer_email === actor.email ||
-    productCase.assignee_email === actor.email;
+  if (!actorHas(actor, PRODUCT_TEST_PERMS.approve)) return [];
   return Object.entries(PRODUCT_TEST_TRANSITIONS)
     .filter(([, transition]) => transition.from.includes(productCase.status))
-    .filter(([, transition]) => {
-      if (transition.role === "marketing")
-        return isOwner && actorHas(actor, PRODUCT_TEST_PERMS.marketing);
-      if (transition.role === "purchasing")
-        return actorHas(actor, PRODUCT_TEST_PERMS.purchasing);
-      return actorHas(actor, PRODUCT_TEST_PERMS.approve);
-    })
     .map(([id, transition]) => ({ id, next_status: transition.to }));
 }
 
@@ -178,14 +171,8 @@ export function buildSummary(
 
 function nextAction(status: string): string {
   const labels: Record<string, string> = {
-    draft: "Gửi mua hàng check",
-    awaiting_purchase_check: "Mua hàng check giá",
-    purchase_changes_requested: "MKT bổ sung",
-    proposal_draft: "Hoàn thiện đề xuất",
-    awaiting_test_approval: "Leader duyệt test",
-    proposal_changes_requested: "MKT sửa đề xuất",
+    draft: "Điền giá bán + combo",
     testing: "Nhập kết quả ngày",
-    awaiting_final_decision: "Leader kết luận",
     import_approved: "Đã duyệt nhập",
     import_rejected: "Không nhập",
   };

@@ -7,31 +7,42 @@ export type ProductTestTab =
   | "results"
   | "concluded";
 
+// Live statuses. The retired ones are kept only so historical event rows,
+// which store the original strings, still type-check.
 export type ProductTestStatus =
   | "draft"
+  | "testing"
+  | "import_approved"
+  | "import_rejected"
   | "awaiting_purchase_check"
   | "purchase_changes_requested"
   | "proposal_draft"
   | "awaiting_test_approval"
   | "proposal_changes_requested"
-  | "testing"
-  | "awaiting_final_decision"
-  | "import_approved"
-  | "import_rejected";
+  | "awaiting_final_decision";
 
 // Single source of truth for status wording, shared by the list page and drawer.
 export const STATUS_LABELS: Record<ProductTestStatus, string> = {
-  draft: "Nháp",
+  draft: "Đang chuẩn bị",
+  testing: "Đang test",
+  import_approved: "Duyệt nhập",
+  import_rejected: "Không nhập",
+  // Retired — only ever rendered from old audit events.
   awaiting_purchase_check: "Chờ check giá",
   purchase_changes_requested: "Cần bổ sung check giá",
   proposal_draft: "Soạn đề xuất",
   awaiting_test_approval: "Chờ duyệt test",
   proposal_changes_requested: "Cần sửa đề xuất",
-  testing: "Đang test",
   awaiting_final_decision: "Chờ kết luận",
-  import_approved: "Duyệt nhập",
-  import_rejected: "Không nhập",
 };
+
+/** The four statuses a live case can hold — drives filters and kanban columns. */
+export const ACTIVE_STATUSES: ProductTestStatus[] = [
+  "draft",
+  "testing",
+  "import_approved",
+  "import_rejected",
+];
 
 export type ProductTestDecision = "import_approved" | "import_rejected" | null;
 

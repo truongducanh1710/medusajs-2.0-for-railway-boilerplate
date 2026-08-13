@@ -14,7 +14,8 @@ import {
   mapProposal,
   mapPurchase,
 } from "./_query";
-import { syncMarketingTask } from "./_tasks";
+import { createPurchasingTask, syncMarketingTask } from "./_tasks";
+import { postMilestone, PRODUCT_TEST_MILESTONES } from "./_milestones";
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -213,6 +214,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ],
     );
     const created = rows[0];
+    await postMilestone(req, {
+      case_id: created.id,
+      code: created.code,
+      product_name: created.product_name,
+      milestone: PRODUCT_TEST_MILESTONES.created,
+      actor,
+      facts: [{ label: "MKT phụ trách", value: marketerName || marketerEmail }],
+    });
     await syncMarketingTask(req, {
       caseId: created.id,
       code: created.code,
@@ -220,6 +229,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       status: created.status,
       assigneeEmail: created.assignee_email,
       assigneeName: created.assignee_name,
+      actor,
+    });
+    // Purchasing is told at creation now that no submit step exists.
+    await createPurchasingTask(req, {
+      caseId: created.id,
+      code: created.code,
+      productName: created.product_name,
       actor,
     });
     res.status(201).json({ case: created });

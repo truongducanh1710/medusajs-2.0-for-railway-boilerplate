@@ -29,7 +29,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
        evaluation=$1,leader_note=$2,evaluated_by=$3,evaluated_at=now(),version=d.version+1,updated_at=now()
        FROM product_test_case c
        WHERE d.id=$4 AND d.case_id=$5 AND d.case_id=c.id AND d.version=$6
-       AND d.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status IN ('testing','awaiting_final_decision')
+       AND d.deleted_at IS NULL AND c.deleted_at IS NULL
+       AND c.status NOT IN ('import_approved','import_rejected')
        RETURNING d.*`,
       [
         evaluation,
