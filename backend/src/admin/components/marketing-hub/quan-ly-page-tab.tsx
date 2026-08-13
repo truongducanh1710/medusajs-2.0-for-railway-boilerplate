@@ -194,7 +194,10 @@ export function QuanLyPageTab() {
   const [toast, setToast] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState({ mkt_code: "", page_name: "", page_link: "", sp_chay: "", pancake: "CHƯA", hoat_dong: "ĐANG CHẠY", share_anhtd: "CHƯA", pos: "CHƯA", bm: "CHƯA", share_hoan: "CHƯA", ghi_chu: "" })
-  const [deleteId, setDeleteId] = useState<string | null>(null)
+  // Fixed-position modal, not a row-anchored popover: the table scroller
+  // (overflowX) and card wrapper (overflow: hidden) clip absolute children,
+  // and the delete button sits in the last column.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const load = () => apiJson("/admin/mkt-pages").then(d => setPages(d.pages || [])).catch(() => {})
   useEffect(() => {
@@ -223,7 +226,7 @@ export function QuanLyPageTab() {
 
   const deletePage = async (id: string) => {
     await apiJson(`/admin/mkt-pages/${id}`, "DELETE")
-    setDeleteId(null)
+    setDeleteTarget(null)
     setToast("Đã xóa")
     load()
   }
@@ -357,19 +360,8 @@ export function QuanLyPageTab() {
                       </td>
                       <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
                         {canEdit && (
-                          <div style={{ position: "relative", display: "inline-block" }}>
-                            <button onClick={() => setDeleteId(deleteId === p.id ? null : p.id)}
-                              style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#EF4444" }}>🗑</button>
-                            {deleteId === p.id && (
-                              <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 500, background: "#FFF", border: "1px solid #FECACA", borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", padding: "10px 14px", minWidth: 140, whiteSpace: "nowrap" }}>
-                                <div style={{ color: "#111827", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Xóa page này?</div>
-                                <div style={{ display: "flex", gap: 6 }}>
-                                  <button onClick={() => deletePage(p.id)} style={{ background: "#EF4444", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Xóa</button>
-                                  <button onClick={() => setDeleteId(null)} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Hủy</button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <button onClick={() => setDeleteTarget({ id: p.id, name: p.page_name })}
+                            style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#EF4444" }}>🗑</button>
                         )}
                       </td>
                     </tr>
@@ -454,6 +446,22 @@ export function QuanLyPageTab() {
         )}
       </div>
       </>}
+
+      {/* ── Popup: xác nhận xóa page ── */}
+      {deleteTarget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setDeleteTarget(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 20, width: 320, maxWidth: "92vw", boxShadow: "0 12px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", marginBottom: 6 }}>Xóa page này?</div>
+            <div style={{ fontSize: 13, color: "#6B7280", marginBottom: 16 }}>
+              Page <b style={{ color: "#111827" }}>{deleteTarget.name}</b> sẽ bị xóa khỏi danh sách. Không hoàn tác được.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ background: "#F3F4F6", color: "#374151", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: "pointer" }}>Hủy</button>
+              <button onClick={() => deletePage(deleteTarget.id)} style={{ background: "#EF4444", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Xóa</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
