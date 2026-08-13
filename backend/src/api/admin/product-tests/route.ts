@@ -190,10 +190,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       actor.is_super && body.marketer_name
         ? String(body.marketer_name)
         : actor.name;
+    // Optional at creation — MKT can also pick the purchaser later from the
+    // drawer; leaving it empty falls back to the sole eligible user.
+    const purchaserEmail = body.purchaser_email
+      ? String(body.purchaser_email).toLowerCase()
+      : null;
     const { rows } = await getPool().query(
       `INSERT INTO product_test_case
-       (id, code, product_name, product_handle, marketer_email, marketer_name, assignee_email, assignee_name, status, version)
-       VALUES ($1,$2,$3,$4,$5,$6,$5,$6,'draft',1) RETURNING *`,
+       (id, code, product_name, product_handle, marketer_email, marketer_name, assignee_email, assignee_name,
+        purchaser_email, purchaser_name, status, version)
+       VALUES ($1,$2,$3,$4,$5,$6,$5,$6,$7,$8,'draft',1) RETURNING *`,
       [
         id,
         code,
@@ -201,6 +207,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         body.product_handle || null,
         marketerEmail,
         marketerName,
+        purchaserEmail,
+        purchaserEmail ? String(body.purchaser_name || purchaserEmail) : null,
       ],
     );
     await getPool().query(
@@ -237,6 +245,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       code: created.code,
       productName: created.product_name,
       actor,
+      purchaserEmail: created.purchaser_email,
+      purchaserName: created.purchaser_name,
     });
     res.status(201).json({ case: created });
   } catch (error) {

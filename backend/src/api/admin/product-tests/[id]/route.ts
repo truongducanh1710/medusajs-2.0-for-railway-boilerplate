@@ -16,6 +16,7 @@ import {
   permissionsFor,
 } from "../_query";
 import { isConcluded } from "../../../../modules/product-test/state-machine";
+import { createPurchasingTask } from "../_tasks";
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -81,20 +82,49 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
         : String(body.product_name || "").trim();
     if (!productName)
       return res.status(400).json({ error: "Tên sản phẩm không được trống" });
+    // Assigning the purchaser is what actually creates their task, so an
+    // explicit null clears the field rather than being treated as "unchanged".
+    const purchaserEmail =
+      body.purchaser_email === undefined
+        ? bundle.case.purchaser_email
+        : body.purchaser_email
+          ? String(body.purchaser_email).toLowerCase()
+          : null;
+    const purchaserName =
+      body.purchaser_email === undefined
+        ? bundle.case.purchaser_name
+        : purchaserEmail
+          ? String(body.purchaser_name || purchaserEmail)
+          : null;
     const { rows } = await getPool().query(
-      `UPDATE product_test_case SET product_name=$1, product_handle=$2, version=version+1, updated_at=now()
+      `UPDATE product_test_case SET product_name=$1, product_handle=$2,
+       purchaser_email=$5, purchaser_name=$6, version=version+1, updated_at=now()
        WHERE id=$3 AND version=$4 AND deleted_at IS NULL RETURNING *`,
       [
         productName,
         body.product_handle ?? bundle.case.product_handle,
         req.params.id,
         version,
+        purchaserEmail,
+        purchaserName,
       ],
     );
     if (!rows.length)
       return res
         .status(409)
         .json({ error: "Hồ sơ đã được người khác cập nhật" });
+    // Picking a purchaser after creation is the other path into their task —
+    // createPurchasingTask is idempotent per case, so this is safe to retry.
+    if (purchaserEmail && purchaserEmail !== bundle.case.purchaser_email) {
+      await createPurchasingTask(req, {
+        caseId: rows[0].id,
+        code: rows[0].code,
+        productName: rows[0].product_name,
+        actor,
+        purchaserEmail,
+        purchaserName,
+      });
+    }
     res.json({ case: rows[0] });
   } catch (error) {
     return apiError(res, error);

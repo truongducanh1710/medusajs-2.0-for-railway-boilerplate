@@ -167,6 +167,7 @@ export default defineMiddlewares({
     // Product test extension. Body-aware transitions are also enforced in handlers.
     { matcher: "/admin/product-tests", method: ["GET"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/product-tests/facets*", method: ["GET"], middlewares: [requirePerm("page.product-test.view")] },
+    { matcher: "/admin/product-tests/purchasers", method: ["GET"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/product-tests/:id", method: ["GET"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/product-tests/:id/daily-results", method: ["GET"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/product-tests", method: ["POST"], middlewares: [requirePerm("page.product-test.marketing")] },

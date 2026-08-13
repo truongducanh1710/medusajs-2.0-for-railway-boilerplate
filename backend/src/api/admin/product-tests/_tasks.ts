@@ -1,6 +1,11 @@
 import type { MedusaRequest } from "@medusajs/framework/http";
 import { Modules } from "@medusajs/framework/utils";
-import { normalizeEmail, type ProductTestActor } from "./_lib";
+import {
+  normalizeEmail,
+  PRODUCT_TEST_PERMS,
+  type ProductTestActor,
+} from "./_lib";
+import { resolveUserPerms } from "../../middlewares";
 
 // Vietnamese label for the MKT tracking task's title — kept here rather
 // than importing the admin-side STATUS_LABELS (that file lives under
@@ -18,20 +23,55 @@ async function findMktTaskModule(req: MedusaRequest) {
   return req.scope.resolve("mktTaskModule") as any;
 }
 
-async function findUserByRole(req: MedusaRequest, role: string) {
+export type PurchaserRef = { email: string; name: string };
+
+function toRef(user: any): PurchaserRef {
+  return {
+    email: normalizeEmail(user.email),
+    name:
+      [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email,
+  };
+}
+
+/** Everyone who effectively holds the purchasing permission. */
+export async function listPurchasers(
+  req: MedusaRequest,
+): Promise<PurchaserRef[]> {
   const userModule = req.scope.resolve(Modules.USER) as any;
   const users = await userModule.listUsers(
     {},
     { select: ["id", "email", "first_name", "last_name", "metadata"] },
   );
-  const match = users.find((u: any) => u.metadata?.role === role);
-  if (!match) return null;
-  return {
-    email: normalizeEmail(match.email),
-    name:
-      [match.first_name, match.last_name].filter(Boolean).join(" ") ||
-      match.email,
-  };
+  return users
+    .filter((u: any) =>
+      resolveUserPerms(u.metadata).includes(PRODUCT_TEST_PERMS.purchasing),
+    )
+    .map(toRef)
+    .filter((u: PurchaserRef) => u.email);
+}
+
+/**
+ * Resolves who a purchasing task belongs to.
+ *
+ * The case's own purchaser_email wins. Otherwise this falls back to the sole
+ * eligible user, and deliberately does NOT guess when several exist — an
+ * unassigned task is recoverable, a task silently sitting in the wrong
+ * person's list is not.
+ *
+ * The previous implementation matched on metadata.role === "mua-hang" only,
+ * which missed anyone whose access comes from an explicit
+ * metadata.permissions list with no role set. Since the caller just returns
+ * when this yields nothing, purchasing tasks were never created for those
+ * users and the failure was completely silent.
+ */
+async function resolvePurchaser(
+  req: MedusaRequest,
+  assigned?: { email?: string | null; name?: string | null } | null,
+): Promise<PurchaserRef | null> {
+  const email = normalizeEmail(assigned?.email);
+  if (email) return { email, name: assigned?.name || email };
+  const eligible = await listPurchasers(req);
+  return eligible.length === 1 ? eligible[0] : null;
 }
 
 // One task per case tracks the whole MKT-side journey: created the moment
@@ -100,6 +140,8 @@ export async function createPurchasingTask(
     code: string;
     productName: string;
     actor: ProductTestActor;
+    purchaserEmail?: string | null;
+    purchaserName?: string | null;
   },
 ): Promise<void> {
   try {
@@ -110,8 +152,13 @@ export async function createPurchasingTask(
     });
     if (existing.length) return; // already created for this case once
 
-    const purchaser = await findUserByRole(req, "mua-hang");
-    if (!purchaser) return; // no one holds the role yet — nothing to assign
+    const purchaser = await resolvePurchaser(req, {
+      email: input.purchaserEmail,
+      name: input.purchaserName,
+    });
+    // Nobody named and more than one candidate — leave it unassigned rather
+    // than guessing; picking the purchaser on the case creates it later.
+    if (!purchaser) return;
 
     await taskSvc.createMktTasks({
       title: `[Check giá] ${input.code} · ${input.productName}`,
@@ -141,6 +188,8 @@ export async function createImportTask(
     code: string;
     productName: string;
     actor: ProductTestActor;
+    purchaserEmail?: string | null;
+    purchaserName?: string | null;
   },
 ): Promise<void> {
   try {
@@ -151,7 +200,10 @@ export async function createImportTask(
     });
     if (existing.length) return;
 
-    const purchaser = await findUserByRole(req, "mua-hang");
+    const purchaser = await resolvePurchaser(req, {
+      email: input.purchaserEmail,
+      name: input.purchaserName,
+    });
     if (!purchaser) return;
 
     await taskSvc.createMktTasks({

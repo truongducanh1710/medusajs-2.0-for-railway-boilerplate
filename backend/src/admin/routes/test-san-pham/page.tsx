@@ -320,6 +320,7 @@ function ProductTable({
             <th>Ngày tạo</th>
             <th>Trạng thái</th>
             <th>MKT</th>
+            <th>Mua hàng</th>
             <th>Giá vốn</th>
             <th>Giá bán</th>
             <th>Ngày test</th>
@@ -355,6 +356,13 @@ function ProductTable({
                 </span>
               </td>
               <td>{row.assignee_name}</td>
+              <td>
+                {row.purchaser_name || (
+                  <span className="pt-unassigned" title="Mua hàng chưa nhận việc — mở hồ sơ để giao">
+                    Chưa giao
+                  </span>
+                )}
+              </td>
               <td>{money(row.landed_cost)}</td>
               <td>{money(row.sale_price)}</td>
               <td>{row.test_days}</td>
@@ -459,6 +467,14 @@ function ProductKanban({
                     <dd>{row.assignee_name}</dd>
                   </div>
                   <div>
+                    <dt>Mua hàng</dt>
+                    <dd>
+                      {row.purchaser_name || (
+                        <span className="pt-unassigned">Chưa giao</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Test</dt>
                     <dd>
                       {row.test_days} ngày · {number(row.orders)} đơn
@@ -529,6 +545,7 @@ const PAGE_CSS = `
 .s-import_approved{background:#dcfce7;color:#166534}
 .s-import_rejected,.s-purchase_changes_requested,.s-proposal_changes_requested{background:#fee2e2;color:#991b1b}
 .pt-next{font-size:12px;color:#2563eb}
+.pt-unassigned{color:#b45309;background:#fef3c7;border-radius:5px;padding:2px 6px;font-size:11.5px;white-space:nowrap}
 .pt-formula{color:#92400e;background:#fef3c7;border-radius:5px;padding:2px 6px;font-weight:600;cursor:help;border-bottom:1px dashed #d97706}
 .pt-table th[title]{cursor:help;border-bottom:1px dashed var(--fg-muted,#9ca3af)}
 .pt-kanban{display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:12px;padding:14px;overflow:auto}

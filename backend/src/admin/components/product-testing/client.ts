@@ -92,12 +92,22 @@ export function createProductTestingClient() {
     payload: {
       product_name?: string;
       product_handle?: string;
+      // Sending an empty string clears the assignment; omitting the key
+      // leaves it untouched.
+      purchaser_email?: string | null;
+      purchaser_name?: string | null;
       version: number;
     },
   ) {
     return requestJson<{ case: ProductTestCaseRecord }>(
       `/admin/product-tests/${id}`,
       jsonInit("PATCH", payload),
+    );
+  }
+
+  async function listPurchasers() {
+    return requestJson<{ purchasers: Array<{ email: string; name: string }> }>(
+      "/admin/product-tests/purchasers",
     );
   }
 
@@ -210,6 +220,7 @@ export function createProductTestingClient() {
     createCase,
     updateCase,
     deleteCase,
+    listPurchasers,
     updatePurchaseCheck,
     updateProposal,
     createDailyResult,

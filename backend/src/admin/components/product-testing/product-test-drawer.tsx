@@ -112,6 +112,9 @@ export function ProductTestDrawer({
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState("");
+  const [purchasers, setPurchasers] = useState<
+    Array<{ email: string; name: string }>
+  >([]);
 
   async function load() {
     try {
@@ -134,6 +137,14 @@ export function ProductTestDrawer({
   useEffect(() => {
     load();
   }, [caseId]);
+  useEffect(() => {
+    // Independent of the case itself, so a failure here only empties the
+    // picker rather than blocking the drawer.
+    client
+      .listPurchasers()
+      .then((data) => setPurchasers(data.purchasers || []))
+      .catch(() => setPurchasers([]));
+  }, []);
 
   if (!detail)
     return (
@@ -146,6 +157,19 @@ export function ProductTestDrawer({
     );
   const record = detail.case as ProductTestCaseRecord;
   const permissions = detail.permissions;
+
+  // Assigning is what creates the Mua hàng task, so it saves immediately
+  // rather than waiting for another Lưu button.
+  async function assignPurchaser(email: string) {
+    const person = purchasers.find((p) => p.email === email);
+    await run("purchaser", () =>
+      client.updateCase(record.id, {
+        purchaser_email: email,
+        purchaser_name: person?.name || null,
+        version: record.version,
+      }),
+    );
+  }
 
   async function run(label: string, operation: () => Promise<unknown>) {
     setBusy(label);
@@ -358,6 +382,40 @@ export function ProductTestDrawer({
                 }
                 lockedLabel="Hồ sơ đã kết luận, không sửa được nữa"
               />
+            </div>
+            <div className="pt-field pt-purchaser">
+              <label>
+                Người mua hàng phụ trách
+                <small>
+                  {" "}
+                  — chọn để giao việc check giá
+                </small>
+              </label>
+              <select
+                value={record.purchaser_email || ""}
+                disabled={!purchaseEditable || busy === "purchaser"}
+                onChange={(e) => assignPurchaser(e.target.value)}
+              >
+                <option value="">
+                  {purchasers.length
+                    ? "— Chưa giao —"
+                    : "Không có ai có quyền Mua hàng"}
+                </option>
+                {purchasers.map((person) => (
+                  <option key={person.email} value={person.email}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+              {record.purchaser_email ? (
+                <small className="pt-hint ok">
+                  ✓ Đã giao việc cho {record.purchaser_name || record.purchaser_email}
+                </small>
+              ) : (
+                <small className="pt-hint warn">
+                  ⚠ Chưa giao — Mua hàng sẽ không nhận được task check giá
+                </small>
+              )}
             </div>
             <div className="pt-images">
               {purchase.image_urls.map((url) => (
@@ -1036,7 +1094,12 @@ const DRAWER_CSS = `
 .pt-field input,.pt-field textarea,.pt-evaluate input,.pt-evaluate select{width:100%;border:1px solid var(--border-base,#d1d5db);border-radius:7px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);padding:8px;font:13px inherit;font-weight:400;outline:none;transition:border-color .12s,box-shadow .12s}
 .pt-field input:focus,.pt-field textarea:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
 .pt-field textarea{min-height:74px;resize:vertical;line-height:1.5}
-.pt-field input:disabled,.pt-field textarea:disabled{background:var(--bg-disabled,#f6f7f8);color:var(--fg-muted,#9ca3af);cursor:not-allowed}
+.pt-field input:disabled,.pt-field textarea:disabled,.pt-field select:disabled{background:var(--bg-disabled,#f6f7f8);color:var(--fg-muted,#9ca3af);cursor:not-allowed}
+.pt-purchaser{margin-bottom:14px}
+.pt-purchaser select{width:100%;padding:8px 10px;border:1px solid var(--border-base,#e5e7eb);border-radius:7px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);font-size:13px}
+.pt-hint{display:block;margin-top:5px;font-size:11.5px}
+.pt-hint.ok{color:#166534}
+.pt-hint.warn{color:#b45309}
 .pt-images{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .pt-images button,.pt-upload{width:64px;height:64px;border:1px solid var(--border-base,#d1d5db);border-radius:8px;background:var(--bg-field,#f9fafb);padding:2px;cursor:pointer}
 .pt-images button.selected{border:2px solid #2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.16)}

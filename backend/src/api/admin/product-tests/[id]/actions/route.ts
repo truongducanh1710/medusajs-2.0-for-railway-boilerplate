@@ -158,6 +158,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         code: updatedCase.code,
         productName: updatedCase.product_name,
         actor,
+        purchaserEmail: updatedCase.purchaser_email,
+        purchaserName: updatedCase.purchaser_name,
       });
     }
     return res.json({ case: updatedCase, action, version: version + 1 });
