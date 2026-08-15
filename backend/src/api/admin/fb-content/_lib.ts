@@ -290,17 +290,17 @@ export async function createUnpublishedPost(opts: {
     published: false,
   }
   if (opts.videoId) {
-    // Video dark post — qua /{page-id}/videos
+    // Video dark post — qua /{page-id}/videos. Trước đây bỏ qua opts.link/name/description
+    // khiến dark post video luôn mất CTA + link trang đích dù user đã nhập (bug đã verify).
+    const f = new URLSearchParams()
+    f.append("access_token", opts.pageToken)
+    f.append("description", opts.message)
+    f.append("video_id", opts.videoId)
+    f.append("published", "false")
+    if (opts.link) f.append("call_to_action", JSON.stringify({ type: "SHOP_NOW", value: { link: opts.link } }))
     const v = await fetch(`https://graph.facebook.com/v18.0/${opts.pageId}/videos`, {
       method: "POST",
-      body: (() => {
-        const f = new URLSearchParams()
-        f.append("access_token", opts.pageToken)
-        f.append("description", opts.message)
-        f.append("video_id", opts.videoId)
-        f.append("published", "false")
-        return f
-      })(),
+      body: f,
     }).then(r => r.json()) as any
     if (v?.error) throw new Error(`FB dark video: ${v.error.message}`)
     return { post_id: v.id, object_story_id: `${opts.pageId}_${v.id}` }

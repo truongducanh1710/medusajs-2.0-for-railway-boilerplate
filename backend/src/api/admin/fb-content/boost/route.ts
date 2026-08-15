@@ -8,6 +8,137 @@ const UTM_STATIC =
 const todayDM = (d = new Date()) => `${d.getDate()}/${d.getMonth() + 1}`
 const buildAdName = (vd: string, postId: string) => `${vd} - ${postId}`
 
+// ── Chuẩn cấu hình adset ─────────────────────────────────────────────────────
+// Đối chiếu camp mẫu "24/05_XUANLT_CHẢO VÀNG HẤP_ADS341_VD111112113V_30ALL"
+// (adset 120246449308750614) — verified trực tiếp trên Graph API 15/8/2026.
+
+/**
+ * Cửa sổ quy đổi. KHÔNG gửi field này thì FB mặc định chỉ 7d click → hụt
+ * view-through + engaged video view so với camp mẫu (đã đo thực tế).
+ * Lưu ý: destination_type KHÔNG ảnh hưởng tới attribution (đã test WEBSITE + 3 cửa sổ, FB nhận đủ).
+ */
+const ATTRIBUTION_STD = [
+  { event_type: "CLICK_THROUGH", window_days: 7 },
+  { event_type: "VIEW_THROUGH", window_days: 1 },
+  { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 },
+]
+
+const MIN_DAILY_BUDGET = 50_000
+const DEFAULT_DAILY_BUDGET = 500_000
+
+/** Ngân sách/ngày: mặc định 500k, sàn cứng 50k cho MỌI mode (trước đây chỉ mode B check). */
+function resolveDailyBudget(b: any): number {
+  const v = Number(b.daily_budget) || DEFAULT_DAILY_BUDGET
+  if (v < MIN_DAILY_BUDGET) throw new Error(`Ngân sách tối thiểu ${MIN_DAILY_BUDGET.toLocaleString("vi-VN")}đ`)
+  return v
+}
+
+/**
+ * Targeting chuẩn theo camp mẫu.
+ *
+ * age_min PHẢI ≤ 25 khi advantage_audience=1 — gửi cao hơn thì FB từ chối tạo adset:
+ *   #100 subcode 1870188 "Với nhóm quảng cáo dùng đối tượng Advantage+, bạn không thể
+ *   đặt lựa chọn kiểm soát đối tượng theo độ tuổi tối thiểu cao hơn 25".
+ * Muốn nhắm già hơn thì để tuổi mong muốn vào age_range (FB coi là gợi ý) — đúng cách
+ * camp mẫu làm: age_min 25 + age_range [30, 65].
+ *
+ * KHÔNG gửi destination_type (mẫu để UNDEFINED) và KHÔNG gửi locales (mẫu không giới hạn
+ * tiếng Việt — gửi [27] là tự thu hẹp tệp).
+ */
+function buildTargeting(b: any) {
+  const wanted = Number(b.age_min) || 25
+  const t: any = {
+    geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
+    age_min: 25,
+    age_max: 65,
+    brand_safety_content_filter_levels: ["FACEBOOK_RELAXED", "AN_RELAXED"],
+    targeting_automation: { advantage_audience: 1 },
+  }
+  if (wanted > 25) t.age_range = [wanted, 65]
+  if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0) {
+    t.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
+  }
+  return t
+}
+
+// ── Mode E (dark_post_raw_video) — hỗ trợ NHIỀU video trong 1 camp ─────────
+// 1 campaign → 1 adset → N ad (mỗi video 1 ad), đúng cấu trúc camp mẫu
+// (adset "VD111112113V" chứa 3 ad VD111/VD112/VD113V).
+
+type VideoItem = {
+  vd_code: string
+  drive_url?: string
+  video_id?: string
+  thumbnail_url?: string | null
+  message?: string
+  cta_type?: string
+  link?: string
+  title?: string
+}
+
+/** Gộp nhiều mã VD giống cách đặt tên adset của camp mẫu: VD111 + VD112 + VD113V → "VD111112113V". */
+function joinVdCodes(vdCodes: string[]): string {
+  if (vdCodes.length === 1) return vdCodes[0]
+  const prefix = vdCodes[0].match(/^[A-Za-z]+/)?.[0] || "VD"
+  const nums = vdCodes.map(v => v.replace(/^[A-Za-z]+/, ""))
+  return prefix + nums.join("")
+}
+
+/** Upload (nếu cần) + poll ready cho 1 video. Ném lỗi nếu thất bại — caller gom vào errors[]. */
+async function prepareVideo(adAcc: string, it: VideoItem): Promise<{ videoId: string; thumbnailUrl: string | null }> {
+  if (it.video_id) {
+    if (it.thumbnail_url) return { videoId: it.video_id, thumbnailUrl: it.thumbnail_url }
+    const token = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
+    const thumbs: any = await fetch(`https://graph.facebook.com/v18.0/${it.video_id}/thumbnails?access_token=${token}`).then(r => r.json())
+    const preferred = (thumbs?.data || []).find((t: any) => t.is_preferred) || thumbs?.data?.[0]
+    return { videoId: it.video_id, thumbnailUrl: preferred?.uri || null }
+  }
+  const videoId = await uploadVideoToFbFromDrive(adAcc, it.drive_url!, it.vd_code)
+  const pollResult = await waitForFbVideoReady(videoId)
+  if (!pollResult.ready) throw new Error(`Video chưa xử lý xong sau khi chờ, thử lại sau (video_id: ${videoId})`)
+  return { videoId, thumbnailUrl: pollResult.thumbnailUrl }
+}
+
+/** Tạo creative + ad cho từng video đã prepare, trong 1 adset. Lỗi từng video không chặn các video còn lại. */
+async function createAdsForVideos(
+  adAcc: string, b: any,
+  prepared: { item: VideoItem; videoId: string; thumbnailUrl: string | null }[],
+  adsetId: string,
+  errors: { vd_code: string; error: string }[],
+): Promise<{ vd_code: string; ad_id: string; creative_id: string; video_id: string }[]> {
+  const results: { vd_code: string; ad_id: string; creative_id: string; video_id: string }[] = []
+  for (const { item: it, videoId, thumbnailUrl } of prepared) {
+    try {
+      const videoData: Record<string, any> = {
+        video_id: videoId,
+        title: it.title || b.title || it.vd_code,
+        message: it.message ?? b.message,
+        call_to_action: {
+          type: it.cta_type || b.cta_type || "SHOP_NOW",
+          value: { link: it.link ?? b.link },
+        },
+      }
+      if (thumbnailUrl) videoData.image_url = thumbnailUrl
+
+      const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
+        name: `CR_${it.vd_code}`,
+        object_story_spec: { page_id: b.page_id, video_data: videoData },
+        url_tags: UTM_STATIC,
+      })
+      const ad = await callFb("POST", `/${adAcc}/ads`, {
+        name: it.vd_code,
+        adset_id: adsetId,
+        creative: { creative_id: creative.id },
+        status: "PAUSED",
+      })
+      results.push({ vd_code: it.vd_code, ad_id: ad.id, creative_id: creative.id, video_id: videoId })
+    } catch (e: any) {
+      errors.push({ vd_code: it.vd_code, error: e.message })
+    }
+  }
+  return results
+}
+
 /**
  * GET /admin/fb-content/boost?ad_id=xxx
  * Preview thông tin ad nguồn (mode from_ad_id).
@@ -105,17 +236,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         status: "PAUSED",
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
-        daily_budget: Number(b.daily_budget) || 500000, // CBO — budget ở cấp campaign, không phải adset (theo mẫu camp chạy tốt)
+        daily_budget: resolveDailyBudget(b), // CBO — budget ở cấp campaign, không phải adset (theo mẫu camp chạy tốt)
         bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật, thiếu → tạo adset lỗi "phải nhập giá thầu"
       })
-      const targeting: any = {
-        geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
-        age_min: Number(b.age_min) || 25,
-        locales: [27],
-        targeting_automation: { advantage_audience: 1 },
-      }
-      if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
-        targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
+      const targeting = buildTargeting(b)
       // pixel_id bắt buộc: optimization_goal=OFFSITE_CONVERSIONS mà promoted_object rỗng
       // → FB lỗi #100 subcode 2490408 "không thể dùng mục tiêu hiệu quả đã chọn cho mục
       // tiêu chiến dịch" (bug thật quan sát khi client gọi thiếu field này).
@@ -130,9 +254,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         campaign_id: campaign.id,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
-        destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau, thiếu thì attribution_spec bị rút gọn
         promoted_object: promotedObject,
         targeting,
+        attribution_spec: ATTRIBUTION_STD,
         status: "PAUSED",
       })
       const ad = await callFb("POST", `/${adAcc}/ads`, {
@@ -150,76 +274,76 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // ── MODE E: video raw từ Drive (Marketing Hub) → upload FB → dark post creative → camp ──
-    // Input: vd_code + page_id + link (Drive view URL). Không cần đăng Page trước.
+    // Không cần đăng Page trước. Nhận NHIỀU video → 1 camp / 1 adset / N ad,
+    // đúng cấu trúc camp mẫu (adset VD111112113V chứa 3 ad, mỗi ad 1 video).
     if (mode === "dark_post_raw_video") {
-      if (!b.vd_code) return res.status(400).json({ error: "Thiếu vd_code" })
       if (!b.page_id) return res.status(400).json({ error: "Thiếu page_id" })
-      if (!b.message) return res.status(400).json({ error: "Thiếu message (caption)" })
-      if (!b.video_id && !b.drive_url) return res.status(400).json({ error: "Cần drive_url hoặc video_id đã upload" })
+
+      // Nhận mảng videos[]; client cũ (MCP) gửi field số ít thì bọc thành mảng 1 phần tử.
+      const items: VideoItem[] = Array.isArray(b.videos) && b.videos.length > 0
+        ? b.videos
+        : [{
+            vd_code: b.vd_code, drive_url: b.drive_url, video_id: b.video_id,
+            thumbnail_url: b.thumbnail_url, message: b.message,
+            cta_type: b.cta_type, link: b.link, title: b.title,
+          }]
+
+      if (items.length === 0) return res.status(400).json({ error: "Chưa chọn video nào" })
+      for (const [i, it] of items.entries()) {
+        if (!it.vd_code) return res.status(400).json({ error: `Video #${i + 1}: thiếu vd_code` })
+        if (!it.video_id && !it.drive_url) return res.status(400).json({ error: `${it.vd_code}: cần drive_url hoặc video_id đã upload` })
+        if (!(it.message ?? b.message)) return res.status(400).json({ error: `${it.vd_code}: thiếu message (caption)` })
+        if (!(it.link ?? b.link)) return res.status(400).json({ error: `${it.vd_code}: thiếu link (CTA URL, không kèm UTM)` })
+      }
 
       const pageTokens = await getPageTokens(pool)
       const pageToken = pageTokens.find(t => t.page_id === b.page_id)?.access_token
       if (!pageToken) return res.status(400).json({ error: "Không tìm thấy page token cho page này" })
 
-      const vdCode: string = b.vd_code
-      // Nếu đã có video_id (đã upload trước) thì bỏ qua bước upload + poll
-      let videoId: string = b.video_id || ""
-      let thumbnailUrl: string | null = b.thumbnail_url || null
-      if (!videoId) {
-        videoId = await uploadVideoToFbFromDrive(adAcc, b.drive_url, vdCode)
-        const pollResult = await waitForFbVideoReady(videoId)
-        if (!pollResult.ready) return res.status(504).json({ error: `Video ${videoId} chưa xử lý xong sau khi chờ, thử lại sau`, video_id: videoId })
-        thumbnailUrl = pollResult.thumbnailUrl
-      } else if (!thumbnailUrl) {
-        // Fetch thumbnail cho video đã có sẵn
-        const token = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
-        const thumbs: any = await fetch(`https://graph.facebook.com/v18.0/${videoId}/thumbnails?access_token=${token}`).then(r => r.json())
-        const preferred = (thumbs?.data || []).find((t: any) => t.is_preferred) || thumbs?.data?.[0]
-        thumbnailUrl = preferred?.uri || null
+      if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
+
+      let dailyBudget: number
+      try { dailyBudget = resolveDailyBudget(b) } catch (e: any) { return res.status(400).json({ error: e.message }) }
+
+      // 1. Upload + poll SONG SONG. Video lỗi không làm hỏng cả camp — gom vào errors[].
+      const errors: { vd_code: string; error: string }[] = []
+      const prepared = (await Promise.all(items.map(async it => {
+        try {
+          return { item: it, ...(await prepareVideo(adAcc, it)) }
+        } catch (e: any) {
+          errors.push({ vd_code: it.vd_code, error: e.message })
+          return null
+        }
+      }))).filter(Boolean) as { item: VideoItem; videoId: string; thumbnailUrl: string | null }[]
+
+      if (prepared.length === 0) {
+        return res.status(400).json({ error: "Không video nào sẵn sàng để tạo quảng cáo", errors })
       }
 
-      const dailyBudget = Number(b.daily_budget) || 500000
+      // Tên adset gộp mã VD như camp mẫu: VD111 + VD112 + VD113V → "VD111112113V"
+      const vdCodes = prepared.map(p => p.item.vd_code)
+      const adsetName: string = b.adset_name || joinVdCodes(vdCodes)
+
+      // 2. Nếu chọn adset có sẵn → chỉ tạo creative + ad, bỏ qua campaign/adset
+      if (b.adset_id) {
+        const ads = await createAdsForVideos(adAcc, b, prepared, b.adset_id, errors)
+        return res.json({
+          mode, adset_id: b.adset_id, ads, errors,
+          ad_id: ads[0]?.ad_id, creative_id: ads[0]?.creative_id, video_id: ads[0]?.video_id, // tương thích client cũ
+          adsmanager_url: `https://business.facebook.com/adsmanager/manage/ads?act=${adAcc.replace("act_", "")}`,
+        })
+      }
+
       const campaignName: string = b.campaign_name?.trim() || (() => {
         const sku = (b.sku_code || "PHVVN").toUpperCase()
         const mkt = (auth.mktCode || "MKT").toUpperCase()
         const sp = (b.product_name || "SP").toUpperCase()
         const ads = b.ads_code || "ADS"
         const audience = (b.audience || "30ALL").trim()
-        return `${sku}_${todayDM()}_${mkt}_${sp}_${ads}_${audience}_${vdCode}`
+        return `${sku}_${todayDM()}_${mkt}_${sp}_${ads}_${audience}_${adsetName}`
       })()
 
-      const videoData: Record<string, any> = {
-        video_id: videoId,
-        title: b.title || vdCode,
-        message: b.message,
-        call_to_action: {
-          type: b.cta_type || "SHOP_NOW",
-          value: { link: b.link },
-        },
-      }
-      if (thumbnailUrl) videoData.image_url = thumbnailUrl
-      if (!b.link) return res.status(400).json({ error: "Thiếu link (CTA URL, không kèm UTM)" })
-
-      const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
-        name: `CR_${vdCode}`,
-        object_story_spec: { page_id: b.page_id, video_data: videoData },
-        url_tags: UTM_STATIC,
-      })
-
-      // Nếu chọn adset có sẵn → chỉ tạo ad
-      if (b.adset_id) {
-        const ad = await callFb("POST", `/${adAcc}/ads`, {
-          name: b.ad_name || vdCode,
-          adset_id: b.adset_id,
-          creative: { creative_id: creative.id },
-          status: "PAUSED",
-        })
-        return res.json({
-          mode, ad_id: ad.id, adset_id: b.adset_id, creative_id: creative.id, video_id: videoId,
-          adsmanager_url: `https://business.facebook.com/adsmanager/manage/ads?act=${adAcc.replace("act_", "")}`,
-        })
-      }
-
+      // 3. Campaign (1) → Adset (1)
       const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
         name: campaignName,
         objective: "OUTCOME_SALES",
@@ -229,39 +353,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         daily_budget: dailyBudget, // CBO — budget ở cấp campaign
         bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
       })
-      const targeting: any = {
-        geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
-        age_min: Number(b.age_min) || 25,
-        locales: [27],
-        targeting_automation: { advantage_audience: 1 },
-      }
-      if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
-        targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-      if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
-      const promotedObject: any = {
-        pixel_id: b.pixel_id,
-        custom_event_type: b.custom_event_type || "COMPLETE_REGISTRATION",
-        smart_pse_enabled: false,
-      }
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
-        name: b.adset_name || vdCode,
+        name: adsetName,
         campaign_id: campaign.id,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
-        destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau
-        promoted_object: promotedObject,
-        targeting,
+        promoted_object: {
+          pixel_id: b.pixel_id,
+          custom_event_type: b.custom_event_type || "COMPLETE_REGISTRATION",
+          smart_pse_enabled: false,
+        },
+        targeting: buildTargeting(b),
+        attribution_spec: ATTRIBUTION_STD,
         status: "PAUSED",
       })
-      const ad = await callFb("POST", `/${adAcc}/ads`, {
-        name: b.ad_name || vdCode,
-        adset_id: adset.id,
-        creative: { creative_id: creative.id },
-        status: "PAUSED",
-      })
+
+      // 4. Mỗi video → 1 creative + 1 ad trong cùng adset
+      const ads = await createAdsForVideos(adAcc, b, prepared, adset.id, errors)
+
       return res.json({
         mode, campaign_id: campaign.id, campaign_name: campaignName,
-        adset_id: adset.id, ad_id: ad.id, creative_id: creative.id, video_id: videoId,
+        adset_id: adset.id, adset_name: adsetName, ads, errors,
+        ad_id: ads[0]?.ad_id, creative_id: ads[0]?.creative_id, video_id: ads[0]?.video_id, // tương thích client cũ
         adsmanager_url: `https://business.facebook.com/adsmanager/manage/campaigns?act=${adAcc.replace("act_", "")}`,
       })
     }
@@ -310,7 +423,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }
 
       // Tạo camp mới hoàn chỉnh
-      const dailyBudget = Number(b.daily_budget) || 500000
+      let dailyBudget: number
+      try { dailyBudget = resolveDailyBudget(b) } catch (e: any) { return res.status(400).json({ error: e.message }) }
       const campaignName: string = b.campaign_name?.trim() || (() => {
         const sku = (b.sku_code || "PHVVN").toUpperCase()
         const mkt = (auth.mktCode || "MKT").toUpperCase()
@@ -328,14 +442,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         daily_budget: dailyBudget, // CBO — budget ở cấp campaign
         bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
       })
-      const targeting: any = {
-        geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
-        age_min: Number(b.age_min) || 25,
-        locales: [27],
-        targeting_automation: { advantage_audience: 1 },
-      }
-      if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0)
-        targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
       if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
       const promotedObject: any = {
         pixel_id: b.pixel_id,
@@ -347,9 +453,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         campaign_id: campaign.id,
         billing_event: "IMPRESSIONS",
         optimization_goal: "OFFSITE_CONVERSIONS",
-        destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau
         promoted_object: promotedObject,
-        targeting,
+        targeting: buildTargeting(b),
+        attribution_spec: ATTRIBUTION_STD,
         status: "PAUSED",
       })
       const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
@@ -418,8 +524,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // ── MODE B: tạo campaign mới ─────────────────────────────────────────
-    const dailyBudget = Number(b.daily_budget) || 500000
-    if (dailyBudget < 50000) return res.status(400).json({ error: "Ngân sách tối thiểu 50.000đ" })
+    let dailyBudget: number
+    try { dailyBudget = resolveDailyBudget(b) } catch (e: any) { return res.status(400).json({ error: e.message }) }
 
     // Tên campaign: ưu tiên client gửi, không thì tự sinh
     const campaignName: string = b.campaign_name?.trim() || (() => {
@@ -443,16 +549,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
 
     // 2. Ad Set (PAUSED) — targeting + pixel + loại trừ audiences
-    const targeting: any = {
-      geo_locations: { countries: ["VN"], location_types: ["home", "recent"] },
-      age_min: Number(b.age_min) || 25,
-      locales: [27],
-      targeting_automation: { advantage_audience: 1 },
-    }
-    if (Array.isArray(b.excluded_audience_ids) && b.excluded_audience_ids.length > 0) {
-      targeting.excluded_custom_audiences = b.excluded_audience_ids.map((id: string) => ({ id }))
-    }
-
     if (!b.pixel_id) return res.status(400).json({ error: "Thiếu pixel_id — bắt buộc để tạo adset (optimization_goal=OFFSITE_CONVERSIONS)" })
     const promotedObject: any = {
       pixel_id: b.pixel_id,
@@ -465,9 +561,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       campaign_id: campaign.id,
       billing_event: "IMPRESSIONS",
       optimization_goal: "OFFSITE_CONVERSIONS",
-      destination_type: "WEBSITE", // bắt buộc truyền lúc tạo — không sửa được sau
       promoted_object: promotedObject,
-      targeting,
+      targeting: buildTargeting(b),
+      attribution_spec: ATTRIBUTION_STD,
       status: "PAUSED",
     })
 

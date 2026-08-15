@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
-import { BoostCampModal, type BoostTarget } from "./boost-camp-modal"
 import { PostStatsTab } from "./post-stats-tab"
 
 export type FbPrefill = { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null
@@ -536,12 +535,11 @@ function LichDangTab() {
   const [filterTo, setFilterTo]   = useState("")
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar")
-  const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [editing, setEditing] = useState<any | null>(null)
   const [previewing, setPreviewing] = useState<any | null>(null)
-  const { mktCode, has, isSuper } = useCurrentPermissions()
-  const canBoost = isSuper || has("page.fb-content.post")
+  const { has, isSuper } = useCurrentPermissions()
+  const canBoost = isSuper || has("page.fb-content.boost")
 
   const handleSaveEdit = async (postId: string, message: string) => {
     await apiJson(`/admin/fb-content/post/${postId}`, "PATCH", { message })
@@ -670,8 +668,8 @@ function LichDangTab() {
                     {canBoost && p.post_id && p.media_type === "video" && (
                       p.boost_status === "active"
                         ? <span style={{ fontSize: 11, color: "#059669", fontWeight: 600, whiteSpace: "nowrap" }}>✓ Đã lên camp</span>
-                        : <button onClick={() => setBoostTarget({ postId: p.id, pageName: p.page_name, vdCode: p.vd_code, productName: p.product || "", mktCode })}
-                            style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>🚀 Lên Camp</button>
+                        : <a href="/app/marketing-hub#lencamp"
+                            style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none" }}>🚀 Lên Camp</a>
                     )}
                     {p.status === "scheduled" && (
                       <button
@@ -695,10 +693,6 @@ function LichDangTab() {
           </div>
         </div>
       ))}
-
-      {boostTarget && (
-        <BoostCampModal target={boostTarget} onClose={() => setBoostTarget(null)} onDone={load} />
-      )}
 
       {editing && (
         <EditPostModal post={editing} onClose={() => setEditing(null)} onSave={handleSaveEdit} />

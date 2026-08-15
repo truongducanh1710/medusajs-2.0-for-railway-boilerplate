@@ -2,8 +2,6 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
-import { CreateCampPicker } from "../../components/marketing-hub/create-camp-picker"
-import { BoostCampModal, type BoostTarget } from "../../components/marketing-hub/boost-camp-modal"
 import { withRouteGuard } from "../../components/route-guard"
 
 function fmtMoney(n: number): string {
@@ -163,10 +161,8 @@ function BaoCaoMktPage() {
 
   const { isSuper, mktCode, mktCodes, has } = useCurrentPermissions()
 
-  // Tạo Camp từ video (picker → BoostCampModal)
-  const canCreateCamp = isSuper || has("page.fb-content.post")
-  const [campPickerOpen, setCampPickerOpen] = useState(false)
-  const [boostTarget, setBoostTarget] = useState<BoostTarget | null>(null)
+  // Lên camp gom về Marketing Hub — chỉ còn link trỏ sang, không mở picker/modal ở đây nữa
+  const canCreateCamp = isSuper || has("page.fb-content.boost")
 
   // Tab 3 — Lịch hẹn Camp (schedules + logs)
   const [jobsSubTab, setJobsSubTab] = useState<"schedules" | "logs" | "fb-history">("schedules")
@@ -1148,12 +1144,13 @@ function BaoCaoMktPage() {
               {campLoading ? "Đang tải..." : "↻ Refresh"}
             </button>
             {canCreateCamp && (
-              <button onClick={() => setCampPickerOpen(true)} style={{
+              <a href="/app/marketing-hub#lencamp" style={{
                 background: "#10b981", color: "#fff", border: "none", borderRadius: 6,
-                padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap"
+                padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap",
+                textDecoration: "none", display: "inline-flex", alignItems: "center"
               }}>
-                🚀 Tạo Camp
-              </button>
+                🚀 Lên Camp
+              </a>
             )}
           </div>
           {(() => {
@@ -4529,23 +4526,6 @@ function BaoCaoMktPage() {
           </div>
         )
       })()}
-
-      {/* Tạo Camp từ video: picker → BoostCampModal */}
-      {campPickerOpen && (
-        <CreateCampPicker
-          mktCode={mktCode}
-          isAdmin={isSuper}
-          onClose={() => setCampPickerOpen(false)}
-          onPick={(target) => { setCampPickerOpen(false); setBoostTarget(target) }}
-        />
-      )}
-      {boostTarget && (
-        <BoostCampModal
-          target={boostTarget}
-          onClose={() => setBoostTarget(null)}
-          onDone={() => fetchCampData()}
-        />
-      )}
 
       {/* ===== TAB: BÀN GIAO MKT ===== */}
       {activeTab === "handover" && (() => {

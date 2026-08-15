@@ -6,6 +6,8 @@ import { FbContentSection, type FbPrefill } from "../../components/marketing-hub
 import { HieuQuaSection } from "../../components/marketing-hub/hieu-qua-section"
 import { QuanLyPageTab } from "../../components/marketing-hub/quan-ly-page-tab"
 import { AudienceTab } from "../../components/marketing-hub/audience-tab"
+import { LenCampTab } from "../../components/marketing-hub/len-camp-tab"
+import { QuyTrinhCampTab } from "../../components/marketing-hub/quy-trinh-camp-tab"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -148,6 +150,7 @@ const MarketingHubPage = () => {
     if (innerTab) setFbInitialTab(innerTab)
   }
   const canAudience = isSuper || has("page.fb-content.post")
+  const canBoost = isSuper || has("page.fb-content.boost")
 
   const onDangFB = (row: VideoRow) => {
     setPrefill({ videoId: row.id, driveUrl: row.link || "", sp: row.sp, vd: row.vdCode })
@@ -161,6 +164,8 @@ const MarketingHubPage = () => {
     { id: "quanly",   label: "🗂 Quản lý Page" },
     ...(canAudience ? [{ id: "audience", label: "🎯 Tệp đối tượng" }] : []),
     ...(isSuper ? [{ id: "products", label: "📦 Danh mục SP" }] : []),
+    ...(canBoost ? [{ id: "lencamp", label: "🚀 Lên Camp" }] : []),
+    ...(canBoost ? [{ id: "quytrinh", label: "📘 Quy trình lên camp" }] : []),
   ] as const
 
   return (
@@ -187,6 +192,8 @@ const MarketingHubPage = () => {
       {section === "quanly"  && <div style={{ padding: 20 }}><QuanLyPageTab /></div>}
       {section === "audience" && <div style={{ padding: 20 }}><AudienceTab isAdmin={isSuper} mktCode={mktCode} /></div>}
       {section === "products" && isSuper && <ProductsTab />}
+      {section === "lencamp" && canBoost && <LenCampTab mktCode={mktCode} isAdmin={isSuper} />}
+      {section === "quytrinh" && canBoost && <div style={{ padding: 20 }}><QuyTrinhCampTab /></div>}
     </div>
   )
 }
