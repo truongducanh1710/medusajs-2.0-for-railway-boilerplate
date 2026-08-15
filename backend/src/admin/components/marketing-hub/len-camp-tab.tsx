@@ -27,6 +27,101 @@ const CTA_OPTS = [
   { v: "ORDER_NOW", l: "Đặt hàng ngay" },
 ]
 
+const VN_WEEKDAYS = ["CN", "Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7"]
+const pad2 = (n: number) => String(n).padStart(2, "0")
+
+/** Parse chuỗi datetime-local (YYYY-MM-DDTHH:mm) thành {y,m,d,hh,mm}, hoặc null nếu rỗng/sai. */
+function parseLocalDT(v: string): { y: number; m: number; d: number; hh: number; mm: number } | null {
+  const mch = v?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (!mch) return null
+  return { y: +mch[1], m: +mch[2], d: +mch[3], hh: +mch[4], mm: +mch[5] }
+}
+function formatLocalDT(y: number, m: number, d: number, hh: number, mm: number): string {
+  return `${y}-${pad2(m)}-${pad2(d)}T${pad2(hh)}:${pad2(mm)}`
+}
+
+/**
+ * Date/time picker tự vẽ theo định dạng Việt Nam (Th 2 → CN, dd/mm/yyyy, giờ 24h) —
+ * thay cho <input type="datetime-local"> gốc trình duyệt hiện lịch kiểu Mỹ (Su-Mo-Tu,
+ * AM/PM). Value/onChange vẫn giữ format datetime-local để không đổi logic submit nơi khác.
+ */
+function VnDateTimePicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [open, setOpen] = useState(false)
+  const parsed = parseLocalDT(value)
+  const now = new Date()
+  const [viewY, setViewY] = useState(parsed?.y ?? now.getFullYear())
+  const [viewM, setViewM] = useState(parsed?.m ?? now.getMonth() + 1) // 1-12
+
+  const daysInMonth = new Date(viewY, viewM, 0).getDate()
+  const firstWeekday = new Date(viewY, viewM - 1, 1).getDay() // 0=CN
+  const cells: (number | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+
+  const pickDay = (d: number) => {
+    const hh = parsed?.hh ?? 9
+    const mm = parsed?.mm ?? 0
+    onChange(formatLocalDT(viewY, viewM, d, hh, mm))
+  }
+  const setTime = (hh: number, mm: number) => {
+    onChange(formatLocalDT(viewY, viewM, parsed?.d ?? now.getDate(), hh, mm))
+  }
+  const shiftMonth = (delta: number) => {
+    let m = viewM + delta, y = viewY
+    if (m > 12) { m = 1; y++ } else if (m < 1) { m = 12; y-- }
+    setViewM(m); setViewY(y)
+  }
+
+  const displayStr = parsed ? `${pad2(parsed.d)}/${pad2(parsed.m)}/${parsed.y}  ${pad2(parsed.hh)}:${pad2(parsed.mm)}` : ""
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ ...inp, textAlign: "left", cursor: "pointer", color: displayStr ? "#111827" : "#9CA3AF", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>{displayStr || placeholder || "Chọn ngày giờ…"}</span>
+        <span style={{ color: "#9CA3AF" }}>📅</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 9999, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 12, width: 260 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <button type="button" onClick={() => shiftMonth(-1)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#4B5563", padding: 4 }}>‹</button>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>Tháng {viewM}/{viewY}</span>
+              <button type="button" onClick={() => shiftMonth(1)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#4B5563", padding: 4 }}>›</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 4 }}>
+              {VN_WEEKDAYS.map(w => <div key={w} style={{ textAlign: "center", fontSize: 10, color: "#9CA3AF", fontWeight: 700 }}>{w}</div>)}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+              {cells.map((d, i) => {
+                if (d === null) return <div key={i} />
+                const isSelected = parsed && parsed.y === viewY && parsed.m === viewM && parsed.d === d
+                return (
+                  <button key={i} type="button" onClick={() => pickDay(d)}
+                    style={{
+                      aspectRatio: "1", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12,
+                      background: isSelected ? "#1877F2" : "transparent", color: isSelected ? "#fff" : "#374151",
+                      fontWeight: isSelected ? 700 : 400,
+                    }}>{d}</button>
+                )
+              })}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, paddingTop: 10, borderTop: "1px solid #F3F4F6" }}>
+              <span style={{ fontSize: 11, color: "#6B7280" }}>Giờ:</span>
+              <input type="number" min={0} max={23} value={parsed?.hh ?? 9} onChange={e => setTime(Math.min(23, Math.max(0, Number(e.target.value) || 0)), parsed?.mm ?? 0)}
+                style={{ width: 44, ...inp, padding: "4px 6px", textAlign: "center" }} />
+              <span style={{ fontSize: 12, color: "#9CA3AF" }}>:</span>
+              <input type="number" min={0} max={59} value={parsed?.mm ?? 0} onChange={e => setTime(parsed?.hh ?? 9, Math.min(59, Math.max(0, Number(e.target.value) || 0)))}
+                style={{ width: 44, ...inp, padding: "4px 6px", textAlign: "center" }} />
+              <span style={{ fontSize: 10, color: "#9CA3AF" }}>(24h)</span>
+              <button type="button" onClick={() => setOpen(false)} style={{ marginLeft: "auto", background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Xong</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5, display: "block" }
 const inp: React.CSSProperties = { width: "100%", background: "#FFFFFF", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 10px", fontSize: 13, outline: "none" }
 const groupBox: React.CSSProperties = { border: "1px solid #E5E7EB", borderRadius: 10, background: "#FFFFFF", overflow: "hidden" }
@@ -427,11 +522,11 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
                         <div>
                           <label style={lbl}>Ngày bắt đầu</label>
-                          <input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} style={inp} />
+                          <VnDateTimePicker value={startTime} onChange={setStartTime} />
                         </div>
                         <div>
                           <label style={lbl}>Ngày kết thúc (tuỳ chọn)</label>
-                          <input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} style={inp} />
+                          <VnDateTimePicker value={endTime} onChange={setEndTime} placeholder="Không giới hạn" />
                         </div>
                       </div>
                     )}
