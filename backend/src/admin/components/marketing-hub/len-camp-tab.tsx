@@ -179,12 +179,18 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
   const [ageMin, setAgeMin] = useState(25)
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [funnel, setFunnel] = useState<"" | "top" | "middle" | "bottom">("")
+  const [statusActive, setStatusActive] = useState(false) // tin tưởng thì bật ACTIVE, không thì PAUSED (mặc định)
+  const [scheduleLater, setScheduleLater] = useState(false) // false = chạy luôn ngay, true = hẹn ngày giờ
+  const [startTime, setStartTime] = useState("")
+  const [endTime, setEndTime] = useState("")
 
   const [pageId, setPageId] = useState("")
   const [message, setMessage] = useState("")
   const [ctaType, setCtaType] = useState("SHOP_NOW")
   const [link, setLink] = useState("")
-  const [overrides, setOverrides] = useState<Map<string, { message?: string; link?: string; cta_type?: string }>>(new Map())
+  const [title, setTitle] = useState("")
+  const [description, setDescription] = useState("")
+  const [overrides, setOverrides] = useState<Map<string, { message?: string; link?: string; cta_type?: string; title?: string; description?: string }>>(new Map())
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
@@ -247,7 +253,7 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
     else { setAudience("UPSELL"); setExcluded(new Set()) }
   }
 
-  const setOverride = (id: string, patch: Partial<{ message: string; link: string; cta_type: string }>) => {
+  const setOverride = (id: string, patch: Partial<{ message: string; link: string; cta_type: string; title: string; description: string }>) => {
     setOverrides(prev => {
       const n = new Map(prev)
       n.set(id, { ...n.get(id), ...patch })
@@ -255,7 +261,14 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
     })
   }
 
-  const canSubmit = accId && pageId && message.trim() && link.trim() && pixelId && selectedVideos.length > 0 && budget >= 50000
+  // Tiêu đề bắt buộc: chung HOẶC mỗi video đã có override riêng
+  const allTitlesFilled = title.trim()
+    ? true
+    : selectedVideos.every(v => (overrides.get(v.id)?.title || "").trim())
+
+  const canSubmit = accId && pageId && message.trim() && link.trim() && pixelId
+    && selectedVideos.length > 0 && budget >= 50000 && allTitlesFilled
+    && (!scheduleLater || startTime)
 
   const submit = async () => {
     if (!canSubmit || submitting) return
@@ -271,6 +284,8 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
           message: ov.message,
           cta_type: ov.cta_type,
           link: ov.link,
+          title: ov.title,
+          description: ov.description,
         }
       })
       setPhase("Tạo camp…")
@@ -278,7 +293,7 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
         mode: "dark_post_raw_video",
         ad_account_id: accId,
         page_id: pageId,
-        message, cta_type: ctaType, link,
+        message, cta_type: ctaType, link, title, description,
         videos: videosPayload,
         campaign_name: campNamePreview,
         sku_code: skuCode, ads_code: adsCode, audience,
@@ -287,6 +302,9 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
         age_min: ageMin,
         product_name: selectedVideos[0]?.sp,
         adset_name: adsetNamePreview,
+        status: statusActive ? "ACTIVE" : "PAUSED",
+        start_time: scheduleLater ? (startTime || undefined) : undefined,
+        end_time: scheduleLater ? (endTime || undefined) : undefined,
       })
       setPhase("Xong")
       setProgress(prev => prev.map(p => {
@@ -370,7 +388,7 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
             <>
               {/* ① CHIẾN DỊCH */}
               <div style={groupBox}>
-                <div style={groupHead}><span>① CHIẾN DỊCH</span><span style={{ color: "#9CA3AF", fontWeight: 500 }}>2 field</span></div>
+                <div style={groupHead}><span>① CHIẾN DỊCH</span><span style={{ color: "#9CA3AF", fontWeight: 500 }}>4 field</span></div>
                 <div style={groupBody}>
                   <div>
                     <label style={lbl}>Tên Campaign (tự sinh)</label>
@@ -389,8 +407,37 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                       <input type="number" value={budget} onChange={e => setBudget(Number(e.target.value))} style={inp} />
                     </div>
                   </div>
+
+                  <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: 10 }}>
+                    <label style={lbl}>Trạng thái khởi tạo</label>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {([[false, "⏸ Tắt (PAUSED)", "An toàn — review xong tự bật tay"], [true, "▶ Bật luôn (ACTIVE)", "Tin tưởng cấu hình, chạy ngay"]] as const).map(([v, l, desc]) => (
+                        <button key={String(v)} type="button" onClick={() => setStatusActive(v)} title={desc}
+                          style={{ flex: 1, background: statusActive === v ? "#1877F2" : "#F3F4F6", color: statusActive === v ? "#fff" : "#4B5563", border: "none", borderRadius: 8, padding: "8px 6px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", textTransform: "none", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                      <input type="checkbox" checked={scheduleLater} onChange={e => setScheduleLater(e.target.checked)} />
+                      Lịch chạy — hẹn ngày giờ thay vì áp dụng ngay
+                    </label>
+                    {scheduleLater && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
+                        <div>
+                          <label style={lbl}>Ngày bắt đầu</label>
+                          <input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} style={inp} />
+                        </div>
+                        <div>
+                          <label style={lbl}>Ngày kết thúc (tuỳ chọn)</label>
+                          <input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} style={inp} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div style={fixedLine}>🔒 Mục tiêu Doanh số · Ngân sách cấp camp (CBO) · Giá thầu thấp nhất · PAUSED</div>
+                <div style={fixedLine}>🔒 Mục tiêu Doanh số · Ngân sách cấp camp (CBO) · Giá thầu thấp nhất</div>
               </div>
 
               {/* ② NHÓM QUẢNG CÁO */}
@@ -449,6 +496,17 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                     </select>
                   </div>
                   <div>
+                    <label style={lbl}>Tiêu đề (bắt buộc, chung)</label>
+                    <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề hiện trên quảng cáo…" style={inp} />
+                    {!title.trim() && (
+                      <div style={{ fontSize: 10.5, color: "#9CA3AF", marginTop: 4 }}>Để trống thì mỗi video phải có tiêu đề riêng (sửa ở mục dưới).</div>
+                    )}
+                  </div>
+                  <div>
+                    <label style={lbl}>Mô tả (tuỳ chọn, chung)</label>
+                    <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Mô tả phụ dưới tiêu đề…" style={inp} />
+                  </div>
+                  <div>
                     <label style={lbl}>Nội dung bài (caption chung)</label>
                     <textarea value={message} onChange={e => setMessage(e.target.value)} rows={3} placeholder="Nội dung quảng cáo…" style={{ ...inp, resize: "vertical" }} />
                   </div>
@@ -467,13 +525,15 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
 
                   {selectedVideos.length > 1 && (
                     <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: 10 }}>
-                      <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 6 }}>Áp caption/CTA/link chung cho {selectedVideos.length} video — sửa riêng nếu cần</div>
+                      <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 6 }}>Áp tiêu đề/mô tả/caption/CTA/link chung cho {selectedVideos.length} video — sửa riêng nếu cần</div>
                       {selectedVideos.map(v => {
                         const hasOverride = overrides.has(v.id)
+                        const missingTitle = !title.trim() && !(overrides.get(v.id)?.title || "").trim()
                         return (
                           <div key={v.id} style={{ marginBottom: 6 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
                               <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{v.vdCode}</span>
+                              {missingTitle && <span style={{ color: "#DC2626", fontSize: 10.5 }}>⚠️ thiếu tiêu đề</span>}
                               <button type="button" onClick={() => setEditingId(editingId === v.id ? null : v.id)}
                                 style={{ background: "none", border: "none", color: hasOverride ? "#1877F2" : "#9CA3AF", fontSize: 11, cursor: "pointer" }}>
                                 {hasOverride ? "● đã sửa riêng" : "✎ sửa riêng"}
@@ -481,6 +541,14 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                             </div>
                             {editingId === v.id && (
                               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, padding: 8, background: "#F9FAFB", borderRadius: 8 }}>
+                                <input placeholder={`Tiêu đề riêng cho ${v.vdCode}${title.trim() ? " (để trống = dùng chung)" : " (bắt buộc — chưa có tiêu đề chung)"}`}
+                                  defaultValue={overrides.get(v.id)?.title || ""}
+                                  onChange={e => setOverride(v.id, { title: e.target.value || undefined })}
+                                  style={{ ...inp, fontSize: 12 }} />
+                                <input placeholder="Mô tả riêng (để trống = dùng chung)"
+                                  defaultValue={overrides.get(v.id)?.description || ""}
+                                  onChange={e => setOverride(v.id, { description: e.target.value || undefined })}
+                                  style={{ ...inp, fontSize: 12 }} />
                                 <textarea placeholder={`Caption riêng cho ${v.vdCode} (để trống = dùng chung)`}
                                   defaultValue={overrides.get(v.id)?.message || ""}
                                   onChange={e => setOverride(v.id, { message: e.target.value || undefined })}

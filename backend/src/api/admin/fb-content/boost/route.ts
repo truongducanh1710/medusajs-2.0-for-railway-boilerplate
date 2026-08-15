@@ -26,6 +26,25 @@ const ATTRIBUTION_STD = [
 const MIN_DAILY_BUDGET = 50_000
 const DEFAULT_DAILY_BUDGET = 500_000
 
+/** Trạng thái khởi tạo — mặc định PAUSED (an toàn, review trước khi chạy tiền thật), chọn ACTIVE để chạy ngay. */
+function resolveStatus(b: any): "ACTIVE" | "PAUSED" {
+  return b.status === "ACTIVE" ? "ACTIVE" : "PAUSED"
+}
+
+/**
+ * Lịch chạy (ngày bắt đầu/kết thúc). PHẢI set ở cấp ADSET, không phải campaign —
+ * đã verify trên Graph API thật (15/8/2026): gửi start_time lúc tạo/update CAMPAIGN
+ * trả "success" nhưng field bị lặng lẽ bỏ qua (đọc lại luôn ra epoch 1970-01-01, giống
+ * kiểu individual_setting). Cùng field đó gửi ở ADSET thì lưu đúng, Facebook tự chuyển
+ * ACTIVE/PAUSED đúng giờ hẹn — app không cần tự canh giờ.
+ */
+function resolveSchedule(b: any): { start_time?: string; end_time?: string } {
+  const out: { start_time?: string; end_time?: string } = {}
+  if (b.start_time) out.start_time = new Date(b.start_time).toISOString()
+  if (b.end_time) out.end_time = new Date(b.end_time).toISOString()
+  return out
+}
+
 /** Ngân sách/ngày: mặc định 500k, sàn cứng 50k cho MỌI mode (trước đây chỉ mode B check). */
 function resolveDailyBudget(b: any): number {
   const v = Number(b.daily_budget) || DEFAULT_DAILY_BUDGET
@@ -74,6 +93,7 @@ type VideoItem = {
   cta_type?: string
   link?: string
   title?: string
+  description?: string
 }
 
 /** Gộp nhiều mã VD giống cách đặt tên adset của camp mẫu: VD111 + VD112 + VD113V → "VD111112113V". */
@@ -111,13 +131,15 @@ async function createAdsForVideos(
     try {
       const videoData: Record<string, any> = {
         video_id: videoId,
-        title: it.title || b.title || it.vd_code,
+        title: (it.title ?? b.title)?.trim(),
         message: it.message ?? b.message,
         call_to_action: {
           type: it.cta_type || b.cta_type || "SHOP_NOW",
           value: { link: it.link ?? b.link },
         },
       }
+      const desc = (it.description ?? b.description)?.trim()
+      if (desc) videoData.link_description = desc
       if (thumbnailUrl) videoData.image_url = thumbnailUrl
 
       const creative = await callFb("POST", `/${adAcc}/adcreatives`, {
@@ -129,7 +151,7 @@ async function createAdsForVideos(
         name: it.vd_code,
         adset_id: adsetId,
         creative: { creative_id: creative.id },
-        status: "PAUSED",
+        status: resolveStatus(b),
       })
       results.push({ vd_code: it.vd_code, ad_id: ad.id, creative_id: creative.id, video_id: videoId })
     } catch (e: any) {
@@ -294,6 +316,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         if (!it.video_id && !it.drive_url) return res.status(400).json({ error: `${it.vd_code}: cần drive_url hoặc video_id đã upload` })
         if (!(it.message ?? b.message)) return res.status(400).json({ error: `${it.vd_code}: thiếu message (caption)` })
         if (!(it.link ?? b.link)) return res.status(400).json({ error: `${it.vd_code}: thiếu link (CTA URL, không kèm UTM)` })
+        if (!(it.title ?? b.title)?.trim()) return res.status(400).json({ error: `${it.vd_code}: thiếu tiêu đề` })
       }
 
       const pageTokens = await getPageTokens(pool)
@@ -344,14 +367,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       })()
 
       // 3. Campaign (1) → Adset (1)
+      const status = resolveStatus(b)
       const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
         name: campaignName,
         objective: "OUTCOME_SALES",
-        status: "PAUSED",
         special_ad_categories: [],
         is_adset_budget_sharing_enabled: false,
         daily_budget: dailyBudget, // CBO — budget ở cấp campaign
         bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
+        status,
       })
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: adsetName,
@@ -365,7 +389,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         },
         targeting: buildTargeting(b),
         attribution_spec: ATTRIBUTION_STD,
-        status: "PAUSED",
+        status, // theo trạng thái campaign — adset PAUSED thì camp không chạy dù campaign trạng thái nào
+        ...resolveSchedule(b), // start_time/end_time (lịch chạy, tuỳ chọn) — PHẢI ở cấp adset, campaign bỏ qua field này
       })
 
       // 4. Mỗi video → 1 creative + 1 ad trong cùng adset
