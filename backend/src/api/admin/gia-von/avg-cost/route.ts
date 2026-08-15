@@ -174,8 +174,6 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   const unlinked: { label: string; gia_tb: number }[] = []
   let mapped = 0
   let total = 0
-  // prefix → giá; prefix đụng độ (2 mã khác giá cùng PHVVN###) bị loại để không đoán sai.
-  const prefixHits: Record<string, Set<number>> = {}
 
   for (const g of Object.values(groupMap)) {
     if (!g.tenChinh && g.soLuong === 0) continue
@@ -195,13 +193,21 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     if (code) {
       costs[code] = giaTB
       mapped++
-      const m = code.match(/^(PHVVN\d{2,3})/)
-      if (m) (prefixHits[m[1]] ??= new Set()).add(giaTB)
     } else {
       unlinked.push({ label: tenChinh || g.nhom, gia_tb: giaTB })
     }
   }
 
+  // Dựng byPrefix TỪ costs (sau khi gom), không tích lũy trong vòng lặp: nhiều nhóm sheet
+  // có thể cùng 1 mã (vd 4 dòng KHAY LỌC DẦU nhập các đợt nhập hàng khác nhau) và costs
+  // giữ giá của nhóm cuối. Nếu gom từng giaTB thì prefix thấy nhiều giá và bị loại oan —
+  // đúng trường hợp PHVVN038 mất giá vốn dù chỉ có 1 mã duy nhất.
+  // Chỉ loại khi 2 MÃ KHÁC NHAU cùng prefix cho giá khác nhau (lúc đó không đoán được).
+  const prefixHits: Record<string, Set<number>> = {}
+  for (const [code, giaTB] of Object.entries(costs)) {
+    const m = code.match(/^(PHVVN\d{2,3})/)
+    if (m) (prefixHits[m[1]] ??= new Set()).add(giaTB)
+  }
   const byPrefix: Record<string, number> = {}
   for (const [p, vals] of Object.entries(prefixHits)) {
     if (vals.size === 1) byPrefix[p] = [...vals][0]
