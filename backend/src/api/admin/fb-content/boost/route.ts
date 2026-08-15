@@ -151,7 +151,7 @@ async function createAdsForVideos(
         name: it.vd_code,
         adset_id: adsetId,
         creative: { creative_id: creative.id },
-        status: resolveStatus(b),
+        status: "PAUSED", // luôn PAUSED để review trước khi bật tay — trạng thái Tắt/Bật chỉ áp cho campaign
       })
       results.push({ vd_code: it.vd_code, ad_id: ad.id, creative_id: creative.id, video_id: videoId })
     } catch (e: any) {
@@ -366,8 +366,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         return `${sku}_${todayDM()}_${mkt}_${sp}_${ads}_${audience}_${adsetName}`
       })()
 
-      // 3. Campaign (1) → Adset (1)
-      const status = resolveStatus(b)
+      // 3. Campaign (1) → Adset (1). Trạng thái Tắt/Bật chỉ áp cho CAMPAIGN — adset và ad
+      // luôn PAUSED để còn review trước khi chạy tiền thật. Bật campaign nhưng adset/ad
+      // PAUSED thì camp thực tế KHÔNG chạy quảng cáo nào (Facebook cần cả 3 cấp ACTIVE).
       const campaign = await callFb("POST", `/${adAcc}/campaigns`, {
         name: campaignName,
         objective: "OUTCOME_SALES",
@@ -375,7 +376,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         is_adset_budget_sharing_enabled: false,
         daily_budget: dailyBudget, // CBO — budget ở cấp campaign
         bid_strategy: "LOWEST_COST_WITHOUT_CAP", // bắt buộc ở campaign khi CBO bật
-        status,
+        status: resolveStatus(b),
       })
       const adset = await callFb("POST", `/${adAcc}/adsets`, {
         name: adsetName,
@@ -389,7 +390,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         },
         targeting: buildTargeting(b),
         attribution_spec: ATTRIBUTION_STD,
-        status, // theo trạng thái campaign — adset PAUSED thì camp không chạy dù campaign trạng thái nào
+        status: "PAUSED",
         ...resolveSchedule(b), // start_time/end_time (lịch chạy, tuỳ chọn) — PHẢI ở cấp adset, campaign bỏ qua field này
       })
 

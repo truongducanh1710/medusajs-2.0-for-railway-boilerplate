@@ -504,13 +504,14 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                   </div>
 
                   <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: 10 }}>
-                    <label style={lbl}>Trạng thái khởi tạo</label>
+                    <label style={lbl}>Trạng thái khởi tạo (chỉ campaign)</label>
                     <div style={{ display: "flex", gap: 6 }}>
                       {([[false, "⏸ Tắt (PAUSED)", "An toàn — review xong tự bật tay"], [true, "▶ Bật luôn (ACTIVE)", "Tin tưởng cấu hình, chạy ngay"]] as const).map(([v, l, desc]) => (
                         <button key={String(v)} type="button" onClick={() => setStatusActive(v)} title={desc}
                           style={{ flex: 1, background: statusActive === v ? "#1877F2" : "#F3F4F6", color: statusActive === v ? "#fff" : "#4B5563", border: "none", borderRadius: 8, padding: "8px 6px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{l}</button>
                       ))}
                     </div>
+                    <div style={{ fontSize: 10.5, color: "#9CA3AF", marginTop: 4 }}>Nhóm quảng cáo &amp; quảng cáo luôn tạo Tắt (PAUSED) để review — kể cả khi bật campaign.</div>
                   </div>
 
                   <div>
