@@ -159,6 +159,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SELECT *, COALESCE(NULLIF(sp_code, ''), sp_name_up, 'CHƯA RÕ SP') AS sp_key
         FROM oi
       ),
+      -- Quà tặng của đơn = item giá 0 trong đơn CÓ ít nhất 1 item bán (order_total_value > 0).
+      -- Gom về (đơn → danh sách quà) để cộng giá vốn quà vào SP chính của đơn: khách trả tiền
+      -- cho combo, nên giá vốn combo phải nằm trọn ở SP chính, không rơi vào dòng SP quà
+      -- (dòng đó không có doanh thu, giá vốn sẽ biến mất khỏi báo cáo).
+      gifts AS (
+        SELECT
+          order_id,
+          jsonb_agg(jsonb_build_object(
+            'code', NULLIF(sp_code, ''),
+            'name', sp_name_up,
+            'qty',  qty
+          )) AS gift_items
+        FROM oi2
+        WHERE item_value = 0 AND order_total_value > 0
+        GROUP BY order_id
+      ),
       -- gom item trùng SP trong cùng đơn → 1 dòng / (đơn, SP)
       os AS (
         SELECT
@@ -175,8 +191,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           SUM(qty) AS sp_qty,
           -- SP có chứa item giá trị cao nhất đơn → chịu ship/fullfill
           bool_or(item_value = order_max_value AND order_max_value > 0) AS is_main,
-          MAX(partner_fee) AS partner_fee
+          MAX(partner_fee) AS partner_fee,
+          -- Quà tặng của đơn (chỉ gắn vào SP chính, xử lý ở JS bên dưới)
+          (array_agg(g.gift_items))[1] AS gift_items
         FROM oi2
+        LEFT JOIN gifts g USING (order_id)
         GROUP BY order_id, sp_key
       )
       SELECT
@@ -191,6 +210,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status IN (0, 1, 2, 8, 9, 11) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_treo,
         SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
+        -- Quà tặng kèm của các đơn ĐÃ NHẬN mà SP này là SP chính → giá vốn quà tính vào SP này.
+        COALESCE(jsonb_agg(gift_items) FILTER (
+          WHERE is_main AND status = 3 AND NOT ${excludeCond} AND gift_items IS NOT NULL
+        ), '[]'::jsonb) AS gift_agg,
         COUNT(*) FILTER (WHERE is_main AND status NOT IN (-2) AND NOT ${excludeCond})::int AS main_orders,
         COUNT(*) FILTER (WHERE is_main AND status = 3 AND NOT ${excludeCond})::int AS da_nhan,
         COUNT(*) FILTER (WHERE is_main AND status = 5 AND NOT ${excludeCond})::int AS da_hoan,
@@ -225,6 +248,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           delivered_qty: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
           da_xac_nhan: 0, dang_dong_hang: 0, cho_chuyen_hang: 0,
+          gift_qty: {} as Record<string, { qty: number; label: string }>,
         }
       }
       const g = merged[key]
@@ -233,6 +257,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         "da_xoa", "da_gui_hang", "moi", "cho_hang", "da_xac_nhan", "dang_dong_hang",
         "cho_chuyen_hang"]) {
         g[k] += Number(row[k] ?? 0)
+      }
+      // Gom quà tặng: gift_agg = mảng-của-mảng (mỗi đơn 1 mảng item quà) → cộng SL theo mã quà.
+      for (const perOrder of (row.gift_agg ?? [])) {
+        for (const gi of (perOrder ?? [])) {
+          const code = gi?.code ? String(gi.code).trim().toUpperCase() : null
+          const label = gi?.name ? String(gi.name) : "CHƯA RÕ SP"
+          const gkey = code || `NAME:${label.toUpperCase()}`
+          if (!g.gift_qty[gkey]) g.gift_qty[gkey] = { qty: 0, label }
+          g.gift_qty[gkey].qty += Number(gi?.qty ?? 0)
+        }
       }
     }
 
@@ -243,7 +277,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const unit = (g.sp_code && avgCost.costs[g.sp_code] != null)
         ? avgCost.costs[g.sp_code]
         : (avgCost.byName[(g.sp_label || "").toUpperCase()] ?? null)
-      const cogs = unit != null ? Math.round(unit * g.delivered_qty) : 0
+      const cogs_sp = unit != null ? Math.round(unit * g.delivered_qty) : 0
+
+      // ── Giá vốn quà tặng kèm (combo) ──
+      // Quà giá 0đ không sinh doanh thu nên không thể đứng thành dòng riêng có LNG;
+      // giá vốn của nó thuộc về SP chính đã bán kèm. Không cộng vào delivered_qty
+      // (quà cho không, không phải hàng bán) — chỉ cộng tiền vốn.
+      let cogs_gift = 0
+      const gift_detail: { label: string; qty: number; unit_cost: number | null; cost: number }[] = []
+      for (const [gkey, gv] of Object.entries(g.gift_qty as Record<string, { qty: number; label: string }>)) {
+        const gcode = gkey.startsWith("NAME:") ? null : gkey
+        const gunit = (gcode && avgCost.costs[gcode] != null)
+          ? avgCost.costs[gcode]
+          : (avgCost.byName[gv.label.toUpperCase()] ?? null)
+        const gcost = gunit != null ? Math.round(gunit * gv.qty) : 0
+        cogs_gift += gcost
+        gift_detail.push({ label: gv.label, qty: gv.qty, unit_cost: gunit, cost: gcost })
+      }
+      gift_detail.sort((a, b) => b.cost - a.cost)
+      // Quà chưa khai giá vốn → hiện cảnh báo thay vì âm thầm tính 0 (làm LNG đẹp giả).
+      const gift_missing_cost = gift_detail.filter(d => d.unit_cost == null).map(d => d.label)
+
+      const cogs = cogs_sp + cogs_gift
       // Chi phí ads gán theo mã SP (attribution từ tên camp, xem adsByCode). SP không map
       // được camp nào → 0. Tương đối nhưng đủ để so lãi/lỗ theo SP.
       const ads_cost = g.sp_code ? (adsByCode[String(g.sp_code).toUpperCase()] ?? 0) : 0
@@ -292,6 +347,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         // LNG thực
         total_orders: g.total_orders, revenue_total: g.revenue_total,
         revenue_delivered: g.revenue_delivered, cogs, ship_cost: g.ship_cost, ads_cost,
+        // Tách giá vốn SP / quà tặng để biết combo "ăn" bao nhiêu vào lãi
+        cogs_sp, cogs_gift, gift_detail, gift_missing_cost,
+        cogs_sp_pct: pct(cogs_sp, g.revenue_delivered),
+        cogs_gift_pct: pct(cogs_gift, g.revenue_delivered),
         fullfill, lng, lng_thuc: lng,
         cogs_pct: pct(cogs, g.revenue_delivered),
         ship_pct: pct(g.ship_cost, g.revenue_delivered),
@@ -320,7 +379,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       total_orders: sum("total_orders"),
       revenue_total: sum("revenue_total"),
       revenue_delivered: sum("revenue_delivered"),
-      cogs: sum("cogs"), ship_cost: sum("ship_cost"), ads_cost: sum("ads_cost"),
+      cogs: sum("cogs"), cogs_sp: sum("cogs_sp"), cogs_gift: sum("cogs_gift"),
+      ship_cost: sum("ship_cost"), ads_cost: sum("ads_cost"),
       fullfill: sum("fullfill"), lng: sum("lng"), lng_thuc: sum("lng"),
       revenue_tam_tinh: totalRevenueTamTinh, cogs_tam_tinh: sum("cogs_tam_tinh"),
       ship_tam_tinh: sum("ship_tam_tinh"), fullfill_tam_tinh: sum("fullfill_tam_tinh"),

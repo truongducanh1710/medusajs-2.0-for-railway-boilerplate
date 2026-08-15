@@ -92,6 +92,7 @@ const PancakeOrderDetailPage = () => {
   const id = useOrderId()
   const [order, setOrder] = useState<any>(null)
   const [medusaOrder, setMedusaOrder] = useState<any>(null)
+  const [costBreakdown, setCostBreakdown] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showRaw, setShowRaw] = useState(false)
@@ -109,6 +110,7 @@ const PancakeOrderDetailPage = () => {
       const data = await res.json()
       setOrder(data.order)
       setMedusaOrder(data.medusa_order ?? null)
+      setCostBreakdown(data.cost_breakdown ?? null)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -267,6 +269,7 @@ const PancakeOrderDetailPage = () => {
                       <th className="py-2 font-medium text-center w-16">SL</th>
                       <th className="py-2 font-medium text-right w-32">Đơn giá</th>
                       <th className="py-2 font-medium text-right w-32">Thành tiền</th>
+                      <th className="py-2 font-medium text-right w-32">Giá vốn</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -274,13 +277,25 @@ const PancakeOrderDetailPage = () => {
                       const qty = item.qty ?? 1
                       const price = item.price ?? 0
                       const lineTotal = price * qty
+                      // Khớp theo tên: cost_breakdown dựng từ raw.items cùng thứ tự
+                      const cb = costBreakdown?.items?.[i]
+                      const isGift = price === 0
                       return (
-                        <tr key={i} className="text-gray-700">
-                          <td className="py-2.5 font-medium">{item.name || "—"}</td>
+                        <tr key={i} className={`text-gray-700 ${isGift ? "bg-amber-50/50" : ""}`}>
+                          <td className="py-2.5 font-medium">
+                            {item.name || "—"}
+                            {isGift && <span className="ml-2 text-[11px] text-amber-700 font-semibold">🎁 Tặng kèm</span>}
+                          </td>
                           <td className="py-2.5 text-center">{qty}</td>
                           <td className="py-2.5 text-right">{formatVND(price)}</td>
                           <td className="py-2.5 text-right font-semibold">
                             {formatVND(lineTotal)}
+                          </td>
+                          <td className="py-2.5 text-right text-gray-600" title={cb?.unit_cost != null ? `${formatVND(cb.unit_cost)}/sp` : undefined}>
+                            {cb == null ? "—"
+                              : cb.cost == null
+                                ? <span className="text-[11px] text-red-500">chưa có giá vốn</span>
+                                : formatVND(cb.cost)}
                           </td>
                         </tr>
                       )
@@ -294,17 +309,47 @@ const PancakeOrderDetailPage = () => {
                       <td className="py-2 text-right font-bold text-gray-900">
                         {formatVND(order.total)}
                       </td>
+                      <td className="py-2 text-right font-bold text-gray-900">
+                        {costBreakdown ? formatVND(costBreakdown.total_cost) : "—"}
+                      </td>
                     </tr>
                     <tr className="text-sm text-gray-500">
                       <td colSpan={3} className="py-1 text-right">Phí vận chuyển</td>
                       <td className="py-1 text-right">{formatVND(order.shipping_fee ?? 0)}</td>
+                      <td />
                     </tr>
                     <tr className="text-sm text-gray-500">
                       <td colSpan={3} className="py-1 text-right">COD</td>
                       <td className="py-1 text-right font-medium">
                         {formatVND(order.cod_amount ?? 0)}
                       </td>
+                      <td />
                     </tr>
+                    {costBreakdown && (
+                      <>
+                        {costBreakdown.gift_cost > 0 && (
+                          <tr className="text-sm text-amber-700">
+                            <td colSpan={4} className="py-1 text-right">🎁 Trong đó giá vốn hàng tặng kèm</td>
+                            <td className="py-1 text-right font-medium">{formatVND(costBreakdown.gift_cost)}</td>
+                          </tr>
+                        )}
+                        <tr className="border-t border-gray-200 text-sm">
+                          <td colSpan={4} className="py-2 text-right text-gray-500 font-medium">
+                            Lãi gộp (DT − giá vốn){costBreakdown.cost_pct != null && <span className="text-gray-400 font-normal"> · giá vốn {costBreakdown.cost_pct}%</span>}
+                          </td>
+                          <td className={`py-2 text-right font-bold ${costBreakdown.gross_profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            {formatVND(costBreakdown.gross_profit)}
+                          </td>
+                        </tr>
+                        {costBreakdown.missing_cost?.length > 0 && (
+                          <tr className="text-[11px] text-red-500">
+                            <td colSpan={5} className="py-1 text-right">
+                              Chưa khai giá vốn: {costBreakdown.missing_cost.join(", ")} — số trên còn thiếu phần này
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )}
                   </tfoot>
                 </table>
               </div>

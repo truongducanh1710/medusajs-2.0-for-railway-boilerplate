@@ -1917,15 +1917,28 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
   const money = (v: number) => fmtNum(Math.round(v || 0))
 
   // Mỗi sub-tab có bộ cột riêng: định nghĩa value/className để renderRow chạy chung.
-  type Cell = { val: string; cls?: string }
+  type Cell = { val: string; cls?: string; tip?: string }
   const hasAcc = !!data?.has_accounting
+
+  // Báo cáo theo SP: giá vốn gồm cả quà tặng kèm (combo). Tooltip tách rõ SP / quà,
+  // vì %GV combo cao hơn hẳn bán lẻ và người xem cần biết phần chênh đến từ đâu.
+  const giftTip = (row: LngRow): string | undefined => {
+    const gd = (row as any).gift_detail as { label: string; qty: number; unit_cost: number | null; cost: number }[] | undefined
+    if (!gd?.length) return undefined
+    const lines = gd.map(d => `  · ${d.label} ×${d.qty} = ${d.unit_cost == null ? "CHƯA CÓ GIÁ VỐN" : money(d.cost) + "đ"}`)
+    return [
+      `Giá vốn SP: ${money((row as any).cogs_sp ?? 0)}đ`,
+      `Quà tặng kèm: ${money((row as any).cogs_gift ?? 0)}đ`,
+      ...lines,
+    ].join("\n")
+  }
   const buildCells = (row: LngRow): Cell[] => {
     if (sub === "thuc") {
       const cells: Cell[] = [
         { val: money(row.revenue_total) },
         { val: money(row.revenue_delivered) },
-        { val: money(row.cogs) },
-        { val: pctStr(row.cogs_pct), cls: "text-gray-400" },
+        { val: money(row.cogs) + (((row as any).cogs_gift ?? 0) > 0 ? " 🎁" : ""), tip: giftTip(row) },
+        { val: pctStr(row.cogs_pct), cls: "text-gray-400", tip: giftTip(row) },
         { val: money(row.ship_cost), cls: "text-amber-700" },
         { val: pctStr(row.ship_pct), cls: "text-gray-400" },
         { val: money(row.ads_cost) },
@@ -1971,7 +1984,7 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
         {isTotal ? "TỔNG" : row.mkt_name}
       </td>
       {buildCells(row).map((c, i) => (
-        <td key={i} className={`px-3 py-2 text-sm text-right tabular-nums ${c.cls ?? "text-gray-700"}`}>{c.val}</td>
+        <td key={i} title={c.tip} className={`px-3 py-2 text-sm text-right tabular-nums ${c.cls ?? "text-gray-700"}${c.tip ? " cursor-help" : ""}`}>{c.val}</td>
       ))}
     </tr>
   )
