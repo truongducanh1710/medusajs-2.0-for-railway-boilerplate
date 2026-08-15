@@ -62,9 +62,37 @@ export function toVNDate(s: string | null | undefined): string {
 export interface AvgCostResult {
   costs: Record<string, number>   // code → giá TB
   byName: Record<string, number>  // TÊN SP CHÍNH (upper) → giá TB
+  byPrefix: Record<string, number> // PHVVN### → giá TB (khớp biến thể mã, xem lookupCost)
   mapped: number
   total: number
   unlinked: { label: string; gia_tb: number }[]  // nhóm không khớp được mã (cũ: lệch tên; mới: K trống/không phải mã hợp lệ)
+}
+
+/**
+ * Tra giá vốn 1 SP theo thứ tự tin cậy giảm dần: mã đầy đủ → prefix PHVVN### → tên.
+ *
+ * Cần bước prefix vì Pancake sinh biến thể mã mà bảng giá vốn không có: đơn ghi
+ * "PHVVN038_KLD01" + tên "BỘ KHAY LỌC DẦU", sheet ghi "PHVVN038_KLD" + tên
+ * "KHAY LỌC DẦU" → lệch cả mã lẫn tên, giá vốn tra ra null và bị tính bằng 0.
+ * Phần số PHVVN### là danh tính thật của SP (đã kiểm: 51 SP = 51 prefix, không trùng),
+ * nên khớp theo prefix an toàn và không phải bảo trì alias cho từng biến thể.
+ */
+export function lookupCost(
+  avg: AvgCostResult,
+  code: string | null | undefined,
+  name: string | null | undefined
+): number | null {
+  if (code) {
+    const c = String(code).trim().toUpperCase()
+    if (avg.costs[c] != null) return avg.costs[c]
+    const m = c.match(/^(PHVVN\d{2,3})/)
+    if (m && avg.byPrefix[m[1]] != null) return avg.byPrefix[m[1]]
+  }
+  if (name) {
+    const n = String(name).trim().toUpperCase()
+    if (avg.byName[n] != null) return avg.byName[n]
+  }
+  return null
 }
 
 /**
@@ -84,7 +112,7 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     `SELECT id, position, data FROM cost_sheet_row ORDER BY position ASC`
   )
   if (sheetRows.length < 2) {
-    return { costs: {}, byName: {}, mapped: 0, total: 0, unlinked: [] }
+    return { costs: {}, byName: {}, byPrefix: {}, mapped: 0, total: 0, unlinked: [] }
   }
 
   // pos → colId
@@ -146,6 +174,8 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   const unlinked: { label: string; gia_tb: number }[] = []
   let mapped = 0
   let total = 0
+  // prefix → giá; prefix đụng độ (2 mã khác giá cùng PHVVN###) bị loại để không đoán sai.
+  const prefixHits: Record<string, Set<number>> = {}
 
   for (const g of Object.values(groupMap)) {
     if (!g.tenChinh && g.soLuong === 0) continue
@@ -165,12 +195,19 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     if (code) {
       costs[code] = giaTB
       mapped++
+      const m = code.match(/^(PHVVN\d{2,3})/)
+      if (m) (prefixHits[m[1]] ??= new Set()).add(giaTB)
     } else {
       unlinked.push({ label: tenChinh || g.nhom, gia_tb: giaTB })
     }
   }
 
-  return { costs, byName, mapped, total, unlinked }
+  const byPrefix: Record<string, number> = {}
+  for (const [p, vals] of Object.entries(prefixHits)) {
+    if (vals.size === 1) byPrefix[p] = [...vals][0]
+  }
+
+  return { costs, byName, byPrefix, mapped, total, unlinked }
 }
 
 /**

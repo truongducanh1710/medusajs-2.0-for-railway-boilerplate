@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getAuthInfo, getFbAdAccounts, getFbAudiences, getFbPixels, getFbCampaignsWithAdsets } from "../../_lib"
+import { getAuthInfo, getFbAdAccounts, getFbAudiences, getFbPixels, getFbCampaignsWithAdsets, getPageTokens, getPool, ensureTables } from "../../_lib"
 
 /**
  * GET /admin/fb-content/boost/meta
@@ -54,11 +54,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         mkt_name: dbMap[a.id]?.mkt_name || "",
       }))
 
-    // Trả thêm danh sách pages (cho mode Dark post)
-    const pool = (await import("../../_lib.js")).getPool()
-    const { rows: pages } = await pool.query(
-      `SELECT page_id, page_name FROM fb_page_token ORDER BY page_name`
-    ).catch(() => ({ rows: [] }))
+    // Trả thêm danh sách pages (cho mode Dark post). Dùng getPageTokens() thay vì query
+    // thẳng bảng — nó tự refresh page nào token đã stale (>24h), tránh dropdown hiện page
+    // mà bước tạo camp sau đó báo "Không tìm thấy page token" (bug thật đã verify 15/8/2026:
+    // dropdown liệt kê mọi page trong DB không lọc TTL, còn bước tạo camp lọc TTL — page cũ
+    // lỡ không refresh thì hiện ở đây nhưng tạo camp thì fail).
+    const pool = getPool()
+    await ensureTables(pool)
+    const pages = await getPageTokens(pool)
+      .then(rows => rows.map(r => ({ page_id: r.page_id, page_name: r.page_name })).sort((a, b) => a.page_name.localeCompare(b.page_name)))
+      .catch(() => [])
 
     return res.json({ accounts, pages })
   } catch (err: any) {

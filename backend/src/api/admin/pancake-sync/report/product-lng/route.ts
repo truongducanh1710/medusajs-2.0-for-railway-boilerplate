@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { computeAvgCost, resolveDisplayId, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
+import { computeAvgCost, lookupCost, resolveDisplayId, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -278,9 +278,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const result = Object.entries(merged).map(([key, g]: [string, any]) => {
       // giá vốn / sp từ avgCost: ưu tiên code, fallback tên
-      const unit = (g.sp_code && avgCost.costs[g.sp_code] != null)
-        ? avgCost.costs[g.sp_code]
-        : (avgCost.byName[(g.sp_label || "").toUpperCase()] ?? null)
+      const unit = lookupCost(avgCost, g.sp_code, g.sp_label)
       const cogs_sp = unit != null ? Math.round(unit * g.delivered_qty) : 0
 
       // ── Giá vốn quà tặng kèm (combo) ──
@@ -291,9 +289,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const gift_detail: { label: string; qty: number; unit_cost: number | null; cost: number }[] = []
       for (const [gkey, gv] of Object.entries(g.gift_qty as Record<string, { qty: number; label: string }>)) {
         const gcode = gkey.startsWith("NAME:") ? null : gkey
-        const gunit = (gcode && avgCost.costs[gcode] != null)
-          ? avgCost.costs[gcode]
-          : (avgCost.byName[gv.label.toUpperCase()] ?? null)
+        const gunit = lookupCost(avgCost, gcode, gv.label)
         const gcost = gunit != null ? Math.round(gunit * gv.qty) : 0
         cogs_gift += gcost
         gift_detail.push({ label: gv.label, qty: gv.qty, unit_cost: gunit, cost: gcost })

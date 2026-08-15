@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { computeAvgCost, resolveDisplayId } from "../../gia-von/avg-cost/route"
+import { computeAvgCost, lookupCost, resolveDisplayId } from "../../gia-von/avg-cost/route"
 
 /**
  * Lõi tính LNG dùng chung cho báo cáo "theo NV MKT" và "theo nền tảng".
@@ -255,9 +255,7 @@ export async function mergeLngRows(rows: any[]): Promise<Record<string, LngGroup
         const vi = it?.variation_info ?? {}
         const code = resolveDisplayId(vi.display_id)
         const name = (vi.name ?? it?.name ?? "").toUpperCase()
-        let unit: number | undefined
-        if (code && avgCost.costs[code] != null) unit = avgCost.costs[code]
-        else if (name && avgCost.byName[name] != null) unit = avgCost.byName[name]
+        const unit = lookupCost(avgCost, code, name)
         if (unit != null) {
           cogs += unit * qty
           mappedQty += qty

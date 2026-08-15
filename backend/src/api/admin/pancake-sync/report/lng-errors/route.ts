@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { computeAvgCost, resolveDisplayId, toVNDate } from "../../../gia-von/avg-cost/route"
+import { computeAvgCost, lookupCost, resolveDisplayId, toVNDate } from "../../../gia-von/avg-cost/route"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -122,8 +122,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const noCost = productAgg.filter((p: any) => {
       const code = resolveDisplayId(p.display_id)
       const name = (p.name ?? "").toUpperCase()
-      const hasCost = (code && avg.costs[code] != null) || (name && avg.byName[name] != null)
-      return !hasCost
+      return lookupCost(avg, code, name) == null
     }).map((p: any) => ({
       display_id: p.display_id,
       name: p.name,

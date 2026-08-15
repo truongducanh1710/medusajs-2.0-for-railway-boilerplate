@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { computeAvgCost, DISPLAY_ID_ALIASES } from "../../avg-cost/route"
+import { computeAvgCost, lookupCost, DISPLAY_ID_ALIASES } from "../../avg-cost/route"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -123,11 +123,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.json({ insufficient_data: true, sample_size })
     }
 
-    const costOf = (sp_code: string | null, sp_label: string): number => {
-      if (sp_code && avgCost.costs[sp_code] != null) return avgCost.costs[sp_code]
-      const byName = avgCost.byName[(sp_label || "").toUpperCase()]
-      return byName ?? 0
-    }
+    const costOf = (sp_code: string | null, sp_label: string): number =>
+      lookupCost(avgCost, sp_code, sp_label) ?? 0
 
     const buckets: Record<1 | 2 | 3, { count: number; costSum: number }> = {
       1: { count: 0, costSum: 0 },

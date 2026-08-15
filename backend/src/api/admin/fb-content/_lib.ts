@@ -440,11 +440,17 @@ const CACHE_TTL_HOURS = 24
  */
 export async function getPageTokens(pool: Pool, force = false): Promise<Array<{ page_id: string; page_name: string; access_token: string; category: string | null; fan_count: number }>> {
   if (!force) {
-    const { rows } = await pool.query(
+    // So sánh tổng số page với số page còn "tươi" — trước đây chỉ check rows.length > 0,
+    // nghĩa là chỉ cần 1 page fresh thì bỏ qua refresh, khiến page nào lỡ không được đụng
+    // tới (vd mới thêm sau lần refresh trước) bị stale VĨNH VIỄN, không bao giờ tự refresh
+    // lại (bug thật: page "Chảo Vàng Chống Dính Titan Chính Hãng" stale 72 ngày trong khi
+    // các page khác vẫn fresh 5h — verified trên DB thật 15/8/2026).
+    const { rows: fresh } = await pool.query(
       `SELECT page_id, page_name, access_token, category, fan_count
        FROM fb_page_token WHERE fetched_at > now() - interval '${CACHE_TTL_HOURS} hours'`
     )
-    if (rows.length) return rows
+    const { rows: totalRow } = await pool.query(`SELECT count(*)::int AS n FROM fb_page_token`)
+    if (fresh.length > 0 && fresh.length === totalRow[0].n) return fresh
   }
   // refresh từ FB
   const pages = await fetchAllPageTokens()
