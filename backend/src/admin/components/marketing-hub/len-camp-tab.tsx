@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { apiJson } from "../../lib/api-client"
 import { SKU_LIST, toCampCode, matchSkuByName, parseAdsCode, buildCampaignName } from "../../lib/camp-naming"
 
@@ -47,6 +48,8 @@ function formatLocalDT(y: number, m: number, d: number, hh: number, mm: number):
  */
 function VnDateTimePicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const parsed = parseLocalDT(value)
   const now = new Date()
   const [viewY, setViewY] = useState(parsed?.y ?? now.getFullYear())
@@ -72,17 +75,25 @@ function VnDateTimePicker({ value, onChange, placeholder }: { value: string; onC
 
   const displayStr = parsed ? `${pad2(parsed.d)}/${pad2(parsed.m)}/${parsed.y}  ${pad2(parsed.hh)}:${pad2(parsed.mm)}` : ""
 
+  const toggleOpen = () => {
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left })
+    }
+    setOpen(o => !o)
+  }
+
   return (
-    <div style={{ position: "relative" }}>
-      <button type="button" onClick={() => setOpen(o => !o)}
+    <div>
+      <button ref={triggerRef} type="button" onClick={toggleOpen}
         style={{ ...inp, textAlign: "left", cursor: "pointer", color: displayStr ? "#111827" : "#9CA3AF", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span>{displayStr || placeholder || "Chọn ngày giờ…"}</span>
         <span style={{ color: "#9CA3AF" }}>📅</span>
       </button>
-      {open && (
+      {open && createPortal(
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
-          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 9999, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 12, width: 260 }}>
+          <div style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", padding: 12, width: 260 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <button type="button" onClick={() => shiftMonth(-1)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#4B5563", padding: 4 }}>‹</button>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>Tháng {viewM}/{viewY}</span>
@@ -116,7 +127,8 @@ function VnDateTimePicker({ value, onChange, placeholder }: { value: string; onC
               <button type="button" onClick={() => setOpen(false)} style={{ marginLeft: "auto", background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Xong</button>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
