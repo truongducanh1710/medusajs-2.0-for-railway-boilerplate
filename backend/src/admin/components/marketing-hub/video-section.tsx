@@ -253,6 +253,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   const [detailRow, setDetailRow] = useState<VideoRow | null>(null)
   const defaultNguoi = "all"
   const [filters, setFilters] = useState({ nguoi: defaultNguoi, sp: "all", tts: "all", q: "", starOnly: false })
+  // Phân trang client-side: DB có 500+ video, render hết làm bảng nặng và khó đọc
+  const [pageSize, setPageSize] = useState<number>(() => {
+    const saved = typeof localStorage !== "undefined" ? Number(localStorage.getItem("mkt-video-bang.page-size")) : 0
+    return saved && saved > 0 ? saved : 50
+  })
+  const [pageIdx, setPageIdx] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const [fbLinkModal, setFbLinkModal] = useState<{ row: VideoRow } | null>(null)
   const [fbLinkDraft, setFbLinkDraft] = useState<{ page_name: string; post_url: string }>({ page_name: "", post_url: "" })
@@ -441,7 +447,8 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   }
 
   const toggleSelectAll = () => {
-    const ids = filtered.filter(r => r.link).map(r => r.id)
+    // Chỉ chọn trong trang hiện tại, không phải toàn bộ 500+ video
+    const ids = paged.filter(r => r.link).map(r => r.id)
     if (ids.every(id => selectedIds.has(id))) {
       setSelectedIds(new Set())
     } else {
@@ -582,6 +589,13 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
     if (filters.starOnly && !r.starred) return false
     return true
   })
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage = Math.min(pageIdx, pageCount - 1)
+  const paged = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
+
+  // Đổi bộ lọc → về trang 1 (nếu không, trang hiện tại có thể vượt quá số trang mới)
+  useEffect(() => { setPageIdx(0) }, [filters.nguoi, filters.sp, filters.tts, filters.q, filters.starOnly, pageSize])
 
   const inp: React.CSSProperties = { background: "#FFFFFF", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 8, padding: "6px 10px", fontSize: 12, outline: "none" }
   const cellInp: React.CSSProperties = { background: "#F0F6FF", color: "#111827", border: "1px solid #93C5FD", borderRadius: 6, padding: "4px 8px", fontSize: 12, outline: "none", width: "100%" }
@@ -755,7 +769,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         type="checkbox"
                         title="Chọn tất cả"
                         style={{ cursor: "pointer", accentColor: "#7C3AED" }}
-                        checked={filtered.filter(r => r.link).length > 0 && filtered.filter(r => r.link).every(r => selectedIds.has(r.id))}
+                        checked={paged.filter(r => r.link).length > 0 && paged.filter(r => r.link).every(r => selectedIds.has(r.id))}
                         onChange={toggleSelectAll}
                       />
                     ) : c.label}
@@ -837,12 +851,12 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   </td>
                 </tr>
               )}
-              {filtered.map((row, idx) => {
+              {paged.map((row, idx) => {
                 const isEditing = editRowId === row.id
                 const ed = editDraft!
                 const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
                 return (
-                <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
+                <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < paged.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
                   <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} className="sticky-left" style={{ position: "sticky", left: 0, zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", textAlign: "center" }}>
                     {row.link && (
                       <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={e => e.stopPropagation()} style={{ cursor: "pointer", accentColor: "#7C3AED" }} />
@@ -1051,6 +1065,36 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
         {adding && <div style={{ padding: "5px 14px", borderTop: "1px solid #E5E7EB", background: "#EFF6FF" }}>
           <span style={{ color: "#60A5FA", fontSize: 11 }}>Enter để lưu · Esc để hủy</span>
         </div>}
+        {/* ── Phân trang ── */}
+        {filtered.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: "1px solid #E5E7EB", background: "#FAFAFA", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: "#6B7280" }}>
+              Trang {safePage + 1}/{pageCount} — hiện {paged.length} / {filtered.length} video
+            </span>
+            <select
+              value={pageSize}
+              onChange={e => { const v = Number(e.target.value); setPageSize(v); try { localStorage.setItem("mkt-video-bang.page-size", String(v)) } catch {} }}
+              style={{ ...inp, padding: "4px 8px" }}
+            >
+              {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n} dòng/trang</option>)}
+              <option value={100000}>Tất cả</option>
+            </select>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setPageIdx(p => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+                style={{ background: "#FFF", color: safePage === 0 ? "#D1D5DB" : "#374151", border: "1px solid #E5E7EB", borderRadius: 8, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: safePage === 0 ? "default" : "pointer" }}>
+                ← Trước
+              </button>
+              <button
+                onClick={() => setPageIdx(p => Math.min(pageCount - 1, p + 1))}
+                disabled={safePage >= pageCount - 1}
+                style={{ background: "#FFF", color: safePage >= pageCount - 1 ? "#D1D5DB" : "#374151", border: "1px solid #E5E7EB", borderRadius: 8, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: safePage >= pageCount - 1 ? "default" : "pointer" }}>
+                Tiếp →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Popup: xác nhận xóa dòng ── */}
