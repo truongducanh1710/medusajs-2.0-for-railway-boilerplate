@@ -211,6 +211,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
         -- Quà tặng kèm của các đơn ĐÃ NHẬN mà SP này là SP chính → giá vốn quà tính vào SP này.
+        -- Lưu ý: is_main dùng "item_value = order_max_value", nên nếu 1 đơn có 2 SP KHÁC NHAU
+        -- cùng đạt giá trị cao nhất thì cả hai đều là SP chính và giá vốn quà bị cộng 2 lần.
+        -- Đã kiểm dữ liệu T8/2026: 0 đơn combo rơi vào trường hợp này. Nếu về sau xuất hiện
+        -- (vd combo 2 SP đồng giá), cần chốt SP chính duy nhất (tie-break theo sp_code).
         COALESCE(jsonb_agg(gift_items) FILTER (
           WHERE is_main AND status = 3 AND NOT ${excludeCond} AND gift_items IS NOT NULL
         ), '[]'::jsonb) AS gift_agg,
