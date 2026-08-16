@@ -187,11 +187,11 @@ function PeriodSelector({ range, onChange }: { range: DateRange; onChange: (r: D
         <div className="flex gap-2 items-center ml-1">
           <input type="date" value={custom.from}
             onChange={e => setCustom(c => ({ ...c, from: e.target.value }))}
-            className="border rounded-lg px-2 py-1 text-sm" />
+            className="border rounded-lg px-2 py-1 text-sm bg-white text-gray-900" />
           <span className="text-gray-400 text-sm">→</span>
           <input type="date" value={custom.to}
             onChange={e => setCustom(c => ({ ...c, to: e.target.value }))}
-            className="border rounded-lg px-2 py-1 text-sm" />
+            className="border rounded-lg px-2 py-1 text-sm bg-white text-gray-900" />
           <button onClick={() => onChange(custom)}
             className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm">Áp dụng</button>
         </div>
@@ -268,7 +268,7 @@ function MarketPicker({ market, onMarket, currencyMode, onCurrencyMode, month, r
   return (
     <>
       <select value={market} onChange={e => onMarket(e.target.value as Market)}
-        className="border rounded-lg px-3 py-1.5 text-sm font-medium bg-white">
+        className="border rounded-lg px-3 py-1.5 text-sm font-medium bg-white text-gray-900">
         <option value="VN">🇻🇳 Việt Nam</option>
         <option value="MY">🇲🇾 Malaysia (TikTok)</option>
       </select>
@@ -276,9 +276,9 @@ function MarketPicker({ market, onMarket, currencyMode, onCurrencyMode, month, r
         <>
           <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
             <button onClick={() => onCurrencyMode("MYR")}
-              className={`px-2 py-1 text-xs rounded ${currencyMode === "MYR" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>MYR</button>
+              className={`px-2 py-1 text-xs rounded ${currencyMode === "MYR" ? "bg-white shadow font-semibold text-gray-900" : "text-gray-500"}`}>MYR</button>
             <button onClick={() => onCurrencyMode("VND")}
-              className={`px-2 py-1 text-xs rounded ${currencyMode === "VND" ? "bg-white shadow font-semibold" : "text-gray-500"}`}>VND (quy đổi)</button>
+              className={`px-2 py-1 text-xs rounded ${currencyMode === "VND" ? "bg-white shadow font-semibold text-gray-900" : "text-gray-500"}`}>VND (quy đổi)</button>
           </div>
           <ExchangeRateEditor month={month} rate={rate} onSaved={onRate} />
         </>
@@ -321,7 +321,7 @@ function ExchangeRateEditor({ month, rate, onSaved }: { month: string; rate: num
           onChange={e => setValue(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false) }}
           autoFocus
-          className="w-20 text-xs border rounded px-1.5 py-0.5"
+          className="w-20 text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900"
         />
         <span className="text-xs text-gray-400">đ</span>
         <button onClick={save} disabled={saving}
@@ -368,7 +368,7 @@ function ExchangeRateHistory({ onClose }: { onClose: () => void }) {
           {rows.map(r => (
             <div key={r.month} className="flex justify-between text-xs">
               <span className="text-gray-500">{r.month}</span>
-              <span className="font-medium">{new Intl.NumberFormat("vi-VN").format(Number(r.myr_to_vnd))}đ</span>
+              <span className="font-medium text-gray-900">{new Intl.NumberFormat("vi-VN").format(Number(r.myr_to_vnd))}đ</span>
             </div>
           ))}
         </div>
@@ -605,7 +605,7 @@ function OverviewMarketerBlock({ mkt, totalRevenue, fmt }: { mkt: any; totalReve
               <th className="text-right px-4 py-2.5">%LNG</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y text-gray-900">
             {rows.map((r: any) => {
               const lng = r.lng_thuc ?? r.lng ?? 0
               return (
@@ -648,7 +648,7 @@ function OverviewProductBlock({ products, fmt }: { products: any[]; fmt: (n: any
               <th className="text-right px-4 py-2.5">%</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y text-gray-900">
             {rows.map((p: any) => {
               const pct = totalRev > 0 ? Math.round(Number(p.revenue) / totalRev * 100) : 0
               return (
@@ -825,7 +825,7 @@ function PlatformBreakdownBlock({ data }: { data: any }) {
               <th className="text-right px-4 py-2.5">Tổng COD</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y text-gray-900">
             {platforms.map(p => (
               <tr key={p.platform}>
                 <td className="px-4 py-2.5 font-medium">
@@ -871,7 +871,7 @@ function ProductByShopBlock({ products, shops }: { products: any[]; shops: any[]
         <span>Doanh số sản phẩm theo gian hàng</span>
         <div className="flex items-center gap-2">
           <select value={platformFilter} onChange={e => setPlatformFilter(e.target.value as any)}
-            className="border rounded-lg px-2 py-1 text-xs bg-white">
+            className="border rounded-lg px-2 py-1 text-xs bg-white text-gray-900">
             <option value="all">Tất cả sàn</option>
             <option value="tiktok">TikTok</option>
             <option value="shopee">Shopee</option>
@@ -891,7 +891,7 @@ function ProductByShopBlock({ products, shops }: { products: any[]; shops: any[]
               <th className="text-right px-4 py-2.5">%</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y text-gray-900">
             {filtered.map((p: any, i: number) => {
               const pct = totalRev > 0 ? Math.round(Number(p.revenue) / totalRev * 100) : 0
               const color = colorOf(p.shop_name || "")
@@ -995,7 +995,7 @@ function ShopBreakdownBlock({ data, totalRevenue }: { data: any; totalRevenue: n
               <th className="text-right px-4 py-2.5">%</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y text-gray-900">
             {shops.map((s, i) => {
               const pct = totalRevenue > 0 ? Math.round(s.total_revenue / totalRevenue * 100) : 0
               return (
@@ -1119,7 +1119,7 @@ function ShippingTab({ range, market }: { range: DateRange; market: Market }) {
                 <th className="text-right px-4 py-2">Tỷ lệ hoàn</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y text-gray-900">
               {data.by_province.map((p: any) => (
                 <tr key={p.province} className={Number(p.return_rate) > 20 ? "bg-orange-50" : ""}>
                   <td className="px-4 py-2.5 font-medium">{p.province}</td>
@@ -1204,7 +1204,7 @@ function ProductTab({ range, market }: { range: DateRange; market: Market }) {
                 <th className="text-right px-4 py-2.5">Tồn kho</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y text-gray-900">
               {(data.products ?? []).map((p: any, i: number) => {
                 const isLow = p.stock_qty != null && p.stock_qty < 50
                 return (
@@ -1344,7 +1344,7 @@ function ProductCancelReasonsBlock({ range, market }: { range: DateRange; market
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-gray-900">
               {data.totals && renderRow(data.totals, true)}
               {visibleRows.map(r => renderRow(r))}
             </tbody>
@@ -1497,7 +1497,7 @@ function ProductLngBlock({ range, market }: { range: DateRange; market: Market }
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-gray-900">
               {data.totals && renderRow(data.totals, true)}
               {visibleRows.map(r => renderRow(r))}
             </tbody>
@@ -1533,7 +1533,7 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
         {!useRange && (
           <input type="date" value={dateOverride}
             onChange={e => setDateOverride(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm" />
+            className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900" />
         )}
         {perfData && (
           <span className="text-sm text-gray-400">
@@ -1590,7 +1590,7 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y text-gray-900">
                 {perfData.sales.map((s: any) => (
                   <tr key={s.sale_name} className={s.no_action > 3 ? "bg-red-50/60" : ""}>
                     <td className="px-4 py-2.5 font-semibold text-gray-900">{s.sale_name}</td>
@@ -1677,7 +1677,7 @@ function SaleKpiTable({ range, market }: { range: DateRange; market: Market }) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-gray-900">
               {renderRow(data.summary, true)}
               {data.rows.map(r => renderRow(r))}
             </tbody>
@@ -1757,7 +1757,7 @@ function SaleStatusTable({ range, market }: { range: DateRange; market: Market }
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-gray-900">
               {renderRow(data.summary, true)}
               {data.rows.map(r => renderRow(r))}
             </tbody>
@@ -1850,7 +1850,7 @@ function NvMktTab({ range, market }: { range: DateRange; market: Market }) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-gray-900">
               {renderRow(data.summary, true)}
               {data.rows.map(r => renderRow(r))}
             </tbody>
@@ -2107,7 +2107,7 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-gray-900">
               {totalRow && renderRow(totalRow, true)}
               {visibleRows.map(r => renderRow(r))}
             </tbody>
@@ -2150,7 +2150,7 @@ function PlatformLngTable({ range, market, sub, heads, buildCells }: {
 
   const renderRow = (row: any, isTotal = false) => (
     <tr key={isTotal ? "__total" : row.platform} className={isTotal ? "bg-violet-50 font-semibold border-t-2 border-violet-200" : "hover:bg-gray-50"}>
-      <td className={`px-3 py-2 text-sm whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 z-10 font-medium ${isTotal ? "" : PLATFORM_STYLE[row.platform] ?? ""}`}>
+      <td className={`px-3 py-2 text-sm whitespace-nowrap sticky left-0 border-r border-gray-100 z-10 font-medium ${isTotal ? "bg-violet-50 text-gray-900" : `bg-white ${PLATFORM_STYLE[row.platform] ?? "text-gray-900"}`}`}>
         {isTotal ? "TỔNG" : row.platform_label}
       </td>
       {buildCells(row as LngRow).map((c, i) => (
@@ -2189,7 +2189,7 @@ function PlatformLngTable({ range, market, sub, heads, buildCells }: {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 text-gray-900">
                 {totalRow && renderRow(totalRow, true)}
                 {(data.rows ?? []).map(r => renderRow(r))}
               </tbody>
@@ -2270,7 +2270,7 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
               <th className="px-3 py-2.5 font-semibold text-right w-40">Xu hướng (tạm tính)</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 text-gray-900">
             {rows.map(r => {
               const neg = r.lng_tam_tinh < 0
               const w = Math.round(Math.abs(r.lng_tam_tinh) / maxAbs * 100)
@@ -2364,7 +2364,7 @@ function ErrorsTab({ range, market }: { range: DateRange; market: Market }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 text-gray-900">
                 {nm.orders.map((o: any) => (
                   <tr key={o.system_id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-xs">{o.system_id}</td>
@@ -2405,7 +2405,7 @@ function ErrorsTab({ range, market }: { range: DateRange; market: Market }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 text-gray-900">
                 {nc.products.map((p: any, i: number) => (
                   <tr key={i} className="hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono text-xs">{p.display_id || "—"}</td>
@@ -2438,7 +2438,7 @@ function ErrorsTab({ range, market }: { range: DateRange; market: Market }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 text-gray-900">
                 {ul.products.map((p: any, i: number) => (
                   <tr key={i} className="hover:bg-gray-50">
                     <td className="px-3 py-2">{p.name}</td>
@@ -2581,7 +2581,7 @@ function CombinedTab({ range }: { range: DateRange }) {
           <span className="text-xs text-gray-400">1 RM = {fmtNum(data.myr_to_vnd_rate)}đ</span>
           {canEditTarget && (
             <button onClick={() => setShowSetting(true)}
-              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white hover:bg-gray-50">
+              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-700 hover:bg-gray-50">
               🎯 Cài kế hoạch
             </button>
           )}
@@ -3104,7 +3104,7 @@ function CombinedDayTable({ days, series, totalKey, targetDays, hasTarget, total
               <th className="text-right px-3 py-2 font-semibold w-48">Cơ cấu</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="text-gray-900">
             {days.map(d => {
               const dayTotal = Number(d[activeKey] ?? 0)
               const t = Number(targetByDate.get(d.date)?.[activeKey] ?? 0)
@@ -3150,7 +3150,7 @@ function CombinedDayTable({ days, series, totalKey, targetDays, hasTarget, total
               )
             })}
           </tbody>
-          <tfoot className="sticky bottom-0">
+          <tfoot className="sticky bottom-0 text-gray-900">
             <tr className="bg-violet-50 font-bold border-t-2 border-gray-200">
               <td className="px-3 py-2 text-xs">Tổng kỳ{platform ? ` · ${activeLabel}` : ""}</td>
               {[...activeSeries].reverse().map(s => (
@@ -3270,7 +3270,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
           </div>
           <div className="flex items-center gap-2">
             <input type="month" value={m} onChange={e => setM(e.target.value)}
-              className="border rounded-lg px-2.5 py-1.5 text-sm" />
+              className="border rounded-lg px-2.5 py-1.5 text-sm bg-white text-gray-900" />
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2">×</button>
           </div>
         </div>
@@ -3291,7 +3291,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
                 <input type="text" inputMode="numeric" value={quick[f.key]}
                   onChange={e => setQuick(q => ({ ...q, [f.key]: e.target.value }))}
                   placeholder="0"
-                  className="w-full border rounded-lg px-2 py-1.5 text-sm text-right" />
+                  className="w-full border rounded-lg px-2 py-1.5 text-sm text-right bg-white text-gray-900" />
               </div>
             ))}
           </div>
@@ -3330,7 +3330,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
                   <th className="border-l" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="text-gray-900">
                 {rows.map(r => {
                   const rowTotal = TARGET_FIELDS.reduce((a, f) => a + Number(r[f.key] ?? 0), 0)
                   return (
@@ -3344,7 +3344,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
                             value={Number(r[f.key] ?? 0) ? fmtNum(r[f.key]) : ""}
                             placeholder="0"
                             onChange={e => setCell(r.date, f.key, e.target.value)}
-                            className="w-full border rounded px-1.5 py-1 text-xs text-right" />
+                            className="w-full border rounded px-1.5 py-1 text-xs text-right bg-white text-gray-900" />
                         </td>
                       ))}
                       <td className="text-right px-3 py-1 text-xs font-semibold border-l text-gray-900">{fmtVND(rowTotal)}</td>
@@ -3352,7 +3352,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
                   )
                 })}
               </tbody>
-              <tfoot className="sticky bottom-0">
+              <tfoot className="sticky bottom-0 text-gray-900">
                 <tr className="bg-violet-50 font-bold border-t-2 text-xs">
                   <td className="px-3 py-2">Tổng tháng</td>
                   {TARGET_FIELDS.map(f => (
@@ -3377,7 +3377,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
             {dirty && !msg && <span className="ml-3 text-amber-600">Có thay đổi chưa lưu.</span>}
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-1.5 border rounded-lg text-sm hover:bg-gray-50">Đóng</button>
+            <button onClick={onClose} className="px-4 py-1.5 border rounded-lg text-sm text-gray-700 hover:bg-gray-50">Đóng</button>
             <button onClick={save} disabled={saving || !dirty}
               className="px-4 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 disabled:opacity-50">
               {saving ? "Đang lưu…" : "Lưu kế hoạch"}
