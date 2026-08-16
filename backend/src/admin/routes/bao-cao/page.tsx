@@ -98,7 +98,7 @@ function KpiCard({ label, value, sub, delta, deltaSuffix, invertDelta, accent }:
   return (
     <div className={`bg-white border rounded-xl p-5 shadow-sm ${accent ?? ""}`}>
       <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
-      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-2xl font-bold text-gray-900">{value}</div>
       {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
       {delta != null && <div className="mt-1"><Delta v={delta} suffix={deltaSuffix ?? "%"} invert={invertDelta} /></div>}
     </div>
@@ -441,12 +441,12 @@ function OverviewTab({ range, market, onRate, marketPicker }: {
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
           <button
             onClick={() => setSourceGroup("all")}
-            className={`px-3 py-1.5 ${sourceGroup === "all" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+            className={`px-3 py-1.5 whitespace-nowrap ${sourceGroup === "all" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
             Toàn bộ
           </button>
           <button
             onClick={() => setSourceGroup("core")}
-            className={`px-3 py-1.5 border-l border-gray-200 ${sourceGroup === "core" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+            className={`px-3 py-1.5 border-l border-gray-200 whitespace-nowrap ${sourceGroup === "core" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
             Khớp LNG
           </button>
         </div>
@@ -595,6 +595,7 @@ function OverviewMarketerBlock({ mkt, totalRevenue, fmt }: { mkt: any; totalReve
       ) : rows.length === 0 ? (
         <div className="p-6 text-center text-sm text-gray-400">Không có dữ liệu</div>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b text-xs text-gray-500">
             <tr>
@@ -609,7 +610,7 @@ function OverviewMarketerBlock({ mkt, totalRevenue, fmt }: { mkt: any; totalReve
               const lng = r.lng_thuc ?? r.lng ?? 0
               return (
                 <tr key={r.mkt_name}>
-                  <td className="px-4 py-2.5 font-medium">{r.mkt_name}</td>
+                  <td className="px-4 py-2.5 font-medium text-gray-900">{r.mkt_name}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(r.revenue_total)}</td>
                   <td className={`px-4 py-2.5 text-right font-semibold ${lng >= 0 ? "text-violet-700" : "text-red-500"}`}>{fmt(lng)}</td>
                   <td className="px-4 py-2.5 text-right text-gray-500">{r.lng_pct != null ? `${r.lng_pct}%` : "—"}</td>
@@ -618,6 +619,7 @@ function OverviewMarketerBlock({ mkt, totalRevenue, fmt }: { mkt: any; totalReve
             })}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
@@ -636,6 +638,7 @@ function OverviewProductBlock({ products, fmt }: { products: any[]; fmt: (n: any
       {rows.length === 0 ? (
         <div className="p-6 text-center text-sm text-gray-400">Không có dữ liệu</div>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b text-xs text-gray-500">
             <tr>
@@ -650,8 +653,8 @@ function OverviewProductBlock({ products, fmt }: { products: any[]; fmt: (n: any
               const pct = totalRev > 0 ? Math.round(Number(p.revenue) / totalRev * 100) : 0
               return (
                 <tr key={p.name}>
-                  <td className="px-4 py-2.5 font-medium max-w-[220px] truncate" title={p.name}>{p.name}</td>
-                  <td className="px-4 py-2.5 text-right font-mono">{fmtNum(p.qty)}</td>
+                  <td className="px-4 py-2.5 font-medium max-w-[220px] truncate text-gray-900" title={p.name}>{p.name}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-gray-900">{fmtNum(p.qty)}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-green-700">{fmt(p.revenue)}</td>
                   <td className="px-4 py-2.5 text-right text-gray-500">{pct}%</td>
                 </tr>
@@ -659,6 +662,7 @@ function OverviewProductBlock({ products, fmt }: { products: any[]; fmt: (n: any
             })}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
@@ -1300,7 +1304,7 @@ function ProductCancelReasonsBlock({ range, market }: { range: DateRange; market
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="font-semibold text-gray-800">Lý do hủy / hoàn theo Sản phẩm</h3>
           <p className="text-xs text-gray-400 mt-0.5">Đơn hủy + hoàn · mỗi đơn 1 SP chính + 1 lý do ưu tiên</p>
@@ -1469,7 +1473,7 @@ function ProductLngBlock({ range, market }: { range: DateRange; market: Market }
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <h3 className="font-semibold text-gray-800">Hoàn hủy & LNG theo Sản phẩm</h3>
         <div className="flex items-center gap-2">
           {subBtn("hoan_huy", "Hoàn hủy", "tong_don_giao")}
@@ -1589,7 +1593,7 @@ function SaleTab({ range, market }: { range: DateRange; market: Market }) {
               <tbody className="divide-y">
                 {perfData.sales.map((s: any) => (
                   <tr key={s.sale_name} className={s.no_action > 3 ? "bg-red-50/60" : ""}>
-                    <td className="px-4 py-2.5 font-semibold">{s.sale_name}</td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{s.sale_name}</td>
                     <td className="px-3 py-2.5 font-mono">{s.total}</td>
                     <td className={`px-3 py-2.5 font-mono font-semibold ${s.no_action > 3 ? "text-red-600" : s.no_action > 0 ? "text-orange-500" : "text-gray-400"}`}>{s.no_action}</td>
                     <td className="px-3 py-2.5 font-mono text-yellow-700">{s.knm_1 || "—"}</td>
@@ -1655,7 +1659,7 @@ function SaleKpiTable({ range, market }: { range: DateRange; market: Market }) {
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <h3 className="font-semibold text-gray-800">Chỉ số KPI theo Sale</h3>
         <div className="flex items-center gap-2">
           {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
@@ -1738,7 +1742,7 @@ function SaleStatusTable({ range, market }: { range: DateRange; market: Market }
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <h3 className="font-semibold text-gray-800">Tình trạng Vận đơn theo Sale</h3>
         {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
       </div>
@@ -1830,7 +1834,7 @@ function NvMktTab({ range, market }: { range: DateRange; market: Market }) {
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <h3 className="font-semibold text-gray-800">Tình trạng Vận đơn theo NV MKT</h3>
         {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
       </div>
@@ -2065,7 +2069,7 @@ function LngTab({ range, market }: { range: DateRange; market: Market }) {
     <div className="space-y-4">
     <LngTrendChart range={range} market={market} />
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="font-semibold text-gray-800">Lợi nhuận gộp (LNG) theo NV MKT</h3>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -2159,7 +2163,7 @@ function PlatformLngTable({ range, market, sub, heads, buildCells }: {
 
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="font-semibold text-gray-800">Lợi nhuận gộp (LNG) theo nền tảng</h3>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -2236,7 +2240,7 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
 
   return (
     <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b flex items-center justify-between">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="font-semibold text-gray-800">LNG theo ngày (Thực & Tạm tính)</h3>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -2554,6 +2558,7 @@ function CombinedTab({ range }: { range: DateRange }) {
       {/* Phạm vi: xem chung hoặc soi riêng từng thị trường */}
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm text-gray-500">Phạm vi:</span>
+        <div className="max-w-full overflow-x-auto">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden bg-white">
           {([
             { k: "all" as Scope, label: "Tổng 2 thị trường", dot: "" },
@@ -2561,7 +2566,7 @@ function CombinedTab({ range }: { range: DateRange }) {
             { k: "my" as Scope, label: "Malaysia", dot: "#d97706" },
           ]).map((s, i) => (
             <button key={s.k} onClick={() => setScope(s.k)}
-              className={`px-3.5 py-1.5 text-sm inline-flex items-center gap-2 ${i > 0 ? "border-l border-gray-200" : ""} ${
+              className={`px-3.5 py-1.5 text-sm inline-flex items-center gap-2 whitespace-nowrap ${i > 0 ? "border-l border-gray-200" : ""} ${
                 scope === s.k ? "bg-violet-600 text-white font-semibold" : "bg-white text-gray-600 hover:bg-gray-50"
               }`}>
               {s.dot && <i className="w-2 h-2 rounded-full inline-block"
@@ -2569,6 +2574,7 @@ function CombinedTab({ range }: { range: DateRange }) {
               {s.label}
             </button>
           ))}
+        </div>
         </div>
         <span className="text-xs text-gray-400">{SCOPE_HINT[scope]}</span>
         <div className="ml-auto flex items-center gap-2">
@@ -2674,7 +2680,7 @@ function CombinedKpi({ label, value, target, hasTarget, sub, color, dim, days, s
     <div className={`bg-white border rounded-xl p-5 shadow-sm transition-opacity ${dim ? "opacity-40" : ""}`}
       style={{ borderTop: `3px solid ${color}` }}>
       <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
-      <div className="text-2xl font-bold mt-1">{fmtVND(v)}</div>
+      <div className="text-2xl font-bold mt-1 text-gray-900">{fmtVND(v)}</div>
       <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
       {hasTarget && (
         <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex items-center justify-between text-xs">
@@ -3341,7 +3347,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
                             className="w-full border rounded px-1.5 py-1 text-xs text-right" />
                         </td>
                       ))}
-                      <td className="text-right px-3 py-1 text-xs font-semibold border-l">{fmtVND(rowTotal)}</td>
+                      <td className="text-right px-3 py-1 text-xs font-semibold border-l text-gray-900">{fmtVND(rowTotal)}</td>
                     </tr>
                   )
                 })}
@@ -3437,10 +3443,10 @@ const BaoCaoPage = () => {
   ]
 
   return (
-    <div className="p-6 max-w-7xl">
+    <div className="p-3 sm:p-6 max-w-7xl">
       <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Báo cáo</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Báo cáo</h1>
           <p className="text-gray-400 text-sm mt-0.5">Dashboard quản lý · dữ liệu từ Pancake POS</p>
         </div>
       </div>
