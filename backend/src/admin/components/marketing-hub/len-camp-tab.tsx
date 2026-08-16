@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { apiJson } from "../../lib/api-client"
+import { useCurrentPermissions } from "../../lib/use-permissions"
 import { SKU_LIST, toCampCode, matchSkuByName, parseAdsCode, buildCampaignName } from "../../lib/camp-naming"
 
 /**
@@ -134,6 +135,96 @@ function VnDateTimePicker({ value, onChange, placeholder }: { value: string; onC
   )
 }
 
+// ── Sao yêu thích — lưu trong trình duyệt (localStorage), riêng theo email đang đăng nhập
+// vì máy có thể dùng chung. Áp cho 4 nhóm hay lặp lại: MKT, Sản phẩm, Pixel, Tệp loại trừ —
+// mỗi người thường chỉ làm vài SP/MKT/pixel cố định, sao giúp đỡ phải cuộn tìm trong list dài.
+function favKey(kind: string, email: string): string {
+  return `lencamp_fav_${kind}_${email || "anon"}`
+}
+function useFavorites(kind: string, email: string) {
+  const [favs, setFavs] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(favKey(kind, email)) || "[]")) } catch { return new Set() }
+  })
+  useEffect(() => {
+    try { setFavs(new Set(JSON.parse(localStorage.getItem(favKey(kind, email)) || "[]"))) } catch { setFavs(new Set()) }
+  }, [kind, email])
+  const toggle = (id: string) => setFavs(prev => {
+    const n = new Set(prev)
+    n.has(id) ? n.delete(id) : n.add(id)
+    try { localStorage.setItem(favKey(kind, email), JSON.stringify([...n])) } catch {}
+    return n
+  })
+  return { favs, toggle }
+}
+
+/** Sắp mục đã đánh dấu sao lên đầu, giữ thứ tự gốc trong từng nhóm. */
+function sortByFav<T>(items: T[], favs: Set<string>, keyOf: (item: T) => string): T[] {
+  const fav = items.filter(it => favs.has(keyOf(it)))
+  const rest = items.filter(it => !favs.has(keyOf(it)))
+  return [...fav, ...rest]
+}
+
+/**
+ * Dropdown tự vẽ có icon sao bấm được cạnh mỗi mục (native <select> không nhúng được nút
+ * bấm vào <option>). Mục đã sao tự nổi lên đầu danh sách, cách biệt bằng đường kẻ.
+ */
+function StarSelect({ value, onChange, options, favs, onToggleFav, placeholder }: {
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string }[]
+  favs: Set<string>
+  onToggleFav: (id: string) => void
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  const sorted = sortByFav(options, favs, o => o.value)
+  const favCount = sorted.filter(o => favs.has(o.value)).length
+  const selected = options.find(o => o.value === value)
+
+  const toggleOpen = () => {
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    }
+    setOpen(o => !o)
+  }
+
+  return (
+    <div>
+      <button ref={triggerRef} type="button" onClick={toggleOpen}
+        style={{ ...inp, textAlign: "left", cursor: "pointer", color: selected ? "#111827" : "#9CA3AF", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected?.label || placeholder || "— Chọn —"}</span>
+        <span style={{ color: "#9CA3AF", fontSize: 10 }}>▾</span>
+      </button>
+      {open && createPortal(
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+          <div style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 220), zIndex: 9999, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", maxHeight: 280, overflowY: "auto" }}>
+            <button type="button" onClick={() => { onChange(""); setOpen(false) }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", background: "none", border: "none", cursor: "pointer", fontSize: 12.5, color: "#9CA3AF" }}>— Chọn —</button>
+            {sorted.map((o, i) => (
+              <div key={o.value} style={{ display: "flex", alignItems: "center", borderTop: i === favCount ? "1px solid #F3F4F6" : "none" }}>
+                <button type="button" onClick={() => { onChange(o.value); setOpen(false) }}
+                  style={{ flex: 1, textAlign: "left", padding: "8px 4px 8px 10px", background: o.value === value ? "#EFF6FF" : "none", border: "none", cursor: "pointer", fontSize: 12.5, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {o.label}
+                </button>
+                <button type="button" onClick={() => onToggleFav(o.value)} title={favs.has(o.value) ? "Bỏ yêu thích" : "Đánh dấu yêu thích"}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: "8px 10px", color: favs.has(o.value) ? "#F59E0B" : "#D1D5DB" }}>
+                  {favs.has(o.value) ? "★" : "☆"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  )
+}
+
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5, display: "block" }
 const inp: React.CSSProperties = { width: "100%", background: "#FFFFFF", color: "#111827", border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 10px", fontSize: 13, outline: "none" }
 const groupBox: React.CSSProperties = { border: "1px solid #E5E7EB", borderRadius: 10, background: "#FFFFFF", overflow: "hidden" }
@@ -141,7 +232,11 @@ const groupHead: React.CSSProperties = { display: "flex", justifyContent: "space
 const groupBody: React.CSSProperties = { padding: 14, display: "flex", flexDirection: "column", gap: 10 }
 const fixedLine: React.CSSProperties = { fontSize: 11, color: "#9CA3AF", padding: "8px 14px", background: "#FAFAFA", borderTop: "1px solid #F3F4F6" }
 
+const DRAFT_KEY = "lencamp_draft"
+
 export function LenCampTab({ mktCode, isAdmin }: { mktCode: string | null; isAdmin: boolean }) {
+  const { email } = useCurrentPermissions()
+
   // ── Pane trái: chọn video ──
   const [videos, setVideos] = useState<VideoRow[]>([])
   const [loadingVideos, setLoadingVideos] = useState(true)
@@ -151,12 +246,51 @@ export function LenCampTab({ mktCode, isAdmin }: { mktCode: string | null; isAdm
   const [productFilter, setProductFilter] = useState("")
   const [q, setQ] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const mktFav = useFavorites("mkt", email)
+  const productFav = useFavorites("product", email)
+
+  // Nháp đang làm dở — tự lưu vào trình duyệt, 1 bản duy nhất (lưu đè). Khôi phục
+  // khi mở lại tab để khỏi điền lại từ đầu nếu bị gián đoạn giữa chừng.
+  const [draftFields, setDraftFields] = useState<Record<string, any> | null>(null)
+  const [draftBanner, setDraftBanner] = useState<{ vdCodes: string[]; savedAt: string } | null>(null)
+  const draftLoadedRef = useRef(false)
 
   useEffect(() => {
     apiJson("/admin/marketing-video").then(d => setVideos(d.rows || [])).catch(() => {}).finally(() => setLoadingVideos(false))
     apiJson("/admin/permissions/mkt-users").then(d => setMktUsers(d.users || [])).catch(() => {})
     apiJson("/admin/marketing-video/products").then(d => setProducts(d.products || [])).catch(() => {})
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (raw) {
+        const d = JSON.parse(raw)
+        if (d?.savedAt) setDraftBanner({ vdCodes: d.vdCodes || [], savedAt: d.savedAt })
+      }
+    } catch {}
   }, [])
+
+  const restoreDraft = () => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw)
+      setMktFilter(""); setProductFilter(""); setQ("") // xoá lọc để video đã chọn không bị ẩn khỏi selectedVideos
+      setSelected(new Set(d.selectedIds || []))
+      setDraftFields(d.fields || null)
+      draftLoadedRef.current = true
+    } catch {}
+    setDraftBanner(null)
+  }
+  const discardDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    setDraftBanner(null)
+  }
+  const saveDraft = (fields: Record<string, any>, vdCodes: string[], selectedIds: string[]) => {
+    // Không có gì để lưu — video chưa chọn và form còn trống thì khỏi tạo nháp rác
+    if (selectedIds.length === 0) return
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ selectedIds, fields, vdCodes, savedAt: new Date().toISOString() }))
+    } catch {}
+  }
 
   const codeToName = useMemo(() => {
     const m: Record<string, string> = {}
@@ -188,7 +322,15 @@ export function LenCampTab({ mktCode, isAdmin }: { mktCode: string | null; isAdm
   const mixedProducts = distinctProducts.size > 1
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, padding: 20, alignItems: "start" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
+      {draftBanner && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "10px 14px", fontSize: 12.5, color: "#1654B8" }}>
+          <span>💾 Có nháp đang làm dở ({draftBanner.vdCodes.join(", ") || "chưa chọn video"}) — lưu lúc {new Date(draftBanner.savedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}.</span>
+          <button type="button" onClick={restoreDraft} style={{ marginLeft: "auto", background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Khôi phục</button>
+          <button type="button" onClick={discardDraft} style={{ background: "none", border: "1px solid #BFDBFE", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "#1654B8" }}>Bỏ qua</button>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }}>
       <VideoPicker
         videos={filteredVideos}
         loading={loadingVideos}
@@ -199,13 +341,18 @@ export function LenCampTab({ mktCode, isAdmin }: { mktCode: string | null; isAdm
         q={q} setQ={setQ}
         selected={selected} toggleSelect={toggleSelect}
         isAdmin={isAdmin}
+        mktFav={mktFav} productFav={productFav}
       />
       <LenCampForm
         selectedVideos={selectedVideos}
         mixedProducts={mixedProducts}
         mktCode={mktCode}
-        onDone={() => { setSelected(new Set()); apiJson("/admin/marketing-video").then(d => setVideos(d.rows || [])) }}
+        email={email}
+        draftFields={draftFields}
+        onFieldsChange={(fields) => saveDraft(fields, selectedVideos.map(v => v.vdCode), [...selected])}
+        onDone={() => { setSelected(new Set()); discardDraft(); apiJson("/admin/marketing-video").then(d => setVideos(d.rows || [])) }}
       />
+      </div>
     </div>
   )
 }
@@ -218,23 +365,26 @@ function VideoPicker(props: {
   q: string; setQ: (v: string) => void
   selected: Set<string>; toggleSelect: (id: string) => void
   isAdmin: boolean
+  mktFav: ReturnType<typeof useFavorites>; productFav: ReturnType<typeof useFavorites>
 }) {
-  const { videos, loading, mktUsers, products, mktFilter, setMktFilter, productFilter, setProductFilter, q, setQ, selected, toggleSelect, isAdmin } = props
+  const { videos, loading, mktUsers, products, mktFilter, setMktFilter, productFilter, setProductFilter, q, setQ, selected, toggleSelect, isAdmin, mktFav, productFav } = props
   return (
     <div style={{ ...groupBox, display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 180px)" }}>
       <div style={{ padding: 12, borderBottom: "1px solid #E5E7EB", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Chọn video ({selected.size} đã chọn)</div>
         <div style={{ display: "flex", gap: 6 }}>
           {isAdmin && (
-            <select value={mktFilter} onChange={e => setMktFilter(e.target.value)} style={{ ...inp, flex: 1 }}>
-              <option value="">Tất cả MKT</option>
-              {mktUsers.filter(u => u.mkt_code).map(u => <option key={u.mkt_code!} value={u.mkt_code!}>{u.name}</option>)}
-            </select>
+            <div style={{ flex: 1 }}>
+              <StarSelect value={mktFilter} onChange={setMktFilter} placeholder="Tất cả MKT"
+                options={mktUsers.filter(u => u.mkt_code).map(u => ({ value: u.mkt_code!, label: u.name }))}
+                favs={mktFav.favs} onToggleFav={mktFav.toggle} />
+            </div>
           )}
-          <select value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ ...inp, flex: 1 }}>
-            <option value="">Tất cả SP</option>
-            {products.map(p => <option key={p.id} value={p.code}>{p.name}</option>)}
-          </select>
+          <div style={{ flex: 1 }}>
+            <StarSelect value={productFilter} onChange={setProductFilter} placeholder="Tất cả SP"
+              options={products.map(p => ({ value: p.code, label: p.name }))}
+              favs={productFav.favs} onToggleFav={productFav.toggle} />
+          </div>
         </div>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="⌕ tìm VD / sản phẩm…" style={inp} />
       </div>
@@ -270,34 +420,43 @@ function VideoPicker(props: {
 }
 
 // ── Pane phải: form lên camp ─────────────────────────────────────────────────
-function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
-  selectedVideos: VideoRow[]; mixedProducts: boolean; mktCode: string | null; onDone: () => void
+function LenCampForm({ selectedVideos, mixedProducts, mktCode, email, draftFields, onFieldsChange, onDone }: {
+  selectedVideos: VideoRow[]; mixedProducts: boolean; mktCode: string | null; email: string
+  draftFields: Record<string, any> | null; onFieldsChange: (fields: Record<string, any>) => void
+  onDone: () => void
 }) {
+  const pixelFav = useFavorites("pixel", email)
+  const audienceFav = useFavorites("audience", email)
+  const d = draftFields // alias ngắn cho lazy initializer bên dưới
+  const metaLoadedOnceRef = useRef(false)
+
   const [accounts, setAccounts] = useState<Account[]>([])
   const [pages, setPages] = useState<Page[]>([])
-  const [accId, setAccId] = useState("")
+  const [accId, setAccId] = useState(() => d?.accId || "")
   const [meta, setMeta] = useState<{ audiences: Audience[]; pixels: Pixel[] }>({ audiences: [], pixels: [] })
   const [loadingMeta, setLoadingMeta] = useState(false)
 
-  const [skuCode, setSkuCode] = useState("")
-  const [audience, setAudience] = useState("30ALL")
-  const [budget, setBudget] = useState(500000)
-  const [pixelId, setPixelId] = useState("")
-  const [ageMin, setAgeMin] = useState(25)
-  const [excluded, setExcluded] = useState<Set<string>>(new Set())
-  const [funnel, setFunnel] = useState<"" | "top" | "middle" | "bottom">("")
-  const [statusActive, setStatusActive] = useState(false) // tin tưởng thì bật ACTIVE, không thì PAUSED (mặc định)
-  const [scheduleLater, setScheduleLater] = useState(false) // false = chạy luôn ngay, true = hẹn ngày giờ
-  const [startTime, setStartTime] = useState("")
-  const [endTime, setEndTime] = useState("")
+  const [skuCode, setSkuCode] = useState(() => d?.skuCode || "")
+  const [audience, setAudience] = useState(() => d?.audience || "30ALL")
+  const [budget, setBudget] = useState(() => d?.budget ?? 500000)
+  const [pixelId, setPixelId] = useState(() => d?.pixelId || "")
+  const [ageMin, setAgeMin] = useState(() => d?.ageMin ?? 25)
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set(d?.excluded || []))
+  const [funnel, setFunnel] = useState<"" | "top" | "middle" | "bottom">(() => d?.funnel || "")
+  const [statusActive, setStatusActive] = useState(() => d?.statusActive ?? false) // tin tưởng thì bật ACTIVE, không thì PAUSED (mặc định)
+  const [scheduleLater, setScheduleLater] = useState(() => d?.scheduleLater ?? false) // false = chạy luôn ngay, true = hẹn ngày giờ
+  const [startTime, setStartTime] = useState(() => d?.startTime || "")
+  const [endTime, setEndTime] = useState(() => d?.endTime || "")
 
-  const [pageId, setPageId] = useState("")
-  const [message, setMessage] = useState("")
-  const [ctaType, setCtaType] = useState("SHOP_NOW")
-  const [link, setLink] = useState("")
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [overrides, setOverrides] = useState<Map<string, { message?: string; link?: string; cta_type?: string; title?: string; description?: string }>>(new Map())
+  const [pageId, setPageId] = useState(() => d?.pageId || "")
+  const [message, setMessage] = useState(() => d?.message || "")
+  const [ctaType, setCtaType] = useState(() => d?.ctaType || "SHOP_NOW")
+  const [link, setLink] = useState(() => d?.link || "")
+  const [title, setTitle] = useState(() => d?.title || "")
+  const [description, setDescription] = useState(() => d?.description || "")
+  const [overrides, setOverrides] = useState<Map<string, { message?: string; link?: string; cta_type?: string; title?: string; description?: string }>>(
+    () => new Map(Object.entries(d?.overrides || {}))
+  )
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
@@ -318,10 +477,16 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
     if (!accId) return
     setLoadingMeta(true)
     setMeta({ audiences: [], pixels: [] })
-    setPixelId("")
+    // Lần đầu mount có nháp thì giữ pixelId đã khôi phục, chỉ chờ meta xác nhận còn hợp lệ.
+    // Các lần đổi account sau đó (user tự tay) mới clear vì pixel thuộc account khác.
+    const keepFromDraft = !metaLoadedOnceRef.current ? pixelId : ""
+    if (!keepFromDraft) setPixelId("")
+    metaLoadedOnceRef.current = true
     apiJson(`/admin/fb-content/boost/meta?account_id=${accId}`)
       .then(d => {
         setMeta({ audiences: d.audiences || [], pixels: d.pixels || [] })
+        if (keepFromDraft && (d.pixels || []).some((p: Pixel) => p.id === keepFromDraft)) return // vẫn hợp lệ, giữ nguyên
+        if (keepFromDraft) setPixelId("") // account đổi khác account lúc lưu nháp, pixel cũ không còn hợp lệ
         if ((d.pixels || []).length === 1) setPixelId(d.pixels[0].id)
       })
       .catch(e => setError("Lỗi tải dữ liệu account: " + e.message))
@@ -334,6 +499,19 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
     const guess = matchSkuByName(selectedVideos[0].sp || "")
     if (guess) setSkuCode(guess)
   }, [selectedVideos.map(v => v.id).join(",")])
+
+  // Tự lưu nháp — debounce nhẹ để không ghi localStorage mỗi keystroke
+  useEffect(() => {
+    const t = setTimeout(() => {
+      onFieldsChange({
+        accId, skuCode, audience, budget, pixelId, ageMin, excluded: [...excluded], funnel,
+        statusActive, scheduleLater, startTime, endTime,
+        pageId, message, ctaType, link, title, description,
+        overrides: Object.fromEntries(overrides),
+      })
+    }, 800)
+    return () => clearTimeout(t)
+  }, [accId, skuCode, audience, budget, pixelId, ageMin, excluded, funnel, statusActive, scheduleLater, startTime, endTime, pageId, message, ctaType, link, title, description, overrides])
 
   const selectedAcc = accounts.find(a => a.id === accId)
   const adsCode = selectedAcc ? parseAdsCode(selectedAcc.name) : "ADS"
@@ -564,10 +742,9 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div>
                       <label style={lbl}>Pixel</label>
-                      <select value={pixelId} onChange={e => setPixelId(e.target.value)} style={inp}>
-                        <option value="">— Chọn pixel —</option>
-                        {meta.pixels.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
+                      <StarSelect value={pixelId} onChange={setPixelId} placeholder="— Chọn pixel —"
+                        options={meta.pixels.map(p => ({ value: p.id, label: p.name }))}
+                        favs={pixelFav.favs} onToggleFav={pixelFav.toggle} />
                     </div>
                     <div>
                       <label style={lbl}>Tuổi tối thiểu (gợi ý)</label>
@@ -577,14 +754,21 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, onDone }: {
                   <div style={{ fontSize: 10.5, color: "#9CA3AF" }}>Advantage+ vẫn có thể phân phối ngoài khoảng tuổi này.</div>
                   <div>
                     <label style={lbl}>Loại trừ đối tượng ({excluded.size} chọn)</label>
-                    <div style={{ maxHeight: 140, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff" }}>
+                    <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 8, background: "#fff" }}>
                       {meta.audiences.length === 0 && <div style={{ padding: 10, fontSize: 12, color: "#9CA3AF" }}>Không có audience</div>}
-                      {meta.audiences.map(a => (
-                        <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid #F3F4F6", cursor: "pointer", fontSize: 12 }}>
-                          <input type="checkbox" checked={excluded.has(a.id)} onChange={() => toggleExcl(a.id)} />
-                          <span style={{ flex: 1, color: "#374151" }}>{a.name}</span>
-                        </label>
-                      ))}
+                      {sortByFav(meta.audiences, audienceFav.favs, a => a.id).map((a, i, arr) => {
+                        const favCount = arr.filter(x => audienceFav.favs.has(x.id)).length
+                        return (
+                          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 4px 6px 10px", borderBottom: "1px solid #F3F4F6", borderTop: i === favCount ? "1px solid #E5E7EB" : "none", fontSize: 12 }}>
+                            <input type="checkbox" checked={excluded.has(a.id)} onChange={() => toggleExcl(a.id)} />
+                            <span style={{ flex: 1, color: "#374151", cursor: "pointer" }} onClick={() => toggleExcl(a.id)}>{a.name}</span>
+                            <button type="button" onClick={() => audienceFav.toggle(a.id)} title={audienceFav.favs.has(a.id) ? "Bỏ yêu thích" : "Đánh dấu yêu thích"}
+                              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: "2px 6px", color: audienceFav.favs.has(a.id) ? "#F59E0B" : "#D1D5DB" }}>
+                              {audienceFav.favs.has(a.id) ? "★" : "☆"}
+                            </button>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
