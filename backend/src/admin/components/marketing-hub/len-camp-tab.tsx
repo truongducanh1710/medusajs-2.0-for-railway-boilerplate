@@ -396,22 +396,30 @@ function VideoPicker(props: {
           </div>
         )}
         {videos.map(v => (
-          <label key={v.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderBottom: "1px solid #F3F4F6", cursor: "pointer" }}
+          <div key={v.id} onClick={() => toggleSelect(v.id)}
+            style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderBottom: "1px solid #F3F4F6", cursor: "pointer" }}
             onMouseEnter={e => (e.currentTarget.style.background = "#F9FAFB")}
             onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-            <input type="checkbox" checked={selected.has(v.id)} onChange={() => toggleSelect(v.id)} style={{ marginTop: 3 }} />
+            <input type="checkbox" checked={selected.has(v.id)} readOnly style={{ marginTop: 3, pointerEvents: "none" }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 18 }}>🎬</span>
                 <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#1654B8" }}>{v.vdCode}</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }} className="line-clamp-1">{v.sp || "—"}</span>
                 {v.starred && <span style={{ fontSize: 11 }}>⭐{v.aiScore ?? ""}</span>}
+                {v.link && (
+                  <a href={v.link} target="_blank" rel="noopener noreferrer" title="Mở video Drive để kiểm tra"
+                    onClick={e => e.stopPropagation()}
+                    style={{ marginLeft: "auto", fontSize: 11, color: "#1877F2", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    ▶ Xem
+                  </a>
+                )}
               </div>
               <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
                 {v.nguoiLam} {v.ngayDang ? `· ${v.ngayDang}` : ""}
               </div>
             </div>
-          </label>
+          </div>
         ))}
       </div>
       <div style={{ padding: "8px 12px", borderTop: "1px solid #E5E7EB", fontSize: 11, color: "#9CA3AF" }}>{videos.length} video</div>
