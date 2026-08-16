@@ -41,6 +41,11 @@ function parseLocalDT(v: string): { y: number; m: number; d: number; hh: number;
 function formatLocalDT(y: number, m: number, d: number, hh: number, mm: number): string {
   return `${y}-${pad2(m)}-${pad2(d)}T${pad2(hh)}:${pad2(mm)}`
 }
+/** Thời điểm hiện tại ở format datetime-local — dùng làm giá trị gợi ý ban đầu, dễ nhìn thấy rồi chỉnh tiếp thay vì ô trống. */
+function nowLocalDT(): string {
+  const n = new Date()
+  return formatLocalDT(n.getFullYear(), n.getMonth() + 1, n.getDate(), n.getHours(), n.getMinutes())
+}
 
 /**
  * Date/time picker tự vẽ theo định dạng Việt Nam (Th 2 → CN, dd/mm/yyyy, giờ 24h) —
@@ -714,7 +719,11 @@ function LenCampForm({ selectedVideos, mixedProducts, mktCode, email, draftField
 
                   <div>
                     <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", textTransform: "none", fontSize: 12, fontWeight: 600, color: "#374151" }}>
-                      <input type="checkbox" checked={scheduleLater} onChange={e => setScheduleLater(e.target.checked)} />
+                      <input type="checkbox" checked={scheduleLater} onChange={e => {
+                        const on = e.target.checked
+                        setScheduleLater(on)
+                        if (on && !startTime) setStartTime(nowLocalDT()) // gợi ý sẵn giờ hiện tại, dễ thấy rồi chỉnh tiếp thay vì ô trống
+                      }} />
                       Lịch chạy — hẹn ngày giờ thay vì áp dụng ngay
                     </label>
                     {scheduleLater && (
