@@ -126,13 +126,34 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const itemPrice = `COALESCE((mi->'variation_info'->>'retail_price')::numeric, (mi->>'price')::numeric, 0)`
     const itemValueExpr = `(${itemPrice} * COALESCE((mi->>'quantity')::numeric, 1))`
 
+    // Bảng giá vốn đẩy vào SQL để xác định SP chính + tính vốn cả đơn ngay trong query.
+    // Khớp theo thứ tự của lookupCost(): code đầy đủ → prefix PHVVN### → tên SP.
+    const costEntries = [
+      ...Object.entries(avgCost.costs).map(([k, v]) => ["code", k, v] as const),
+      ...Object.entries(avgCost.byPrefix).map(([k, v]) => ["prefix", k, v] as const),
+      ...Object.entries(avgCost.byName).map(([k, v]) => ["name", k, v] as const),
+    ]
+    const costValues = costEntries.length
+      ? costEntries.map(([kind, key, val]) =>
+          `('${kind}', '${String(key).replace(/'/g, "''")}', ${Number(val) || 0})`).join(",")
+      : `('code', '__none__', 0)`
+
     // ── Query: explode item, gom theo (đơn, SP) rồi group theo SP ───────────────
-    // Đếm đơn (total_orders, da_nhan, da_hoan...): CHỈ tính khi SP này là SP chính
-    // của đơn (is_main) → 1 đơn chỉ được đếm đúng 1 lần, quy về đúng 1 SP.
-    // Tiền (doanh thu/cogs): chia theo tỷ trọng giá trị item của SP trong đơn.
-    // Ship/fullfill: gán trọn cho SP chính (item giá trị cao nhất) của đơn.
+    // Nguyên tắc (theo cách nhìn của người kinh doanh): 1 đơn = 1 SP chính.
+    //   • Doanh thu: GÁN TRỌN số tiền khách trả cho SP chính, KHÔNG chia theo giá niêm yết.
+    //     Giá niêm yết không phản ánh giá bán thật (combo giảm 36-40%), chia theo nó khiến
+    //     SP chính mất doanh thu về tay SP tặng kèm → %giá vốn phồng giả (nồi sứ 53% vs 44,5% thật).
+    //   • Giá vốn: cộng vốn TOÀN BỘ item trong đơn (gồm cả SP tặng kèm) vào SP chính.
+    //   • Ship/fullfill/đếm đơn: cũng gán trọn SP chính → 1 đơn chỉ đếm 1 lần.
+    // SP chính = item có (GIÁ VỐN × SL) cao nhất đơn, KHÔNG dùng giá niêm yết:
+    // hàng tặng kèm luôn có vốn thấp hơn hàng bán chính, nên tiêu chí này đúng bản chất hơn
+    // và không lệ thuộc vào giá niêm yết/khuyến mãi. Đã đối chiếu T8/2026: trong 127 đơn
+    // nhiều SP tính được vốn, hai tiêu chí cho CÙNG kết quả (0 đơn khác), và dùng giá vốn
+    // còn khử được ca hoà giá trị (1 đơn từng bị đếm 2 lần vì 2 SP cùng giá niêm yết cao nhất).
+    // Tie-break bằng sp_key để mỗi đơn luôn chốt đúng 1 SP chính duy nhất.
     const rows = await sql(`
-      WITH oi AS (
+      WITH cost_map(kind, key, unit) AS (VALUES ${costValues}),
+      oi AS (
         SELECT
           po.id AS order_id,
           po.status,
@@ -143,9 +164,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           COALESCE((mi->>'quantity')::numeric, 1) AS qty,
           ${itemValueExpr} AS item_value,
           ${revenueExpr} AS order_revenue,
-          COALESCE((po.raw->>'partner_fee')::numeric, 0) AS partner_fee,
-          SUM(${itemValueExpr}) OVER (PARTITION BY po.id) AS order_total_value,
-          MAX(${itemValueExpr}) OVER (PARTITION BY po.id) AS order_max_value
+          COALESCE((po.raw->>'partner_fee')::numeric, 0) AS partner_fee
         FROM pancake_order po
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
         WHERE po.deleted_at IS NULL
@@ -154,24 +173,46 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.raw->'items' IS NOT NULL
       ),
-      -- gán sp_key cho từng item (cột thường để GROUP BY được)
+      -- gán sp_key + giá vốn đơn vị cho từng item (khớp code → prefix → tên, như lookupCost)
       oi2 AS (
-        SELECT *, COALESCE(NULLIF(sp_code, ''), sp_name_up, 'CHƯA RÕ SP') AS sp_key
+        SELECT
+          oi.*,
+          COALESCE(NULLIF(sp_code, ''), sp_name_up, 'CHƯA RÕ SP') AS sp_key,
+          COALESCE(
+            (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'prefix' AND c.key = (regexp_match(upper(oi.sp_code), '^(PHVVN[0-9]{2,3})'))[1]),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
+            0
+          ) AS unit_cost
         FROM oi
       ),
-      -- Quà tặng của đơn = item giá 0 trong đơn CÓ ít nhất 1 item bán (order_total_value > 0).
-      -- Gom về (đơn → danh sách quà) để cộng giá vốn quà vào SP chính của đơn: khách trả tiền
-      -- cho combo, nên giá vốn combo phải nằm trọn ở SP chính, không rơi vào dòng SP quà
-      -- (dòng đó không có doanh thu, giá vốn sẽ biến mất khỏi báo cáo).
+      -- Giá trị vốn từng item + tổng vốn cả đơn (dùng chọn SP chính và gán vốn trọn đơn)
+      oi3 AS (
+        SELECT
+          oi2.*,
+          (unit_cost * qty) AS item_cost,
+          SUM(unit_cost * qty) OVER (PARTITION BY order_id) AS order_total_cost,
+          SUM(item_value)     OVER (PARTITION BY order_id) AS order_total_value,
+          -- SP chính = vốn cao nhất; hoà thì lấy sp_key nhỏ nhất để chốt duy nhất 1 SP
+          (ROW_NUMBER() OVER (
+            PARTITION BY order_id
+            ORDER BY (unit_cost * qty) DESC, item_value DESC, COALESCE(NULLIF(sp_code, ''), sp_name_up, 'CHƯA RÕ SP') ASC
+          )) AS cost_rank
+        FROM oi2
+      ),
+      -- Quà tặng của đơn = item giá 0 trong đơn CÓ ít nhất 1 item bán.
+      -- Giữ lại để hiển thị chi tiết combo (gift_detail) — giá vốn quà giờ đã nằm trong
+      -- order_total_cost nên KHÔNG cộng lại lần nữa ở JS (tránh tính đôi).
       gifts AS (
         SELECT
           order_id,
           jsonb_agg(jsonb_build_object(
             'code', NULLIF(sp_code, ''),
             'name', sp_name_up,
-            'qty',  qty
+            'qty',  qty,
+            'unit', unit_cost
           )) AS gift_items
-        FROM oi2
+        FROM oi3
         WHERE item_value = 0 AND order_total_value > 0
         GROUP BY order_id
       ),
@@ -184,17 +225,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           (array_agg(tags))[1] AS tags,
           MAX(sp_label) AS sp_label,
           NULLIF(MAX(sp_code), '') AS sp_code,
-          -- phần doanh thu của SP = revenue đơn × (giá trị item SP / tổng giá trị item đơn)
-          CASE WHEN MAX(order_total_value) > 0
-            THEN MAX(order_revenue) * (SUM(item_value) / MAX(order_total_value))
-            ELSE 0 END AS sp_revenue,
+          -- SP chính (vốn cao nhất đơn) nhận TRỌN doanh thu + TRỌN vốn cả đơn; SP phụ nhận 0.
+          bool_or(cost_rank = 1) AS is_main,
+          CASE WHEN bool_or(cost_rank = 1) THEN MAX(order_revenue) ELSE 0 END AS sp_revenue,
+          CASE WHEN bool_or(cost_rank = 1) THEN MAX(order_total_cost) ELSE 0 END AS sp_cost,
           SUM(qty) AS sp_qty,
-          -- SP có chứa item giá trị cao nhất đơn → chịu ship/fullfill
-          bool_or(item_value = order_max_value AND order_max_value > 0) AS is_main,
           MAX(partner_fee) AS partner_fee,
-          -- Quà tặng của đơn (chỉ gắn vào SP chính, xử lý ở JS bên dưới)
+          -- Quà tặng của đơn (chỉ gắn vào SP chính, dùng để hiển thị chi tiết)
           (array_agg(g.gift_items))[1] AS gift_items
-        FROM oi2
+        FROM oi3
         LEFT JOIN gifts g USING (order_id)
         GROUP BY order_id, sp_key
       )
@@ -210,11 +249,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status IN (0, 1, 2, 8, 9, 11) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_treo,
         SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
-        -- Quà tặng kèm của các đơn ĐÃ NHẬN mà SP này là SP chính → giá vốn quà tính vào SP này.
-        -- Lưu ý: is_main dùng "item_value = order_max_value", nên nếu 1 đơn có 2 SP KHÁC NHAU
-        -- cùng đạt giá trị cao nhất thì cả hai đều là SP chính và giá vốn quà bị cộng 2 lần.
-        -- Đã kiểm dữ liệu T8/2026: 0 đơn combo rơi vào trường hợp này. Nếu về sau xuất hiện
-        -- (vd combo 2 SP đồng giá), cần chốt SP chính duy nhất (tie-break theo sp_code).
+        -- Giá vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (đã gồm SP tặng kèm).
+        SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_cost ELSE 0 END)::bigint AS cogs_order,
+        -- Chi tiết quà tặng kèm (chỉ để hiển thị) — giá vốn quà ĐÃ nằm trong cogs_order.
         COALESCE(jsonb_agg(gift_items) FILTER (
           WHERE is_main AND status = 3 AND NOT ${excludeCond} AND gift_items IS NOT NULL
         ), '[]'::jsonb) AS gift_agg,
@@ -249,15 +286,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         merged[key] = {
           sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
           total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, revenue_treo: 0, ship_cost: 0,
-          delivered_qty: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
+          delivered_qty: 0, cogs_order: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
           da_xac_nhan: 0, dang_dong_hang: 0, cho_chuyen_hang: 0,
-          gift_qty: {} as Record<string, { qty: number; label: string }>,
+          gift_qty: {} as Record<string, { qty: number; label: string; unit: number | null }>,
         }
       }
       const g = merged[key]
       for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "revenue_treo", "ship_cost",
-        "delivered_qty", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
+        "delivered_qty", "cogs_order", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
         "da_xoa", "da_gui_hang", "moi", "cho_hang", "da_xac_nhan", "dang_dong_hang",
         "cho_chuyen_hang"]) {
         g[k] += Number(row[k] ?? 0)
@@ -268,7 +305,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           const code = gi?.code ? String(gi.code).trim().toUpperCase() : null
           const label = gi?.name ? String(gi.name) : "CHƯA RÕ SP"
           const gkey = code || `NAME:${label.toUpperCase()}`
-          if (!g.gift_qty[gkey]) g.gift_qty[gkey] = { qty: 0, label }
+          const gunit = gi?.unit != null ? Number(gi.unit) : null
+          if (!g.gift_qty[gkey]) g.gift_qty[gkey] = { qty: 0, label, unit: gunit }
           g.gift_qty[gkey].qty += Number(gi?.qty ?? 0)
         }
       }
@@ -277,28 +315,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
     const result = Object.entries(merged).map(([key, g]: [string, any]) => {
-      // giá vốn / sp từ avgCost: ưu tiên code, fallback tên
-      const unit = lookupCost(avgCost, g.sp_code, g.sp_label)
-      const cogs_sp = unit != null ? Math.round(unit * g.delivered_qty) : 0
+      // Giá vốn = vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (tính sẵn trong SQL,
+      // đã gồm cả SP tặng kèm). Không nhân lại unit × delivered_qty vì đơn combo còn có
+      // vốn của SP phụ đi kèm — nhân lại sẽ bỏ sót phần đó.
+      const cogs = Math.round(Number(g.cogs_order) || 0)
 
-      // ── Giá vốn quà tặng kèm (combo) ──
-      // Quà giá 0đ không sinh doanh thu nên không thể đứng thành dòng riêng có LNG;
-      // giá vốn của nó thuộc về SP chính đã bán kèm. Không cộng vào delivered_qty
-      // (quà cho không, không phải hàng bán) — chỉ cộng tiền vốn.
+      // ── Tách phần vốn của quà tặng kèm (chỉ để hiển thị "combo ăn bao nhiêu vào lãi") ──
+      // Số này ĐÃ nằm trong cogs ở trên, không cộng thêm lần nữa.
       let cogs_gift = 0
       const gift_detail: { label: string; qty: number; unit_cost: number | null; cost: number }[] = []
-      for (const [gkey, gv] of Object.entries(g.gift_qty as Record<string, { qty: number; label: string }>)) {
+      for (const [gkey, gv] of Object.entries(g.gift_qty as Record<string, { qty: number; label: string; unit: number | null }>)) {
         const gcode = gkey.startsWith("NAME:") ? null : gkey
-        const gunit = lookupCost(avgCost, gcode, gv.label)
+        const gunit = gv.unit != null && gv.unit > 0 ? gv.unit : lookupCost(avgCost, gcode, gv.label)
         const gcost = gunit != null ? Math.round(gunit * gv.qty) : 0
         cogs_gift += gcost
         gift_detail.push({ label: gv.label, qty: gv.qty, unit_cost: gunit, cost: gcost })
       }
       gift_detail.sort((a, b) => b.cost - a.cost)
       // Quà chưa khai giá vốn → hiện cảnh báo thay vì âm thầm tính 0 (làm LNG đẹp giả).
-      const gift_missing_cost = gift_detail.filter(d => d.unit_cost == null).map(d => d.label)
+      const gift_missing_cost = gift_detail.filter(d => d.unit_cost == null || d.unit_cost === 0).map(d => d.label)
+      const cogs_sp = Math.max(0, cogs - cogs_gift)
 
-      const cogs = cogs_sp + cogs_gift
       // Chi phí ads gán theo mã SP (attribution từ tên camp, xem adsByCode). SP không map
       // được camp nào → 0. Tương đối nhưng đủ để so lãi/lỗ theo SP.
       const ads_cost = g.sp_code ? (adsByCode[String(g.sp_code).toUpperCase()] ?? 0) : 0
