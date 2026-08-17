@@ -197,6 +197,9 @@ export default defineMiddlewares({
     { matcher: "/admin/sql-query*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-backfill*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-status*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    // Điền tay chi phí Google Ads — route tự giới hạn MKT chỉ ghi được dòng của chính mình
+    // (so mkt_code trong metadata), admin ghi cho mọi mã. Xem middlewares trong route.
+    { matcher: "/admin/pancake-sync/report/mkt-cost-gg-manual*", method: ["GET", "PUT"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control/verify", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },

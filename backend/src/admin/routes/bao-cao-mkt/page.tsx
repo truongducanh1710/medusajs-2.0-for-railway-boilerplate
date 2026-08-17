@@ -59,6 +59,7 @@ function BaoCaoMktPage() {
   const [bonusPopupMkt, setBonusPopupMkt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [ggManualOpen, setGgManualOpen] = useState(false)
   const [mktNames, setMktNames] = useState<string[]>([])
   const [mktOrder, setMktOrder] = useState<string[]>([])
   const [cronStatus, setCronStatus] = useState<any>(null)
@@ -866,8 +867,17 @@ function BaoCaoMktPage() {
           }}>
             {syncing ? "Đang sync..." : "↓ Sync chi phí hôm nay"}
           </button>
+          <button onClick={() => setGgManualOpen(true)} title="Điền tay chi phí Google Ads theo ngày" style={{
+            background: dark ? "#7c2d12" : "#ffedd5", color: "#ea580c", border: "1px solid #ea580c44", borderRadius: 6,
+            padding: "8px 16px", cursor: "pointer", fontSize: 13,
+          }}>
+            ✎ Điền chi phí Google
+          </button>
         </div>
       </div>
+
+      {ggManualOpen && <GgManualCostModal t={t} dark={dark} onClose={() => setGgManualOpen(false)}
+        onSaved={() => { fetchData(); if (activeTabRef.current === "platform") fetchPlatformDataRef.current() }} />}
 
       {/* Cron Status Bar */}
       {cronStatus && (() => {
@@ -4789,6 +4799,182 @@ function ScheduleModal({ camp, onClose, t, onChanged }: { camp: any; onClose: ()
 
       </div>
     </div>
+  )
+}
+
+/**
+ * Điền tay chi phí Google Ads theo ngày.
+ * Dùng khi sync từ Google Sheet hỏng/ngừng chạy — số điền tay ghi thẳng vào
+ * mkt_ads_cost_gg nên mọi báo cáo (Nền tảng, LNG) dùng được ngay.
+ */
+function GgManualCostModal({ t, dark, onClose, onSaved }: {
+  t: any; dark: boolean; onClose: () => void; onSaved: () => void
+}) {
+  const [rows, setRows] = useState<any[]>([])
+  const [mktCodes, setMktCodes] = useState<string[]>([])
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [okMsg, setOkMsg] = useState<string | null>(null)
+
+  const [date, setDate] = useState(todayVN())
+  const [mktCode, setMktCode] = useState("")
+  const [cost, setCost] = useState("")
+  const [clicks, setClicks] = useState("")
+  const [impressions, setImpressions] = useState("")
+  const [conversions, setConversions] = useState("")
+
+  // Kỳ xem: 30 ngày gần nhất cho đủ ngữ cảnh mà không tải nặng
+  const to = todayVN()
+  const from = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10) })()
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null)
+    try {
+      const r = await apiFetch(`/admin/pancake-sync/report/mkt-cost-gg-manual?from=${from}&to=${to}`)
+      const d = await r.json()
+      if (d.error) throw new Error(d.error)
+      setRows(d.rows ?? [])
+      setMktCodes(d.mkt_codes ?? [])
+      setIsAdmin(!!d.is_admin)
+      setMktCode(prev => prev || d.my_mkt_code || (d.mkt_codes ?? [])[0] || "")
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }, [from, to])
+
+  useEffect(() => { load() }, [load])
+
+  const save = async (del = false) => {
+    setSaving(true); setErr(null); setOkMsg(null)
+    try {
+      const r = await apiFetch("/admin/pancake-sync/report/mkt-cost-gg-manual", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date, mkt_code: mktCode,
+          cost: del ? null : Number(String(cost).replace(/[^\d]/g, "")) || 0,
+          clicks: Number(String(clicks).replace(/[^\d]/g, "")) || 0,
+          impressions: Number(String(impressions).replace(/[^\d]/g, "")) || 0,
+          conversions: Number(String(conversions).replace(/[^\d.]/g, "")) || 0,
+        }),
+      })
+      const d = await r.json()
+      if (d.error) throw new Error(d.error)
+      setOkMsg(del ? `Đã xoá dòng ${date}` : `Đã lưu ${date}: ${fmtMoney(d.cost ?? 0)}`)
+      if (!del) { setCost(""); setClicks(""); setImpressions(""); setConversions("") }
+      await load()
+      onSaved()
+    } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
+  }
+
+  const inp: React.CSSProperties = {
+    background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6,
+    padding: "7px 10px", color: t.inputText, fontSize: 13, width: "100%",
+  }
+  const lbl: React.CSSProperties = { fontSize: 11, color: t.textMuted, marginBottom: 4, display: "block", fontWeight: 600 }
+
+  // Điền sẵn ô nếu ngày+MKT đang chọn đã có số → sửa thay vì nhập đè nhầm
+  const existing = rows.find(r => r.date === date && String(r.mkt_name).toUpperCase() === String(mktCode).toUpperCase())
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9000 }} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+        width: 620, maxWidth: "94vw", maxHeight: "88vh", background: t.card, border: `1px solid ${t.cardBorder}`,
+        borderRadius: 12, zIndex: 9001, display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${t.cardBorder}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>✎ Điền chi phí Google Ads</div>
+            <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 2 }}>
+              Nhập tổng chi phí GG Ads mỗi ngày — dùng khi sync sheet không chạy.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: t.textMuted, fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ padding: 18, overflowY: "auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isAdmin ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label style={lbl}>Ngày</label>
+              <input type="date" value={date} max={todayVN()} onChange={e => setDate(e.target.value)} style={inp} />
+            </div>
+            {isAdmin && (
+              <div>
+                <label style={lbl}>Marketer</label>
+                <select value={mktCode} onChange={e => setMktCode(e.target.value)} style={inp}>
+                  {mktCodes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={lbl}>Chi phí GG Ads (đ) — bắt buộc</label>
+            <input value={cost} onChange={e => setCost(e.target.value)} inputMode="numeric"
+              placeholder={existing ? `Đang có: ${fmtMoney(existing.cost)}` : "VD: 1250000"} style={{ ...inp, fontSize: 15, fontWeight: 700 }} />
+            {existing && (
+              <div style={{ fontSize: 11, color: t.amber, marginTop: 4 }}>
+                ⚠ Ngày này đã có {fmtMoney(existing.cost)} — lưu sẽ ghi đè.
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div><label style={lbl}>Hiển thị</label><input value={impressions} onChange={e => setImpressions(e.target.value)} inputMode="numeric" placeholder="0" style={inp} /></div>
+            <div><label style={lbl}>Click</label><input value={clicks} onChange={e => setClicks(e.target.value)} inputMode="numeric" placeholder="0" style={inp} /></div>
+            <div><label style={lbl}>Chuyển đổi</label><input value={conversions} onChange={e => setConversions(e.target.value)} inputMode="decimal" placeholder="0" style={inp} /></div>
+          </div>
+          <div style={{ fontSize: 10.5, color: t.textMuted, marginBottom: 14 }}>
+            3 ô trên tuỳ chọn — để trống cũng được, chỉ chi phí là bắt buộc. CTR/CPC/giá mỗi chuyển đổi hệ thống tự tính.
+          </div>
+
+          {err && <div style={{ fontSize: 12, color: t.red, background: dark ? "#7f1d1d33" : "#fee2e2", borderRadius: 6, padding: "8px 10px", marginBottom: 10 }}>⚠ {err}</div>}
+          {okMsg && <div style={{ fontSize: 12, color: t.green, background: dark ? "#065f4633" : "#d1fae5", borderRadius: 6, padding: "8px 10px", marginBottom: 10 }}>✓ {okMsg}</div>}
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+            <button onClick={() => save(false)} disabled={saving || !cost.trim() || !mktCode} style={{
+              flex: 1, background: (saving || !cost.trim() || !mktCode) ? t.textMuted : "#16a34a", color: "#fff",
+              border: "none", borderRadius: 8, padding: "10px 16px", fontSize: 13.5, fontWeight: 700,
+              cursor: (saving || !cost.trim() || !mktCode) ? "not-allowed" : "pointer",
+            }}>{saving ? "Đang lưu…" : "Lưu chi phí"}</button>
+            {existing && (
+              <button onClick={() => save(true)} disabled={saving} style={{
+                background: "none", border: `1px solid ${t.red}66`, color: t.red, borderRadius: 8,
+                padding: "10px 14px", fontSize: 13, cursor: "pointer",
+              }}>Xoá dòng này</button>
+            )}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 6 }}>
+            30 ngày gần nhất {loading && <span style={{ color: t.textMuted, fontWeight: 400 }}>· đang tải…</span>}
+          </div>
+          <div style={{ border: `1px solid ${t.cardBorder}`, borderRadius: 8, overflow: "hidden" }}>
+            {rows.length === 0 && !loading && (
+              <div style={{ padding: 16, textAlign: "center", color: t.textMuted, fontSize: 12 }}>Chưa có dữ liệu trong kỳ</div>
+            )}
+            {rows.map((r, i) => (
+              <div key={`${r.date}-${r.mkt_name}`} onClick={() => {
+                setDate(r.date); setMktCode(String(r.mkt_name).toUpperCase())
+                setCost(String(r.cost ?? "")); setImpressions(String(r.impressions ?? ""))
+                setClicks(String(r.clicks ?? "")); setConversions(String(r.conversions ?? ""))
+              }} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", fontSize: 12.5,
+                borderBottom: i < rows.length - 1 ? `1px solid ${t.rowBorder}` : "none",
+                background: r.date === date && String(r.mkt_name).toUpperCase() === String(mktCode).toUpperCase() ? (dark ? "#1e3a8a33" : "#eff6ff") : "transparent",
+                cursor: "pointer",
+              }}>
+                <span style={{ color: t.text, fontFamily: "monospace" }}>{r.date}</span>
+                <span style={{ color: t.textMuted }}>{r.mkt_name}</span>
+                <span style={{ marginLeft: "auto", color: t.text, fontWeight: 700 }}>{fmtMoney(r.cost)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 6 }}>Bấm 1 dòng để nạp lên form sửa nhanh.</div>
+        </div>
+      </div>
+    </>
   )
 }
 
