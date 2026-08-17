@@ -3389,10 +3389,157 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
   )
 }
 
-// ---- Main Page ----
-type TabKey = "overview" | "combined" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "errors" | "marketing"
+/**
+ * Tab "Sàn TMĐT" — LNG đơn TikTok Shop / Shopee.
+ * Các báo cáo LNG khác chỉ lấy đơn ads (source manual/facebook/...) nên toàn bộ đơn sàn
+ * không xuất hiện ở đâu. Doanh thu ở đây là tiền THỰC NHẬN (sàn đã trừ phí + khuyến mãi).
+ */
+function MarketplaceLngTab({ range }: { range: DateRange }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const [showMissing, setShowMissing] = useState(false)
 
-const VALID_TABS: TabKey[] = ["overview", "combined", "shipping", "product", "sale", "nv-mkt", "lng", "errors", "marketing"]
+  useEffect(() => {
+    setLoading(true); setErr(null)
+    apiFetch(`/admin/pancake-sync/report/marketplace-lng?from=${range.from}&to=${range.to}`)
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setData(d) })
+      .catch(e => setErr(e.message))
+      .finally(() => setLoading(false))
+  }, [range.from, range.to])
+
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Đang tải...</div>
+  if (err) return <div className="p-6 text-center text-sm text-red-600">⚠ {err}</div>
+  if (!data) return null
+
+  const rows: any[] = data.rows ?? []
+  const cov = data.coverage ?? {}
+  const shown = showMissing ? rows : rows.filter(r => !r.missing_cost)
+  const money = (n: any) => fmtVND(Number(n || 0))
+  const pctCell = (v: any, good?: boolean) =>
+    v == null ? <span className="text-gray-300">—</span>
+      : <span className={good == null ? "text-gray-600" : good ? "text-green-600" : "text-red-600"}>{v}%</span>
+
+  return (
+    <div className="space-y-4">
+      {cov.pct != null && cov.pct < 100 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          <b>Giá vốn phủ {cov.pct}% doanh thu.</b>{" "}
+          Còn {money(cov.revenue_no_cost)} doanh thu từ {cov.missing_products} sản phẩm chưa khai giá vốn —
+          phần này <b>không được tính vào LNG</b> (tránh lãi ảo). Khai thêm ở trang Giá vốn để số đầy đủ hơn.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {(data.by_platform ?? []).map((p: any) => (
+          <div key={p.platform} className="bg-white border rounded-xl p-5 shadow-sm"
+            style={{ borderTop: `3px solid ${p.platform === "tiktok" ? "#111827" : "#ee4d2d"}` }}>
+            <div className="text-xs text-gray-500 uppercase tracking-wide">{p.platform_label}</div>
+            <div className="text-2xl font-bold mt-1 text-gray-900">{money(p.revenue_delivered)}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{fmtNum(p.da_nhan)} đơn giao thành công</div>
+            <div className="mt-2 pt-2 border-t border-dashed border-gray-200 space-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700">{money(p.fee_marketplace)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700">{money(p.cogs)} {pctCell(p.cogs_pct)}</span></div>
+              <div className="flex justify-between font-semibold">
+                <span className="text-gray-500">LNG</span>
+                <span className={p.lng >= 0 ? "text-green-600" : "text-red-600"}>{money(p.lng)} ({p.lng_pct}%)</span>
+              </div>
+            </div>
+          </div>
+        ))}
+        {data.totals && (
+          <div className="bg-white border rounded-xl p-5 shadow-sm" style={{ borderTop: "3px solid #7c3aed" }}>
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Tổng 2 sàn</div>
+            <div className="text-2xl font-bold mt-1 text-gray-900">{money(data.totals.revenue_delivered)}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{fmtNum(data.totals.da_nhan)} đơn · huỷ {fmtNum(data.totals.da_huy)}</div>
+            <div className="mt-2 pt-2 border-t border-dashed border-gray-200 space-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700">{money(data.totals.fee_marketplace)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700">{money(data.totals.cogs)} {pctCell(data.totals.cogs_pct)}</span></div>
+              <div className="flex justify-between font-semibold">
+                <span className="text-gray-500">LNG</span>
+                <span className={data.totals.lng >= 0 ? "text-green-600" : "text-red-600"}>{money(data.totals.lng)} ({data.totals.lng_pct}%)</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800">LNG theo sản phẩm</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Doanh thu = tiền thực nhận (sàn đã trừ phí + khuyến mãi). Mỗi dòng hàng tính giá vốn riêng.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
+            Hiện cả SP chưa khai giá vốn ({rows.filter(r => r.missing_cost).length})
+          </label>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+              <tr>
+                <th className="text-left px-4 py-2.5">Sàn</th>
+                <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                <th className="text-right px-3 py-2.5">SL</th>
+                <th className="text-right px-3 py-2.5">Đơn</th>
+                <th className="text-right px-3 py-2.5">Phí sàn</th>
+                <th className="text-right px-3 py-2.5">DT thực nhận</th>
+                <th className="text-right px-3 py-2.5">Giá vốn</th>
+                <th className="text-right px-3 py-2.5">%GV</th>
+                <th className="text-right px-3 py-2.5">LNG</th>
+                <th className="text-right px-3 py-2.5">%LNG</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {shown.length === 0 && (
+                <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+              )}
+              {shown.map((r, i) => (
+                <tr key={`${r.platform}-${r.sp_code ?? r.sp_label}-${i}`} className={r.missing_cost ? "bg-amber-50/50" : ""}>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                      r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                    }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                  </td>
+                  <td className="px-4 py-2.5 max-w-[260px]">
+                    <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
+                    {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                    {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.delivered_qty)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fee_marketplace)}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.cogs_pct)}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${r.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    {r.missing_cost ? "—" : money(r.lng)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.lng_pct, r.lng >= 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500">
+          Đơn sàn không có chi phí quảng cáo gán riêng nên LNG ở đây <b>chưa trừ ads</b>. Ship do sàn trả (không tính).
+          Fullfill 5.000đ/đơn giống các báo cáo khác.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---- Main Page ----
+type TabKey = "overview" | "combined" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "sanTMDT" | "errors" | "marketing"
+
+const VALID_TABS: TabKey[] = ["overview", "combined", "shipping", "product", "sale", "nv-mkt", "lng", "sanTMDT", "errors", "marketing"]
 
 const BaoCaoPage = () => {
   const initParams = getSearchParams()
@@ -3438,6 +3585,7 @@ const BaoCaoPage = () => {
     { key: "sale",      label: "Sale & Funnel", icon: "🎯" },
     { key: "nv-mkt",   label: "NV MKT",        icon: "📦" },
     { key: "lng",       label: "LNG theo MKT", icon: "💵" },
+    { key: "sanTMDT",   label: "Sàn TMĐT",     icon: "🛒" },
     { key: "errors",    label: "Đơn lỗi",      icon: "⚠️" },
     { key: "marketing", label: "MKT",          icon: "📣" },
   ]
@@ -3489,6 +3637,7 @@ const BaoCaoPage = () => {
         {tab === "sale"      && <SaleTab range={range} market={market} />}
         {tab === "nv-mkt"   && <NvMktTab range={range} market={market} />}
         {tab === "lng"      && <LngTab range={range} market={market} />}
+        {tab === "sanTMDT"  && <MarketplaceLngTab range={range} />}
         {tab === "errors"   && <ErrorsTab range={range} market={market} />}
       </CurrencyCtx.Provider>
       {tab === "marketing" && (
