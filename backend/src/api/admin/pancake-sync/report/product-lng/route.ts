@@ -74,6 +74,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const c of codeSet) stripToCode[stripKey(c)] = c
     const reHead = /^(PHVVN\d{2,3}[A-ZĐ]*)/i
 
+    // Sửa mã SP bị MKT đặt nhầm khi tạo camp trên Facebook. Đổi tên camp bên FB không sửa
+    // được dữ liệu ads ĐÃ sync, nên chặn ngay ở bước gán chi phí: camp khớp `when` (mã sai
+    // + dấu hiệu nhận biết trong tên) sẽ được quy về `to` là mã đúng.
+    //
+    // Case T7-T8/2026: 10 camp mang tiền tố PHVVN033NCDTMS (NỒI CHỐNG DÍNH TRÁNG MEN SỨ)
+    // nhưng tên camp ghi rõ "NỒI SỨ" và thực chất chạy cho NỒI SỨ HOA VĂN (PHVVN044_NS).
+    // Hậu quả trước khi sửa: PHVVN033 gánh 13,5tr ads dù bán 0 sản phẩm → LNG -16,9tr,
+    // còn NỒI SỨ được báo lãi ảo vì không phải chịu phần ads của chính nó.
+    const CAMPAIGN_CODE_FIXES: { when: RegExp; to: string }[] = [
+      { when: /^PHVVN033NCDTMS.*NỒI\s*SỨ/i, to: "PHVVN044_NS" },
+    ]
+
     const adsRows = await sql(`
       SELECT campaign_name, SUM(spend)::bigint AS spend
       FROM mkt_ads_cost
@@ -86,8 +98,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     let adsMappedTotal = 0
     for (const r of adsRows) {
       const spend = Number(r.spend) || 0
-      const m = String(r.campaign_name || "").match(reHead)
-      const code = m ? stripToCode[stripKey(m[1])] : undefined
+      const name = String(r.campaign_name || "")
+      const fix = CAMPAIGN_CODE_FIXES.find(f => f.when.test(name))
+      const m = name.match(reHead)
+      const code = fix ? fix.to : (m ? stripToCode[stripKey(m[1])] : undefined)
       if (code) {
         adsDirect[code] = (adsDirect[code] || 0) + spend
         adsMappedTotal += spend
