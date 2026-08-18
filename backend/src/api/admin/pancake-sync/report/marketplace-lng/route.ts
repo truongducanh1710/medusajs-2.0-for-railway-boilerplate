@@ -27,11 +27,19 @@ const FULLFILL_PER_ORDER = 5000
  *
  * by_day trả 2 mức song song:
  *  • THỰC   — chỉ đơn status=3 (giao thành công). Tiền chắc chắn về.
- *  • TẠM TÍNH — thêm đơn đã xác nhận cho đi (status 2/6/9: đang giao, đã gửi VC,
- *    chờ VTP lấy). Đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận, KHÔNG nhân
- *    tỷ lệ dự phóng như báo cáo FB (marketer-lng dùng revenue_treo × tỷ_lệ_nhận).
+ *  • TẠM TÍNH — thêm đơn đã xác nhận cho đi: status 2 (đang giao) + 8 (đang đóng hàng).
+ *    Đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận, KHÔNG nhân tỷ lệ dự phóng
+ *    như báo cáo FB (marketer-lng dùng revenue_treo × tỷ_lệ_nhận).
  *    Cần 2 mức vì đơn sàn mất vài ngày mới giao xong: ngày gần đây ads đã tiêu hết
  *    nhưng doanh thu chưa kịp ghi nhận → nhìn số "thực" tưởng lỗ nặng.
+ *
+ * ⚠ Status thực tế trên đơn sàn (quét ~2.000 đơn Shopee+TikTok, 8/2026) — bảng
+ * GLOSSARY.md ĐANG SAI ở code 6 và thiếu code 8:
+ *    0 Chờ xử lý · 1 Sale đã chốt · 2 Đang giao · 3 Giao thành công
+ *    4 Đang hoàn về · 6 ĐÃ HỦY (glossary ghi nhầm "Đã gửi VC") · 8 Đang đóng hàng
+ * Code 6 = huỷ đúng trên MỌI nguồn (đã đối chiếu cả facebook/manual), không riêng sàn.
+ * Gộp nhầm 6 vào tạm tính từng làm 08/08 Shopee VN ra 21 đơn thay vì 15.
+ * Status 9 (glossary ghi "Chờ VTP lấy") KHÔNG tồn tại trên đơn sàn.
  *
  * LNG đơn sàn TMĐT (TikTok Shop / Shopee) — các báo cáo LNG khác lọc
  * `source IN ('manual','facebook','medusa','unknown','webcake')` nên toàn bộ đơn sàn
@@ -284,11 +292,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- 9 chờ VTP lấy) — tức đã rời kho, chỉ chưa biết giao xong chưa. KHÔNG dự phóng
         -- theo tỷ lệ như báo cáo FB: đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận.
         -- Loại 0/1/11 (chưa cho đi) và -1/-2/4/5/7 (huỷ/hoàn/xoá).
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,6,9))::int AS orders_tt,
-        SUM(CASE WHEN status IN (2,3,6,9) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (2,3,6,9) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (2,3,6,9) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,6,9) AND unit_cost > 0)::int AS orders_costed_tt
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8))::int AS orders_tt,
+        SUM(CASE WHEN status IN (2,3,8) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8) AND unit_cost > 0)::int AS orders_costed_tt
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
