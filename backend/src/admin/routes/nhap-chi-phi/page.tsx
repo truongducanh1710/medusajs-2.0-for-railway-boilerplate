@@ -216,8 +216,10 @@ function MarketplaceAdsCost() {
     [shops, platform, market]
   )
   // Đổi sàn/thị trường mà shop cũ không còn hợp lệ thì bỏ chọn.
+  // Chỉ có đúng 1 shop thì chọn sẵn cho đỡ thao tác.
   useEffect(() => {
-    if (shop && !shopOptions.some(s => s.shop === shop)) setShop("")
+    if (shop && !shopOptions.some(s => s.shop === shop)) { setShop(""); return }
+    if (!shop && shopOptions.length === 1) setShop(shopOptions[0].shop)
   }, [shopOptions, shop])
 
   const existing = rows.find(r =>
@@ -231,13 +233,13 @@ function MarketplaceAdsCost() {
         cost: del ? null : Number(String(cost).replace(/[^\d]/g, "")) || 0,
         note: note.trim() || null,
       })
-      setOk(del ? `Đã xoá ${date}` : `Đã lưu ${date} · ${platLabel(platform)} ${market}: ${fmtMoney(d?.cost ?? 0)}`)
+      setOk(del ? `Đã xoá ${date}` : `Đã lưu ${date} · ${platLabel(platform)} ${market} · ${shop}: ${fmtMoney(d?.cost ?? 0)}`)
       if (!del) { setCost(""); setNote("") }
       await load()
     } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
   }
 
-  const canSave = !saving && !!cost.trim()
+  const canSave = !saving && !!cost.trim() && !!shop
 
   return (
     <div className="space-y-4">
@@ -295,12 +297,20 @@ function MarketplaceAdsCost() {
             </div>
           </Field>
           <Field label="Shop">
-            <select value={shop} onChange={e => setShop(e.target.value)} className={inputCls}>
-              <option value="">— Gộp cả thị trường —</option>
+            <select value={shop} onChange={e => setShop(e.target.value)}
+              className={`${inputCls} ${shop ? "" : "border-amber-300"}`}>
+              <option value="">— Chọn shop —</option>
               {shopOptions.map(s => (
                 <option key={s.shop} value={s.shop}>{s.shop || "(không tên)"} · {s.orders} đơn</option>
               ))}
             </select>
+            {!shop && (
+              <p className="text-[11px] text-amber-600 mt-1">
+                {shopOptions.length
+                  ? "Điền chi phí theo từng shop — chọn shop trước khi lưu."
+                  : "Chưa thấy shop nào có đơn ở sàn/thị trường này trong 30 ngày."}
+              </p>
+            )}
           </Field>
         </div>
 
@@ -337,7 +347,7 @@ function MarketplaceAdsCost() {
         cols={["Ngày", "TT", "Sàn", "Shop", "Chi phí", "Ghi chú"]}
         renderRow={(r: any) => [
           r.date, r.market, platLabel(r.platform),
-          r.shop || "(cả thị trường)", fmtMoney(r.cost), r.note || "—",
+          r.shop || "(chưa rõ shop)", fmtMoney(r.cost), r.note || "—",
         ]}
         isActive={(r: any) => r.date === date && r.platform === platform && r.market === market && (r.shop ?? "") === shop}
         onPick={(r: any) => {
@@ -376,9 +386,15 @@ function TongHopTab() {
   const rows: any[] = data?.rows ?? []
   const missing: any[] = data?.missing ?? []
   const grand = rows.reduce((s, r) => s + Number(r.cost || 0), 0)
+  const isAdminView = !!data?.is_admin
 
   return (
     <div className="space-y-4">
+      {data && !isAdminView && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-[12px] text-gray-600">
+          👤 Bạn đang xem <b>chi phí do chính bạn điền</b>. Quản lý xem được của tất cả mọi người.
+        </div>
+      )}
       <div className="bg-white border rounded-xl p-4 shadow-sm">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Field label="Từ ngày"><input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inputCls} /></Field>
@@ -476,22 +492,22 @@ function TongHopTab() {
                 <th className="px-4 py-2 text-left">Sàn</th>
                 <th className="px-4 py-2 text-left">Shop</th>
                 <th className="px-4 py-2 text-right">Chi phí</th>
-                <th className="px-4 py-2 text-left">Người điền</th>
+                {isAdminView && <th className="px-4 py-2 text-left">Người điền</th>}
                 <th className="px-4 py-2 text-left">Ghi chú</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">Chưa có dữ liệu trong kỳ</td></tr>
+                <tr><td colSpan={isAdminView ? 7 : 6} className="px-4 py-6 text-center text-sm text-gray-400">Chưa có dữ liệu trong kỳ</td></tr>
               )}
               {rows.map((r, i) => (
                 <tr key={i} className="hover:bg-gray-50">
                   <td className="px-4 py-2 font-mono">{r.date}</td>
                   <td className="px-4 py-2">{r.market}</td>
                   <td className="px-4 py-2">{platLabel(r.platform)}</td>
-                  <td className="px-4 py-2">{r.shop || <span className="text-gray-400">(cả thị trường)</span>}</td>
+                  <td className="px-4 py-2">{r.shop || <span className="text-gray-400">(chưa rõ shop)</span>}</td>
                   <td className="px-4 py-2 text-right font-semibold">{fmtMoney(r.cost)}</td>
-                  <td className="px-4 py-2 text-[11px] text-gray-500">{r.created_by || "—"}</td>
+                  {isAdminView && <td className="px-4 py-2 text-[11px] text-gray-500">{r.created_by || "—"}</td>}
                   <td className="px-4 py-2 text-[11px] text-gray-500">{r.note || "—"}</td>
                 </tr>
               ))}

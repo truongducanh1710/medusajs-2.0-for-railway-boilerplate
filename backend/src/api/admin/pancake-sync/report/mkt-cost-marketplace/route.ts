@@ -1,4 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
+import { resolveUserPerms } from "../../../../middlewares"
 
 /**
  * Chi phí quảng cáo sàn TMĐT (TikTok Shop / Shopee) — điền tay theo ngày.
@@ -14,6 +16,19 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
  * (~797 RM/đơn), nhưng chi phí ở đây do người nhập quy đổi sẵn về VNĐ trước khi điền —
  * nếu không, tổng chi phí sẽ cộng lẫn 2 đơn vị tiền.
  */
+
+type AuthInfo = { email: string; isAdmin: boolean }
+
+/** Admin = super admin hoặc có users.manage — giống mkt-cost-gg-manual để nhất quán. */
+async function getAuth(req: MedusaRequest): Promise<AuthInfo | null> {
+  const auth = (req as any).auth_context
+  if (auth?.actor_type !== "user" || !auth?.actor_id) return null
+  const userModule = req.scope.resolve(Modules.USER)
+  const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
+  const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
+  const perms = resolveUserPerms(user.metadata)
+  return { email: user.email || "", isAdmin: isSuper || perms.includes("users.manage") }
+}
 
 const PLATFORMS = ["tiktok", "shopee"] as const
 const MARKETS = ["VN", "MY"] as const
@@ -70,6 +85,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       platform,
     } = req.query as Record<string, string>
 
+    const me = await getAuth(req)
+    if (!me) return res.status(401).json({ error: "Unauthenticated" })
+
     const svc = req.scope.resolve("cskhAnalysisModule") as any
     await ensureTable(svc)
 
@@ -80,6 +98,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
     if (platform && PLATFORMS.includes(platform as any)) {
       params.push(platform); filters.push(`platform = $${params.length}`)
+    }
+    // Nhân sự chỉ thấy chi phí do CHÍNH MÌNH điền; admin/manager thấy toàn bộ.
+    // Lọc ở SQL chứ không ở client — ẩn trên giao diện không phải là kiểm soát truy cập.
+    if (!me.isAdmin) {
+      params.push(me.email); filters.push(`created_by = $${params.length}`)
     }
     const where = filters.length ? `AND ${filters.join(" AND ")}` : ""
 
@@ -141,13 +164,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         LEFT JOIN mkt_ads_cost_marketplace c
           ON c.date = d.date AND c.platform = d.platform
          AND c.market = d.market AND c.shop = d.shop AND c.deleted_at IS NULL
+         ${me.isAdmin ? "" : "AND c.created_by = $3"}
        WHERE c.id IS NULL
        ORDER BY d.date DESC, d.market, d.platform
        LIMIT 200
-    `, [from, to])
+    `, me.isAdmin ? [from, to] : [from, to, me.email])
 
     return res.json({
       rows, totals, by_day: byDay, shops, missing,
+      is_admin: me.isAdmin, my_email: me.email,
       platforms: PLATFORMS, markets: MARKETS, from, to,
     })
   } catch (err: any) {
@@ -163,10 +188,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
  */
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const auth = (req as any).auth_context
-    if (auth?.actor_type !== "user" || !auth?.actor_id) {
-      return res.status(401).json({ error: "Unauthenticated" })
-    }
+    const me = await getAuth(req)
+    if (!me) return res.status(401).json({ error: "Unauthenticated" })
 
     const b = req.body as any
     const date = String(b?.date ?? "")
@@ -183,30 +206,46 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const shop = String(b?.shop ?? "").trim().slice(0, 64)
+    // Chi phí điền theo TỪNG shop, không gộp cả thị trường — gộp thì LNG từng shop sai.
+    if (!shop) return res.status(400).json({ error: "Thiếu shop — chi phí phải điền theo từng shop." })
 
     const svc = req.scope.resolve("cskhAnalysisModule") as any
     await ensureTable(svc)
 
     if (b?.cost === null || b?.cost === "" || b?.cost === undefined) {
-      await svc.sql(
+      // Người thường chỉ xoá được dòng CHÍNH MÌNH điền — chặn ở SQL, không dựa vào UI.
+      const owner = me.isAdmin ? "" : "AND created_by = $5"
+      const del = await svc.sql(
         `UPDATE mkt_ads_cost_marketplace SET deleted_at = now(), updated_at = now()
-          WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4 AND deleted_at IS NULL`,
-        [date, platform, market, shop]
+          WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
+            AND deleted_at IS NULL ${owner}
+          RETURNING id`,
+        me.isAdmin ? [date, platform, market, shop] : [date, platform, market, shop, me.email]
       )
+      if (!del.length) {
+        return res.status(403).json({ error: "Không tìm thấy dòng của bạn để xoá (dòng này do người khác điền)." })
+      }
       return res.json({ ok: true, deleted: true, date, platform, market, shop })
     }
 
     const cost = Math.round(Number(b.cost))
     if (!Number.isFinite(cost) || cost < 0) return res.status(400).json({ error: "Chi phí không hợp lệ" })
 
-    // Lưu email người điền để truy vết khi số liệu lệch.
-    let email = ""
-    try {
-      const { Modules } = await import("@medusajs/framework/utils")
-      const userModule = req.scope.resolve(Modules.USER)
-      const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email"] })
-      email = user.email || ""
-    } catch { /* không chặn việc lưu chỉ vì thiếu email */ }
+    // Grain (date, platform, market, shop) là duy nhất toàn hệ thống, nên nếu người khác
+    // đã điền kênh-ngày này thì ON CONFLICT sẽ ghi đè số của họ. Chặn trước: người thường
+    // chỉ được ghi vào ô trống hoặc ô của chính mình; admin ghi đè được để sửa hộ.
+    if (!me.isAdmin) {
+      const owner = await svc.sql(
+        `SELECT created_by FROM mkt_ads_cost_marketplace
+          WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4 AND deleted_at IS NULL`,
+        [date, platform, market, shop]
+      )
+      if (owner.length && owner[0].created_by && owner[0].created_by !== me.email) {
+        return res.status(403).json({
+          error: `Kênh-ngày này do ${owner[0].created_by} điền — bạn không sửa được. Nhờ admin nếu cần đổi.`,
+        })
+      }
+    }
 
     await svc.sql(`
       INSERT INTO mkt_ads_cost_marketplace (date, platform, market, shop, cost, note, created_by)
@@ -217,7 +256,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
         created_by = EXCLUDED.created_by,
         deleted_at = NULL,
         updated_at = now()
-    `, [date, platform, market, shop, cost, b?.note ?? null, email])
+    `, [date, platform, market, shop, cost, b?.note ?? null, me.email])
 
     return res.json({ ok: true, date, platform, market, shop, cost })
   } catch (err: any) {
