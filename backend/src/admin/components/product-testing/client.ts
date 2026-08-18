@@ -164,6 +164,13 @@ export function createProductTestingClient() {
     );
   }
 
+  async function deleteDailyResult(id: string, resultId: string) {
+    return requestJson<{ ok: boolean }>(
+      `/admin/product-tests/${id}/daily-results/${resultId}`,
+      { method: "DELETE" },
+    );
+  }
+
   async function evaluateDailyResult(
     id: string,
     resultId: string,
@@ -225,6 +232,7 @@ export function createProductTestingClient() {
     updateProposal,
     createDailyResult,
     updateDailyResult,
+    deleteDailyResult,
     evaluateDailyResult,
     transitionCase,
     uploadImages,

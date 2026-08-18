@@ -108,3 +108,54 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     client.release();
   }
 }
+
+export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
+  const client = await getPool().connect();
+  try {
+    const actor = await getProductTestActor(req);
+    if (!actor) return res.status(401).json({ error: "Unauthenticated" });
+    requireActorPermission(actor, PRODUCT_TEST_PERMS.marketing);
+
+    await client.query("BEGIN");
+    const locked = await client.query(
+      `SELECT d.*, c.status AS case_status, c.assignee_email
+       FROM product_test_daily_result d
+       JOIN product_test_case c ON c.id=d.case_id
+       WHERE d.id=$1 AND d.case_id=$2 AND d.deleted_at IS NULL AND c.deleted_at IS NULL
+       FOR UPDATE OF d`,
+      [req.params.resultId, req.params.id],
+    );
+    const row = locked.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Không tìm thấy kết quả test" });
+    }
+    if (row.case_status !== "testing") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Kết quả đã bị khóa" });
+    }
+    if (row.assignee_email !== actor.email && !actor.is_super) {
+      await client.query("ROLLBACK");
+      return res
+        .status(403)
+        .json({ error: "Chỉ MKT phụ trách được xoá kết quả" });
+    }
+
+    await client.query(
+      `UPDATE product_test_daily_result SET deleted_at=now(), version=version+1, updated_at=now()
+       WHERE id=$1`,
+      [req.params.resultId],
+    );
+    await client.query(
+      `UPDATE product_test_case SET version=version+1,updated_at=now() WHERE id=$1`,
+      [req.params.id],
+    );
+    await client.query("COMMIT");
+    return res.json({ ok: true });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    return apiError(res, error);
+  } finally {
+    client.release();
+  }
+}

@@ -17,6 +17,7 @@ import {
 } from "./format";
 import { ComboCalculator } from "./combo-calculator";
 import { calculateKpis } from "../../../modules/product-test/kpi";
+import { useCurrentPermissions } from "../../lib/use-permissions";
 
 const ACTION_LABELS: Record<string, string> = {
   request_more_testing: "Yêu cầu test thêm",
@@ -157,6 +158,14 @@ export function ProductTestDrawer({
     );
   const record = detail.case as ProductTestCaseRecord;
   const permissions = detail.permissions;
+  const { email: myEmail, isSuper } = useCurrentPermissions();
+  // Khớp đúng chốt chặn ở backend (PATCH/DELETE daily-results): chỉ MKT đang
+  // phụ trách hồ sơ hoặc super sửa/xoá được dòng test, và chỉ khi hồ sơ còn
+  // đang "testing" — kết luận rồi thì số liệu phải đứng yên làm căn cứ.
+  const canEditDailyRows =
+    permissions.can_edit_marketing &&
+    record.status === "testing" &&
+    (isSuper || myEmail === record.assignee_email);
 
   // Assigning is what creates the Mua hàng task, so it saves immediately
   // rather than waiting for another Lưu button.
@@ -766,6 +775,7 @@ export function ProductTestDrawer({
                     <th>Doanh thu</th>
                     <th title="Công thức: Chi phí ads ÷ Số lead">CPL ⨍</th>
                     <th>Đánh giá leader</th>
+                    {canEditDailyRows && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -775,6 +785,7 @@ export function ProductTestDrawer({
                         key={row.id}
                         row={row}
                         canEvaluate={permissions.can_approve}
+                        canEditRow={canEditDailyRows}
                         recordId={record.id}
                         client={client}
                         onRun={run}
@@ -782,7 +793,9 @@ export function ProductTestDrawer({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8}>Chưa có kết quả test.</td>
+                      <td colSpan={canEditDailyRows ? 9 : 8}>
+                        Chưa có kết quả test.
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -873,21 +886,101 @@ export function ProductTestDrawer({
 function DailyResultRow({
   row,
   canEvaluate,
+  canEditRow,
   recordId,
   client,
   onRun,
 }: {
   row: ProductTestDailyResult;
   canEvaluate: boolean;
+  canEditRow: boolean;
   recordId: string;
   client: ProductTestingClient;
   onRun: (label: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const [evaluation, setEvaluation] = useState(row.evaluation || "");
   const [note, setNote] = useState(row.leader_note || "");
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [draft, setDraft] = useState(() => toDraft(row));
   // Same formula as the backend's kpi.ts, reused here so a single row can
   // show its CPL before the whole case is re-fetched from the server.
   const { cpl } = calculateKpis(row);
+
+  function startEdit() {
+    setDraft(toDraft(row));
+    setEditing(true);
+  }
+
+  async function save() {
+    await onRun(`edit-${row.id}`, () =>
+      client.updateDailyResult(recordId, row.id, {
+        test_date: draft.test_date,
+        campaign_name: draft.campaign_name,
+        ad_spend: draft.ad_spend === "" ? null : Number(draft.ad_spend),
+        leads: draft.leads === "" ? null : Number(draft.leads),
+        orders: draft.orders === "" ? null : Number(draft.orders),
+        revenue: draft.revenue === "" ? null : Number(draft.revenue),
+        version: row.version,
+      }),
+    );
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <tr className="pt-daily-editing">
+        <td>
+          <input
+            type="date"
+            value={draft.test_date}
+            onChange={(e) => setDraft({ ...draft, test_date: e.target.value })}
+          />
+        </td>
+        <td>
+          <input
+            value={draft.campaign_name}
+            onChange={(e) =>
+              setDraft({ ...draft, campaign_name: e.target.value })
+            }
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            value={draft.ad_spend}
+            onChange={(e) => setDraft({ ...draft, ad_spend: e.target.value })}
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            value={draft.leads}
+            onChange={(e) => setDraft({ ...draft, leads: e.target.value })}
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            value={draft.orders}
+            onChange={(e) => setDraft({ ...draft, orders: e.target.value })}
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            value={draft.revenue}
+            onChange={(e) => setDraft({ ...draft, revenue: e.target.value })}
+          />
+        </td>
+        <td colSpan={2} className="pt-daily-edit-actions">
+          <button onClick={save}>Lưu</button>
+          <button onClick={() => setEditing(false)}>Huỷ</button>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <tr>
       <td>{new Date(row.test_date).toLocaleDateString("vi-VN")}</td>
@@ -902,7 +995,7 @@ function DailyResultRow({
           display={vnMoney(cpl)}
         />
       </td>
-      <td>
+      <td className="pt-eval-cell">
         {canEvaluate ? (
           <div className="pt-evaluate">
             <select
@@ -941,8 +1034,56 @@ function DailyResultRow({
           </>
         )}
       </td>
+      {canEditRow && (
+        <td className="pt-daily-row-actions">
+          {confirmDelete ? (
+            <div className="pt-delete-confirm">
+              <span>Xoá dòng này?</span>
+              <button
+                className="danger"
+                onClick={() =>
+                  onRun(`delete-${row.id}`, () =>
+                    client.deleteDailyResult(recordId, row.id),
+                  )
+                }
+              >
+                Xoá
+              </button>
+              <button onClick={() => setConfirmDelete(false)}>Huỷ</button>
+            </div>
+          ) : (
+            <>
+              <button
+                className="pt-row-icon-btn"
+                title="Sửa dòng test"
+                onClick={startEdit}
+              >
+                ✎
+              </button>
+              <button
+                className="pt-row-icon-btn"
+                title="Xoá dòng test"
+                onClick={() => setConfirmDelete(true)}
+              >
+                🗑
+              </button>
+            </>
+          )}
+        </td>
+      )}
     </tr>
   );
+}
+
+function toDraft(row: ProductTestDailyResult) {
+  return {
+    test_date: row.test_date.slice(0, 10),
+    campaign_name: row.campaign_name || "",
+    ad_spend: row.ad_spend == null ? "" : String(row.ad_spend),
+    leads: row.leads == null ? "" : String(row.leads),
+    orders: row.orders == null ? "" : String(row.orders),
+    revenue: row.revenue == null ? "" : String(row.revenue),
+  };
 }
 
 function Field({
@@ -1125,8 +1266,15 @@ const DRAWER_CSS = `
 .pt-daily-table th,.pt-daily-table td{padding:9px;border-bottom:1px solid var(--border-base,#eef0f2);text-align:left;font-size:12px}
 .pt-daily-table tr:last-child td{border-bottom:0}
 .pt-daily-table th{color:var(--fg-muted,#6b7280);background:var(--bg-subtle,#f9fafb);font-weight:600;white-space:nowrap}
-.pt-daily-table td:last-child{min-width:250px}
+.pt-daily-table td.pt-eval-cell{min-width:250px}
 .pt-daily-table td small{display:block;color:var(--fg-muted,#6b7280);margin-top:3px}
+.pt-daily-row-actions{display:flex;gap:6px;white-space:nowrap}
+.pt-row-icon-btn{border:1px solid var(--border-base,#e5e7eb);background:var(--bg-field,#fff);color:var(--fg-muted,#6b7280);border-radius:6px;width:26px;height:26px;line-height:1;cursor:pointer;font-size:13px}
+.pt-row-icon-btn:hover{background:var(--bg-subtle,#f3f4f6);color:var(--fg-base,#111827)}
+.pt-daily-editing input{width:100%;border:1px solid var(--border-base,#d1d5db);border-radius:6px;background:var(--bg-field,#fff);color:var(--fg-base,#111827);padding:6px 7px;font:12px inherit;outline:none}
+.pt-daily-edit-actions{display:flex;gap:6px;white-space:nowrap}
+.pt-daily-edit-actions button{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:600;font-size:12px}
+.pt-daily-edit-actions button:last-child{border-color:var(--border-base,#e5e7eb);background:var(--bg-field,#fff);color:var(--fg-muted,#6b7280)}
 .pt-formula{color:#92400e;background:#fef3c7;border-radius:5px;padding:2px 6px;font-weight:600;cursor:help;border-bottom:1px dashed #d97706}
 .pt-daily-table th[title]{cursor:help;border-bottom:1px dashed var(--fg-muted,#9ca3af)}
 .pt-evaluate{display:grid;grid-template-columns:110px 1fr auto;gap:5px}

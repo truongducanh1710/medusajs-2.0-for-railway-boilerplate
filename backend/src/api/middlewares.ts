@@ -208,7 +208,7 @@ export default defineMiddlewares({
     // MKT phụ trách and Purchasing may both edit the proposal. Handler enforces assignee-only for MKT.
     { matcher: "/admin/product-tests/:id/proposal", method: ["PUT"], middlewares: [requireAnyPerm("page.product-test.purchasing", "page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id/daily-results", method: ["POST"], middlewares: [requirePerm("page.product-test.marketing")] },
-    { matcher: "/admin/product-tests/:id/daily-results/:resultId", method: ["PATCH"], middlewares: [requirePerm("page.product-test.marketing")] },
+    { matcher: "/admin/product-tests/:id/daily-results/:resultId", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id/daily-results/:resultId/evaluate", method: ["POST"], middlewares: [requirePerm("page.product-test.approve")] },
     { matcher: "/admin/product-tests/:id/actions", method: ["POST"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/pancake-status*", middlewares: [requirePerm("page.don-hang.view")] },
