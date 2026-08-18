@@ -20,7 +20,10 @@ async function sql(query: string, params?: any[]): Promise<any[]> {
 const FULLFILL_PER_ORDER = 5000
 
 /**
- * GET /admin/pancake-sync/report/marketplace-lng?from=2026-08-01&to=2026-08-31
+ * GET /admin/pancake-sync/report/marketplace-lng?from=&to=&platform=&market=VN|MY
+ *
+ * Luôn chạy trên MỘT thị trường (mặc định VN): đơn MY lưu tiền theo đồng của shop đó,
+ * cộng chung VN+MY ra số vô nghĩa nên không có chế độ "tất cả thị trường".
  *
  * LNG đơn sàn TMĐT (TikTok Shop / Shopee) — các báo cáo LNG khác lọc
  * `source IN ('manual','facebook','medusa','unknown','webcake')` nên toàn bộ đơn sàn
@@ -31,7 +34,9 @@ const FULLFILL_PER_ORDER = 5000
  *    phí sàn + khuyến mãi. Không tự trừ fee_marketplace lần nữa (sẽ trừ đôi) — chỉ hiển
  *    thị phí sàn để biết sàn giữ bao nhiêu.
  *  • Ship: sàn trả, partner_fee = 0 trên mọi đơn đã kiểm → không tính vào giá vốn.
- *  • Ads: sàn không chạy ads qua hệ thống → không có chi phí ads gán được.
+ *  • Ads: sàn không có API spend — chi phí lấy từ bảng nhân sự điền tay ở trang
+ *    /app/nhap-chi-phi (mkt_ads_cost_marketplace), grain (ngày × sàn × thị trường × shop).
+ *    Doanh thu chưa tách được tới shop nên khi trừ thì gộp các shop cùng sàn.
  *  • Marketer: raw.marketer trên đơn sàn là nhân viên vận hành sàn, KHÔNG phải MKT chạy
  *    ads, nên gom theo SÀN + SẢN PHẨM chứ không theo MKT.
  *
@@ -46,7 +51,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       from: fromRaw = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
       to: toRaw = new Date().toISOString().slice(0, 10),
       platform,
+      market: marketRaw,
     } = req.query as Record<string, string>
+
+    // Mặc định VN. Đơn MY lưu giá trị theo đồng tiền của shop đó, cộng chung với VN ra
+    // số vô nghĩa — nên báo cáo luôn chạy trên MỘT thị trường, không có chế độ "tất cả".
+    const market = String(marketRaw || "VN").toUpperCase() === "MY" ? "MY" : "VN"
 
     const from = toVNDate(fromRaw)
     const to = toVNDate(toRaw)
@@ -74,6 +84,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const platformFilter = platform && ["shopee", "tiktok"].includes(platform)
       ? `AND po.source = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
+    const marketFilter = `AND COALESCE(NULLIF(po.market, ''), 'VN') = '${market}'`
 
     // Giá vốn của PHỤ KIỆN bán lẻ, đọc trực tiếp từ cost_sheet.
     // computeAvgCost() chỉ đưa dòng "Sản phẩm chính" vào byName và gộp tiền phụ kiện vào
@@ -135,6 +146,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
         WHERE po.deleted_at IS NULL
           ${platformFilter}
+          ${marketFilter}
           AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.raw->'items' IS NOT NULL
@@ -194,6 +206,75 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty
       FROM oi3
       GROUP BY platform, sp_key
+    `, [from, to])
+
+    // ── LNG THEO NGÀY × SÀN ────────────────────────────────────────────────────
+    // Cùng cách tính với bảng theo SP ở trên (chia doanh thu theo tỷ trọng, giá vốn
+    // từng dòng hàng), chỉ đổi chiều gom: ngày giao × sàn. Ngày lấy theo giờ VN.
+    const dayRows = await sql(`
+      WITH cost_map(kind, key, unit) AS (VALUES ${costValues}),
+      oi AS (
+        SELECT
+          po.id AS order_id,
+          po.source AS platform,
+          po.status,
+          (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d,
+          ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
+          upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
+          COALESCE((mi->>'quantity')::numeric, 1) AS qty,
+          (COALESCE((mi->'variation_info'->>'retail_price')::numeric, (mi->>'price')::numeric, 0)
+            * COALESCE((mi->>'quantity')::numeric, 1)) AS retail_value,
+          ${revenueExpr} AS order_revenue,
+          ${feeExpr} AS fee_marketplace,
+          ${listPriceExpr} AS list_price
+        FROM pancake_order po
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
+        WHERE po.deleted_at IS NULL
+          ${platformFilter}
+          ${marketFilter}
+          AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND po.raw->'items' IS NOT NULL
+      ),
+      oi2 AS (
+        SELECT oi.*,
+          COALESCE(
+            (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'prefix' AND c.key = (regexp_match(upper(oi.sp_code), '^(PHVVN[0-9]{2,3})'))[1]),
+            0
+          ) AS unit_cost
+        FROM oi
+      ),
+      oi3 AS (
+        SELECT oi2.*,
+          (unit_cost * qty) AS item_cost,
+          CASE WHEN SUM(retail_value) OVER (PARTITION BY order_id) > 0
+            THEN retail_value / SUM(retail_value) OVER (PARTITION BY order_id)
+            ELSE 1.0 / COUNT(*) OVER (PARTITION BY order_id)
+          END AS rev_share
+        FROM oi2
+      )
+      SELECT
+        d::text AS date,
+        platform,
+        COUNT(DISTINCT order_id) FILTER (WHERE NOT ${excludeCond})::int AS total_orders,
+        COUNT(DISTINCT order_id) FILTER (WHERE status = 3)::int AS da_nhan,
+        COUNT(DISTINCT order_id) FILTER (WHERE status = 5)::int AS da_hoan,
+        COUNT(DISTINCT order_id) FILTER (WHERE status = 4)::int AS dang_hoan,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (6, -1))::int AS da_huy,
+        SUM(CASE WHEN status = 3 THEN order_revenue   * rev_share ELSE 0 END)::bigint AS revenue_delivered,
+        SUM(CASE WHEN status = 3 THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_marketplace,
+        SUM(CASE WHEN status = 3 THEN list_price      * rev_share ELSE 0 END)::bigint AS list_price,
+        SUM(CASE WHEN status = 3 AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs,
+        SUM(CASE WHEN status = 3 AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed,
+        SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
+        COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
+        SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty
+      FROM oi3
+      GROUP BY d, platform
+      ORDER BY d DESC, platform
     `, [from, to])
 
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
@@ -277,14 +358,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // được ở mức TỔNG mỗi sàn, không quy về từng sản phẩm — dòng SP vì vậy vẫn là LNG
     // trước ads, còn thẻ tổng có thêm lng_sau_ads để biết sàn thực lãi/lỗ.
     let adsByPlatform: Record<string, number> = {}
+    // Chi phí ads theo (ngày × sàn) — nhân sự điền theo từng shop, ở đây gộp các shop
+    // cùng sàn vì doanh thu chưa tách được tới shop.
+    const adsByDay: Record<string, number> = {}
     try {
       const adsRows = await sql(`
-        SELECT platform, SUM(cost)::bigint AS cost
+        SELECT date::text AS date, platform, SUM(cost)::bigint AS cost
           FROM mkt_ads_cost_marketplace
          WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
-         GROUP BY platform
-      `, [from, to])
-      for (const r of adsRows) adsByPlatform[String(r.platform)] = Number(r.cost) || 0
+           AND market = $3
+         GROUP BY date, platform
+      `, [from, to, market])
+      for (const r of adsRows) {
+        const c = Number(r.cost) || 0
+        adsByPlatform[String(r.platform)] = (adsByPlatform[String(r.platform)] ?? 0) + c
+        adsByDay[`${r.date}||${r.platform}`] = c
+      }
     } catch { /* bảng chưa tạo (chưa chạy migration) — coi như chưa có chi phí ads */ }
 
     const withAds = (t: any, ads: number) => ({
@@ -312,7 +401,46 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       missing_products: result.filter(r => r.missing_cost).length,
     }
 
-    return res.json({ rows: result, by_platform: byPlatform, totals, coverage, has_ads: hasAds, from, to })
+    // Bảng theo ngày: LNG trước ads (từ đơn) trừ chi phí ads đã điền cho đúng ngày × sàn.
+    // ads_missing = ngày đó có đơn giao nhưng chưa ai điền chi phí — số lãi sẽ đẹp giả tạo,
+    // nên đánh dấu để không đọc nhầm.
+    const byDay = dayRows.map((r: any) => {
+      const ff = FULLFILL_PER_ORDER * Number(r.orders_costed || 0)
+      const revCosted = Number(r.revenue_costed || 0)
+      const cogs = Number(r.cogs || 0)
+      const lng = revCosted - (cogs + ff)
+      const key = `${r.date}||${r.platform}`
+      const ads = adsByDay[key] ?? 0
+      const hasAdsEntry = Object.prototype.hasOwnProperty.call(adsByDay, key)
+      const rev = Number(r.revenue_delivered || 0)
+      return {
+        date: r.date,
+        platform: r.platform,
+        platform_label: r.platform === "tiktok" ? "TikTok Shop" : "Shopee",
+        total_orders: Number(r.total_orders || 0),
+        da_nhan: Number(r.da_nhan || 0), da_hoan: Number(r.da_hoan || 0),
+        dang_hoan: Number(r.dang_hoan || 0), da_huy: Number(r.da_huy || 0),
+        delivered_qty: Number(r.delivered_qty || 0),
+        list_price: Number(r.list_price || 0),
+        fee_marketplace: Number(r.fee_marketplace || 0),
+        fee_pct: pct(Number(r.fee_marketplace || 0), Number(r.list_price || 0)),
+        revenue_delivered: rev,
+        revenue_costed: revCosted,
+        revenue_no_cost: Number(r.revenue_no_cost || 0),
+        cogs, cogs_pct: pct(cogs, revCosted),
+        fullfill: ff,
+        lng, lng_pct: pct(lng, revCosted),
+        ads_cost: ads, ads_pct: pct(ads, rev),
+        ads_missing: !hasAdsEntry && Number(r.da_nhan || 0) > 0,
+        lng_sau_ads: lng - ads,
+        lng_sau_ads_pct: pct(lng - ads, revCosted),
+      }
+    })
+
+    return res.json({
+      rows: result, by_platform: byPlatform, by_day: byDay,
+      totals, coverage, has_ads: hasAds, market, from, to,
+    })
   } catch (err: any) {
     console.error("[report/marketplace-lng]", err.message)
     return res.status(500).json({ error: err.message })

@@ -3394,7 +3394,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
  * Các báo cáo LNG khác chỉ lấy đơn ads (source manual/facebook/...) nên toàn bộ đơn sàn
  * không xuất hiện ở đâu. Doanh thu ở đây là tiền THỰC NHẬN (sàn đã trừ phí + khuyến mãi).
  */
-function MarketplaceLngTab({ range }: { range: DateRange }) {
+function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -3402,12 +3402,12 @@ function MarketplaceLngTab({ range }: { range: DateRange }) {
 
   useEffect(() => {
     setLoading(true); setErr(null)
-    apiFetch(`/admin/pancake-sync/report/marketplace-lng?from=${range.from}&to=${range.to}`)
+    apiFetch(`/admin/pancake-sync/report/marketplace-lng?from=${range.from}&to=${range.to}&market=${market}`)
       .then(r => r.json())
       .then(d => { if (d.error) throw new Error(d.error); setData(d) })
       .catch(e => setErr(e.message))
       .finally(() => setLoading(false))
-  }, [range.from, range.to])
+  }, [range.from, range.to, market])
 
   if (loading) return <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Đang tải...</div>
   if (err) return <div className="p-6 text-center text-sm text-red-600">⚠ {err}</div>
@@ -3420,6 +3420,8 @@ function MarketplaceLngTab({ range }: { range: DateRange }) {
   const pctCell = (v: any, good?: boolean) =>
     v == null ? <span className="text-gray-300">—</span>
       : <span className={good == null ? "text-gray-600" : good ? "text-green-600" : "text-red-600"}>{v}%</span>
+
+  const byDay: any[] = data.by_day ?? []
 
   return (
     <div className="space-y-4">
@@ -3441,9 +3443,11 @@ function MarketplaceLngTab({ range }: { range: DateRange }) {
             <div className="mt-2 pt-2 border-t border-dashed border-gray-200 space-y-1 text-xs">
               <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700">{money(p.fee_marketplace)}</span></div>
               <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700">{money(p.cogs)} {pctCell(p.cogs_pct)}</span></div>
-              <div className="flex justify-between font-semibold">
-                <span className="text-gray-500">LNG</span>
-                <span className={p.lng >= 0 ? "text-green-600" : "text-red-600"}>{money(p.lng)} ({p.lng_pct}%)</span>
+              <div className="flex justify-between"><span className="text-gray-400">LNG trước ads</span><span className="text-gray-700">{money(p.lng)} {pctCell(p.lng_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Chi phí ads</span><span className="text-gray-700">{money(p.ads_cost)} {pctCell(p.ads_pct)}</span></div>
+              <div className="flex justify-between font-semibold pt-1 border-t border-dashed border-gray-200">
+                <span className="text-gray-500">LNG sau ads</span>
+                <span className={p.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>{money(p.lng_sau_ads)} ({p.lng_sau_ads_pct}%)</span>
               </div>
             </div>
           </div>
@@ -3456,9 +3460,11 @@ function MarketplaceLngTab({ range }: { range: DateRange }) {
             <div className="mt-2 pt-2 border-t border-dashed border-gray-200 space-y-1 text-xs">
               <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700">{money(data.totals.fee_marketplace)}</span></div>
               <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700">{money(data.totals.cogs)} {pctCell(data.totals.cogs_pct)}</span></div>
-              <div className="flex justify-between font-semibold">
-                <span className="text-gray-500">LNG</span>
-                <span className={data.totals.lng >= 0 ? "text-green-600" : "text-red-600"}>{money(data.totals.lng)} ({data.totals.lng_pct}%)</span>
+              <div className="flex justify-between"><span className="text-gray-400">LNG trước ads</span><span className="text-gray-700">{money(data.totals.lng)} {pctCell(data.totals.lng_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Chi phí ads</span><span className="text-gray-700">{money(data.totals.ads_cost)} {pctCell(data.totals.ads_pct)}</span></div>
+              <div className="flex justify-between font-semibold pt-1 border-t border-dashed border-gray-200">
+                <span className="text-gray-500">LNG sau ads</span>
+                <span className={data.totals.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>{money(data.totals.lng_sau_ads)} ({data.totals.lng_sau_ads_pct}%)</span>
               </div>
             </div>
           </div>
@@ -3528,8 +3534,61 @@ function MarketplaceLngTab({ range }: { range: DateRange }) {
           </table>
         </div>
         <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500">
-          Đơn sàn không có chi phí quảng cáo gán riêng nên LNG ở đây <b>chưa trừ ads</b>. Ship do sàn trả (không tính).
-          Fullfill 5.000đ/đơn giống các báo cáo khác.
+          LNG ở bảng theo sản phẩm <b>chưa trừ ads</b> — chi phí ads chỉ điền được theo (ngày × sàn),
+          không tách tới từng sản phẩm. Xem LNG sau ads ở thẻ tổng phía trên hoặc bảng theo ngày dưới đây.
+          Ship do sàn trả (không tính). Fullfill 5.000đ/đơn giống các báo cáo khác.
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b">
+          <h3 className="font-semibold text-gray-800">LNG theo ngày</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Trừ đúng chi phí ads đã điền cho từng ngày × sàn ở trang Nhập chi phí.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+              <tr>
+                <th className="text-left px-4 py-2.5">Ngày</th>
+                <th className="text-left px-4 py-2.5">Sàn</th>
+                <th className="text-right px-3 py-2.5">Đơn</th>
+                <th className="text-right px-3 py-2.5">DT thực nhận</th>
+                <th className="text-right px-3 py-2.5">Giá vốn</th>
+                <th className="text-right px-3 py-2.5">Ads</th>
+                <th className="text-right px-3 py-2.5">LNG sau ads</th>
+                <th className="text-right px-3 py-2.5">%LNG</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {byDay.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+              )}
+              {byDay.map((r: any) => (
+                <tr key={`${r.date}-${r.platform}`} className={r.ads_missing ? "bg-amber-50/50" : ""}>
+                  <td className="px-4 py-2.5 font-mono text-gray-700">{r.date}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                      r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                    }`}>{r.platform_label}</span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">{money(r.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">
+                    {r.ads_missing
+                      ? <span className="text-amber-600" title="Chưa điền chi phí ads cho ngày này">⚠ chưa điền</span>
+                      : money(r.ads_cost)}
+                  </td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    {money(r.lng_sau_ads)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">{pctCell(r.lng_sau_ads_pct, r.lng_sau_ads >= 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -3637,7 +3696,7 @@ const BaoCaoPage = () => {
         {tab === "sale"      && <SaleTab range={range} market={market} />}
         {tab === "nv-mkt"   && <NvMktTab range={range} market={market} />}
         {tab === "lng"      && <LngTab range={range} market={market} />}
-        {tab === "sanTMDT"  && <MarketplaceLngTab range={range} />}
+        {tab === "sanTMDT"  && <MarketplaceLngTab range={range} market={market} />}
         {tab === "errors"   && <ErrorsTab range={range} market={market} />}
       </CurrencyCtx.Provider>
       {tab === "marketing" && (
