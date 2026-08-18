@@ -3399,6 +3399,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [showMissing, setShowMissing] = useState(false)
+  const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
+  const [daySort, setDaySort] = useState<{ key: string; dir: 1 | -1 }>({ key: "date", dir: -1 })
 
   useEffect(() => {
     setLoading(true); setErr(null)
@@ -3421,7 +3423,31 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     v == null ? <span className="text-gray-300">—</span>
       : <span className={good == null ? "text-gray-600" : good ? "text-green-600" : "text-red-600"}>{v}%</span>
 
-  const byDay: any[] = data.by_day ?? []
+  const WEEKDAY_VN = ["CN", "Th2", "Th3", "Th4", "Th5", "Th6", "Th7"]
+  const dayLabel = (iso: string) => {
+    const d = new Date(iso + "T00:00:00Z")
+    const dd = String(d.getUTCDate()).padStart(2, "0")
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0")
+    return `${dd}/${mm} (${WEEKDAY_VN[d.getUTCDay()]})`
+  }
+
+  const byDayRaw: any[] = data.by_day ?? []
+  const byDayFiltered = dayPlatform === "all" ? byDayRaw : byDayRaw.filter((r: any) => r.platform === dayPlatform)
+  const byDay = [...byDayFiltered].sort((a: any, b: any) => {
+    const av = a[daySort.key], bv = b[daySort.key]
+    if (av === bv) return a.date === b.date ? a.platform.localeCompare(b.platform) : (a.date < b.date ? 1 : -1)
+    return (av > bv ? 1 : -1) * daySort.dir
+  })
+  const dayTotal = byDayFiltered.reduce((acc: any, r: any) => {
+    for (const k of ["total_orders", "da_nhan", "revenue_delivered", "cogs", "ads_cost"]) acc[k] += Number(r[k] || 0)
+    acc.lng_sau_ads += Number(r.lng_sau_ads || 0)
+    acc.revenue_costed += Number(r.revenue_costed || 0)
+    if (r.ads_missing) acc.ads_missing_days += 1
+    return acc
+  }, { total_orders: 0, da_nhan: 0, revenue_delivered: 0, cogs: 0, ads_cost: 0, lng_sau_ads: 0, revenue_costed: 0, ads_missing_days: 0 })
+  const toggleDaySort = (key: string) =>
+    setDaySort(s => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 })
+  const sortIcon = (key: string) => daySort.key !== key ? "" : (daySort.dir === -1 ? " ▼" : " ▲")
 
   return (
     <div className="space-y-4">
@@ -3541,53 +3567,97 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
       </div>
 
       <div className="bg-white border rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b">
-          <h3 className="font-semibold text-gray-800">LNG theo ngày</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Trừ đúng chi phí ads đã điền cho từng ngày × sàn ở trang Nhập chi phí.
-          </p>
+        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800">LNG theo ngày</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Trừ đúng chi phí ads đã điền cho từng ngày × sàn ở trang Nhập chi phí. Bấm tiêu đề cột để sắp xếp.
+            </p>
+          </div>
+          <div className="flex gap-1">
+            {([["all", "Cả 2 sàn"], ["tiktok", "TikTok"], ["shopee", "Shopee"]] as const).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setDayPlatform(k)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                  dayPlatform === k ? "bg-violet-600 text-white border-violet-600"
+                                    : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500 select-none">
               <tr>
-                <th className="text-left px-4 py-2.5">Ngày</th>
+                <th className="text-left px-4 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("date")}>Ngày{sortIcon("date")}</th>
                 <th className="text-left px-4 py-2.5">Sàn</th>
-                <th className="text-right px-3 py-2.5">Đơn</th>
-                <th className="text-right px-3 py-2.5">DT thực nhận</th>
-                <th className="text-right px-3 py-2.5">Giá vốn</th>
-                <th className="text-right px-3 py-2.5">Ads</th>
-                <th className="text-right px-3 py-2.5">LNG sau ads</th>
-                <th className="text-right px-3 py-2.5">%LNG</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("da_nhan")}>Đơn{sortIcon("da_nhan")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("revenue_delivered")}>DT thực nhận{sortIcon("revenue_delivered")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("cogs")}>Giá vốn{sortIcon("cogs")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("ads_cost")}>Ads{sortIcon("ads_cost")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng_sau_ads")}>LNG sau ads{sortIcon("lng_sau_ads")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng_sau_ads_pct")}>%LNG{sortIcon("lng_sau_ads_pct")}</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
               {byDay.length === 0 && (
                 <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
-              {byDay.map((r: any) => (
-                <tr key={`${r.date}-${r.platform}`} className={r.ads_missing ? "bg-amber-50/50" : ""}>
-                  <td className="px-4 py-2.5 font-mono text-gray-700">{r.date}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                      r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                    }`}>{r.platform_label}</span>
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-700">{money(r.cogs)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-700">
-                    {r.ads_missing
-                      ? <span className="text-amber-600" title="Chưa điền chi phí ads cho ngày này">⚠ chưa điền</span>
-                      : money(r.ads_cost)}
-                  </td>
-                  <td className={`px-3 py-2.5 text-right font-semibold ${r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-500"}`}>
-                    {money(r.lng_sau_ads)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right">{pctCell(r.lng_sau_ads_pct, r.lng_sau_ads >= 0)}</td>
-                </tr>
-              ))}
+              {byDay.map((r: any) => {
+                const lngBad = r.revenue_costed > 0 && r.lng_sau_ads_pct != null && r.lng_sau_ads_pct < -20
+                return (
+                  <tr key={`${r.date}-${r.platform}`}
+                    className={lngBad ? "bg-red-50/60" : r.ads_missing ? "bg-amber-50/50" : ""}>
+                    <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{dayLabel(r.date)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{r.platform_label}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">{money(r.cogs)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">
+                      {r.ads_missing
+                        ? <span className="text-amber-600" title="Chưa điền chi phí ads cho ngày này">⚠ chưa điền</span>
+                        : money(r.ads_cost)}
+                    </td>
+                    <td className={`px-3 py-2.5 text-right font-semibold ${r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                      {lngBad && <span title="Lỗ nặng: LNG sau ads dưới -20% doanh thu">🔴 </span>}
+                      {money(r.lng_sau_ads)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">{pctCell(r.lng_sau_ads_pct, r.lng_sau_ads >= 0)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
+            {byDay.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
+                  <td className="px-4 py-2.5" colSpan={2}>
+                    Tổng {byDay.length} dòng
+                    {dayTotal.ads_missing_days > 0 && (
+                      <span className="ml-2 font-normal text-amber-600">
+                        (⚠ {dayTotal.ads_missing_days} dòng chưa điền ads)
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(dayTotal.da_nhan)}</td>
+                  <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.revenue_delivered)}</td>
+                  <td className="px-3 py-2.5 text-right">{money(dayTotal.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
+                  <td className={`px-3 py-2.5 text-right ${dayTotal.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    {money(dayTotal.lng_sau_ads)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {pctCell(
+                      dayTotal.revenue_costed > 0 ? Math.round(dayTotal.lng_sau_ads / dayTotal.revenue_costed * 10000) / 100 : null,
+                      dayTotal.lng_sau_ads >= 0,
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
