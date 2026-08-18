@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -39,8 +39,28 @@ const platLabel = (k: string) => PLATFORMS.find(p => p.key === k)?.label ?? k
 
 const inputCls = "w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-violet-400"
 
+/**
+ * Nhớ lựa chọn qua các lần F5 (tab đang mở, sàn/thị trường/shop, bộ lọc kỳ).
+ * CHỦ Ý không nhớ ô số tiền và ghi chú: số của hôm qua nổi lại trong form của
+ * hôm nay là cách nhanh nhất để lưu nhầm chi phí.
+ * Ngày cũng không nhớ — mặc định luôn là hôm nay, đúng với việc điền hằng ngày.
+ */
+function useSticky<T extends string = string>(key: string, initial: T) {
+  const [v, setV] = useState<T>(() => {
+    try { return (localStorage.getItem("nhapchiphi_" + key) as T) || initial } catch { return initial }
+  })
+  // ref để đọc giá trị hiện tại trong callback mà không phải đưa state vào deps
+  const ref = useRef(v)
+  const set = useCallback((next: T) => {
+    ref.current = next
+    setV(next)
+    try { localStorage.setItem("nhapchiphi_" + key, next) } catch { /* private mode */ }
+  }, [key])
+  return [v, set, ref] as const
+}
+
 function NhapChiPhiPage() {
-  const [tab, setTab] = useState<Tab>("google")
+  const [tab, setTab] = useSticky<Tab>("tab", "google")
   return (
     <div className="p-3 sm:p-6 max-w-6xl">
       <div className="mb-4">
@@ -79,7 +99,7 @@ function GoogleAdsCost() {
   const [ok, setOk] = useState<string | null>(null)
 
   const [date, setDate] = useState(todayVN())
-  const [mktCode, setMktCode] = useState("")
+  const [mktCode, setMktCode, mktCodeRef] = useSticky<string>("gg_mkt", "")
   const [cost, setCost] = useState("")
   const [clicks, setClicks] = useState("")
   const [impressions, setImpressions] = useState("")
@@ -94,9 +114,15 @@ function GoogleAdsCost() {
       setRows(d?.rows ?? [])
       setMktCodes(d?.mkt_codes ?? [])
       setIsAdmin(!!d?.is_admin)
-      setMktCode(prev => prev || d?.my_mkt_code || (d?.mkt_codes ?? [])[0] || "")
+      // Mã đã nhớ từ lần trước thì giữ, nhưng chỉ khi còn hợp lệ (mã có thể đã đổi,
+      // hoặc admin từng chọn mã người khác rồi mất quyền admin).
+      const codes: string[] = d?.mkt_codes ?? []
+      const remembered = mktCodeRef.current
+      if (!remembered || (codes.length && !codes.includes(remembered))) {
+        setMktCode(d?.my_mkt_code || codes[0] || "")
+      }
     } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
-  }, [from, to])
+  }, [from, to, mktCodeRef, setMktCode])
   useEffect(() => { load() }, [load])
 
   const existing = rows.find(r => r.date === date && String(r.mkt_name).toUpperCase() === String(mktCode).toUpperCase())
@@ -192,9 +218,9 @@ function MarketplaceAdsCost() {
   const [ok, setOk] = useState<string | null>(null)
 
   const [date, setDate] = useState(todayVN())
-  const [platform, setPlatform] = useState("tiktok")
-  const [market, setMarket] = useState("VN")
-  const [shop, setShop] = useState("")
+  const [platform, setPlatform] = useSticky<string>("san_platform", "tiktok")
+  const [market, setMarket] = useSticky<string>("san_market", "VN")
+  const [shop, setShop] = useSticky<string>("san_shop", "")
   const [cost, setCost] = useState("")
   const [note, setNote] = useState("")
 
@@ -366,10 +392,10 @@ function TongHopTab() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
 
-  const [from, setFrom] = useState(daysAgoVN(30))
-  const [to, setTo] = useState(todayVN())
-  const [fMarket, setFMarket] = useState("")
-  const [fPlatform, setFPlatform] = useState("")
+  const [from, setFrom] = useSticky<string>("tong_from", daysAgoVN(30))
+  const [to, setTo] = useSticky<string>("tong_to", todayVN())
+  const [fMarket, setFMarket] = useSticky<string>("tong_market", "")
+  const [fPlatform, setFPlatform] = useSticky<string>("tong_platform", "")
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
