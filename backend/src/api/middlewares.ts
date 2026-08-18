@@ -149,12 +149,14 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/report*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
     { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
-    // 2 route nhập chi phí phải đứng TRƯỚC catch-all /report* bên dưới: middleware chạy
-    // theo thứ tự khai báo, để sau sẽ bị catch-all ép phải có page.bao-cao.view —
-    // quyền đó mở toàn bộ báo cáo doanh số/LNG, quá rộng cho người chỉ điền số.
+    // 2 route nhập chi phí dùng quyền riêng page.nhap-chi-phi.manage, KHÔNG bắt buộc
+    // page.bao-cao.view (quyền đó mở toàn bộ báo cáo doanh số/LNG — quá rộng cho người
+    // chỉ điền số). Đặt rule riêng đứng trước catch-all là KHÔNG đủ: Medusa cộng dồn mọi
+    // rule có matcher khớp chứ không dừng ở rule đầu, nên catch-all vẫn chạy và trả 403.
+    // Vì vậy phải loại trừ 2 path ngay trong regex của chính catch-all.
     { matcher: "/admin/pancake-sync/report/mkt-cost-gg-manual*", method: ["GET", "PUT"], middlewares: [requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-marketplace*", method: ["GET", "PUT"], middlewares: [requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")] },
-    { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: /^\/admin\/pancake-sync\/report(?!\/mkt-cost-gg-manual|\/mkt-cost-marketplace)/, middlewares: [requirePerm("page.bao-cao.view")] },
     // Chi phí kế toán: đọc = view, ghi (nhập/sửa/xóa khoản chi phí) = camp-control.
     { matcher: "/admin/pancake-sync/report/accounting-cost*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     // Kế hoạch doanh số: ai xem báo cáo cũng đọc được target (để thấy % hoàn thành),
