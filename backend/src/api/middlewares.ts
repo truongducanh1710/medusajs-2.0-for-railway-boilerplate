@@ -75,6 +75,26 @@ function requireAnyPerm(...accepted: string[]) {
   }
 }
 
+/**
+ * Guard cho nhóm /admin/pancake-sync/report*.
+ *
+ * Mặc định đòi page.bao-cao.view. Riêng 2 route NHẬP chi phí chấp nhận thêm
+ * page.nhap-chi-phi.manage, để nhân sự chỉ điền số không phải cầm quyền xem
+ * toàn bộ báo cáo doanh số/LNG. Ngoại lệ đặt ở đây (không tách thành rule riêng)
+ * vì Medusa cộng dồn mọi rule khớp matcher — rule riêng không thay thế được catch-all.
+ */
+const COST_ENTRY_PATHS = ["/mkt-cost-gg-manual", "/mkt-cost-marketplace"]
+
+const reportGuard = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+  // originalUrl luôn là path đầy đủ kèm query; req.path có thể đã bị cắt theo mount point.
+  const url = ((req as any).originalUrl || req.path || "").split("?")[0]
+  const isCostEntry = COST_ENTRY_PATHS.some((p) => url.includes("/report" + p))
+  const check = isCostEntry
+    ? requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")
+    : requirePerm("page.bao-cao.view")
+  return check(req, res, next)
+}
+
 // CORS middleware cho Chrome Extension
 const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
   const origin = req.headers.origin || ""
@@ -149,14 +169,17 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/report*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
     { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
-    // 2 route nhập chi phí dùng quyền riêng page.nhap-chi-phi.manage, KHÔNG bắt buộc
-    // page.bao-cao.view (quyền đó mở toàn bộ báo cáo doanh số/LNG — quá rộng cho người
-    // chỉ điền số). Đặt rule riêng đứng trước catch-all là KHÔNG đủ: Medusa cộng dồn mọi
-    // rule có matcher khớp chứ không dừng ở rule đầu, nên catch-all vẫn chạy và trả 403.
-    // Vì vậy phải loại trừ 2 path ngay trong regex của chính catch-all.
-    { matcher: "/admin/pancake-sync/report/mkt-cost-gg-manual*", method: ["GET", "PUT"], middlewares: [requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")] },
-    { matcher: "/admin/pancake-sync/report/mkt-cost-marketplace*", method: ["GET", "PUT"], middlewares: [requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")] },
-    { matcher: /^\/admin\/pancake-sync\/report(?!\/mkt-cost-gg-manual|\/mkt-cost-marketplace)/, middlewares: [requirePerm("page.bao-cao.view")] },
+    // Catch-all: mọi báo cáo đòi page.bao-cao.view.
+    //
+    // 2 route NHẬP chi phí là ngoại lệ — người chỉ điền số không nên có page.bao-cao.view
+    // (quyền đó mở toàn bộ doanh số/LNG/lợi nhuận). Hai cách đã thử và KHÔNG dùng được:
+    //   1. Đặt rule riêng đứng TRƯỚC catch-all — Medusa cộng dồn mọi rule khớp chứ không
+    //      dừng ở rule đầu, nên catch-all vẫn chạy và trả 403.
+    //   2. Dùng matcher RegExp với negative lookahead — Medusa KHÔNG áp matcher dạng
+    //      RegExp cho nhóm route này, hệ quả là TOÀN BỘ /report* mất bảo vệ (đã tái hiện:
+    //      product-lng trả 200 cho user chỉ có page.nhap-chi-phi.manage).
+    // Vì vậy ngoại lệ phải nằm TRONG chính middleware của catch-all — xem allowCostEntry.
+    { matcher: "/admin/pancake-sync/report*", middlewares: [reportGuard] },
     // Chi phí kế toán: đọc = view, ghi (nhập/sửa/xóa khoản chi phí) = camp-control.
     { matcher: "/admin/pancake-sync/report/accounting-cost*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     // Kế hoạch doanh số: ai xem báo cáo cũng đọc được target (để thấy % hoàn thành),
