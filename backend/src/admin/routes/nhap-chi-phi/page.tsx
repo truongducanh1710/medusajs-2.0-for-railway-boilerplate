@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -12,7 +12,8 @@ import { withRouteGuard } from "../../components/route-guard"
  * page.nhap-chi-phi.manage để cấp đúng phần việc.
  *
  * Chi phí sàn TikTok/Shopee trước đây ghi tay ra Google Sheet ngoài hệ thống nên báo cáo
- * LNG sàn không trừ được ads — giờ nhập thẳng ở đây.
+ * LNG sàn không trừ được ads — giờ nhập thẳng ở đây, tách theo thị trường (VN/MY) và
+ * từng shop vì MY chạy nhiều shop song song.
  */
 
 const fmtMoney = (n: any) => Number(n || 0).toLocaleString("vi-VN") + "đ"
@@ -24,19 +25,24 @@ function daysAgoVN(n: number): string {
   return new Date(Date.now() + 7 * 3600_000 - n * 86400_000).toISOString().slice(0, 10)
 }
 
-type Tab = "google" | "san"
+type Tab = "google" | "san" | "tong"
 
 const PLATFORMS = [
   { key: "tiktok", label: "TikTok Shop", color: "#111827" },
   { key: "shopee", label: "Shopee", color: "#ee4d2d" },
 ]
+const MARKETS = [
+  { key: "VN", label: "🇻🇳 Việt Nam" },
+  { key: "MY", label: "🇲🇾 Malaysia" },
+]
+const platLabel = (k: string) => PLATFORMS.find(p => p.key === k)?.label ?? k
 
 const inputCls = "w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-violet-400"
 
 function NhapChiPhiPage() {
   const [tab, setTab] = useState<Tab>("google")
   return (
-    <div className="p-3 sm:p-6 max-w-5xl">
+    <div className="p-3 sm:p-6 max-w-6xl">
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Nhập chi phí quảng cáo</h1>
         <p className="text-gray-400 text-sm mt-0.5">
@@ -45,7 +51,7 @@ function NhapChiPhiPage() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200 overflow-x-auto">
-        {([["google", "🔍 Google Ads"], ["san", "🛒 Sàn TMĐT"]] as [Tab, string][]).map(([k, label]) => (
+        {([["google", "🔍 Google Ads"], ["san", "🛒 Sàn TMĐT"], ["tong", "📋 Tổng hợp & kiểm tra"]] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
               tab === k
@@ -57,6 +63,7 @@ function NhapChiPhiPage() {
 
       {tab === "google" && <GoogleAdsCost />}
       {tab === "san" && <MarketplaceAdsCost />}
+      {tab === "tong" && <TongHopTab />}
     </div>
   )
 }
@@ -178,6 +185,7 @@ function GoogleAdsCost() {
 function MarketplaceAdsCost() {
   const [rows, setRows] = useState<any[]>([])
   const [totals, setTotals] = useState<any[]>([])
+  const [shops, setShops] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -185,6 +193,8 @@ function MarketplaceAdsCost() {
 
   const [date, setDate] = useState(todayVN())
   const [platform, setPlatform] = useState("tiktok")
+  const [market, setMarket] = useState("VN")
+  const [shop, setShop] = useState("")
   const [cost, setCost] = useState("")
   const [note, setNote] = useState("")
 
@@ -194,22 +204,34 @@ function MarketplaceAdsCost() {
     setLoading(true); setErr(null)
     try {
       const d = await apiJson(`/admin/pancake-sync/report/mkt-cost-marketplace?from=${from}&to=${to}`)
-      setRows(d?.rows ?? []); setTotals(d?.totals ?? [])
+      setRows(d?.rows ?? []); setTotals(d?.totals ?? []); setShops(d?.shops ?? [])
     } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
   }, [from, to])
   useEffect(() => { load() }, [load])
 
-  const existing = rows.find(r => r.date === date && r.platform === platform)
+  // Shop khả dụng theo (sàn, thị trường) đang chọn — lấy từ đơn thật, tránh gõ sai tên
+  // làm vỡ grain (mỗi cách viết thành 1 dòng chi phí riêng).
+  const shopOptions = useMemo(
+    () => shops.filter(s => s.platform === platform && s.market === market),
+    [shops, platform, market]
+  )
+  // Đổi sàn/thị trường mà shop cũ không còn hợp lệ thì bỏ chọn.
+  useEffect(() => {
+    if (shop && !shopOptions.some(s => s.shop === shop)) setShop("")
+  }, [shopOptions, shop])
+
+  const existing = rows.find(r =>
+    r.date === date && r.platform === platform && r.market === market && (r.shop ?? "") === shop)
 
   const save = async (del = false) => {
     setSaving(true); setErr(null); setOk(null)
     try {
       const d = await apiJson("/admin/pancake-sync/report/mkt-cost-marketplace", "PUT", {
-        date, platform,
+        date, platform, market, shop,
         cost: del ? null : Number(String(cost).replace(/[^\d]/g, "")) || 0,
         note: note.trim() || null,
       })
-      setOk(del ? `Đã xoá ${date}` : `Đã lưu ${date}: ${fmtMoney(d?.cost ?? 0)}`)
+      setOk(del ? `Đã xoá ${date}` : `Đã lưu ${date} · ${platLabel(platform)} ${market}: ${fmtMoney(d?.cost ?? 0)}`)
       if (!del) { setCost(""); setNote("") }
       await load()
     } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
@@ -220,14 +242,17 @@ function MarketplaceAdsCost() {
   return (
     <div className="space-y-4">
       {totals.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {totals.map((t: any) => {
             const p = PLATFORMS.find(x => x.key === t.platform)
             return (
-              <div key={t.platform} className="bg-white border rounded-xl p-4 shadow-sm" style={{ borderTop: `3px solid ${p?.color ?? "#666666"}` }}>
-                <div className="text-xs text-gray-500 uppercase tracking-wide">{p?.label ?? t.platform}</div>
+              <div key={`${t.platform}-${t.market}`} className="bg-white border rounded-xl p-4 shadow-sm"
+                style={{ borderTop: `3px solid ${p?.color ?? "#666666"}` }}>
+                <div className="text-xs text-gray-500 uppercase tracking-wide">
+                  {p?.label ?? t.platform} · {t.market}
+                </div>
                 <div className="text-xl font-bold mt-1 text-gray-900">{fmtMoney(t.cost)}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{t.days} ngày đã điền · 30 ngày gần nhất</div>
+                <div className="text-xs text-gray-400 mt-0.5">{t.days} ngày · {t.entries} dòng</div>
               </div>
             )
           })}
@@ -235,10 +260,29 @@ function MarketplaceAdsCost() {
       )}
 
       <div className="bg-white border rounded-xl p-5 shadow-sm space-y-3">
+        <div className="rounded-lg bg-blue-50 px-3 py-2 text-[12px] text-blue-800">
+          💡 Nhập chi phí bằng <b>VNĐ</b> cho cả 2 thị trường. Đơn Malaysia lưu bằng RM nên nếu
+          báo cáo sàn hiển thị RM, hãy quy đổi trước khi điền để tổng chi phí không lẫn 2 loại tiền.
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Ngày">
             <input type="date" value={date} max={todayVN()} onChange={e => setDate(e.target.value)} className={inputCls} />
           </Field>
+          <Field label="Thị trường">
+            <div className="flex gap-2">
+              {MARKETS.map(m => (
+                <button key={m.key} type="button" onClick={() => setMarket(m.key)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    market === m.key ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Sàn">
             <div className="flex gap-2">
               {PLATFORMS.map(p => (
@@ -250,13 +294,21 @@ function MarketplaceAdsCost() {
               ))}
             </div>
           </Field>
+          <Field label="Shop">
+            <select value={shop} onChange={e => setShop(e.target.value)} className={inputCls}>
+              <option value="">— Gộp cả thị trường —</option>
+              {shopOptions.map(s => (
+                <option key={s.shop} value={s.shop}>{s.shop || "(không tên)"} · {s.orders} đơn</option>
+              ))}
+            </select>
+          </Field>
         </div>
 
-        <Field label="Chi phí quảng cáo (đ) — bắt buộc">
+        <Field label="Chi phí quảng cáo (VNĐ) — bắt buộc">
           <input value={cost} onChange={e => setCost(e.target.value)} inputMode="numeric"
             placeholder={existing ? `Đang có: ${fmtMoney(existing.cost)}` : "VD: 573363"}
             className={`${inputCls} text-base font-bold`} />
-          {existing && <p className="text-[11px] text-amber-600 mt-1">⚠ Ngày này đã có {fmtMoney(existing.cost)} — lưu sẽ ghi đè.</p>}
+          {existing && <p className="text-[11px] text-amber-600 mt-1">⚠ Kênh này ngày {date} đã có {fmtMoney(existing.cost)} — lưu sẽ ghi đè.</p>}
         </Field>
 
         <Field label="Ghi chú (tuỳ chọn)">
@@ -282,19 +334,171 @@ function MarketplaceAdsCost() {
         title="30 ngày gần nhất"
         loading={loading}
         rows={rows}
-        cols={["Ngày", "Sàn", "Chi phí", "Ghi chú"]}
+        cols={["Ngày", "TT", "Sàn", "Shop", "Chi phí", "Ghi chú"]}
         renderRow={(r: any) => [
-          r.date,
-          PLATFORMS.find(p => p.key === r.platform)?.label ?? r.platform,
-          fmtMoney(r.cost),
-          r.note || "—",
+          r.date, r.market, platLabel(r.platform),
+          r.shop || "(cả thị trường)", fmtMoney(r.cost), r.note || "—",
         ]}
-        isActive={(r: any) => r.date === date && r.platform === platform}
+        isActive={(r: any) => r.date === date && r.platform === platform && r.market === market && (r.shop ?? "") === shop}
         onPick={(r: any) => {
-          setDate(r.date); setPlatform(r.platform)
+          setDate(r.date); setPlatform(r.platform); setMarket(r.market); setShop(r.shop ?? "")
           setCost(String(r.cost ?? "")); setNote(r.note ?? "")
         }}
+        moneyCol={4}
       />
+    </div>
+  )
+}
+
+// ─── Tổng hợp & kiểm tra (cho quản lý) ───────────────────────────────────────
+function TongHopTab() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+
+  const [from, setFrom] = useState(daysAgoVN(30))
+  const [to, setTo] = useState(todayVN())
+  const [fMarket, setFMarket] = useState("")
+  const [fPlatform, setFPlatform] = useState("")
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null)
+    try {
+      const q = new URLSearchParams({ from, to })
+      if (fMarket) q.set("market", fMarket)
+      if (fPlatform) q.set("platform", fPlatform)
+      const d = await apiJson(`/admin/pancake-sync/report/mkt-cost-marketplace?${q}`)
+      setData(d)
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }, [from, to, fMarket, fPlatform])
+  useEffect(() => { load() }, [load])
+
+  const rows: any[] = data?.rows ?? []
+  const missing: any[] = data?.missing ?? []
+  const grand = rows.reduce((s, r) => s + Number(r.cost || 0), 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border rounded-xl p-4 shadow-sm">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Field label="Từ ngày"><input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inputCls} /></Field>
+          <Field label="Đến ngày"><input type="date" value={to} max={todayVN()} onChange={e => setTo(e.target.value)} className={inputCls} /></Field>
+          <Field label="Thị trường">
+            <select value={fMarket} onChange={e => setFMarket(e.target.value)} className={inputCls}>
+              <option value="">Tất cả</option>
+              {MARKETS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Sàn">
+            <select value={fPlatform} onChange={e => setFPlatform(e.target.value)} className={inputCls}>
+              <option value="">Tất cả</option>
+              {PLATFORMS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </Field>
+        </div>
+      </div>
+
+      {err && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">⚠ {err}</div>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {(data?.totals ?? []).map((t: any) => {
+          const p = PLATFORMS.find(x => x.key === t.platform)
+          return (
+            <div key={`${t.platform}-${t.market}`} className="bg-white border rounded-xl p-4 shadow-sm"
+              style={{ borderTop: `3px solid ${p?.color ?? "#666666"}` }}>
+              <div className="text-xs text-gray-500 uppercase tracking-wide">{p?.label ?? t.platform} · {t.market}</div>
+              <div className="text-xl font-bold mt-1 text-gray-900">{fmtMoney(t.cost)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{t.days} ngày · {t.entries} dòng</div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+        <b>Tổng chi phí sàn trong kỳ: {fmtMoney(grand)}</b>
+        <span className="text-violet-700"> · {rows.length} dòng đã điền</span>
+      </div>
+
+      {/* Cảnh báo bỏ sót — kênh có đơn nhưng chưa điền chi phí ngày đó */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800 text-sm">⚠ Kênh có đơn nhưng chưa điền chi phí</h3>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Chỉ liệt kê kênh có từ 3 đơn/ngày trở lên — bỏ qua ngày lẻ tẻ vài đơn.
+            </p>
+          </div>
+          <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${
+            missing.length === 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+            {missing.length === 0 ? "Đủ hết" : `${missing.length} kênh-ngày thiếu`}
+          </span>
+        </div>
+        <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+              <tr>
+                <th className="px-4 py-2 text-left">Ngày</th>
+                <th className="px-4 py-2 text-left">TT</th>
+                <th className="px-4 py-2 text-left">Sàn</th>
+                <th className="px-4 py-2 text-left">Shop</th>
+                <th className="px-4 py-2 text-right">Số đơn</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {!loading && missing.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-green-600">✓ Mọi kênh có đơn đều đã điền chi phí</td></tr>
+              )}
+              {missing.map((m, i) => (
+                <tr key={i} className="bg-amber-50/40">
+                  <td className="px-4 py-2 font-mono">{m.date}</td>
+                  <td className="px-4 py-2">{m.market}</td>
+                  <td className="px-4 py-2">{platLabel(m.platform)}</td>
+                  <td className="px-4 py-2">{m.shop || "(không tên)"}</td>
+                  <td className="px-4 py-2 text-right font-mono">{m.orders}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Toàn bộ dòng đã điền — truy vết ai điền, khi nào */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b text-sm font-semibold text-gray-700">
+          Chi tiết đã điền {loading && <span className="font-normal text-gray-400">· đang tải…</span>}
+        </div>
+        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+              <tr>
+                <th className="px-4 py-2 text-left">Ngày</th>
+                <th className="px-4 py-2 text-left">TT</th>
+                <th className="px-4 py-2 text-left">Sàn</th>
+                <th className="px-4 py-2 text-left">Shop</th>
+                <th className="px-4 py-2 text-right">Chi phí</th>
+                <th className="px-4 py-2 text-left">Người điền</th>
+                <th className="px-4 py-2 text-left">Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {!loading && rows.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">Chưa có dữ liệu trong kỳ</td></tr>
+              )}
+              {rows.map((r, i) => (
+                <tr key={i} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 font-mono">{r.date}</td>
+                  <td className="px-4 py-2">{r.market}</td>
+                  <td className="px-4 py-2">{platLabel(r.platform)}</td>
+                  <td className="px-4 py-2">{r.shop || <span className="text-gray-400">(cả thị trường)</span>}</td>
+                  <td className="px-4 py-2 text-right font-semibold">{fmtMoney(r.cost)}</td>
+                  <td className="px-4 py-2 text-[11px] text-gray-500">{r.created_by || "—"}</td>
+                  <td className="px-4 py-2 text-[11px] text-gray-500">{r.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
@@ -318,20 +522,21 @@ function Alerts({ err, ok }: { err: string | null; ok: string | null }) {
   )
 }
 
-function HistoryTable({ title, loading, rows, cols, renderRow, isActive, onPick }: {
+function HistoryTable({ title, loading, rows, cols, renderRow, isActive, onPick, moneyCol = 2 }: {
   title: string; loading: boolean; rows: any[]; cols: string[]
   renderRow: (r: any) => (string | number)[]
   isActive: (r: any) => boolean
   onPick: (r: any) => void
+  moneyCol?: number
 }) {
   return (
     <div className="bg-white border rounded-xl overflow-hidden">
       <div className="px-4 py-2.5 border-b text-sm font-semibold text-gray-700">
         {title} {loading && <span className="font-normal text-gray-400">· đang tải…</span>}
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b text-xs text-gray-500">
+          <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
             <tr>{cols.map(c => <th key={c} className="px-4 py-2 text-left">{c}</th>)}</tr>
           </thead>
           <tbody className="divide-y text-gray-900">
@@ -342,7 +547,7 @@ function HistoryTable({ title, loading, rows, cols, renderRow, isActive, onPick 
               <tr key={i} onClick={() => onPick(r)}
                 className={`cursor-pointer hover:bg-gray-50 ${isActive(r) ? "bg-violet-50" : ""}`}>
                 {renderRow(r).map((cell, j) => (
-                  <td key={j} className={`px-4 py-2 ${j === 0 ? "font-mono" : ""} ${j === 2 ? "font-semibold" : ""}`}>{cell}</td>
+                  <td key={j} className={`px-4 py-2 ${j === 0 ? "font-mono" : ""} ${j === moneyCol ? "font-semibold" : ""}`}>{cell}</td>
                 ))}
               </tr>
             ))}

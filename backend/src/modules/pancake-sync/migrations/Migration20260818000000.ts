@@ -16,19 +16,36 @@ export class Migration20260818000000 extends Migration {
         "id"         uuid not null default gen_random_uuid(),
         "date"       date not null,
         "platform"   varchar(16) not null,      -- 'tiktok' | 'shopee'
-        "cost"       bigint not null default 0,
+        "market"     varchar(8)  not null default 'VN',   -- 'VN' | 'MY'
+        "shop"       varchar(64) not null default '',     -- shop_name; '' = gộp cả thị trường
+        "cost"       bigint not null default 0,  -- LUÔN quy về VNĐ (đơn MY lưu RM, nhập tay đã quy đổi)
         "note"       text,
         "created_by" varchar(255),
         "created_at" timestamptz not null default now(),
         "updated_at" timestamptz not null default now(),
         "deleted_at" timestamptz null,
         primary key ("id"),
-        constraint "mkt_ads_cost_marketplace_date_platform_unique" unique ("date", "platform")
+        constraint "mkt_ads_cost_marketplace_uniq" unique ("date", "platform", "market", "shop")
       );
     `)
     this.addSql(`
       create index if not exists "idx_mkt_ads_cost_mp_date"
-        on "mkt_ads_cost_marketplace" ("date", "platform");
+        on "mkt_ads_cost_marketplace" ("date", "platform", "market");
+    `)
+
+    // Bảng có thể đã tạo ở bản trước (chỉ date+platform) — nâng cấp tại chỗ cho môi
+    // trường đã deploy, tránh phải xoá dữ liệu đã nhập.
+    this.addSql(`alter table "mkt_ads_cost_marketplace" add column if not exists "market" varchar(8) not null default 'VN';`)
+    this.addSql(`alter table "mkt_ads_cost_marketplace" add column if not exists "shop" varchar(64) not null default '';`)
+    this.addSql(`alter table "mkt_ads_cost_marketplace" drop constraint if exists "mkt_ads_cost_marketplace_date_platform_unique";`)
+    this.addSql(`
+      do $$
+      begin
+        if not exists (select 1 from pg_constraint where conname = 'mkt_ads_cost_marketplace_uniq') then
+          alter table "mkt_ads_cost_marketplace"
+            add constraint "mkt_ads_cost_marketplace_uniq" unique ("date", "platform", "market", "shop");
+        end if;
+      end $$;
     `)
   }
 
