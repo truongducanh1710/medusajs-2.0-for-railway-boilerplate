@@ -3400,6 +3400,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const [err, setErr] = useState<string | null>(null)
   const [showMissing, setShowMissing] = useState(false)
   const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
+  // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
+  // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
+  const [dayMode, setDayMode] = useState<"tt" | "thuc">("tt")
   const [daySort, setDaySort] = useState<{ key: string; dir: 1 | -1 }>({ key: "date", dir: -1 })
 
   useEffect(() => {
@@ -3433,18 +3436,32 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
 
   const byDayRaw: any[] = data.by_day ?? []
   const byDayFiltered = dayPlatform === "all" ? byDayRaw : byDayRaw.filter((r: any) => r.platform === dayPlatform)
+  // Mỗi mode đọc bộ field riêng: "thực" = chỉ đơn đã giao, "tạm tính" = thêm đơn đang đi.
+  const M = dayMode === "tt"
+    ? { orders: "orders_tt", rev: "revenue_tt", cogs: "cogs_tt", lng: "lng_tt_sau_ads", pct: "lng_tt_sau_ads_pct" }
+    : { orders: "da_nhan", rev: "revenue_delivered", cogs: "cogs", lng: "lng_sau_ads", pct: "lng_sau_ads_pct" }
+  // Cột hiển thị đổi theo mode, nên sort key cũng phải map sang field tương ứng —
+  // nếu không, bấm "LNG sau ads" ở mode tạm tính sẽ sort theo số của mode thực.
+  const SORT_ALIAS: Record<string, string> = {
+    orders: M.orders, rev: M.rev, cogs: M.cogs, lng: M.lng, pct: M.pct,
+  }
   const byDay = [...byDayFiltered].sort((a: any, b: any) => {
-    const av = a[daySort.key], bv = b[daySort.key]
+    const key = SORT_ALIAS[daySort.key] ?? daySort.key
+    const av = a[key], bv = b[key]
     if (av === bv) return a.date === b.date ? a.platform.localeCompare(b.platform) : (a.date < b.date ? 1 : -1)
     return (av > bv ? 1 : -1) * daySort.dir
   })
   const dayTotal = byDayFiltered.reduce((acc: any, r: any) => {
-    for (const k of ["total_orders", "da_nhan", "revenue_delivered", "cogs", "ads_cost"]) acc[k] += Number(r[k] || 0)
-    acc.lng_sau_ads += Number(r.lng_sau_ads || 0)
-    acc.revenue_costed += Number(r.revenue_costed || 0)
+    acc.orders += Number(r[M.orders] || 0)
+    acc.rev += Number(r[M.rev] || 0)
+    acc.cogs += Number(r[M.cogs] || 0)
+    acc.ads_cost += Number(r.ads_cost || 0)
+    acc.lng += Number(r[M.lng] || 0)
+    acc.rev_costed += Number(dayMode === "tt" ? (r.revenue_tt || 0) : (r.revenue_costed || 0))
+    acc.pending += Number(r.orders_pending || 0)
     if (r.ads_missing) acc.ads_missing_days += 1
     return acc
-  }, { total_orders: 0, da_nhan: 0, revenue_delivered: 0, cogs: 0, ads_cost: 0, lng_sau_ads: 0, revenue_costed: 0, ads_missing_days: 0 })
+  }, { orders: 0, rev: 0, cogs: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
   const toggleDaySort = (key: string) =>
     setDaySort(s => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 })
   const sortIcon = (key: string) => daySort.key !== key ? "" : (daySort.dir === -1 ? " ▼" : " ▲")
@@ -3569,20 +3586,37 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
       <div className="bg-white border rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h3 className="font-semibold text-gray-800">LNG theo ngày</h3>
+            <h3 className="font-semibold text-gray-800">
+              LNG theo ngày {dayMode === "tt" ? "(Tạm tính)" : "(Thực)"}
+            </h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              Trừ đúng chi phí ads đã điền cho từng ngày × sàn ở trang Nhập chi phí. Bấm tiêu đề cột để sắp xếp.
+              {dayMode === "tt"
+                ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong (đơn sàn hoàn rất ít nên coi như sẽ nhận)."
+                : "Chỉ đơn đã giao thành công — tiền chắc chắn về."}
+              {" "}Bấm tiêu đề cột để sắp xếp.
             </p>
           </div>
-          <div className="flex gap-1">
-            {([["all", "Cả 2 sàn"], ["tiktok", "TikTok"], ["shopee", "Shopee"]] as const).map(([k, label]) => (
-              <button key={k} type="button" onClick={() => setDayPlatform(k)}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                  dayPlatform === k ? "bg-violet-600 text-white border-violet-600"
-                                    : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-1">
+              {([["tt", "Tạm tính"], ["thuc", "Thực"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setDayMode(k)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                    dayMode === k ? "bg-gray-900 text-white border-gray-900"
+                                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1">
+              {([["all", "Cả 2 sàn"], ["tiktok", "TikTok"], ["shopee", "Shopee"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setDayPlatform(k)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                    dayPlatform === k ? "bg-violet-600 text-white border-violet-600"
+                                      : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -3591,12 +3625,12 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               <tr>
                 <th className="text-left px-4 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("date")}>Ngày{sortIcon("date")}</th>
                 <th className="text-left px-4 py-2.5">Sàn</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("da_nhan")}>Đơn{sortIcon("da_nhan")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("revenue_delivered")}>DT thực nhận{sortIcon("revenue_delivered")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("orders")}>Đơn{sortIcon("orders")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("rev")}>Doanh thu{sortIcon("rev")}</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("cogs")}>Giá vốn{sortIcon("cogs")}</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("ads_cost")}>Ads{sortIcon("ads_cost")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng_sau_ads")}>LNG sau ads{sortIcon("lng_sau_ads")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng_sau_ads_pct")}>%LNG{sortIcon("lng_sau_ads_pct")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng")}>LNG sau ads{sortIcon("lng")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("pct")}>%LNG{sortIcon("pct")}</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
@@ -3604,29 +3638,43 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
               {byDay.map((r: any) => {
-                const lngBad = r.revenue_costed > 0 && r.lng_sau_ads_pct != null && r.lng_sau_ads_pct < -20
+                const lngVal = Number(r[M.lng] || 0)
+                const pctVal = r[M.pct]
+                const lngBad = Number(r[M.rev] || 0) > 0 && pctVal != null && pctVal < -20
+                // Ở mode "thực", ngày còn nhiều đơn đang đi thì số chưa chín — nhắc để
+                // không kết luận nhầm là lỗ.
+                const pending = Number(r.orders_pending || 0)
+                const notRipe = dayMode === "thuc" && pending > 0
                 return (
                   <tr key={`${r.date}-${r.platform}`}
                     className={lngBad ? "bg-red-50/60" : r.ads_missing ? "bg-amber-50/50" : ""}>
-                    <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{dayLabel(r.date)}</td>
+                    <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">
+                      {dayLabel(r.date)}
+                      {notRipe && (
+                        <span className="ml-1.5 text-[10.5px] text-gray-400"
+                          title={`Còn ${pending} đơn đã cho đi nhưng chưa giao xong — số "thực" của ngày này chưa đủ chín`}>
+                          ⏳{pending}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
                         r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
                       }`}>{r.platform_label}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-700">{money(r.cogs)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[M.orders])}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r[M.rev])}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-700">{money(r[M.cogs])}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700">
                       {r.ads_missing
                         ? <span className="text-amber-600" title="Chưa điền chi phí ads cho ngày này">⚠ chưa điền</span>
                         : money(r.ads_cost)}
                     </td>
-                    <td className={`px-3 py-2.5 text-right font-semibold ${r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    <td className={`px-3 py-2.5 text-right font-semibold ${lngVal >= 0 ? "text-violet-700" : "text-red-500"}`}>
                       {lngBad && <span title="Lỗ nặng: LNG sau ads dưới -20% doanh thu">🔴 </span>}
-                      {money(r.lng_sau_ads)}
+                      {money(lngVal)}
                     </td>
-                    <td className="px-3 py-2.5 text-right">{pctCell(r.lng_sau_ads_pct, r.lng_sau_ads >= 0)}</td>
+                    <td className="px-3 py-2.5 text-right">{pctCell(pctVal, lngVal >= 0)}</td>
                   </tr>
                 )
               })}
@@ -3641,18 +3689,23 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         (⚠ {dayTotal.ads_missing_days} dòng chưa điền ads)
                       </span>
                     )}
+                    {dayMode === "thuc" && dayTotal.pending > 0 && (
+                      <span className="ml-2 font-normal text-gray-500">
+                        (⏳ {fmtNum(dayTotal.pending)} đơn chưa giao xong — xem Tạm tính)
+                      </span>
+                    )}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(dayTotal.da_nhan)}</td>
-                  <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.revenue_delivered)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(dayTotal.orders)}</td>
+                  <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.rev)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.cogs)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
-                  <td className={`px-3 py-2.5 text-right ${dayTotal.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-500"}`}>
-                    {money(dayTotal.lng_sau_ads)}
+                  <td className={`px-3 py-2.5 text-right ${dayTotal.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    {money(dayTotal.lng)}
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     {pctCell(
-                      dayTotal.revenue_costed > 0 ? Math.round(dayTotal.lng_sau_ads / dayTotal.revenue_costed * 10000) / 100 : null,
-                      dayTotal.lng_sau_ads >= 0,
+                      dayTotal.rev_costed > 0 ? Math.round(dayTotal.lng / dayTotal.rev_costed * 10000) / 100 : null,
+                      dayTotal.lng >= 0,
                     )}
                   </td>
                 </tr>

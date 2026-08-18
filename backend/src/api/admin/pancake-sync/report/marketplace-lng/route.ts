@@ -25,6 +25,14 @@ const FULLFILL_PER_ORDER = 5000
  * Luôn chạy trên MỘT thị trường (mặc định VN): đơn MY lưu tiền theo đồng của shop đó,
  * cộng chung VN+MY ra số vô nghĩa nên không có chế độ "tất cả thị trường".
  *
+ * by_day trả 2 mức song song:
+ *  • THỰC   — chỉ đơn status=3 (giao thành công). Tiền chắc chắn về.
+ *  • TẠM TÍNH — thêm đơn đã xác nhận cho đi (status 2/6/9: đang giao, đã gửi VC,
+ *    chờ VTP lấy). Đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận, KHÔNG nhân
+ *    tỷ lệ dự phóng như báo cáo FB (marketer-lng dùng revenue_treo × tỷ_lệ_nhận).
+ *    Cần 2 mức vì đơn sàn mất vài ngày mới giao xong: ngày gần đây ads đã tiêu hết
+ *    nhưng doanh thu chưa kịp ghi nhận → nhìn số "thực" tưởng lỗ nặng.
+ *
  * LNG đơn sàn TMĐT (TikTok Shop / Shopee) — các báo cáo LNG khác lọc
  * `source IN ('manual','facebook','medusa','unknown','webcake')` nên toàn bộ đơn sàn
  * (T8/2026: 6.404 đơn, 103,5tr doanh thu) không xuất hiện ở đâu cả.
@@ -271,7 +279,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed,
         SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
         COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
-        SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty
+        SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty,
+        -- TẠM TÍNH: đơn đã xác nhận cho đi (2 đang giao, 3 giao xong, 6 đã gửi VC,
+        -- 9 chờ VTP lấy) — tức đã rời kho, chỉ chưa biết giao xong chưa. KHÔNG dự phóng
+        -- theo tỷ lệ như báo cáo FB: đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận.
+        -- Loại 0/1/11 (chưa cho đi) và -1/-2/4/5/7 (huỷ/hoàn/xoá).
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,6,9))::int AS orders_tt,
+        SUM(CASE WHEN status IN (2,3,6,9) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (2,3,6,9) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (2,3,6,9) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,6,9) AND unit_cost > 0)::int AS orders_costed_tt
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
@@ -413,6 +430,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const ads = adsByDay[key] ?? 0
       const hasAdsEntry = Object.prototype.hasOwnProperty.call(adsByDay, key)
       const rev = Number(r.revenue_delivered || 0)
+
+      // Tạm tính: gồm cả đơn đang trên đường. Ads trừ NGUYÊN (đã tiêu hết trong ngày),
+      // chỉ doanh thu và giá vốn mở rộng theo đơn chưa giao xong.
+      const ffTT = FULLFILL_PER_ORDER * Number(r.orders_costed_tt || 0)
+      const revCostedTT = Number(r.revenue_costed_tt || 0)
+      const cogsTT = Number(r.cogs_tt || 0)
+      const lngTT = revCostedTT - (cogsTT + ffTT)
+      const revTT = Number(r.revenue_tt || 0)
+
       return {
         date: r.date,
         platform: r.platform,
@@ -431,9 +457,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         fullfill: ff,
         lng, lng_pct: pct(lng, revCosted),
         ads_cost: ads, ads_pct: pct(ads, rev),
-        ads_missing: !hasAdsEntry && Number(r.da_nhan || 0) > 0,
+        ads_missing: !hasAdsEntry && Number(r.orders_tt || 0) > 0,
         lng_sau_ads: lng - ads,
         lng_sau_ads_pct: pct(lng - ads, revCosted),
+
+        // Tạm tính (gồm đơn đang trên đường)
+        orders_tt: Number(r.orders_tt || 0),
+        revenue_tt: revTT,
+        cogs_tt: cogsTT,
+        fullfill_tt: ffTT,
+        lng_tt: lngTT,
+        lng_tt_sau_ads: lngTT - ads,
+        lng_tt_sau_ads_pct: pct(lngTT - ads, revCostedTT),
+        // Số đơn đã rời kho nhưng chưa giao xong — càng lớn thì số "thực" càng
+        // chưa phản ánh đủ, dùng để cảnh báo ngày quá mới.
+        orders_pending: Number(r.orders_tt || 0) - Number(r.da_nhan || 0),
       }
     })
 
