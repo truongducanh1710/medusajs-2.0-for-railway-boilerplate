@@ -288,12 +288,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
         COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
         SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty,
-        -- TẠM TÍNH: đơn đã xác nhận cho đi (2 đang giao, 3 giao xong, 6 đã gửi VC,
-        -- 9 chờ VTP lấy) — tức đã rời kho, chỉ chưa biết giao xong chưa. KHÔNG dự phóng
-        -- theo tỷ lệ như báo cáo FB: đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận.
-        -- Loại 0/1/11 (chưa cho đi) và -1/-2/4/5/7 (huỷ/hoàn/xoá).
+        -- TẠM TÍNH: đơn đã xác nhận cho đi — 2 (đang giao), 3 (giao xong),
+        -- 8 (đang đóng hàng). KHÔNG dự phóng theo tỷ lệ như báo cáo FB: đơn sàn hoàn
+        -- rất ít nên coi đơn đang đi là sẽ nhận.
+        -- Loại 0/1 (chưa cho đi) và 4/5/6/7/-1/-2 (hoàn/huỷ/xoá) — xem ghi chú status
+        -- ở đầu file: code 6 = ĐÃ HỦY, không phải "đã gửi VC" như GLOSSARY ghi.
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8))::int AS orders_tt,
         SUM(CASE WHEN status IN (2,3,8) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
         SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
         SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8) AND unit_cost > 0)::int AS orders_costed_tt
@@ -447,6 +449,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const lngTT = revCostedTT - (cogsTT + ffTT)
       const revTT = Number(r.revenue_tt || 0)
 
+      // Doanh thu TRƯỚC phí sàn = tiền khách thực trả (đã trừ khuyến mãi, chưa trừ
+      // phí sàn) = revenue + fee. KHÁC list_price — list_price là giá niêm yết, chưa
+      // trừ khuyến mãi, nên %ads tính trên nó sẽ thấp hơn thực tế.
+      const fee = Number(r.fee_marketplace || 0)
+      const feeTT = Number(r.fee_tt || 0)
+      const revGross = rev + fee
+      const revGrossTT = revTT + feeTT
+
       return {
         date: r.date,
         platform: r.platform,
@@ -469,10 +479,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         lng_sau_ads: lng - ads,
         lng_sau_ads_pct: pct(lng - ads, revCosted),
 
+        // Doanh thu trước phí sàn + %ads tính trên nó (mức thực)
+        revenue_gross: revGross,
+        ads_gross_pct: pct(ads, revGross),
+
         // Tạm tính (gồm đơn đang trên đường)
         orders_tt: Number(r.orders_tt || 0),
         revenue_tt: revTT,
+        revenue_costed_tt: revCostedTT,
+        fee_tt: feeTT,
+        revenue_gross_tt: revGrossTT,
+        ads_gross_pct_tt: pct(ads, revGrossTT),
+        ads_pct_tt: pct(ads, revTT),
         cogs_tt: cogsTT,
+        cogs_tt_pct: pct(cogsTT, revCostedTT),
         fullfill_tt: ffTT,
         lng_tt: lngTT,
         lng_tt_sau_ads: lngTT - ads,

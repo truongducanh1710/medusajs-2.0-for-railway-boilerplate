@@ -3438,12 +3438,17 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const byDayFiltered = dayPlatform === "all" ? byDayRaw : byDayRaw.filter((r: any) => r.platform === dayPlatform)
   // Mỗi mode đọc bộ field riêng: "thực" = chỉ đơn đã giao, "tạm tính" = thêm đơn đang đi.
   const M = dayMode === "tt"
-    ? { orders: "orders_tt", rev: "revenue_tt", cogs: "cogs_tt", lng: "lng_tt_sau_ads", pct: "lng_tt_sau_ads_pct" }
-    : { orders: "da_nhan", rev: "revenue_delivered", cogs: "cogs", lng: "lng_sau_ads", pct: "lng_sau_ads_pct" }
+    ? { orders: "orders_tt", gross: "revenue_gross_tt", rev: "revenue_tt", cogs: "cogs_tt",
+        cogsPct: "cogs_tt_pct", adsGrossPct: "ads_gross_pct_tt",
+        lng: "lng_tt_sau_ads", pct: "lng_tt_sau_ads_pct" }
+    : { orders: "da_nhan", gross: "revenue_gross", rev: "revenue_delivered", cogs: "cogs",
+        cogsPct: "cogs_pct", adsGrossPct: "ads_gross_pct",
+        lng: "lng_sau_ads", pct: "lng_sau_ads_pct" }
   // Cột hiển thị đổi theo mode, nên sort key cũng phải map sang field tương ứng —
   // nếu không, bấm "LNG sau ads" ở mode tạm tính sẽ sort theo số của mode thực.
   const SORT_ALIAS: Record<string, string> = {
-    orders: M.orders, rev: M.rev, cogs: M.cogs, lng: M.lng, pct: M.pct,
+    orders: M.orders, gross: M.gross, rev: M.rev, cogs: M.cogs,
+    cogsPct: M.cogsPct, adsGrossPct: M.adsGrossPct, lng: M.lng, pct: M.pct,
   }
   const byDay = [...byDayFiltered].sort((a: any, b: any) => {
     const key = SORT_ALIAS[daySort.key] ?? daySort.key
@@ -3453,15 +3458,18 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   })
   const dayTotal = byDayFiltered.reduce((acc: any, r: any) => {
     acc.orders += Number(r[M.orders] || 0)
+    acc.gross += Number(r[M.gross] || 0)
     acc.rev += Number(r[M.rev] || 0)
     acc.cogs += Number(r[M.cogs] || 0)
     acc.ads_cost += Number(r.ads_cost || 0)
     acc.lng += Number(r[M.lng] || 0)
-    acc.rev_costed += Number(dayMode === "tt" ? (r.revenue_tt || 0) : (r.revenue_costed || 0))
+    // Mẫu số cho %GV và %LNG là doanh thu CÓ giá vốn — phần chưa khai giá vốn bị loại
+    // khỏi LNG nên cũng không được nằm ở mẫu số, nếu không %  sẽ bị pha loãng.
+    acc.rev_costed += Number(dayMode === "tt" ? (r.revenue_costed_tt || 0) : (r.revenue_costed || 0))
     acc.pending += Number(r.orders_pending || 0)
     if (r.ads_missing) acc.ads_missing_days += 1
     return acc
-  }, { orders: 0, rev: 0, cogs: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
+  }, { orders: 0, gross: 0, rev: 0, cogs: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
   const toggleDaySort = (key: string) =>
     setDaySort(s => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 })
   const sortIcon = (key: string) => daySort.key !== key ? "" : (daySort.dir === -1 ? " ▼" : " ▲")
@@ -3626,16 +3634,19 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <th className="text-left px-4 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("date")}>Ngày{sortIcon("date")}</th>
                 <th className="text-left px-4 py-2.5">Sàn</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("orders")}>Đơn{sortIcon("orders")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("rev")}>Doanh thu{sortIcon("rev")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Tiền khách trả (đã trừ khuyến mãi, CHƯA trừ phí sàn)" onClick={() => toggleDaySort("gross")}>DT trước phí sàn{sortIcon("gross")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Tiền thực nhận — đã trừ cả khuyến mãi và phí sàn" onClick={() => toggleDaySort("rev")}>DT thực nhận{sortIcon("rev")}</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("cogs")}>Giá vốn{sortIcon("cogs")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Giá vốn ÷ DT thực nhận" onClick={() => toggleDaySort("cogsPct")}>%GV{sortIcon("cogsPct")}</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("ads_cost")}>Ads{sortIcon("ads_cost")}</th>
+                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Chi phí ads ÷ DT trước phí sàn" onClick={() => toggleDaySort("adsGrossPct")}>%Ads{sortIcon("adsGrossPct")}</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng")}>LNG sau ads{sortIcon("lng")}</th>
                 <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("pct")}>%LNG{sortIcon("pct")}</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
               {byDay.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+                <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
               {byDay.map((r: any) => {
                 const lngVal = Number(r[M.lng] || 0)
@@ -3663,12 +3674,17 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                       }`}>{r.platform_label}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[M.orders])}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-600">{money(r[M.gross])}</td>
                     <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r[M.rev])}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700">{money(r[M.cogs])}</td>
+                    <td className="px-3 py-2.5 text-right">{pctCell(r[M.cogsPct])}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700">
                       {r.ads_missing
                         ? <span className="text-amber-600" title="Chưa điền chi phí ads cho ngày này">⚠ chưa điền</span>
                         : money(r.ads_cost)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {r.ads_missing ? <span className="text-gray-300">—</span> : pctCell(r[M.adsGrossPct])}
                     </td>
                     <td className={`px-3 py-2.5 text-right font-semibold ${lngVal >= 0 ? "text-violet-700" : "text-red-500"}`}>
                       {lngBad && <span title="Lỗ nặng: LNG sau ads dưới -20% doanh thu">🔴 </span>}
@@ -3696,9 +3712,17 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono">{fmtNum(dayTotal.orders)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600">{money(dayTotal.gross)}</td>
                   <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.rev)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {/* Mẫu số là doanh thu CÓ giá vốn (rev_costed), khớp cách tính từng dòng */}
+                    {pctCell(dayTotal.rev_costed > 0 ? Math.round(dayTotal.cogs / dayTotal.rev_costed * 10000) / 100 : null)}
+                  </td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.ads_cost / dayTotal.gross * 10000) / 100 : null)}
+                  </td>
                   <td className={`px-3 py-2.5 text-right ${dayTotal.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
                     {money(dayTotal.lng)}
                   </td>
