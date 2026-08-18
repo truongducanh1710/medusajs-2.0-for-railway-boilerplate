@@ -272,13 +272,38 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // Chi phí quảng cáo sàn — nhập tay ở trang "Nhập chi phí" (bảng mkt_ads_cost_marketplace).
+    // Sàn không có API spend nên đây là nguồn duy nhất. Điền theo (ngày, sàn) nên chỉ trừ
+    // được ở mức TỔNG mỗi sàn, không quy về từng sản phẩm — dòng SP vì vậy vẫn là LNG
+    // trước ads, còn thẻ tổng có thêm lng_sau_ads để biết sàn thực lãi/lỗ.
+    let adsByPlatform: Record<string, number> = {}
+    try {
+      const adsRows = await sql(`
+        SELECT platform, SUM(cost)::bigint AS cost
+          FROM mkt_ads_cost_marketplace
+         WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+         GROUP BY platform
+      `, [from, to])
+      for (const r of adsRows) adsByPlatform[String(r.platform)] = Number(r.cost) || 0
+    } catch { /* bảng chưa tạo (chưa chạy migration) — coi như chưa có chi phí ads */ }
+
+    const withAds = (t: any, ads: number) => ({
+      ...t,
+      ads_cost: ads,
+      ads_pct: pct(ads, t.revenue_delivered),
+      lng_sau_ads: t.lng - ads,
+      lng_sau_ads_pct: pct(t.lng - ads, t.revenue_costed),
+    })
+
     const byPlatform = ["tiktok", "shopee"].map(p => ({
       platform: p,
       platform_label: p === "tiktok" ? "TikTok Shop" : "Shopee",
-      ...mkTotals(result.filter(r => r.platform === p)),
+      ...withAds(mkTotals(result.filter(r => r.platform === p)), adsByPlatform[p] ?? 0),
     })).filter(p => p.total_orders > 0)
 
-    const totals = mkTotals(result)
+    const totalAds = Object.values(adsByPlatform).reduce((s, v) => s + v, 0)
+    const totals = withAds(mkTotals(result), totalAds)
+    const hasAds = totalAds > 0
     // Cảnh báo mức phủ giá vốn — biết số LNG đang đại diện cho bao nhiêu % doanh thu.
     const coverage = {
       revenue_costed: totals.revenue_costed,
@@ -287,7 +312,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       missing_products: result.filter(r => r.missing_cost).length,
     }
 
-    return res.json({ rows: result, by_platform: byPlatform, totals, coverage, from, to })
+    return res.json({ rows: result, by_platform: byPlatform, totals, coverage, has_ads: hasAds, from, to })
   } catch (err: any) {
     console.error("[report/marketplace-lng]", err.message)
     return res.status(500).json({ error: err.message })

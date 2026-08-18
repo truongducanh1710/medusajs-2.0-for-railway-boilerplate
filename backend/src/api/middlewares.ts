@@ -149,6 +149,11 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/report*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
     { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
+    // 2 route nhập chi phí phải đứng TRƯỚC catch-all /report* bên dưới: middleware chạy
+    // theo thứ tự khai báo, để sau sẽ bị catch-all ép phải có page.bao-cao.view —
+    // quyền đó mở toàn bộ báo cáo doanh số/LNG, quá rộng cho người chỉ điền số.
+    { matcher: "/admin/pancake-sync/report/mkt-cost-gg-manual*", method: ["GET", "PUT"], middlewares: [requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")] },
+    { matcher: "/admin/pancake-sync/report/mkt-cost-marketplace*", method: ["GET", "PUT"], middlewares: [requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")] },
     { matcher: "/admin/pancake-sync/report*", middlewares: [requirePerm("page.bao-cao.view")] },
     // Chi phí kế toán: đọc = view, ghi (nhập/sửa/xóa khoản chi phí) = camp-control.
     { matcher: "/admin/pancake-sync/report/accounting-cost*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
@@ -197,9 +202,6 @@ export default defineMiddlewares({
     { matcher: "/admin/sql-query*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-backfill*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-status*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
-    // Điền tay chi phí Google Ads — route tự giới hạn MKT chỉ ghi được dòng của chính mình
-    // (so mkt_code trong metadata), admin ghi cho mọi mã. Xem middlewares trong route.
-    { matcher: "/admin/pancake-sync/report/mkt-cost-gg-manual*", method: ["GET", "PUT"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control/verify", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
