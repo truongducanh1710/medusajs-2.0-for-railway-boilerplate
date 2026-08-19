@@ -3,7 +3,10 @@ export const PERMISSIONS = {
   "page.don-hang.edit": "Cập nhật trạng thái đơn",
   "page.san-pham.view": "Xem trang sản phẩm (Marketing)",
   "page.san-pham.edit": "Sửa nội dung trang sản phẩm (GrapesJS)",
-  "page.bao-cao.view": "Xem báo cáo",
+  "page.bao-cao.view": "Xem báo cáo (TẤT CẢ tab)",
+  // Quyền hẹp: chỉ mở tab "Sàn TMĐT" của trang Báo cáo, không thấy doanh số/LNG/sale.
+  // Ai đã có page.bao-cao.view thì đương nhiên xem được, không cần cấp thêm.
+  "page.bao-cao.sanTMDT": "Xem báo cáo — CHỈ tab Sàn TMĐT (TikTok/Shopee)",
   "page.pancake-sync.view": "Xem trang Sync",
   "page.pancake-sync.run": "Trigger sync Pancake",
   "page.ity-cdr.view": "Xem báo cáo cuộc gọi tổng đài (CDR)",

@@ -32,6 +32,7 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     color: "bg-blue-50 border-blue-200",
     keys: [
       "page.bao-cao.view",
+      "page.bao-cao.sanTMDT",
       "page.bao-cao.camp-control",
       "page.bao-cao.fb-accounts",
       "page.bao-cao.care-rules",

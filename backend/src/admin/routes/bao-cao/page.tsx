@@ -3815,6 +3815,13 @@ type TabKey = "overview" | "combined" | "shipping" | "product" | "sale" | "nv-mk
 
 const VALID_TABS: TabKey[] = ["overview", "combined", "shipping", "product", "sale", "nv-mkt", "lng", "sanTMDT", "errors", "marketing"]
 
+// Quyền hẹp mở riêng từng tab. page.bao-cao.view vẫn thấy TẤT CẢ tab như trước —
+// đây chỉ là đường vào cho nhân sự KHÔNG có quyền xem full báo cáo.
+// Tab không liệt kê ở đây = chỉ page.bao-cao.view mới xem được.
+const TAB_PERMS: Partial<Record<TabKey, string>> = {
+  sanTMDT: "page.bao-cao.sanTMDT",
+}
+
 const BaoCaoPage = () => {
   const initParams = getSearchParams()
   const initTab = (VALID_TABS.includes(initParams.get("tab") as TabKey) ? initParams.get("tab") : "overview") as TabKey
@@ -3824,13 +3831,29 @@ const BaoCaoPage = () => {
 
   const initMarket = (initParams.get("market") === "MY" ? "MY" : "VN") as Market
 
+  const { has, loading: permLoading } = useCurrentPermissions()
+  // Xem full → mọi tab. Ngược lại chỉ những tab có quyền hẹp tương ứng.
+  const canSeeAll = has("page.bao-cao.view")
+  const allowedTabs = VALID_TABS.filter(t => canSeeAll || (TAB_PERMS[t] ? has(TAB_PERMS[t]!) : false))
+
   const [tab, setTab] = useState<TabKey>(initTab)
   const [range, setRange] = useState<DateRange>(initRange)
   const [market, setMarket] = useState<Market>(initMarket)
   const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("MYR")
   const [myrRate, setMyrRate] = useState<number>(5800)
 
+  // Quyền tải sau lần render đầu, nên phải ép lại tab khi biết quyền thật:
+  // nhân sự gõ tay ?tab=lng sẽ bị đẩy về tab đầu tiên họ được xem.
+  useEffect(() => {
+    if (permLoading || allowedTabs.length === 0) return
+    if (!allowedTabs.includes(tab)) {
+      setTab(allowedTabs[0])
+      pushState(allowedTabs[0], range, market)
+    }
+  }, [permLoading, allowedTabs.join(","), tab])
+
   function changeTab(t: TabKey) {
+    if (!allowedTabs.includes(t)) return
     setTab(t)
     pushState(t, range, market)
   }
@@ -3880,11 +3903,11 @@ const BaoCaoPage = () => {
       </div>
 
       {/* AI Summary */}
-      <AISummaryBlock range={range} />
+      {canSeeAll && <AISummaryBlock range={range} />}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200 overflow-x-auto">
-        {tabs.map(t => (
+        {tabs.filter(t => allowedTabs.includes(t.key)).map(t => (
           <button key={t.key} onClick={() => changeTab(t.key)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
               tab === t.key

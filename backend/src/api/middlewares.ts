@@ -85,12 +85,21 @@ function requireAnyPerm(...accepted: string[]) {
  */
 const COST_ENTRY_PATHS = ["/mkt-cost-gg-manual", "/mkt-cost-marketplace"]
 
+// Endpoint cấp dữ liệu cho tab "Sàn TMĐT". Nhân sự vận hành sàn chỉ cần quyền hẹp
+// page.bao-cao.sanTMDT là gọi được, KHÔNG cần page.bao-cao.view (vốn mở toàn bộ
+// doanh số/LNG/sale). Chặn ở đây mới là chặn thật — ẩn tab ngoài UI chỉ là giao diện,
+// gõ thẳng URL API vẫn qua nếu backend không kiểm.
+const MARKETPLACE_PATHS = ["/marketplace-lng"]
+
 const reportGuard = (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
   // originalUrl luôn là path đầy đủ kèm query; req.path có thể đã bị cắt theo mount point.
   const url = ((req as any).originalUrl || req.path || "").split("?")[0]
   const isCostEntry = COST_ENTRY_PATHS.some((p) => url.includes("/report" + p))
+  const isMarketplace = MARKETPLACE_PATHS.some((p) => url.includes("/report" + p))
   const check = isCostEntry
     ? requireAnyPerm("page.bao-cao.view", "page.nhap-chi-phi.manage")
+    : isMarketplace
+    ? requireAnyPerm("page.bao-cao.view", "page.bao-cao.sanTMDT")
     : requirePerm("page.bao-cao.view")
   return check(req, res, next)
 }

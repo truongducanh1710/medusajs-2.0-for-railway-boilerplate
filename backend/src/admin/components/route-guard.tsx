@@ -1,6 +1,10 @@
 import { useEffect, type ComponentType } from "react"
 import { useCurrentPermissions } from "../lib/use-permissions"
 import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
+
+// ROUTE_PERMS cho phép khai 1 quyền hoặc mảng quyền (thoả BẤT KỲ quyền nào là vào được).
+const hasAnyPerm = (perm: string | string[], has: (p: string) => boolean) =>
+  Array.isArray(perm) ? perm.some(has) : has(perm)
 import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
 import { DEFAULT_ADMIN_APP_ROUTE } from "../lib/default-route"
 import { installAdminDebugHooks } from "../lib/debug-hooks"
@@ -50,7 +54,7 @@ export const RouteGuard = () => {
     }
 
     for (const [prefix, p] of Object.entries(ROUTE_PERMS)) {
-      if (!has(p)) {
+      if (!hasAnyPerm(p, has)) {
         hide.push(
           `nav a[href$="/app${prefix}"]`,
           `nav a[href*="/app${prefix}/"]`,
@@ -134,7 +138,7 @@ export const RouteGuard = () => {
 
     for (const [prefix, perm] of Object.entries(ROUTE_PERMS)) {
       // Exact segment match so "/bao-cao" does not swallow "/bao-cao-mkt".
-      if ((path === prefix || path.startsWith(`${prefix}/`)) && !has(perm)) {
+      if ((path === prefix || path.startsWith(`${prefix}/`)) && !hasAnyPerm(perm, has)) {
         alert(FORBIDDEN_MESSAGE)
         window.location.href = DEFAULT_ADMIN_APP_ROUTE
         return

@@ -1,10 +1,14 @@
-export const ROUTE_PERMS: Record<string, string> = {
+// Giá trị là 1 quyền, hoặc mảng "có BẤT KỲ quyền nào trong đây thì vào được" —
+// dùng khi một trang phục vụ nhiều mức quyền (vd Báo cáo: xem full vs chỉ 1 tab).
+export const ROUTE_PERMS: Record<string, string | string[]> = {
   "/don-hang": "page.don-hang.view",
   "/xac-nhan-don": "page.don-hang.view",
   "/pancake-orders": "page.don-hang.view",
   "/san-pham": "page.san-pham.view",
   "/test-san-pham": "page.product-test.view",
-  "/bao-cao": "page.bao-cao.view",
+  // Vào được trang Báo cáo nếu xem full HOẶC chỉ được mở tab Sàn TMĐT.
+  // Tab nào hiện ra do TAB_PERMS trong routes/bao-cao/page.tsx quyết định.
+  "/bao-cao": ["page.bao-cao.view", "page.bao-cao.sanTMDT"],
   "/pancake-sync": "page.pancake-sync.view",
   "/dohana-sync": "page.dohana-sync.view",
   "/pages": "page.pages.view",
