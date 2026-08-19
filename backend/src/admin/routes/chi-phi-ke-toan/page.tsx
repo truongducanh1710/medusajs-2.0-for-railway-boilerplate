@@ -388,12 +388,19 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
               <th style={{ padding: "6px 8px" }}>NV MKT</th><th style={{ padding: "6px 8px", textAlign: "right" }}>CP thực</th>
             </tr></thead>
             <tbody>
-              {rows.map((r: any) => (
-                <tr key={r.nv} style={{ borderTop: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "6px 8px", fontWeight: 500 }}>{r.nv}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#6d28d9", fontWeight: 600 }}>{fmtMoney(r.cp_thuc)}</td>
-                </tr>
-              ))}
+              {rows.map((r: any) => {
+                // KHÁC = tiền chưa quy được về NV nào (camp thiếu mã MKT, mã ADS
+                // chưa khai báo...). Tô khác màu để không bị đọc nhầm là một NV.
+                const isOther = r.nv === "KHÁC"
+                return (
+                  <tr key={r.nv} style={{ borderTop: "1px solid #f3f4f6", background: isOther ? "#fffbeb" : undefined }}>
+                    <td style={{ padding: "6px 8px", fontWeight: 500, color: isOther ? "#92400e" : undefined }}>
+                      {isOther ? "KHÁC (chưa gán NV)" : r.nv}
+                    </td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: isOther ? "#b45309" : "#6d28d9", fontWeight: 600 }}>{fmtMoney(r.cp_thuc)}</td>
+                  </tr>
+                )
+              })}
               {rows.length > 0 && (
                 <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 700 }}>
                   <td style={{ padding: "6px 8px" }}>TỔNG</td>
@@ -403,6 +410,15 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
               {rows.length === 0 && <tr><td colSpan={2} style={{ padding: 16, textAlign: "center", color: "#9ca3af" }}>Nhập khoản chi phí để xem phân bổ</td></tr>}
             </tbody>
           </table>
+          {(data?.unallocated_notes?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 8, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, fontSize: 11, color: "#92400e" }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Vì sao có dòng KHÁC</div>
+              {data.unallocated_notes.map((n: string, i: number) => (
+                <div key={i} style={{ lineHeight: 1.5 }}>· {n}</div>
+              ))}
+              <div style={{ marginTop: 4, color: "#78350f" }}>Gán mã NV cho các camp này rồi Refresh để tiền về đúng người.</div>
+            </div>
+          )}
         </div>
       </div>
     </div>

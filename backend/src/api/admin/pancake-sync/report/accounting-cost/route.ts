@@ -117,6 +117,8 @@ export async function computeAccountingCost(
   to: string
 ): Promise<{
   costByNV: Record<string, number>
+  unallocated: number
+  unallocatedNotes: string[]
   costByPlatform: Record<string, number>
   items: any[]
   nvCodes: string[]
@@ -136,6 +138,16 @@ export async function computeAccountingCost(
 
   const costByNV: Record<string, number> = {}
   const add = (code: string, amt: number) => { costByNV[code] = (costByNV[code] || 0) + amt }
+  // Tiền không quy được về NV nào (camp thiếu mã MKT, mã ADS chưa khai báo...).
+  // KHÔNG được vứt đi: giữ riêng ở đây để bảng phân bổ hiện dòng KHÁC và tổng
+  // luôn khớp đúng tổng tiền đã nhập.
+  let unallocated = 0
+  const unallocatedNotes: string[] = []
+  const addOther = (amt: number, why: string) => {
+    if (amt <= 0) return
+    unallocated += amt
+    if (why && !unallocatedNotes.includes(why)) unallocatedNotes.push(why)
+  }
 
   // Phân bổ song song theo NỀN TẢNG — cho cột CP thực (KT) ở bảng LNG theo nền tảng.
   // 'nap' (tài khoản FB) → facebook, 'nap_gg' → google; chi phí chung (NL/ITY/ZALO...)
@@ -148,12 +160,24 @@ export async function computeAccountingCost(
       costByPlatform.facebook += amount
       const acc = it.ads_code ? codeToAccount[it.ads_code] : null
       const spend = acc ? spendByAcc[acc] : null
-      if (spend && Object.keys(spend).length) {
-        const totalSpend = Object.values(spend).reduce((s, v) => s + v, 0)
-        for (const [nv, sp] of Object.entries(spend)) {
+      const totalSpend = spend ? Object.values(spend).reduce((s, v) => s + v, 0) : 0
+      if (totalSpend > 0) {
+        // Chia theo % tiêu thực của từng NV trên chính tài khoản này. Phần chi
+        // tiêu "KHÁC" (camp chưa gắn mã MKT) vẫn nằm trong mẫu số, nên phần
+        // tiền tương ứng phải đi vào KHÁC — trước đây nó bị bỏ qua và biến mất.
+        let given = 0
+        for (const [nv, sp] of Object.entries(spend!)) {
           if (nv === "KHÁC") continue
-          add(nv, totalSpend > 0 ? amount * (sp / totalSpend) : 0)
+          const part = amount * (sp / totalSpend)
+          add(nv, part)
+          given += part
         }
+        addOther(amount - given, `${it.ads_code || "?"}: có chi tiêu chưa gắn mã NV`)
+      } else {
+        // Mã ADS chưa khai báo trong AD_ACCOUNTS, hoặc tài khoản không phát sinh
+        // chi tiêu trong kỳ → không có cơ sở chia. Dồn vào KHÁC kèm ghi chú thay
+        // vì im lặng bỏ trọn khoản nạp.
+        addOther(amount, `${it.ads_code || "?"}: ${acc ? "không có chi tiêu trong kỳ" : "mã ADS chưa khai báo"}`)
       }
     } else if (it.kind === "nap_gg") {
       // Tiền nạp Google Ads — chia về NV theo % tiêu Google thực trong kỳ.
@@ -161,15 +185,23 @@ export async function computeAccountingCost(
       const totalGg = Object.entries(ggSpendByNV)
         .filter(([nv]) => nv !== "KHÁC")
         .reduce((s, [, v]) => s + v, 0)
-      for (const [nv, sp] of Object.entries(ggSpendByNV)) {
-        if (nv === "KHÁC") continue
-        add(nv, totalGg > 0 ? amount * (sp / totalGg) : 0)
+      if (totalGg > 0) {
+        for (const [nv, sp] of Object.entries(ggSpendByNV)) {
+          if (nv === "KHÁC") continue
+          add(nv, amount * (sp / totalGg))
+        }
+      } else {
+        addOther(amount, "Nạp Google Ads: chưa có chi tiêu GG gắn mã NV trong kỳ")
       }
     } else {
       costByPlatform.chung += amount
       if (it.alloc === "deu") {
-        const per = nvCodes.length ? amount / nvCodes.length : 0
-        for (const nv of nvCodes) add(nv, per)
+        if (nvCodes.length) {
+          const per = amount / nvCodes.length
+          for (const nv of nvCodes) add(nv, per)
+        } else {
+          addOther(amount, (it.label || "Chi phí chung") + ": kỳ này chưa có NV nào phát sinh chi tiêu")
+        }
       } else if (it.alloc?.startsWith("nv:")) {
         add(it.alloc.slice(3).toUpperCase(), amount)
       } else if (it.alloc === "ty_le") {
@@ -184,14 +216,25 @@ export async function computeAccountingCost(
           if (nv === "KHÁC") continue
           totalByNV[nv] = (totalByNV[nv] || 0) + sp; grand += sp
         }
-        for (const [nv, sp] of Object.entries(totalByNV)) add(nv, grand > 0 ? amount * (sp / grand) : 0)
+        if (grand > 0) {
+          for (const [nv, sp] of Object.entries(totalByNV)) add(nv, amount * (sp / grand))
+        } else {
+          addOther(amount, (it.label || "Chi phí chung") + ": chưa có chi tiêu gắn mã NV để chia tỷ lệ")
+        }
+      } else {
+        // alloc lạ (dữ liệu cũ / nhập tay sai) — không rơi vào nhánh nào ở trên.
+        addOther(amount, (it.label || "Chi phí chung") + ": cách chia không hợp lệ (" + it.alloc + ")")
       }
     }
   }
-  // Làm tròn.
+  // Làm tròn. Sai số làm tròn của từng NV được dồn nốt vào KHÁC để tổng hiển
+  // thị luôn bằng đúng tổng tiền đã nhập, không lệch vài đồng.
+  const grandTotal = items.reduce((sum: number, it: any) => sum + Number(it.amount), 0)
   for (const k of Object.keys(costByNV)) costByNV[k] = Math.round(costByNV[k])
+  const allocatedRounded = Object.values(costByNV).reduce((sum, v) => sum + v, 0)
+  unallocated = grandTotal - allocatedRounded
   for (const k of Object.keys(costByPlatform)) costByPlatform[k] = Math.round(costByPlatform[k])
-  return { costByNV, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV }
+  return { costByNV, unallocated, unallocatedNotes, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV }
 }
 
 // GET: trả các khoản chi phí + bảng phân bổ CP thực về từng NV.
@@ -200,15 +243,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const { from, to } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
 
-    const { costByNV, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV } =
+    const { costByNV, unallocated, unallocatedNotes, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV } =
       await computeAccountingCost(from, to)
     const rows = Object.entries(costByNV)
       .map(([nv, cp]) => ({ nv, cp_thuc: cp }))
       .sort((a, b) => b.cp_thuc - a.cp_thuc)
+    // Dòng KHÁC luôn ở cuối bảng, và chỉ hiện khi thực sự có tiền chưa quy được
+    // về NV — để tổng khớp đúng tổng các khoản đã nhập.
+    if (unallocated !== 0) rows.push({ nv: "KHÁC", cp_thuc: unallocated })
     const total = rows.reduce((s, r) => s + r.cp_thuc, 0)
 
     return res.json({
       month: monthOf(from), items, rows, total,
+      unallocated, unallocated_notes: unallocatedNotes,
       cost_by_platform: costByPlatform,
       gg_spend_by_nv: ggSpendByNV,
       ad_accounts: AD_ACCOUNTS,
