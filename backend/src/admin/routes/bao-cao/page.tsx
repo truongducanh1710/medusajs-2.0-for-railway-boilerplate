@@ -3396,11 +3396,12 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
  * không xuất hiện ở đâu. Doanh thu ở đây là tiền THỰC NHẬN (sàn đã trừ phí + khuyến mãi).
  */
 // Cột bảng "LNG theo ngày" — id trùng với sort key để header dùng chung một chỗ.
-type DayColId = "date" | "platform" | "orders" | "gross" | "rev" | "cogs" | "cogsPct" | "ads_cost" | "adsMetric" | "lng" | "pct"
+type DayColId = "date" | "platform" | "orders" | "huyHoan" | "gross" | "rev" | "cogs" | "cogsPct" | "ads_cost" | "adsMetric" | "lng" | "pct"
 const SANTMDT_DAY_COLS: ColumnDef<DayColId>[] = [
   { id: "date",      label: "Ngày",             default: 130, min: 90 },
   { id: "platform",  label: "Sàn",              default: 110, min: 80 },
   { id: "orders",    label: "Đơn",              default: 70,  min: 55 },
+  { id: "huyHoan",   label: "Huỷ/Hoàn",         default: 110, min: 80 },
   { id: "gross",     label: "DT trước phí sàn", default: 140, min: 90 },
   { id: "rev",       label: "DT thực nhận",     default: 130, min: 90 },
   { id: "cogs",      label: "Giá vốn",          default: 120, min: 80 },
@@ -3480,6 +3481,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const SORT_ALIAS: Record<string, string> = {
     orders: M.orders, gross: M.gross, rev: M.rev, cogs: M.cogs,
     cogsPct: M.cogsPct, adsGrossPct: M.adsGrossPct, lng: M.lng, pct: M.pct,
+    huyHoan: "da_huy",
   }
   const byDay = [...byDayFiltered].sort((a: any, b: any) => {
     const key = SORT_ALIAS[daySort.key] ?? daySort.key
@@ -3489,6 +3491,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   })
   const dayTotal = byDayFiltered.reduce((acc: any, r: any) => {
     acc.orders += Number(r[M.orders] || 0)
+    acc.huy += Number(r.da_huy || 0)
+    acc.hoan += Number(r.da_hoan || 0) + Number(r.dang_hoan || 0)
+    acc.nhan += Number(r.da_nhan || 0)
     acc.gross += Number(r[M.gross] || 0)
     acc.rev += Number(r[M.rev] || 0)
     acc.cogs += Number(r[M.cogs] || 0)
@@ -3500,7 +3505,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     acc.pending += Number(r.orders_pending || 0)
     if (r.ads_missing) acc.ads_missing_days += 1
     return acc
-  }, { orders: 0, gross: 0, rev: 0, cogs: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
+  }, { orders: 0, huy: 0, hoan: 0, nhan: 0, gross: 0, rev: 0, cogs: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
   const toggleDaySort = (key: string) =>
     setDaySort(s => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 })
   const sortIcon = (key: string) => daySort.key !== key ? "" : (daySort.dir === -1 ? " ▼" : " ▲")
@@ -3630,8 +3635,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
               {dayMode === "tt"
-                ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong (đơn sàn hoàn rất ít nên coi như sẽ nhận)."
-                : "Chỉ đơn đã giao thành công — tiền chắc chắn về."}
+                ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."
+                : "Chỉ đơn đã giao thành công — tiền chắc chắn về. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."}
               {" "}Bấm tiêu đề cột để sắp xếp; riêng cột <b>{adsMetric === "pct" ? "%Ads" : "ROAS"}</b> bấm để đổi cách tính.
               {" "}Kéo mép cột để đổi độ rộng —{" "}
               <button type="button" onClick={resetColWidths}
@@ -3692,6 +3697,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     )
                   }
                   const titles: Partial<Record<DayColId, string>> = {
+                    huyHoan: "Số đơn huỷ + hoàn (và % trên số đơn đã ngã ngũ). Không tính vào doanh thu.",
                     gross: "Tiền khách trả (đã trừ khuyến mãi, CHƯA trừ phí sàn)",
                     rev: "Tiền thực nhận — đã trừ cả khuyến mãi và phí sàn",
                     cogsPct: "Giá vốn ÷ doanh thu có giá vốn",
@@ -3736,6 +3742,31 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                       }`}>{r.platform_label}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[M.orders])}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      {(() => {
+                        // Đơn huỷ/hoàn KHÔNG nằm trong doanh thu — cột này chỉ để thấy
+                        // quy mô thất thoát và biết dòng nào tạm tính đáng tin.
+                        const huy = Number(r.da_huy || 0)
+                        const hoan = Number(r.da_hoan || 0) + Number(r.dang_hoan || 0)
+                        const tong = huy + hoan
+                        if (tong === 0) return <span className="text-gray-300">—</span>
+                        // Mẫu số: số đơn đã ngã ngũ (nhận/huỷ/hoàn) — đơn còn đang đi
+                        // chưa biết kết quả nên không tính vào.
+                        const ngaNgu = Number(r.da_nhan || 0) + tong
+                        const pctHuy = ngaNgu > 0 ? Math.round(tong / ngaNgu * 1000) / 10 : null
+                        const nang = pctHuy != null && pctHuy >= 30
+                        return (
+                          <span title={`Huỷ ${huy} · Hoàn ${hoan} — trên ${ngaNgu} đơn đã ngã ngũ`}>
+                            <span className={nang ? "font-semibold text-red-600" : "text-gray-700"}>{fmtNum(tong)}</span>
+                            {pctHuy != null && (
+                              <span className={`ml-1 text-[11px] ${nang ? "text-red-500" : "text-gray-400"}`}>
+                                {pctHuy}%
+                              </span>
+                            )}
+                          </span>
+                        )
+                      })()}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-gray-600">{money(r[M.gross])}</td>
                     <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r[M.rev])}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700">{money(r[M.cogs])}</td>
@@ -3778,6 +3809,20 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono">{fmtNum(dayTotal.orders)}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {(() => {
+                      const tong = dayTotal.huy + dayTotal.hoan
+                      if (tong === 0) return <span className="text-gray-300">—</span>
+                      const ngaNgu = dayTotal.nhan + tong
+                      const p = ngaNgu > 0 ? Math.round(tong / ngaNgu * 1000) / 10 : null
+                      return (
+                        <span title={`Huỷ ${dayTotal.huy} · Hoàn ${dayTotal.hoan} — trên ${ngaNgu} đơn đã ngã ngũ`}>
+                          {fmtNum(tong)}
+                          {p != null && <span className="ml-1 text-[11px] font-normal text-gray-500">{p}%</span>}
+                        </span>
+                      )
+                    })()}
+                  </td>
                   <td className="px-3 py-2.5 text-right text-gray-600">{money(dayTotal.gross)}</td>
                   <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.rev)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.cogs)}</td>
@@ -3852,6 +3897,30 @@ const BaoCaoPage = () => {
     }
   }, [permLoading, allowedTabs.join(","), tab])
 
+  // Chưa biết quyền thì KHÔNG render tab nào. Trước đây render luôn tab mặc định
+  // ("overview") ngay lần đầu: người chỉ có page.bao-cao.sanTMDT bị OverviewTab gọi
+  // /pancake-sync/report → 403 → apiFetch alert + đá về /app/mkt-chat, nên không bao
+  // giờ vào được tab Sàn TMĐT dù đã cấp đúng quyền.
+  if (permLoading) {
+    return (
+      <div className="p-3 sm:p-6 max-w-7xl">
+        <div className="text-center py-16 text-gray-400 text-sm animate-pulse">Đang tải…</div>
+      </div>
+    )
+  }
+  if (allowedTabs.length === 0) {
+    return (
+      <div className="p-3 sm:p-6 max-w-7xl">
+        <div className="text-center py-16 text-gray-500 text-sm">
+          Bạn chưa được cấp quyền xem báo cáo nào.
+        </div>
+      </div>
+    )
+  }
+  // Quyền đã biết nhưng effect ép tab chạy sau render này — render tab hợp lệ ngay
+  // để không loé một tab cấm rồi mới đổi.
+  const activeTab: TabKey = allowedTabs.includes(tab) ? tab : allowedTabs[0]
+
   function changeTab(t: TabKey) {
     if (!allowedTabs.includes(t)) return
     setTab(t)
@@ -3910,7 +3979,7 @@ const BaoCaoPage = () => {
         {tabs.filter(t => allowedTabs.includes(t.key)).map(t => (
           <button key={t.key} onClick={() => changeTab(t.key)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-              tab === t.key
+              activeTab === t.key
                 ? "text-violet-600 border-b-2 border-violet-600 bg-violet-50/50"
                 : "text-gray-500 hover:text-gray-700 border-b-2 border-transparent"
             }`}>
@@ -3923,21 +3992,21 @@ const BaoCaoPage = () => {
         {/* Tổng quan nhúng picker vào hàng "Phạm vi"; các tab khác chưa có hàng lọc
             riêng nên hiện picker ở đây. "Tổng 2 TT" gộp cả 2 thị trường và MKT là
             trang riêng → không cần chọn thị trường. */}
-        {tab !== "overview" && tab !== "combined" && tab !== "marketing" && (
+        {activeTab !== "overview" && activeTab !== "combined" && activeTab !== "marketing" && (
           <div className="mb-4 flex flex-wrap items-center gap-3">{marketPicker}</div>
         )}
-        {tab === "overview"  && <OverviewTab range={range} market={market} onRate={setMyrRate} marketPicker={marketPicker} />}
+        {activeTab === "overview"  && <OverviewTab range={range} market={market} onRate={setMyrRate} marketPicker={marketPicker} />}
         {/* Gộp 2 thị trường → luôn hiển thị VND, không phụ thuộc dropdown market. */}
-        {tab === "combined"  && <CombinedTab range={range} />}
-        {tab === "shipping"  && <ShippingTab range={range} market={market} />}
-        {tab === "product"   && <ProductTab range={range} market={market} />}
-        {tab === "sale"      && <SaleTab range={range} market={market} />}
-        {tab === "nv-mkt"   && <NvMktTab range={range} market={market} />}
-        {tab === "lng"      && <LngTab range={range} market={market} />}
-        {tab === "sanTMDT"  && <MarketplaceLngTab range={range} market={market} />}
-        {tab === "errors"   && <ErrorsTab range={range} market={market} />}
+        {activeTab === "combined"  && <CombinedTab range={range} />}
+        {activeTab === "shipping"  && <ShippingTab range={range} market={market} />}
+        {activeTab === "product"   && <ProductTab range={range} market={market} />}
+        {activeTab === "sale"      && <SaleTab range={range} market={market} />}
+        {activeTab === "nv-mkt"   && <NvMktTab range={range} market={market} />}
+        {activeTab === "lng"      && <LngTab range={range} market={market} />}
+        {activeTab === "sanTMDT"  && <MarketplaceLngTab range={range} market={market} />}
+        {activeTab === "errors"   && <ErrorsTab range={range} market={market} />}
       </CurrencyCtx.Provider>
-      {tab === "marketing" && (
+      {activeTab === "marketing" && (
         <div className="bg-white border rounded-xl p-10 text-center space-y-4">
           <div className="text-5xl">📣</div>
           <h3 className="font-semibold text-gray-700 text-lg">Báo cáo Marketing</h3>
