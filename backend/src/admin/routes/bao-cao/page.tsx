@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useContext, createContext } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 import { useCurrentPermissions } from "../../lib/use-permissions"
+import { useResizableColumns, ResizeHandle, type ColumnDef } from "../../lib/resizable-columns"
 
 // ---- Currency display context ----
 // Cho phép mọi Tab format tiền đúng theo market đang chọn (VN → VND, MY → MYR/VND quy đổi)
@@ -3394,6 +3395,22 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
  * Các báo cáo LNG khác chỉ lấy đơn ads (source manual/facebook/...) nên toàn bộ đơn sàn
  * không xuất hiện ở đâu. Doanh thu ở đây là tiền THỰC NHẬN (sàn đã trừ phí + khuyến mãi).
  */
+// Cột bảng "LNG theo ngày" — id trùng với sort key để header dùng chung một chỗ.
+type DayColId = "date" | "platform" | "orders" | "gross" | "rev" | "cogs" | "cogsPct" | "ads_cost" | "adsMetric" | "lng" | "pct"
+const SANTMDT_DAY_COLS: ColumnDef<DayColId>[] = [
+  { id: "date",      label: "Ngày",             default: 130, min: 90 },
+  { id: "platform",  label: "Sàn",              default: 110, min: 80 },
+  { id: "orders",    label: "Đơn",              default: 70,  min: 55 },
+  { id: "gross",     label: "DT trước phí sàn", default: 140, min: 90 },
+  { id: "rev",       label: "DT thực nhận",     default: 130, min: 90 },
+  { id: "cogs",      label: "Giá vốn",          default: 120, min: 80 },
+  { id: "cogsPct",   label: "%GV",              default: 75,  min: 55 },
+  { id: "ads_cost",  label: "Ads",              default: 120, min: 80 },
+  { id: "adsMetric", label: "%Ads",             default: 85,  min: 60 },
+  { id: "lng",       label: "LNG sau ads",      default: 140, min: 90 },
+  { id: "pct",       label: "%LNG",             default: 85,  min: 60 },
+]
+
 function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3403,6 +3420,11 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
   // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
   const [dayMode, setDayMode] = useState<"tt" | "thuc">("tt")
+  // Cùng 1 cột hiển thị được 2 cách đo hiệu quả ads — bấm tiêu đề để đổi, đỡ phải
+  // thêm cột mới. %Ads = ads/doanh thu; ROAS = doanh thu/ads (nghịch đảo).
+  const [adsMetric, setAdsMetric] = useState<"pct" | "roas">("pct")
+  const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } =
+    useResizableColumns("santmdt-lng-ngay.col-widths.v1", SANTMDT_DAY_COLS)
   const [daySort, setDaySort] = useState<{ key: string; dir: 1 | -1 }>({ key: "date", dir: -1 })
 
   useEffect(() => {
@@ -3425,6 +3447,15 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const pctCell = (v: any, good?: boolean) =>
     v == null ? <span className="text-gray-300">—</span>
       : <span className={good == null ? "text-gray-600" : good ? "text-green-600" : "text-red-600"}>{v}%</span>
+
+  // ROAS = doanh thu ÷ chi phí ads. Ads = 0 thì không chia được (chưa điền hoặc
+  // ngày không chạy ads) — trả "—" thay vì Infinity.
+  const roasCell = (revenue: any, ads: any) => {
+    const a = Number(ads || 0), r = Number(revenue || 0)
+    if (a <= 0) return <span className="text-gray-300">—</span>
+    const v = Math.round(r / a * 100) / 100
+    return <span className={v >= 1 ? "text-green-600" : "text-red-600"}>{v.toFixed(2)}</span>
+  }
 
   const WEEKDAY_VN = ["CN", "Th2", "Th3", "Th4", "Th5", "Th6", "Th7"]
   const dayLabel = (iso: string) => {
@@ -3601,7 +3632,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               {dayMode === "tt"
                 ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong (đơn sàn hoàn rất ít nên coi như sẽ nhận)."
                 : "Chỉ đơn đã giao thành công — tiền chắc chắn về."}
-              {" "}Bấm tiêu đề cột để sắp xếp.
+              {" "}Bấm tiêu đề cột để sắp xếp; riêng cột <b>{adsMetric === "pct" ? "%Ads" : "ROAS"}</b> bấm để đổi cách tính.
+              {" "}Kéo mép cột để đổi độ rộng —{" "}
+              <button type="button" onClick={resetColWidths}
+                className="underline hover:text-gray-600">đặt lại</button>.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -3628,25 +3662,53 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="text-sm" style={{ tableLayout: "fixed", width: `${totalWidth}px`, minWidth: "100%" }}>
+            <colgroup>
+              {SANTMDT_DAY_COLS.map(c => <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />)}
+            </colgroup>
             <thead className="bg-gray-50 border-b text-xs text-gray-500 select-none">
               <tr>
-                <th className="text-left px-4 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("date")}>Ngày{sortIcon("date")}</th>
-                <th className="text-left px-4 py-2.5">Sàn</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("orders")}>Đơn{sortIcon("orders")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Tiền khách trả (đã trừ khuyến mãi, CHƯA trừ phí sàn)" onClick={() => toggleDaySort("gross")}>DT trước phí sàn{sortIcon("gross")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Tiền thực nhận — đã trừ cả khuyến mãi và phí sàn" onClick={() => toggleDaySort("rev")}>DT thực nhận{sortIcon("rev")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("cogs")}>Giá vốn{sortIcon("cogs")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Giá vốn ÷ DT thực nhận" onClick={() => toggleDaySort("cogsPct")}>%GV{sortIcon("cogsPct")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("ads_cost")}>Ads{sortIcon("ads_cost")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" title="Chi phí ads ÷ DT trước phí sàn" onClick={() => toggleDaySort("adsGrossPct")}>%Ads{sortIcon("adsGrossPct")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("lng")}>LNG sau ads{sortIcon("lng")}</th>
-                <th className="text-right px-3 py-2.5 cursor-pointer hover:text-gray-700" onClick={() => toggleDaySort("pct")}>%LNG{sortIcon("pct")}</th>
+                {SANTMDT_DAY_COLS.map(c => {
+                  const alignLeft = c.id === "date" || c.id === "platform"
+                  const base = `relative ${alignLeft ? "text-left px-4" : "text-right px-3"} py-2.5`
+                  // Cột "Sàn" không sort (chỉ là nhãn), cột %Ads bấm để đổi cách tính.
+                  if (c.id === "platform") {
+                    return <th key={c.id} className={base}>{c.label}<ResizeHandle onMouseDown={onResizeMouseDown(c.id)} /></th>
+                  }
+                  if (c.id === "adsMetric") {
+                    return (
+                      <th key={c.id} className={base}>
+                        <button type="button"
+                          onClick={() => setAdsMetric(m => m === "pct" ? "roas" : "pct")}
+                          title={adsMetric === "pct"
+                            ? "Chi phí ads ÷ DT trước phí sàn — bấm để đổi sang ROAS"
+                            : "DT trước phí sàn ÷ chi phí ads — bấm để đổi sang %Ads"}
+                          className="inline-flex items-center gap-1 hover:text-gray-700 cursor-pointer">
+                          {adsMetric === "pct" ? "%Ads" : "ROAS"}
+                          <span className="text-[9px] text-gray-400">⇄</span>
+                        </button>
+                        <ResizeHandle onMouseDown={onResizeMouseDown(c.id)} />
+                      </th>
+                    )
+                  }
+                  const titles: Partial<Record<DayColId, string>> = {
+                    gross: "Tiền khách trả (đã trừ khuyến mãi, CHƯA trừ phí sàn)",
+                    rev: "Tiền thực nhận — đã trừ cả khuyến mãi và phí sàn",
+                    cogsPct: "Giá vốn ÷ doanh thu có giá vốn",
+                  }
+                  return (
+                    <th key={c.id} className={`${base} cursor-pointer hover:text-gray-700`}
+                      title={titles[c.id]} onClick={() => toggleDaySort(c.id)}>
+                      {c.label}{sortIcon(c.id)}
+                      <ResizeHandle onMouseDown={onResizeMouseDown(c.id)} />
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
               {byDay.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+                <tr><td colSpan={SANTMDT_DAY_COLS.length} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
               {byDay.map((r: any) => {
                 const lngVal = Number(r[M.lng] || 0)
@@ -3659,7 +3721,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 return (
                   <tr key={`${r.date}-${r.platform}`}
                     className={lngBad ? "bg-red-50/60" : r.ads_missing ? "bg-amber-50/50" : ""}>
-                    <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap overflow-hidden">
                       {dayLabel(r.date)}
                       {notRipe && (
                         <span className="ml-1.5 text-[10.5px] text-gray-400"
@@ -3668,8 +3730,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                    <td className="px-4 py-2.5 overflow-hidden">
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${
                         r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
                       }`}>{r.platform_label}</span>
                     </td>
@@ -3684,7 +3746,11 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         : money(r.ads_cost)}
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      {r.ads_missing ? <span className="text-gray-300">—</span> : pctCell(r[M.adsGrossPct])}
+                      {r.ads_missing
+                        ? <span className="text-gray-300">—</span>
+                        : adsMetric === "pct"
+                          ? pctCell(r[M.adsGrossPct])
+                          : roasCell(r[M.gross], r.ads_cost)}
                     </td>
                     <td className={`px-3 py-2.5 text-right font-semibold ${lngVal >= 0 ? "text-violet-700" : "text-red-500"}`}>
                       {lngBad && <span title="Lỗ nặng: LNG sau ads dưới -20% doanh thu">🔴 </span>}
@@ -3721,7 +3787,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   </td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
                   <td className="px-3 py-2.5 text-right">
-                    {pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.ads_cost / dayTotal.gross * 10000) / 100 : null)}
+                    {adsMetric === "pct"
+                      ? pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.ads_cost / dayTotal.gross * 10000) / 100 : null)
+                      : roasCell(dayTotal.gross, dayTotal.ads_cost)}
                   </td>
                   <td className={`px-3 py-2.5 text-right ${dayTotal.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
                     {money(dayTotal.lng)}
