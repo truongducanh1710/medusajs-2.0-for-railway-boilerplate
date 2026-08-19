@@ -256,6 +256,10 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [draft, setDraft] = useState<any>({ kind: "nap", ads_code: "ADS329", label: "", amount: "", alloc: "ty_le" })
+  // Chi tiết dòng KHÁC — chỉ tải khi kế toán bấm mở, vì phải quét từng camp.
+  const [otherOpen, setOtherOpen] = useState(false)
+  const [otherData, setOtherData] = useState<any>(null)
+  const [otherLoading, setOtherLoading] = useState(false)
 
   const month = from.slice(0, 7)
   const load = useCallback(async () => {
@@ -264,6 +268,17 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
     catch (e: any) { alert(e.message) } finally { setLoading(false) }
   }, [from, to])
   useEffect(() => { load() }, [load])
+  // Đổi kỳ thì chi tiết cũ không còn đúng nữa.
+  useEffect(() => { setOtherOpen(false); setOtherData(null) }, [from, to])
+
+  async function toggleOther() {
+    if (otherOpen) { setOtherOpen(false); return }
+    setOtherOpen(true)
+    if (otherData) return
+    setOtherLoading(true)
+    try { setOtherData(await apiJson(`/admin/pancake-sync/report/accounting-cost/unallocated?from=${from}&to=${to}`)) }
+    catch (e: any) { alert(e.message) } finally { setOtherLoading(false) }
+  }
 
   async function addItem() {
     if (!draft.amount || Number.isNaN(Number(draft.amount))) { alert("Số tiền không hợp lệ"); return }
@@ -393,9 +408,11 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
                 // chưa khai báo...). Tô khác màu để không bị đọc nhầm là một NV.
                 const isOther = r.nv === "KHÁC"
                 return (
-                  <tr key={r.nv} style={{ borderTop: "1px solid #f3f4f6", background: isOther ? "#fffbeb" : undefined }}>
+                  <tr key={r.nv}
+                      onClick={isOther ? toggleOther : undefined}
+                      style={{ borderTop: "1px solid #f3f4f6", background: isOther ? "#fffbeb" : undefined, cursor: isOther ? "pointer" : undefined }}>
                     <td style={{ padding: "6px 8px", fontWeight: 500, color: isOther ? "#92400e" : undefined }}>
-                      {isOther ? "KHÁC (chưa gán NV)" : r.nv}
+                      {isOther ? <>KHÁC (chưa gán NV) <span style={{ fontSize: 10, textDecoration: "underline" }}>{otherOpen ? "▾ ẩn" : "▸ xem ở đâu"}</span></> : r.nv}
                     </td>
                     <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: isOther ? "#b45309" : "#6d28d9", fontWeight: 600 }}>{fmtMoney(r.cp_thuc)}</td>
                   </tr>
@@ -417,6 +434,57 @@ function AccountingAllocation({ from, to, canEdit }: { from: string; to: string;
                 <div key={i} style={{ lineHeight: 1.5 }}>· {n}</div>
               ))}
               <div style={{ marginTop: 4, color: "#78350f" }}>Gán mã NV cho các camp này rồi Refresh để tiền về đúng người.</div>
+            </div>
+          )}
+          {otherOpen && (
+            <div style={{ marginTop: 8, border: "1px solid #fde68a", borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ padding: "6px 10px", background: "#fef3c7", fontSize: 11, fontWeight: 600, color: "#92400e" }}>
+                Tiền KHÁC đến từ đâu {otherLoading && <span style={{ fontWeight: 400 }}>· đang quét camp...</span>}
+              </div>
+              {otherData && (
+                <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                  {/* Gom theo tài khoản trước — kế toán thường xử lý theo tài khoản. */}
+                  {(otherData.by_account ?? []).map((a: any) => (
+                    <div key={a.ads_code} style={{ padding: "5px 10px", background: "#fffdf5", borderBottom: "1px solid #fef3c7", fontSize: 11, display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontWeight: 600, color: "#92400e" }}>{a.ads_code}</span>
+                      <span style={{ color: "#b45309", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(a.amount)} · {a.campaigns} camp</span>
+                    </div>
+                  ))}
+                  <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                    <thead><tr style={{ background: "#f9fafb", textAlign: "left" }}>
+                      <th style={{ padding: "5px 8px" }}>Ngày</th>
+                      <th style={{ padding: "5px 8px" }}>TK</th>
+                      <th style={{ padding: "5px 8px" }}>Camp chưa gắn mã NV</th>
+                      <th style={{ padding: "5px 8px", textAlign: "right" }}>Tiền</th>
+                    </tr></thead>
+                    <tbody>
+                      {(otherData.rows ?? []).map((r: any, i: number) => (
+                        <tr key={r.campaign_id + r.date + i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                          <td style={{ padding: "5px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{r.date}</td>
+                          <td style={{ padding: "5px 8px", whiteSpace: "nowrap", fontWeight: 500 }}>{r.ads_code}</td>
+                          <td style={{ padding: "5px 8px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.campaign_name}>{r.campaign_name}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#b45309", fontWeight: 600 }}>{fmtMoney(r.amount)}</td>
+                        </tr>
+                      ))}
+                      {(otherData.rows ?? []).length === 0 && !otherLoading && (
+                        <tr><td colSpan={4} style={{ padding: 12, textAlign: "center", color: "#9ca3af" }}>Không có camp nào thiếu mã NV — xem ghi chú phía trên.</td></tr>
+                      )}
+                      {/* Phần không truy được về camp: mã ADS chưa khai, TK không
+                          có chi tiêu, chi phí chung không chia được, sai số làm tròn. */}
+                      {Math.abs(otherData.unmatched ?? 0) > 0 && (
+                        <tr style={{ borderTop: "1px solid #f3f4f6", background: "#fffdf5" }}>
+                          <td colSpan={3} style={{ padding: "5px 8px", fontStyle: "italic", color: "#78350f" }}>Không truy được về camp (mã ADS chưa khai / TK không chi tiêu / làm tròn)</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#b45309", fontWeight: 600 }}>{fmtMoney(otherData.unmatched)}</td>
+                        </tr>
+                      )}
+                      <tr style={{ borderTop: "2px solid #fde68a", fontWeight: 700, background: "#fef3c7" }}>
+                        <td colSpan={3} style={{ padding: "5px 8px", color: "#92400e" }}>TỔNG KHÁC</td>
+                        <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#92400e" }}>{fmtMoney(otherData.unallocated ?? 0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>

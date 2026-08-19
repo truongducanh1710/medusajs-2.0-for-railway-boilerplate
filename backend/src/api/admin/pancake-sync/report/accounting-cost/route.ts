@@ -18,14 +18,14 @@ async function sql(query: string, params?: any[]): Promise<any[]> {
 
 // Map ad_account_id (Facebook) → mã ADS gợi nhớ. Verify từ campaign_name thực tế.
 // Dùng để nhập "tiền nạp" theo mã ADS thay vì id dài, và để tính % tiêu thực/NV theo tài khoản.
-const AD_ACCOUNTS: { account_id: string; ads_code: string }[] = [
+export const AD_ACCOUNTS: { account_id: string; ads_code: string }[] = [
   { account_id: "act_899712815703406", ads_code: "ADS329" },
   { account_id: "act_1336247387117837", ads_code: "ADS343" },
   { account_id: "act_1397084955139677", ads_code: "ADS344" },
   { account_id: "act_1133464788237858", ads_code: "ADS327" },
   { account_id: "act_2801056226892845", ads_code: "ADS346" },
 ]
-const codeToAccount: Record<string, string> = {}
+export const codeToAccount: Record<string, string> = {}
 for (const a of AD_ACCOUNTS) codeToAccount[a.ads_code] = a.account_id
 
 async function ensureTable() {
