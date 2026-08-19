@@ -117,6 +117,10 @@ export function ProductTestDrawer({
     Array<{ email: string; name: string }>
   >([]);
 
+  // Must stay above the "!detail" early return below: hooks cannot be
+  // called conditionally, and detail flips null -> loaded on the first fetch.
+  const { email: myEmail, isSuper } = useCurrentPermissions();
+
   async function load() {
     try {
       setError("");
@@ -158,7 +162,6 @@ export function ProductTestDrawer({
     );
   const record = detail.case as ProductTestCaseRecord;
   const permissions = detail.permissions;
-  const { email: myEmail, isSuper } = useCurrentPermissions();
   // Khớp đúng chốt chặn ở backend (PATCH/DELETE daily-results): chỉ MKT đang
   // phụ trách hồ sơ hoặc super sửa/xoá được dòng test, và chỉ khi hồ sơ còn
   // đang "testing" — kết luận rồi thì số liệu phải đứng yên làm căn cứ.
