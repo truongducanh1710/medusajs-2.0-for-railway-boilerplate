@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
+import { getMyrToVndRate } from "../../../../../lib/db"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -24,6 +25,11 @@ const FULLFILL_PER_ORDER = 5000
  *
  * Luôn chạy trên MỘT thị trường (mặc định VN): đơn MY lưu tiền theo đồng của shop đó,
  * cộng chung VN+MY ra số vô nghĩa nên không có chế độ "tất cả thị trường".
+ *
+ * TIỀN TỆ: đơn MY lưu bằng SEN (1 RM = 100 sen) — total_price 5800 = RM 58,00. Báo cáo
+ * quy hết về VND ngay trong SQL theo tỷ giá tháng (bảng mkt_exchange_rate), vì giá vốn
+ * khai bằng VND và chi phí ads cũng nhập bằng VND. Không quy đổi thì %giá vốn và LNG vô
+ * nghĩa (đem VND chia cho sen).
  *
  * by_day trả 2 mức song song:
  *  • THỰC   — chỉ đơn status=3 (giao thành công). Tiền chắc chắn về.
@@ -93,10 +99,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Đơn sàn không có tag "Đơn nháp/trùng" như đơn ads; chỉ loại đơn đã xoá (status 7).
     const excludeCond = `status = 7`
+
+    // Đơn MY lưu tiền bằng SEN (1 RM = 100 sen): total_price 5800 = RM 58,00. Quy hết
+    // về VND ngay trong SQL để mọi phép tính phía sau (giá vốn, ads, LNG) cùng một đơn
+    // vị — giá vốn khai bằng VND và chi phí ads cũng nhập bằng VND.
+    const rate = market === "MY" ? await getMyrToVndRate(to) : 1
+    const MONEY = market === "MY" ? `* ${rate} / 100.0` : ""
+
     // Tiền thực nhận (sàn đã trừ phí + khuyến mãi).
-    const revenueExpr = `COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric)::bigint`
-    const feeExpr = `COALESCE((raw->>'fee_marketplace')::numeric, 0)::bigint`
-    const listPriceExpr = `COALESCE((raw->>'total_price')::numeric, 0)::bigint`
+    const revenueExpr = `(COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric) ${MONEY})::bigint`
+    const feeExpr = `(COALESCE((raw->>'fee_marketplace')::numeric, 0) ${MONEY})::bigint`
+    const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
 
     const platformFilter = platform && ["shopee", "tiktok"].includes(platform)
       ? `AND po.source = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
@@ -506,6 +519,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.json({
       rows: result, by_platform: byPlatform, by_day: byDay,
       totals, coverage, has_ads: hasAds, market, from, to,
+      // MY: mọi số tiền đã quy về VND theo tỷ giá này (VND/RM). VN: 1 (không quy đổi).
+      myr_to_vnd_rate: market === "MY" ? rate : null,
     })
   } catch (err: any) {
     console.error("[report/marketplace-lng]", err.message)

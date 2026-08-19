@@ -3512,11 +3512,24 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
 
   return (
     <div className="space-y-4">
+      {data.myr_to_vnd_rate && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-[12.5px] text-blue-800">
+          💱 Đơn Malaysia lưu bằng RM — mọi số tiền ở đây đã <b>quy về VND</b> theo tỷ giá{" "}
+          <b>{fmtNum(data.myr_to_vnd_rate)}đ/RM</b> để so sánh được với giá vốn và chi phí ads (đều là VND).
+        </div>
+      )}
+
       {cov.pct != null && cov.pct < 100 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
           <b>Giá vốn phủ {cov.pct}% doanh thu.</b>{" "}
           Còn {money(cov.revenue_no_cost)} doanh thu từ {cov.missing_products} sản phẩm chưa khai giá vốn —
           phần này <b>không được tính vào LNG</b> (tránh lãi ảo). Khai thêm ở trang Giá vốn để số đầy đủ hơn.
+          {cov.pct != null && cov.pct < 20 && (
+            <div className="mt-1.5 font-semibold">
+              ⚠ Mức phủ quá thấp — con số LNG bên dưới chỉ đại diện cho {cov.pct}% doanh thu,
+              chưa dùng để kết luận lãi/lỗ được.
+            </div>
+          )}
         </div>
       )}
 
