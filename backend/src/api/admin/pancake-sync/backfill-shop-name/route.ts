@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { getPool } from "../../../../lib/db"
 
 /**
  * POST /admin/pancake-sync/backfill-shop-name
@@ -26,18 +27,15 @@ const WHERE_COND = `
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const syncService = req.scope.resolve("pancakeSyncModule") as any
-    const mgr = (syncService as any).__container?.manager
-    if (!mgr) return res.status(500).json({ error: "Cannot resolve DB manager" })
-
-    const preview = await mgr.execute(`
+    const pool = getPool()
+    const preview = await pool.query(`
       SELECT source, market, ${FILL_EXPR} AS shop, COUNT(*)::int AS orders
       FROM pancake_order
       WHERE ${WHERE_COND}
       GROUP BY 1, 2, 3
       ORDER BY 2, 1, 4 DESC
     `)
-    const stillEmpty = await mgr.execute(`
+    const stillEmpty = await pool.query(`
       SELECT COUNT(*)::int AS n
       FROM pancake_order
       WHERE deleted_at IS NULL AND source IN ('shopee','tiktok')
@@ -45,11 +43,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         AND ${FILL_EXPR} IS NULL
     `)
     return res.json({
-      will_fill: preview,
-      total: preview.reduce((s: number, r: any) => s + Number(r.orders || 0), 0),
+      will_fill: preview.rows,
+      total: preview.rows.reduce((s: number, r: any) => s + Number(r.orders || 0), 0),
       // Đơn không có cả page.name lẫn account_name — backfill không giúp được,
       // phải sync lại từ Pancake nếu muốn có tên.
-      still_empty_after: Number(stillEmpty?.[0]?.n ?? 0),
+      still_empty_after: Number(stillEmpty.rows?.[0]?.n ?? 0),
     })
   } catch (err: any) {
     console.error("[backfill-shop-name] Error:", err.message)
@@ -59,16 +57,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
-    const syncService = req.scope.resolve("pancakeSyncModule") as any
-    const mgr = (syncService as any).__container?.manager
-    if (!mgr) return res.status(500).json({ error: "Cannot resolve DB manager" })
-
-    const result = await mgr.execute(`
+    const pool = getPool()
+    const result = await pool.query(`
       UPDATE pancake_order
       SET shop_name = ${FILL_EXPR}
       WHERE ${WHERE_COND}
     `)
-    return res.json({ ok: true, rowsAffected: result?.rowCount ?? "unknown" })
+    return res.json({ ok: true, rowsAffected: result.rowCount ?? 0 })
   } catch (err: any) {
     console.error("[backfill-shop-name] Error:", err.message)
     return res.status(500).json({ error: err.message })
