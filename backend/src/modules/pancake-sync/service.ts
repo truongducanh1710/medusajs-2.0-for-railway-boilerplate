@@ -229,7 +229,12 @@ export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string,
     source: detectSource(raw),
     market,
     currency: shop.currency,
-    shop_name: raw.page?.name ?? "",   // tên gian hàng TikTok con (MY)
+    // Tên gian hàng. Đơn TikTok có raw.page.name; đơn Shopee KHÔNG có page (null)
+    // nên tên nằm ở account_name — thiếu fallback này thì toàn bộ đơn Shopee của
+    // các shop Vietmate rơi vào "(không tên)" và không nhập chi phí ads riêng được.
+    // Ưu tiên page.name vì trên TikTok MY hai trường khác nhau (page "Gardening-Tool.my"
+    // vs account "PhanViet Garden Tool") và page.name mới là tên gian hàng hiển thị.
+    shop_name: raw.page?.name || raw.account_name || "",
     status: raw.status ?? 0,
     status_name: statusLabel(raw.status ?? 0),
     customer_name: raw.bill_full_name ?? raw.customer?.name ?? "",
