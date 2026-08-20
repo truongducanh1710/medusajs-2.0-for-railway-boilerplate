@@ -542,6 +542,11 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
     let active = true
     setLoading(true)
     setError(null)
+    // Kế hoạch và nhận xét gắn với ĐÚNG ngày đang xem — đổi ngày mà giữ lại thì
+    // nội dung của hôm trước bị gửi nhầm sang báo cáo hôm sau.
+    setPlan([])
+    setNote("")
+    setPlanQuery("")
     fetch(`/admin/mkt-tasks/${task.id}/daily-report?date=${date}`, { credentials: "include" })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}))
@@ -665,9 +670,9 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
             </div>
             {/* Bảng chỉ chứa sản phẩm ĐÃ chọn — mỗi dòng một sản phẩm, gọn chiều dọc.
                 Không có dòng trống chờ nhập; thêm dòng bằng ô tìm bên dưới. */}
-            {plan.length > 0 && (
+            {plan.some(p => p.product.trim()) && (
               <div className="mt-1 overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
-                {plan.map((r, i) => (
+                {plan.map((r, i) => !r.product.trim() ? null : (
                   <div key={i} className={cn("flex items-center gap-2 px-2.5 py-1.5", i > 0 && "border-t border-ui-border-base")}>
                     <span className="min-w-0 flex-1 truncate text-[13px] text-ui-fg-base">{r.product}</span>
                     {r.test && (
