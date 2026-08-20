@@ -687,18 +687,13 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
   const issueCards: { n: number; sev: "bad" | "warn" | "ok"; chip: string; label: string; why: string; jump?: () => void }[] = [
     {
-      n: byKind("bad_code").length, sev: byKind("bad_code").length ? "bad" : "ok",
-      chip: byKind("bad_code").length ? "Mất số liệu" : "Sạch",
-      label: "Sản phẩm không khớp mã nào",
-      why: "Đã khai giá vốn nhưng báo cáo LNG không dùng được — coi như chưa khai.",
-      jump: byKind("bad_code")[0] && (() => jumpToRow(byKind("bad_code")[0].rowIdx)),
-    },
-    {
-      n: byKind("no_code").length, sev: byKind("no_code").length ? "bad" : "ok",
-      chip: byKind("no_code").length ? "Thiếu" : "Sạch",
-      label: "Chưa chọn mã sản phẩm",
-      why: "Cột Mã SP để trống nên không gom được các lô của cùng một mặt hàng.",
-      jump: byKind("no_code")[0] && (() => jumpToRow(byKind("no_code")[0].rowIdx)),
+      // Gộp "chưa chọn mã" và "mã sai" vào một thẻ: hậu quả giống hệt nhau (dòng bị
+      // loại khỏi báo cáo), tách ra chỉ làm người nhập tưởng là hai việc phải sửa.
+      n: brokenRows.size, sev: brokenRows.size ? "bad" : "ok",
+      chip: brokenRows.size ? "Mất số liệu" : "Sạch",
+      label: "Chưa vào được báo cáo LNG",
+      why: "Thiếu mã SP hoặc mã không khớp danh mục — đã khai giá vốn nhưng coi như chưa khai.",
+      jump: brokenRows.size ? (() => jumpToRow(Math.min(...brokenRows))) : undefined,
     },
     {
       n: byKind("blank").length, sev: byKind("blank").length ? "warn" : "ok",
