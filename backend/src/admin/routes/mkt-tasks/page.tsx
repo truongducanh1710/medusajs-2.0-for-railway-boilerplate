@@ -678,11 +678,17 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
                     {r.test && (
                       <span className="flex-none rounded px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-violet-700 ring-1 ring-violet-300 dark:text-violet-300 dark:ring-violet-500/40">test</span>
                     )}
+                    {/* Chiều rộng đặt bằng inline style chứ KHÔNG dùng w-[56px]: build
+                        Tailwind của admin không sinh class arbitrary value (kiểm tra
+                        trong CSS đã deploy: .w-\[56px\] không tồn tại), nên class đó
+                        rỗng và w-full của INPUT_CLS thắng — ô số ăn hết chiều ngang,
+                        đẩy tên sản phẩm ra khỏi tầm nhìn. */}
                     <input
                       type="number" min={1} inputMode="numeric"
                       value={r.qty}
                       onChange={e => setPlan(ps => ps.map((p, j) => j === i ? { ...p, qty: e.target.value } : p))}
-                      className={cn(INPUT_CLS, "w-[56px] flex-none py-1 text-right font-mono text-[13px] font-bold")}
+                      style={{ width: 56, flex: "none" }}
+                      className="rounded-lg border border-ui-border-base bg-ui-bg-field px-2 py-1 text-right font-mono font-bold text-ui-fg-base outline-none transition-shadow focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
                     />
                     <button
                       type="button"
