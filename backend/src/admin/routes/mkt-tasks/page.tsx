@@ -461,7 +461,14 @@ function formatDateVN(dateKey: string): string {
   return `${d}/${m}/${y}`
 }
 
-function buildDailyMktReportText(row: DailyMktReportRow, note: string): string {
+/** Một dòng kế hoạch: hôm nay làm bao nhiêu video cho sản phẩm nào. */
+type VideoPlanRow = { product: string; qty: string }
+
+function buildDailyMktReportText(row: DailyMktReportRow, note: string, plan: VideoPlanRow[]): string {
+  // Chỉ lấy dòng đã chọn SP và có số > 0 — dòng trống là do bấm "+" rồi bỏ dở.
+  const planned = plan.filter(p => p.product.trim() && Number(p.qty) > 0)
+  const planTotal = planned.reduce((s, p) => s + Number(p.qty), 0)
+
   return [
     `📊 Báo cáo MKT — ${formatDateVN(row.date)} — ${row.mkt_name}`,
     "",
@@ -473,6 +480,9 @@ function buildDailyMktReportText(row: DailyMktReportRow, note: string): string {
     `Tỷ lệ chi phí/doanh số: ${formatPercent(row.care_pct)}`,
     `Bài đăng: ${Number(row.posts_published || 0)}`,
     `Video: ${Number(row.videos_made || 0)}`,
+    "",
+    `🎬 Kế hoạch video hôm nay: ${planTotal > 0 ? `${planTotal} video` : "(chưa khai)"}`,
+    ...planned.map(p => `  • ${p.product} — ${Number(p.qty)} video`),
     "",
     "📝 Nhận xét:",
     note.trim() || "(Không có)",
@@ -487,10 +497,26 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
   const [date, setDate] = useState(todayVNKey())
   const [report, setReport] = useState<DailyMktReportRow | null>(null)
   const [note, setNote] = useState("")
+  const [plan, setPlan] = useState<VideoPlanRow[]>([{ product: "", qty: "" }])
+  // Danh mục SP lấy từ marketing-video (quyền page.marketing-video.view) chứ KHÔNG
+  // dùng /admin/gia-von/products — endpoint đó đòi page.gia-von.view mà MKT không có,
+  // gọi vào sẽ 403 và bị apiFetch đá khỏi trang.
+  const [planProducts, setPlanProducts] = useState<MktProductLite[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [cooldown, setCooldown] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Danh mục SP cho ô chọn kế hoạch video. Lỗi ở đây không chặn báo cáo —
+  // người dùng vẫn gõ tay được tên SP.
+  useEffect(() => {
+    let active = true
+    fetch(`/admin/marketing-video/products`, { credentials: "include" })
+      .then(r => (r.ok ? r.json() : { products: [] }))
+      .then(d => { if (active) setPlanProducts((d.products || []).filter((p: any) => p.active !== false)) })
+      .catch(() => { /* giữ danh sách rỗng, ô chọn cho gõ tay */ })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -523,7 +549,7 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: buildDailyMktReportText(report, note), msg_type: "text" }),
+        body: JSON.stringify({ content: buildDailyMktReportText(report, note, plan), msg_type: "text" }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || data?.message || "Không gửi được báo cáo")
@@ -536,6 +562,8 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
       setSending(false)
     }
   }
+
+  const planTotal = plan.reduce((s, p) => p.product.trim() && Number(p.qty) > 0 ? s + Number(p.qty) : s, 0)
 
   const metrics = report ? [
     ["Tổng đơn", Number(report.total_orders || 0)],
@@ -581,6 +609,51 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-3">
+            <div className="flex items-center justify-between gap-2">
+              <label className={LABEL_CLS}>Kế hoạch video hôm nay</label>
+              {planTotal > 0 && (
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  Tổng {planTotal} video
+                </span>
+              )}
+            </div>
+            <div className="mt-1 space-y-1.5">
+              {plan.map((r, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <input
+                    list="mkt-plan-products"
+                    value={r.product}
+                    onChange={e => setPlan(ps => ps.map((p, j) => j === i ? { ...p, product: e.target.value } : p))}
+                    className={cn(INPUT_CLS, "flex-1 py-1.5")}
+                    placeholder="Chọn hoặc gõ tên sản phẩm..."
+                  />
+                  <input
+                    type="number" min={0} inputMode="numeric"
+                    value={r.qty}
+                    onChange={e => setPlan(ps => ps.map((p, j) => j === i ? { ...p, qty: e.target.value } : p))}
+                    className={cn(INPUT_CLS, "w-[72px] py-1.5 text-right")}
+                    placeholder="SL"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPlan(ps => ps.length > 1 ? ps.filter((_, j) => j !== i) : [{ product: "", qty: "" }])}
+                    title="Xoá dòng"
+                    className="rounded-md px-2 py-1.5 text-[13px] text-ui-fg-muted transition hover:bg-ui-bg-component hover:text-rose-600"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+            <datalist id="mkt-plan-products">
+              {planProducts.map(p => <option key={p.id} value={p.name} />)}
+            </datalist>
+            <button
+              type="button"
+              onClick={() => setPlan(ps => [...ps, { product: "", qty: "" }])}
+              className="mt-1.5 rounded-md px-2 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+            >+ Thêm sản phẩm</button>
           </div>
 
           <div className="mt-3">
