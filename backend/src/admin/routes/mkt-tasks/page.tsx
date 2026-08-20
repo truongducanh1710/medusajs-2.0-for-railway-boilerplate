@@ -462,7 +462,7 @@ function formatDateVN(dateKey: string): string {
 }
 
 /** Một dòng kế hoạch: hôm nay làm bao nhiêu video cho sản phẩm nào. */
-type VideoPlanRow = { product: string; qty: string }
+type VideoPlanRow = { product: string; qty: string; test?: boolean }
 
 function buildDailyMktReportText(row: DailyMktReportRow, note: string, plan: VideoPlanRow[]): string {
   // Chỉ lấy dòng đã chọn SP và có số > 0 — dòng trống là do bấm "+" rồi bỏ dở.
@@ -482,7 +482,7 @@ function buildDailyMktReportText(row: DailyMktReportRow, note: string, plan: Vid
     `Video: ${Number(row.videos_made || 0)}`,
     "",
     `🎬 Kế hoạch video hôm nay: ${planTotal > 0 ? `${planTotal} video` : "(chưa khai)"}`,
-    ...planned.map(p => `  • ${p.product} — ${Number(p.qty)} video`),
+    ...planned.map(p => `  • ${p.product}${p.test ? " (test)" : ""} — ${Number(p.qty)} video`),
     "",
     "📝 Nhận xét:",
     note.trim() || "(Không có)",
@@ -497,26 +497,46 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
   const [date, setDate] = useState(todayVNKey())
   const [report, setReport] = useState<DailyMktReportRow | null>(null)
   const [note, setNote] = useState("")
-  const [plan, setPlan] = useState<VideoPlanRow[]>([{ product: "", qty: "" }])
+  // Chỉ chứa dòng ĐÃ chọn — không có dòng trống chờ nhập như trước.
+  const [plan, setPlan] = useState<VideoPlanRow[]>([])
   // Danh mục SP lấy từ marketing-video (quyền page.marketing-video.view) chứ KHÔNG
   // dùng /admin/gia-von/products — endpoint đó đòi page.gia-von.view mà MKT không có,
   // gọi vào sẽ 403 và bị apiFetch đá khỏi trang.
   const [planProducts, setPlanProducts] = useState<MktProductLite[]>([])
+  // Hồ sơ ĐANG test của chính người này — video test hay làm trước khi SP lên bán.
+  const [testCases, setTestCases] = useState<{ id: string; name: string; code: string }[]>([])
+  const [planQuery, setPlanQuery] = useState("")
+  const [planOpen, setPlanOpen] = useState(false)
+  const [planActive, setPlanActive] = useState(0)
+  const { email: planOwnerEmail } = useCurrentPermissions()
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [cooldown, setCooldown] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Danh mục SP cho ô chọn kế hoạch video. Lỗi ở đây không chặn báo cáo —
-  // người dùng vẫn gõ tay được tên SP.
+  // Nguồn gợi ý cho ô tìm sản phẩm. Cả hai lời gọi đều "hỏng thì bỏ qua": thiếu
+  // quyền cũng không chặn báo cáo, người dùng vẫn gõ tay tên SP được.
+  // Dùng fetch trần chứ KHÔNG dùng apiFetch — apiFetch gặp 403 sẽ alert và đá khỏi trang.
   useEffect(() => {
     let active = true
     fetch(`/admin/marketing-video/products`, { credentials: "include" })
       .then(r => (r.ok ? r.json() : { products: [] }))
       .then(d => { if (active) setPlanProducts((d.products || []).filter((p: any) => p.active !== false)) })
-      .catch(() => { /* giữ danh sách rỗng, ô chọn cho gõ tay */ })
+      .catch(() => { /* giữ danh sách rỗng, ô tìm vẫn gõ tay được */ })
+
+    // Hồ sơ ĐANG test của chính người đang đăng nhập — MKT thường quay video test
+    // trước khi sản phẩm được duyệt nhập, lúc đó chưa có trong danh mục SP.
+    if (planOwnerEmail) {
+      fetch(`/admin/product-tests?status=testing&owner=${encodeURIComponent(planOwnerEmail)}&limit=50`, { credentials: "include" })
+        .then(r => (r.ok ? r.json() : { cases: [] }))
+        .then(d => {
+          if (!active) return
+          setTestCases((d.cases || []).map((c: any) => ({ id: c.id, name: c.product_name, code: c.code })))
+        })
+        .catch(() => { /* không có quyền test — bỏ nhóm gợi ý này */ })
+    }
     return () => { active = false }
-  }, [])
+  }, [planOwnerEmail])
 
   useEffect(() => {
     let active = true
@@ -564,6 +584,29 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
   }
 
   const planTotal = plan.reduce((s, p) => p.product.trim() && Number(p.qty) > 0 ? s + Number(p.qty) : s, 0)
+
+  // Gợi ý cho ô tìm: SP đang bán trước, hồ sơ đang test sau. Bỏ những cái đã chọn
+  // để không thêm trùng dòng.
+  const planQ = planQuery.trim().toLowerCase()
+  const chosen = new Set(plan.map(p => p.product.trim().toLowerCase()))
+  const planSuggest = [
+    ...planProducts.map(p => ({ key: `p_${p.id}`, name: p.name, code: p.code ?? "", test: false })),
+    ...testCases.map(c => ({ key: `t_${c.id}`, name: c.name, code: c.code, test: true })),
+  ]
+    .filter(s => !chosen.has(s.name.trim().toLowerCase()))
+    .filter(s => !planQ || s.name.toLowerCase().includes(planQ) || s.code.toLowerCase().includes(planQ))
+    .slice(0, 30)
+
+  function addPlanRow(name: string, test: boolean) {
+    const key = name.trim().toLowerCase()
+    if (!key) return
+    // Chọn lại sản phẩm đã có thì tăng số lượng thay vì tạo dòng trùng.
+    setPlan(ps => ps.some(p => p.product.trim().toLowerCase() === key)
+      ? ps.map(p => p.product.trim().toLowerCase() === key ? { ...p, qty: String(Number(p.qty || 0) + 1) } : p)
+      : [...ps, { product: name.trim(), qty: "1", test }])
+    setPlanQuery("")
+    setPlanActive(0)
+  }
 
   const metrics = report ? [
     ["Tổng đơn", Number(report.total_orders || 0)],
@@ -620,40 +663,92 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
                 </span>
               )}
             </div>
-            <div className="mt-1 space-y-1.5">
-              {plan.map((r, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <input
-                    list="mkt-plan-products"
-                    value={r.product}
-                    onChange={e => setPlan(ps => ps.map((p, j) => j === i ? { ...p, product: e.target.value } : p))}
-                    className={cn(INPUT_CLS, "flex-1 py-1.5")}
-                    placeholder="Chọn hoặc gõ tên sản phẩm..."
-                  />
-                  <input
-                    type="number" min={0} inputMode="numeric"
-                    value={r.qty}
-                    onChange={e => setPlan(ps => ps.map((p, j) => j === i ? { ...p, qty: e.target.value } : p))}
-                    className={cn(INPUT_CLS, "w-[72px] py-1.5 text-right")}
-                    placeholder="SL"
-                  />
+            {/* Bảng chỉ chứa sản phẩm ĐÃ chọn — mỗi dòng một sản phẩm, gọn chiều dọc.
+                Không có dòng trống chờ nhập; thêm dòng bằng ô tìm bên dưới. */}
+            {plan.length > 0 && (
+              <div className="mt-1 overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
+                {plan.map((r, i) => (
+                  <div key={i} className={cn("flex items-center gap-2 px-2.5 py-1.5", i > 0 && "border-t border-ui-border-base")}>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ui-fg-base">{r.product}</span>
+                    {r.test && (
+                      <span className="flex-none rounded px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-violet-700 ring-1 ring-violet-300 dark:text-violet-300 dark:ring-violet-500/40">test</span>
+                    )}
+                    <input
+                      type="number" min={1} inputMode="numeric"
+                      value={r.qty}
+                      onChange={e => setPlan(ps => ps.map((p, j) => j === i ? { ...p, qty: e.target.value } : p))}
+                      className={cn(INPUT_CLS, "w-[56px] flex-none py-1 text-right font-mono text-[13px] font-bold")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPlan(ps => ps.filter((_, j) => j !== i))}
+                      title="Bỏ sản phẩm này"
+                      className="flex-none rounded-md px-1.5 py-1 text-[13px] text-ui-fg-muted transition hover:bg-ui-bg-component hover:text-rose-600"
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Gõ để lọc; Enter/click chọn là thêm dòng luôn, không phải bấm "+" trước. */}
+            <div className="relative mt-1.5">
+              <input
+                value={planQuery}
+                onChange={e => { setPlanQuery(e.target.value); setPlanOpen(true); setPlanActive(0) }}
+                onFocus={() => setPlanOpen(true)}
+                onBlur={() => setTimeout(() => setPlanOpen(false), 150)}
+                onKeyDown={e => {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setPlanActive(i => Math.min(i + 1, planSuggest.length - 1)) }
+                  else if (e.key === "ArrowUp") { e.preventDefault(); setPlanActive(i => Math.max(i - 1, 0)) }
+                  else if (e.key === "Enter") {
+                    e.preventDefault()
+                    const pick = planSuggest[planActive]
+                    if (pick) addPlanRow(pick.name, pick.test)
+                    else if (planQuery.trim()) addPlanRow(planQuery.trim(), false)
+                  } else if (e.key === "Escape") setPlanOpen(false)
+                }}
+                className={cn(INPUT_CLS, "py-1.5 pl-8")}
+                placeholder="Gõ tên sản phẩm để thêm..."
+              />
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-ui-fg-muted">⌕</span>
+
+              {planOpen && planSuggest.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[210px] overflow-y-auto rounded-lg border border-ui-border-base bg-ui-bg-base shadow-lg">
+                  {planSuggest.map((s, i) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => addPlanRow(s.name, s.test)}
+                      onMouseEnter={() => setPlanActive(i)}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition",
+                        i === planActive ? "bg-emerald-50 dark:bg-emerald-500/10" : "hover:bg-ui-bg-subtle",
+                        i > 0 && "border-t border-ui-border-base",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-ui-fg-base">{s.name}</span>
+                      {s.test && (
+                        <span className="flex-none rounded px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-violet-700 ring-1 ring-violet-300 dark:text-violet-300 dark:ring-violet-500/40">test</span>
+                      )}
+                      {s.code && <span className="flex-none font-mono text-[10.5px] text-ui-fg-muted">{s.code}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {planOpen && planQuery.trim() && planSuggest.length === 0 && (
+                <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-lg border border-ui-border-base bg-ui-bg-base p-2 shadow-lg">
                   <button
                     type="button"
-                    onClick={() => setPlan(ps => ps.length > 1 ? ps.filter((_, j) => j !== i) : [{ product: "", qty: "" }])}
-                    title="Xoá dòng"
-                    className="rounded-md px-2 py-1.5 text-[13px] text-ui-fg-muted transition hover:bg-ui-bg-component hover:text-rose-600"
-                  >✕</button>
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => addPlanRow(planQuery.trim(), false)}
+                    className="w-full rounded-md px-2 py-1.5 text-left text-[12.5px] text-ui-fg-subtle transition hover:bg-ui-bg-subtle"
+                  >
+                    Không có trong danh mục — thêm "<b className="text-ui-fg-base">{planQuery.trim()}</b>"
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
-            <datalist id="mkt-plan-products">
-              {planProducts.map(p => <option key={p.id} value={p.name} />)}
-            </datalist>
-            <button
-              type="button"
-              onClick={() => setPlan(ps => [...ps, { product: "", qty: "" }])}
-              className="mt-1.5 rounded-md px-2 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
-            >+ Thêm sản phẩm</button>
           </div>
 
           <div className="mt-3">
