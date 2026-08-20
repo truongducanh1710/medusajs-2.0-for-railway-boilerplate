@@ -70,7 +70,7 @@ export async function GET(_req: MedusaRequest, res: MedusaResponse) {
       `SELECT id, position, name, col_type, width FROM cost_sheet_column ORDER BY position ASC`
     )
     const { rows } = await pool.query(
-      `SELECT id, position, data FROM cost_sheet_row ORDER BY position ASC`
+      `SELECT id, position, data, created_at FROM cost_sheet_row ORDER BY position ASC`
     )
     return res.json({ columns, rows })
   } catch (err: any) {

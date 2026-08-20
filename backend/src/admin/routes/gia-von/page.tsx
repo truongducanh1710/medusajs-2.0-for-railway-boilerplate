@@ -19,8 +19,13 @@ interface SheetRow {
   id: string
   position: number
   data: Record<string, string>
+  /** Do DB tự điền khi thêm dòng; dòng cũ (trước 20/08/2026) là null. */
+  created_at?: string | null
   _dirty?: boolean
 }
+
+/** Hai giá trị hợp lệ của cột "Tính chất" — backend so khớp TUYỆT ĐỐI chuỗi này. */
+const TINH_CHAT = ["Sản phẩm chính", "Phụ kiện"] as const
 
 interface MktProduct {
   id: string
@@ -216,12 +221,92 @@ function Cell({
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             outline: "none",
             boxSizing: "border-box",
+            // Chữ số thẳng cột thì nhìn ra ngay số nhập lệch hàng.
+            ...(colType === "number"
+              ? { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontVariantNumeric: "tabular-nums" as const }
+              : null),
           }}
         >
           {display}
         </div>
       )}
     </div>
+  )
+}
+
+// ─── TinhChatCell ─────────────────────────────────────────────────────────────
+
+/**
+ * Ô "Tính chất" — chỉ có 2 giá trị hợp lệ nên cho CHỌN thay vì gõ.
+ *
+ * Backend (avg-cost) so khớp tuyệt đối `=== "Sản phẩm chính"`. Gõ tay thừa một dấu
+ * cách hay viết tắt là dòng đó bị tính thành phụ kiện, giá vốn sai mà không báo gì.
+ */
+function TinhChatCell({ value, onCommit, onFocus, onNav, inputRef }: {
+  value: string
+  onCommit: (v: string) => void
+  onFocus: () => void
+  onNav: (dir: "left" | "right" | "up" | "down" | "tab") => void
+  inputRef?: (el: HTMLSelectElement | null) => void
+}) {
+  const v = value.trim()
+  const known = TINH_CHAT.includes(v as any)
+  const isMain = v === "Sản phẩm chính"
+  const tone = !v
+    ? { fg: "#9ca3af", bg: "transparent", bd: "transparent" }
+    : !known
+      ? { fg: "#b91c1c", bg: "#fdecec", bd: "#f0bdbd" }
+      : isMain
+        ? { fg: "#0f766e", bg: "#e6f2f0", bd: "#99c9c3" }
+        : { fg: "#57534e", bg: "#f4f2ee", bd: "#cfcabf" }
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", padding: "0 4px" }}>
+      <select
+        ref={inputRef}
+        value={known ? v : ""}
+        onFocus={onFocus}
+        onChange={e => onCommit(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Tab") { e.preventDefault(); onNav("tab") }
+          else if (e.key === "Enter") { e.preventDefault(); onNav("down") }
+        }}
+        style={{
+          width: "100%", height: 22, border: `1px solid ${tone.bd}`, borderRadius: 5,
+          background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 600,
+          fontFamily: "inherit", padding: "0 4px", outline: "none", cursor: "pointer",
+        }}
+      >
+        <option value="">— chọn —</option>
+        {TINH_CHAT.map(t => <option key={t} value={t}>{t}</option>)}
+        {/* Giá trị cũ sai chính tả vẫn phải hiện được, nếu không select sẽ tự nhảy
+            sang giá trị khác và âm thầm sửa dữ liệu người dùng chưa xem. */}
+        {v && !known && <option value={v}>{v} (sai)</option>}
+      </select>
+    </div>
+  )
+}
+
+// ─── CreatedAtCell ────────────────────────────────────────────────────────────
+
+/** Ngày tạo dòng — DB tự điền, không sửa được. Dòng cũ (trước 20/08/2026) là null. */
+function CreatedAtCell({ iso }: { iso?: string | null }) {
+  if (!iso) return <span style={{ color: "#d1d5db" }}>—</span>
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return <span style={{ color: "#d1d5db" }}>—</span>
+  const dd = String(d.getDate()).padStart(2, "0")
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const label = `${dd}/${mm}/${d.getFullYear()}`
+  // "Mới" = tạo trong hôm nay, để biết ai vừa thêm gì mà không phải so ngày bằng mắt.
+  const today = new Date()
+  const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", color: isToday ? "#15803d" : "#8a8378", fontWeight: isToday ? 600 : 400 }}>
+      {label}
+      {isToday && (
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", padding: "1px 5px", borderRadius: 4, background: "#e9f5ec", color: "#15803d", marginLeft: 6, textTransform: "uppercase" }}>mới</span>
+      )}
+    </span>
   )
 }
 
@@ -278,6 +363,9 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   const [loading, setLoading] = useState(true)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [showAddCol, setShowAddCol] = useState(false)
+  const [search, setSearch] = useState("")
+  const [hideEmptyCols, setHideEmptyCols] = useState(true)
+  const [showIssues, setShowIssues] = useState(true)
   const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
   const [syncing, setSyncing] = useState(false)
 
@@ -287,7 +375,9 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
   const dirtyRef = useRef<Map<string, SheetRow>>(new Map()) // id → row
   const saveTimerRef = useRef<any>(null)
-  const cellRefs = useRef<Map<string, HTMLInputElement>>(new Map()) // "ri,ci" → input
+  // Ô "Tính chất" là <select>, các ô còn lại là <input> — cả hai đều cần focus()
+  // và scrollIntoView() khi điều hướng bàn phím hoặc nhảy tới dòng lỗi.
+  const cellRefs = useRef<Map<string, HTMLInputElement | HTMLSelectElement>>(new Map()) // "ri,ci" → ô
   const rowsRef = useRef<SheetRow[]>([])
   const colsRef = useRef<SheetColumn[]>([])
 
@@ -510,11 +600,182 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
   if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>
 
+  // ── Đọc cấu hình cột từ dòng header (dòng 0) ─────────────────────────────
+  // Backend (avg-cost) cũng đọc y hệt cách này: tên cột nằm ở dòng dữ liệu đầu tiên,
+  // fallback về vị trí cột nếu header trống. Phải khớp, nếu không UI báo "sạch"
+  // trong khi báo cáo lại bỏ dòng đó.
+  const posToId: Record<number, string> = {}
+  for (const c of columns) posToId[c.position] = c.id
+  const hdr = (rows[0]?.data ?? {}) as Record<string, string>
+  const headerToId: Record<string, string> = {}
+  for (const [cid, v] of Object.entries(hdr)) if (v) headerToId[String(v).trim()] = cid
+  const colSanPham = headerToId["Sản phẩm"] ?? posToId[1]
+  const colTinhChat = headerToId["Tính chất"] ?? posToId[2]
+  const colMaSP = posToId[10]
+
+  // ── Soát lỗi ─────────────────────────────────────────────────────────────
+  // Mã hợp lệ = có trong danh mục SP (mkt_product). Dữ liệu cũ lưu TÊN thay vì mã
+  // nên chấp nhận cả hai, giống backend.
+  const validCodes = new Set(mktProducts.map(p => p.code.trim().toUpperCase()))
+  const validNames = new Set(mktProducts.map(p => p.name.trim().toUpperCase()))
+
+  type Issue = { rowIdx: number; kind: "no_code" | "bad_code" | "bad_tinhchat" | "blank" }
+  const issues: Issue[] = []
+  const nameCount = new Map<string, number[]>()
+
+  rows.forEach((r, i) => {
+    if (i === 0) return // dòng header, không phải dữ liệu
+    const d = r.data ?? {}
+    const ten = (d[colSanPham] ?? "").trim()
+    if (!ten) {
+      // Dòng trống hẳn mới tính; dòng có nhập gì đó mà thiếu tên là chuyện khác.
+      if (!Object.values(d).some(v => (v ?? "").trim())) issues.push({ rowIdx: i, kind: "blank" })
+      return
+    }
+    const key = ten.toUpperCase()
+    nameCount.set(key, [...(nameCount.get(key) ?? []), i])
+
+    const tc = (d[colTinhChat] ?? "").trim()
+    if (tc && !TINH_CHAT.includes(tc as any)) issues.push({ rowIdx: i, kind: "bad_tinhchat" })
+
+    const ma = (colMaSP ? d[colMaSP] : "")?.trim() ?? ""
+    if (!ma) issues.push({ rowIdx: i, kind: "no_code" })
+    else if (!validCodes.has(ma.toUpperCase()) && !validNames.has(ma.toUpperCase())) {
+      issues.push({ rowIdx: i, kind: "bad_code" })
+    }
+  })
+
+  const dupGroups = [...nameCount.entries()].filter(([, idxs]) => idxs.length > 1)
+  const byKind = (k: Issue["kind"]) => issues.filter(x => x.kind === k)
+  // Dòng "hỏng" = không vào được báo cáo LNG (thiếu mã hoặc mã sai).
+  const brokenRows = new Set(issues.filter(x => x.kind === "no_code" || x.kind === "bad_code").map(x => x.rowIdx))
+  const dataRowCount = Math.max(rows.length - 1, 0)
+  const usableRows = dataRowCount - byKind("blank").length - brokenRows.size
+
+  function jumpToRow(rowIdx: number) {
+    const key = `${rowIdx},1`
+    const el = cellRefs.current.get(key)
+    el?.scrollIntoView({ behavior: "smooth", block: "center" })
+    setTimeout(() => el?.focus(), 250)
+  }
+
+  // ── Lọc theo ô tìm kiếm ──────────────────────────────────────────────────
+  // Giữ nguyên chỉ số gốc để nhảy tới dòng và đánh số thứ tự vẫn đúng.
+  const q = search.trim().toLowerCase()
+  const visibleRows: { row: SheetRow; idx: number }[] = rows
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row, idx }) => {
+      if (idx === 0) return true // luôn giữ dòng header
+      if (!q) return true
+      const d = row.data ?? {}
+      const ten = (d[colSanPham] ?? "").toLowerCase()
+      const ma = (colMaSP ? d[colMaSP] : "")?.toLowerCase() ?? ""
+      return ten.includes(q) || ma.includes(q)
+    })
+
+  // ── Ẩn cột không có dữ liệu ──────────────────────────────────────────────
+  // Bảng khai 26 cột A–Z nhưng chỉ ~11 cột dùng thật; ẩn phần còn lại đỡ kéo ngang.
+  const usedColIds = new Set<string>()
+  for (const r of rows) {
+    for (const [cid, v] of Object.entries(r.data ?? {})) if ((v ?? "").trim()) usedColIds.add(cid)
+  }
+  const visibleCols = hideEmptyCols ? columns.filter(c => usedColIds.has(c.id)) : columns
+  const hiddenColCount = columns.length - visibleCols.length
+
   const ROW_H = 28
   const NUM_COL_W = 40
 
+  const issueCards: { n: number; sev: "bad" | "warn" | "ok"; chip: string; label: string; why: string; jump?: () => void }[] = [
+    {
+      n: byKind("bad_code").length, sev: byKind("bad_code").length ? "bad" : "ok",
+      chip: byKind("bad_code").length ? "Mất số liệu" : "Sạch",
+      label: "Sản phẩm không khớp mã nào",
+      why: "Đã khai giá vốn nhưng báo cáo LNG không dùng được — coi như chưa khai.",
+      jump: byKind("bad_code")[0] && (() => jumpToRow(byKind("bad_code")[0].rowIdx)),
+    },
+    {
+      n: byKind("no_code").length, sev: byKind("no_code").length ? "bad" : "ok",
+      chip: byKind("no_code").length ? "Thiếu" : "Sạch",
+      label: "Chưa chọn mã sản phẩm",
+      why: "Cột Mã SP để trống nên không gom được các lô của cùng một mặt hàng.",
+      jump: byKind("no_code")[0] && (() => jumpToRow(byKind("no_code")[0].rowIdx)),
+    },
+    {
+      n: byKind("blank").length, sev: byKind("blank").length ? "warn" : "ok",
+      chip: byKind("blank").length ? "Dòng trống" : "Sạch",
+      label: "Dòng chưa nhập gì",
+      why: "Nằm xen giữa bảng, làm khó cuộn và đếm.",
+      jump: byKind("blank")[0] && (() => jumpToRow(byKind("blank")[0].rowIdx)),
+    },
+    {
+      n: dupGroups.length, sev: dupGroups.length ? "warn" : "ok",
+      chip: dupGroups.length ? "Trùng tên" : "Sạch",
+      label: "Tên lặp ở nhiều dòng",
+      why: "Đúng nếu là nhiều lô nhập khác nhau — kiểm tra lại nếu gõ trùng.",
+      jump: dupGroups[0] && (() => jumpToRow(dupGroups[0][1][0])),
+    },
+    {
+      n: byKind("bad_tinhchat").length, sev: byKind("bad_tinhchat").length ? "bad" : "ok",
+      chip: byKind("bad_tinhchat").length ? "Sai giá trị" : "Sạch",
+      label: "Tính chất sai chính tả",
+      why: "Chỉ nhận đúng \"Sản phẩm chính\" hoặc \"Phụ kiện\" — sai là bị tính thành phụ kiện.",
+      jump: byKind("bad_tinhchat")[0] && (() => jumpToRow(byKind("bad_tinhchat")[0].rowIdx)),
+    },
+  ]
+  const SEV: Record<string, { fg: string; bg: string; bd: string }> = {
+    bad: { fg: "#b91c1c", bg: "#fdecec", bd: "#f0bdbd" },
+    warn: { fg: "#b45309", bg: "#fdf3e3", bd: "#edd3a6" },
+    ok: { fg: "#8a8378", bg: "#f4f2ee", bd: "#e4e0d8" },
+  }
+  const usablePct = dataRowCount > 0 ? Math.round(usableRows / dataRowCount * 100) : 100
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+      {/* Kiểm tra dữ liệu — thứ cần xử lý, đặt trên cùng để đọc trước khi cuộn bảng */}
+      <div style={{ border: "1px solid #e4e0d8", borderRadius: 12, background: "#fff", marginBottom: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "12px 16px", borderBottom: showIssues ? "1px solid #e4e0d8" : "none" }}>
+          <b style={{ fontSize: 14.5 }}>Kiểm tra dữ liệu</b>
+          <span style={{ fontSize: 12.5, color: "#8a8378" }}>{dataRowCount} dòng · cập nhật khi bạn nhập</span>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ fontSize: 12.5, color: "#8a8378" }}>Dùng được cho báo cáo</span>
+            <span style={{ width: 140, height: 7, borderRadius: 99, background: "#f4f2ee", overflow: "hidden", display: "inline-block" }}>
+              <span style={{ display: "block", height: "100%", width: `${usablePct}%`, borderRadius: 99, background: usablePct >= 90 ? "#15803d" : usablePct >= 70 ? "#b45309" : "#b91c1c" }} />
+            </span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, fontFamily: "monospace", color: usablePct >= 90 ? "#15803d" : usablePct >= 70 ? "#b45309" : "#b91c1c" }}>
+              {usableRows}/{dataRowCount}
+            </span>
+            <button onClick={() => setShowIssues(v => !v)}
+              style={{ background: "none", border: "1px solid #cfcabf", borderRadius: 7, padding: "4px 9px", cursor: "pointer", fontSize: 12, color: "#57534e" }}>
+              {showIssues ? "Thu gọn" : "Mở rộng"}
+            </button>
+          </div>
+        </div>
+        {showIssues && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(224px, 1fr))" }}>
+            {issueCards.map((c, i) => {
+              const sv = SEV[c.sev]
+              return (
+                <button key={i} onClick={c.jump} disabled={!c.jump}
+                  style={{
+                    padding: "12px 16px", borderRight: "1px solid #e4e0d8", borderBottom: "1px solid #e4e0d8",
+                    borderTop: 0, borderLeft: 0, background: "none", textAlign: "left",
+                    display: "flex", flexDirection: "column", gap: 6,
+                    cursor: c.jump ? "pointer" : "default", font: "inherit", color: "inherit",
+                  }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 21, fontWeight: 700, lineHeight: 1, color: sv.fg }}>{c.n}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", padding: "3px 7px", borderRadius: 5, color: sv.fg, background: sv.bg, border: `1px solid ${sv.bd}` }}>{c.chip}</span>
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{c.label}</span>
+                  <span style={{ fontSize: 11.5, color: "#8a8378", lineHeight: 1.45 }}>{c.why}</span>
+                  {c.jump && <span style={{ fontSize: 11.5, fontWeight: 600, color: "#0f766e", marginTop: "auto" }}>Tới dòng đầu tiên →</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
         {canManage && (
@@ -538,8 +799,21 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
             </button>
           </>
         )}
+        <div style={{ position: "relative", flex: 1, minWidth: 200, maxWidth: 320 }}>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 12, pointerEvents: "none" }}>⌕</span>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Tìm tên hoặc mã sản phẩm…"
+            style={{ width: "100%", font: "inherit", fontSize: 13, padding: "7px 11px 7px 28px", borderRadius: 7, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#111827", outline: "none" }} />
+        </div>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#57534e", cursor: "pointer", userSelect: "none" }}
+          title={hiddenColCount > 0 ? `Đang ẩn ${hiddenColCount} cột chưa có dữ liệu` : "Không có cột trống"}>
+          <input type="checkbox" checked={hideEmptyCols} onChange={e => setHideEmptyCols(e.target.checked)} style={{ margin: 0 }} />
+          Ẩn cột trống{hiddenColCount > 0 ? ` (${hiddenColCount})` : ""}
+        </label>
         <div style={{ marginLeft: "auto", fontSize: 12, display: "flex", gap: 12, alignItems: "center" }}>
-          <span style={{ color: "#9ca3af" }}>{rows.length} dòng · {columns.length} cột</span>
+          <span style={{ color: "#9ca3af" }}>
+            {q ? `${visibleRows.length - 1}/${dataRowCount} dòng` : `${dataRowCount} dòng`} · {visibleCols.length} cột
+          </span>
           {saveState === "saving" && <span style={{ color: "#d97706" }}>⏳ Đang lưu…</span>}
           {saveState === "saved" && <span style={{ color: "#16a34a" }}>✓ Đã lưu</span>}
           {saveState === "error" && <span style={{ color: "#dc2626" }}>✗ Lỗi lưu</span>}
@@ -548,10 +822,11 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
       {/* Sheet */}
       <div style={{ flex: 1, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
-        <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: NUM_COL_W + columns.reduce((s, c) => s + c.width, 0) }}>
+        <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: NUM_COL_W + visibleCols.reduce((s, c) => s + c.width, 0) + 110 }}>
           <colgroup>
             <col style={{ width: NUM_COL_W }} />
-            {columns.map(c => <col key={c.id} style={{ width: c.width }} />)}
+            {visibleCols.map(c => <col key={c.id} style={{ width: c.width }} />)}
+            <col style={{ width: 110 }} />
             {canManage && <col style={{ width: 32 }} />}
           </colgroup>
           <thead>
@@ -559,12 +834,21 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
               {/* Row number header */}
               <th style={thS(NUM_COL_W)}></th>
 
-              {columns.map((col) => (
+              {visibleCols.map((col) => (
                 <ColumnHeader key={col.id} col={col} canManage={canManage}
+                  headerName={(hdr[col.id] ?? "").trim()}
                   onDelete={() => deleteColumn(col)}
                   onRename={n => renameColumn(col, n)}
                 />
               ))}
+
+              {/* Ngày tạo — do hệ thống điền, không sửa được nên không dùng ColumnHeader */}
+              <th style={{ ...thS(110), padding: "6px 10px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#1c1917" }}>Ngày tạo</span>
+                  <span style={{ fontSize: 9.5, color: "#8a8378", textTransform: "uppercase", letterSpacing: ".03em", fontWeight: 600 }}>tự động</span>
+                </div>
+              </th>
 
               {canManage && <th style={thS(32)}></th>}
             </tr>
@@ -572,44 +856,77 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + 2} style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px 0" }}>
+                <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px 0" }}>
                   Bảng trống — bấm "+ Thêm dòng" hoặc paste dữ liệu từ Excel/GG Sheets
                 </td>
               </tr>
-            ) : rows.map((row, ri) => (
-              <tr key={row.id} style={{ height: ROW_H, background: ri % 2 === 0 ? "#fff" : "#fafafa" }}>
+            ) : visibleRows.length <= 1 && q ? (
+              <tr>
+                <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px 0" }}>
+                  Không có dòng nào khớp "{search}"
+                </td>
+              </tr>
+            ) : visibleRows.map(({ row, idx: ri }) => {
+              const isHeaderRow = ri === 0
+              const broken = brokenRows.has(ri)
+              const bg = broken ? "#fdecec" : isHeaderRow ? "#f4f2ee" : ri % 2 === 0 ? "#fff" : "#fafafa"
+              return (
+              <tr key={row.id} style={{ height: ROW_H, background: bg }}>
                 {/* Row number */}
                 <td style={{ ...tdS(NUM_COL_W), textAlign: "center", color: "#9ca3af", fontSize: 11, background: "#f9fafb", borderRight: "2px solid #e5e7eb", userSelect: "none" }}>
                   {ri + 1}
                 </td>
 
-                {columns.map((col, ci) => {
+                {visibleCols.map((col, ci) => {
                   const isProductCol = col.position === 10
+                  // Cột "Tính chất" chỉ nhận 2 giá trị — cho chọn thay vì gõ, xoá hẳn
+                  // lỗi sai chính tả làm dòng bị tính nhầm thành phụ kiện.
+                  const isTinhChat = !isHeaderRow && col.id === colTinhChat
                   return (
                   <td key={col.id}
                     style={{ ...tdS(col.width), position: "relative", padding: 0 }}
                   >
-                    <Cell
-                      value={row.data[col.id] ?? ""}
-                      colType={col.col_type}
-                      readOnly={!canManage}
-                      onCommit={v => updateCell(row.id, col.id, v)}
-                      onFocus={() => setFocused([ri, ci])}
-                      onNav={dir => navigate(ri, ci, dir)}
-                      inputRef={el => {
-                        const key = `${ri},${ci}`
-                        if (el) cellRefs.current.set(key, el)
-                        else cellRefs.current.delete(key)
-                      }}
-                      products={isProductCol ? mktProducts : undefined}
-                      colId={isProductCol ? col.id : undefined}
-                    />
+                    {isTinhChat && canManage ? (
+                      <TinhChatCell
+                        value={row.data[col.id] ?? ""}
+                        onCommit={v => updateCell(row.id, col.id, v)}
+                        onFocus={() => setFocused([ri, ci])}
+                        onNav={dir => navigate(ri, ci, dir)}
+                        inputRef={el => {
+                          const key = `${ri},${ci}`
+                          if (el) cellRefs.current.set(key, el)
+                          else cellRefs.current.delete(key)
+                        }}
+                      />
+                    ) : (
+                      <Cell
+                        value={row.data[col.id] ?? ""}
+                        colType={col.col_type}
+                        readOnly={!canManage}
+                        onCommit={v => updateCell(row.id, col.id, v)}
+                        onFocus={() => setFocused([ri, ci])}
+                        onNav={dir => navigate(ri, ci, dir)}
+                        inputRef={el => {
+                          const key = `${ri},${ci}`
+                          if (el) cellRefs.current.set(key, el)
+                          else cellRefs.current.delete(key)
+                        }}
+                        products={isProductCol ? mktProducts : undefined}
+                        colId={isProductCol ? col.id : undefined}
+                      />
+                    )}
                   </td>
                   )
                 })}
 
+                {/* Ngày tạo */}
+                <td style={{ ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: "monospace", color: "#8a8378" }}>
+                  {isHeaderRow ? "" : <CreatedAtCell iso={row.created_at} />}
+                </td>
+
                 {canManage && (
                   <td style={{ ...tdS(32), textAlign: "center", padding: 0 }}>
+                    {broken && <span title="Dòng này không vào được báo cáo LNG" style={{ color: "#b91c1c", fontSize: 11, fontWeight: 700, marginRight: 2 }}>●</span>}
                     <button onClick={() => deleteRow(row.id)}
                       title="Xóa dòng"
                       style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: 13, padding: "0 4px", lineHeight: 1 }}
@@ -619,7 +936,8 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                   </td>
                 )}
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -637,9 +955,14 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
 // ─── ColumnHeader (inline rename) ─────────────────────────────────────────────
 
-function ColumnHeader({ col, canManage, onDelete, onRename }: {
+/** Cột bắt buộc — thiếu là dòng không vào được báo cáo LNG. */
+const REQUIRED_HEADERS = new Set(["Sản phẩm", "Tính chất", "Số lượng", "Tổng tiền"])
+
+function ColumnHeader({ col, canManage, headerName, onDelete, onRename }: {
   col: SheetColumn
   canManage: boolean
+  /** Tên nghiệp vụ lấy từ dòng header (dòng 0) — hiện lên đầu cột thay cho A, B, C. */
+  headerName?: string
   onDelete: () => void
   onRename: (name: string) => void
 }) {
@@ -666,11 +989,19 @@ function ColumnHeader({ col, canManage, onDelete, onRename }: {
         ) : (
           <span
             onDoubleClick={canManage ? () => setEditing(true) : undefined}
-            title={canManage ? "Double-click để đổi tên" : col.name}
-            style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: canManage ? "pointer" : "default" }}
+            title={canManage ? "Double-click để đổi tên" : (headerName || col.name)}
+            style={{ flex: 1, overflow: "hidden", cursor: canManage ? "pointer" : "default", display: "flex", flexDirection: "column", gap: 1, alignItems: col.col_type === "number" ? "flex-end" : "flex-start" }}
           >
-            {col.col_type === "number" ? <span style={{ color: "#9ca3af", marginRight: 3, fontSize: 9 }}>🔢</span> : null}
-            {col.name}
+            {/* Tên nghiệp vụ ("Sản phẩm") đọc từ dòng header; chữ cái cột (A, B, C)
+                thu nhỏ xuống dưới — trước đây header chỉ hiện chữ cái nên cuộn xuống
+                là không biết cột nào là gì. */}
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1c1917", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+              {headerName || col.name}
+              {headerName && REQUIRED_HEADERS.has(headerName) && <span style={{ color: "#b91c1c", marginLeft: 2 }}>*</span>}
+            </span>
+            {headerName && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: ".04em" }}>{col.name}</span>
+            )}
           </span>
         )}
         {canManage && !editing && (

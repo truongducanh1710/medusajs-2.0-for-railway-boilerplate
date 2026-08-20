@@ -35,7 +35,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     for (const r of toInsert) {
       const { rows: [row] } = await pool.query(
         `INSERT INTO cost_sheet_row (id, position, data, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, now()) RETURNING id, position, data`,
+         VALUES (gen_random_uuid(), $1, $2, now()) RETURNING id, position, data, created_at`,
         [nextPos, JSON.stringify(r.data)]
       )
       inserted.push(row)
