@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, Fragment } from "react"
 import { createPortal } from "react-dom"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
@@ -28,8 +28,22 @@ interface SheetRow {
 // duy nhất cho tên cột, kiểu dữ liệu và công thức, tránh FE/BE lệch nhau.
 import { TINH_CHAT, specAt, isValidCell, parseNumLoose, computeFormulas } from "../../lib/gia-von-schema"
 
-/** A, B, C... cho vị trí cột — chỉ để hiển thị nhỏ dưới tên cột. */
-const COL_LETTER = (pos: number) => String.fromCharCode(65 + pos)
+/**
+ * Bảng màu của trang. Neutral lệch vàng nhạt cho hợp bối cảnh kho/hoá đơn, accent
+ * xanh dầu; ba màu trạng thái tách riêng khỏi accent để "cần xử lý" đọc được ngay.
+ */
+const C = {
+  ground: "#FBFAF8", surface: "#FFFFFF", surface2: "#F6F4EF",
+  line: "#E4E0D6", lineSoft: "#EFECE5",
+  ink: "#1F1D17", ink2: "#4A463C", muted: "#7A756A",
+  accent: "#0E6E62", accentSoft: "#E3F0ED",
+  bad: "#B4342A", badSoft: "#FBEAE8",
+  warn: "#A56A12", warnSoft: "#FAF0DE",
+  good: "#2F7A3E", goodSoft: "#E7F2E8",
+} as const
+
+/** Font số — canh đều nét để nhìn ra ngay số lệch hàng. */
+const NUM_FONT = 'ui-monospace, "SFMono-Regular", Menlo, monospace' 
 
 interface MktProduct {
   id: string
@@ -200,7 +214,7 @@ function Cell({
             }}
             style={{
               position: "absolute", inset: 0, width: "100%", height: "100%",
-              border: "2px solid #7c3aed", borderRadius: 2,
+              border: `2px solid ${C.accent}`, borderRadius: 4,
               padding: "0 4px", fontSize: 12, fontFamily: "inherit",
               outline: "none", background: "#fff", zIndex: 2,
               textAlign: colType === "number" ? "right" : "left",
@@ -240,7 +254,7 @@ function Cell({
             boxSizing: "border-box",
             // Chữ số thẳng cột thì nhìn ra ngay số nhập lệch hàng.
             ...(colType === "number"
-              ? { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontVariantNumeric: "tabular-nums" as const }
+              ? { fontFamily: NUM_FONT, fontVariantNumeric: "tabular-nums" as const }
               : null),
           }}
         >
@@ -335,7 +349,6 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   const [loading, setLoading] = useState(true)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [search, setSearch] = useState("")
-  const [hideEmptyCols, setHideEmptyCols] = useState(true)
   const [showIssues, setShowIssues] = useState(true)
   const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
   const [syncing, setSyncing] = useState(false)
@@ -465,6 +478,23 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     }
   }
 
+  /**
+   * Ghi đè các ô công thức đang lệch bằng số máy tính ra. Ô công thức vẫn cho gõ tay
+   * (có lúc mua hàng cố ý để số khác), nên đây là hành động người dùng chủ động bấm.
+   */
+  function applyFormula(rowId: string, drift: { colId: string; want: number }[]) {
+    if (drift.length === 0) return
+    setRows(rs => rs.map(r => {
+      if (r.id !== rowId) return r
+      const newData = { ...r.data }
+      for (const d of drift) newData[d.colId] = String(d.want)
+      const updated = { ...r, data: newData, _dirty: true }
+      dirtyRef.current.set(rowId, updated)
+      return updated
+    }))
+    scheduleSave()
+  }
+
   function updateCell(rowId: string, colId: string, value: string) {
     setRows(rs => rs.map(r => {
       if (r.id !== rowId) return r
@@ -549,7 +579,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     setTimeout(() => cellRefs.current.get(key)?.focus(), 0)
   }
 
-  if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>
+  if (loading) return <div style={{ padding: 40, color: C.muted, fontSize: 14 }}>Đang tải…</div>
 
   // ── Đọc cấu hình cột từ dòng header (dòng 0) ─────────────────────────────
   // Backend (avg-cost) cũng đọc y hệt cách này: tên cột nằm ở dòng dữ liệu đầu tiên,
@@ -570,7 +600,12 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   const validCodes = new Set(mktProducts.map(p => p.code.trim().toUpperCase()))
   const validNames = new Set(mktProducts.map(p => p.name.trim().toUpperCase()))
 
-  type Issue = { rowIdx: number; kind: "no_code" | "bad_code" | "bad_tinhchat" | "blank" | "formula_drift" }
+  type Issue = {
+    rowIdx: number
+    kind: "no_code" | "bad_code" | "bad_tinhchat" | "blank" | "formula_drift"
+    /** Chỉ có ở formula_drift — cột nào lệch và công thức ra bao nhiêu. */
+    drift?: { colId: string; label: string; want: number }[]
+  }
   const issues: Issue[] = []
   const nameCount = new Map<string, number[]>()
 
@@ -606,9 +641,11 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
         // Sai 1đ do làm tròn thì bỏ qua, chỉ báo khi lệch thật.
         return Math.abs(parseNum(raw) - want) > 1
       }
-      if (drift(colG, expect.vat) || drift(colI, expect.total) || drift(colJ, expect.avg)) {
-        issues.push({ rowIdx: i, kind: "formula_drift" })
-      }
+      const driftCols: { colId: string; label: string; want: number }[] = []
+      if (drift(colG, expect.vat)) driftCols.push({ colId: colG, label: "VAT", want: expect.vat })
+      if (drift(colI, expect.total)) driftCols.push({ colId: colI, label: "Tổng tiền", want: expect.total })
+      if (drift(colJ, expect.avg)) driftCols.push({ colId: colJ, label: "Giá TB/sp", want: expect.avg })
+      if (driftCols.length > 0) issues.push({ rowIdx: i, kind: "formula_drift", drift: driftCols })
     }
 
     const ma = (colMaSP ? d[colMaSP] : "")?.trim() ?? ""
@@ -617,6 +654,14 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       issues.push({ rowIdx: i, kind: "bad_code" })
     }
   })
+
+  // Issue theo dòng — dùng để vẽ vạch màu đầu dòng và dải giải thích ngay bên dưới,
+  // thay vì bắt người nhập tự dò xem dòng nào đang hỏng.
+  const issuesByRow = new Map<number, Issue[]>()
+  for (const it of issues) {
+    if (it.kind === "blank") continue // dòng trống không cần giải thích gì
+    issuesByRow.set(it.rowIdx, [...(issuesByRow.get(it.rowIdx) ?? []), it])
+  }
 
   const dupGroups = [...nameCount.entries()].filter(([, idxs]) => idxs.length > 1)
   const byKind = (k: Issue["kind"]) => issues.filter(x => x.kind === k)
@@ -646,14 +691,8 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       return ten.includes(q) || ma.includes(q)
     })
 
-  // ── Ẩn cột không có dữ liệu ──────────────────────────────────────────────
-  // Cột nào chưa ai nhập gì thì ẩn cho đỡ kéo ngang (bộ cột cố định 11 cột A–K).
-  const usedColIds = new Set<string>()
-  for (const r of rows) {
-    for (const [cid, v] of Object.entries(r.data ?? {})) if ((v ?? "").trim()) usedColIds.add(cid)
-  }
-  const visibleCols = hideEmptyCols ? columns.filter(c => usedColIds.has(c.id)) : columns
-  const hiddenColCount = columns.length - visibleCols.length
+  // Bộ cột đã cố định A–K nên hiện hết, không còn cột thừa để ẩn như bản A–Z cũ.
+  const visibleCols = columns
 
   const ROW_H = 28
   const NUM_COL_W = 40
@@ -698,29 +737,29 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     },
   ]
   const SEV: Record<string, { fg: string; bg: string; bd: string }> = {
-    bad: { fg: "#b91c1c", bg: "#fdecec", bd: "#f0bdbd" },
-    warn: { fg: "#b45309", bg: "#fdf3e3", bd: "#edd3a6" },
-    ok: { fg: "#8a8378", bg: "#f4f2ee", bd: "#e4e0d8" },
+    bad: { fg: C.bad, bg: C.badSoft, bd: `${C.bad}33` },
+    warn: { fg: C.warn, bg: C.warnSoft, bd: `${C.warn}33` },
+    ok: { fg: C.muted, bg: C.surface2, bd: C.line },
   }
   const usablePct = dataRowCount > 0 ? Math.round(usableRows / dataRowCount * 100) : 100
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
       {/* Kiểm tra dữ liệu — thứ cần xử lý, đặt trên cùng để đọc trước khi cuộn bảng */}
-      <div style={{ border: "1px solid #e4e0d8", borderRadius: 12, background: "#fff", marginBottom: 12, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "12px 16px", borderBottom: showIssues ? "1px solid #e4e0d8" : "none" }}>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface, marginBottom: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "12px 16px", borderBottom: showIssues ? `1px solid ${C.line}` : "none" }}>
           <b style={{ fontSize: 14.5 }}>Kiểm tra dữ liệu</b>
-          <span style={{ fontSize: 12.5, color: "#8a8378" }}>{dataRowCount} dòng · cập nhật khi bạn nhập</span>
+          <span style={{ fontSize: 12.5, color: C.muted }}>{dataRowCount} dòng · cập nhật khi bạn nhập</span>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9 }}>
-            <span style={{ fontSize: 12.5, color: "#8a8378" }}>Dùng được cho báo cáo</span>
-            <span style={{ width: 140, height: 7, borderRadius: 99, background: "#f4f2ee", overflow: "hidden", display: "inline-block" }}>
-              <span style={{ display: "block", height: "100%", width: `${usablePct}%`, borderRadius: 99, background: usablePct >= 90 ? "#15803d" : usablePct >= 70 ? "#b45309" : "#b91c1c" }} />
+            <span style={{ fontSize: 12.5, color: C.muted }}>Dùng được cho báo cáo</span>
+            <span style={{ width: 140, height: 6, borderRadius: 99, background: C.line, overflow: "hidden", display: "inline-block" }}>
+              <span style={{ display: "block", height: "100%", width: `${usablePct}%`, borderRadius: 99, background: usablePct >= 90 ? C.good : usablePct >= 70 ? C.warn : C.bad }} />
             </span>
-            <span style={{ fontSize: 12.5, fontWeight: 700, fontFamily: "monospace", color: usablePct >= 90 ? "#15803d" : usablePct >= 70 ? "#b45309" : "#b91c1c" }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, fontFamily: NUM_FONT, color: usablePct >= 90 ? C.good : usablePct >= 70 ? C.warn : C.bad }}>
               {usableRows}/{dataRowCount}
             </span>
             <button onClick={() => setShowIssues(v => !v)}
-              style={{ background: "none", border: "1px solid #cfcabf", borderRadius: 7, padding: "4px 9px", cursor: "pointer", fontSize: 12, color: "#57534e" }}>
+              style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 7, padding: "4px 9px", cursor: "pointer", fontSize: 12, color: C.ink2 }}>
               {showIssues ? "Thu gọn" : "Mở rộng"}
             </button>
           </div>
@@ -732,18 +771,18 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
               return (
                 <button key={i} onClick={c.jump} disabled={!c.jump}
                   style={{
-                    padding: "12px 16px", borderRight: "1px solid #e4e0d8", borderBottom: "1px solid #e4e0d8",
+                    padding: "12px 16px", borderRight: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`,
                     borderTop: 0, borderLeft: 0, background: "none", textAlign: "left",
                     display: "flex", flexDirection: "column", gap: 6,
                     cursor: c.jump ? "pointer" : "default", font: "inherit", color: "inherit",
                   }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 21, fontWeight: 700, lineHeight: 1, color: sv.fg }}>{c.n}</span>
+                    <span style={{ fontFamily: NUM_FONT, fontSize: 21, fontWeight: 700, lineHeight: 1, color: sv.fg }}>{c.n}</span>
                     <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", padding: "3px 7px", borderRadius: 5, color: sv.fg, background: sv.bg, border: `1px solid ${sv.bd}` }}>{c.chip}</span>
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{c.label}</span>
-                  <span style={{ fontSize: 11.5, color: "#8a8378", lineHeight: 1.45 }}>{c.why}</span>
-                  {c.jump && <span style={{ fontSize: 11.5, fontWeight: 600, color: "#0f766e", marginTop: "auto" }}>Tới dòng đầu tiên →</span>}
+                  <span style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.45 }}>{c.why}</span>
+                  {c.jump && <span style={{ fontSize: 11.5, fontWeight: 600, color: C.accent, marginTop: "auto" }}>Tới dòng đầu tiên →</span>}
                 </button>
               )
             })}
@@ -756,43 +795,38 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
         {canManage && (
           <>
             <button onClick={() => addRow(1)}
-              style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              style={{ background: C.accent, border: "1px solid transparent", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#fff" }}>
               + Thêm dòng
             </button>
             <button onClick={() => addRow(10)}
-              style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 7, padding: "7px 12px", cursor: "pointer", fontSize: 12, color: "#6b7280" }}>
+              style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 7, padding: "7px 12px", cursor: "pointer", fontSize: 12, color: C.ink2 }}>
               +10 dòng
             </button>
             <button onClick={syncProducts} disabled={syncing}
               title="Kéo danh mục SP mới nhất từ Pancake POS về (cập nhật gợi ý cột Sản phẩm)"
-              style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 7, padding: "7px 14px", cursor: syncing ? "wait" : "pointer", fontSize: 13, fontWeight: 600, color: "#059669" }}>
-              {syncing ? "⏳ Đang đồng bộ…" : "🔄 Đồng bộ SP từ POS"}
+              style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 7, padding: "7px 14px", cursor: syncing ? "wait" : "pointer", fontSize: 13, fontWeight: 600, color: C.ink2 }}>
+              {syncing ? "Đang đồng bộ…" : "Đồng bộ SP từ POS"}
             </button>
           </>
         )}
         <div style={{ position: "relative", flex: 1, minWidth: 200, maxWidth: 320 }}>
-          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 12, pointerEvents: "none" }}>⌕</span>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 12, pointerEvents: "none" }}>⌕</span>
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Tìm tên hoặc mã sản phẩm…"
-            style={{ width: "100%", font: "inherit", fontSize: 13, padding: "7px 11px 7px 28px", borderRadius: 7, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#111827", outline: "none" }} />
+            style={{ width: "100%", font: "inherit", fontSize: 13, padding: "7px 11px 7px 28px", borderRadius: 7, border: `1px solid ${C.line}`, background: C.surface, color: C.ink, outline: "none" }} />
         </div>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#57534e", cursor: "pointer", userSelect: "none" }}
-          title={hiddenColCount > 0 ? `Đang ẩn ${hiddenColCount} cột chưa có dữ liệu` : "Không có cột trống"}>
-          <input type="checkbox" checked={hideEmptyCols} onChange={e => setHideEmptyCols(e.target.checked)} style={{ margin: 0 }} />
-          Ẩn cột trống{hiddenColCount > 0 ? ` (${hiddenColCount})` : ""}
-        </label>
-        <div style={{ marginLeft: "auto", fontSize: 12, display: "flex", gap: 12, alignItems: "center" }}>
-          <span style={{ color: "#9ca3af" }}>
-            {q ? `${visibleRows.length - 1}/${dataRowCount} dòng` : `${dataRowCount} dòng`} · {visibleCols.length} cột
+        <div style={{ marginLeft: "auto", fontSize: 12.5, display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ color: C.muted, fontFamily: NUM_FONT }}>
+            {q ? `${visibleRows.length - 1}/${dataRowCount} dòng` : `${dataRowCount} dòng`}
           </span>
-          {saveState === "saving" && <span style={{ color: "#d97706" }}>⏳ Đang lưu…</span>}
-          {saveState === "saved" && <span style={{ color: "#16a34a" }}>✓ Đã lưu</span>}
-          {saveState === "error" && <span style={{ color: "#dc2626" }}>✗ Lỗi lưu</span>}
+          {saveState === "saving" && <span style={{ color: C.warn }}>Đang lưu…</span>}
+          {saveState === "saved" && <span style={{ color: C.good }}>Đã lưu</span>}
+          {saveState === "error" && <span style={{ color: C.bad }}>Lỗi lưu</span>}
         </div>
       </div>
 
       {/* Sheet */}
-      <div style={{ flex: 1, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
+      <div style={{ flex: 1, overflow: "auto", border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface }}>
         <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: NUM_COL_W + visibleCols.reduce((s, c) => s + c.width, 0) + 110 }}>
           <colgroup>
             <col style={{ width: NUM_COL_W }} />
@@ -823,24 +857,39 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px 0" }}>
+                <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "32px 0" }}>
                   Bảng trống — bấm "+ Thêm dòng" hoặc paste dữ liệu từ Excel/GG Sheets
                 </td>
               </tr>
             ) : visibleRows.length <= 1 && q ? (
               <tr>
-                <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px 0" }}>
+                <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "32px 0" }}>
                   Không có dòng nào khớp "{search}"
                 </td>
               </tr>
             ) : visibleRows.map(({ row, idx: ri }) => {
               const isHeaderRow = ri === 0
               const broken = brokenRows.has(ri)
-              const bg = broken ? "#fdecec" : isHeaderRow ? "#f4f2ee" : ri % 2 === 0 ? "#fff" : "#fafafa"
+              const rowIssues = issuesByRow.get(ri) ?? []
+              // Nặng nhất quyết định màu dòng: thiếu/sai mã (đỏ) > lệch công thức (vàng).
+              const sev: "bad" | "warn" | null =
+                broken ? "bad" : rowIssues.length > 0 ? "warn" : null
+              const bg = isHeaderRow ? C.surface2
+                : sev === "bad" ? C.badSoft
+                : sev === "warn" ? C.warnSoft
+                : C.surface
               return (
-              <tr key={row.id} style={{ height: ROW_H, background: bg }}>
-                {/* Row number */}
-                <td style={{ ...tdS(NUM_COL_W), textAlign: "center", color: "#9ca3af", fontSize: 11, background: "#f9fafb", borderRight: "2px solid #e5e7eb", userSelect: "none" }}>
+              <Fragment key={row.id}>
+              <tr style={{ height: ROW_H, background: bg }}>
+                {/* Số dòng + vạch màu: dòng cần xử lý nhận ra được khi lướt nhanh. */}
+                <td style={{ ...tdS(NUM_COL_W), textAlign: "center", color: C.muted, fontSize: 11, background: isHeaderRow ? C.surface2 : C.ground, userSelect: "none", position: "relative" }}>
+                  {sev && (
+                    <span style={{
+                      position: "absolute", left: 0, top: 4, bottom: 4, width: 3,
+                      borderRadius: "0 2px 2px 0",
+                      background: sev === "bad" ? C.bad : C.warn,
+                    }} />
+                  )}
                   {ri + 1}
                 </td>
 
@@ -887,22 +936,40 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                 })}
 
                 {/* Ngày tạo */}
-                <td style={{ ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: "monospace", color: "#8a8378" }}>
+                <td style={{ ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: NUM_FONT, color: C.muted }}>
                   {isHeaderRow ? "" : <CreatedAtCell iso={row.created_at} />}
                 </td>
 
                 {canManage && (
                   <td style={{ ...tdS(32), textAlign: "center", padding: 0 }}>
-                    {broken && <span title="Dòng này không vào được báo cáo LNG" style={{ color: "#b91c1c", fontSize: 11, fontWeight: 700, marginRight: 2 }}>●</span>}
                     <button onClick={() => deleteRow(row.id)}
                       title="Xóa dòng"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: 13, padding: "0 4px", lineHeight: 1 }}
-                      onMouseOver={e => (e.currentTarget.style.color = "#dc2626")}
-                      onMouseOut={e => (e.currentTarget.style.color = "#d1d5db")}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: C.line, fontSize: 13, padding: "0 4px", lineHeight: 1 }}
+                      onMouseOver={e => (e.currentTarget.style.color = C.bad)}
+                      onMouseOut={e => (e.currentTarget.style.color = C.line)}
                     >✕</button>
                   </td>
                 )}
               </tr>
+
+              {/* Dải giải thích ngay dưới dòng lỗi — nói rõ sai gì và sửa thế nào,
+                  thay vì để người nhập tự đoán từ ô đỏ. */}
+              {rowIssues.length > 0 && (
+                <tr style={{ background: sev === "bad" ? C.badSoft : C.warnSoft }}>
+                  <td colSpan={visibleCols.length + (canManage ? 3 : 2)}
+                    style={{ padding: "0 12px 9px", borderBottom: `1px solid ${C.lineSoft}` }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, paddingLeft: NUM_COL_W - 12 }}>
+                      {rowIssues.map((it, k) => (
+                        <IssueNote key={k} issue={it} rowIdx={ri}
+                          onFix={it.kind === "formula_drift" && canManage
+                            ? () => applyFormula(row.id, it.drift ?? [])
+                            : undefined} />
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
               )
             })}
           </tbody>
@@ -910,12 +977,75 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       </div>
 
       {canManage && rows.length === 0 && (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#9ca3af" }}>
+        <div style={{ marginTop: 8, fontSize: 12, color: C.muted }}>
           Tip: Paste trực tiếp từ Excel / GG Sheets (Ctrl+V) vào bất kỳ ô nào để điền hàng loạt.
         </div>
       )}
 
     </div>
+  )
+}
+
+// ─── IssueNote ────────────────────────────────────────────────────────────────
+
+/**
+ * Một lỗi của dòng, hiện thành dải ngay dưới dòng đó. Mỗi lỗi nói đúng ba thứ:
+ * sai gì, hậu quả ra sao, và (nếu máy sửa hộ được) một nút bấm để sửa.
+ */
+function IssueNote({ issue, onFix }: {
+  issue: { kind: string; drift?: { colId: string; label: string; want: number }[] }
+  rowIdx: number
+  onFix?: () => void
+}) {
+  const nf = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n))
+  const bad = issue.kind === "no_code" || issue.kind === "bad_code" || issue.kind === "bad_tinhchat"
+  const fg = bad ? C.bad : C.warn
+
+  let chip = ""
+  let text: React.ReactNode = null
+  if (issue.kind === "no_code") {
+    chip = "Thiếu mã SP"
+    text = "Chưa chọn mã ở cột Mã SP — dòng này không vào được báo cáo LNG."
+  } else if (issue.kind === "bad_code") {
+    chip = "Mã SP sai"
+    text = "Mã không khớp danh mục sản phẩm — đã khai giá vốn nhưng báo cáo vẫn coi như chưa khai."
+  } else if (issue.kind === "bad_tinhchat") {
+    chip = "Tính chất sai"
+    text = 'Chỉ nhận đúng "Sản phẩm chính" hoặc "Phụ kiện" — sai là bị tính thành phụ kiện.'
+  } else if (issue.kind === "formula_drift") {
+    const d = issue.drift ?? []
+    chip = "Lệch công thức"
+    text = (
+      <>
+        {d.map((x, i) => (
+          <span key={x.colId}>
+            {i > 0 && " · "}
+            {x.label} gõ tay khác số tự tính <b style={{ fontFamily: NUM_FONT }}>{nf(x.want)}</b>
+          </span>
+        ))}
+      </>
+    )
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span style={{
+        fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", padding: "2px 8px",
+        borderRadius: 99, color: fg, background: bad ? C.badSoft : C.warnSoft,
+        border: `1px solid ${fg}33`, whiteSpace: "nowrap",
+      }}>{chip}</span>
+      <span style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>{text}</span>
+      {onFix && (
+        <button onClick={onFix}
+          style={{
+            font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer",
+            padding: "3px 10px", borderRadius: 6,
+            border: `1px solid ${C.line}`, background: C.surface, color: C.ink2,
+          }}>
+          Dùng số tự tính
+        </button>
+      )}
+    </span>
   )
 }
 
@@ -940,15 +1070,12 @@ function ColumnHeader({ col, headerName }: {
       <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: col.col_type === "number" ? "flex-end" : "flex-start" }}>
         <span
           title={spec?.formula ? `${label} — ô tự tính theo công thức` : label}
-          style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", gap: 1, alignItems: col.col_type === "number" ? "flex-end" : "flex-start" }}
+          style={{ flex: 1, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: col.col_type === "number" ? "flex-end" : "flex-start" }}
         >
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1c1917", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: ".05em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
             {label}
-            {REQUIRED_HEADERS.has(label) && <span style={{ color: "#b91c1c", marginLeft: 2 }}>*</span>}
-            {spec?.formula && <span title="Ô tự tính" style={{ color: "#9ca3af", marginLeft: 3, fontWeight: 400 }}>ƒ</span>}
-          </span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: ".04em" }}>
-            {COL_LETTER(col.position)}{spec ? ` · ${spec.col_type === "number" ? "số" : "chữ"}` : ""}
+            {REQUIRED_HEADERS.has(label) && <span style={{ color: C.bad, marginLeft: 2 }}>*</span>}
+            {spec?.formula && <span title="Ô tự tính theo công thức" style={{ color: C.muted, marginLeft: 4, fontWeight: 400, textTransform: "none" }}>ƒ</span>}
           </span>
         </span>
       </div>
@@ -960,11 +1087,10 @@ function ColumnHeader({ col, headerName }: {
 
 function thS(w: number): React.CSSProperties {
   return {
-    padding: "5px 6px",
-    borderRight: "1px solid #e5e7eb",
-    borderBottom: "2px solid #d1d5db",
-    background: "#f3f4f6",
-    fontSize: 11, fontWeight: 700, color: "#374151",
+    padding: "9px 12px",
+    borderBottom: `1px solid ${C.line}`,
+    background: C.surface2,
+    fontSize: 11, fontWeight: 700, color: C.muted,
     whiteSpace: "nowrap",
     width: w, minWidth: w,
     position: "sticky", top: 0, zIndex: 10,
@@ -974,10 +1100,9 @@ function thS(w: number): React.CSSProperties {
 
 function tdS(w: number): React.CSSProperties {
   return {
-    borderRight: "1px solid #f3f4f6",
-    borderBottom: "1px solid #f3f4f6",
+    borderBottom: `1px solid ${C.lineSoft}`,
     width: w, minWidth: w,
-    height: 28,
+    height: 32,
     verticalAlign: "middle",
     padding: 0,
     boxSizing: "border-box",
