@@ -884,7 +884,12 @@ function PurchaseLotBlock({
       setLot(data.lot)
       setCreating(false)
       onLinked(data.lot.id) // gắn vào task
-      onToast("Đã tạo & liên kết lô nhập vào giá vốn", "success")
+      // Backend còn thêm 1 dòng vào tab "Bảng dữ liệu"; nếu sheet thiếu cột bắt buộc
+      // thì lô vẫn lưu nhưng mua hàng phải tự thêm dòng — nói rõ thay vì báo thành công suông.
+      if (data.sheet_warning)
+        onToast(`Đã tạo lô nhưng CHƯA thêm được dòng ở Bảng dữ liệu: ${data.sheet_warning}`, "error")
+      else
+        onToast("Đã tạo lô, liên kết task & thêm dòng vào Bảng dữ liệu giá vốn", "success")
     } catch (e: any) {
       onToast(e?.message || "Lỗi tạo lô", "error")
     } finally {

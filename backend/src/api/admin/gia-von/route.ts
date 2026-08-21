@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
+import { appendLotToSheet } from "./_sheet-append"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -123,7 +124,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       [product_id, product_title, final_price, qty, lot_date]
     )
 
-    return res.json({ lot })
+    // Đẩy luôn thành 1 dòng ở tab "Bảng dữ liệu" — trước đây lô tạo từ task Mua hàng
+    // chỉ nằm trong import_lot nên mua hàng không thấy và phải gõ tay lại.
+    // Bỏ qua khi caller tự nhập trên chính sheet (skip_sheet) để khỏi nhân đôi dòng.
+    let sheet_row: any = null
+    if (body.skip_sheet !== true) {
+      const appended = await appendLotToSheet(pool, lot)
+      if (appended.ok) {
+        sheet_row = { id: appended.row_id, position: appended.position }
+      } else {
+        console.warn("[gia-von POST] không thêm được dòng sheet:", appended.reason)
+        return res.json({ lot, sheet_row: null, sheet_warning: appended.reason })
+      }
+    }
+
+    return res.json({ lot, sheet_row })
   } catch (err: any) {
     console.error("[gia-von POST error]", err?.message, err?.stack)
     return res.status(500).json({ error: err?.message ?? String(err) })
