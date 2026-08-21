@@ -3574,75 +3574,6 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
       <div className="bg-white border rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h3 className="font-semibold text-gray-800">LNG theo sản phẩm</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Doanh thu = tiền thực nhận (sàn đã trừ phí + khuyến mãi). Mỗi dòng hàng tính giá vốn riêng.
-            </p>
-          </div>
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
-            Hiện cả SP chưa khai giá vốn ({rows.filter(r => r.missing_cost).length})
-          </label>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b text-xs text-gray-500">
-              <tr>
-                <th className="text-left px-4 py-2.5">Sàn</th>
-                <th className="text-left px-4 py-2.5">Sản phẩm</th>
-                <th className="text-right px-3 py-2.5">SL</th>
-                <th className="text-right px-3 py-2.5">Đơn</th>
-                <th className="text-right px-3 py-2.5">Phí sàn</th>
-                <th className="text-right px-3 py-2.5">DT thực nhận</th>
-                <th className="text-right px-3 py-2.5">Giá vốn</th>
-                <th className="text-right px-3 py-2.5">%GV</th>
-                <th className="text-right px-3 py-2.5">LNG</th>
-                <th className="text-right px-3 py-2.5">%LNG</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y text-gray-900">
-              {shown.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
-              )}
-              {shown.map((r, i) => (
-                <tr key={`${r.platform}-${r.sp_code ?? r.sp_label}-${i}`} className={r.missing_cost ? "bg-amber-50/50" : ""}>
-                  <td className="px-4 py-2.5">
-                    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                      r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                    }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
-                  </td>
-                  <td className="px-4 py-2.5 max-w-[260px]">
-                    <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
-                    {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
-                    {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.delivered_qty)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fee_marketplace)}</td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r.cogs)}</td>
-                  <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.cogs_pct)}</td>
-                  <td className={`px-3 py-2.5 text-right font-semibold ${r.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
-                    {r.missing_cost ? "—" : money(r.lng)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.lng_pct, r.lng >= 0)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500">
-          LNG ở bảng theo sản phẩm <b>chưa trừ ads</b> — chi phí ads chỉ điền được theo (ngày × sàn),
-          không tách tới từng sản phẩm. Xem LNG sau ads ở thẻ tổng phía trên hoặc bảng theo ngày dưới đây.
-          Ship do sàn trả (không tính). Fullfill 5.000đ/đơn giống các báo cáo khác.
-        </div>
-      </div>
-
-      <div className="bg-white border rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
-          <div>
             <h3 className="font-semibold text-gray-800">
               LNG theo ngày {dayMode === "tt" ? "(Tạm tính)" : "(Thực)"}
             </h3>
@@ -3862,6 +3793,75 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               </tfoot>
             )}
           </table>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800">LNG theo sản phẩm</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Doanh thu = tiền thực nhận (sàn đã trừ phí + khuyến mãi). Mỗi dòng hàng tính giá vốn riêng.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
+            Hiện cả SP chưa khai giá vốn ({rows.filter(r => r.missing_cost).length})
+          </label>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+              <tr>
+                <th className="text-left px-4 py-2.5">Sàn</th>
+                <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                <th className="text-right px-3 py-2.5">SL</th>
+                <th className="text-right px-3 py-2.5">Đơn</th>
+                <th className="text-right px-3 py-2.5">Phí sàn</th>
+                <th className="text-right px-3 py-2.5">DT thực nhận</th>
+                <th className="text-right px-3 py-2.5">Giá vốn</th>
+                <th className="text-right px-3 py-2.5">%GV</th>
+                <th className="text-right px-3 py-2.5">LNG</th>
+                <th className="text-right px-3 py-2.5">%LNG</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {shown.length === 0 && (
+                <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+              )}
+              {shown.map((r, i) => (
+                <tr key={`${r.platform}-${r.sp_code ?? r.sp_label}-${i}`} className={r.missing_cost ? "bg-amber-50/50" : ""}>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                      r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                    }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                  </td>
+                  <td className="px-4 py-2.5 max-w-[260px]">
+                    <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
+                    {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                    {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.delivered_qty)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fee_marketplace)}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.cogs_pct)}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${r.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    {r.missing_cost ? "—" : money(r.lng)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.lng_pct, r.lng >= 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500">
+          LNG ở bảng theo sản phẩm <b>chưa trừ ads</b> — chi phí ads chỉ điền được theo (ngày × sàn),
+          không tách tới từng sản phẩm. Xem LNG sau ads ở thẻ tổng hoặc bảng theo ngày phía trên.
+          Ship do sàn trả (không tính). Fullfill 5.000đ/đơn giống các báo cáo khác.
         </div>
       </div>
     </div>
