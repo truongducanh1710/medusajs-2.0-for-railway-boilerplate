@@ -1,10 +1,39 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
+import { specAt, isValidCell } from "../../../../../admin/lib/gia-von-schema"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
   if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })
   return _pool
+}
+
+/**
+ * Loại bỏ ô sai kiểu trước khi ghi (chữ vào cột số, giá trị lạ ở cột Tính chất).
+ * UI đã chặn từ đầu vào; đây là chốt chặn cuối cho paste hàng loạt và gọi API trực tiếp.
+ * Ô sai bị BỎ QUA chứ không làm hỏng cả dòng — phần hợp lệ vẫn được lưu.
+ */
+async function loadColPositions(pool: Pool): Promise<Map<string, number>> {
+  const { rows } = await pool.query(`SELECT id, position FROM cost_sheet_column`)
+  const posById = new Map<string, number>()
+  for (const c of rows) posById.set(String(c.id), Number(c.position))
+  return posById
+}
+
+function sanitize(posById: Map<string, number>, data: Record<string, string>): {
+  clean: Record<string, string>; rejected: string[]
+} {
+  const clean: Record<string, string> = {}
+  const rejected: string[] = []
+  for (const [colId, raw] of Object.entries(data ?? {})) {
+    const pos = posById.get(colId)
+    // Cột không còn trong schema (L..Z cũ): giữ nguyên giá trị, không render nhưng không mất.
+    if (pos === undefined) { clean[colId] = String(raw ?? ""); continue }
+    const spec = specAt(pos)
+    if (isValidCell(spec, String(raw ?? ""))) clean[colId] = String(raw ?? "")
+    else rejected.push(`${spec?.name ?? colId}: "${raw}"`)
+  }
+  return { clean, rejected }
 }
 
 /**
@@ -23,9 +52,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     )
     let nextPos = Number(maxpos) + 1
 
+    const rejectedAll: string[] = []
     let toInsert: { data: Record<string, string> }[] = []
     if (Array.isArray(body.rows)) {
-      toInsert = body.rows.map((r: any) => ({ data: r.data ?? {} }))
+      const posById = await loadColPositions(pool)
+      for (const r of body.rows) {
+        const { clean, rejected } = sanitize(posById, r.data ?? {})
+        toInsert.push({ data: clean })
+        rejectedAll.push(...rejected)
+      }
     } else {
       const count = Math.max(1, Math.min(Number(body.count ?? 1), 200))
       toInsert = Array.from({ length: count }, () => ({ data: {} }))
@@ -42,7 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       nextPos++
     }
 
-    return res.json({ rows: inserted })
+    return res.json({ rows: inserted, rejected: rejectedAll })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
@@ -61,15 +96,19 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     }
     const pool = getPool()
     let updated = 0
+    const rejectedAll: string[] = []
+    const posById = await loadColPositions(pool)
     for (const r of body.rows) {
       if (!r.id) continue
+      const { clean, rejected } = sanitize(posById, r.data ?? {})
+      rejectedAll.push(...rejected)
       await pool.query(
         `UPDATE cost_sheet_row SET data = $1, updated_at = now() WHERE id = $2`,
-        [JSON.stringify(r.data ?? {}), r.id]
+        [JSON.stringify(clean), r.id]
       )
       updated++
     }
-    return res.json({ updated })
+    return res.json({ updated, rejected: rejectedAll })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
