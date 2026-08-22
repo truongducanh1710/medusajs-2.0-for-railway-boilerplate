@@ -432,6 +432,24 @@ function isDailyMktReportTask(task: Task): boolean {
   return (task.tags || []).some(tag => normalizeReportTitle(tag) === "bao_cao_9h")
 }
 
+/**
+ * Task báo cáo sàn TMĐT — nhận biết qua tag nền tảng, không dùng BAO_CAO_9H.
+ * BAO_CAO_9H kéo theo form báo cáo Facebook Ads (đơn Pancake theo mkt_name +
+ * chi phí ads FB/Google), sai hoàn toàn với người vận hành sàn.
+ */
+const MARKETPLACE_TAGS: Record<string, { platform: "shopee" | "tiktok"; label: string }> = {
+  shopee_vn: { platform: "shopee", label: "Shopee Việt Nam" },
+  tiktok_vn: { platform: "tiktok", label: "TikTok Shop Việt Nam" },
+}
+
+function marketplaceOfTask(task: Task): { platform: "shopee" | "tiktok"; label: string } | null {
+  for (const tag of task.tags || []) {
+    const hit = MARKETPLACE_TAGS[normalizeReportTitle(tag)]
+    if (hit) return hit
+  }
+  return null
+}
+
 function isDailyVideoPostTask(task: Task): boolean {
   return (task.tags || []).some(tag => normalizeReportTitle(tag) === "dang_video")
 }
@@ -789,6 +807,245 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
     </div>
   )
 }
+/**
+ * Báo cáo ngày cho người vận hành sàn TMĐT.
+ *
+ * Nguồn số: /admin/pancake-sync/report/marketplace-lng — đúng endpoint mà tab
+ * "Sàn TMĐT" trong Báo cáo đang dùng, lọc lấy riêng nền tảng của task. Nhờ vậy
+ * số trong báo cáo và số trên trang Báo cáo luôn khớp nhau.
+ */
+type MpPlatformRow = {
+  platform: string
+  platform_label: string
+  total_orders: number
+  da_nhan: number
+  da_huy: number
+  da_hoan: number
+  dang_hoan: number
+  revenue_delivered: number
+  fee_marketplace: number
+  cogs: number
+  lng: number
+  lng_pct: number
+  ads_cost: number
+  lng_sau_ads: number
+  lng_sau_ads_pct: number
+}
+
+type MpProductRow = {
+  platform: string
+  sp_label: string
+  sp_code: string | null
+  da_nhan: number
+  da_huy: number
+  revenue_delivered: number
+  lng: number
+  lng_pct: number
+  missing_cost: boolean
+}
+
+function buildMarketplaceReportText(
+  label: string, dateKey: string, row: MpPlatformRow | null,
+  top: MpProductRow[], note: string,
+): string {
+  if (!row) return `📊 Báo cáo ${label} — ${formatDateVN(dateKey)}\n\n(Không có dữ liệu)`
+  const huyHoan = Number(row.da_huy || 0) + Number(row.da_hoan || 0) + Number(row.dang_hoan || 0)
+  const ngaNgu = Number(row.da_nhan || 0) + huyHoan
+  const pctHuy = ngaNgu > 0 ? Math.round(huyHoan / ngaNgu * 1000) / 10 : 0
+  return [
+    `📊 Báo cáo ${label} — ${formatDateVN(dateKey)}`,
+    "",
+    `Tổng đơn: ${Number(row.total_orders || 0)} · Đã nhận: ${Number(row.da_nhan || 0)}`,
+    `Huỷ + hoàn: ${huyHoan} (${pctHuy}% trên ${ngaNgu} đơn đã ngã ngũ)`,
+    `Doanh thu thực nhận: ${formatVND(row.revenue_delivered)}`,
+    `Phí sàn giữ: ${formatVND(row.fee_marketplace)}`,
+    `Giá vốn: ${formatVND(row.cogs)}`,
+    `LNG trước ads: ${formatVND(row.lng)} (${Number(row.lng_pct || 0)}%)`,
+    `Chi phí ads: ${formatVND(row.ads_cost)}`,
+    `LNG sau ads: ${formatVND(row.lng_sau_ads)} (${Number(row.lng_sau_ads_pct || 0)}%)`,
+    "",
+    ...(top.length > 0 ? [
+      "🏆 Sản phẩm dẫn đầu doanh thu:",
+      ...top.map((p, i) => `  ${i + 1}. ${p.sp_label} — ${formatVND(p.revenue_delivered)} · ${p.da_nhan} đơn · LNG ${p.missing_cost ? "—" : formatVND(p.lng)}`),
+      "",
+    ] : []),
+    "📝 Nhận xét:",
+    note.trim() || "(Không có)",
+  ].join("\n")
+}
+
+function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
+  task: Task
+  platform: "shopee" | "tiktok"
+  label: string
+  canSend: boolean
+  onToast: (msg: string, type: "success" | "error") => void
+}) {
+  // Mặc định xem HÔM QUA: báo cáo 09:00 là chốt số của ngày hôm trước.
+  const [date, setDate] = useState(() => {
+    const d = new Date(Date.now() + 7 * 3600 * 1000 - 86400 * 1000)
+    return d.toISOString().slice(0, 10)
+  })
+  const [row, setRow] = useState<MpPlatformRow | null>(null)
+  const [top, setTop] = useState<MpProductRow[]>([])
+  const [note, setNote] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [cooldown, setCooldown] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError(null)
+    setNote("")
+    fetch(`/admin/pancake-sync/report/marketplace-lng?from=${date}&to=${date}&market=VN`, { credentials: "include" })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || data?.message || "Không tải được số liệu sàn")
+        if (!active) return
+        const mine = (data.by_platform || []).find((p: any) => p.platform === platform) || null
+        setRow(mine)
+        setTop(
+          (data.rows || [])
+            .filter((r: any) => r.platform === platform && Number(r.revenue_delivered) > 0)
+            .sort((a: any, b: any) => Number(b.revenue_delivered) - Number(a.revenue_delivered))
+            .slice(0, 5),
+        )
+      })
+      .catch((e) => {
+        if (!active) return
+        setRow(null); setTop([])
+        setError(e?.message || "Không tải được số liệu sàn")
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [date, platform])
+
+  const sendReport = async () => {
+    if (!row) { onToast("Chưa có dữ liệu để gửi", "error"); return }
+    setSending(true)
+    try {
+      const channelId = await resolveReportChannelId(task)
+      const res = await fetch(`/admin/mkt-chat/channels/${channelId}/messages`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: buildMarketplaceReportText(label, date, row, top, note),
+          msg_type: "text",
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || data?.message || "Không gửi được báo cáo")
+      onToast("Đã gửi báo cáo vào chat", "success")
+      setCooldown(true)
+      setTimeout(() => setCooldown(false), 3000)
+    } catch (e: any) {
+      onToast(e?.message || "Không gửi được báo cáo", "error")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const huyHoan = row ? Number(row.da_huy || 0) + Number(row.da_hoan || 0) + Number(row.dang_hoan || 0) : 0
+  const ngaNgu = row ? Number(row.da_nhan || 0) + huyHoan : 0
+  const metrics: [string, React.ReactNode][] = row ? [
+    ["Tổng đơn", Number(row.total_orders || 0)],
+    ["Đã nhận", Number(row.da_nhan || 0)],
+    ["Huỷ + hoàn", `${huyHoan}${ngaNgu > 0 ? ` (${Math.round(huyHoan / ngaNgu * 1000) / 10}%)` : ""}`],
+    ["Doanh thu thực nhận", formatVND(row.revenue_delivered)],
+    ["Phí sàn giữ", formatVND(row.fee_marketplace)],
+    ["Giá vốn", formatVND(row.cogs)],
+    ["LNG trước ads", `${formatVND(row.lng)} (${Number(row.lng_pct || 0)}%)`],
+    ["Chi phí ads", formatVND(row.ads_cost)],
+    ["LNG sau ads", (
+      <span className={Number(row.lng_sau_ads) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+        {formatVND(row.lng_sau_ads)} ({Number(row.lng_sau_ads_pct || 0)}%)
+      </span>
+    )],
+  ] : []
+
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-[12px] font-bold text-emerald-800 dark:text-emerald-300">📊 Báo cáo {label}</div>
+        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-ui-fg-muted">
+          {task.assignee_id?.split("@")[0]?.toUpperCase()}
+        </span>
+      </div>
+
+      <input
+        type="date" value={date} onChange={e => setDate(e.target.value)}
+        className={INPUT_CLS}
+      />
+
+      {loading ? (
+        <div className="py-4 text-center text-[12px] text-ui-fg-muted">Đang tải số liệu…</div>
+      ) : error ? (
+        <div className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</div>
+      ) : !row ? (
+        <div className="mt-2 rounded-lg bg-ui-bg-subtle px-3 py-2 text-[12px] text-ui-fg-muted">
+          Ngày này chưa có đơn nào trên {label}.
+        </div>
+      ) : (
+        <>
+          <div className="mt-2 overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
+            <table className="w-full text-[12.5px]">
+              <tbody>
+                {metrics.map(([k, v], i) => (
+                  <tr key={String(k)} className={i > 0 ? "border-t border-ui-border-base" : ""}>
+                    <td className="px-3 py-2 text-ui-fg-subtle">{k}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-ui-fg-base">{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {top.length > 0 && (
+            <div className="mt-3">
+              <label className={LABEL_CLS}>Sản phẩm dẫn đầu doanh thu</label>
+              <div className="mt-1 overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
+                {top.map((p, i) => (
+                  <div key={`${p.sp_code}-${i}`} className={cn("flex items-center gap-2 px-2.5 py-1.5", i > 0 && "border-t border-ui-border-base")}>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ui-fg-base" title={p.sp_label}>{p.sp_label}</span>
+                    <span className="flex-none font-mono text-[11.5px] text-ui-fg-subtle">{p.da_nhan} đơn</span>
+                    <span className="flex-none font-mono text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      {formatVND(p.revenue_delivered)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3">
+            <label className={LABEL_CLS}>Nhận xét</label>
+            <textarea
+              value={note} onChange={e => setNote(e.target.value)} rows={4}
+              className={cn(INPUT_CLS, "resize-y")}
+              placeholder="Sàn/SP bất thường, việc cần theo dõi hôm nay..."
+            />
+          </div>
+
+          <button
+            onClick={sendReport}
+            disabled={!canSend || sending || cooldown}
+            className={cn("mt-3 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition active:scale-95",
+              canSend && !sending && !cooldown
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-ui-bg-component text-ui-fg-disabled")}
+            title={!canSend ? "Bạn không phải người xử lý task này" : undefined}
+          >
+            {sending ? "Đang gửi..." : cooldown ? "Đã gửi" : "Gửi báo cáo"}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 type MktProductLite = { id: string; name: string; code: string | null }
 type ImportLot = {
   id: string; product_title: string; qty: number; price_unit: number
@@ -1482,7 +1739,19 @@ function TaskDrawer({
               </div>
             )}
 
-            {isDailyMktReportTask(task) && (
+            {/* Task vận hành sàn dùng form riêng lấy số từ marketplace-lng.
+                Kiểm tra TRƯỚC form MKT vì task sàn cũng mang tag BAO_CAO_9H —
+                form MKT đọc đơn theo mkt_name + ads FB/Google nên với người sàn
+                mọi chỉ số đều bằng 0. */}
+            {marketplaceOfTask(task) ? (
+              <MarketplaceReportBlock
+                task={task}
+                platform={marketplaceOfTask(task)!.platform}
+                label={marketplaceOfTask(task)!.label}
+                canSend={canWork}
+                onToast={onToast}
+              />
+            ) : isDailyMktReportTask(task) && (
               <DailyMktReportBlock
                 task={task}
                 canSend={canWork}
