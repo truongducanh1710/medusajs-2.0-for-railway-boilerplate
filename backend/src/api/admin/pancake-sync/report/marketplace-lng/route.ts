@@ -232,7 +232,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed,
         SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
         COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
-        SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty
+        SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty,
+        -- Tạm tính (status 2,3,8): gồm cả đơn đã cho đi nhưng chưa giao xong. Bảng
+        -- "SP bán chạy" phải đọc bộ số này — chỉ đếm đơn đã giao xong thì SP mới
+        -- chạy quảng cáo hôm nay gần như không xuất hiện.
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8))::int AS orders_tt,
+        SUM(CASE WHEN status IN (2,3,8) THEN order_revenue   * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
+        SUM(CASE WHEN status IN (2,3,8) THEN qty ELSE 0 END)::numeric AS qty_tt
       FROM oi3
       GROUP BY platform, sp_key
     `, [from, to])
@@ -332,12 +342,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           total_orders: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           revenue_delivered: 0, fee_marketplace: 0, list_price: 0,
           cogs: 0, revenue_costed: 0, revenue_no_cost: 0, orders_costed: 0, delivered_qty: 0,
+          orders_tt: 0, revenue_tt: 0, fee_tt: 0, cogs_tt: 0,
+          revenue_costed_tt: 0, orders_costed_tt: 0, qty_tt: 0,
         }
       }
       const g = merged[key]
       for (const k of ["total_orders", "da_nhan", "da_hoan", "dang_hoan", "da_huy",
         "revenue_delivered", "fee_marketplace", "list_price", "cogs",
-        "revenue_costed", "revenue_no_cost", "orders_costed", "delivered_qty"]) {
+        "revenue_costed", "revenue_no_cost", "orders_costed", "delivered_qty",
+        "orders_tt", "revenue_tt", "fee_tt", "cogs_tt",
+        "revenue_costed_tt", "orders_costed_tt", "qty_tt"]) {
         g[k] += Number(row[k] ?? 0)
       }
       if (!row.has_cost) g.has_cost = false
@@ -350,6 +364,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const fullfill = FULLFILL_PER_ORDER * g.orders_costed
       // LNG chỉ tính trên phần doanh thu có giá vốn — phần còn lại nêu riêng ở revenue_no_cost.
       const lng = g.revenue_costed - (g.cogs + fullfill)
+      // Bộ số tạm tính song song, cùng công thức nhưng gồm cả đơn đang trên đường.
+      const fullfillTT = FULLFILL_PER_ORDER * g.orders_costed_tt
+      const lngTT = g.revenue_costed_tt - (g.cogs_tt + fullfillTT)
       const nGiao = g.total_orders
       const pctN = (p: number) => nGiao > 0 ? Math.round(p / nGiao * 1000) / 10 : 0
       return {
@@ -370,6 +387,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         cogs: g.cogs, cogs_pct: pct(g.cogs, g.revenue_costed),
         fullfill,
         lng, lng_pct: pct(lng, g.revenue_costed),
+        orders_tt: g.orders_tt,
+        qty_tt: g.qty_tt,
+        revenue_tt: g.revenue_tt,
+        fee_tt: g.fee_tt,
+        cogs_tt: g.cogs_tt,
+        revenue_costed_tt: g.revenue_costed_tt,
+        fullfill_tt: fullfillTT,
+        lng_tt: lngTT,
+        lng_tt_pct: pct(lngTT, g.revenue_costed_tt),
       }
     }).sort((a, b) => b.revenue_delivered - a.revenue_delivered)
 

@@ -844,11 +844,11 @@ type MpProductRow = {
   platform: string
   sp_label: string
   sp_code: string | null
-  da_nhan: number
-  da_huy: number
-  revenue_delivered: number
-  lng: number
-  lng_pct: number
+  /** Tạm tính — gồm cả đơn khách đã đặt nhưng chưa giao xong. */
+  orders_tt: number
+  qty_tt: number
+  revenue_tt: number
+  lng_tt: number
   missing_cost: boolean
 }
 
@@ -877,8 +877,8 @@ function buildMarketplaceReportText(
       : []),
     "",
     ...(top.length > 0 ? [
-      "🏆 Sản phẩm dẫn đầu (đơn đã giao xong):",
-      ...top.map((p, i) => `  ${i + 1}. ${p.sp_label} — ${formatVND(p.revenue_delivered)} · ${p.da_nhan} đơn · LNG ${p.missing_cost ? "—" : formatVND(p.lng)}`),
+      "🏆 Sản phẩm bán chạy:",
+      ...top.map((p, i) => `  ${i + 1}. ${p.sp_label} — ${Number(p.qty_tt)} sp / ${Number(p.orders_tt)} đơn · ${formatVND(p.revenue_tt)} · LNG ${p.missing_cost ? "—" : formatVND(p.lng_tt)}`),
       "",
     ] : []),
     "📝 Nhận xét:",
@@ -921,9 +921,12 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
         const mine = (data.by_day || []).find((p: any) => p.platform === platform) || null
         setRow(mine)
         setTop(
+          // Xếp theo SỐ LƯỢNG khách đặt trong ngày (tạm tính), không theo đơn đã
+          // giao xong — SP mới chạy hôm nay thì chưa đơn nào giao xong, xếp theo
+          // số thực sẽ không bao giờ thấy nó.
           (data.rows || [])
-            .filter((r: any) => r.platform === platform && Number(r.revenue_delivered) > 0)
-            .sort((a: any, b: any) => Number(b.revenue_delivered) - Number(a.revenue_delivered))
+            .filter((r: any) => r.platform === platform && Number(r.qty_tt) > 0)
+            .sort((a: any, b: any) => Number(b.qty_tt) - Number(a.qty_tt))
             .slice(0, 5),
         )
       })
@@ -1036,23 +1039,20 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
 
           {top.length > 0 && (
             <div className="mt-3">
-              <label className={LABEL_CLS}>
-                Sản phẩm dẫn đầu — theo đơn đã giao xong
-              </label>
+              <label className={LABEL_CLS}>Sản phẩm bán chạy</label>
               <div className="mt-1 overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
                 {top.map((p, i) => (
                   <div key={`${p.sp_code}-${i}`} className={cn("flex items-center gap-2 px-2.5 py-1.5", i > 0 && "border-t border-ui-border-base")}>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-ui-fg-base" title={p.sp_label}>{p.sp_label}</span>
-                    <span className="flex-none font-mono text-[11.5px] text-ui-fg-subtle">{p.da_nhan} đơn</span>
+                    <span className="flex-none font-mono text-[11.5px] text-ui-fg-subtle">
+                      {Number(p.qty_tt)} sp · {Number(p.orders_tt)} đơn
+                    </span>
                     <span className="flex-none font-mono text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">
-                      {formatVND(p.revenue_delivered)}
+                      {formatVND(p.revenue_tt)}
                     </span>
                   </div>
                 ))}
               </div>
-              <p className="mt-1 text-[10.5px] text-ui-fg-muted">
-                Bảng này chỉ tính đơn đã giao xong nên có thể ít hơn nhiều so với số tạm tính ở trên.
-              </p>
             </div>
           )}
 
