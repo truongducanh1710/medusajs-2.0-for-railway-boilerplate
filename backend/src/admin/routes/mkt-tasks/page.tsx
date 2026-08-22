@@ -817,19 +817,27 @@ function DailyMktReportBlock({ task, canSend, onToast }: {
 type MpPlatformRow = {
   platform: string
   platform_label: string
+  date: string
   total_orders: number
   da_nhan: number
   da_huy: number
   da_hoan: number
   dang_hoan: number
-  revenue_delivered: number
-  fee_marketplace: number
-  cogs: number
-  lng: number
-  lng_pct: number
   ads_cost: number
+  ads_missing: boolean
+  /** Số đơn đã cho đi nhưng chưa giao xong — phần làm "thực" và "tạm tính" lệch nhau. */
+  orders_pending: number
+  // Tạm tính: gồm cả đơn đang trên đường. Ads trừ nguyên vì đã tiêu hết trong ngày.
+  orders_tt: number
+  revenue_tt: number
+  fee_tt: number
+  cogs_tt: number
+  lng_tt: number
+  lng_tt_sau_ads: number
+  lng_tt_sau_ads_pct: number
+  // Thực: chỉ đơn đã giao xong — giữ lại để đối chiếu.
+  revenue_delivered: number
   lng_sau_ads: number
-  lng_sau_ads_pct: number
 }
 
 type MpProductRow = {
@@ -852,20 +860,24 @@ function buildMarketplaceReportText(
   const huyHoan = Number(row.da_huy || 0) + Number(row.da_hoan || 0) + Number(row.dang_hoan || 0)
   const ngaNgu = Number(row.da_nhan || 0) + huyHoan
   const pctHuy = ngaNgu > 0 ? Math.round(huyHoan / ngaNgu * 1000) / 10 : 0
+  const pending = Number(row.orders_pending || 0)
   return [
-    `📊 Báo cáo ${label} — ${formatDateVN(dateKey)}`,
+    `📊 Báo cáo ${label} — ${formatDateVN(dateKey)} (tạm tính)`,
     "",
-    `Tổng đơn: ${Number(row.total_orders || 0)} · Đã nhận: ${Number(row.da_nhan || 0)}`,
+    `Tổng đơn: ${Number(row.total_orders || 0)} · Tính doanh thu: ${Number(row.orders_tt || 0)}${pending > 0 ? ` (${pending} chưa giao xong)` : ""}`,
     `Huỷ + hoàn: ${huyHoan} (${pctHuy}% trên ${ngaNgu} đơn đã ngã ngũ)`,
-    `Doanh thu thực nhận: ${formatVND(row.revenue_delivered)}`,
-    `Phí sàn giữ: ${formatVND(row.fee_marketplace)}`,
-    `Giá vốn: ${formatVND(row.cogs)}`,
-    `LNG trước ads: ${formatVND(row.lng)} (${Number(row.lng_pct || 0)}%)`,
-    `Chi phí ads: ${formatVND(row.ads_cost)}`,
-    `LNG sau ads: ${formatVND(row.lng_sau_ads)} (${Number(row.lng_sau_ads_pct || 0)}%)`,
+    `Doanh thu thực nhận: ${formatVND(row.revenue_tt)}`,
+    `Phí sàn giữ: ${formatVND(row.fee_tt)}`,
+    `Giá vốn: ${formatVND(row.cogs_tt)}`,
+    `LNG trước ads: ${formatVND(row.lng_tt)}`,
+    `Chi phí ads: ${row.ads_missing ? "chưa điền" : formatVND(row.ads_cost)}`,
+    `LNG sau ads: ${formatVND(row.lng_tt_sau_ads)} (${Number(row.lng_tt_sau_ads_pct || 0)}%)`,
+    ...(pending > 0
+      ? ["", `⏳ Còn ${pending} đơn đang đi — số sẽ đổi khi giao xong.`]
+      : []),
     "",
     ...(top.length > 0 ? [
-      "🏆 Sản phẩm dẫn đầu doanh thu:",
+      "🏆 Sản phẩm dẫn đầu (đơn đã giao xong):",
       ...top.map((p, i) => `  ${i + 1}. ${p.sp_label} — ${formatVND(p.revenue_delivered)} · ${p.da_nhan} đơn · LNG ${p.missing_cost ? "—" : formatVND(p.lng)}`),
       "",
     ] : []),
@@ -904,7 +916,9 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error || data?.message || "Không tải được số liệu sàn")
         if (!active) return
-        const mine = (data.by_platform || []).find((p: any) => p.platform === platform) || null
+        // Đọc by_day chứ không phải by_platform: chỉ by_day mới có bộ số tạm tính
+        // (_tt). Khoảng ngày là 1 ngày nên tối đa 1 dòng cho mỗi nền tảng.
+        const mine = (data.by_day || []).find((p: any) => p.platform === platform) || null
         setRow(mine)
         setTop(
           (data.rows || [])
@@ -950,18 +964,23 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
 
   const huyHoan = row ? Number(row.da_huy || 0) + Number(row.da_hoan || 0) + Number(row.dang_hoan || 0) : 0
   const ngaNgu = row ? Number(row.da_nhan || 0) + huyHoan : 0
+  // Dùng số TẠM TÍNH: gồm cả đơn đã cho đi nhưng chưa giao xong. Số "thực" của một
+  // ngày lẻ gần như vô nghĩa vì đơn sàn vài ngày sau mới giao xong, trong khi ads
+  // đã tiêu hết ngay trong ngày — đọc số thực sẽ thấy lỗ nặng giả tạo.
   const metrics: [string, React.ReactNode][] = row ? [
     ["Tổng đơn", Number(row.total_orders || 0)],
-    ["Đã nhận", Number(row.da_nhan || 0)],
+    ["Đơn tính doanh thu", `${Number(row.orders_tt || 0)}${Number(row.orders_pending || 0) > 0 ? ` (${Number(row.orders_pending)} chưa giao xong)` : ""}`],
     ["Huỷ + hoàn", `${huyHoan}${ngaNgu > 0 ? ` (${Math.round(huyHoan / ngaNgu * 1000) / 10}%)` : ""}`],
-    ["Doanh thu thực nhận", formatVND(row.revenue_delivered)],
-    ["Phí sàn giữ", formatVND(row.fee_marketplace)],
-    ["Giá vốn", formatVND(row.cogs)],
-    ["LNG trước ads", `${formatVND(row.lng)} (${Number(row.lng_pct || 0)}%)`],
-    ["Chi phí ads", formatVND(row.ads_cost)],
+    ["Doanh thu thực nhận", formatVND(row.revenue_tt)],
+    ["Phí sàn giữ", formatVND(row.fee_tt)],
+    ["Giá vốn", formatVND(row.cogs_tt)],
+    ["LNG trước ads", formatVND(row.lng_tt)],
+    ["Chi phí ads", row.ads_missing
+      ? <span className="text-amber-600 dark:text-amber-400">Chưa điền</span>
+      : formatVND(row.ads_cost)],
     ["LNG sau ads", (
-      <span className={Number(row.lng_sau_ads) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-        {formatVND(row.lng_sau_ads)} ({Number(row.lng_sau_ads_pct || 0)}%)
+      <span className={Number(row.lng_tt_sau_ads) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+        {formatVND(row.lng_tt_sau_ads)} ({Number(row.lng_tt_sau_ads_pct || 0)}%)
       </span>
     )],
   ] : []
@@ -969,7 +988,13 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-[12px] font-bold text-emerald-800 dark:text-emerald-300">📊 Báo cáo {label}</div>
+        <div className="text-[12px] font-bold text-emerald-800 dark:text-emerald-300">
+          📊 Báo cáo {label}
+          <span
+            title="Gồm cả đơn đã cho đi nhưng chưa giao xong. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."
+            className="ml-1.5 font-semibold text-ui-fg-muted"
+          >· tạm tính</span>
+        </div>
         <span className="text-[10.5px] font-semibold uppercase tracking-wide text-ui-fg-muted">
           {task.assignee_id?.split("@")[0]?.toUpperCase()}
         </span>
@@ -1003,9 +1028,17 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
             </table>
           </div>
 
+          {Number(row.orders_pending || 0) > 0 && (
+            <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+              Còn {Number(row.orders_pending)} đơn đang đi — số này sẽ đổi khi giao xong.
+            </div>
+          )}
+
           {top.length > 0 && (
             <div className="mt-3">
-              <label className={LABEL_CLS}>Sản phẩm dẫn đầu doanh thu</label>
+              <label className={LABEL_CLS}>
+                Sản phẩm dẫn đầu — theo đơn đã giao xong
+              </label>
               <div className="mt-1 overflow-hidden rounded-lg border border-ui-border-base bg-ui-bg-base">
                 {top.map((p, i) => (
                   <div key={`${p.sp_code}-${i}`} className={cn("flex items-center gap-2 px-2.5 py-1.5", i > 0 && "border-t border-ui-border-base")}>
@@ -1017,6 +1050,9 @@ function MarketplaceReportBlock({ task, platform, label, canSend, onToast }: {
                   </div>
                 ))}
               </div>
+              <p className="mt-1 text-[10.5px] text-ui-fg-muted">
+                Bảng này chỉ tính đơn đã giao xong nên có thể ít hơn nhiều so với số tạm tính ở trên.
+              </p>
             </div>
           )}
 
