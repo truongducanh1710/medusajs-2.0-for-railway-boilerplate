@@ -16,9 +16,41 @@ function storageKey(caseId: string) {
   return `pt-combo-calc:${caseId}`;
 }
 
-function loadSaved(caseId: string, seedCost1: number): ComboState {
+const TIER_LABELS = ["Đơn 1", "Đơn đôi", "Đơn ba"] as const;
+
+/**
+ * Đọc ngược ba mức giá từ chuỗi combo đã lưu ở DB.
+ *
+ * Chuỗi do chính comboSummary bên dưới sinh ra nên dạng cố định:
+ *   "Đơn 1: 399.000đ – Đơn đôi: 749.000đ – Đơn ba: 999.000đ"
+ * Mức nào không có trong chuỗi (lúc lưu để trống) thì trả 0, đúng như khi nhập tay.
+ */
+function parseCombo(summary: string | null | undefined): number[] | null {
+  const raw = String(summary || "").trim();
+  if (!raw) return null;
+  const out = [0, 0, 0];
+  let found = false;
+  TIER_LABELS.forEach((label, i) => {
+    // Số kiểu vi-VN: dấu chấm ngăn nghìn, kết thúc bằng "đ".
+    const m = raw.match(new RegExp(`${label}\\s*:\\s*([\\d.]+)\\s*đ`));
+    if (m) {
+      const n = Number(m[1].replace(/\./g, ""));
+      if (!isNaN(n)) { out[i] = n; found = true; }
+    }
+  });
+  return found ? out : null;
+}
+
+function loadSaved(
+  caseId: string,
+  seedCost1: number,
+  savedCombo: string | null | undefined,
+): ComboState {
+  // Ba mức giá đã lưu ở DB là nguồn sự thật — người khác mở thẻ phải thấy đúng
+  // số MKT đã chốt, chứ không phải bảng trống vì localStorage máy họ không có gì.
+  const fromDb = parseCombo(savedCombo);
   const fallback: ComboState = {
-    sale: [0, 0, 0],
+    sale: fromDb ?? [0, 0, 0],
     cost: [seedCost1, seedCost1 * 2, seedCost1 * 3],
     mix: [80, 18, 2],
     returnRate: 18,
@@ -31,7 +63,12 @@ function loadSaved(caseId: string, seedCost1: number): ComboState {
     const raw = window.localStorage.getItem(storageKey(caseId));
     if (!raw) return fallback;
     const saved = JSON.parse(raw);
-    return { ...fallback, ...saved };
+    const merged = { ...fallback, ...saved };
+    // localStorage chỉ giữ các thông số đang dò dở (giá vốn, phí, tỷ lệ mix...).
+    // Riêng ba mức giá, nếu DB đã có thì DB thắng: bản nháp cũ trên máy không được
+    // phép che mất con số đã chốt và đang chạy camp.
+    if (fromDb) merged.sale = fromDb;
+    return merged;
   } catch {
     return fallback;
   }
@@ -53,16 +90,19 @@ export function ComboCalculator({
   caseId,
   costHint,
   savedSalePrice,
+  savedCombo,
   onResult,
 }: {
   caseId: string;
   costHint: number | null;
   savedSalePrice: number | null;
+  /** combo_json đang lưu ở DB — để mở thẻ trên máy khác vẫn thấy đúng giá đã chốt. */
+  savedCombo: string | null;
   onResult: (salePrice: number, comboSummary: string) => void;
 }) {
   const seedCost1 = costHint && costHint > 0 ? Math.round(costHint) : 0;
   const [state, setState] = useState<ComboState>(() =>
-    loadSaved(caseId, seedCost1),
+    loadSaved(caseId, seedCost1, savedCombo),
   );
   const { sale, cost, mix, returnRate, shipFee, codFee, packFee, targetLng } =
     state;
@@ -271,6 +311,15 @@ export function ComboCalculator({
           <small>{money(Math.max(calc.cpqcMaxVnd, 0))} / đơn</small>
         </div>
       </div>
+
+      {/* Bảng trống trong khi DB đang có giá — thường là mở thẻ trên máy khác rồi
+          lỡ xoá ô. Nói rõ ra để không ai bấm Lưu đè mất giá đang chạy camp. */}
+      {calc.saleAvg <= 0 && Number(savedSalePrice) > 0 && (
+        <div className="pt-combo-warn">
+          Bảng đang trống nhưng đề xuất đã có giá {money(savedSalePrice)} — nếu bấm
+          "Lưu đề xuất" lúc này, giá bán và combo đã chốt sẽ bị xoá.
+        </div>
+      )}
 
       {calc.saleAvg > 0 && (
         <div className="pt-combo-apply">

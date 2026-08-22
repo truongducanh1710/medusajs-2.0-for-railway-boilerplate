@@ -583,6 +583,7 @@ export function ProductTestDrawer({
                 caseId={record.id}
                 costHint={purchase.landed_price_per_unit}
                 savedSalePrice={proposal.sale_price}
+                savedCombo={record.proposal?.combo_json || null}
                 onResult={(salePrice, comboSummary) =>
                   setProposal({
                     ...proposal,
@@ -618,6 +619,13 @@ export function ProductTestDrawer({
             </div>
             {proposalEditable && (
               <div className="pt-save-row">
+                {/* Giá bán/Combo mới chỉ nằm trong form — chưa bấm nút này là người
+                    khác mở thẻ vẫn thấy số cũ. Nói thẳng ra thay vì để im. */}
+                {hasUnsavedProposal && (
+                  <span className="pt-save-hint">
+                    Giá bán / Combo chưa lưu — người khác chưa thấy
+                  </span>
+                )}
                 <button
                   className="pt-drawer-primary"
                   disabled={
@@ -1251,6 +1259,7 @@ const DRAWER_CSS = `
 .pt-upload{display:grid;place-items:center;color:#2563eb;font-weight:600;font-size:12px}
 .pt-upload input{display:none}
 .pt-save-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}
+.pt-save-hint{font-size:11.5px;font-weight:600;color:#b45309;background:#fef3c7;border-radius:6px;padding:4px 9px}
 .pt-hint{color:var(--fg-muted,#6b7280);font-size:12px;margin-right:auto}
 .pt-drawer-primary{border:0;border-radius:7px;background:#2563eb;color:#fff;padding:9px 14px;font-weight:600;font-size:13px;cursor:pointer;transition:background .12s}
 .pt-drawer-primary:hover:not(:disabled){background:#1d4ed8}
