@@ -106,23 +106,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Đơn RÁC — không phải doanh thu thật, loại khỏi cả doanh thu lẫn mẫu số các tỷ lệ.
     //
-    // Nguồn NỘI BỘ (sale tự lên đơn: manual/facebook/medusa/webcake/unknown) dùng đúng
-    // bộ lọc của trang bao-cao-mkt để hai trang không nói hai con số khác nhau:
+    // Nguồn NỘI BỘ (sale tự lên đơn: manual/facebook/medusa/webcake/unknown):
     //   - "Đơn trùng": loại ở mọi trạng thái (đơn nhân bản, tính vào là đếm tiền 2 lần)
-    //   - "Đơn nháp":  loại ở MỌI trạng thái, kể cả còn sống — sale tạo thử, chưa phải
-    //     đơn thật. Trước đây chỉ loại khi đã huỷ nên đơn nháp còn sống vẫn vào doanh
-    //     thu (24/08: 10 đơn nháp = 8,1tr thổi "Thủ công" từ 15,6tr lên 23,7tr).
+    //   - "Đơn nháp":  loại khi CHƯA AI ĐỘNG TỚI (status 0 = Mới) hoặc đã huỷ/xoá.
+    //     Đơn nháp đã đi tiếp (xác nhận/gửi hàng/giao xong/hoàn) là đơn THẬT — sale
+    //     tạo nháp rồi chốt, tiền có về. Tháng 8 có 80 đơn nháp giao thành công =
+    //     40,7tr; loại cả cụm "Đơn nháp" sẽ xoá mất khoản doanh thu này.
+    //     Ngược lại, nháp còn ở "Mới" thì chưa ai xác nhận (24/08: 10 đơn = 8,1tr
+    //     thổi "Thủ công" từ 15,6tr lên 23,7tr).
     //   - status -2 (hoàn manual) và 7 (đã xoá): không tính doanh thu.
     //
     // Nguồn SÀN (tiktok/shopee) GIỮ NGUYÊN cách cũ: sàn không có khái niệm đơn nháp do
-    // sale tạo, và cod_amount của sàn đã là tiền thực nhận sau phí — áp thêm bộ lọc nội
-    // bộ vào đây chỉ làm lệch so với tab Sàn TMĐT.
+    // sale tạo (đã kiểm: 0/7.084 đơn sàn mang tag này), và cod_amount của sàn đã là tiền
+    // thực nhận sau phí — áp thêm bộ lọc nội bộ vào đây chỉ làm lệch so với tab Sàn TMĐT.
     const INTERNAL_SOURCES = new Set(["manual", "facebook", "medusa", "webcake", "unknown"])
     const isJunkOrder = (o: any): boolean => {
       if (hasTag(o, "Đơn trùng")) return true
       if (INTERNAL_SOURCES.has(o.source)) {
-        if (hasTag(o, "Đơn nháp")) return true
-        return o.status === -2 || o.status === 7
+        if (o.status === -2 || o.status === 7) return true
+        const chuaChot = o.status === 0 || o.status === 6 || o.status === -1
+        return chuaChot && hasTag(o, "Đơn nháp")
       }
       const cancelledOrDeleted = o.status === 6 || o.status === 7 || o.status === -1
       return cancelledOrDeleted && hasTag(o, "Đơn nháp")
