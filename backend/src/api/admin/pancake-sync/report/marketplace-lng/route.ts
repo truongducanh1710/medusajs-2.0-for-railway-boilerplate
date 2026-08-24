@@ -233,16 +233,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
         COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
         SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty,
-        -- Tạm tính (status 2,3,8): gồm cả đơn đã cho đi nhưng chưa giao xong. Bảng
+        -- Tạm tính (status 1,2,3,8 = đã xác nhận / đã gửi / đã nhận / đang chuyển):
+        -- gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong, đúng như mô tả trên UI.
+        -- Thiếu status 1 thì đơn sàn mới xác nhận chưa kịp gửi hàng bị rơi ra ngoài:
+        -- doanh thu = 0 trong khi ads vẫn trừ đủ -> ngày gần nhất luôn hiện lỗ giả
+        -- (23/08 Shopee: 7 đơn 2,38tr hiện 0đ, LNG -780.887đ). Bảng
         -- "SP bán chạy" phải đọc bộ số này — chỉ đếm đơn đã giao xong thì SP mới
         -- chạy quảng cáo hôm nay gần như không xuất hiện.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8))::int AS orders_tt,
-        SUM(CASE WHEN status IN (2,3,8) THEN order_revenue   * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
-        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
-        SUM(CASE WHEN status IN (2,3,8) THEN qty ELSE 0 END)::numeric AS qty_tt
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8))::int AS orders_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue   * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN qty ELSE 0 END)::numeric AS qty_tt
       FROM oi3
       GROUP BY platform, sp_key
     `, [from, to])
@@ -316,12 +320,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- rất ít nên coi đơn đang đi là sẽ nhận.
         -- Loại 0/1 (chưa cho đi) và 4/5/6/7/-1/-2 (hoàn/huỷ/xoá) — xem ghi chú status
         -- ở đầu file: code 6 = ĐÃ HỦY, không phải "đã gửi VC" như GLOSSARY ghi.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8))::int AS orders_tt,
-        SUM(CASE WHEN status IN (2,3,8) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
-        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (2,3,8) AND unit_cost > 0)::int AS orders_costed_tt
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8))::int AS orders_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
