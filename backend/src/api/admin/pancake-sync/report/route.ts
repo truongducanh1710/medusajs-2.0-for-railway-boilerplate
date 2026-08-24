@@ -104,13 +104,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
     const prevOrdersKept = prevOrdersRaw.filter(keepOrder)
 
-    // Đơn RÁC — không phải doanh thu thật, loại khỏi cả doanh thu lẫn mẫu số các tỷ lệ:
-    //   - thẻ "Đơn trùng": loại ở MỌI trạng thái (đơn đã nhân bản, tính vào là đếm tiền 2 lần)
-    //   - thẻ "Đơn nháp":  chỉ loại khi đã hủy/xóa (6/7/-1) — sale tạo nhầm rồi hủy. Đơn nháp
-    //     còn sống vẫn giữ vì có thể được chốt thành đơn thật.
-    // Khác isExcludedCore: hàm này áp cho MỌI source_group, kể cả "all".
+    // Đơn RÁC — không phải doanh thu thật, loại khỏi cả doanh thu lẫn mẫu số các tỷ lệ.
+    //
+    // Nguồn NỘI BỘ (sale tự lên đơn: manual/facebook/medusa/webcake/unknown) dùng đúng
+    // bộ lọc của trang bao-cao-mkt để hai trang không nói hai con số khác nhau:
+    //   - "Đơn trùng": loại ở mọi trạng thái (đơn nhân bản, tính vào là đếm tiền 2 lần)
+    //   - "Đơn nháp":  loại ở MỌI trạng thái, kể cả còn sống — sale tạo thử, chưa phải
+    //     đơn thật. Trước đây chỉ loại khi đã huỷ nên đơn nháp còn sống vẫn vào doanh
+    //     thu (24/08: 10 đơn nháp = 8,1tr thổi "Thủ công" từ 15,6tr lên 23,7tr).
+    //   - status -2 (hoàn manual) và 7 (đã xoá): không tính doanh thu.
+    //
+    // Nguồn SÀN (tiktok/shopee) GIỮ NGUYÊN cách cũ: sàn không có khái niệm đơn nháp do
+    // sale tạo, và cod_amount của sàn đã là tiền thực nhận sau phí — áp thêm bộ lọc nội
+    // bộ vào đây chỉ làm lệch so với tab Sàn TMĐT.
+    const INTERNAL_SOURCES = new Set(["manual", "facebook", "medusa", "webcake", "unknown"])
     const isJunkOrder = (o: any): boolean => {
       if (hasTag(o, "Đơn trùng")) return true
+      if (INTERNAL_SOURCES.has(o.source)) {
+        if (hasTag(o, "Đơn nháp")) return true
+        return o.status === -2 || o.status === 7
+      }
       const cancelledOrDeleted = o.status === 6 || o.status === 7 || o.status === -1
       return cancelledOrDeleted && hasTag(o, "Đơn nháp")
     }
