@@ -124,7 +124,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (hasTag(o, "Đơn trùng")) return true
       if (INTERNAL_SOURCES.has(o.source)) {
         if (o.status === -2 || o.status === 7) return true
-        const chuaChot = o.status === 0 || o.status === 6 || o.status === -1
+        // status 0 = Chờ xử lý, 11 = Chờ hàng — cùng nghĩa "chưa ai xác nhận".
+        // Khớp EXCLUDE_COND trong _lng-core.ts để tab Overview và tab LNG không lệch.
+        const chuaChot = o.status === 0 || o.status === 11 || o.status === 6 || o.status === -1
         return chuaChot && hasTag(o, "Đơn nháp")
       }
       const cancelledOrDeleted = o.status === 6 || o.status === 7 || o.status === -1

@@ -20,11 +20,19 @@ const MY_SEN_PER_RM = 100
 
 // Don RAC — giong dinh nghia o report/route.ts, phai khop de 2 tab khong lech nhau:
 //   - the "Don trung": loai o MOI trang thai (dem vao la tinh tien 2 lan)
-//   - the "Don nhap":  chi loai khi da huy/xoa (6/7/-1); don nhap con song van giu
+//   - the "Don nhap" o nguon NOI BO: loai khi chua ai xac nhan (status 0/11) hoac
+//     da huy/xoa. Nhap DA CHOT (xac nhan/gui hang/giao xong) van tinh — do la tien
+//     that. Nguon SAN giu cach cu: san khong co don nhap do sale tao.
+const INTERNAL_SOURCES = new Set(["manual", "facebook", "medusa", "webcake", "unknown"])
 const hasTag = (o: any, name: string): boolean =>
   Array.isArray(o.tags) && o.tags.some((t: any) => String(t?.name ?? "") === name)
 const isJunkOrder = (o: any): boolean => {
   if (hasTag(o, "Đơn trùng")) return true
+  if (INTERNAL_SOURCES.has(o.source)) {
+    if (o.status === -2 || o.status === 7) return true
+    const chuaChot = o.status === 0 || o.status === 11 || o.status === 6 || o.status === -1
+    return chuaChot && hasTag(o, "Đơn nháp")
+  }
   const cancelledOrDeleted = o.status === 6 || o.status === 7 || o.status === -1
   return cancelledOrDeleted && hasTag(o, "Đơn nháp")
 }
