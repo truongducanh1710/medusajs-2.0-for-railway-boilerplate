@@ -1249,6 +1249,276 @@ function numField(label: string, value: string, onChange: (v: string) => void, s
   )
 }
 
+// ─── Chi phí đóng gói (CCDC) ──────────────────────────────────────────────────
+
+type PackingRow = {
+  id: string
+  position: number
+  product: string
+  supplier: string
+  quantity: string
+  amount: number
+  note: string
+}
+
+/** "2026-08" → "Tháng 8/2026" */
+function periodLabel(p: string): string {
+  const [y, m] = p.split("-")
+  return `Tháng ${Number(m)}/${y}`
+}
+
+function thisPeriod(): string {
+  return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7)
+}
+
+/**
+ * Bảng chi phí công cụ dụng cụ đóng gói theo tháng — xốp nổ, băng dính, hộp
+ * carton, gói hút ẩm... Mua hàng nhập tay mỗi khi có hoá đơn.
+ *
+ * Tách khỏi "Bảng dữ liệu" vì đây là chi phí VẬN HÀNH (phân bổ cho mọi đơn),
+ * không phải giá vốn của một sản phẩm cụ thể.
+ */
+function PackingCostTab({ canManage }: { canManage: boolean }) {
+  const [period, setPeriod] = useState(thisPeriod())
+  const [rows, setRows] = useState<PackingRow[]>([])
+  const [periods, setPeriods] = useState<{ period: string; total: number; n: number }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const dirtyRef = useRef<Map<string, PackingRow>>(new Map())
+  const saveTimerRef = useRef<any>(null)
+
+  function load(p: string) {
+    setLoading(true)
+    apiJson(`/admin/gia-von/packing?period=${p}`, "GET")
+      .then(d => {
+        setRows(d.rows ?? [])
+        setPeriods(d.periods ?? [])
+      })
+      .catch(e => alert("Lỗi tải chi phí đóng gói: " + e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load(period) }, [period])
+
+  function scheduleSave() {
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(flushSave, 700)
+  }
+
+  async function flushSave() {
+    if (dirtyRef.current.size === 0) return
+    const toSave = Array.from(dirtyRef.current.values())
+    dirtyRef.current.clear()
+    setSaveState("saving")
+    try {
+      await apiJson("/admin/gia-von/packing", "PUT", { rows: toSave })
+      setSaveState("saved")
+      setTimeout(() => setSaveState("idle"), 2000)
+    } catch {
+      setSaveState("error")
+    }
+  }
+
+  function updateField(id: string, key: keyof PackingRow, value: string) {
+    setRows(rs => rs.map(r => {
+      if (r.id !== id) return r
+      const next: PackingRow = key === "amount"
+        ? { ...r, amount: Number(String(value).replace(/[^\d-]/g, "")) || 0 }
+        : { ...r, [key]: value } as PackingRow
+      dirtyRef.current.set(id, next)
+      return next
+    }))
+    scheduleSave()
+  }
+
+  async function addRows(count: number) {
+    try {
+      const d = await apiJson("/admin/gia-von/packing", "POST", { period, count })
+      setRows(rs => [...rs, ...(d.rows ?? [])])
+    } catch (e: any) {
+      alert("Lỗi thêm dòng: " + e.message)
+    }
+  }
+
+  async function removeRow(id: string) {
+    if (!confirm("Xoá dòng này?")) return
+    try {
+      await apiJson(`/admin/gia-von/packing?id=${id}`, "DELETE")
+      setRows(rs => rs.filter(r => r.id !== id))
+    } catch (e: any) {
+      alert("Lỗi xoá dòng: " + e.message)
+    }
+  }
+
+  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0)
+  const nf = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n))
+
+  // Tháng có sẵn trong DB + tháng đang chọn (kể cả chưa có dòng nào) + 3 tháng
+  // gần đây, để mua hàng mở tháng mới mà không phải gõ tay.
+  const recent: string[] = []
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(Date.now() + 7 * 3600 * 1000)
+    d.setUTCMonth(d.getUTCMonth() - i)
+    recent.push(d.toISOString().slice(0, 7))
+  }
+  const periodOptions = Array.from(
+    new Set([...periods.map(p => p.period), ...recent, period]),
+  ).sort().reverse()
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", border: "none", background: "transparent",
+    font: "inherit", fontSize: 13, color: C.ink, outline: "none", padding: "0 4px",
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+      {/* Thanh công cụ */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+        <select
+          value={period}
+          onChange={e => setPeriod(e.target.value)}
+          style={{
+            font: "inherit", fontSize: 13, fontWeight: 600, padding: "7px 11px",
+            borderRadius: 7, border: `1px solid ${C.line}`, background: C.surface, color: C.ink,
+          }}>
+          {periodOptions.map(p => (
+            <option key={p} value={p}>{periodLabel(p)}</option>
+          ))}
+        </select>
+
+        {canManage && (
+          <>
+            <button onClick={() => addRows(1)}
+              style={{ background: C.accent, border: "1px solid transparent", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#fff" }}>
+              + Thêm dòng
+            </button>
+            <button onClick={() => addRows(5)}
+              style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 7, padding: "7px 12px", cursor: "pointer", fontSize: 12, color: C.ink2 }}>
+              +5 dòng
+            </button>
+          </>
+        )}
+
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, fontSize: 12.5 }}>
+          {saveState === "saving" && <span style={{ color: C.warn }}>Đang lưu…</span>}
+          {saveState === "saved" && <span style={{ color: C.good }}>Đã lưu</span>}
+          {saveState === "error" && <span style={{ color: C.bad }}>Lỗi lưu</span>}
+          <span style={{ color: C.muted, fontFamily: NUM_FONT }}>{rows.length} dòng</span>
+        </div>
+      </div>
+
+      {/* Tổng tháng */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+        border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface,
+        padding: "14px 18px", marginBottom: 12,
+      }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: C.muted }}>
+            Tổng chi phí đóng gói
+          </div>
+          <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>{periodLabel(period)}</div>
+        </div>
+        <div style={{ fontFamily: NUM_FONT, fontSize: 26, fontWeight: 700, color: C.accent }}>
+          {nf(total)}đ
+        </div>
+      </div>
+
+      {/* Bảng */}
+      <div style={{ flex: 1, overflow: "auto", border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+          <thead>
+            <tr>
+              {[
+                ["STT", 52, "left"],
+                ["Tên sản phẩm", 280, "left"],
+                ["Tên NCC", 300, "left"],
+                ["Số lượng", 130, "left"],
+                ["Thành tiền", 150, "right"],
+                ["Ghi chú", 200, "left"],
+              ].map(([label, w, align]) => (
+                <th key={String(label)} style={{
+                  ...thS(Number(w)),
+                  textAlign: align as any,
+                }}>{label}</th>
+              ))}
+              {canManage && <th style={thS(40)}></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={7} style={{ textAlign: "center", color: C.muted, padding: "32px 0" }}>Đang tải…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center", color: C.muted, padding: "32px 0", fontSize: 13 }}>
+                  {periodLabel(period)} chưa có dòng nào
+                  {canManage && ' — bấm "+ Thêm dòng" để bắt đầu'}
+                </td>
+              </tr>
+            ) : rows.map((r, i) => (
+              <tr key={r.id} style={{ height: 34 }}>
+                <td style={{ ...tdS(52), textAlign: "center", color: C.muted, fontSize: 11.5, background: C.ground }}>
+                  {i + 1}
+                </td>
+                <td style={{ ...tdS(280), padding: "0 8px" }}>
+                  <input style={inputStyle} value={r.product} readOnly={!canManage}
+                    placeholder="Xốp nổ 1,5m…"
+                    onChange={e => updateField(r.id, "product", e.target.value)} />
+                </td>
+                <td style={{ ...tdS(300), padding: "0 8px" }}>
+                  <input style={inputStyle} value={r.supplier} readOnly={!canManage}
+                    placeholder="Tên nhà cung cấp…"
+                    onChange={e => updateField(r.id, "supplier", e.target.value)} />
+                </td>
+                <td style={{ ...tdS(130), padding: "0 8px" }}>
+                  {/* Để tự do vì đơn vị mỗi món một kiểu: "46 cuộn", "1000 gói", "12 đôi". */}
+                  <input style={inputStyle} value={r.quantity} readOnly={!canManage}
+                    placeholder="46 cuộn"
+                    onChange={e => updateField(r.id, "quantity", e.target.value)} />
+                </td>
+                <td style={{ ...tdS(150), padding: "0 8px" }}>
+                  <input
+                    style={{ ...inputStyle, textAlign: "right", fontFamily: NUM_FONT, fontWeight: 600 }}
+                    value={r.amount ? nf(r.amount) : ""}
+                    readOnly={!canManage}
+                    placeholder="0"
+                    onChange={e => updateField(r.id, "amount", e.target.value)} />
+                </td>
+                <td style={{ ...tdS(200), padding: "0 8px" }}>
+                  <input style={inputStyle} value={r.note} readOnly={!canManage}
+                    onChange={e => updateField(r.id, "note", e.target.value)} />
+                </td>
+                {canManage && (
+                  <td style={{ ...tdS(40), textAlign: "center" }}>
+                    <button onClick={() => removeRow(r.id)} title="Xoá dòng"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: C.line, fontSize: 13, padding: "0 4px", lineHeight: 1 }}
+                      onMouseOver={e => (e.currentTarget.style.color = C.bad)}
+                      onMouseOut={e => (e.currentTarget.style.color = C.line)}
+                    >✕</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr style={{ background: C.surface2, borderTop: `2px solid ${C.line}` }}>
+                <td colSpan={4} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: C.ink }}>
+                  Tổng
+                </td>
+                <td style={{ padding: "10px 8px", textAlign: "right", fontFamily: NUM_FONT, fontWeight: 700, color: C.accent }}>
+                  {nf(total)}đ
+                </td>
+                <td colSpan={canManage ? 2 : 1}></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
   const [mktProducts, setMktProducts] = useState<MktProduct[]>([])
   const [inputs, setInputs] = useState<CpqcInputs>(emptyCpqcInputs)
@@ -1536,7 +1806,7 @@ function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
 function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
-  const [tab, setTab] = useState<"sheet" | "summary" | "cpqc">("sheet")
+  const [tab, setTab] = useState<"sheet" | "summary" | "cpqc" | "packing">("sheet")
 
   if (loading) {
     return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
@@ -1554,7 +1824,7 @@ function GiaVonPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "2px solid #e5e7eb" }}>
-        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"]] as const).map(([key, label]) => (
+        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
               padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -1571,6 +1841,7 @@ function GiaVonPage() {
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {tab === "sheet" ? <Spreadsheet canManage={canManage} />
           : tab === "summary" ? <SummaryTab />
+          : tab === "packing" ? <PackingCostTab canManage={canManage} />
           : <CpqcCalculatorTab canManage={canManage} />}
       </div>
     </div>
