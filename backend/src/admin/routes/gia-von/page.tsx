@@ -683,7 +683,9 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
   const visibleRows: { row: SheetRow; idx: number }[] = rows
     .map((row, idx) => ({ row, idx }))
     .filter(({ row, idx }) => {
-      if (idx === 0) return true // luôn giữ dòng header
+      // Dòng 0 chỉ chứa TÊN CỘT, đã hiện ở hàng tiêu đề phía trên nên không render
+      // lại làm gì. Vẫn giữ nguyên trong DB vì computeAvgCost() đọc nó để dò cột.
+      if (idx === 0) return false
       if (!q) return true
       const d = row.data ?? {}
       const ten = (d[colSanPham] ?? "").toLowerCase()
@@ -817,7 +819,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
         </div>
         <div style={{ marginLeft: "auto", fontSize: 12.5, display: "flex", gap: 12, alignItems: "center" }}>
           <span style={{ color: C.muted, fontFamily: NUM_FONT }}>
-            {q ? `${visibleRows.length - 1}/${dataRowCount} dòng` : `${dataRowCount} dòng`}
+            {q ? `${visibleRows.length}/${dataRowCount} dòng` : `${dataRowCount} dòng`}
           </span>
           {saveState === "saving" && <span style={{ color: C.warn }}>Đang lưu…</span>}
           {saveState === "saved" && <span style={{ color: C.good }}>Đã lưu</span>}
@@ -860,7 +862,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                   Bảng trống — bấm "+ Thêm dòng" hoặc paste dữ liệu từ Excel/GG Sheets
                 </td>
               </tr>
-            ) : visibleRows.length <= 1 && q ? (
+            ) : visibleRows.length === 0 && q ? (
               <tr>
                 <td colSpan={visibleCols.length + 3} style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "32px 0" }}>
                   Không có dòng nào khớp "{search}"
@@ -884,11 +886,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                 <td style={{
                   ...tdS(NUM_COL_W), textAlign: "center", color: C.muted, fontSize: 11,
                   background: isHeaderRow ? C.surface2 : C.ground, userSelect: "none",
-                  // Dòng 0 chứa TÊN CỘT nghiệp vụ — dính lại ngay dưới hàng <th> để
-                  // mua hàng cuộn xuống giữa bảng vẫn biết đang điền vào cột nào.
-                  ...(isHeaderRow
-                    ? { position: "sticky" as const, top: TH_H, zIndex: 9 }
-                    : { position: "relative" as const }),
+                  position: "relative",
                 }}>
                   {sev && (
                     <span style={{
@@ -907,12 +905,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                   const isTinhChat = !isHeaderRow && col.id === colTinhChat
                   return (
                   <td key={col.id}
-                    style={{
-                      ...tdS(col.width), padding: 0,
-                      ...(isHeaderRow
-                        ? { position: "sticky" as const, top: TH_H, zIndex: 9, background: C.surface2 }
-                        : { position: "relative" as const }),
-                    }}
+                    style={{ ...tdS(col.width), position: "relative", padding: 0 }}
                   >
                     {isTinhChat && canManage ? (
                       <TinhChatCell
@@ -948,18 +941,12 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                 })}
 
                 {/* Ngày tạo */}
-                <td style={{
-                  ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: NUM_FONT, color: C.muted,
-                  ...(isHeaderRow ? { position: "sticky" as const, top: TH_H, zIndex: 9, background: C.surface2 } : null),
-                }}>
+                <td style={{ ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: NUM_FONT, color: C.muted }}>
                   {isHeaderRow ? "" : <CreatedAtCell iso={row.created_at} />}
                 </td>
 
                 {canManage && (
-                  <td style={{
-                    ...tdS(32), textAlign: "center", padding: 0,
-                    ...(isHeaderRow ? { position: "sticky" as const, top: TH_H, zIndex: 9, background: C.surface2 } : null),
-                  }}>
+                  <td style={{ ...tdS(32), textAlign: "center", padding: 0 }}>
                     {/* Dòng header không có gì để xoá — nút ẩn đi cho khỏi bấm nhầm. */}
                     {!isHeaderRow && <button onClick={() => deleteRow(row.id)}
                       title="Xóa dòng"
