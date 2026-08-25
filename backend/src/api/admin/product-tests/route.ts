@@ -48,8 +48,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     params.push(limit, offset);
 
     const casesResult = await getPool().query(
+      // Sắp theo NGÀY TẠO chứ không phải updated_at: bảng hiển thị cột "Ngày tạo",
+      // sắp theo updated_at làm thứ tự trông lộn xộn (hồ sơ tạo 11/8 nằm trên hồ sơ
+      // tạo 18/8 chỉ vì vừa được sửa). Hồ sơ mới tạo giờ luôn ở đầu danh sách.
       `SELECT c.* FROM product_test_case c WHERE ${where.join(" AND ")}
-       ORDER BY c.updated_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+       ORDER BY c.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
     const ids = casesResult.rows.map((row: any) => row.id);
