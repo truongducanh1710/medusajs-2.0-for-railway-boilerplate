@@ -106,6 +106,12 @@ export function ProductTestDrawer({
     revenue: "",
   });
   const [comment, setComment] = useState("");
+  // Kết quả kéo số ads gần nhất — hiện CPM/CTR/CPC để MKT kiểm trước khi lưu.
+  const [campMetrics, setCampMetrics] = useState<{
+    cpm: number | null; ctr_pct: number | null; cpc: number | null;
+    campaign_names: string[];
+  } | null>(null);
+  const [campMsg, setCampMsg] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -210,6 +216,48 @@ export function ProductTestDrawer({
       setBusy("");
     }
   }
+
+  /**
+   * Kéo số ads của campaign trong đúng ngày test đang chọn và điền vào form.
+   * Chỉ đổ ads/impressions/clicks — đơn và doanh thu MKT vẫn tự nhập vì đơn gắn
+   * với camp qua utm, không phải lúc nào cũng khớp.
+   */
+  async function pullCampaignMetrics() {
+    const campaign = String(daily.campaign_name || "").trim();
+    const date = String(daily.test_date || "").trim();
+    setCampMetrics(null);
+    if (!campaign || !date) {
+      setCampMsg("Nhập tên campaign và ngày test trước.");
+      return;
+    }
+    setCampMsg("");
+    await run("pull-metrics", async () => {
+      const data = await client.fetchCampaignMetrics(campaign, date);
+      if (!data.found) {
+        setCampMsg(
+          `Không tìm thấy camp nào khớp "${campaign}" trong ngày ${date}. Kiểm tra lại tên hoặc chờ đồng bộ (5 phút/lần).`,
+        );
+        return;
+      }
+      const m = data.metrics;
+      setDaily((prev: any) => ({
+        ...prev,
+        ad_spend: String(m.ad_spend),
+        impressions: String(m.impressions),
+        clicks: String(m.clicks),
+      }));
+      setCampMetrics({
+        cpm: m.cpm, ctr_pct: m.ctr_pct, cpc: m.cpc,
+        campaign_names: data.campaign_names,
+      });
+      setCampMsg(
+        data.campaign_count > 1
+          ? `Đã cộng dồn ${data.campaign_count} camp khớp tên.`
+          : "",
+      );
+    });
+  }
+
   // MKT and Purchasing may both edit Check giá/Đề xuất at any open stage;
   // only the two terminal decisions lock the case for good.
   const isConcluded = ["import_approved", "import_rejected"].includes(
@@ -724,6 +772,31 @@ export function ProductTestDrawer({
                       setDaily({ ...daily, ad_spend: value })
                     }
                   />
+                </div>
+
+                {/* Kéo số ads từ mkt_ads_cost thay vì gõ tay. Đặt ngay dưới ô
+                    campaign để thao tác liền mạch: gõ tên camp -> bấm lấy số. */}
+                <div className="pt-camp-pull">
+                  <button
+                    type="button"
+                    onClick={pullCampaignMetrics}
+                    disabled={busy === "pull-metrics"}
+                  >
+                    {busy === "pull-metrics" ? "Đang lấy…" : "Lấy số liệu từ camp"}
+                  </button>
+                  {campMetrics && (
+                    <span className="pt-camp-kpi">
+                      CPM <b>{vnMoney(campMetrics.cpm)}</b>
+                      <i>·</i>
+                      CTR <b>{campMetrics.ctr_pct == null ? "—" : `${campMetrics.ctr_pct}%`}</b>
+                      <i>·</i>
+                      CPC <b>{vnMoney(campMetrics.cpc)}</b>
+                    </span>
+                  )}
+                  {campMsg && <small className="pt-camp-msg">{campMsg}</small>}
+                </div>
+
+                <div className="pt-form-grid three">
                   <Field
                     label="Đơn"
                     type="number"
@@ -1307,6 +1380,13 @@ const DRAWER_CSS = `
 .pt-linked a{color:#2563eb}
 .pt-linked>span{font-size:11px;background:var(--bg-field,#e5e7eb);color:var(--fg-muted,#6b7280);border-radius:99px;padding:4px 8px;white-space:nowrap}
 .pt-daily-form{background:var(--bg-subtle,#f8fafc);border:1px solid var(--border-base,#e5e7eb);padding:12px;border-radius:8px;margin-bottom:12px}
+.pt-camp-pull{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
+.pt-camp-pull>button{border:1px solid #93c5fd;background:#eff6ff;color:#1d4ed8;border-radius:7px;padding:6px 12px;font:600 12.5px inherit;cursor:pointer}
+.pt-camp-pull>button:disabled{opacity:.55;cursor:default}
+.pt-camp-kpi{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg-subtle,#4b5563)}
+.pt-camp-kpi b{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fg-base,#111827)}
+.pt-camp-kpi i{color:var(--fg-muted,#9ca3af);font-style:normal}
+.pt-camp-msg{font-size:11.5px;color:#b45309;background:#fef3c7;border-radius:6px;padding:3px 8px}
 .pt-daily-form>.pt-drawer-primary{margin-top:10px}
 .pt-daily-table{overflow:auto;border:1px solid var(--border-base,#e5e7eb);border-radius:8px}
 .pt-daily-table table{border-collapse:collapse;width:100%;min-width:780px}

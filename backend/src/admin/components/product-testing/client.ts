@@ -182,6 +182,27 @@ export function createProductTestingClient() {
     );
   }
 
+  /** Kéo số liệu ads của 1 campaign trong 1 ngày từ mkt_ads_cost. */
+  async function fetchCampaignMetrics(campaign: string, date: string) {
+    return requestJson<{
+      found: boolean;
+      campaign_count: number;
+      campaign_names: string[];
+      metrics: {
+        ad_spend: number;
+        impressions: number;
+        clicks: number;
+        cpm: number | null;
+        ctr_pct: number | null;
+        cpc: number | null;
+      };
+    }>(
+      `/admin/product-tests/campaign-metrics?campaign=${encodeURIComponent(
+        campaign,
+      )}&date=${encodeURIComponent(date)}`,
+    );
+  }
+
   /** MKT tự nhận định ngày test này: test_tiep | dung | de_xuat_nhap */
   async function setMktDecision(
     id: string,
@@ -247,6 +268,7 @@ export function createProductTestingClient() {
     deleteDailyResult,
     evaluateDailyResult,
     setMktDecision,
+    fetchCampaignMetrics,
     transitionCase,
     uploadImages,
   };
