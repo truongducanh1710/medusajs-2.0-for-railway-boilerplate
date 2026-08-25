@@ -1249,6 +1249,322 @@ function numField(label: string, value: string, onChange: (v: string) => void, s
   )
 }
 
+// ─── Nhà cung cấp ─────────────────────────────────────────────────────────────
+
+type Supplier = {
+  id: string
+  name: string
+  /** VN = mua trong nước · CN = nhập hàng Trung Quốc */
+  origin: string
+  contact_name: string
+  phone: string
+  link: string
+  products: string
+  status: string
+  note: string
+  total_amount: number
+  order_count: number
+  last_period: string | null
+}
+
+const emptySupplier = {
+  name: "", origin: "VN", contact_name: "", phone: "",
+  link: "", products: "", status: "active", note: "",
+}
+
+/** "2026-08" → "T8/2026" */
+function shortPeriod(p: string | null): string {
+  if (!p) return "—"
+  const [y, m] = p.split("-")
+  return `T${Number(m)}/${y}`
+}
+
+/**
+ * Danh mục nhà cung cấp — bản gọn, chỉ thông tin cơ bản.
+ *
+ * Mục đích chính giai đoạn này: để tab "Chi phí đóng gói" chọn NCC từ danh sách
+ * thay vì gõ tay, hết cảnh cùng một nhà mà mỗi dòng viết một kiểu.
+ */
+function SupplierTab({ canManage }: { canManage: boolean }) {
+  const [list, setList] = useState<Supplier[]>([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState("")
+  const [originFilter, setOriginFilter] = useState<"" | "VN" | "CN">("")
+  const [editing, setEditing] = useState<any | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  function load() {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (q.trim()) params.set("q", q.trim())
+    if (originFilter) params.set("origin", originFilter)
+    apiJson(`/admin/gia-von/suppliers?${params}`, "GET")
+      .then(d => setList(d.suppliers ?? []))
+      .catch(e => alert("Lỗi tải nhà cung cấp: " + e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    const t = setTimeout(load, q ? 300 : 0)
+    return () => clearTimeout(t)
+  }, [q, originFilter])
+
+  async function save() {
+    if (!editing?.name?.trim()) { alert("Nhập tên nhà cung cấp"); return }
+    setSaving(true)
+    try {
+      await apiJson("/admin/gia-von/suppliers", editing.id ? "PUT" : "POST", editing)
+      setEditing(null)
+      load()
+    } catch (e: any) {
+      alert("Lỗi lưu: " + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function remove(s: Supplier) {
+    if (!confirm(`Xoá nhà cung cấp "${s.name}"?\n\nCác dòng chi phí đã ghi vẫn giữ nguyên tên.`)) return
+    try {
+      await apiJson(`/admin/gia-von/suppliers?id=${s.id}`, "DELETE")
+      load()
+    } catch (e: any) {
+      alert("Lỗi xoá: " + e.message)
+    }
+  }
+
+  const nf = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n))
+  const inputCls: React.CSSProperties = {
+    width: "100%", font: "inherit", fontSize: 13, padding: "7px 10px",
+    borderRadius: 7, border: `1px solid ${C.line}`, background: C.surface,
+    color: C.ink, outline: "none", boxSizing: "border-box",
+  }
+  const labelCls: React.CSSProperties = {
+    display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".05em",
+    textTransform: "uppercase", color: C.muted, marginBottom: 4,
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+      {/* Thanh công cụ */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+        {canManage && (
+          <button onClick={() => setEditing({ ...emptySupplier })}
+            style={{ background: C.accent, border: "1px solid transparent", borderRadius: 7, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#fff" }}>
+            + Thêm nhà cung cấp
+          </button>
+        )}
+
+        <div style={{ display: "flex", gap: 4 }}>
+          {([["", "Tất cả"], ["VN", "Việt Nam"], ["CN", "Trung Quốc"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setOriginFilter(k as any)}
+              style={{
+                fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 7,
+                cursor: "pointer",
+                border: `1px solid ${originFilter === k ? "transparent" : C.line}`,
+                background: originFilter === k ? C.accentSoft : C.surface,
+                color: originFilter === k ? C.accent : C.ink2,
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <input value={q} onChange={e => setQ(e.target.value)}
+          placeholder="Tìm tên, mặt hàng, người liên hệ…"
+          style={{ ...inputCls, flex: 1, minWidth: 200, maxWidth: 320 }} />
+
+        <span style={{ marginLeft: "auto", fontSize: 12.5, color: C.muted, fontFamily: NUM_FONT }}>
+          {list.length} nhà cung cấp
+        </span>
+      </div>
+
+      {/* Bảng */}
+      <div style={{ flex: 1, overflow: "auto", border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ ...thS(230), textAlign: "left" }}>Nhà cung cấp</th>
+              <th style={{ ...thS(90), textAlign: "left" }}>Nguồn</th>
+              <th style={{ ...thS(180), textAlign: "left" }}>Liên hệ</th>
+              <th style={{ ...thS(240), textAlign: "left" }}>Mặt hàng</th>
+              <th style={{ ...thS(140), textAlign: "right" }}>Đã mua</th>
+              <th style={{ ...thS(100), textAlign: "center" }}>Gần nhất</th>
+              <th style={{ ...thS(100), textAlign: "center" }}>Trạng thái</th>
+              {canManage && <th style={thS(80)}></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={8} style={{ textAlign: "center", color: C.muted, padding: "32px 0" }}>Đang tải…</td></tr>
+            ) : list.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ textAlign: "center", color: C.muted, padding: "32px 0", fontSize: 13 }}>
+                  {q || originFilter ? "Không có nhà cung cấp nào khớp" : "Chưa có nhà cung cấp nào"}
+                  {canManage && !q && !originFilter && ' — bấm "+ Thêm nhà cung cấp"'}
+                </td>
+              </tr>
+            ) : list.map(s => {
+              const off = s.status !== "active"
+              return (
+                <tr key={s.id} style={{ height: 40, opacity: off ? 0.55 : 1 }}>
+                  <td style={{ ...tdS(230), padding: "0 12px", fontWeight: 600, color: C.ink }}>
+                    {s.link ? (
+                      <a href={s.link} target="_blank" rel="noreferrer"
+                        style={{ color: C.accent, textDecoration: "none" }} title={s.link}>
+                        {s.name} ↗
+                      </a>
+                    ) : s.name}
+                  </td>
+                  <td style={{ ...tdS(90), padding: "0 12px" }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+                      color: s.origin === "CN" ? C.warn : C.good,
+                      background: s.origin === "CN" ? C.warnSoft : C.goodSoft,
+                    }}>{s.origin === "CN" ? "Trung Quốc" : "Việt Nam"}</span>
+                  </td>
+                  <td style={{ ...tdS(180), padding: "0 12px", color: C.ink2 }}>
+                    {s.contact_name || s.phone
+                      ? <>{s.contact_name}{s.contact_name && s.phone ? " · " : ""}
+                          <span style={{ fontFamily: NUM_FONT }}>{s.phone}</span></>
+                      : <span style={{ color: C.muted }}>—</span>}
+                  </td>
+                  <td style={{ ...tdS(240), padding: "0 12px", color: C.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 240 }}
+                    title={s.products}>
+                    {s.products || <span style={{ color: C.muted }}>—</span>}
+                  </td>
+                  <td style={{ ...tdS(140), padding: "0 12px", textAlign: "right", fontFamily: NUM_FONT, color: s.total_amount ? C.ink : C.muted }}>
+                    {s.total_amount ? `${nf(s.total_amount)}đ` : "—"}
+                    {s.order_count > 0 && (
+                      <span style={{ color: C.muted, fontSize: 11 }}> · {s.order_count} lần</span>
+                    )}
+                  </td>
+                  <td style={{ ...tdS(100), padding: "0 12px", textAlign: "center", color: C.muted, fontSize: 12 }}>
+                    {shortPeriod(s.last_period)}
+                  </td>
+                  <td style={{ ...tdS(100), padding: "0 12px", textAlign: "center" }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+                      color: off ? C.muted : C.good, background: off ? C.surface2 : C.goodSoft,
+                    }}>{off ? "Ngừng" : "Đang dùng"}</span>
+                  </td>
+                  {canManage && (
+                    <td style={{ ...tdS(80), textAlign: "center" }}>
+                      <button onClick={() => setEditing({ ...s })} title="Sửa"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 13, padding: "0 5px" }}>
+                        ✎
+                      </button>
+                      <button onClick={() => remove(s)} title="Xoá"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: C.line, fontSize: 13, padding: "0 5px" }}
+                        onMouseOver={e => (e.currentTarget.style.color = C.bad)}
+                        onMouseOut={e => (e.currentTarget.style.color = C.line)}
+                      >✕</button>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Form thêm/sửa */}
+      {editing && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(28,27,21,.4)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }} onClick={e => { if (e.target === e.currentTarget) setEditing(null) }}>
+          <div style={{
+            background: C.surface, borderRadius: 12, padding: 22, width: 520, maxWidth: "100%",
+            maxHeight: "90vh", overflowY: "auto", boxShadow: "0 10px 40px rgba(0,0,0,.2)",
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: C.ink }}>
+              {editing.id ? "Sửa nhà cung cấp" : "Thêm nhà cung cấp"}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <div>
+                <label style={labelCls}>Tên nhà cung cấp *</label>
+                <input autoFocus style={inputCls} value={editing.name}
+                  placeholder="Công ty TNHH Dịch vụ và Thương mại Minh Sơn"
+                  onChange={e => setEditing({ ...editing, name: e.target.value })} />
+              </div>
+
+              <div>
+                <label style={labelCls}>Nguồn hàng</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {([["VN", "Việt Nam"], ["CN", "Trung Quốc"]] as const).map(([k, label]) => (
+                    <button key={k} onClick={() => setEditing({ ...editing, origin: k })}
+                      style={{
+                        flex: 1, padding: "8px 0", borderRadius: 7, cursor: "pointer",
+                        fontSize: 12.5, fontWeight: 700,
+                        border: `2px solid ${editing.origin === k ? C.accent : C.line}`,
+                        background: editing.origin === k ? C.accentSoft : C.surface,
+                        color: editing.origin === k ? C.accent : C.ink2,
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={labelCls}>Người liên hệ</label>
+                  <input style={inputCls} value={editing.contact_name}
+                    onChange={e => setEditing({ ...editing, contact_name: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelCls}>Điện thoại / Zalo</label>
+                  <input style={inputCls} value={editing.phone}
+                    onChange={e => setEditing({ ...editing, phone: e.target.value })} />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelCls}>Link shop / website</label>
+                <input style={inputCls} value={editing.link}
+                  placeholder="https://…"
+                  onChange={e => setEditing({ ...editing, link: e.target.value })} />
+              </div>
+
+              <div>
+                <label style={labelCls}>Mặt hàng đang lấy</label>
+                <input style={inputCls} value={editing.products}
+                  placeholder="Xốp nổ, hộp carton, băng dính…"
+                  onChange={e => setEditing({ ...editing, products: e.target.value })} />
+              </div>
+
+              <div>
+                <label style={labelCls}>Ghi chú</label>
+                <textarea style={{ ...inputCls, minHeight: 64, resize: "vertical" }} value={editing.note}
+                  onChange={e => setEditing({ ...editing, note: e.target.value })} />
+              </div>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.ink2, cursor: "pointer" }}>
+                <input type="checkbox" checked={editing.status !== "active"}
+                  onChange={e => setEditing({ ...editing, status: e.target.checked ? "inactive" : "active" })} />
+                Ngừng hợp tác (ẩn khỏi danh sách chọn)
+              </label>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+              <button onClick={save} disabled={saving}
+                style={{ flex: 1, background: C.accent, color: "#fff", border: "none", borderRadius: 7, padding: "9px 0", fontWeight: 700, cursor: saving ? "wait" : "pointer", fontSize: 13 }}>
+                {saving ? "Đang lưu…" : "Lưu"}
+              </button>
+              <button onClick={() => setEditing(null)}
+                style={{ padding: "9px 18px", border: `1px solid ${C.line}`, borderRadius: 7, background: C.surface, cursor: "pointer", fontSize: 13, color: C.ink2 }}>
+                Huỷ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Chi phí đóng gói (CCDC) ──────────────────────────────────────────────────
 
 type PackingRow = {
@@ -1282,6 +1598,9 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
   const [period, setPeriod] = useState(thisPeriod())
   const [rows, setRows] = useState<PackingRow[]>([])
   const [periods, setPeriods] = useState<{ period: string; total: number; n: number }[]>([])
+  // Gợi ý tên NCC từ danh mục ở tab "Nhà cung cấp" — vẫn cho gõ tay tên lạ,
+  // chỉ là khỏi phải nhớ chính xác chữ nào viết hoa, "Shopee" hay "Shoppe".
+  const [supplierNames, setSupplierNames] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const dirtyRef = useRef<Map<string, PackingRow>>(new Map())
@@ -1299,6 +1618,16 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
   }
 
   useEffect(() => { load(period) }, [period])
+
+  useEffect(() => {
+    apiJson("/admin/gia-von/suppliers", "GET")
+      .then(d => setSupplierNames(
+        (d.suppliers ?? [])
+          .filter((x: any) => x.status === "active")
+          .map((x: any) => x.name),
+      ))
+      .catch(() => { /* chưa có NCC nào thì gõ tay như cũ */ })
+  }, [])
 
   function scheduleSave() {
     clearTimeout(saveTimerRef.current)
@@ -1424,6 +1753,11 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
         </div>
       </div>
 
+      {/* Một datalist dùng chung cho mọi dòng — nhẹ hơn nhúng vào từng ô. */}
+      <datalist id="packing-suppliers">
+        {supplierNames.map(n => <option key={n} value={n} />)}
+      </datalist>
+
       {/* Bảng */}
       <div style={{ flex: 1, overflow: "auto", border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
@@ -1467,7 +1801,8 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
                 </td>
                 <td style={{ ...tdS(300), padding: "0 8px" }}>
                   <input style={inputStyle} value={r.supplier} readOnly={!canManage}
-                    placeholder="Tên nhà cung cấp…"
+                    list="packing-suppliers"
+                    placeholder="Chọn hoặc gõ tên NCC…"
                     onChange={e => updateField(r.id, "supplier", e.target.value)} />
                 </td>
                 <td style={{ ...tdS(130), padding: "0 8px" }}>
@@ -1806,7 +2141,7 @@ function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
 function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
-  const [tab, setTab] = useState<"sheet" | "summary" | "cpqc" | "packing">("sheet")
+  const [tab, setTab] = useState<"sheet" | "summary" | "cpqc" | "packing" | "supplier">("sheet")
 
   if (loading) {
     return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
@@ -1824,7 +2159,7 @@ function GiaVonPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "2px solid #e5e7eb" }}>
-        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"]] as const).map(([key, label]) => (
+        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"], ["supplier", "Nhà cung cấp"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
               padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -1842,6 +2177,7 @@ function GiaVonPage() {
         {tab === "sheet" ? <Spreadsheet canManage={canManage} />
           : tab === "summary" ? <SummaryTab />
           : tab === "packing" ? <PackingCostTab canManage={canManage} />
+          : tab === "supplier" ? <SupplierTab canManage={canManage} />
           : <CpqcCalculatorTab canManage={canManage} />}
       </div>
     </div>
