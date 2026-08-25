@@ -5,6 +5,7 @@ import {
   vnDate,
   periodKeyFor,
   periodDeadline,
+  shouldSpawnToday,
   spawnInstanceForPeriod,
   ensureCurrentPeriodInstances,
 } from "../../../modules/mkt-task/recurring-helpers"
@@ -182,9 +183,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       product_name: type === "cskh_call" && manager ? (product_name || null) : null,
     })
 
-    // Recurring → sinh ngay instance kỳ hiện tại để nhân sự thấy việc luôn
-    if (isRecurring) {
-      const vn = vnDate()
+    // Recurring → sinh ngay instance kỳ hiện tại để nhân sự thấy việc luôn.
+    // Qua shouldSpawnToday để tạo template daily vào Chủ nhật không sinh instance
+    // rồi bị auto-miss ngay hôm sau — giống hệt cron và catch-up.
+    const vn = vnDate()
+    if (isRecurring && shouldSpawnToday(validFrequency, vn)) {
       const periodKey = periodKeyFor(validFrequency, vn)
       const instDeadline = periodDeadline(validFrequency, vn)
       await spawnInstanceForPeriod(svc, task, periodKey, instDeadline).catch(() => {})

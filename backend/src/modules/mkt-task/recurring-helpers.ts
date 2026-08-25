@@ -57,9 +57,20 @@ export function periodDeadline(frequency: Frequency, vn: Date): Date {
   return new Date(utcMidnightVN.getTime() + (24 * 3600 - 60) * 1000) // 23:59 VN
 }
 
-/** Hôm nay (giờ VN) có phải mốc sinh kỳ mới cho frequency không? */
+/**
+ * Hôm nay (giờ VN) có phải mốc sinh kỳ mới cho frequency không?
+ *
+ * Việc lặp HẰNG NGÀY nghỉ Chủ nhật: lịch làm việc là Thứ 2–Thứ 7, và cả 8 template
+ * daily đang chạy đều đã ghi "Không thực hiện Chủ nhật" trong ghi chú. Trước đây
+ * vẫn sinh instance ngày CN rồi cron auto-miss đánh "Bỏ lỡ", nên nhân sự phải vào
+ * huỷ tay từng cái (đã có 51 instance CN bị huỷ thủ công) và bảng đánh giá bị dính
+ * việc quá hạn ảo.
+ *
+ * Weekly/monthly không đụng: mốc của chúng là Thứ 2 và ngày 1, không rơi vào CN
+ * (ngày 1 có thể là CN nhưng đó là kỳ tháng, vẫn phải sinh).
+ */
 export function shouldSpawnToday(frequency: Frequency, vn: Date): boolean {
-  if (frequency === "daily") return true
+  if (frequency === "daily") return vn.getUTCDay() !== 0 // 0 = Chủ nhật
   if (frequency === "weekly") return ((vn.getUTCDay() + 6) % 7) === 0 // Thứ 2
   if (frequency === "monthly") return vn.getUTCDate() === 1
   return false
