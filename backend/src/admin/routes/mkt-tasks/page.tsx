@@ -3231,6 +3231,12 @@ function StatsTab() {
 const VIEW_STORAGE_KEY = "mkt-tasks:view" // legacy key — vẫn đọc để migrate 1 lần
 const SETTINGS_STORAGE_KEY = "mkt-tasks:settings"
 const SETTINGS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 1 tháng — quá hạn thì coi như chưa từng lưu
+// Khoảng ngày hết hạn SỚM hơn các filter khác: mở lại sau nửa ngày thì khoảng ngày cũ
+// gần như chắc chắn đã lệch (qua đêm là sang ngày mới), trong khi view/groupBy/mineOnly
+// vẫn là lựa chọn có chủ đích nên giữ đủ 1 tháng.
+const DATE_RANGE_MAX_AGE_MS = 12 * 60 * 60 * 1000
+/** Số ngày của khoảng mặc định khi khoảng ngày đã lưu hết hạn (7 ngày = hôm nay + 6 ngày trước). */
+const DEFAULT_RANGE_DAYS = 7
 
 type PersistedSettings = {
   view?: ViewMode
@@ -3241,6 +3247,9 @@ type PersistedSettings = {
   filterTag?: string
   filterDateFrom?: string
   filterDateTo?: string
+  /** Lúc khoảng ngày được đặt lần cuối — tách riêng savedAt vì savedAt làm mới
+      mỗi khi BẤT KỲ filter nào đổi, sẽ gia hạn oan cho khoảng ngày. */
+  dateSavedAt?: number
   mineOnly?: boolean
 }
 
@@ -3250,7 +3259,15 @@ function loadPersistedSettings(): PersistedSettings {
     if (!raw) return {}
     const parsed = JSON.parse(raw)
     if (!parsed?.savedAt || Date.now() - parsed.savedAt > SETTINGS_MAX_AGE_MS) return {}
-    return parsed.data || {}
+    const data: PersistedSettings = parsed.data || {}
+    // Quá 12 tiếng thì bỏ riêng khoảng ngày, để state khởi tạo rơi về mặc định 7 ngày.
+    // Các filter còn lại giữ nguyên.
+    const dateAt = Number(data.dateSavedAt) || Number(parsed.savedAt) || 0
+    if (Date.now() - dateAt > DATE_RANGE_MAX_AGE_MS) {
+      delete data.filterDateFrom
+      delete data.filterDateTo
+    }
+    return data
   } catch { return {} }
 }
 
@@ -3272,7 +3289,7 @@ function MktTasksPage() {
   const [filterType, setFilterType] = useState(initialSettings.filterType ?? "")
   const [filterPriority, setFilterPriority] = useState(initialSettings.filterPriority ?? "")
   const [filterTag, setFilterTag] = useState(initialSettings.filterTag ?? "")
-  const [filterDateFrom, setFilterDateFrom] = useState(initialSettings.filterDateFrom ?? (() => addDaysKey(vnDateKey(new Date()) as string, -13))())
+  const [filterDateFrom, setFilterDateFrom] = useState(initialSettings.filterDateFrom ?? (() => addDaysKey(vnDateKey(new Date()) as string, -(DEFAULT_RANGE_DAYS - 1)))())
   const [filterDateTo, setFilterDateTo] = useState(initialSettings.filterDateTo ?? (() => vnDateKey(new Date()) as string)())
   const [mineOnly, setMineOnly] = useState(initialSettings.mineOnly ?? false)
   const [search, setSearch] = useState("")
@@ -3287,13 +3304,24 @@ function MktTasksPage() {
   const showToast = (msg: string, type: "success" | "error") => setToast({ msg, type })
   const setViewPersist = (v: ViewMode) => setView(v)
 
+  // Mốc riêng cho khoảng ngày: chỉ chạm vào khi from/to thực sự đổi, nên đổi filter
+  // khác không làm khoảng ngày được gia hạn thêm 12 tiếng.
+  const dateSavedAtRef = useRef<number>(initialSettings.dateSavedAt ?? Date.now())
+  const lastRangeRef = useRef<string>(`${filterDateFrom}|${filterDateTo}`)
+
   // Lưu gộp mọi filter/setting phụ mỗi khi đổi — 1 tháng không mở lại thì coi như hết hạn,
   // tránh giữ mãi 1 khoảng ngày cũ đã vô nghĩa nếu nhân sự nghỉ dài rồi quay lại.
   useEffect(() => {
+    const rangeKey = `${filterDateFrom}|${filterDateTo}`
+    if (rangeKey !== lastRangeRef.current) {
+      lastRangeRef.current = rangeKey
+      dateSavedAtRef.current = Date.now()
+    }
     const data: PersistedSettings = {
       view: view === "stats" ? undefined : view,
       groupBy, filterStatus, filterType, filterPriority, filterTag,
       filterDateFrom, filterDateTo, mineOnly,
+      dateSavedAt: dateSavedAtRef.current,
     }
     try {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), data }))
