@@ -844,11 +844,10 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
               ))}
 
               {/* Ngày tạo — do hệ thống điền, không sửa được nên không dùng ColumnHeader */}
-              <th style={{ ...thS(110), padding: "6px 10px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#1c1917" }}>Ngày tạo</span>
-                  <span style={{ fontSize: 9.5, color: "#8a8378", textTransform: "uppercase", letterSpacing: ".03em", fontWeight: 600 }}>tự động</span>
-                </div>
+              {/* Một dòng chữ như mọi ô header khác — hai dòng làm ô này cao hơn,
+                  mốc `top` của dòng tên cột lệch và các cột không thẳng hàng. */}
+              <th style={thS(110)} title="Ngày tạo dòng — hệ thống tự điền">
+                Ngày tạo
               </th>
 
               {canManage && <th style={thS(32)}></th>}
@@ -1086,7 +1085,7 @@ function ColumnHeader({ col, headerName }: {
   const spec = specAt(col.position)
   const label = headerName || spec?.name || col.name
   return (
-    <th style={{ ...thS(col.width), position: "relative", userSelect: "none" }}>
+    <th style={{ ...thS(col.width), userSelect: "none" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: col.col_type === "number" ? "flex-end" : "flex-start" }}>
         <span
           title={spec?.formula ? `${label} — ô tự tính theo công thức` : label}
@@ -1109,10 +1108,13 @@ function ColumnHeader({ col, headerName }: {
  * Chiều cao hàng <th> (padding 9px trên/dưới + line-height ~14px của font 11px).
  * Dòng header dữ liệu (dòng 0) dính ngay bên dưới mốc này nên hai giá trị phải khớp.
  */
-const TH_H = 32
+const TH_H = 36
 
 function thS(w: number): React.CSSProperties {
   return {
+    // Ép chiều cao cố định: ô "Ngày tạo" có 2 dòng chữ nên tự nhiên cao hơn các ô
+    // còn lại, làm mốc `top` của dòng tên cột lệch đi và các cột không thẳng hàng.
+    height: TH_H,
     padding: "9px 12px",
     borderBottom: `1px solid ${C.line}`,
     background: C.surface2,
