@@ -882,7 +882,15 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
               <Fragment key={row.id}>
               <tr style={{ height: ROW_H, background: bg }}>
                 {/* Số dòng + vạch màu: dòng cần xử lý nhận ra được khi lướt nhanh. */}
-                <td style={{ ...tdS(NUM_COL_W), textAlign: "center", color: C.muted, fontSize: 11, background: isHeaderRow ? C.surface2 : C.ground, userSelect: "none", position: "relative" }}>
+                <td style={{
+                  ...tdS(NUM_COL_W), textAlign: "center", color: C.muted, fontSize: 11,
+                  background: isHeaderRow ? C.surface2 : C.ground, userSelect: "none",
+                  // Dòng 0 chứa TÊN CỘT nghiệp vụ — dính lại ngay dưới hàng <th> để
+                  // mua hàng cuộn xuống giữa bảng vẫn biết đang điền vào cột nào.
+                  ...(isHeaderRow
+                    ? { position: "sticky" as const, top: TH_H, zIndex: 9 }
+                    : { position: "relative" as const }),
+                }}>
                   {sev && (
                     <span style={{
                       position: "absolute", left: 0, top: 4, bottom: 4, width: 3,
@@ -900,7 +908,12 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                   const isTinhChat = !isHeaderRow && col.id === colTinhChat
                   return (
                   <td key={col.id}
-                    style={{ ...tdS(col.width), position: "relative", padding: 0 }}
+                    style={{
+                      ...tdS(col.width), padding: 0,
+                      ...(isHeaderRow
+                        ? { position: "sticky" as const, top: TH_H, zIndex: 9, background: C.surface2 }
+                        : { position: "relative" as const }),
+                    }}
                   >
                     {isTinhChat && canManage ? (
                       <TinhChatCell
@@ -936,18 +949,25 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                 })}
 
                 {/* Ngày tạo */}
-                <td style={{ ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: NUM_FONT, color: C.muted }}>
+                <td style={{
+                  ...tdS(110), padding: "0 10px", fontSize: 11.5, fontFamily: NUM_FONT, color: C.muted,
+                  ...(isHeaderRow ? { position: "sticky" as const, top: TH_H, zIndex: 9, background: C.surface2 } : null),
+                }}>
                   {isHeaderRow ? "" : <CreatedAtCell iso={row.created_at} />}
                 </td>
 
                 {canManage && (
-                  <td style={{ ...tdS(32), textAlign: "center", padding: 0 }}>
-                    <button onClick={() => deleteRow(row.id)}
+                  <td style={{
+                    ...tdS(32), textAlign: "center", padding: 0,
+                    ...(isHeaderRow ? { position: "sticky" as const, top: TH_H, zIndex: 9, background: C.surface2 } : null),
+                  }}>
+                    {/* Dòng header không có gì để xoá — nút ẩn đi cho khỏi bấm nhầm. */}
+                    {!isHeaderRow && <button onClick={() => deleteRow(row.id)}
                       title="Xóa dòng"
                       style={{ background: "none", border: "none", cursor: "pointer", color: C.line, fontSize: 13, padding: "0 4px", lineHeight: 1 }}
                       onMouseOver={e => (e.currentTarget.style.color = C.bad)}
                       onMouseOut={e => (e.currentTarget.style.color = C.line)}
-                    >✕</button>
+                    >✕</button>}
                   </td>
                 )}
               </tr>
@@ -1084,6 +1104,12 @@ function ColumnHeader({ col, headerName }: {
 }
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
+
+/**
+ * Chiều cao hàng <th> (padding 9px trên/dưới + line-height ~14px của font 11px).
+ * Dòng header dữ liệu (dòng 0) dính ngay bên dưới mốc này nên hai giá trị phải khớp.
+ */
+const TH_H = 32
 
 function thS(w: number): React.CSSProperties {
   return {
