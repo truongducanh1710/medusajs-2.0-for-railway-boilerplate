@@ -726,12 +726,6 @@ export function ProductTestDrawer({
                     }
                   />
                   <Field
-                    label="Lead"
-                    type="number"
-                    value={daily.leads}
-                    onChange={(value) => setDaily({ ...daily, leads: value })}
-                  />
-                  <Field
                     label="Đơn"
                     type="number"
                     value={daily.orders}
@@ -781,10 +775,9 @@ export function ProductTestDrawer({
                     <th>Ngày</th>
                     <th>Campaign</th>
                     <th>Ads</th>
-                    <th>Lead</th>
                     <th>Đơn</th>
                     <th>Doanh thu</th>
-                    <th title="Công thức: Chi phí ads ÷ Số lead">CPL ⨍</th>
+                    <th title="Công thức: Chi phí ads ÷ Số đơn">CPO ⨍</th>
                     <th>Đánh giá leader</th>
                     {canEditDailyRows && <th></th>}
                   </tr>
@@ -915,8 +908,8 @@ function DailyResultRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [draft, setDraft] = useState(() => toDraft(row));
   // Same formula as the backend's kpi.ts, reused here so a single row can
-  // show its CPL before the whole case is re-fetched from the server.
-  const { cpl } = calculateKpis(row);
+  // show its CPO before the whole case is re-fetched from the server.
+  const { cpo } = calculateKpis(row);
 
   function startEdit() {
     setDraft(toDraft(row));
@@ -966,13 +959,6 @@ function DailyResultRow({
         <td>
           <input
             type="number"
-            value={draft.leads}
-            onChange={(e) => setDraft({ ...draft, leads: e.target.value })}
-          />
-        </td>
-        <td>
-          <input
-            type="number"
             value={draft.orders}
             onChange={(e) => setDraft({ ...draft, orders: e.target.value })}
           />
@@ -997,13 +983,12 @@ function DailyResultRow({
       <td>{new Date(row.test_date).toLocaleDateString("vi-VN")}</td>
       <td>{row.campaign_name || "—"}</td>
       <td>{vnMoney(row.ad_spend)}</td>
-      <td>{row.leads ?? "—"}</td>
       <td>{row.orders ?? "—"}</td>
       <td>{vnMoney(row.revenue)}</td>
       <td>
         <FormulaCell
-          formula={`${vnMoney(row.ad_spend)} chi phí ads ÷ ${row.leads ?? 0} lead`}
-          display={vnMoney(cpl)}
+          formula={`${vnMoney(row.ad_spend)} chi phí ads ÷ ${row.orders ?? 0} đơn`}
+          display={vnMoney(cpo)}
         />
       </td>
       <td className="pt-eval-cell">

@@ -327,7 +327,7 @@ function ProductTable({
             <th>Chi phí ads</th>
             <th>Đơn</th>
             <th>Doanh thu</th>
-            <th title="Công thức: Chi phí ads ÷ Số lead">CPL ⨍</th>
+            <th title="Công thức: Chi phí ads ÷ Số đơn">CPO ⨍</th>
             <th title="Công thức: Chi phí ads ÷ Doanh thu">% ads ⨍</th>
             <th>Đánh giá</th>
             <th>Bước tiếp</th>
@@ -371,8 +371,8 @@ function ProductTable({
               <td>{money(row.revenue)}</td>
               <td>
                 <FormulaCell
-                  formula={`${money(row.spend)} chi phí ads ÷ ${number(row.orders)} lead`}
-                  display={money(row.cpl)}
+                  formula={`${money(row.spend)} chi phí ads ÷ ${number(row.orders)} đơn`}
+                  display={money(row.cpo)}
                 />
               </td>
               <td>
