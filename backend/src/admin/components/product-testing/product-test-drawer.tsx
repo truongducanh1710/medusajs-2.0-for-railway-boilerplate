@@ -101,7 +101,6 @@ export function ProductTestDrawer({
     ad_spend: "",
     impressions: "",
     clicks: "",
-    leads: "",
     orders: "",
     cancelled_orders: "",
     revenue: "",
@@ -778,6 +777,7 @@ export function ProductTestDrawer({
                     <th>Đơn</th>
                     <th>Doanh thu</th>
                     <th title="Công thức: Chi phí ads ÷ Số đơn">CPO ⨍</th>
+                    <th>MKT đề xuất</th>
                     <th>Đánh giá leader</th>
                     {canEditDailyRows && <th></th>}
                   </tr>
@@ -789,6 +789,7 @@ export function ProductTestDrawer({
                         key={row.id}
                         row={row}
                         canEvaluate={permissions.can_approve}
+                        canDecide={canEditDailyRows}
                         canEditRow={canEditDailyRows}
                         recordId={record.id}
                         client={client}
@@ -887,9 +888,17 @@ export function ProductTestDrawer({
   );
 }
 
+/** Nhãn tiếng Việt cho giá trị mkt_decision lưu trong DB. */
+const MKT_DECISION_LABEL: Record<string, string> = {
+  test_tiep: "Test tiếp",
+  dung: "Dừng",
+  de_xuat_nhap: "Đề xuất nhập",
+};
+
 function DailyResultRow({
   row,
   canEvaluate,
+  canDecide,
   canEditRow,
   recordId,
   client,
@@ -897,6 +906,8 @@ function DailyResultRow({
 }: {
   row: ProductTestDailyResult;
   canEvaluate: boolean;
+  /** MKT phụ trách được tự nhận định nên test tiếp hay dừng. */
+  canDecide: boolean;
   canEditRow: boolean;
   recordId: string;
   client: ProductTestingClient;
@@ -904,6 +915,8 @@ function DailyResultRow({
 }) {
   const [evaluation, setEvaluation] = useState(row.evaluation || "");
   const [note, setNote] = useState(row.leader_note || "");
+  const [mktDecision, setMktDecision] = useState(row.mkt_decision || "");
+  const [mktNote, setMktNote] = useState(row.mkt_note || "");
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [draft, setDraft] = useState(() => toDraft(row));
@@ -922,7 +935,6 @@ function DailyResultRow({
         test_date: draft.test_date,
         campaign_name: draft.campaign_name,
         ad_spend: draft.ad_spend === "" ? null : Number(draft.ad_spend),
-        leads: draft.leads === "" ? null : Number(draft.leads),
         orders: draft.orders === "" ? null : Number(draft.orders),
         revenue: draft.revenue === "" ? null : Number(draft.revenue),
         version: row.version,
@@ -970,7 +982,7 @@ function DailyResultRow({
             onChange={(e) => setDraft({ ...draft, revenue: e.target.value })}
           />
         </td>
-        <td colSpan={2} className="pt-daily-edit-actions">
+        <td colSpan={4} className="pt-daily-edit-actions">
           <button onClick={save}>Lưu</button>
           <button onClick={() => setEditing(false)}>Huỷ</button>
         </td>
@@ -990,6 +1002,45 @@ function DailyResultRow({
           formula={`${vnMoney(row.ad_spend)} chi phí ads ÷ ${row.orders ?? 0} đơn`}
           display={vnMoney(cpo)}
         />
+      </td>
+      <td className="pt-eval-cell">
+        {canDecide ? (
+          <div className="pt-evaluate">
+            <select
+              value={mktDecision}
+              onChange={(e) => setMktDecision(e.target.value)}
+            >
+              <option value="">Chọn đề xuất</option>
+              <option value="test_tiep">Test tiếp</option>
+              <option value="dung">Dừng</option>
+              <option value="de_xuat_nhap">Đề xuất nhập</option>
+            </select>
+            <input
+              placeholder="Lý do"
+              value={mktNote}
+              onChange={(e) => setMktNote(e.target.value)}
+            />
+            <button
+              disabled={!mktDecision}
+              onClick={() =>
+                onRun(`mkt-${row.id}`, () =>
+                  client.setMktDecision(recordId, row.id, {
+                    mkt_decision: mktDecision,
+                    mkt_note: mktNote,
+                    version: row.version,
+                  }),
+                )
+              }
+            >
+              Lưu
+            </button>
+          </div>
+        ) : (
+          <>
+            <b>{MKT_DECISION_LABEL[row.mkt_decision ?? ""] || "Chưa đề xuất"}</b>
+            {row.mkt_note && <small>{row.mkt_note}</small>}
+          </>
+        )}
       </td>
       <td className="pt-eval-cell">
         {canEvaluate ? (
@@ -1076,7 +1127,6 @@ function toDraft(row: ProductTestDailyResult) {
     test_date: row.test_date.slice(0, 10),
     campaign_name: row.campaign_name || "",
     ad_spend: row.ad_spend == null ? "" : String(row.ad_spend),
-    leads: row.leads == null ? "" : String(row.leads),
     orders: row.orders == null ? "" : String(row.orders),
     revenue: row.revenue == null ? "" : String(row.revenue),
   };

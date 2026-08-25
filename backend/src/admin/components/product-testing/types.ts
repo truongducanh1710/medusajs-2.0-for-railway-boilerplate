@@ -101,6 +101,11 @@ export interface ProductTestDailyResult {
   leader_note: string;
   evaluated_by: string;
   evaluated_at: string;
+  /** MKT tự nhận định: test_tiep | dung | de_xuat_nhap */
+  mkt_decision: string | null;
+  mkt_note: string | null;
+  mkt_decided_by: string | null;
+  mkt_decided_at: string | null;
   version: number;
   created_at: string;
   updated_at: string;

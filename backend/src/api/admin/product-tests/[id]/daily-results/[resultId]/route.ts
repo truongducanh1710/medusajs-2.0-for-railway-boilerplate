@@ -37,6 +37,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       "landed_price_per_unit",
       "evaluation",
       "leader_note",
+      "mkt_decision",
+      "mkt_note",
     ]);
     const resultVersion = parseVersion(body.version);
     const testDate = validDate(body.test_date);

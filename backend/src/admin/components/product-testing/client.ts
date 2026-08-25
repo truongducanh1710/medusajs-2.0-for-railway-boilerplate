@@ -182,6 +182,18 @@ export function createProductTestingClient() {
     );
   }
 
+  /** MKT tự nhận định ngày test này: test_tiep | dung | de_xuat_nhap */
+  async function setMktDecision(
+    id: string,
+    resultId: string,
+    payload: { mkt_decision: string; mkt_note: string; version: number },
+  ) {
+    return requestJson<{ daily_result: ProductTestDailyResult }>(
+      `/admin/product-tests/${id}/daily-results/${resultId}/mkt-decision`,
+      jsonInit("POST", payload),
+    );
+  }
+
   async function transitionCase(
     id: string,
     payload: {
@@ -234,6 +246,7 @@ export function createProductTestingClient() {
     updateDailyResult,
     deleteDailyResult,
     evaluateDailyResult,
+    setMktDecision,
     transitionCase,
     uploadImages,
   };

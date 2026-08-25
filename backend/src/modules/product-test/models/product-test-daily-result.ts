@@ -13,10 +13,16 @@ const ProductTestDailyResult = model.define("product_test_daily_result", {
   orders: model.number().nullable(),
   cancelled_orders: model.number().nullable(),
   revenue: model.number().nullable(),
+  // Leader chốt: Đạt / Cần test thêm / Không đạt
   evaluation: model.text().nullable(),
   leader_note: model.text().nullable(),
   evaluated_by: model.text().nullable(),
   evaluated_at: model.dateTime().nullable(),
+  // MKT tự nhận định trước: test_tiep / dung / de_xuat_nhap
+  mkt_decision: model.text().nullable(),
+  mkt_note: model.text().nullable(),
+  mkt_decided_by: model.text().nullable(),
+  mkt_decided_at: model.dateTime().nullable(),
   version: model.number().default(1),
 });
 
