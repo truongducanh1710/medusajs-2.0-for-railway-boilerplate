@@ -71,20 +71,3 @@ export function parseNumLoose(raw: string): number {
   const norm = v.replace(/\./g, "").replace(",", ".")
   return /^-?\d+(\.\d+)?$/.test(norm) ? Number(norm) : NaN
 }
-
-/**
- * Tính lại 3 ô công thức từ D/E/F/H. Trả về giá trị mong đợi để so với số đang
- * lưu — dùng cho cả auto-điền lẫn cảnh báo "số này lệch công thức".
- *   VAT (G)       = (E*D + F) * 8%
- *   Tổng tiền (I) = E*D + F + G + H
- *   Giá TB/sp (J) = I / D
- */
-export function computeFormulas(input: {
-  qty: number; priceUnit: number; fee: number; vat: number; otherFee: number
-}): { vat: number; total: number; avg: number } {
-  const { qty, priceUnit, fee, otherFee } = input
-  const vat = Math.round((priceUnit * qty + fee) * 0.08)
-  const total = Math.round(priceUnit * qty + fee + input.vat + otherFee)
-  const avg = qty > 0 ? Math.round(total / qty) : 0
-  return { vat, total, avg }
-}

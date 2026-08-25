@@ -26,7 +26,7 @@ interface SheetRow {
 
 // Schema cột dùng CHUNG với API (admin/lib/gia-von-schema) — một nguồn sự thật
 // duy nhất cho tên cột, kiểu dữ liệu và công thức, tránh FE/BE lệch nhau.
-import { TINH_CHAT, specAt, isValidCell, parseNumLoose, computeFormulas } from "../../lib/gia-von-schema"
+import { TINH_CHAT, specAt, isValidCell, parseNumLoose } from "../../lib/gia-von-schema"
 
 /**
  * Bảng màu của trang. Neutral lệch vàng nhạt cho hợp bối cảnh kho/hoá đơn, accent
@@ -478,23 +478,6 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     }
   }
 
-  /**
-   * Ghi đè các ô công thức đang lệch bằng số máy tính ra. Ô công thức vẫn cho gõ tay
-   * (có lúc mua hàng cố ý để số khác), nên đây là hành động người dùng chủ động bấm.
-   */
-  function applyFormula(rowId: string, drift: { colId: string; want: number }[]) {
-    if (drift.length === 0) return
-    setRows(rs => rs.map(r => {
-      if (r.id !== rowId) return r
-      const newData = { ...r.data }
-      for (const d of drift) newData[d.colId] = String(d.want)
-      const updated = { ...r, data: newData, _dirty: true }
-      dirtyRef.current.set(rowId, updated)
-      return updated
-    }))
-    scheduleSave()
-  }
-
   function updateCell(rowId: string, colId: string, value: string) {
     setRows(rs => rs.map(r => {
       if (r.id !== rowId) return r
@@ -602,9 +585,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
   type Issue = {
     rowIdx: number
-    kind: "no_code" | "bad_code" | "bad_tinhchat" | "blank" | "formula_drift"
-    /** Chỉ có ở formula_drift — cột nào lệch và công thức ra bao nhiêu. */
-    drift?: { colId: string; label: string; want: number }[]
+    kind: "no_code" | "bad_code" | "bad_tinhchat" | "blank"
   }
   const issues: Issue[] = []
   const nameCount = new Map<string, number[]>()
@@ -623,30 +604,6 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 
     const tc = (d[colTinhChat] ?? "").trim()
     if (tc && !TINH_CHAT.includes(tc as any)) issues.push({ rowIdx: i, kind: "bad_tinhchat" })
-
-    // Ô công thức (VAT, Tổng tiền, Giá TB/sp) vẫn cho gõ đè, nhưng lệch với công
-    // thức thì phải nói ra — số tay và số máy khác nhau là lúc báo cáo sai âm thầm.
-    const colG = posToId[6], colI = posToId[8], colJ = posToId[9]
-    if (colG && colI && colJ) {
-      const expect = computeFormulas({
-        qty: parseNum(d[posToId[3]] ?? ""),
-        priceUnit: parseNum(d[posToId[4]] ?? ""),
-        fee: parseNum(d[posToId[5]] ?? ""),
-        vat: parseNum(d[colG] ?? ""),
-        otherFee: parseNum(d[posToId[7]] ?? ""),
-      })
-      const drift = (colId: string, want: number) => {
-        const raw = (d[colId] ?? "").trim()
-        if (!raw || want <= 0) return false
-        // Sai 1đ do làm tròn thì bỏ qua, chỉ báo khi lệch thật.
-        return Math.abs(parseNum(raw) - want) > 1
-      }
-      const driftCols: { colId: string; label: string; want: number }[] = []
-      if (drift(colG, expect.vat)) driftCols.push({ colId: colG, label: "VAT", want: expect.vat })
-      if (drift(colI, expect.total)) driftCols.push({ colId: colI, label: "Tổng tiền", want: expect.total })
-      if (drift(colJ, expect.avg)) driftCols.push({ colId: colJ, label: "Giá TB/sp", want: expect.avg })
-      if (driftCols.length > 0) issues.push({ rowIdx: i, kind: "formula_drift", drift: driftCols })
-    }
 
     const ma = (colMaSP ? d[colMaSP] : "")?.trim() ?? ""
     if (!ma) issues.push({ rowIdx: i, kind: "no_code" })
@@ -722,13 +679,6 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
       label: "Tên lặp ở nhiều dòng",
       why: "Đúng nếu là nhiều lô nhập khác nhau — kiểm tra lại nếu gõ trùng.",
       jump: dupGroups[0] && (() => jumpToRow(dupGroups[0][1][0])),
-    },
-    {
-      n: byKind("formula_drift").length, sev: byKind("formula_drift").length ? "warn" : "ok",
-      chip: byKind("formula_drift").length ? "Lệch công thức" : "Sạch",
-      label: "Số gõ tay khác số tự tính",
-      why: "VAT / Tổng tiền / Giá TB đang khác công thức — cố ý thì bỏ qua, không thì sửa lại.",
-      jump: byKind("formula_drift")[0] && (() => jumpToRow(byKind("formula_drift")[0].rowIdx)),
     },
     {
       n: byKind("bad_tinhchat").length, sev: byKind("bad_tinhchat").length ? "bad" : "ok",
@@ -872,13 +822,10 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
               const isHeaderRow = ri === 0
               const broken = brokenRows.has(ri)
               const rowIssues = issuesByRow.get(ri) ?? []
-              // Nặng nhất quyết định màu dòng: thiếu/sai mã (đỏ) > lệch công thức (vàng).
-              const sev: "bad" | "warn" | null =
-                broken ? "bad" : rowIssues.length > 0 ? "warn" : null
-              const bg = isHeaderRow ? C.surface2
-                : sev === "bad" ? C.badSoft
-                : sev === "warn" ? C.warnSoft
-                : C.surface
+              // Mọi lỗi còn lại (thiếu mã, sai mã, sai tính chất) đều chặn dòng khỏi
+              // báo cáo LNG nên dùng chung một mức nặng.
+              const hasIssue = broken || rowIssues.length > 0
+              const bg = isHeaderRow ? C.surface2 : hasIssue ? C.badSoft : C.surface
               return (
               <Fragment key={row.id}>
               <tr style={{ height: ROW_H, background: bg }}>
@@ -888,11 +835,10 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                   background: isHeaderRow ? C.surface2 : C.ground, userSelect: "none",
                   position: "relative",
                 }}>
-                  {sev && (
+                  {hasIssue && (
                     <span style={{
                       position: "absolute", left: 0, top: 4, bottom: 4, width: 3,
-                      borderRadius: "0 2px 2px 0",
-                      background: sev === "bad" ? C.bad : C.warn,
+                      borderRadius: "0 2px 2px 0", background: C.bad,
                     }} />
                   )}
                   {ri + 1}
@@ -961,15 +907,12 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
               {/* Dải giải thích ngay dưới dòng lỗi — nói rõ sai gì và sửa thế nào,
                   thay vì để người nhập tự đoán từ ô đỏ. */}
               {rowIssues.length > 0 && (
-                <tr style={{ background: sev === "bad" ? C.badSoft : C.warnSoft }}>
+                <tr style={{ background: C.badSoft }}>
                   <td colSpan={visibleCols.length + (canManage ? 3 : 2)}
                     style={{ padding: "0 12px 9px", borderBottom: `1px solid ${C.lineSoft}` }}>
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, paddingLeft: NUM_COL_W - 12 }}>
                       {rowIssues.map((it, k) => (
-                        <IssueNote key={k} issue={it} rowIdx={ri}
-                          onFix={it.kind === "formula_drift" && canManage
-                            ? () => applyFormula(row.id, it.drift ?? [])
-                            : undefined} />
+                        <IssueNote key={k} issue={it} rowIdx={ri} />
                       ))}
                     </div>
                   </td>
@@ -995,17 +938,14 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
 // ─── IssueNote ────────────────────────────────────────────────────────────────
 
 /**
- * Một lỗi của dòng, hiện thành dải ngay dưới dòng đó. Mỗi lỗi nói đúng ba thứ:
- * sai gì, hậu quả ra sao, và (nếu máy sửa hộ được) một nút bấm để sửa.
+ * Một lỗi của dòng, hiện thành dải ngay dưới dòng đó: sai gì và hậu quả ra sao.
+ * Mọi lỗi còn lại đều chặn dòng khỏi báo cáo nên dùng chung một màu đỏ.
  */
-function IssueNote({ issue, onFix }: {
-  issue: { kind: string; drift?: { colId: string; label: string; want: number }[] }
+function IssueNote({ issue }: {
+  issue: { kind: string }
   rowIdx: number
-  onFix?: () => void
 }) {
-  const nf = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n))
-  const bad = issue.kind === "no_code" || issue.kind === "bad_code" || issue.kind === "bad_tinhchat"
-  const fg = bad ? C.bad : C.warn
+  const fg = C.bad
 
   let chip = ""
   let text: React.ReactNode = null
@@ -1018,39 +958,16 @@ function IssueNote({ issue, onFix }: {
   } else if (issue.kind === "bad_tinhchat") {
     chip = "Tính chất sai"
     text = 'Chỉ nhận đúng "Sản phẩm chính" hoặc "Phụ kiện" — sai là bị tính thành phụ kiện.'
-  } else if (issue.kind === "formula_drift") {
-    const d = issue.drift ?? []
-    chip = "Lệch công thức"
-    text = (
-      <>
-        {d.map((x, i) => (
-          <span key={x.colId}>
-            {i > 0 && " · "}
-            {x.label} gõ tay khác số tự tính <b style={{ fontFamily: NUM_FONT }}>{nf(x.want)}</b>
-          </span>
-        ))}
-      </>
-    )
   }
 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <span style={{
         fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", padding: "2px 8px",
-        borderRadius: 99, color: fg, background: bad ? C.badSoft : C.warnSoft,
+        borderRadius: 99, color: fg, background: C.badSoft,
         border: `1px solid ${fg}33`, whiteSpace: "nowrap",
       }}>{chip}</span>
       <span style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>{text}</span>
-      {onFix && (
-        <button onClick={onFix}
-          style={{
-            font: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer",
-            padding: "3px 10px", borderRadius: 6,
-            border: `1px solid ${C.line}`, background: C.surface, color: C.ink2,
-          }}>
-          Dùng số tự tính
-        </button>
-      )}
     </span>
   )
 }
