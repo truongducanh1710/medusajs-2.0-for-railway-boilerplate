@@ -24,12 +24,14 @@ const ACTION_LABELS: Record<string, string> = {
   request_more_testing: "Yêu cầu test thêm",
   approve_import: "Duyệt nhập",
   reject_import: "Không nhập",
+  mark_not_viable: "Dừng — không khả thi",
 };
-// Every remaining action is a leader judgement, so all of them need a reason.
+// Mọi hành động đều là một quyết định, nên đều phải nêu lý do.
 const COMMENT_ACTIONS = new Set([
   "request_more_testing",
   "approve_import",
   "reject_import",
+  "mark_not_viable",
 ]);
 
 const emptyPurchase: ProductTestPurchaseCheck = {
@@ -261,7 +263,7 @@ export function ProductTestDrawer({
 
   // MKT and Purchasing may both edit Check giá/Đề xuất at any open stage;
   // only the two terminal decisions lock the case for good.
-  const isConcluded = ["import_approved", "import_rejected"].includes(
+  const isConcluded = ["import_approved", "import_rejected", "not_viable"].includes(
     record.status,
   );
   const purchaseEditable =
@@ -910,7 +912,7 @@ export function ProductTestDrawer({
                 <button
                   key={action.id}
                   className={
-                    action.id === "reject_import"
+                    action.id === "reject_import" || action.id === "mark_not_viable"
                       ? "danger"
                       : action.id.includes("approve")
                         ? "success"

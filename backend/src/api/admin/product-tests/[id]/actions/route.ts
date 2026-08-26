@@ -26,6 +26,7 @@ const ACTION_LABELS: Record<string, string> = {
   request_more_testing: "Leader yêu cầu test thêm",
   approve_import: "Leader kết luận nhập sản phẩm",
   reject_import: "Leader kết luận không nhập",
+  mark_not_viable: "MKT dừng: không khả thi",
 };
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -59,9 +60,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const transition = getTransition(action, productCase.status);
     assertTransitionComment(action, comment);
-    // Every remaining action is the leader's; a single permission check covers
-    // all three.
-    if (!actorHas(actor, PRODUCT_TEST_PERMS.approve)) {
+    // mark_not_viable là hành động của MKT (dừng trước khi test); ba hành động
+    // còn lại là kết luận của leader.
+    const requiredPerm =
+      transition.role === "marketing"
+        ? PRODUCT_TEST_PERMS.marketing
+        : PRODUCT_TEST_PERMS.approve;
+    if (!actorHas(actor, requiredPerm)) {
       await client.query("ROLLBACK");
       return res
         .status(403)
@@ -91,8 +96,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         ? "import_approved"
         : action === "reject_import"
           ? "import_rejected"
-          : productCase.final_decision;
-    const decidedBy = ["approve_import", "reject_import"].includes(action)
+          : action === "mark_not_viable"
+            ? "not_viable"
+            : productCase.final_decision;
+    const decidedBy = ["approve_import", "reject_import", "mark_not_viable"].includes(action)
       ? actor.email
       : productCase.decided_by;
     const result = await client.query(

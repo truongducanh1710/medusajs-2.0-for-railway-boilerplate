@@ -14,6 +14,7 @@ export type ProductTestStatus =
   | "testing"
   | "import_approved"
   | "import_rejected"
+  | "not_viable"
   | "awaiting_purchase_check"
   | "purchase_changes_requested"
   | "proposal_draft"
@@ -27,6 +28,7 @@ export const STATUS_LABELS: Record<ProductTestStatus, string> = {
   testing: "Đang test",
   import_approved: "Duyệt nhập",
   import_rejected: "Không nhập",
+  not_viable: "Không khả thi",
   // Retired — only ever rendered from old audit events.
   awaiting_purchase_check: "Chờ check giá",
   purchase_changes_requested: "Cần bổ sung check giá",
@@ -36,15 +38,20 @@ export const STATUS_LABELS: Record<ProductTestStatus, string> = {
   awaiting_final_decision: "Chờ kết luận",
 };
 
-/** The four statuses a live case can hold — drives filters and kanban columns. */
+/** The statuses a live case can hold — drives filters and kanban columns. */
 export const ACTIVE_STATUSES: ProductTestStatus[] = [
   "draft",
   "testing",
+  "not_viable",
   "import_approved",
   "import_rejected",
 ];
 
-export type ProductTestDecision = "import_approved" | "import_rejected" | null;
+export type ProductTestDecision =
+  | "import_approved"
+  | "import_rejected"
+  | "not_viable"
+  | null;
 
 export interface ProductTestPurchaseCheck {
   supplier_link: string;

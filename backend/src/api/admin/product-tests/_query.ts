@@ -98,12 +98,21 @@ export function permissionsFor(actor: ProductTestActor) {
   };
 }
 
-// Every remaining action belongs to the leader, and case ownership no longer
-// restricts anything — holding the permission is the whole check.
+/**
+ * Hành động khả dụng, lọc theo quyền ứng với `role` của từng transition:
+ * mark_not_viable là của MKT (dừng trước khi test), ba cái còn lại là kết luận
+ * của leader. Quyền sở hữu hồ sơ không còn hạn chế gì — có quyền là làm được.
+ */
 export function availableActions(actor: ProductTestActor, productCase: any) {
-  if (!actorHas(actor, PRODUCT_TEST_PERMS.approve)) return [];
   return Object.entries(PRODUCT_TEST_TRANSITIONS)
-    .filter(([, transition]) => transition.from.includes(productCase.status))
+    .filter(([, transition]) => {
+      if (!transition.from.includes(productCase.status)) return false;
+      const perm =
+        transition.role === "marketing"
+          ? PRODUCT_TEST_PERMS.marketing
+          : PRODUCT_TEST_PERMS.approve;
+      return actorHas(actor, perm);
+    })
     .map(([id, transition]) => ({ id, next_status: transition.to }));
 }
 

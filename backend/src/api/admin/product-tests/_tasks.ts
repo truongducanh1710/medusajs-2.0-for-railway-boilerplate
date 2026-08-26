@@ -15,9 +15,16 @@ const STATUS_LABELS: Record<string, string> = {
   testing: "Đang test",
   import_approved: "Duyệt nhập",
   import_rejected: "Không nhập",
+  not_viable: "Không khả thi",
 };
 
-const CONCLUDED_STATUSES = new Set(["import_approved", "import_rejected"]);
+// not_viable cũng là kết luận: MKT đã dừng thì task Giao việc phải đóng theo,
+// không thì nhân sự còn thấy việc treo cho sản phẩm đã bỏ.
+const CONCLUDED_STATUSES = new Set([
+  "import_approved",
+  "import_rejected",
+  "not_viable",
+]);
 
 async function findMktTaskModule(req: MedusaRequest) {
   return req.scope.resolve("mktTaskModule") as any;

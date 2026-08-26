@@ -155,7 +155,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         testing_cases: byStatus.testing || 0,
         awaiting_leader_review: awaitingLeaderReview,
         concluded_cases:
-          (byStatus.import_approved || 0) + (byStatus.import_rejected || 0),
+          (byStatus.import_approved || 0) +
+          (byStatus.import_rejected || 0) +
+          (byStatus.not_viable || 0),
         by_status: byStatus,
         spend: totals.ad_spend,
         orders: totals.orders,

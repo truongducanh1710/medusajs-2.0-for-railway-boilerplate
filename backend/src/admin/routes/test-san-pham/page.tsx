@@ -53,7 +53,7 @@ const tabStatuses: Record<ProductTestTab, ProductTestStatus[] | null> = {
     "proposal_changes_requested",
   ],
   results: ["testing", "awaiting_final_decision"],
-  concluded: ["import_approved", "import_rejected"],
+  concluded: ["import_approved", "import_rejected", "not_viable"],
 };
 
 function ProductTestPage() {
@@ -422,7 +422,7 @@ function ProductKanban({
     {
       id: "done",
       label: "Đã kết luận",
-      statuses: ["import_approved", "import_rejected"],
+      statuses: ["import_approved", "import_rejected", "not_viable"],
     },
   ];
   return (
@@ -544,11 +544,12 @@ const PAGE_CSS = `
 .s-awaiting_final_decision,.s-awaiting_test_approval,.s-awaiting_purchase_check{background:#fef3c7;color:#92400e}
 .s-import_approved{background:#dcfce7;color:#166534}
 .s-import_rejected,.s-purchase_changes_requested,.s-proposal_changes_requested{background:#fee2e2;color:#991b1b}
+.s-not_viable{background:#f3f4f6;color:#4b5563}
 .pt-next{font-size:12px;color:#2563eb}
 .pt-unassigned{color:#b45309;background:#fef3c7;border-radius:5px;padding:2px 6px;font-size:11.5px;white-space:nowrap}
 .pt-formula{color:#92400e;background:#fef3c7;border-radius:5px;padding:2px 6px;font-weight:600;cursor:help;border-bottom:1px dashed #d97706}
 .pt-table th[title]{cursor:help;border-bottom:1px dashed var(--fg-muted,#9ca3af)}
-.pt-kanban{display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:12px;padding:14px;overflow:auto}
+.pt-kanban{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:12px;padding:14px;overflow:auto}
 .pt-column{background:var(--bg-subtle,#f5f6f8);border:1px solid var(--border-base,#e5e7eb);border-radius:9px;padding:10px;min-height:420px}
 .pt-column h3{font-size:13px;margin:2px 2px 10px;color:var(--fg-base,#374151)}
 .pt-column h3 span{float:right;background:var(--bg-field,#e5e7eb);border-radius:99px;padding:2px 8px;color:var(--fg-muted,#6b7280);font-size:11px}
@@ -563,7 +564,7 @@ const PAGE_CSS = `
 .pt-modal h2{margin:0 0 18px;font-size:17px;color:var(--fg-base,#111827)}
 .pt-modal label{display:grid;gap:6px;margin:12px 0;font-weight:600;font-size:12px;color:var(--fg-subtle,#4b5563)}
 .pt-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
-@media(max-width:1200px){.pt-kpis{grid-template-columns:repeat(2,1fr)}.pt-page{padding:16px}.pt-toolbar{flex-wrap:wrap}.pt-view-toggle{margin-left:0}.pt-kanban{grid-template-columns:repeat(4,280px)}}
+@media(max-width:1200px){.pt-kpis{grid-template-columns:repeat(2,1fr)}.pt-page{padding:16px}.pt-toolbar{flex-wrap:wrap}.pt-view-toggle{margin-left:0}.pt-kanban{grid-template-columns:repeat(3,280px)}}
 `;
 
 export const config = defineRouteConfig({ label: "Test sản phẩm", rank: 6 });

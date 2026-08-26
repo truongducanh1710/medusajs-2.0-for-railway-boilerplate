@@ -7,6 +7,9 @@ export const PRODUCT_TEST_STATUSES = [
   "testing",
   "import_approved",
   "import_rejected",
+  // MKT tự dừng khi chưa test: giá vốn về quá cao, không ra được giá bán cạnh
+  // tranh. Khác import_rejected — cái đó là leader kết luận SAU khi đã chạy ads.
+  "not_viable",
   // Retired statuses. The Migration20260813000000 rewrite maps every stored
   // row onto the four live values, but historical product_test_event rows keep
   // their original from_status/to_status strings, so the type must still
@@ -25,6 +28,7 @@ export type ProductTestStatus = (typeof PRODUCT_TEST_STATUSES)[number];
 export const ACTIVE_PRODUCT_TEST_STATUSES = [
   "draft",
   "testing",
+  "not_viable",
   "import_approved",
   "import_rejected",
 ] as const;
@@ -42,7 +46,8 @@ export type ProductTestRole = "marketing" | "purchasing" | "approve";
 export type ProductTestAction =
   | "request_more_testing"
   | "approve_import"
-  | "reject_import";
+  | "reject_import"
+  | "mark_not_viable";
 
 type Transition = {
   from: ProductTestStatus[];
@@ -72,11 +77,20 @@ export const PRODUCT_TEST_TRANSITIONS: Record<ProductTestAction, Transition> = {
     role: "approve",
     comment_required: true,
   },
+  // Chỉ từ "draft": đã sang testing nghĩa là đã tiêu tiền ads, lúc đó phải để
+  // leader kết luận bằng approve_import/reject_import.
+  mark_not_viable: {
+    from: ["draft"],
+    to: "not_viable",
+    role: "marketing",
+    comment_required: true,
+  },
 };
 
 export const CONCLUDED_STATUSES: ProductTestStatus[] = [
   "import_approved",
   "import_rejected",
+  "not_viable",
 ];
 
 export function isConcluded(status: string): boolean {
