@@ -13,6 +13,7 @@ import {
   NumberField,
   isUrl,
   money as vnMoney,
+  number as nfInt,
   formatDateTime as vnDateTime,
 } from "./format";
 import { ComboCalculator } from "./combo-calculator";
@@ -844,9 +845,16 @@ export function ProductTestDrawer({
               <table>
                 <thead>
                   <tr>
-                    <th>Ngày</th>
-                    <th>Campaign</th>
+                    <th className="pt-col-date">Ngày</th>
+                    {/* Neo cột Campaign: bảng cuộn ngang nhiều, không neo thì kéo
+                        sang phải là không biết đang xem camp nào. */}
+                    <th className="pt-col-camp">Campaign</th>
                     <th>Ads</th>
+                    <th title="Số lần hiển thị">Hiển thị</th>
+                    <th>Click</th>
+                    <th title="Công thức: Chi phí ads ÷ Hiển thị × 1000">CPM ⨍</th>
+                    <th title="Công thức: Click ÷ Hiển thị">CTR ⨍</th>
+                    <th title="Công thức: Chi phí ads ÷ Click">CPC ⨍</th>
                     <th>Đơn</th>
                     <th>Doanh thu</th>
                     <th title="Công thức: Chi phí ads ÷ Số đơn">CPO ⨍</th>
@@ -871,7 +879,7 @@ export function ProductTestDrawer({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={canEditDailyRows ? 9 : 8}>
+                      <td colSpan={canEditDailyRows ? 14 : 13}>
                         Chưa có kết quả test.
                       </td>
                     </tr>
@@ -995,7 +1003,14 @@ function DailyResultRow({
   const [draft, setDraft] = useState(() => toDraft(row));
   // Same formula as the backend's kpi.ts, reused here so a single row can
   // show its CPO before the whole case is re-fetched from the server.
-  const { cpo } = calculateKpis(row);
+  const { cpo, ctr } = calculateKpis(row);
+  // CPM/CPC không nằm trong calculateKpis (nó chỉ lo các chỉ số dùng chung với
+  // backend) nên tính tại chỗ — cùng công thức với report/mkt-campaign.
+  const imp = Number(row.impressions ?? 0);
+  const clk = Number(row.clicks ?? 0);
+  const spend = Number(row.ad_spend ?? 0);
+  const cpm = imp > 0 ? Math.round((spend / imp) * 1000) : null;
+  const cpc = clk > 0 ? Math.round(spend / clk) : null;
 
   function startEdit() {
     setDraft(toDraft(row));
@@ -1019,14 +1034,14 @@ function DailyResultRow({
   if (editing) {
     return (
       <tr className="pt-daily-editing">
-        <td>
+        <td className="pt-col-date">
           <input
             type="date"
             value={draft.test_date}
             onChange={(e) => setDraft({ ...draft, test_date: e.target.value })}
           />
         </td>
-        <td>
+        <td className="pt-col-camp">
           <input
             value={draft.campaign_name}
             onChange={(e) =>
@@ -1055,7 +1070,7 @@ function DailyResultRow({
             onChange={(e) => setDraft({ ...draft, revenue: e.target.value })}
           />
         </td>
-        <td colSpan={4} className="pt-daily-edit-actions">
+        <td colSpan={9} className="pt-daily-edit-actions">
           <button onClick={save}>Lưu</button>
           <button onClick={() => setEditing(false)}>Huỷ</button>
         </td>
@@ -1065,9 +1080,29 @@ function DailyResultRow({
 
   return (
     <tr>
-      <td>{new Date(row.test_date).toLocaleDateString("vi-VN")}</td>
-      <td>{row.campaign_name || "—"}</td>
+      <td className="pt-col-date">{new Date(row.test_date).toLocaleDateString("vi-VN")}</td>
+      <td className="pt-col-camp" title={row.campaign_name || ""}>{row.campaign_name || "—"}</td>
       <td>{vnMoney(row.ad_spend)}</td>
+      <td>{row.impressions == null ? "—" : nfInt(row.impressions)}</td>
+      <td>{row.clicks == null ? "—" : nfInt(row.clicks)}</td>
+      <td>
+        <FormulaCell
+          formula={`${vnMoney(row.ad_spend)} chi phí ads ÷ ${nfInt(row.impressions ?? 0)} hiển thị × 1000`}
+          display={vnMoney(cpm)}
+        />
+      </td>
+      <td>
+        <FormulaCell
+          formula={`${nfInt(row.clicks ?? 0)} click ÷ ${nfInt(row.impressions ?? 0)} hiển thị`}
+          display={ctr == null ? "—" : `${(ctr * 100).toFixed(2)}%`}
+        />
+      </td>
+      <td>
+        <FormulaCell
+          formula={`${vnMoney(row.ad_spend)} chi phí ads ÷ ${nfInt(row.clicks ?? 0)} click`}
+          display={vnMoney(cpc)}
+        />
+      </td>
       <td>{row.orders ?? "—"}</td>
       <td>{vnMoney(row.revenue)}</td>
       <td>
@@ -1389,7 +1424,25 @@ const DRAWER_CSS = `
 .pt-camp-msg{font-size:11.5px;color:#b45309;background:#fef3c7;border-radius:6px;padding:3px 8px}
 .pt-daily-form>.pt-drawer-primary{margin-top:10px}
 .pt-daily-table{overflow:auto;border:1px solid var(--border-base,#e5e7eb);border-radius:8px}
-.pt-daily-table table{border-collapse:collapse;width:100%;min-width:780px}
+.pt-daily-table table{border-collapse:separate;border-spacing:0;width:100%;min-width:1180px}
+/* Neo Ngày + Campaign khi cuộn ngang — bảng giờ có thêm CPM/CTR/CPC nên rộng
+   hơn màn hình, kéo sang phải mà mất tên camp thì không biết đang xem dòng nào.
+   border-collapse:separate là bắt buộc: với collapse thì viền của ô sticky
+   bị vẽ đè lên nội dung cuộn qua bên dưới. */
+.pt-daily-table th.pt-col-date,.pt-daily-table td.pt-col-date{
+  position:sticky;left:0;z-index:2;background:var(--bg-base,#fff);min-width:86px}
+.pt-daily-table th.pt-col-camp,.pt-daily-table td.pt-col-camp{
+  position:sticky;left:86px;z-index:2;background:var(--bg-base,#fff);
+  min-width:190px;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  box-shadow:1px 0 0 var(--border-base,#e5e7eb)}
+.pt-daily-table th.pt-col-date,.pt-daily-table th.pt-col-camp{
+  z-index:3;background:var(--bg-subtle,#f9fafb)}
+/* border-spacing:0 bỏ mất viền dưới của <th>, vẽ lại bằng box-shadow. */
+.pt-daily-table th{box-shadow:inset 0 -1px 0 var(--border-base,#e5e7eb)}
+/* Ô Campaign lúc sửa cần rộng hơn để nhập tên camp dài. */
+.pt-daily-editing td.pt-col-camp{max-width:none;overflow:visible}
+.pt-daily-table th.pt-col-camp{
+  box-shadow:1px 0 0 var(--border-base,#e5e7eb),inset 0 -1px 0 var(--border-base,#e5e7eb)}
 .pt-daily-table th,.pt-daily-table td{padding:9px;border-bottom:1px solid var(--border-base,#eef0f2);text-align:left;font-size:12px}
 .pt-daily-table tr:last-child td{border-bottom:0}
 .pt-daily-table th{color:var(--fg-muted,#6b7280);background:var(--bg-subtle,#f9fafb);font-weight:600;white-space:nowrap}
