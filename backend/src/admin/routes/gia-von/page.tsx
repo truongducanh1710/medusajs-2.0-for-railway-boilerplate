@@ -26,7 +26,7 @@ interface SheetRow {
 
 // Schema cột dùng CHUNG với API (admin/lib/gia-von-schema) — một nguồn sự thật
 // duy nhất cho tên cột, kiểu dữ liệu và công thức, tránh FE/BE lệch nhau.
-import { TINH_CHAT, specAt, isValidCell, parseNumLoose } from "../../lib/gia-von-schema"
+import { TINH_CHAT, specAt, isValidCell, parseNumLoose, isProductCode } from "../../lib/gia-von-schema"
 
 /**
  * Bảng màu của trang. Neutral lệch vàng nhạt cho hợp bối cảnh kho/hoá đơn, accent
@@ -69,7 +69,7 @@ function parseViNum(s: string): string {
 // ─── Cell ─────────────────────────────────────────────────────────────────────
 
 function Cell({
-  value, colType, readOnly, onCommit, onFocus, onNav, inputRef, products, colId,
+  value, colType, readOnly, onCommit, onFocus, onNav, inputRef, products, colId, isCodeCol,
 }: {
   value: string
   colType: "text" | "number"
@@ -80,6 +80,8 @@ function Cell({
   inputRef?: (el: HTMLInputElement | null) => void
   products?: MktProduct[]
   colId?: string
+  /** Cột "Mã SP" (K): chỉ cho lưu mã, không lưu text tự do. */
+  isCodeCol?: boolean
 }) {
   // Cột SP (autocomplete): value lưu là code; resolve ngược ra tên để hiển thị cho dễ đọc.
   // Dữ liệu cũ có thể vẫn là tên text (chưa được chọn lại từ dropdown) — khi đó không match
@@ -122,6 +124,15 @@ function Cell({
     setDropdownPos(null)
     // Cột số: gõ ra thứ không phải số thì bỏ hẳn thay vì lưu rác vào báo cáo.
     if (colType === "number" && String(v).trim() && isNaN(parseNumLoose(v))) {
+      setDraft(editValue)
+      return
+    }
+    // Cột "Mã SP": chỉ được lưu MÃ, không lưu text tự do. Gõ tay rồi blur mà chưa chọn
+    // từ dropdown thì tự nắn theo tên SP; không khớp tên nào thì hoàn về giá trị cũ.
+    // Đây là nguyên nhân thật của lỗi cùng 1 SP tách nhiều dòng: cột K lẫn tên với mã.
+    if (isCodeCol && String(v).trim() && !isProductCode(v)) {
+      const byName = products?.find(p => p.name.trim().toUpperCase() === v.trim().toUpperCase())
+      if (byName) { if (byName.code !== value) onCommit(byName.code); return }
       setDraft(editValue)
       return
     }
@@ -431,7 +442,11 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
           const targetCol = currentCols[colIdx]
           const cellVal = pasteRows[ri][ci]
           // Dòng 0 là header (tên cột), không áp kiểu dữ liệu của cột lên nó.
-          if (rowIdx > 0 && !isValidCell(specAt(targetCol.position), cellVal)) { droppedCells++; continue }
+          // Cột "Mã SP" (kind "code") KHÔNG chặn ở đây: backend tự nắn tên SP → mã khi
+          // lưu, chặn sớm ở client sẽ vứt mất ô mà lẽ ra nắn được. Ô nắn không nổi mới
+          // bị backend loại và trả về trong `rejected`.
+          const targetSpec = specAt(targetCol.position)
+          if (rowIdx > 0 && targetSpec?.kind !== "code" && !isValidCell(targetSpec, cellVal)) { droppedCells++; continue }
           newData[targetCol.id] = cellVal
         }
         updates.push({ id: row.id, data: newData })
@@ -470,9 +485,24 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
     dirtyRef.current.clear()
     setSaveState("saving")
     try {
-      await apiJson("/admin/gia-von/sheet/rows", "PUT", { rows: toSave })
+      const d = await apiJson("/admin/gia-von/sheet/rows", "PUT", { rows: toSave })
       setSaveState("saved")
       setTimeout(() => setSaveState("idle"), 2000)
+      // Ô bị backend loại trước đây biến mất im lặng — người nhập tưởng đã lưu.
+      // Ô "Mã SP" ghi tên SP thì được nắn về mã (fixed), chỉ báo khi thật sự mất (rejected).
+      const rejected: string[] = d?.rejected ?? []
+      if (rejected.length > 0) {
+        alert(
+          `Không lưu được ${rejected.length} ô sai định dạng:\n\n` +
+          rejected.slice(0, 10).join("\n") +
+          (rejected.length > 10 ? `\n… và ${rejected.length - 10} ô khác` : "") +
+          `\n\nCột "Mã SP" chỉ nhận mã (vd PHVVN037_HDTP) — chọn lại SP từ danh sách gợi ý.`
+        )
+        // Kéo lại sheet để lưới khớp đúng DB (ô bị loại không còn hiển thị như đã lưu).
+        const sheet = await apiJson("/admin/gia-von/sheet", "GET")
+        setColumns(sheet.columns ?? [])
+        setRows(sheet.rows ?? [])
+      }
     } catch {
       setSaveState("error")
     }
@@ -880,6 +910,7 @@ function Spreadsheet({ canManage }: { canManage: boolean }) {
                         }}
                         products={isProductCol ? mktProducts : undefined}
                         colId={isProductCol ? col.id : undefined}
+                        isCodeCol={isProductCol}
                       />
                     )}
                   </td>

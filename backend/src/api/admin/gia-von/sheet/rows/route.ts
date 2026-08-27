@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
-import { specAt, isValidCell } from "../../../../../admin/lib/gia-von-schema"
+import { specAt, isValidCell, isProductCode } from "../../../../../admin/lib/gia-von-schema"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -20,20 +20,49 @@ async function loadColPositions(pool: Pool): Promise<Map<string, number>> {
   return posById
 }
 
-function sanitize(posById: Map<string, number>, data: Record<string, string>): {
-  clean: Record<string, string>; rejected: string[]
-} {
+/** TÊN SP (upper) → mã, để nắn cột K khi người dùng/paste đưa vào tên thay vì mã. */
+async function loadNameToCode(pool: Pool): Promise<Map<string, string>> {
+  const { rows } = await pool.query(
+    `SELECT name, code FROM mkt_product WHERE active = true AND name <> '' AND code <> ''`
+  )
+  const m = new Map<string, string>()
+  for (const p of rows) m.set(String(p.name).trim().toUpperCase(), String(p.code).trim().toUpperCase())
+  return m
+}
+
+function sanitize(
+  posById: Map<string, number>,
+  data: Record<string, string>,
+  nameToCode: Map<string, string>
+): { clean: Record<string, string>; rejected: string[]; fixed: string[] } {
   const clean: Record<string, string> = {}
   const rejected: string[] = []
+  const fixed: string[] = []
   for (const [colId, raw] of Object.entries(data ?? {})) {
     const pos = posById.get(colId)
     // Cột không còn trong schema (L..Z cũ): giữ nguyên giá trị, không render nhưng không mất.
     if (pos === undefined) { clean[colId] = String(raw ?? ""); continue }
     const spec = specAt(pos)
-    if (isValidCell(spec, String(raw ?? ""))) clean[colId] = String(raw ?? "")
-    else rejected.push(`${spec?.name ?? colId}: "${raw}"`)
+    const val = String(raw ?? "")
+
+    // Cột "Mã SP": nắn TÊN SP về mã thay vì vứt ô. PUT gửi full data mỗi lần sửa, nên
+    // nếu chỉ chặn thì sửa bất kỳ ô nào trên dòng cũ (cột K đang ghi tên) cũng làm mất
+    // luôn mã của dòng đó. Nắn được thì lưu mã; không nắn được mới loại.
+    if (spec?.kind === "code" && val.trim() && !isProductCode(val)) {
+      const mapped = nameToCode.get(val.trim().toUpperCase())
+      if (mapped) {
+        clean[colId] = mapped
+        fixed.push(`${spec.name}: "${val}" → ${mapped}`)
+      } else {
+        rejected.push(`${spec.name}: "${val}"`)
+      }
+      continue
+    }
+
+    if (isValidCell(spec, val)) clean[colId] = val
+    else rejected.push(`${spec?.name ?? colId}: "${val}"`)
   }
-  return { clean, rejected }
+  return { clean, rejected, fixed }
 }
 
 /**
@@ -53,13 +82,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     let nextPos = Number(maxpos) + 1
 
     const rejectedAll: string[] = []
+    const fixedAll: string[] = []
     let toInsert: { data: Record<string, string> }[] = []
     if (Array.isArray(body.rows)) {
-      const posById = await loadColPositions(pool)
+      const [posById, nameToCode] = await Promise.all([loadColPositions(pool), loadNameToCode(pool)])
       for (const r of body.rows) {
-        const { clean, rejected } = sanitize(posById, r.data ?? {})
+        const { clean, rejected, fixed } = sanitize(posById, r.data ?? {}, nameToCode)
         toInsert.push({ data: clean })
         rejectedAll.push(...rejected)
+        fixedAll.push(...fixed)
       }
     } else {
       const count = Math.max(1, Math.min(Number(body.count ?? 1), 200))
@@ -77,7 +108,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       nextPos++
     }
 
-    return res.json({ rows: inserted, rejected: rejectedAll })
+    return res.json({ rows: inserted, rejected: rejectedAll, fixed: fixedAll })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
@@ -97,18 +128,20 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     const pool = getPool()
     let updated = 0
     const rejectedAll: string[] = []
-    const posById = await loadColPositions(pool)
+    const fixedAll: string[] = []
+    const [posById, nameToCode] = await Promise.all([loadColPositions(pool), loadNameToCode(pool)])
     for (const r of body.rows) {
       if (!r.id) continue
-      const { clean, rejected } = sanitize(posById, r.data ?? {})
+      const { clean, rejected, fixed } = sanitize(posById, r.data ?? {}, nameToCode)
       rejectedAll.push(...rejected)
+      fixedAll.push(...fixed)
       await pool.query(
         `UPDATE cost_sheet_row SET data = $1, updated_at = now() WHERE id = $2`,
         [JSON.stringify(clean), r.id]
       )
       updated++
     }
-    return res.json({ updated, rejected: rejectedAll })
+    return res.json({ updated, rejected: rejectedAll, fixed: fixedAll })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

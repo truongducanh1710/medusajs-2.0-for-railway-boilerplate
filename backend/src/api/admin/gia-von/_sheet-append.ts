@@ -93,12 +93,20 @@ export async function appendLotToSheet(pool: Pool, lot: any): Promise<SheetAppen
     // Cột K là key gom nhóm của tab "Tổng kết giá TB" và là mã khớp sang báo cáo LNG:
     // ghi uuid vào đây làm mỗi lô nhập thành 1 nhóm riêng → cùng 1 SP hiện nhiều dòng,
     // và costs[code] bị ghi đè nên giá vốn = giá lô MỚI NHẤT thay vì bình quân gia quyền.
-    if (colMaSP && lot.product_id) {
+    // Tra theo id trước; id không khớp (SP xoá/chưa sync) thì fallback theo TÊN lô.
+    // Bỏ trống cột K là tái diễn đúng bug: dòng đó thành nhóm riêng theo tên, tách khỏi
+    // các lô cùng SP đã có mã → lại hiện 2 dòng trùng mã và giá vốn sai.
+    if (colMaSP) {
       const { rows: [prod] } = await pool.query(
-        `SELECT code FROM mkt_product WHERE id = $1`,
-        [lot.product_id]
+        `SELECT code FROM mkt_product
+          WHERE (id = $1 OR upper(trim(name)) = upper(trim($2))) AND code <> ''
+          ORDER BY (id = $1) DESC LIMIT 1`,
+        [lot.product_id ?? null, String(lot.product_title ?? "")]
       )
       if (prod?.code) data[colMaSP] = String(prod.code).trim().toUpperCase()
+      else console.warn(
+        `[gia-von] Lô "${lot.product_title}" (product_id=${lot.product_id}) không tra được mã SP — cột K để trống, tab Tổng kết giá TB sẽ tách nhóm riêng.`
+      )
     }
 
     const { rows: [{ maxpos }] } = await pool.query(

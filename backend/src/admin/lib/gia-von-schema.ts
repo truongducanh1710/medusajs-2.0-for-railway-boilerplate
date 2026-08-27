@@ -9,7 +9,14 @@
  *   B(1) Sản phẩm · C(2) Tính chất · D(3) Số lượng · I(8) Tổng tiền · K(10) Mã SP
  */
 
-export type ColKind = "text" | "number" | "enum" | "product"
+/**
+ * "product" = ô tên SP (cột B) — text tự do, chỉ gợi ý autocomplete.
+ * "code"    = ô MÃ SP (cột K) — CHỈ nhận mã dạng PHVVN###_XXX, xem isValidCell.
+ * Tách 2 kind vì cột K là key gom nhóm của tab Tổng kết giá TB và là mã khớp sang
+ * báo cáo LNG: ghi tên SP vào đây làm cùng 1 SP tách thành nhiều nhóm -> nhiều dòng
+ * trùng mã, giá vốn sai. Cột B thì ngược lại, phải cho gõ tên tự do.
+ */
+export type ColKind = "text" | "number" | "enum" | "product" | "code"
 
 export type SheetColSpec = {
   position: number
@@ -40,7 +47,7 @@ export const SHEET_SCHEMA: readonly SheetColSpec[] = [
   { position: 7,  name: "Phí khác",  col_type: "number", kind: "number",  width: 110 },
   { position: 8,  name: "Tổng tiền", col_type: "number", kind: "number",  width: 130, formula: true },
   { position: 9,  name: "Giá TB/sp", col_type: "number", kind: "number",  width: 120, formula: true },
-  { position: 10, name: "Mã SP",     col_type: "text",   kind: "product", width: 140 },
+  { position: 10, name: "Mã SP",     col_type: "text",   kind: "code",    width: 140 },
 ] as const
 
 /** Số cột cố định — mọi cột position >= giá trị này là cột thừa cần dọn. */
@@ -59,8 +66,20 @@ export function isValidCell(spec: SheetColSpec | undefined, raw: string): boolea
   if (!v) return true
   if (!spec) return true
   if (spec.kind === "enum") return (spec.options ?? []).includes(v as any)
+  if (spec.kind === "code") return isProductCode(v)
   if (spec.col_type === "number") return !isNaN(parseNumLoose(v))
   return true
+}
+
+/**
+ * Ô cột "Mã SP" có đúng DẠNG mã không (PHVVN### + hậu tố). Cố ý KHÔNG so với danh
+ * sách mkt_product: schema là module thuần, không truy DB được, và mã mới thêm ở
+ * Pancake chưa sync về sẽ bị chặn oan. Kiểm tra dạng đủ để loại nguyên nhân thật đã
+ * gặp — cột K bị ghi TÊN sản phẩm ("HỘP ĐỰNG THỰC PHẨM INOX") hoặc uuid.
+ * Cho phép chữ có dấu vì có mã thật dạng PHVVN023_GĐQA.
+ */
+export function isProductCode(raw: string): boolean {
+  return /^PHVVN\d{2,3}(_[^\s]+)?$/i.test(String(raw ?? "").trim())
 }
 
 /** "1.234.567" | "1234,5" | "1234" -> number; không parse được trả NaN. */
