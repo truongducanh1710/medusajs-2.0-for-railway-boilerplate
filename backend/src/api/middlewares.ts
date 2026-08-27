@@ -231,7 +231,11 @@ export default defineMiddlewares({
     { matcher: "/admin/cskh/suspicious*", method: ["GET"], middlewares: [requirePerm("page.cskh.manage")] },
     { matcher: "/admin/media", method: ["GET"], middlewares: [requirePerm("page.san-pham.edit")] },
     { matcher: "/admin/media", method: ["DELETE"], middlewares: [requirePerm("page.san-pham.edit")] },
-    { matcher: "/admin/gia-von*", method: ["GET"], middlewares: [requirePerm("page.gia-von.view")] },
+    // page.gia-von.summary là quyền HẸP cho tab "Tổng kết giá TB". Tab đó tính
+    // giá TB ngay ở trình duyệt từ /sheet nên vẫn phải cho GET — nghĩa là quyền
+    // này KHÔNG che được dữ liệu thô ở tầng API, chỉ ẩn tab trên giao diện.
+    // Muốn che thật thì phải đổi tab sang đọc /avg-cost (chỉ trả mã + giá TB).
+    { matcher: "/admin/gia-von*", method: ["GET"], middlewares: [requireAnyPerm("page.gia-von.view", "page.gia-von.summary")] },
     { matcher: "/admin/gia-von*", method: ["POST", "PUT", "DELETE"], middlewares: [requirePerm("page.gia-von.manage")] },
     { matcher: "/admin/webcake-leads*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/webcake-leads*", method: ["PATCH"], middlewares: [requirePerm("page.don-hang.edit")] },

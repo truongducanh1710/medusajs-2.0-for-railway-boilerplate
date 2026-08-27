@@ -89,8 +89,17 @@ export async function appendLotToSheet(pool: Pool, lot: any): Promise<SheetAppen
     if (colVat) data[colVat] = num(vat)
     if (colPhiKhac) data[colPhiKhac] = num(phiKhac)
     if (colGiaTb) data[colGiaTb] = num(giaTb)
-    // K giữ mã SP để báo cáo LNG khớp được lô này về đúng sản phẩm.
-    if (colMaSP && lot.product_id) data[colMaSP] = String(lot.product_id)
+    // K giữ MÃ SP (mkt_product.code, vd PHVVN037_HDTP) — KHÔNG phải product_id (uuid).
+    // Cột K là key gom nhóm của tab "Tổng kết giá TB" và là mã khớp sang báo cáo LNG:
+    // ghi uuid vào đây làm mỗi lô nhập thành 1 nhóm riêng → cùng 1 SP hiện nhiều dòng,
+    // và costs[code] bị ghi đè nên giá vốn = giá lô MỚI NHẤT thay vì bình quân gia quyền.
+    if (colMaSP && lot.product_id) {
+      const { rows: [prod] } = await pool.query(
+        `SELECT code FROM mkt_product WHERE id = $1`,
+        [lot.product_id]
+      )
+      if (prod?.code) data[colMaSP] = String(prod.code).trim().toUpperCase()
+    }
 
     const { rows: [{ maxpos }] } = await pool.query(
       `SELECT COALESCE(MAX(position), -1) as maxpos FROM cost_sheet_row`

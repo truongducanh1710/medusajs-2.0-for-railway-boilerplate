@@ -25,6 +25,7 @@ export const PERMISSIONS = {
   "page.cskh.manage": "Quản lý hiệu suất đội CSKH (xem KPI per nhân viên)",
   "page.gia-von.view": "Xem trang giá vốn",
   "page.gia-von.manage": "Nhập/sửa lô hàng giá vốn",
+  "page.gia-von.summary": "Xem giá vốn — CHỈ tab Tổng kết giá TB",
   "page.bao-cao.camp-control": "Bật/tắt camp + chỉnh ngân sách FB Ads",
   "page.bao-cao.fb-accounts": "Xem và quản lý tài khoản FB Ads (manager only)",
   "page.bao-cao.care-rules": "Cài rule chăm sóc camp tự động (tắt/budget/notify)",

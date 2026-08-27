@@ -2138,10 +2138,16 @@ function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+type GiaVonTab = "sheet" | "summary" | "cpqc" | "packing" | "supplier"
+
 function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
   const canManage = has("page.gia-von.manage")
-  const [tab, setTab] = useState<"sheet" | "summary" | "cpqc" | "packing" | "supplier">("sheet")
+  // page.gia-von.summary là quyền HẸP: chỉ mở tab "Tổng kết giá TB" cho người
+  // cần biết giá vốn trung bình mà không cần thấy chi tiết lô nhập, NCC, phí.
+  // page.gia-von.view vẫn thấy toàn bộ tab như trước.
+  const summaryOnly = !has("page.gia-von.view") && has("page.gia-von.summary")
+  const [tab, setTab] = useState<GiaVonTab>(summaryOnly ? "summary" : "sheet")
 
   if (loading) {
     return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
@@ -2152,14 +2158,19 @@ function GiaVonPage() {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: "#111827" }}>Bảng giá vốn</h1>
         <p style={{ fontSize: 12, color: "#9ca3af", margin: "3px 0 0" }}>
-          Double-click ô để sửa · Double-click tên cột để đổi tên · Paste từ Excel/GG Sheets trực tiếp
-          {canManage ? "" : " · (chỉ xem)"}
+          {summaryOnly
+            ? "Giá vốn trung bình mỗi sản phẩm — tính từ các lô đã nhập"
+            : "Double-click ô để sửa · Double-click tên cột để đổi tên · Paste từ Excel/GG Sheets trực tiếp"}
+          {!summaryOnly && !canManage ? " · (chỉ xem)" : ""}
         </p>
       </div>
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "2px solid #e5e7eb" }}>
-        {([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"], ["supplier", "Nhà cung cấp"]] as const).map(([key, label]) => (
+        {(summaryOnly
+          ? ([["summary", "Tổng kết giá TB"]] as const)
+          : ([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"], ["supplier", "Nhà cung cấp"]] as const)
+        ).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
               padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -2174,7 +2185,8 @@ function GiaVonPage() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        {tab === "sheet" ? <Spreadsheet canManage={canManage} />
+        {summaryOnly ? <SummaryTab />
+          : tab === "sheet" ? <Spreadsheet canManage={canManage} />
           : tab === "summary" ? <SummaryTab />
           : tab === "packing" ? <PackingCostTab canManage={canManage} />
           : tab === "supplier" ? <SupplierTab canManage={canManage} />
