@@ -59,19 +59,40 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const syncService = req.scope.resolve("ityCdrSyncModule") as any
     const existing = await syncService.listItyExtensionMaps({ extension }, { take: 1 })
 
+    // display_name là thứ BÁO CÁO đọc để hiện tên nhân viên (report/route.ts gom
+    // theo extension rồi tra display_name). Trước đây UI chỉ gửi user_id nên đổi
+    // người xong tên cũ vẫn nằm nguyên — báo cáo tiếp tục ghi cho người cũ hàng
+    // tháng trời. Vì vậy suy tên từ user_id ngay tại đây thay vì tin vào client.
+    let resolvedName = display_name
+    if (resolvedName === undefined) {
+      if (user_id) {
+        const userService = req.scope.resolve(Modules.USER) as any
+        const [u] = await userService.listUsers(
+          { id: user_id },
+          { select: ["id", "email", "first_name", "last_name"], take: 1 },
+        )
+        resolvedName = u
+          ? [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
+          : ""
+      } else if (user_id === null) {
+        // Bỏ gán thì xoá luôn tên, không để tên người cũ treo lại.
+        resolvedName = ""
+      }
+    }
+
     let saved
     if (existing.length > 0) {
       saved = await syncService.updateItyExtensionMaps({
         id: existing[0].id,
         ...(user_id !== undefined ? { user_id } : {}),
-        ...(display_name !== undefined ? { display_name } : {}),
+        ...(resolvedName !== undefined ? { display_name: resolvedName } : {}),
         ...(note !== undefined ? { note } : {}),
       })
     } else {
       saved = await syncService.createItyExtensionMaps({
         extension,
         user_id: user_id ?? null,
-        display_name: display_name ?? "",
+        display_name: resolvedName ?? "",
         note: note ?? null,
       })
     }

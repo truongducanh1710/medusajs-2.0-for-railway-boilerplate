@@ -1,4 +1,11 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Pool } from "pg"
+
+let _pool: Pool | null = null
+function getPool(): Pool {
+  if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  return _pool
+}
 
 // Chuẩn hoá from/to về đúng mốc UTC của đầu/cuối ngày GIỜ VN. BUG THẬT đã xảy ra: khi
 // caller gửi "YYYY-MM-DD" thuần (không có phần giờ — đúng cách agent-mcp's
@@ -46,6 +53,42 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       maps.map((m: any) => [m.extension, m.display_name || m.extension])
     )
 
+    // Lịch sử bàn giao máy nhánh. Một extension có thể qua nhiều người, nên tên
+    // phải tra theo (extension × NGÀY GỌI) chứ không phải người đang dùng hiện
+    // tại — nếu không, đổi người là toàn bộ cuộc gọi cũ nhảy sang tên người mới.
+    let history: {
+      extension: string
+      display_name: string
+      effective_from: string
+      effective_to: string | null
+    }[] = []
+    try {
+      const { rows } = await getPool().query(
+        `SELECT extension, display_name, effective_from::text, effective_to::text
+         FROM ity_extension_history ORDER BY effective_from ASC`,
+      )
+      history = rows ?? []
+    } catch { /* bảng chưa tạo — dùng tên hiện tại như trước */ }
+
+    /** Khoá gom là "ext|tên" — tách lại để trả về đúng hai trường riêng. */
+    const splitKey = (key: string): { extension: string; name: string } => {
+      const i = key.indexOf("|")
+      return i < 0
+        ? { extension: key, name: nameByExtension[key] || key }
+        : { extension: key.slice(0, i), name: key.slice(i + 1) }
+    }
+
+    /** Ai đang dùng extension này vào ngày đó (YYYY-MM-DD). */
+    const ownerAt = (ext: string, day: string): string => {
+      for (const h of history) {
+        if (h.extension !== ext) continue
+        if (day < h.effective_from) continue
+        if (h.effective_to && day > h.effective_to) continue
+        return h.display_name
+      }
+      return nameByExtension[ext] || ext
+    }
+
     // ---- Aggregate theo extension (so sánh sale) ----
     const byExt: Record<string, { total: number; answered: number; totalBillsec: number; totalDuration: number; activeDays: Set<string> }> = {}
     // ---- Aggregate theo giờ (xu hướng thời gian trong ngày) ----
@@ -59,7 +102,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const byDayExtTotal: Record<string, Record<string, number>> = {}
 
     for (const c of calls as any[]) {
-      const ext = c.extension || "unknown"
+      const rawExt = c.extension || "unknown"
+      // Khoá gom là "extension|người tại thời điểm gọi": cùng một máy nhánh nhưng
+      // hai giai đoạn hai người thì phải ra hai dòng, không cộng chung.
+      const dayForOwner = new Date(new Date(c.calldate).getTime() + 7 * 3600 * 1000)
+        .toISOString().slice(0, 10)
+      const owner = ownerAt(rawExt, dayForOwner)
+      const ext = `${rawExt}|${owner}`
       if (!byExt[ext]) byExt[ext] = { total: 0, answered: 0, totalBillsec: 0, totalDuration: 0, activeDays: new Set() }
       byExt[ext].total++
       if (c.disposition === "ANSWERED") byExt[ext].answered++
@@ -93,14 +142,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const bySale = Object.entries(byExt)
-      .map(([extension, stats]) => {
+      .map(([extKey, stats]) => {
+        const { extension, name } = splitKey(extKey)
         // Mẫu số = số ngày nhân viên THỰC SỰ có cuộc gọi trong khoảng đã chọn × giờ/ca —
         // tránh xem tuần/tháng mà vẫn chia cho 1 ca duy nhất (khiến % bị nhỏ giả tạo).
         const activeDayCount = Math.max(1, stats.activeDays.size)
         const shiftSeconds = shiftHours * 3600 * activeDayCount
         return {
           extension,
-          name: nameByExtension[extension] || extension,
+          name,
           total_calls: stats.total,
           answered: stats.answered,
           answered_rate: stats.total > 0 ? Math.round((stats.answered / stats.total) * 1000) / 10 : 0,
@@ -121,13 +171,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Heatmap giờ × nhân viên — lộ khoảng "chết" của từng người trong ca, không bị gộp
     // chung như by_hour (chỉ tính nhân viên có ít nhất 1 cuộc trong khoảng đã chọn).
-    const byHourExtArr = Object.entries(byExt).map(([extension]) => ({
-      extension,
-      name: nameByExtension[extension] || extension,
+    const byHourExtArr = Object.entries(byExt).map(([extKey]) => ({
+      ...splitKey(extKey),
       hours: Array.from({ length: 24 }, (_, h) => ({
         hour: h,
-        total_calls: byHourExt[extension]?.[h]?.total ?? 0,
-        answered: byHourExt[extension]?.[h]?.answered ?? 0,
+        total_calls: byHourExt[extKey]?.[h]?.total ?? 0,
+        answered: byHourExt[extKey]?.[h]?.answered ?? 0,
       })),
     }))
 
@@ -137,11 +186,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       .sort()
       .map((day) => ({
         day,
-        by_extension: Object.entries(byDaySale[day]).map(([extension, b]) => {
+        by_extension: Object.entries(byDaySale[day]).map(([extKey, b]) => {
+          const { extension, name } = splitKey(extKey)
           const total = b.answered + b.no_answer + b.busy + b.other
           return {
             extension,
-            name: nameByExtension[extension] || extension,
+            name,
             answered: b.answered,
             no_answer: b.no_answer,
             busy: b.busy,
@@ -162,9 +212,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     )
     const trendByExtDay: Record<string, Record<string, number>> = {}
     for (const c of trendCalls as any[]) {
-      const ext = c.extension || "unknown"
+      const rawExt = c.extension || "unknown"
       const callDateVN = new Date(new Date(c.calldate).getTime() + 7 * 3600 * 1000)
       const dayStr = callDateVN.toISOString().slice(0, 10)
+      // Cùng khoá ghép với byExt để sparkline khớp đúng dòng của từng người.
+      const ext = `${rawExt}|${ownerAt(rawExt, dayStr)}`
       if (!trendByExtDay[ext]) trendByExtDay[ext] = {}
       trendByExtDay[ext][dayStr] = (trendByExtDay[ext][dayStr] || 0) + 1
     }
