@@ -1130,18 +1130,37 @@ function SummaryTab() {
     if (p.name && p.code) nameToCode[p.name.trim().toUpperCase()] = p.code
   }
 
-  const summary = Object.values(groupMap)
+  const rowsWithCode = Object.values(groupMap)
     .filter(g => g.tenChinh || g.soLuong > 0)
     .map(g => {
       const tongTienTong = g.tongTienChinh + g.tongTienPhuKien
-      const giaTB = g.soLuong > 0 ? tongTienTong / g.soLuong : 0
       const tenChinh = g.tenChinh || g.nhom
       const nhomUpper = g.nhom.trim().toUpperCase()
       const matchedCode = (nhomUpper && codeSet.has(nhomUpper))
         ? nhomUpper
         : nameToCode[nhomUpper] ?? nameToCode[tenChinh.toUpperCase()]
-      return { ...g, tongTienTong, giaTB, matchedCode }
+      return { ...g, tenChinh, tongTienTong, matchedCode }
     })
+
+  // Gộp các nhóm CÙNG MÃ thành 1 dòng, giá TB = bình quân gia quyền — khớp đúng
+  // computeAvgCost ở backend. Cùng 1 SP nhập nhiều đợt (hoặc dữ liệu cũ có cột K ghi
+  // uuid nên mỗi lô tách 1 nhóm) trước đây hiện thành nhiều dòng trùng mã, trong khi
+  // báo cáo LNG chỉ dùng được 1 giá duy nhất → số trên bảng không khớp số trong báo cáo.
+  // Nhóm chưa khớp mã giữ nguyên từng dòng (không có mã để gộp an toàn).
+  const mergedMap = new Map<string, typeof rowsWithCode[number]>()
+  const summary = rowsWithCode
+    .filter(g => {
+      if (!g.matchedCode) return true
+      const prev = mergedMap.get(g.matchedCode)
+      if (!prev) { mergedMap.set(g.matchedCode, g); return true }
+      prev.soLuong += g.soLuong
+      prev.tongTienChinh += g.tongTienChinh
+      prev.tongTienPhuKien += g.tongTienPhuKien
+      prev.tongTienTong += g.tongTienTong
+      for (const t of g.tenPhuKien) if (!prev.tenPhuKien.includes(t)) prev.tenPhuKien.push(t)
+      return false
+    })
+    .map(g => ({ ...g, giaTB: g.soLuong > 0 ? g.tongTienTong / g.soLuong : 0 }))
     .sort((a, b) => b.giaTB - a.giaTB)
 
   if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>

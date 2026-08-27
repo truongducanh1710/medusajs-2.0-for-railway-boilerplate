@@ -175,12 +175,17 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   let mapped = 0
   let total = 0
 
+  // Cộng dồn theo MÃ trước, chia sau — KHÔNG gán costs[code] = giaTB trong vòng lặp.
+  // Nhiều nhóm sheet có thể cùng 1 mã (mỗi đợt nhập hàng 1 dòng, hoặc dữ liệu cũ có cột K
+  // ghi uuid nên mỗi lô tách thành 1 nhóm). Gán đè khiến giá vốn = giá lô CUỐI theo
+  // position, kể cả khi lô đó chỉ vài chục sp còn lô trước cả chục nghìn sp.
+  const accByCode: Record<string, { tien: number; sl: number }> = {}
+
   for (const g of Object.values(groupMap)) {
     if (!g.tenChinh && g.soLuong === 0) continue
     total++
-    const giaTB = g.soLuong > 0
-      ? Math.round((g.tongTienChinh + g.tongTienPhuKien) / g.soLuong)
-      : 0
+    const tongTien = g.tongTienChinh + g.tongTienPhuKien
+    const giaTB = g.soLuong > 0 ? Math.round(tongTien / g.soLuong) : 0
     const tenChinh = g.tenChinh || g.nhom
     byName[tenChinh.toUpperCase()] = giaTB
 
@@ -191,17 +196,26 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
       ? nhomUpper
       : nameToCode[nhomUpper] ?? nameToCode[tenChinh.toUpperCase()]
     if (code) {
-      costs[code] = giaTB
+      const acc = (accByCode[code] ??= { tien: 0, sl: 0 })
+      acc.tien += tongTien
+      acc.sl += g.soLuong
       mapped++
     } else {
       unlinked.push({ label: tenChinh || g.nhom, gia_tb: giaTB })
     }
   }
 
-  // Dựng byPrefix TỪ costs (sau khi gom), không tích lũy trong vòng lặp: nhiều nhóm sheet
-  // có thể cùng 1 mã (vd 4 dòng KHAY LỌC DẦU nhập các đợt nhập hàng khác nhau) và costs
-  // giữ giá của nhóm cuối. Nếu gom từng giaTB thì prefix thấy nhiều giá và bị loại oan —
-  // đúng trường hợp PHVVN038 mất giá vốn dù chỉ có 1 mã duy nhất.
+  // Bình quân gia quyền theo số lượng. Nhóm SL=0 (chỉ có phụ kiện, không có SP chính)
+  // không chia được — bỏ qua để khỏi sinh Infinity/NaN lọt vào báo cáo LNG.
+  for (const [code, acc] of Object.entries(accByCode)) {
+    if (acc.sl > 0) costs[code] = Math.round(acc.tien / acc.sl)
+  }
+
+  // Dựng byPrefix TỪ costs (sau khi đã gom + bình quân gia quyền), không tích lũy trong
+  // vòng lặp: nhiều nhóm sheet có thể cùng 1 mã (vd 4 dòng KHAY LỌC DẦU nhập các đợt khác
+  // nhau) và costs giờ chỉ còn 1 giá duy nhất cho mã đó. Nếu gom từng giaTB của mỗi nhóm
+  // thì prefix thấy nhiều giá và bị loại oan — đúng trường hợp PHVVN038 mất giá vốn dù
+  // chỉ có 1 mã duy nhất.
   // Chỉ loại khi 2 MÃ KHÁC NHAU cùng prefix cho giá khác nhau (lúc đó không đoán được).
   const prefixHits: Record<string, Set<number>> = {}
   for (const [code, giaTB] of Object.entries(costs)) {
