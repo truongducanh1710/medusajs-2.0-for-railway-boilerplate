@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../lib/db"
+import { loadSkuMapCosts } from "../_sku-map"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -152,7 +153,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Thứ tự tra giá vốn: phụ kiện (tên) → tên SP chính → mã → prefix. Xem oi2 bên dưới.
+    // SKU sàn khai tay ở tab "Khớp SP sàn" — tra TRƯỚC mọi nấc tự động bên dưới.
+    const skuMapCost = await loadSkuMapCosts(getPool(), avgCost, accessoryCost)
+
     const costEntries = [
+      ...Object.entries(skuMapCost).map(([k, v]) => ["skumap", k, v] as const),
       ...Object.entries(accessoryCost).map(([k, v]) => ["accessory", k, v] as const),
       ...Object.entries(avgCost.costs).map(([k, v]) => ["code", k, v] as const),
       ...Object.entries(avgCost.byPrefix).map(([k, v]) => ["prefix", k, v] as const),
@@ -200,6 +205,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           -- Tên trong cost_sheet tách được "GIẺ LAU NHÀ TÁCH NƯỚC" (10.719đ) khỏi
           -- "BỘ LAU NHÀ TÁCH NƯỚC" (226.540đ) nên khớp tên mới ra đúng món.
           COALESCE(
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = upper(oi.sp_code)),
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
@@ -292,6 +299,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi2 AS (
         SELECT oi.*,
           COALESCE(
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = upper(oi.sp_code)),
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),

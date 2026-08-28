@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../../lib/db"
+import { loadSkuMapCosts } from "../../_sku-map"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -31,7 +32,7 @@ const FULLFILL_PER_ORDER = 5000
  * Mọi công thức bám sát ../route.ts để tổng ở đây khớp dòng ngày tương ứng:
  *  • doanh thu thực nhận = total_price_after_sub_discount (fallback cod_amount/total)
  *  • DT trước phí sàn    = thực nhận + fee_marketplace
- *  • giá vốn             = tra theo tên phụ kiện → tên SP → mã → prefix, nhân số lượng
+ *  • giá vốn             = SKU khai tay → tên phụ kiện → tên SP → mã → prefix, × số lượng
  *  • fullfill            = 5.000đ/đơn, chỉ tính đơn đã tra được giá vốn
  *  • mode "thuc" chỉ status=3; mode "tt" gồm status 1,2,3,8 (đã xác nhận cho đi)
  *
@@ -108,7 +109,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // SKU sàn khai tay ở tab "Khớp SP sàn" — tra TRƯỚC mọi nấc tự động (giống ../route.ts).
+    const skuMapCost = await loadSkuMapCosts(getPool(), avgCost, accessoryCost)
+
     const costEntries = [
+      ...Object.entries(skuMapCost).map(([k, v]) => ["skumap", k, v] as const),
       ...Object.entries(accessoryCost).map(([k, v]) => ["accessory", k, v] as const),
       ...Object.entries(avgCost.costs).map(([k, v]) => ["code", k, v] as const),
       ...Object.entries(avgCost.byPrefix).map(([k, v]) => ["prefix", k, v] as const),
@@ -159,6 +164,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi2 AS (
         SELECT oi.*,
           COALESCE(
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = upper(oi.sp_code)),
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),

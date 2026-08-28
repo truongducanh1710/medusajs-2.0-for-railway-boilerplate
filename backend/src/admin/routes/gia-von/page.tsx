@@ -2219,7 +2219,241 @@ function CpqcCalculatorTab({ canManage }: { canManage: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type GiaVonTab = "sheet" | "summary" | "cpqc" | "packing" | "supplier"
+// ─── SKU Mapping Tab ─────────────────────────────────────────────────────────
+/**
+ * Khớp SKU sàn (Shopee/TikTok) với mã SP để báo cáo LNG sàn tra được giá vốn.
+ *
+ * Trên sàn, người đăng bán tự đặt tên và sàn tự sinh SKU, vd
+ * "336391824840 - SET COMBO 2 Chổi Vệ Sinh INOX 304…" — không khớp mã nào trong bảng
+ * giá vốn nên đơn chứa nó bị đánh dấu "thiếu giá vốn" ở tab Sàn TMĐT.
+ *
+ * Khai được combo: 1 SKU = nhiều mã × số lượng, giá vốn cộng lại.
+ */
+function SkuMappingTab({ canManage }: { canManage: boolean }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const [days, setDays] = useState(30)
+  const [view, setView] = useState<"unmatched" | "matched">("unmatched")
+  const [editing, setEditing] = useState<any | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true); setErr(null)
+    apiJson(`/admin/gia-von/sku-mapping?days=${days}`, "GET")
+      .then((d: any) => { if (d.error) throw new Error(d.error); setData(d) })
+      .catch((e: any) => setErr(e.message))
+      .finally(() => setLoading(false))
+  }, [days])
+
+  useEffect(() => { load() }, [load])
+
+  const money = (n: any) =>
+    n == null ? "—" : Number(n).toLocaleString("vi-VN") + "đ"
+
+  async function save(skuKey: string, parts: any[], note: string) {
+    setSaving(true)
+    try {
+      await apiJson("/admin/gia-von/sku-mapping", "POST", { sku_key: skuKey, parts, note })
+      setEditing(null)
+      load()
+    } catch (e: any) {
+      alert("Lưu thất bại: " + (e?.message ?? ""))
+    } finally { setSaving(false) }
+  }
+
+  async function remove(skuKey: string) {
+    if (!confirm(`Xoá khớp cho SKU này?\n\n${skuKey}`)) return
+    try {
+      await apiJson(`/admin/gia-von/sku-mapping?sku_key=${encodeURIComponent(skuKey)}`, "DELETE")
+      load()
+    } catch (e: any) { alert("Xoá thất bại: " + (e?.message ?? "")) }
+  }
+
+  if (loading) return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải…</div>
+  if (err) return <div style={{ padding: 24, color: "#dc2626", fontSize: 14 }}>⚠ {err}</div>
+  if (!data) return null
+
+  const s = data.summary ?? {}
+  const list = view === "unmatched" ? data.unmatched : data.matched
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {([["unmatched", `Chưa khớp (${s.unmatched ?? 0})`],
+             ["matched", `Đã khớp (${s.matched ?? 0})`]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setView(k)}
+              style={{
+                padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                borderRadius: 8, border: "1px solid " + (view === k ? "#7c3aed" : "#e5e7eb"),
+                background: view === k ? "#7c3aed" : "#fff",
+                color: view === k ? "#fff" : "#6b7280",
+              }}>{label}</button>
+          ))}
+        </div>
+        <select value={days} onChange={e => setDays(Number(e.target.value))}
+          style={{ padding: "6px 10px", fontSize: 12.5, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#111827" }}>
+          {[7, 30, 90, 180].map(d => <option key={d} value={d}>{d} ngày gần đây</option>)}
+        </select>
+        {s.incomplete > 0 && (
+          <span style={{ fontSize: 12, color: "#b45309" }}>
+            ⚠ {s.incomplete} SKU đã khớp nhưng mã con chưa có giá vốn
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.6 }}>
+        {view === "unmatched" ? (
+          <>SKU sàn xuất hiện trong đơn thật nhưng <b>chưa tra được giá vốn</b> — đơn chứa chúng
+            đang bị đánh dấu "thiếu giá vốn" ở tab Sàn TMĐT và bị loại khỏi LNG.
+            {" "}Bấm <b>Khớp</b> để chọn SP tương ứng; combo thì thêm nhiều dòng.
+            {" "}SKU tự khớp được rồi không hiện ở đây.</>
+        ) : (
+          <>Các SKU đã khai tay. Khai tay <b>được ưu tiên hơn</b> mọi cách tự khớp,
+            nên nếu số nào sai thì sửa ở đây là báo cáo đổi theo.</>
+        )}
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead style={{ position: "sticky", top: 0, background: "#f9fafb", zIndex: 1 }}>
+            <tr style={{ color: "#6b7280", textAlign: "left" }}>
+              <th style={{ padding: "9px 12px", fontWeight: 700 }}>Tên SKU trên sàn</th>
+              <th style={{ padding: "9px 12px", fontWeight: 700, width: 80 }}>Sàn</th>
+              <th style={{ padding: "9px 12px", fontWeight: 700, width: 70, textAlign: "right" }}>Đơn</th>
+              <th style={{ padding: "9px 12px", fontWeight: 700, width: 70, textAlign: "right" }}>SL</th>
+              {view === "matched" && (
+                <>
+                  <th style={{ padding: "9px 12px", fontWeight: 700 }}>Khớp với</th>
+                  <th style={{ padding: "9px 12px", fontWeight: 700, width: 110, textAlign: "right" }}>Giá vốn</th>
+                </>
+              )}
+              <th style={{ padding: "9px 12px", fontWeight: 700, width: 120 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.length === 0 && (
+              <tr><td colSpan={view === "matched" ? 7 : 5}
+                style={{ padding: "28px 12px", textAlign: "center", color: "#9ca3af" }}>
+                {view === "unmatched" ? "🎉 Không còn SKU nào thiếu giá vốn" : "Chưa khai SKU nào"}
+              </td></tr>
+            )}
+            {list.map((r: any, i: number) => (
+              <tr key={i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                <td style={{ padding: "9px 12px", color: "#111827" }}>
+                  {r.sku_name}
+                  {r.sku_code && <span style={{ marginLeft: 6, color: "#9ca3af", fontSize: 11 }}>{r.sku_code}</span>}
+                </td>
+                <td style={{ padding: "9px 12px", color: "#6b7280" }}>
+                  {r.platform === "tiktok" ? "TikTok" : "Shopee"}
+                </td>
+                <td style={{ padding: "9px 12px", textAlign: "right", color: "#111827", fontWeight: 600 }}>{r.orders}</td>
+                <td style={{ padding: "9px 12px", textAlign: "right", color: "#6b7280" }}>{r.qty}</td>
+                {view === "matched" && (
+                  <>
+                    <td style={{ padding: "9px 12px", color: "#374151" }}>
+                      {r.parts.map((p: any, j: number) => (
+                        <span key={j} style={{ marginRight: 8 }}>
+                          {p.qty > 1 && <b>{p.qty}× </b>}{p.product_code}
+                          {p.unit_cost == null && <span style={{ color: "#b45309" }}> (chưa có giá vốn)</span>}
+                        </span>
+                      ))}
+                    </td>
+                    <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 700, color: r.incomplete ? "#b45309" : "#111827" }}>
+                      {r.incomplete ? "thiếu" : money(r.cost)}
+                    </td>
+                  </>
+                )}
+                <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                  {canManage && (
+                    <>
+                      <button onClick={() => setEditing({
+                        sku_key: (r.matched_key ?? r.sku_name),
+                        sku_name: r.sku_name,
+                        parts: r.parts?.length ? r.parts.map((p: any) => ({ ...p })) : [{ product_code: "", qty: 1 }],
+                        note: r.note ?? "",
+                      })}
+                        style={{ padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", borderRadius: 6, border: "1px solid #7c3aed", background: "#fff", color: "#7c3aed" }}>
+                        {view === "matched" ? "Sửa" : "Khớp"}
+                      </button>
+                      {view === "matched" && (
+                        <button onClick={() => remove(r.matched_key ?? r.sku_name)}
+                          style={{ marginLeft: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", color: "#9ca3af" }}>
+                          ×
+                        </button>
+                      )}
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && createPortal(
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget) setEditing(null) }}>
+          <div style={{ background: "#fff", borderRadius: 12, width: "100%", maxWidth: 620, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb" }}>
+              <div style={{ fontWeight: 800, color: "#111827", fontSize: 15 }}>Khớp SKU sàn với sản phẩm</div>
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4, wordBreak: "break-word" }}>{editing.sku_name}</div>
+            </div>
+            <div style={{ padding: "16px 20px", overflow: "auto", flex: 1 }}>
+              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+                SKU này gồm những sản phẩm nào? Combo thì thêm nhiều dòng —
+                giá vốn sẽ được <b>cộng lại</b> theo số lượng.
+              </div>
+              {editing.parts.map((p: any, i: number) => (
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                  <select value={p.product_code}
+                    onChange={e => setEditing((s: any) => {
+                      const parts = [...s.parts]; parts[i] = { ...parts[i], product_code: e.target.value }
+                      return { ...s, parts }
+                    })}
+                    style={{ flex: 1, padding: "7px 10px", fontSize: 12.5, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#111827" }}>
+                    <option value="">— chọn sản phẩm —</option>
+                    {(data.products ?? []).map((pr: any) => (
+                      <option key={pr.code} value={pr.code}>{pr.code} — {pr.name}</option>
+                    ))}
+                  </select>
+                  <input type="number" min={1} value={p.qty}
+                    onChange={e => setEditing((s: any) => {
+                      const parts = [...s.parts]; parts[i] = { ...parts[i], qty: Number(e.target.value) || 1 }
+                      return { ...s, parts }
+                    })}
+                    title="Số lượng món này trong SKU"
+                    style={{ width: 70, padding: "7px 10px", fontSize: 12.5, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#111827", textAlign: "right" }} />
+                  <button onClick={() => setEditing((s: any) => ({ ...s, parts: s.parts.filter((_: any, j: number) => j !== i) }))}
+                    disabled={editing.parts.length <= 1}
+                    style={{ padding: "6px 10px", fontSize: 13, cursor: editing.parts.length <= 1 ? "not-allowed" : "pointer", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", color: "#9ca3af" }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => setEditing((s: any) => ({ ...s, parts: [...s.parts, { product_code: "", qty: 1 }] }))}
+                style={{ padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", borderRadius: 6, border: "1px dashed #c4b5fd", background: "#faf5ff", color: "#7c3aed" }}>
+                + Thêm sản phẩm (combo)
+              </button>
+              <input value={editing.note} onChange={e => setEditing((s: any) => ({ ...s, note: e.target.value }))}
+                placeholder="Ghi chú (không bắt buộc)"
+                style={{ width: "100%", marginTop: 12, padding: "7px 10px", fontSize: 12.5, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#111827", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setEditing(null)}
+                style={{ padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#6b7280" }}>Huỷ</button>
+              <button disabled={saving || !editing.parts.some((p: any) => p.product_code)}
+                onClick={() => save(editing.sku_key, editing.parts.filter((p: any) => p.product_code), editing.note)}
+                style={{ padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", opacity: saving ? .6 : 1 }}>
+                {saving ? "Đang lưu…" : "Lưu"}
+              </button>
+            </div>
+          </div>
+        </div>, document.body)}
+    </div>
+  )
+}
+
+type GiaVonTab = "sheet" | "summary" | "cpqc" | "packing" | "supplier" | "skumap"
 
 function GiaVonPage() {
   const { has, loading } = useCurrentPermissions()
@@ -2250,7 +2484,7 @@ function GiaVonPage() {
       <div style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "2px solid #e5e7eb" }}>
         {(summaryOnly
           ? ([["summary", "Tổng kết giá TB"]] as const)
-          : ([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"], ["supplier", "Nhà cung cấp"]] as const)
+          : ([["sheet", "Bảng dữ liệu"], ["summary", "Tổng kết giá TB"], ["skumap", "Khớp SP sàn"], ["cpqc", "Target CPQC"], ["packing", "Chi phí đóng gói"], ["supplier", "Nhà cung cấp"]] as const)
         ).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             style={{
@@ -2271,6 +2505,7 @@ function GiaVonPage() {
           : tab === "summary" ? <SummaryTab />
           : tab === "packing" ? <PackingCostTab canManage={canManage} />
           : tab === "supplier" ? <SupplierTab canManage={canManage} />
+          : tab === "skumap" ? <SkuMappingTab canManage={canManage} />
           : <CpqcCalculatorTab canManage={canManage} />}
       </div>
     </div>
