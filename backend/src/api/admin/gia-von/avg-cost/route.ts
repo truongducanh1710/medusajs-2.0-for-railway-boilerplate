@@ -49,6 +49,11 @@ export const COMBO_COMPOSITION: Record<string, { code: string; qty: number }[]> 
     { code: "PHVVN037_HDTP", qty: 5 },  // 5 HỘP ĐỰNG THỰC PHẨM INOX
     { code: "PHVVN038_KLD", qty: 2 },   // 2 KHAY LỌC DẦU
   ],
+  // COMBO 1 KHAY 3 HỘP
+  PHVVN051_CB2: [
+    { code: "PHVVN037_HDTP", qty: 3 },  // 3 HỘP ĐỰNG THỰC PHẨM INOX
+    { code: "PHVVN038_KLD", qty: 1 },   // 1 KHAY LỌC DẦU
+  ],
 }
 
 export function resolveDisplayId(displayId: string | null | undefined): string | null {
