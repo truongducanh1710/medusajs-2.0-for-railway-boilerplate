@@ -33,6 +33,24 @@ export const DISPLAY_ID_ALIASES: Record<string, string> = {
   PHVVN041_GBCX: "PHVVN031_BCX",
 }
 
+/**
+ * COMBO = nhiều SP đã có giá vốn gộp lại bán chung, POS sinh MÃ MỚI cho combo đó.
+ *
+ * Không dùng được DISPLAY_ID_ALIASES: alias map combo về MỘT mã nên chỉ lấy giá vốn của
+ * một thành phần, bỏ hẳn phần còn lại (combo 2 khay 5 hộp map về hộp inox sẽ tính thiếu
+ * 2 khay → lãi ảo). Ở đây khai thành phần để cộng đúng: giá vốn combo = Σ(vốn mã con × SL).
+ *
+ * Chỉ khai combo mà MỌI thành phần đều đã có giá vốn — thiếu 1 mã con thì combo bị bỏ qua
+ * (trả về không có giá vốn) thay vì cộng ra số thiếu và im lặng báo lãi ảo.
+ */
+export const COMBO_COMPOSITION: Record<string, { code: string; qty: number }[]> = {
+  // COMBO 2 KHAY 5 HỘP INOX
+  PHVVN050_CB1: [
+    { code: "PHVVN037_HDTP", qty: 5 },  // 5 HỘP ĐỰNG THỰC PHẨM INOX
+    { code: "PHVVN038_KLD", qty: 2 },   // 2 KHAY LỌC DẦU
+  ],
+}
+
 export function resolveDisplayId(displayId: string | null | undefined): string | null {
   if (!displayId) return null
   const upper = displayId.trim().toUpperCase()
@@ -225,6 +243,24 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   const byPrefix: Record<string, number> = {}
   for (const [p, vals] of Object.entries(prefixHits)) {
     if (vals.size === 1) byPrefix[p] = [...vals][0]
+  }
+
+  // Giá vốn COMBO = Σ(giá vốn mã con × SL). Tính SAU costs/byPrefix để thành phần tra
+  // được qua đúng chuỗi fallback như SP thường. Combo nào thiếu giá vốn của bất kỳ mã
+  // con nào thì KHÔNG ghi vào costs — thà báo "thiếu giá vốn" còn hơn cộng ra số thiếu
+  // rồi báo lãi ảo. Không ghi đè combo đã tự khai giá vốn trong sheet.
+  for (const [comboCode, parts] of Object.entries(COMBO_COMPOSITION)) {
+    if (costs[comboCode] != null) continue
+    let sum = 0
+    let complete = true
+    for (const part of parts) {
+      const partCode = part.code.toUpperCase()
+      const m = partCode.match(/^(PHVVN\d{2,3})/)
+      const unit = costs[partCode] ?? (m ? byPrefix[m[1]] : undefined)
+      if (unit == null) { complete = false; break }
+      sum += unit * part.qty
+    }
+    if (complete) costs[comboCode] = sum
   }
 
   return { costs, byName, byPrefix, mapped, total, unlinked }
