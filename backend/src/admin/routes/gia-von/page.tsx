@@ -1620,6 +1620,8 @@ function SupplierTab({ canManage }: { canManage: boolean }) {
 type PackingRow = {
   id: string
   position: number
+  /** Ngày mua "YYYY-MM-DD"; "" = chưa ghi (dòng cũ trước khi có cột này). */
+  item_date: string
   product: string
   supplier: string
   quantity: string
@@ -1635,6 +1637,20 @@ function periodLabel(p: string): string {
 
 function thisPeriod(): string {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7)
+}
+
+/** "2026-08" → "2026-08-31" (ngày cuối tháng, dùng làm max cho input date). */
+function monthEnd(p: string): string {
+  const [y, m] = p.split("-").map(Number)
+  // Ngày 0 của tháng kế = ngày cuối tháng này; dùng UTC để không lệch theo máy người dùng.
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+}
+
+/** "2026-08-14" → "14/08" cho tiêu đề nhóm; chuỗi rỗng = chưa ghi ngày. */
+function dayLabel(iso: string): string {
+  if (!iso) return "Chưa ghi ngày"
+  const [, m, d] = iso.split("-")
+  return `${d}/${m}`
 }
 
 /**
@@ -1712,7 +1728,13 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
 
   async function addRows(count: number) {
     try {
-      const d = await apiJson("/admin/gia-von/packing", "POST", { period, count })
+      // Điền sẵn ngày hôm nay khi đang xem THÁNG HIỆN TẠI — mua hàng thường nhập ngay
+      // hôm mua. Xem tháng cũ thì để trống, không đoán hộ ngày của hoá đơn cũ.
+      const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
+      const item_date = period === thisPeriod() ? today : ""
+      const d = await apiJson("/admin/gia-von/packing", "POST", {
+        period, rows: Array.from({ length: count }, () => ({ item_date })),
+      })
       setRows(rs => [...rs, ...(d.rows ?? [])])
     } catch (e: any) {
       alert("Lỗi thêm dòng: " + e.message)
@@ -1815,11 +1837,12 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
             <tr>
               {[
                 ["STT", 52, "left"],
-                ["Tên sản phẩm", 280, "left"],
-                ["Tên NCC", 300, "left"],
-                ["Số lượng", 130, "left"],
+                ["Ngày", 130, "left"],
+                ["Tên sản phẩm", 260, "left"],
+                ["Tên NCC", 280, "left"],
+                ["Số lượng", 120, "left"],
                 ["Thành tiền", 150, "right"],
-                ["Ghi chú", 200, "left"],
+                ["Ghi chú", 180, "left"],
               ].map(([label, w, align]) => (
                 <th key={String(label)} style={{
                   ...thS(Number(w)),
@@ -1831,10 +1854,10 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ textAlign: "center", color: C.muted, padding: "32px 0" }}>Đang tải…</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: "center", color: C.muted, padding: "32px 0" }}>Đang tải…</td></tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", color: C.muted, padding: "32px 0", fontSize: 13 }}>
+                <td colSpan={8} style={{ textAlign: "center", color: C.muted, padding: "32px 0", fontSize: 13 }}>
                   {periodLabel(period)} chưa có dòng nào
                   {canManage && ' — bấm "+ Thêm dòng" để bắt đầu'}
                 </td>
@@ -1844,18 +1867,26 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
                 <td style={{ ...tdS(52), textAlign: "center", color: C.muted, fontSize: 11.5, background: C.ground }}>
                   {i + 1}
                 </td>
-                <td style={{ ...tdS(280), padding: "0 8px" }}>
+                <td style={{ ...tdS(130), padding: "0 8px" }}>
+                  {/* min/max khoá trong tháng đang xem: ngày lệch tháng sẽ bị backend bỏ
+                      (dòng lọc theo period) nên chặn ngay ở đây cho người nhập thấy. */}
+                  <input type="date" style={{ ...inputStyle, fontFamily: NUM_FONT, fontSize: 12.5 }}
+                    value={r.item_date || ""} readOnly={!canManage}
+                    min={`${period}-01`} max={monthEnd(period)}
+                    onChange={e => updateField(r.id, "item_date", e.target.value)} />
+                </td>
+                <td style={{ ...tdS(260), padding: "0 8px" }}>
                   <input style={inputStyle} value={r.product} readOnly={!canManage}
                     placeholder="Xốp nổ 1,5m…"
                     onChange={e => updateField(r.id, "product", e.target.value)} />
                 </td>
-                <td style={{ ...tdS(300), padding: "0 8px" }}>
+                <td style={{ ...tdS(280), padding: "0 8px" }}>
                   <input style={inputStyle} value={r.supplier} readOnly={!canManage}
                     list="packing-suppliers"
                     placeholder="Chọn hoặc gõ tên NCC…"
                     onChange={e => updateField(r.id, "supplier", e.target.value)} />
                 </td>
-                <td style={{ ...tdS(130), padding: "0 8px" }}>
+                <td style={{ ...tdS(120), padding: "0 8px" }}>
                   {/* Để tự do vì đơn vị mỗi món một kiểu: "46 cuộn", "1000 gói", "12 đôi". */}
                   <input style={inputStyle} value={r.quantity} readOnly={!canManage}
                     placeholder="46 cuộn"
@@ -1869,7 +1900,7 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
                     placeholder="0"
                     onChange={e => updateField(r.id, "amount", e.target.value)} />
                 </td>
-                <td style={{ ...tdS(200), padding: "0 8px" }}>
+                <td style={{ ...tdS(180), padding: "0 8px" }}>
                   <input style={inputStyle} value={r.note} readOnly={!canManage}
                     onChange={e => updateField(r.id, "note", e.target.value)} />
                 </td>
@@ -1888,7 +1919,7 @@ function PackingCostTab({ canManage }: { canManage: boolean }) {
           {rows.length > 0 && (
             <tfoot>
               <tr style={{ background: C.surface2, borderTop: `2px solid ${C.line}` }}>
-                <td colSpan={4} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: C.ink }}>
+                <td colSpan={5} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: C.ink }}>
                   Tổng
                 </td>
                 <td style={{ padding: "10px 8px", textAlign: "right", fontFamily: NUM_FONT, fontWeight: 700, color: C.accent }}>

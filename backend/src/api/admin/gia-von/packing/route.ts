@@ -37,6 +37,12 @@ async function ensureTable(pool: Pool) {
     CREATE INDEX IF NOT EXISTS packing_cost_item_period_idx
       ON packing_cost_item (period, position);
   `)
+  // Cột ngày thêm sau khi bảng đã chạy thật — ADD COLUMN IF NOT EXISTS để không đụng
+  // dữ liệu cũ. NULL = dòng cũ chưa ghi ngày (vẫn thuộc tháng `period`), KHÔNG mặc định
+  // về hôm nay vì như thế là bịa ngày mua cho hoá đơn cũ.
+  await pool.query(`
+    ALTER TABLE packing_cost_item ADD COLUMN IF NOT EXISTS item_date DATE NULL;
+  `)
 }
 
 async function init(pool: Pool) {
@@ -68,6 +74,32 @@ function clean(v: unknown, max = 500): string {
 }
 
 /**
+ * Ngày mua của dòng: "YYYY-MM-DD" hoặc null (chưa ghi).
+ *
+ * Ràng buộc ngày phải THUỘC tháng `period` của dòng — bảng lọc theo period, nên ngày
+ * lệch tháng sẽ làm dòng biến mất khỏi màn hình đang xem mà người nhập không hiểu vì
+ * sao. Lệch tháng thì trả về null (giữ dòng, chỉ bỏ ngày) thay vì ném lỗi mất cả dòng.
+ */
+function toItemDate(v: unknown, period: string): string | null {
+  const s = String(v ?? "").trim()
+  if (!s) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  if (s.slice(0, 7) !== period) return null
+  // Chặn ngày không tồn tại (31/02): Date tự "tràn" sang tháng sau nên so lại chuỗi.
+  const d = new Date(`${s}T00:00:00Z`)
+  if (isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) return null
+  return s
+}
+
+/** DATE từ pg về dạng Date object — đổi sang "YYYY-MM-DD" theo lịch, không lệch múi giờ. */
+function dateOut(v: unknown): string {
+  if (!v) return ""
+  if (typeof v === "string") return v.slice(0, 10)
+  const d = v as Date
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+/**
  * GET /admin/gia-von/packing?period=YYYY-MM
  * Trả các dòng của tháng đó + danh sách tháng đã có dữ liệu (để dựng dropdown).
  */
@@ -77,9 +109,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     await init(pool)
     const period = validPeriod((req.query as any).period) ?? currentPeriod()
 
+    // Sắp theo NGÀY trước (dòng chưa ghi ngày xuống cuối), rồi mới tới position — mua
+    // hàng nhập rải rác trong tháng nên xem theo thứ tự ngày là tự nhiên nhất.
     const { rows } = await pool.query(
-      `SELECT id, period, position, product, supplier, quantity, amount::bigint, note
-       FROM packing_cost_item WHERE period = $1 ORDER BY position ASC, created_at ASC`,
+      `SELECT id, period, position, product, supplier, quantity, amount::bigint, note, item_date
+       FROM packing_cost_item WHERE period = $1
+       ORDER BY item_date ASC NULLS LAST, position ASC, created_at ASC`,
       [period],
     )
     const { rows: periodRows } = await pool.query(
@@ -89,7 +124,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     return res.json({
       period,
-      rows: rows.map(r => ({ ...r, amount: Number(r.amount) })),
+      rows: rows.map(r => ({ ...r, amount: Number(r.amount), item_date: dateOut(r.item_date) })),
       total: rows.reduce((s, r) => s + Number(r.amount || 0), 0),
       periods: periodRows.map(p => ({
         period: p.period, total: Number(p.total), n: Number(p.n),
@@ -121,21 +156,23 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     )
     let pos = Number(maxpos) + 1
 
+    // Chặn 200 dòng/lần cho cả 2 nhánh: nhánh `rows` (paste, hoặc thêm dòng có sẵn ngày)
+    // trước đây không giới hạn nên 1 request có thể chèn tuỳ ý.
     const toInsert: any[] = Array.isArray(body.rows) && body.rows.length
-      ? body.rows
+      ? body.rows.slice(0, 200)
       : Array.from({ length: Math.max(1, Math.min(Number(body.count ?? 1), 100)) }, () => ({}))
 
     const inserted: any[] = []
     for (const r of toInsert) {
       const { rows: [row] } = await pool.query(
         `INSERT INTO packing_cost_item
-           (id, period, position, product, supplier, quantity, amount, note, created_by)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, period, position, product, supplier, quantity, amount::bigint, note`,
+           (id, period, position, product, supplier, quantity, amount, note, created_by, item_date)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, period, position, product, supplier, quantity, amount::bigint, note, item_date`,
         [period, pos, clean(r.product), clean(r.supplier), clean(r.quantity, 100),
-         toAmount(r.amount), clean(r.note), createdBy],
+         toAmount(r.amount), clean(r.note), createdBy, toItemDate(r.item_date, period)],
       )
-      inserted.push({ ...row, amount: Number(row.amount) })
+      inserted.push({ ...row, amount: Number(row.amount), item_date: dateOut(row.item_date) })
       pos++
     }
     return res.json({ rows: inserted })
@@ -158,12 +195,18 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     let updated = 0
     for (const r of body.rows) {
       if (!r?.id) continue
+      // Lấy period từ chính dòng trong DB, không tin period client gửi: ngày phải khớp
+      // tháng của dòng, mà client chỉ gửi các field đang sửa.
+      const { rows: [cur] } = await pool.query(
+        `SELECT period FROM packing_cost_item WHERE id = $1`, [r.id],
+      )
+      if (!cur) continue
       await pool.query(
         `UPDATE packing_cost_item
-         SET product=$1, supplier=$2, quantity=$3, amount=$4, note=$5, updated_at=now()
-         WHERE id=$6`,
+         SET product=$1, supplier=$2, quantity=$3, amount=$4, note=$5, item_date=$6, updated_at=now()
+         WHERE id=$7`,
         [clean(r.product), clean(r.supplier), clean(r.quantity, 100),
-         toAmount(r.amount), clean(r.note), r.id],
+         toAmount(r.amount), clean(r.note), toItemDate(r.item_date, cur.period), r.id],
       )
       updated++
     }
