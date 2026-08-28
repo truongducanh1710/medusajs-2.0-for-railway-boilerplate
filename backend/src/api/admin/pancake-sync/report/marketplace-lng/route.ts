@@ -341,9 +341,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- Tính trên phạm vi TẠM TÍNH vì đó là mode mặc định đang xem.
         SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost = 0)::int AS orders_missing_cost,
-        -- Đơn có doanh thu = 0: sàn chưa trả về tiền (đơn quá mới) hoặc raw thiếu field.
-        -- Không loại được tự động vì đơn thật cũng có thể 0đ, nên chỉ nêu để đi kiểm.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND order_revenue = 0)::int AS orders_zero_revenue
+        -- Đơn doanh thu 0đ = đơn gửi affiliate (hàng tặng KOL/reviewer), KHÔNG phải lỗi.
+        -- Vẫn phải theo dõi vì chúng có giá vốn thật và vẫn được chia ads: gộp chung với
+        -- đơn bán sẽ kéo LNG xuống và làm %GV/%LNG trông xấu hơn thực tế.
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND order_revenue = 0)::int AS orders_zero_revenue,
+        SUM(CASE WHEN status IN (1,2,3,8) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
@@ -566,6 +568,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         orders_missing_cost: Number(r.orders_missing_cost || 0),
         revenue_no_cost_tt: Number(r.revenue_no_cost_tt || 0),
         orders_zero_revenue: Number(r.orders_zero_revenue || 0),
+        cogs_zero_revenue: Number(r.cogs_zero_revenue || 0),
       }
     })
 
@@ -589,11 +592,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         days: missingCostDays.slice(0, 12),
         total_days: missingCostDays.length,
       },
-      zero_revenue: {
-        orders: zeroRevDays.reduce((s, d) => s + d.n, 0),
-        days: zeroRevDays.slice(0, 12),
-        total_days: zeroRevDays.length,
-      },
       ads_missing: {
         orders: adsMissingDays.reduce((s, d) => s + d.n, 0),
         days: adsMissingDays.slice(0, 12),
@@ -601,9 +599,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       },
     }
 
+    // Đơn affiliate (doanh thu 0đ) — hàng gửi KOL/reviewer, KHÔNG phải lỗi dữ liệu nên
+    // tách khỏi data_issues. Vẫn báo cáo vì đây là chi phí thật: giá vốn hàng tặng đi
+    // nằm trong LNG, và mỗi đơn vẫn nhận một suất ads chia đều.
+    const affiliate = {
+      orders: zeroRevDays.reduce((s, d) => s + d.n, 0),
+      cogs: byDay.reduce((s, d) => s + d.cogs_zero_revenue, 0),
+      days: zeroRevDays.slice(0, 12),
+      total_days: zeroRevDays.length,
+    }
+
     return res.json({
       rows: result, by_platform: byPlatform, by_day: byDay,
-      totals, coverage, data_issues: dataIssues, has_ads: hasAds, market, from, to,
+      totals, coverage, data_issues: dataIssues, affiliate,
+      has_ads: hasAds, market, from, to,
       // MY: mọi số tiền đã quy về VND theo tỷ giá này (VND/RM). VN: 1 (không quy đổi).
       myr_to_vnd_rate: market === "MY" ? rate : null,
     })

@@ -3598,6 +3598,14 @@ function DayOrdersModal({
                                 ⚠ thiếu giá vốn
                               </span>
                             )}
+                            {/* Đơn 0đ = hàng gửi affiliate. Không có nhãn thì nhìn cột LNG
+                                âm đỏ dễ tưởng đơn lỗ, trong khi đó là chi phí marketing. */}
+                            {Number(o.revenue || 0) === 0 && (
+                              <span className="ml-1.5 text-[10.5px] text-sky-600"
+                                title="Đơn affiliate — hàng gửi KOL/reviewer nên không có doanh thu. Số LNG âm ở đây là giá vốn hàng gửi + suất ads được chia, không phải lỗ do bán.">
+                                🎁 affiliate
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-gray-600 max-w-[180px] truncate"
                             title={`${o.customer_name}${o.province ? " · " + o.province : ""}${o.status_name ? " · " + o.status_name : ""}`}>
@@ -3833,15 +3841,6 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               sinh thêm thì báo kỹ thuật khai thành phần.</>,
             days: di.missing_cost.days, total: di.missing_cost.total_days,
           },
-          di.zero_revenue?.orders > 0 && {
-            key: "zero",
-            icon: "💸",
-            title: `${fmtNum(di.zero_revenue.orders)} đơn có doanh thu 0đ`,
-            detail: <>Sàn chưa trả về số tiền cho các đơn này (thường do đơn quá mới) — chúng vẫn
-              gánh giá vốn và ads nên <b>kéo LNG xuống thấp giả tạo</b>. Kiểm tra lại sau khi sàn
-              cập nhật; nếu đơn cũ mà vẫn 0đ thì báo kỹ thuật.</>,
-            days: di.zero_revenue.days, total: di.zero_revenue.total_days,
-          },
           di.ads_missing?.total_days > 0 && {
             key: "ads",
             icon: "📢",
@@ -3891,6 +3890,46 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           </div>
         )
       })()}
+
+      {/* Đơn affiliate — thông tin, KHÔNG phải lỗi. Để riêng khỏi banner đỏ để cảnh báo
+          thật không bị loãng, nhưng vẫn nêu vì giá vốn hàng tặng là chi phí thật. */}
+      {data.affiliate?.orders > 0 && (
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-[12.5px] text-sky-900">
+          <div className="font-semibold">
+            🎁 {fmtNum(data.affiliate.orders)} đơn affiliate (doanh thu 0đ)
+            {data.affiliate.cogs > 0 && <> — giá vốn hàng gửi {money(data.affiliate.cogs)}</>}
+          </div>
+          <div className="mt-0.5 text-sky-800/85">
+            Hàng gửi KOL/reviewer nên không có doanh thu — <b>đây là bình thường, không phải lỗi</b>.
+            Nhưng chúng vẫn mang giá vốn thật và vẫn được chia một suất ads, nên đang
+            <b> kéo LNG và %GV của ngày xuống</b>. Khi đọc số, nhớ trừ phần này ra.
+          </div>
+          {data.affiliate.days?.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11.5px] text-sky-700/70">Ngày có đơn affiliate:</span>
+              {data.affiliate.days.map((d: any) => (
+                <button key={`aff-${d.date}-${d.platform}`} type="button"
+                  onClick={() => {
+                    const row = (data.by_day ?? []).find(
+                      (r: any) => r.date === d.date && r.platform === d.platform)
+                    if (row) setDayDetail(row)
+                  }}
+                  title={`${d.platform === "tiktok" ? "TikTok Shop" : "Shopee"} — ${fmtNum(d.n)} đơn affiliate. Bấm để xem chi tiết.`}
+                  className="rounded-md border border-sky-300 bg-white px-2 py-0.5 text-[11.5px] font-medium text-sky-700 hover:bg-sky-100">
+                  {d.date.slice(8, 10)}/{d.date.slice(5, 7)}
+                  <span className="ml-1 text-sky-400">{d.platform === "tiktok" ? "TT" : "SP"}</span>
+                  <span className="ml-1 font-semibold">{fmtNum(d.n)}</span>
+                </button>
+              ))}
+              {data.affiliate.total_days > data.affiliate.days.length && (
+                <span className="text-[11.5px] text-sky-700/70">
+                  …và {data.affiliate.total_days - data.affiliate.days.length} ngày nữa
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {cov.pct != null && cov.pct < 100 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
@@ -3955,7 +3994,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."
                 : "Chỉ đơn đã giao thành công — tiền chắc chắn về. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."}
               {" "}<b>Bấm vào 1 dòng ngày để xem chi tiết từng đơn</b> của ngày đó.
-              {" "}Dấu 🏷️ = đơn chưa khai giá vốn, 💸 = đơn doanh thu 0đ (di chuột để xem).
+              {" "}Dấu 🏷️ = đơn chưa khai giá vốn, 🎁 = đơn affiliate 0đ (di chuột để xem).
               {" "}Bấm tiêu đề cột để sắp xếp; riêng cột <b>{adsMetric === "pct" ? "%Ads" : "ROAS"}</b> bấm để đổi cách tính.
               {" "}Kéo mép cột để đổi độ rộng —{" "}
               <button type="button" onClick={resetColWidths}
@@ -4064,9 +4103,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         </span>
                       )}
                       {Number(r.orders_zero_revenue || 0) > 0 && (
-                        <span className="ml-1.5 text-[10.5px] text-red-500"
-                          title={`${r.orders_zero_revenue} đơn doanh thu 0đ — sàn chưa trả về tiền, kéo LNG xuống giả tạo`}>
-                          💸{r.orders_zero_revenue}
+                        <span className="ml-1.5 text-[10.5px] text-sky-600"
+                          title={`${r.orders_zero_revenue} đơn affiliate (doanh thu 0đ) — hàng gửi KOL, không phải lỗi; vẫn mang giá vốn nên kéo LNG ngày này xuống`}>
+                          🎁{r.orders_zero_revenue}
                         </span>
                       )}
                     </td>
