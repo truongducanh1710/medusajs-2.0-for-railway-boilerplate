@@ -78,6 +78,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         : { extension: key.slice(0, i), name: key.slice(i + 1) }
     }
 
+    /** Mốc sớm nhất của mỗi extension — dùng để xử lý cuộc gọi trước mốc đầu tiên. */
+    const firstFromByExt: Record<string, string> = {}
+    for (const h of history) {
+      const cur = firstFromByExt[h.extension]
+      if (!cur || h.effective_from < cur) firstFromByExt[h.extension] = h.effective_from
+    }
+
     /** Ai đang dùng extension này vào ngày đó (YYYY-MM-DD). */
     const ownerAt = (ext: string, day: string): string => {
       for (const h of history) {
@@ -86,6 +93,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         if (h.effective_to && day > h.effective_to) continue
         return h.display_name
       }
+      // Cuộc gọi TRƯỚC mốc sớm nhất: không biết ai dùng thời đó, nhưng chắc chắn
+      // không phải người hiện tại — gán cho người hiện tại là cộng nhầm việc.
+      const first = firstFromByExt[ext]
+      if (first && day < first) return `${ext} (trước bàn giao)`
       return nameByExtension[ext] || ext
     }
 
