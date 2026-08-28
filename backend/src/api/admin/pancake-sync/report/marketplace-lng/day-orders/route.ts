@@ -1,0 +1,302 @@
+import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Pool } from "pg"
+import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../../gia-von/avg-cost/route"
+import { getMyrToVndRate } from "../../../../../../lib/db"
+
+let _pool: Pool | null = null
+function getPool(): Pool {
+  if (!_pool) _pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  return _pool
+}
+async function sql(query: string, params?: any[]): Promise<any[]> {
+  const client = await getPool().connect()
+  try {
+    const result = await client.query(query, params ?? [])
+    return result.rows
+  } finally {
+    client.release()
+  }
+}
+
+const FULLFILL_PER_ORDER = 5000
+
+/**
+ * GET /admin/pancake-sync/report/marketplace-lng/day-orders
+ *      ?date=YYYY-MM-DD&platform=shopee|tiktok&market=VN|MY&mode=tt|thuc
+ *
+ * Drill-down cho 1 dòng của bảng "LNG theo ngày" ở tab Sàn TMĐT: liệt kê từng ĐƠN của
+ * ngày đó với đúng các chỉ số bảng ngày đang hiển thị (giá vốn, DT trước phí sàn,
+ * DT thực nhận, LNG).
+ *
+ * Mọi công thức bám sát ../route.ts để tổng ở đây khớp dòng ngày tương ứng:
+ *  • doanh thu thực nhận = total_price_after_sub_discount (fallback cod_amount/total)
+ *  • DT trước phí sàn    = thực nhận + fee_marketplace
+ *  • giá vốn             = tra theo tên phụ kiện → tên SP → mã → prefix, nhân số lượng
+ *  • fullfill            = 5.000đ/đơn, chỉ tính đơn đã tra được giá vốn
+ *  • mode "thuc" chỉ status=3; mode "tt" gồm status 1,2,3,8 (đã xác nhận cho đi)
+ *
+ * ADS: sàn chỉ nhập chi phí theo (ngày × sàn), không có spend theo đơn. Ở đây CHIA
+ * TRUNG BÌNH cho các đơn trong phạm vi mode (ads_cost_day / số đơn) — đúng theo yêu cầu
+ * nhân sự. Là con số phân bổ, KHÔNG phải chi phí thật của từng đơn: 2 đơn cùng ngày
+ * gánh ads bằng nhau dù giá trị khác nhau.
+ */
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const { date: dateRaw, platform: platformRaw, market: marketRaw, mode: modeRaw } =
+      req.query as Record<string, string>
+
+    if (!dateRaw) return res.status(400).json({ error: "Thiếu tham số 'date'" })
+    const date = toVNDate(dateRaw)
+    const market = String(marketRaw || "VN").toUpperCase() === "MY" ? "MY" : "VN"
+    const mode = modeRaw === "thuc" ? "thuc" : "tt"
+    // "thực" = chỉ đơn đã giao xong; "tạm tính" = thêm đơn đã xác nhận cho đi.
+    const statusList = mode === "thuc" ? [3] : [1, 2, 3, 8]
+
+    const avgCost = await computeAvgCost(getPool())
+
+    const prodNames = await sql(`SELECT code, name FROM mkt_product WHERE active = true`)
+    const codeToName: Record<string, string> = {}
+    for (const p of prodNames) if (p.code) codeToName[String(p.code).trim().toUpperCase()] = p.name
+
+    const aliasCases = Object.entries(DISPLAY_ID_ALIASES)
+      .map(([f, t]) => `WHEN '${f}' THEN '${t}'`).join("\n          ")
+    const resolveSql = (expr: string) => `
+      CASE upper(trim(${expr}))
+          ${aliasCases}
+          ELSE upper(trim(${expr}))
+      END`
+
+    // Đơn MY lưu tiền bằng SEN — quy về VND ngay trong SQL (xem ../route.ts).
+    const rate = market === "MY" ? await getMyrToVndRate(date) : 1
+    const MONEY = market === "MY" ? `* ${rate} / 100.0` : ""
+
+    const revenueExpr = `(COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric) ${MONEY})::bigint`
+    const feeExpr = `(COALESCE((raw->>'fee_marketplace')::numeric, 0) ${MONEY})::bigint`
+    const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
+
+    const platform = ["shopee", "tiktok"].includes(String(platformRaw)) ? String(platformRaw) : null
+    const platformFilter = platform ? `AND po.source = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
+
+    // Giá vốn phụ kiện bán lẻ đọc thẳng từ cost_sheet — giống ../route.ts, vì trên sàn
+    // giẻ lau bán lẻ 39.000đ không được gánh giá vốn 226.540đ của cả bộ lau nhà.
+    const sheetCols = await sql(`SELECT id, position FROM cost_sheet_column ORDER BY position`)
+    const sheetRows = await sql(`SELECT position, data FROM cost_sheet_row ORDER BY position`)
+    const accessoryCost: Record<string, number> = {}
+    if (sheetRows.length > 1) {
+      const posToId: Record<number, string> = {}
+      for (const c2 of sheetCols) posToId[c2.position] = c2.id
+      const header = sheetRows[0].data as Record<string, string>
+      const headerToId: Record<string, string> = {}
+      for (const [colId, val] of Object.entries(header)) if (val) headerToId[String(val).trim()] = colId
+      const colTen = headerToId["Sản phẩm"] ?? posToId[1]
+      const colTinhChat = headerToId["Tính chất"] ?? posToId[2]
+      const colGiaKho = headerToId["Giá về kho/sp"] ?? posToId[9]
+      for (const r of sheetRows.slice(1)) {
+        const d = r.data as Record<string, string>
+        const ten = (d[colTen] ?? "").trim()
+        if (!ten || (d[colTinhChat] ?? "").trim() === "Sản phẩm chính") continue
+        const gia = parseFloat(String(d[colGiaKho] ?? "").replace(/\./g, "").replace(",", ".")) || 0
+        if (gia > 0) accessoryCost[ten.toUpperCase()] = Math.round(gia)
+      }
+    }
+
+    const costEntries = [
+      ...Object.entries(accessoryCost).map(([k, v]) => ["accessory", k, v] as const),
+      ...Object.entries(avgCost.costs).map(([k, v]) => ["code", k, v] as const),
+      ...Object.entries(avgCost.byPrefix).map(([k, v]) => ["prefix", k, v] as const),
+      ...Object.entries(avgCost.byName).map(([k, v]) => ["name", k, v] as const),
+    ]
+    const costValues = costEntries.length
+      ? costEntries.map(([kind, key, val]) =>
+          `('${kind}', '${String(key).replace(/'/g, "''")}', ${Number(val) || 0})`).join(",")
+      : `('code', '__none__', 0)`
+
+    // Mỗi dòng = 1 dòng hàng của 1 đơn. Gộp về đơn ở JS để trả kèm danh sách SP.
+    const itemRows = await sql(`
+      WITH cost_map(kind, key, unit) AS (VALUES ${costValues}),
+      oi AS (
+        SELECT
+          po.id AS order_id,
+          po.source AS platform,
+          po.status,
+          po.status_name,
+          po.customer_name,
+          po.province,
+          po.shop_name,
+          po.tracking_code,
+          (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS created_at_vn,
+          ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
+          upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
+          COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label,
+          COALESCE((mi->>'quantity')::numeric, 1) AS qty,
+          (COALESCE((mi->'variation_info'->>'retail_price')::numeric, (mi->>'price')::numeric, 0)
+            * COALESCE((mi->>'quantity')::numeric, 1)) AS retail_value,
+          ${revenueExpr} AS order_revenue,
+          ${feeExpr} AS fee_marketplace,
+          ${listPriceExpr} AS list_price
+        FROM pancake_order po
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
+        WHERE po.deleted_at IS NULL
+          ${platformFilter}
+          AND COALESCE(NULLIF(po.market, ''), 'VN') = '${market}'
+          AND po.status = ANY($2::int[])
+          AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND po.pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND po.raw->'items' IS NOT NULL
+      ),
+      oi2 AS (
+        SELECT oi.*,
+          COALESCE(
+            (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'prefix' AND c.key = (regexp_match(upper(oi.sp_code), '^(PHVVN[0-9]{2,3})'))[1]),
+            0
+          ) AS unit_cost
+        FROM oi
+      )
+      SELECT oi2.*,
+        (unit_cost * qty) AS item_cost,
+        CASE WHEN SUM(retail_value) OVER (PARTITION BY order_id) > 0
+          THEN retail_value / SUM(retail_value) OVER (PARTITION BY order_id)
+          ELSE 1.0 / COUNT(*) OVER (PARTITION BY order_id)
+        END AS rev_share
+      FROM oi2
+      ORDER BY order_id
+    `, [date, statusList])
+
+    // Chi phí ads của ngày — nhập tay theo (ngày × sàn), gộp các shop cùng sàn.
+    let adsDay = 0
+    let hasAdsEntry = false
+    try {
+      const adsRows = await sql(`
+        SELECT SUM(cost)::bigint AS cost, COUNT(*)::int AS n
+          FROM mkt_ads_cost_marketplace
+         WHERE deleted_at IS NULL AND date = $1::date AND market = $2
+           ${platform ? `AND platform = '${platform}'` : `AND platform IN ('shopee','tiktok')`}
+      `, [date, market])
+      adsDay = Number(adsRows[0]?.cost || 0)
+      hasAdsEntry = Number(adsRows[0]?.n || 0) > 0
+    } catch { /* bảng chưa tạo — coi như chưa có chi phí ads */ }
+
+    // Gộp dòng hàng về đơn.
+    const orders: Record<string, any> = {}
+    for (const r of itemRows) {
+      const id = String(r.order_id)
+      if (!orders[id]) {
+        orders[id] = {
+          order_id: id,
+          platform: r.platform,
+          platform_label: r.platform === "tiktok" ? "TikTok Shop" : "Shopee",
+          status: Number(r.status),
+          status_name: r.status_name || "",
+          customer_name: r.customer_name || "",
+          province: r.province || "",
+          shop_name: r.shop_name || "",
+          tracking_code: r.tracking_code || "",
+          created_at: r.created_at_vn,
+          // Tiền cấp ĐƠN — mọi dòng hàng của cùng đơn mang cùng giá trị, lấy 1 lần
+          // là đủ (cộng dồn theo dòng sẽ nhân lên số lần bằng số SP trong đơn).
+          revenue: Number(r.order_revenue || 0),
+          fee_marketplace: Number(r.fee_marketplace || 0),
+          list_price: Number(r.list_price || 0),
+          cogs: 0,
+          revenue_costed: 0,
+          revenue_no_cost: 0,
+          qty: 0,
+          has_cost: true,
+          items: [] as any[],
+        }
+      }
+      const o = orders[id]
+      const share = Number(r.rev_share || 0)
+      const itemRev = Math.round(Number(r.order_revenue || 0) * share)
+      const itemCost = Number(r.item_cost || 0)
+      const hasCost = Number(r.unit_cost || 0) > 0
+      if (hasCost) {
+        o.cogs += itemCost
+        o.revenue_costed += itemRev
+      } else {
+        o.has_cost = false
+        o.revenue_no_cost += itemRev
+      }
+      o.qty += Number(r.qty || 0)
+      const code = r.sp_code ? String(r.sp_code).toUpperCase() : null
+      o.items.push({
+        sp_code: code,
+        sp_label: (code && codeToName[code]) || r.sp_label,
+        qty: Number(r.qty || 0),
+        unit_cost: Number(r.unit_cost || 0),
+        item_cost: itemCost,
+        revenue: itemRev,
+        missing_cost: !hasCost,
+      })
+    }
+
+    const list = Object.values(orders)
+    // Ads chia đều: sàn không có spend theo đơn nên mỗi đơn gánh phần bằng nhau.
+    const adsPerOrder = list.length > 0 ? Math.round(adsDay / list.length) : 0
+
+    const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
+
+    const result = list.map((o: any) => {
+      // Fullfill 5.000đ chỉ tính cho đơn đã tra được giá vốn — giống bảng ngày, để
+      // đơn chưa khai vốn không tạo ra khoản lỗ ảo.
+      const fullfill = o.revenue_costed > 0 ? FULLFILL_PER_ORDER : 0
+      const lng = o.revenue_costed - (o.cogs + fullfill)
+      const revenueGross = o.revenue + o.fee_marketplace
+      return {
+        ...o,
+        revenue_gross: revenueGross,
+        fee_pct: pct(o.fee_marketplace, o.list_price),
+        cogs_pct: pct(o.cogs, o.revenue_costed),
+        fullfill,
+        lng,
+        lng_pct: pct(lng, o.revenue_costed),
+        ads_cost: adsPerOrder,
+        ads_gross_pct: pct(adsPerOrder, revenueGross),
+        lng_sau_ads: lng - adsPerOrder,
+        lng_sau_ads_pct: pct(lng - adsPerOrder, o.revenue_costed),
+        missing_cost: !o.has_cost,
+      }
+    }).sort((a: any, b: any) => b.revenue_gross - a.revenue_gross)
+
+    const sum = (k: string) => result.reduce((s: number, r: any) => s + (Number(r[k]) || 0), 0)
+    const revCosted = sum("revenue_costed")
+    const cogs = sum("cogs")
+    const ff = sum("fullfill")
+    const lng = revCosted - (cogs + ff)
+    // Ads tổng = số đã nhập cho cả ngày, KHÔNG phải adsPerOrder × số đơn (làm tròn
+    // từng đơn có thể lệch vài đồng so với tổng thật).
+    const totals = {
+      orders: result.length,
+      qty: sum("qty"),
+      list_price: sum("list_price"),
+      fee_marketplace: sum("fee_marketplace"),
+      revenue: sum("revenue"),
+      revenue_gross: sum("revenue_gross"),
+      revenue_costed: revCosted,
+      revenue_no_cost: sum("revenue_no_cost"),
+      cogs, cogs_pct: pct(cogs, revCosted),
+      fullfill: ff,
+      lng, lng_pct: pct(lng, revCosted),
+      ads_cost: adsDay,
+      ads_gross_pct: pct(adsDay, sum("revenue_gross")),
+      lng_sau_ads: lng - adsDay,
+      lng_sau_ads_pct: pct(lng - adsDay, revCosted),
+    }
+
+    return res.json({
+      date, platform, market, mode,
+      orders: result,
+      totals,
+      ads_cost_day: adsDay,
+      ads_per_order: adsPerOrder,
+      ads_missing: !hasAdsEntry,
+      myr_to_vnd_rate: market === "MY" ? rate : null,
+    })
+  } catch (err: any) {
+    console.error("[report/marketplace-lng/day-orders]", err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}

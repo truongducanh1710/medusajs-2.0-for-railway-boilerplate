@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState, useRef, useContext, createContext } from "react"
+import { useEffect, useState, useRef, useContext, createContext, Fragment } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 import { useCurrentPermissions } from "../../lib/use-permissions"
@@ -3412,6 +3412,254 @@ const SANTMDT_DAY_COLS: ColumnDef<DayColId>[] = [
   { id: "pct",       label: "%LNG",             default: 85,  min: 60 },
 ]
 
+/**
+ * Drill-down 1 dòng của bảng "LNG theo ngày": danh sách ĐƠN của ngày đó kèm giá vốn,
+ * DT trước phí sàn, DT thực nhận, LNG. Mở khi bấm vào dòng ngày.
+ *
+ * mode truyền theo đúng mode bảng đang xem (Thực / Tạm tính) để tổng ở đây khớp dòng
+ * ngày — đổi mode ở bảng rồi mở lại sẽ ra bộ đơn khác.
+ */
+function DayOrdersModal({
+  date, platform, market, mode, dayRow, onClose,
+}: {
+  date: string
+  platform: "tiktok" | "shopee"
+  market: Market
+  mode: "tt" | "thuc"
+  dayRow: any
+  onClose: () => void
+}) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setLoading(true); setErr(null)
+    apiFetch(`/admin/pancake-sync/report/marketplace-lng/day-orders`
+      + `?date=${date}&platform=${platform}&market=${market}&mode=${mode}`)
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setData(d) })
+      .catch(e => setErr(e.message))
+      .finally(() => setLoading(false))
+  }, [date, platform, market, mode])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  const money = (n: any) => fmtVND(Number(n || 0))
+  const pctCell = (v: any, good?: boolean) =>
+    v == null ? <span className="text-gray-300">—</span>
+      : <span className={good == null ? "text-gray-600" : good ? "text-green-600" : "text-red-600"}>{v}%</span>
+  const timeVN = (iso: any) => {
+    if (!iso) return ""
+    const s = String(iso)
+    const m = s.match(/T(\d{2}:\d{2})/)
+    return m ? m[1] : ""
+  }
+
+  const orders: any[] = data?.orders ?? []
+  const t = data?.totals ?? {}
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col">
+        <div className="px-5 py-4 border-b flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-bold text-gray-800">
+              Chi tiết đơn — {date.split("-").reverse().join("/")} ·{" "}
+              {platform === "tiktok" ? "TikTok Shop" : "Shopee"} ·{" "}
+              {mode === "tt" ? "Tạm tính" : "Thực"}
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {mode === "tt"
+                ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong."
+                : "Chỉ đơn đã giao thành công."}
+              {" "}Tiền ads chia <b>trung bình mỗi đơn</b> (sàn không có spend theo đơn).
+              {" "}Bấm 1 đơn để xem từng sản phẩm.
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2">×</button>
+        </div>
+
+        {loading && <div className="p-10 text-center text-gray-400 text-sm animate-pulse">Đang tải...</div>}
+        {err && <div className="p-6 text-center text-sm text-red-600">⚠ {err}</div>}
+
+        {!loading && !err && data && (
+          <>
+            <div className="px-5 py-3 border-b bg-gray-50/60 grid grid-cols-2 md:grid-cols-5 gap-3 text-[12.5px]">
+              <div>
+                <div className="text-gray-400">Số đơn</div>
+                <div className="font-semibold text-gray-900">{fmtNum(t.orders)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400">DT trước phí sàn</div>
+                <div className="font-semibold text-gray-700">{money(t.revenue_gross)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400">DT thực nhận</div>
+                <div className="font-semibold text-green-700">{money(t.revenue)}</div>
+              </div>
+              <div>
+                <div className="text-gray-400">
+                  Ads cả ngày{data.ads_missing && <span className="ml-1 text-amber-600">⚠ chưa điền</span>}
+                </div>
+                <div className="font-semibold text-gray-700">
+                  {money(data.ads_cost_day)}
+                  <span className="ml-1 font-normal text-[11px] text-gray-400">
+                    ≈ {money(data.ads_per_order)}/đơn
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-400">LNG sau ads</div>
+                <div className={`font-semibold ${Number(t.lng_sau_ads) >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                  {money(t.lng_sau_ads)}
+                </div>
+              </div>
+            </div>
+
+            {/* Số ở đây gộp từ chính đơn của ngày, còn dòng bảng ngày gộp theo dòng hàng —
+                lệch vài đồng do làm tròn phần chia doanh thu là bình thường. */}
+            {dayRow && (
+              <div className="px-5 py-2 border-b text-[11.5px] text-gray-400">
+                Dòng ngày tương ứng: DT thực nhận {money(dayRow[mode === "tt" ? "revenue_tt" : "revenue_delivered"])}
+                {" · "}LNG sau ads {money(dayRow[mode === "tt" ? "lng_tt_sau_ads" : "lng_sau_ads"])}
+                {" — chênh vài đồng so với tổng bên trên là do làm tròn khi chia doanh thu cho từng sản phẩm."}
+              </div>
+            )}
+
+            <div className="overflow-auto flex-1">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+                  <tr>
+                    <th className="text-left px-4 py-2.5">Đơn</th>
+                    <th className="text-left px-3 py-2.5">Khách</th>
+                    <th className="text-right px-3 py-2.5">SL</th>
+                    <th className="text-right px-3 py-2.5" title="Tiền khách trả, đã trừ khuyến mãi, CHƯA trừ phí sàn">DT trước phí sàn</th>
+                    <th className="text-right px-3 py-2.5" title="Phí sàn giữ lại">Phí sàn</th>
+                    <th className="text-right px-3 py-2.5" title="Đã trừ cả khuyến mãi và phí sàn">DT thực nhận</th>
+                    <th className="text-right px-3 py-2.5">Giá vốn</th>
+                    <th className="text-right px-3 py-2.5" title="Giá vốn ÷ doanh thu có giá vốn">%GV</th>
+                    <th className="text-right px-3 py-2.5" title="Chi phí ads cả ngày chia đều số đơn">Ads (TB)</th>
+                    <th className="text-right px-3 py-2.5">LNG sau ads</th>
+                    <th className="text-right px-3 py-2.5">%LNG</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-gray-900">
+                  {orders.length === 0 && (
+                    <tr><td colSpan={11} className="px-4 py-6 text-center text-gray-400 text-sm">Không có đơn nào</td></tr>
+                  )}
+                  {orders.map((o: any) => {
+                    const open = !!expanded[o.order_id]
+                    return (
+                      <Fragment key={o.order_id}>
+                        <tr className={`cursor-pointer hover:bg-gray-50 ${o.missing_cost ? "bg-amber-50/40" : ""}`}
+                          onClick={() => setExpanded(s => ({ ...s, [o.order_id]: !s[o.order_id] }))}>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <span className="text-gray-400 mr-1">{open ? "▾" : "▸"}</span>
+                            <span className="font-mono text-[12px] text-gray-700">#{o.order_id}</span>
+                            {timeVN(o.created_at) && (
+                              <span className="ml-1.5 text-[11px] text-gray-400">{timeVN(o.created_at)}</span>
+                            )}
+                            {o.missing_cost && (
+                              <span className="ml-1.5 text-[10.5px] text-amber-600"
+                                title="Đơn có sản phẩm chưa khai giá vốn — LNG chỉ tính trên phần đã khai">
+                                ⚠ thiếu giá vốn
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-600 max-w-[180px] truncate"
+                            title={`${o.customer_name}${o.province ? " · " + o.province : ""}${o.status_name ? " · " + o.status_name : ""}`}>
+                            {o.customer_name || <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-gray-700">{fmtNum(o.qty)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600">{money(o.revenue_gross)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-500">{money(o.fee_marketplace)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(o.revenue)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-700">{money(o.cogs)}</td>
+                          <td className="px-3 py-2.5 text-right">{pctCell(o.cogs_pct)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-500">{money(o.ads_cost)}</td>
+                          <td className={`px-3 py-2.5 text-right font-semibold ${Number(o.lng_sau_ads) >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                            {money(o.lng_sau_ads)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">{pctCell(o.lng_sau_ads_pct, Number(o.lng_sau_ads) >= 0)}</td>
+                        </tr>
+                        {open && (
+                          <tr className="bg-gray-50/70">
+                            <td colSpan={11} className="px-8 py-2.5">
+                              <table className="w-full text-[12.5px]">
+                                <thead className="text-gray-400">
+                                  <tr>
+                                    <th className="text-left py-1">Sản phẩm</th>
+                                    <th className="text-right py-1 w-16">SL</th>
+                                    <th className="text-right py-1 w-28">Vốn/sp</th>
+                                    <th className="text-right py-1 w-32">Giá vốn</th>
+                                    <th className="text-right py-1 w-36" title="Doanh thu thực nhận chia theo tỷ trọng giá niêm yết của dòng hàng">DT phân bổ</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="text-gray-700">
+                                  {o.items.map((it: any, i: number) => (
+                                    <tr key={i}>
+                                      <td className="py-1">
+                                        {it.sp_label}
+                                        {it.sp_code && <span className="ml-1.5 text-[11px] text-gray-400">{it.sp_code}</span>}
+                                        {it.missing_cost && <span className="ml-1.5 text-[11px] text-amber-600">⚠ chưa khai giá vốn</span>}
+                                      </td>
+                                      <td className="text-right py-1 font-mono">{fmtNum(it.qty)}</td>
+                                      <td className="text-right py-1">{it.unit_cost > 0 ? money(it.unit_cost) : <span className="text-gray-300">—</span>}</td>
+                                      <td className="text-right py-1">{it.item_cost > 0 ? money(it.item_cost) : <span className="text-gray-300">—</span>}</td>
+                                      <td className="text-right py-1">{money(it.revenue)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+                {orders.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
+                      <td className="px-4 py-2.5" colSpan={2}>Tổng {orders.length} đơn</td>
+                      <td className="px-3 py-2.5 text-right font-mono">{fmtNum(t.qty)}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-600">{money(t.revenue_gross)}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-500">{money(t.fee_marketplace)}</td>
+                      <td className="px-3 py-2.5 text-right text-green-700">{money(t.revenue)}</td>
+                      <td className="px-3 py-2.5 text-right">{money(t.cogs)}</td>
+                      <td className="px-3 py-2.5 text-right">{pctCell(t.cogs_pct)}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-600">{money(t.ads_cost)}</td>
+                      <td className={`px-3 py-2.5 text-right ${Number(t.lng_sau_ads) >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                        {money(t.lng_sau_ads)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">{pctCell(t.lng_sau_ads_pct, Number(t.lng_sau_ads) >= 0)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+
+            {Number(t.revenue_no_cost) > 0 && (
+              <div className="px-5 py-2.5 border-t bg-amber-50 text-[12px] text-amber-800">
+                ⚠ {money(t.revenue_no_cost)} doanh thu thuộc sản phẩm <b>chưa khai giá vốn</b> —
+                phần này bị loại khỏi LNG và khỏi mẫu số %GV/%LNG, nên số lãi ở đây chỉ đại diện
+                cho phần doanh thu đã có giá vốn.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3427,6 +3675,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const { colWidths, onResizeMouseDown, resetColWidths, totalWidth } =
     useResizableColumns("santmdt-lng-ngay.col-widths.v1", SANTMDT_DAY_COLS)
   const [daySort, setDaySort] = useState<{ key: string; dir: 1 | -1 }>({ key: "date", dir: -1 })
+  // Dòng ngày đang mở drill-down (xem chi tiết từng đơn của ngày × sàn đó).
+  const [dayDetail, setDayDetail] = useState<any | null>(null)
 
   useEffect(() => {
     setLoading(true); setErr(null)
@@ -3581,6 +3831,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               {dayMode === "tt"
                 ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."
                 : "Chỉ đơn đã giao thành công — tiền chắc chắn về. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."}
+              {" "}<b>Bấm vào 1 dòng ngày để xem chi tiết từng đơn</b> của ngày đó.
               {" "}Bấm tiêu đề cột để sắp xếp; riêng cột <b>{adsMetric === "pct" ? "%Ads" : "ROAS"}</b> bấm để đổi cách tính.
               {" "}Kéo mép cột để đổi độ rộng —{" "}
               <button type="button" onClick={resetColWidths}
@@ -3670,7 +3921,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 const notRipe = dayMode === "thuc" && pending > 0
                 return (
                   <tr key={`${r.date}-${r.platform}`}
-                    className={lngBad ? "bg-red-50/60" : r.ads_missing ? "bg-amber-50/50" : ""}>
+                    onClick={() => setDayDetail(r)}
+                    title="Bấm để xem chi tiết từng đơn của ngày này"
+                    className={`cursor-pointer hover:bg-violet-50/60 ${
+                      lngBad ? "bg-red-50/60" : r.ads_missing ? "bg-amber-50/50" : ""}`}>
                     <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap overflow-hidden">
                       {dayLabel(r.date)}
                       {notRipe && (
@@ -3795,6 +4049,17 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           </table>
         </div>
       </div>
+
+      {dayDetail && (
+        <DayOrdersModal
+          date={dayDetail.date}
+          platform={dayDetail.platform}
+          market={market}
+          mode={dayMode}
+          dayRow={dayDetail}
+          onClose={() => setDayDetail(null)}
+        />
+      )}
 
       <div className="bg-white border rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
