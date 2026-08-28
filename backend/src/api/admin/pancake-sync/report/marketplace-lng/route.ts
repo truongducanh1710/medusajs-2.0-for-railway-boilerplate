@@ -107,7 +107,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const MONEY = market === "MY" ? `* ${rate} / 100.0` : ""
 
     // Tiền thực nhận (sàn đã trừ phí + khuyến mãi).
-    const revenueExpr = `(COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric) ${MONEY})::bigint`
+    // NULLIF ở CẢ 3 nấc, không riêng nấc đầu: cod_amount và total là cột NOT NULL
+    // default 0, nên COALESCE trần sẽ dừng ngay ở cod_amount = 0 và không bao giờ
+    // rơi xuống total. Đơn sàn khách trả trên app -> cod = 0, khiến mọi đơn thiếu
+    // total_price_after_sub_discount bị tính doanh thu = 0 (đo được ngày 27/08:
+    // 329 đơn TikTok hiện 0đ doanh thu nhưng vẫn trừ đủ giá vốn + ads).
+    const revenueExpr = `(COALESCE(
+      NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0),
+      NULLIF(cod_amount::numeric, 0),
+      NULLIF(total::numeric, 0),
+      0
+    ) ${MONEY})::bigint`
     const feeExpr = `(COALESCE((raw->>'fee_marketplace')::numeric, 0) ${MONEY})::bigint`
     const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
 

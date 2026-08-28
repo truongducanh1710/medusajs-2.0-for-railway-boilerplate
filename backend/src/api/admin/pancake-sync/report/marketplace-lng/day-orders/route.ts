@@ -70,7 +70,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const rate = market === "MY" ? await getMyrToVndRate(date) : 1
     const MONEY = market === "MY" ? `* ${rate} / 100.0` : ""
 
-    const revenueExpr = `(COALESCE(NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0), cod_amount::numeric, total::numeric) ${MONEY})::bigint`
+    // NULLIF ở CẢ 3 nấc — xem ghi chú ở ../route.ts: cod_amount/total NOT NULL default 0
+    // nên COALESCE trần dừng ở cod_amount = 0, đơn sàn (khách trả trên app, cod = 0)
+    // bị tính doanh thu = 0.
+    const revenueExpr = `(COALESCE(
+      NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0),
+      NULLIF(cod_amount::numeric, 0),
+      NULLIF(total::numeric, 0),
+      0
+    ) ${MONEY})::bigint`
     const feeExpr = `(COALESCE((raw->>'fee_marketplace')::numeric, 0) ${MONEY})::bigint`
     const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
 
