@@ -3433,6 +3433,15 @@ function DayOrdersModal({
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Phản hồi "đã copy" cho ID vừa bấm — nhân sự copy liên tục nhiều đơn nên cần biết
+  // cái nào vừa lấy. Tự tắt sau 1,2s.
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copyId = (v: string) => {
+    navigator.clipboard?.writeText(v).then(() => {
+      setCopiedId(v)
+      setTimeout(() => setCopiedId(c => (c === v ? null : c)), 1200)
+    }).catch(() => { /* trình duyệt chặn clipboard — bỏ qua, user bôi đen tay được */ })
+  }
 
   useEffect(() => {
     setLoading(true); setErr(null)
@@ -3537,7 +3546,10 @@ function DayOrdersModal({
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
                   <tr>
-                    <th className="text-left px-4 py-2.5">Đơn</th>
+                    <th className="text-left px-4 py-2.5"
+                      title="ID tra được trên POS — bấm vào số để copy, dán thẳng vào ô tìm kiếm của POS">
+                      Đơn (ID trên POS)
+                    </th>
                     <th className="text-left px-3 py-2.5">Khách</th>
                     <th className="text-right px-3 py-2.5">SL</th>
                     <th className="text-right px-3 py-2.5" title="Tiền khách trả, đã trừ khuyến mãi, CHƯA trừ phí sàn">DT trước phí sàn</th>
@@ -3562,7 +3574,21 @@ function DayOrdersModal({
                           onClick={() => setExpanded(s => ({ ...s, [o.order_id]: !s[o.order_id] }))}>
                           <td className="px-4 py-2.5 whitespace-nowrap">
                             <span className="text-gray-400 mr-1">{open ? "▾" : "▸"}</span>
-                            <span className="font-mono text-[12px] text-gray-700">#{o.order_id}</span>
+                            {/* ID tra trên POS. Bấm để copy — mục đích chính của cột này là
+                                dán vào ô tìm kiếm của POS, nên đừng bắt bôi đen thủ công. */}
+                            {o.pos_id ? (
+                              <button type="button"
+                                onClick={e => { e.stopPropagation(); copyId(o.pos_id) }}
+                                title={`Bấm để copy — tìm trên POS bằng số này (nội bộ #${o.order_id})`}
+                                className="font-mono text-[12px] text-gray-800 hover:text-violet-700 hover:underline">
+                                {copiedId === o.pos_id ? "✓ đã copy" : o.pos_id}
+                              </button>
+                            ) : (
+                              <span className="font-mono text-[12px] text-gray-700"
+                                title="Đơn này chưa có ID POS trong dữ liệu đã đồng bộ">
+                                #{o.order_id}
+                              </span>
+                            )}
                             {timeVN(o.created_at) && (
                               <span className="ml-1.5 text-[11px] text-gray-400">{timeVN(o.created_at)}</span>
                             )}
@@ -3592,6 +3618,29 @@ function DayOrdersModal({
                         {open && (
                           <tr className="bg-gray-50/70">
                             <td colSpan={11} className="px-8 py-2.5">
+                              {/* Mọi cách định danh đơn — mỗi hệ thống tra bằng một số khác nhau. */}
+                              <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-gray-500">
+                                {o.pos_id && (
+                                  <span>ID trên POS:{" "}
+                                    <button type="button" onClick={() => copyId(o.pos_id)}
+                                      className="font-mono text-gray-700 hover:text-violet-700 hover:underline"
+                                      title="Bấm để copy">{o.pos_id}</button>
+                                  </span>
+                                )}
+                                <span>ID nội bộ:{" "}
+                                  <button type="button" onClick={() => copyId(o.order_id)}
+                                    className="font-mono text-gray-700 hover:text-violet-700 hover:underline"
+                                    title="Bấm để copy">{o.order_id}</button>
+                                </span>
+                                {o.tracking_code && (
+                                  <span>Mã vận đơn:{" "}
+                                    <button type="button" onClick={() => copyId(o.tracking_code)}
+                                      className="font-mono text-gray-700 hover:text-violet-700 hover:underline"
+                                      title="Bấm để copy">{o.tracking_code}</button>
+                                  </span>
+                                )}
+                                {o.status_name && <span>Trạng thái: <b className="text-gray-700">{o.status_name}</b></span>}
+                              </div>
                               <table className="w-full text-[12.5px]">
                                 <thead className="text-gray-400">
                                   <tr>

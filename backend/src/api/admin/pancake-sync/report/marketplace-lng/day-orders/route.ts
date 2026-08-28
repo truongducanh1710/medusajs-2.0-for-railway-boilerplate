@@ -125,6 +125,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi AS (
         SELECT
           po.id AS order_id,
+          -- po.id lưu raw.system_id (số 76xxx) — KHÔNG tìm được trên POS. Ô tìm kiếm
+          -- của POS dùng raw.id (số 58xxxxxx, đơn có ổ khoá trong danh sách) và mã đơn
+          -- của sàn. Trả cả 3 để nhân sự copy đúng cái tra được.
+          po.raw->>'id' AS pos_id,
           po.source AS platform,
           po.status,
           po.status_name,
@@ -194,6 +198,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (!orders[id]) {
         orders[id] = {
           order_id: id,
+          pos_id: r.pos_id ? String(r.pos_id) : null,
           platform: r.platform,
           platform_label: r.platform === "tiktok" ? "TikTok Shop" : "Shopee",
           status: Number(r.status),
