@@ -335,7 +335,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
         SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
         SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
+        -- ── CHẤT LƯỢNG DỮ LIỆU (cho cảnh báo ngoài bảng) ────────────────────────
+        -- Đếm theo ĐƠN chứ không theo dòng hàng: nhân sự đi xử lý từng đơn.
+        -- Tính trên phạm vi TẠM TÍNH vì đó là mode mặc định đang xem.
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost = 0)::int AS orders_missing_cost,
+        -- Đơn có doanh thu = 0: sàn chưa trả về tiền (đơn quá mới) hoặc raw thiếu field.
+        -- Không loại được tự động vì đơn thật cũng có thể 0đ, nên chỉ nêu để đi kiểm.
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND order_revenue = 0)::int AS orders_zero_revenue
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
@@ -553,12 +561,49 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         // Số đơn đã rời kho nhưng chưa giao xong — càng lớn thì số "thực" càng
         // chưa phản ánh đủ, dùng để cảnh báo ngày quá mới.
         orders_pending: Number(r.orders_tt || 0) - Number(r.da_nhan || 0),
+
+        // Chất lượng dữ liệu của ngày — để UI đánh dấu dòng cần đi xử lý.
+        orders_missing_cost: Number(r.orders_missing_cost || 0),
+        revenue_no_cost_tt: Number(r.revenue_no_cost_tt || 0),
+        orders_zero_revenue: Number(r.orders_zero_revenue || 0),
       }
     })
 
+    // ── CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU ────────────────────────────────────────────
+    // Gom các vấn đề khiến số LNG chưa đáng tin, kèm ngày cụ thể để nhân sự bấm vào
+    // xử lý. Chỉ nêu vấn đề CÓ THẬT trong kỳ đang xem — không cảnh báo suông.
+    const issueDays = (pick: (r: any) => number) =>
+      byDay.filter(d => pick(d) > 0)
+        .map(d => ({ date: d.date, platform: d.platform, n: pick(d) }))
+        .sort((a, b) => b.n - a.n)
+
+    const missingCostDays = issueDays(d => d.orders_missing_cost)
+    const zeroRevDays = issueDays(d => d.orders_zero_revenue)
+    const adsMissingDays = byDay.filter(d => d.ads_missing)
+      .map(d => ({ date: d.date, platform: d.platform, n: d.orders_tt }))
+
+    const dataIssues = {
+      missing_cost: {
+        orders: missingCostDays.reduce((s, d) => s + d.n, 0),
+        revenue: byDay.reduce((s, d) => s + d.revenue_no_cost_tt, 0),
+        days: missingCostDays.slice(0, 12),
+        total_days: missingCostDays.length,
+      },
+      zero_revenue: {
+        orders: zeroRevDays.reduce((s, d) => s + d.n, 0),
+        days: zeroRevDays.slice(0, 12),
+        total_days: zeroRevDays.length,
+      },
+      ads_missing: {
+        orders: adsMissingDays.reduce((s, d) => s + d.n, 0),
+        days: adsMissingDays.slice(0, 12),
+        total_days: adsMissingDays.length,
+      },
+    }
+
     return res.json({
       rows: result, by_platform: byPlatform, by_day: byDay,
-      totals, coverage, has_ads: hasAds, market, from, to,
+      totals, coverage, data_issues: dataIssues, has_ads: hasAds, market, from, to,
       // MY: mọi số tiền đã quy về VND theo tỷ giá này (VND/RM). VN: 1 (không quy đổi).
       myr_to_vnd_rate: market === "MY" ? rate : null,
     })

@@ -3769,6 +3769,80 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
         </div>
       )}
 
+      {/* Cảnh báo đơn thiếu thông tin — đặt TRÊN các thẻ số để không ai đọc LNG trước
+          khi biết số đó đang thiếu gì. Bấm 1 ngày để mở thẳng chi tiết đơn của ngày đó. */}
+      {(() => {
+        const di = data.data_issues
+        if (!di) return null
+        const problems = [
+          di.missing_cost?.orders > 0 && {
+            key: "cost",
+            icon: "🏷️",
+            title: `${fmtNum(di.missing_cost.orders)} đơn có sản phẩm chưa khai giá vốn`,
+            detail: <>Kéo theo {money(di.missing_cost.revenue)} doanh thu <b>không được tính vào LNG</b> —
+              số lãi đang thấp hơn thực tế. Khai giá vốn ở trang <b>Giá vốn</b>; nếu là mã combo do POS
+              sinh thêm thì báo kỹ thuật khai thành phần.</>,
+            days: di.missing_cost.days, total: di.missing_cost.total_days,
+          },
+          di.zero_revenue?.orders > 0 && {
+            key: "zero",
+            icon: "💸",
+            title: `${fmtNum(di.zero_revenue.orders)} đơn có doanh thu 0đ`,
+            detail: <>Sàn chưa trả về số tiền cho các đơn này (thường do đơn quá mới) — chúng vẫn
+              gánh giá vốn và ads nên <b>kéo LNG xuống thấp giả tạo</b>. Kiểm tra lại sau khi sàn
+              cập nhật; nếu đơn cũ mà vẫn 0đ thì báo kỹ thuật.</>,
+            days: di.zero_revenue.days, total: di.zero_revenue.total_days,
+          },
+          di.ads_missing?.total_days > 0 && {
+            key: "ads",
+            icon: "📢",
+            title: `${fmtNum(di.ads_missing.total_days)} ngày chưa điền chi phí ads`,
+            detail: <>Các ngày này đang tính lãi <b>như thể không tốn tiền quảng cáo</b> nên LNG
+              đẹp giả tạo. Điền ở trang <b>Nhập chi phí</b>.</>,
+            days: di.ads_missing.days, total: di.ads_missing.total_days,
+          },
+        ].filter(Boolean) as any[]
+
+        if (problems.length === 0) return null
+
+        return (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 space-y-3">
+            <div className="text-[13px] font-semibold text-red-800">
+              ⚠ Có đơn thiếu thông tin — số LNG bên dưới chưa phản ánh đúng thực tế
+            </div>
+            {problems.map(p => (
+              <div key={p.key} className="text-[12.5px] text-red-900/90">
+                <div className="font-semibold">{p.icon} {p.title}</div>
+                <div className="mt-0.5 text-red-800/85">{p.detail}</div>
+                {p.days?.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11.5px] text-red-700/70">Ngày cần xử lý:</span>
+                    {p.days.map((d: any) => (
+                      <button key={`${d.date}-${d.platform}`} type="button"
+                        onClick={() => {
+                          // Mở đúng dòng ngày đó trong bảng bên dưới.
+                          const row = (data.by_day ?? []).find(
+                            (r: any) => r.date === d.date && r.platform === d.platform)
+                          if (row) setDayDetail(row)
+                        }}
+                        title={`${d.platform === "tiktok" ? "TikTok Shop" : "Shopee"} — ${fmtNum(d.n)} đơn. Bấm để xem chi tiết.`}
+                        className="rounded-md border border-red-300 bg-white px-2 py-0.5 text-[11.5px] font-medium text-red-700 hover:bg-red-100">
+                        {d.date.slice(8, 10)}/{d.date.slice(5, 7)}
+                        <span className="ml-1 text-red-400">{d.platform === "tiktok" ? "TT" : "SP"}</span>
+                        <span className="ml-1 font-semibold">{fmtNum(d.n)}</span>
+                      </button>
+                    ))}
+                    {p.total > p.days.length && (
+                      <span className="text-[11.5px] text-red-700/70">…và {p.total - p.days.length} ngày nữa</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {cov.pct != null && cov.pct < 100 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
           <b>Giá vốn phủ {cov.pct}% doanh thu.</b>{" "}
@@ -3832,6 +3906,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."
                 : "Chỉ đơn đã giao thành công — tiền chắc chắn về. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."}
               {" "}<b>Bấm vào 1 dòng ngày để xem chi tiết từng đơn</b> của ngày đó.
+              {" "}Dấu 🏷️ = đơn chưa khai giá vốn, 💸 = đơn doanh thu 0đ (di chuột để xem).
               {" "}Bấm tiêu đề cột để sắp xếp; riêng cột <b>{adsMetric === "pct" ? "%Ads" : "ROAS"}</b> bấm để đổi cách tính.
               {" "}Kéo mép cột để đổi độ rộng —{" "}
               <button type="button" onClick={resetColWidths}
@@ -3931,6 +4006,18 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         <span className="ml-1.5 text-[10.5px] text-gray-400"
                           title={`Còn ${pending} đơn đã cho đi nhưng chưa giao xong — số "thực" của ngày này chưa đủ chín`}>
                           ⏳{pending}
+                        </span>
+                      )}
+                      {Number(r.orders_missing_cost || 0) > 0 && (
+                        <span className="ml-1.5 text-[10.5px] text-amber-600"
+                          title={`${r.orders_missing_cost} đơn có SP chưa khai giá vốn — LNG ngày này đang thấp hơn thực tế`}>
+                          🏷️{r.orders_missing_cost}
+                        </span>
+                      )}
+                      {Number(r.orders_zero_revenue || 0) > 0 && (
+                        <span className="ml-1.5 text-[10.5px] text-red-500"
+                          title={`${r.orders_zero_revenue} đơn doanh thu 0đ — sàn chưa trả về tiền, kéo LNG xuống giả tạo`}>
+                          💸{r.orders_zero_revenue}
                         </span>
                       )}
                     </td>
