@@ -2234,17 +2234,19 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [days, setDays] = useState(30)
+  // Đơn VN và MY ở 2 shop Pancake khác nhau, 2 nhóm nhân sự vận hành — xem riêng.
+  const [market, setMarket] = useState<"VN" | "MY">("VN")
   const [view, setView] = useState<"unmatched" | "matched">("unmatched")
   const [editing, setEditing] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true); setErr(null)
-    apiJson(`/admin/gia-von/sku-mapping?days=${days}`, "GET")
+    apiJson(`/admin/gia-von/sku-mapping?days=${days}&market=${market}`, "GET")
       .then((d: any) => { if (d.error) throw new Error(d.error); setData(d) })
       .catch((e: any) => setErr(e.message))
       .finally(() => setLoading(false))
-  }, [days])
+  }, [days, market])
 
   useEffect(() => { load() }, [load])
 
@@ -2280,6 +2282,19 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        {/* Thị trường đứng đầu: đổi VN/MY là đổi hẳn danh sách bên dưới. */}
+        <div style={{ display: "flex", gap: 6 }}>
+          {([["VN", "🇻🇳 Việt Nam"], ["MY", "🇲🇾 Malaysia"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setMarket(k)}
+              style={{
+                padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                borderRadius: 8, border: "1px solid " + (market === k ? "#0f766e" : "#e5e7eb"),
+                background: market === k ? "#0f766e" : "#fff",
+                color: market === k ? "#fff" : "#6b7280",
+              }}>{label}</button>
+          ))}
+        </div>
+        <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
         <div style={{ display: "flex", gap: 6 }}>
           {([["unmatched", `Chưa khớp (${s.unmatched ?? 0})`],
              ["matched", `Đã khớp (${s.matched ?? 0})`]] as const).map(([k, label]) => (
@@ -2313,6 +2328,8 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
           <>Các SKU đã khai tay. Khai tay <b>được ưu tiên hơn</b> mọi cách tự khớp,
             nên nếu số nào sai thì sửa ở đây là báo cáo đổi theo.</>
         )}
+        {" "}Danh sách tách theo thị trường, nhưng <b>khớp một lần dùng chung cả VN và MY</b> —
+        một mã SP chỉ có một giá vốn, không phải khai lại cho từng shop.
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>

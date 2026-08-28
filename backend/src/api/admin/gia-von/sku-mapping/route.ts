@@ -28,7 +28,12 @@ async function sql(q: string, params?: any[]): Promise<any[]> {
  * qty > 1 để khai combo: "SET COMBO 2 Chổi" = 2 × PHVVN043_CCX02. Nhiều dòng cùng
  * sku_key = combo nhiều thành phần, giá vốn cộng lại.
  *
- * GET  ?days=30  → SKU sàn chưa có giá vốn (gom từ đơn thật) + map đã khai + gợi ý
+ * THỊ TRƯỜNG: danh sách SKU tách theo `market` (VN/MY) vì 2 shop Pancake khác nhau, 2
+ * nhóm nhân sự vận hành, và tab Sàn TMĐT cũng xem theo từng thị trường. Nhưng BẢN THÂN
+ * map dùng chung cả 2 — một mã SP chỉ có một giá vốn (VND), bán ở shop nào cũng vậy;
+ * tách map ra sẽ bắt khai 2 lần cho cùng một sản phẩm.
+ *
+ * GET  ?days=30&market=VN|MY  → SKU sàn chưa có giá vốn (gom từ đơn thật) + map đã khai
  * POST { sku_key, parts: [{product_code, qty}] }  → lưu/ghi đè 1 map
  * DELETE ?sku_key=…                               → xoá map
  */
@@ -61,6 +66,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     await init()
     const days = Math.min(Math.max(parseInt(String((req.query as any).days ?? "30"), 10) || 30, 1), 365)
+    // Tách VN / MY: đơn 2 thị trường nằm ở 2 shop Pancake khác nhau và do 2 nhóm nhân sự
+    // vận hành, nên danh sách SKU cần khớp phải riêng. Bản thân MAP thì dùng chung — một
+    // mã SP chỉ có MỘT giá vốn (VND), không phụ thuộc bán ở shop nào.
+    const market = String((req.query as any).market ?? "VN").toUpperCase() === "MY" ? "MY" : "VN"
 
     const avg = await computeAvgCost(getPool())
     const maps = await sql(`SELECT * FROM marketplace_sku_map ORDER BY sku_key, product_code`)
@@ -122,12 +131,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) AS mi
       WHERE po.deleted_at IS NULL
         AND po.source IN ('shopee','tiktok')
+        AND COALESCE(NULLIF(po.market, ''), 'VN') = $2
         AND po.status IN (1,2,3,8)
         AND po.pancake_created_at >= now() - ($1 || ' days')::interval
         AND po.raw->'items' IS NOT NULL
       GROUP BY 1
       ORDER BY orders DESC
-    `, [String(days)])
+    `, [String(days), market])
 
     // Danh mục mã SP để dropdown chọn — nguồn duy nhất là mkt_product.
     const products = await sql(`SELECT code, name FROM mkt_product WHERE active = true ORDER BY code`)
@@ -167,7 +177,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     return res.json({
-      unmatched, matched, products, days,
+      unmatched, matched, products, days, market,
       summary: {
         unmatched: unmatched.length,
         unmatched_orders: unmatched.reduce((s, u) => s + u.orders, 0),
