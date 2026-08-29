@@ -413,9 +413,15 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
                   return (
                     <button key={p.product_code} type="button"
                       onClick={() => setPicked(ps => on ? ps.filter(c => c !== p.product_code) : [...ps, p.product_code])}
+                      title={`${p.product_code} · ${p.orders} đơn${
+                        p.variant_codes?.length > 1 ? `
+Gồm ${p.variant_codes.length} mã biến thể: ${p.variant_codes.join(", ")}` : ""}`}
                       className={`rounded-md border px-2 py-1 text-[11.5px] font-medium ${
                         on ? "border-violet-300 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}`}>
                       {on ? "✓ " : "+ "}{p.product_name}
+                      {p.variant_codes?.length > 1 && (
+                        <span className="ml-1 text-[10px] opacity-60">×{p.variant_codes.length}</span>
+                      )}
                     </button>
                   )
                 })}
@@ -451,6 +457,17 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
                             </td>
                             <td className={`px-3 py-1.5 ${code === "" ? "text-amber-700 font-medium" : "text-gray-700"}`}>
                               {nameOf(code)}
+                              {(() => {
+                                // Nhắc rằng 1 dòng đã gộp mọi biến thể/combo của SP — điền
+                                // 1 lần là đủ, không phải chia ra từng mã.
+                                const p = productOptions.find(x => x.product_code === code)
+                                return p?.variant_codes?.length > 1 ? (
+                                  <span className="ml-1.5 text-[10.5px] text-gray-400"
+                                    title={`Gồm ${p.variant_codes.length} mã: ${p.variant_codes.join(", ")}`}>
+                                    (gồm {p.variant_codes.length} biến thể)
+                                  </span>
+                                ) : null
+                              })()}
                             </td>
                             <td className="px-3 py-1.5 text-right">
                               <input

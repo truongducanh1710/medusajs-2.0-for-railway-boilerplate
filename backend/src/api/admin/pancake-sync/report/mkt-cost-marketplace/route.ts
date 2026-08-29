@@ -159,19 +159,35 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Gộp theo mã đã chuẩn hoá; SP chưa có mã (display_id trống) bỏ qua vì không phân bổ
     // được — phần đó cứ để dòng chi phí mức shop gánh.
     const products = await svc.sql(`
-      SELECT po.source AS platform, po.market,
-             COALESCE(NULLIF(TRIM(po.shop_name), ''), '') AS shop,
-             upper(trim(mi->'variation_info'->>'display_id')) AS product_code,
-             MAX(COALESCE(mi->'variation_info'->>'name', mi->>'name', '')) AS product_name,
-             COUNT(DISTINCT po.id)::int AS orders
-        FROM pancake_order po
-        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) AS mi
-       WHERE po.deleted_at IS NULL AND po.source IN ('shopee','tiktok')
-         AND po.pancake_created_at >= (now() - interval '90 days')
-         AND COALESCE(mi->'variation_info'->>'display_id', '') <> ''
-       GROUP BY 1,2,3,4
-      HAVING COUNT(DISTINCT po.id) >= 3
-       ORDER BY po.market, po.source, 3, COUNT(DISTINCT po.id) DESC
+      SELECT platform, market, shop, product_code,
+             MAX(product_name) AS product_name,
+             SUM(orders)::int  AS orders,
+             -- Các mã biến thể đã gộp vào dòng này (chỉ để hiện tooltip khi cần đối chiếu).
+             array_agg(DISTINCT full_code) AS variant_codes
+        FROM (
+          SELECT po.source AS platform, po.market,
+                 COALESCE(NULLIF(TRIM(po.shop_name), ''), '') AS shop,
+                 upper(trim(mi->'variation_info'->>'display_id')) AS full_code,
+                 -- GỘP BIẾN THỂ: POS sinh mã riêng cho từng biến thể/combo của cùng một SP
+                 -- (PHVVN043_CCX01/_CCX02/_CCX03 đều là chổi cọ xoong) nên lưới hiện 3 dòng
+                 -- trùng tên, nhân sự không biết điền dòng nào. Phần PHVVN### là danh tính
+                 -- thật của SP; gom theo đó để mỗi SP đúng 1 dòng, chi phí dùng chung.
+                 COALESCE(
+                   (regexp_match(upper(trim(mi->'variation_info'->>'display_id')), '^(PHVVN[0-9]{2,3})'))[1],
+                   upper(trim(mi->'variation_info'->>'display_id'))
+                 ) AS product_code,
+                 COALESCE(mi->'variation_info'->>'name', mi->>'name', '') AS product_name,
+                 COUNT(DISTINCT po.id)::int AS orders
+            FROM pancake_order po
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) AS mi
+           WHERE po.deleted_at IS NULL AND po.source IN ('shopee','tiktok')
+             AND po.pancake_created_at >= (now() - interval '90 days')
+             AND COALESCE(mi->'variation_info'->>'display_id', '') <> ''
+           GROUP BY 1,2,3,4,5,6
+        ) v
+       GROUP BY platform, market, shop, product_code
+      HAVING SUM(orders) >= 3
+       ORDER BY market, platform, shop, SUM(orders) DESC
     `)
 
     // Kênh CÓ đơn trong kỳ nhưng CHƯA điền chi phí ngày đó — dấu hiệu bỏ sót.

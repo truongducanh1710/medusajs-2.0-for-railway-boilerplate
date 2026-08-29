@@ -284,17 +284,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // (đơn mua 2 cái gánh gấp đôi đơn mua 1 cái — sát thực tế hơn chia theo đầu đơn).
     // Phần điền ở mức shop chia đều cho các đơn KHÔNG chứa SP nào đã điền riêng: nếu
     // chia cho tất cả thì đơn đã có ads riêng bị tính 2 lần.
+    // Chi phí điền theo SP được lưu theo PREFIX (PHVVN043), còn dòng hàng mang mã biến
+    // thể đầy đủ (PHVVN043_CCX01/_CCX02). Quy mã dòng hàng về prefix để khớp — nhờ vậy
+    // mọi biến thể/combo của cùng một SP dùng chung khoản chi phí đã điền.
+    const adsKeyOf = (code: string | null): string | null => {
+      if (!code) return null
+      const c = String(code).toUpperCase()
+      if (adsByProduct[c] != null) return c            // điền bằng mã đầy đủ (dữ liệu cũ)
+      const m = c.match(/^(PHVVN\d{2,3})/)
+      return m && adsByProduct[m[1]] != null ? m[1] : null
+    }
+
     const qtyByProduct: Record<string, number> = {}
     for (const o of list as any[]) {
       for (const it of o.items) {
-        if (it.sp_code && adsByProduct[it.sp_code] != null) {
-          qtyByProduct[it.sp_code] = (qtyByProduct[it.sp_code] ?? 0) + it.qty
-        }
+        const k = adsKeyOf(it.sp_code)
+        if (k) qtyByProduct[k] = (qtyByProduct[k] ?? 0) + it.qty
       }
     }
     // Đơn "chưa được ads riêng chạm tới" — nhóm sẽ gánh phần chi phí mức shop.
     const ordersForShopLevel = (list as any[]).filter(
-      o => !o.items.some((it: any) => it.sp_code && adsByProduct[it.sp_code] != null))
+      o => !o.items.some((it: any) => adsKeyOf(it.sp_code)))
     const shopLevelPerOrder = ordersForShopLevel.length > 0
       ? adsShopLevel / ordersForShopLevel.length
       : 0
@@ -302,9 +312,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsOfOrder = (o: any): number => {
       let sum = 0
       for (const it of o.items) {
-        const code = it.sp_code
-        if (code && adsByProduct[code] != null && qtyByProduct[code] > 0) {
-          sum += adsByProduct[code] * (it.qty / qtyByProduct[code])
+        const k = adsKeyOf(it.sp_code)
+        if (k && qtyByProduct[k] > 0) {
+          sum += adsByProduct[k] * (it.qty / qtyByProduct[k])
         }
       }
       // Đơn không dính SP nào có ads riêng thì nhận suất chi phí mức shop.
