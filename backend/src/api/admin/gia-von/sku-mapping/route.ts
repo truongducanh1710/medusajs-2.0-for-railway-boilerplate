@@ -74,6 +74,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const avg = await computeAvgCost(getPool())
     const maps = await sql(`SELECT * FROM marketplace_sku_map ORDER BY sku_key, product_code`)
 
+    // Nạp trước vòng lặp phụ kiện: cột K của cost_sheet có thể ghi TÊN thay vì mã, cần
+    // map tên -> mã để đánh chỉ mục đúng (xem ghi chú ở chỗ dùng bên dưới).
+    const prodRows = await sql(`SELECT code, name FROM mkt_product WHERE active = true ORDER BY code`)
+    const nameToCode: Record<string, string> = {}
+    const codeSet = new Set<string>()
+    for (const p of prodRows) {
+      if (p.code) codeSet.add(String(p.code).trim().toUpperCase())
+      if (p.name && p.code) nameToCode[String(p.name).trim().toUpperCase()] = String(p.code).trim().toUpperCase()
+    }
+
     // Gom map theo sku_key — 1 SKU có thể gồm nhiều thành phần.
     const mapped: Record<string, any> = {}
     for (const m of maps) {
@@ -111,7 +121,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         // "Sản phẩm chính" vào costs — nên tra theo mã sẽ trượt và báo "chưa có giá vốn"
         // dù dòng phụ kiện đã khai đủ. Chỉ ghi khi mã CHƯA có chủ: không đè giá vốn của
         // sản phẩm chính cùng mã (bộ lau nhà đắt hơn nhiều giẻ rời).
-        const ma = (cNhom ? d[cNhom] : "")?.trim().toUpperCase() ?? ""
+        // Cột K ghi MÃ hoặc TÊN (dữ liệu cũ) — quy về mã, nếu không thì key là tên và
+        // đơn về theo mã sẽ tra không thấy.
+        const kRaw = (cNhom ? d[cNhom] : "")?.trim().toUpperCase() ?? ""
+        const ma = kRaw && codeSet.has(kRaw) ? kRaw : (nameToCode[kRaw] ?? "")
         if (ma && accessoryByCode[ma] == null) accessoryByCode[ma] = Math.round(g)
       }
     }
@@ -159,7 +172,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     //    POS (vd "GIẺ LAU TAY TREO TƯỜNG" 3.230đ, "Quà tặng khăn lau cao cấp"). Thiếu
     //    nhóm này thì những SKU đó không bao giờ khớp được vì không có gì để chọn.
     // costOf() tra accessory theo TÊN trước tiên nên dùng thẳng tên làm product_code.
-    const prodRows = await sql(`SELECT code, name FROM mkt_product WHERE active = true ORDER BY code`)
     const products = [
       ...prodRows.map((p: any) => ({
         code: p.code, name: p.name, kind: "product" as const, cost: costOf(p.code),

@@ -57,7 +57,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const prodNames = await sql(`SELECT code, name FROM mkt_product WHERE active = true`)
     const codeToName: Record<string, string> = {}
-    for (const p of prodNames) if (p.code) codeToName[String(p.code).trim().toUpperCase()] = p.name
+    // Chiều ngược lại: cột K của cost_sheet có thể ghi TÊN sản phẩm thay vì mã (dữ liệu
+    // cũ) — cần map tên -> mã, đúng như computeAvgCost() vẫn làm.
+    const nameToCode: Record<string, string> = {}
+    const codeSet = new Set<string>()
+    for (const p of prodNames) {
+      if (p.code) {
+        const c = String(p.code).trim().toUpperCase()
+        codeToName[c] = p.name
+        codeSet.add(c)
+      }
+      if (p.name && p.code) nameToCode[String(p.name).trim().toUpperCase()] = String(p.code).trim().toUpperCase()
+    }
 
     const aliasCases = Object.entries(DISPLAY_ID_ALIASES)
       .map(([f, t]) => `WHEN '${f}' THEN '${t}'`).join("\n          ")
@@ -111,8 +122,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const gia = parseFloat(String(d[colGiaKho] ?? "").replace(/\./g, "").replace(",", ".")) || 0
         if (gia <= 0) continue
         accessoryCost[ten.toUpperCase()] = Math.round(gia)
+        // Cột K có thể ghi MÃ hoặc TÊN sản phẩm (dữ liệu cũ) — quy về mã trước khi đánh
+        // chỉ mục, nếu không thì key là tên và đơn về theo mã sẽ tra không thấy
+        // (đo được: giẻ lau nhà tự vắt phun sương, cột K ghi "CÂY LAU NHÀ TỰ VẮT...").
+        const kRaw = (posToId[10] ? d[posToId[10]] : "")?.trim().toUpperCase() ?? ""
+        const maK = kRaw && codeSet.has(kRaw) ? kRaw : (nameToCode[kRaw] ?? "")
         // Chỉ ghi khi mã chưa có chủ — không đè giá vốn của sản phẩm chính cùng mã.
-        const maK = (posToId[10] ? d[posToId[10]] : "")?.trim().toUpperCase() ?? ""
         if (maK && accessoryByCode[maK] == null) accessoryByCode[maK] = Math.round(gia)
       }
     }
