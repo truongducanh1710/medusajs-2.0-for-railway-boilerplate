@@ -122,13 +122,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const gia = parseFloat(String(d[colGiaKho] ?? "").replace(/\./g, "").replace(",", ".")) || 0
         if (gia <= 0) continue
         accessoryCost[ten.toUpperCase()] = Math.round(gia)
-        // Cột K có thể ghi MÃ hoặc TÊN sản phẩm (dữ liệu cũ) — quy về mã trước khi đánh
-        // chỉ mục, nếu không thì key là tên và đơn về theo mã sẽ tra không thấy
-        // (đo được: giẻ lau nhà tự vắt phun sương, cột K ghi "CÂY LAU NHÀ TỰ VẮT...").
-        const kRaw = (posToId[10] ? d[posToId[10]] : "")?.trim().toUpperCase() ?? ""
-        const maK = kRaw && codeSet.has(kRaw) ? kRaw : (nameToCode[kRaw] ?? "")
+        // Đánh chỉ mục dòng phụ kiện theo MÃ CỦA CHÍNH NÓ trong danh mục, tra bằng TÊN
+        // dòng. KHÔNG dùng cột K: cột đó trỏ tới SP CHÍNH mà phụ kiện đi kèm (dòng "giẻ
+        // lau nhà phun sương" ghi K = "CÂY LAU NHÀ TỰ VẮT PHUN SƯƠNG"), nên lấy theo K sẽ
+        // ra mã cây lau nhà — sai món. Trên sàn giẻ BÁN RIÊNG với mã PHVVN008_GLNTV và
+        // phải lấy giá của chính cái giẻ; chỉ khi đi kèm SP chính mới tính gộp vào bộ.
+        const tenUp = ten.toUpperCase()
+        const maPK = codeSet.has(tenUp) ? tenUp : (nameToCode[tenUp] ?? "")
         // Chỉ ghi khi mã chưa có chủ — không đè giá vốn của sản phẩm chính cùng mã.
-        if (maK && accessoryByCode[maK] == null) accessoryByCode[maK] = Math.round(gia)
+        if (maPK && accessoryByCode[maPK] == null) accessoryByCode[maPK] = Math.round(gia)
       }
     }
 
