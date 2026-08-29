@@ -284,25 +284,47 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     if (!shop) { setGrid({}); setPicked([]); return }
     const mine = rows.filter(r =>
       r.platform === platform && r.market === market && (r.shop ?? "") === shop)
+    const auto = products.filter(x => x.platform === platform && x.market === market && x.shop === shop)
+    const autoCodes = new Set(auto.map(x => x.product_code))
+    // Dòng lưu trước khi gộp biến thể mang mã dài (PHVVN043_CCX) còn danh sách giờ dùng
+    // prefix (PHVVN043) — quy về prefix để rơi đúng dòng, nếu không sẽ đẻ thêm một dòng
+    // trơ mã không có tên và chip không tick.
+    const normCode = (c: string) => {
+      if (!c || autoCodes.has(c)) return c
+      const m = c.match(/^(PHVVN\d{2,3})/)
+      return m && autoCodes.has(m[1]) ? m[1] : c
+    }
     const g: Record<string, Record<string, string>> = {}
     for (const r of mine) {
-      (g[r.date] ??= {})[r.product_code ?? ""] = String(r.cost)
+      const code = normCode(r.product_code ?? "")
+      const day = (g[r.date] ??= {})
+      // 2 mã cũ cùng gộp về 1 prefix thì cộng lại, không để mã sau đè mã trước.
+      const prev = Number(day[code] ?? 0)
+      day[code] = String(prev + Number(r.cost || 0))
     }
     setGrid(g)
     const usedDates = Object.keys(g).sort().reverse().slice(0, 14)
     setDates(usedDates.length ? usedDates : [todayVN()])
     // SP đã từng điền + SP đang bán nhiều nhất, tối đa 8 dòng cho gọn.
     const used = new Set<string>()
-    for (const r of mine) if (r.product_code) used.add(r.product_code)
-    for (const p of products.filter(x => x.platform === platform && x.market === market && x.shop === shop).slice(0, 8)) {
-      used.add(p.product_code)
+    for (const r of mine) {
+      const code = normCode(r.product_code ?? "")
+      if (code) used.add(code)
     }
+    for (const p of auto.slice(0, 8)) used.add(p.product_code)
     setPicked([...used])
   }, [shop, platform, market, rows, products])
 
-  const nameOf = (code: string) =>
-    code === "" ? "Chung cả shop (chia đều)"
-      : (productOptions.find(p => p.product_code === code)?.product_name ?? code)
+  const nameOf = (code: string) => {
+    if (code === "") return "Chung cả shop (chia đều)"
+    const p = productOptions.find(x => x.product_code === code)
+    if (p) return p.product_name
+    // Mã lạ (dữ liệu cũ, SP đã ngừng bán): tra danh mục rồi mới đành hiện mã trần —
+    // hiện mã không tên thì nhân sự không biết đang điền cho món gì.
+    const c = catalog.find((x: any) => x.product_code === code)
+      ?? catalog.find((x: any) => String(x.product_code).startsWith(code))
+    return c?.product_name ?? code
+  }
 
   const onlyDigits = (v: string) => v.replace(/[^0-9]/g, "")
 
