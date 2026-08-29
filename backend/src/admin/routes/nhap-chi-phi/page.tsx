@@ -212,6 +212,7 @@ function MarketplaceAdsCost() {
   const [rows, setRows] = useState<any[]>([])
   const [totals, setTotals] = useState<any[]>([])
   const [shops, setShops] = useState<any[]>([])
+  const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -221,6 +222,9 @@ function MarketplaceAdsCost() {
   const [platform, setPlatform] = useSticky<string>("san_platform", "tiktok")
   const [market, setMarket] = useSticky<string>("san_market", "VN")
   const [shop, setShop] = useSticky<string>("san_shop", "")
+  // Mã SP (tuỳ chọn). Chọn SP = chi phí của riêng SP đó, báo cáo phân bổ đúng vào các đơn
+  // chứa SP; để trống = chi phí chung cả shop, chia đều như cách cũ.
+  const [productCode, setProductCode] = useState("")
   const [cost, setCost] = useState("")
   const [note, setNote] = useState("")
 
@@ -231,6 +235,7 @@ function MarketplaceAdsCost() {
     try {
       const d = await apiJson(`/admin/pancake-sync/report/mkt-cost-marketplace?from=${from}&to=${to}`)
       setRows(d?.rows ?? []); setTotals(d?.totals ?? []); setShops(d?.shops ?? [])
+      setProducts(d?.products ?? [])
     } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
   }, [from, to])
   useEffect(() => { load() }, [load])
@@ -249,13 +254,28 @@ function MarketplaceAdsCost() {
   }, [shopOptions, shop])
 
   const existing = rows.find(r =>
+    r.date === date && r.platform === platform && r.market === market
+    && (r.shop ?? "") === shop && (r.product_code ?? "") === productCode)
+
+  // SP đã bán trên đúng (sàn × thị trường × shop) đang chọn — lấy từ đơn thật.
+  const productOptions = useMemo(
+    () => products.filter(p => p.platform === platform && p.market === market && p.shop === shop),
+    [products, platform, market, shop]
+  )
+  // Đổi shop mà SP cũ không còn bán ở đó thì bỏ chọn, tránh điền nhầm chỗ.
+  useEffect(() => {
+    if (productCode && !productOptions.some(p => p.product_code === productCode)) setProductCode("")
+  }, [productOptions, productCode])
+
+  // Các dòng đã điền cho đúng ngày/sàn/shop này — để thấy đã khai SP nào, còn thiếu gì.
+  const sameChannelRows = rows.filter(r =>
     r.date === date && r.platform === platform && r.market === market && (r.shop ?? "") === shop)
 
   const save = async (del = false) => {
     setSaving(true); setErr(null); setOk(null)
     try {
       const d = await apiJson("/admin/pancake-sync/report/mkt-cost-marketplace", "PUT", {
-        date, platform, market, shop,
+        date, platform, market, shop, product_code: productCode,
         cost: del ? null : Number(String(cost).replace(/[^\d]/g, "")) || 0,
         note: note.trim() || null,
       })
@@ -340,16 +360,75 @@ function MarketplaceAdsCost() {
           </Field>
         </div>
 
+        <div className="grid grid-cols-1 gap-3">
+          <Field label="Sản phẩm (khuyến nghị)">
+            <select value={productCode} onChange={e => setProductCode(e.target.value)}
+              disabled={!shop} className={inputCls}>
+              <option value="">— Chi phí chung cả shop (chia đều mọi đơn) —</option>
+              {productOptions.map(p => (
+                <option key={p.product_code} value={p.product_code}>
+                  {p.product_name} · {p.product_code} · {p.orders} đơn
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-500 mt-1">
+              {productCode
+                ? "✅ Chi phí này sẽ được tính đúng vào các đơn có sản phẩm trên — LNG từng đơn chính xác."
+                : !shop
+                  ? "Chọn shop trước để thấy danh sách sản phẩm."
+                  : productOptions.length
+                    ? "⚠ Để trống thì chi phí bị chia đều cho mọi đơn — đơn giá trị nhỏ sẽ hiện lỗ giả. Nên chọn sản phẩm."
+                    : "Chưa thấy sản phẩm nào có đủ đơn ở shop này trong 90 ngày."}
+            </p>
+          </Field>
+        </div>
+
         <Field label="Chi phí quảng cáo (VNĐ) — bắt buộc">
           <input value={cost} onChange={e => setCost(e.target.value)} inputMode="numeric"
             placeholder={existing ? `Đang có: ${fmtMoney(existing.cost)}` : "VD: 573363"}
             className={`${inputCls} text-base font-bold`} />
-          {existing && <p className="text-[11px] text-amber-600 mt-1">⚠ Kênh này ngày {date} đã có {fmtMoney(existing.cost)} — lưu sẽ ghi đè.</p>}
+          {existing && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              ⚠ {productCode ? "Sản phẩm này" : "Chi phí chung của shop"} ngày {date} đã có{" "}
+              {fmtMoney(existing.cost)} — lưu sẽ ghi đè.
+            </p>
+          )}
         </Field>
 
         <Field label="Ghi chú (tuỳ chọn)">
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="VD: gồm cả hoa hồng Affiliate" className={inputCls} />
         </Field>
+
+        {/* Đã điền gì cho đúng ngày/shop này — điền nhiều SP là việc lặp nhiều lần, cần
+            thấy ngay đã khai xong SP nào để khỏi trùng hoặc sót. */}
+        {shop && sameChannelRows.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+            <div className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+              Đã điền cho {date} · {shop}
+              <span className="ml-2 font-normal text-gray-400">
+                tổng {fmtMoney(sameChannelRows.reduce((a: number, r: any) => a + Number(r.cost || 0), 0))}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {sameChannelRows.map((r: any) => {
+                const pr = products.find((x: any) => x.product_code === r.product_code)
+                return (
+                  <button key={r.product_code ?? ""} type="button"
+                    onClick={() => { setProductCode(r.product_code ?? ""); setCost(String(r.cost)); setNote(r.note ?? "") }}
+                    title="Bấm để sửa dòng này"
+                    className="flex w-full items-center justify-between gap-2 rounded px-1.5 py-1 text-[12px] hover:bg-white">
+                    <span className={r.product_code ? "text-gray-700" : "text-amber-700"}>
+                      {r.product_code
+                        ? (pr?.product_name ?? r.product_code)
+                        : "Chi phí chung cả shop (chia đều)"}
+                    </span>
+                    <span className="font-semibold text-gray-900">{fmtMoney(r.cost)}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <Alerts err={err} ok={ok} />
 

@@ -55,11 +55,20 @@ async function ensureTable(svc: any) {
   await svc.sql(`ALTER TABLE mkt_ads_cost_marketplace ADD COLUMN IF NOT EXISTS market varchar(8) NOT NULL DEFAULT 'VN'`)
   await svc.sql(`ALTER TABLE mkt_ads_cost_marketplace ADD COLUMN IF NOT EXISTS shop varchar(64) NOT NULL DEFAULT ''`)
   await svc.sql(`ALTER TABLE mkt_ads_cost_marketplace DROP CONSTRAINT IF EXISTS mkt_ads_cost_marketplace_date_platform_unique`)
+  // Chiều SẢN PHẨM (thêm 8/2026). Chia đều ads cho mọi đơn trong ngày là sai: đơn 28.000đ
+  // và đơn 55.000đ gánh ads bằng nhau nên đơn nhỏ luôn hiện lỗ giả. Điền theo SP thì phân
+  // bổ đúng vào SP đó.
+  // '' = dòng điền ở MỨC SHOP (cách cũ) — vẫn hợp lệ, chia đều cho các đơn không thuộc SP
+  // nào đã điền riêng. Nhờ vậy dữ liệu cũ chạy nguyên, không phải nhập lại.
+  await svc.sql(`ALTER TABLE mkt_ads_cost_marketplace ADD COLUMN IF NOT EXISTS product_code varchar(64) NOT NULL DEFAULT ''`)
+  // Unique cũ (không có product_code) phải bỏ, nếu không mỗi (ngày,sàn,shop) chỉ điền
+  // được 1 SP duy nhất.
+  await svc.sql(`ALTER TABLE mkt_ads_cost_marketplace DROP CONSTRAINT IF EXISTS mkt_ads_cost_marketplace_uniq`)
   await svc.sql(`
     DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mkt_ads_cost_marketplace_uniq') THEN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mkt_ads_cost_mp_uniq2') THEN
         ALTER TABLE mkt_ads_cost_marketplace
-          ADD CONSTRAINT mkt_ads_cost_marketplace_uniq UNIQUE (date, platform, market, shop);
+          ADD CONSTRAINT mkt_ads_cost_mp_uniq2 UNIQUE (date, platform, market, shop, product_code);
       END IF;
     END $$;
   `)
@@ -107,11 +116,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const where = filters.length ? `AND ${filters.join(" AND ")}` : ""
 
     const rows = await svc.sql(`
-      SELECT date::text AS date, platform, market, shop, cost::bigint AS cost,
+      SELECT date::text AS date, platform, market, shop, product_code, cost::bigint AS cost,
              note, created_by, updated_at
         FROM mkt_ads_cost_marketplace
        WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date ${where}
-       ORDER BY date DESC, market, platform, shop
+       ORDER BY date DESC, market, platform, shop, product_code
     `, params)
 
     const totals = await svc.sql(`
@@ -144,6 +153,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        ORDER BY market, source, COUNT(*) DESC
     `)
 
+    // SP thực sự bán trên từng (sàn × thị trường × shop) trong 90 ngày — cho dropdown khi
+    // điền chi phí theo SP. Lấy từ ĐƠN THẬT chứ không liệt kê cả danh mục: nhân sự chỉ cần
+    // thấy vài SP shop mình đang chạy, không phải cuộn qua 51 mã.
+    // Gộp theo mã đã chuẩn hoá; SP chưa có mã (display_id trống) bỏ qua vì không phân bổ
+    // được — phần đó cứ để dòng chi phí mức shop gánh.
+    const products = await svc.sql(`
+      SELECT po.source AS platform, po.market,
+             COALESCE(NULLIF(TRIM(po.shop_name), ''), '') AS shop,
+             upper(trim(mi->'variation_info'->>'display_id')) AS product_code,
+             MAX(COALESCE(mi->'variation_info'->>'name', mi->>'name', '')) AS product_name,
+             COUNT(DISTINCT po.id)::int AS orders
+        FROM pancake_order po
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) AS mi
+       WHERE po.deleted_at IS NULL AND po.source IN ('shopee','tiktok')
+         AND po.pancake_created_at >= (now() - interval '90 days')
+         AND COALESCE(mi->'variation_info'->>'display_id', '') <> ''
+       GROUP BY 1,2,3,4
+      HAVING COUNT(DISTINCT po.id) >= 3
+       ORDER BY po.market, po.source, 3, COUNT(DISTINCT po.id) DESC
+    `)
+
     // Kênh CÓ đơn trong kỳ nhưng CHƯA điền chi phí ngày đó — dấu hiệu bỏ sót.
     const missing = await svc.sql(`
       WITH có_đơn AS (
@@ -171,7 +201,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `, me.isAdmin ? [from, to] : [from, to, me.email])
 
     return res.json({
-      rows, totals, by_day: byDay, shops, missing,
+      rows, totals, by_day: byDay, shops, products, missing,
       is_admin: me.isAdmin, my_email: me.email,
       platforms: PLATFORMS, markets: MARKETS, from, to,
     })
@@ -209,23 +239,30 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     // Chi phí điền theo TỪNG shop, không gộp cả thị trường — gộp thì LNG từng shop sai.
     if (!shop) return res.status(400).json({ error: "Thiếu shop — chi phí phải điền theo từng shop." })
 
+    // Mã SP (tuỳ chọn). Có mã = chi phí của riêng SP đó; để trống = chi phí chung của shop
+    // trong ngày, sẽ chia cho phần đơn chưa được điền riêng.
+    const productCode = String(b?.product_code ?? "").trim().toUpperCase().slice(0, 64)
+
     const svc = req.scope.resolve("cskhAnalysisModule") as any
     await ensureTable(svc)
 
     if (b?.cost === null || b?.cost === "" || b?.cost === undefined) {
       // Người thường chỉ xoá được dòng CHÍNH MÌNH điền — chặn ở SQL, không dựa vào UI.
-      const owner = me.isAdmin ? "" : "AND created_by = $5"
+      const owner = me.isAdmin ? "" : "AND created_by = $6"
       const del = await svc.sql(
         `UPDATE mkt_ads_cost_marketplace SET deleted_at = now(), updated_at = now()
           WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
+            AND product_code = $5
             AND deleted_at IS NULL ${owner}
           RETURNING id`,
-        me.isAdmin ? [date, platform, market, shop] : [date, platform, market, shop, me.email]
+        me.isAdmin
+          ? [date, platform, market, shop, productCode]
+          : [date, platform, market, shop, productCode, me.email]
       )
       if (!del.length) {
         return res.status(403).json({ error: "Không tìm thấy dòng của bạn để xoá (dòng này do người khác điền)." })
       }
-      return res.json({ ok: true, deleted: true, date, platform, market, shop })
+      return res.json({ ok: true, deleted: true, date, platform, market, shop, product_code: productCode })
     }
 
     const cost = Math.round(Number(b.cost))
@@ -237,8 +274,9 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     if (!me.isAdmin) {
       const owner = await svc.sql(
         `SELECT created_by FROM mkt_ads_cost_marketplace
-          WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4 AND deleted_at IS NULL`,
-        [date, platform, market, shop]
+          WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
+            AND product_code = $5 AND deleted_at IS NULL`,
+        [date, platform, market, shop, productCode]
       )
       if (owner.length && owner[0].created_by && owner[0].created_by !== me.email) {
         return res.status(403).json({
@@ -248,15 +286,15 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     }
 
     await svc.sql(`
-      INSERT INTO mkt_ads_cost_marketplace (date, platform, market, shop, cost, note, created_by)
-      VALUES ($1::date, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (date, platform, market, shop) DO UPDATE SET
+      INSERT INTO mkt_ads_cost_marketplace (date, platform, market, shop, product_code, cost, note, created_by)
+      VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (date, platform, market, shop, product_code) DO UPDATE SET
         cost       = EXCLUDED.cost,
         note       = EXCLUDED.note,
         created_by = EXCLUDED.created_by,
         deleted_at = NULL,
         updated_at = now()
-    `, [date, platform, market, shop, cost, b?.note ?? null, me.email])
+    `, [date, platform, market, shop, productCode, cost, b?.note ?? null, me.email])
 
     return res.json({ ok: true, date, platform, market, shop, cost })
   } catch (err: any) {

@@ -195,19 +195,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY order_id
     `, [date, statusList])
 
-    // Chi phí ads của ngày — nhập tay theo (ngày × sàn), gộp các shop cùng sàn.
+    // Chi phí ads của ngày. Tách 2 loại:
+    //  • Điền THEO SẢN PHẨM (product_code <> '') — phân bổ đúng vào đơn chứa SP đó.
+    //  • Điền ở MỨC SHOP (product_code = '') — chia đều cho phần đơn còn lại, như cũ.
+    // Chia đều toàn bộ là sai: đơn 28.000đ và đơn 55.000đ gánh ads bằng nhau nên đơn nhỏ
+    // luôn hiện lỗ giả. Nhân sự điền theo SP tới đâu thì chính xác tới đó.
     let adsDay = 0
     let hasAdsEntry = false
+    const adsByProduct: Record<string, number> = {}
+    let adsShopLevel = 0
     try {
       const adsRows = await sql(`
-        SELECT SUM(cost)::bigint AS cost, COUNT(*)::int AS n
+        SELECT COALESCE(product_code, '') AS product_code, SUM(cost)::bigint AS cost
           FROM mkt_ads_cost_marketplace
          WHERE deleted_at IS NULL AND date = $1::date AND market = $2
            ${platform ? `AND platform = '${platform}'` : `AND platform IN ('shopee','tiktok')`}
+         GROUP BY 1
       `, [date, market])
-      adsDay = Number(adsRows[0]?.cost || 0)
-      hasAdsEntry = Number(adsRows[0]?.n || 0) > 0
-    } catch { /* bảng chưa tạo — coi như chưa có chi phí ads */ }
+      for (const r of adsRows) {
+        const c = Number(r.cost) || 0
+        adsDay += c
+        hasAdsEntry = true
+        const code = String(r.product_code || "").trim().toUpperCase()
+        if (code) adsByProduct[code] = (adsByProduct[code] ?? 0) + c
+        else adsShopLevel += c
+      }
+    } catch { /* bảng chưa tạo / chưa có cột product_code — coi như chưa có chi phí ads */ }
 
     // Gộp dòng hàng về đơn.
     const orders: Record<string, any> = {}
@@ -265,12 +278,44 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const list = Object.values(orders)
-    // Ads chia đều: sàn không có spend theo đơn nên mỗi đơn gánh phần bằng nhau.
-    const adsPerOrder = list.length > 0 ? Math.round(adsDay / list.length) : 0
+
+    // ── PHÂN BỔ CHI PHÍ ADS ────────────────────────────────────────────────────
+    // Ads điền theo SP được chia cho các đơn chứa SP đó, theo SỐ LƯỢNG SP trong đơn
+    // (đơn mua 2 cái gánh gấp đôi đơn mua 1 cái — sát thực tế hơn chia theo đầu đơn).
+    // Phần điền ở mức shop chia đều cho các đơn KHÔNG chứa SP nào đã điền riêng: nếu
+    // chia cho tất cả thì đơn đã có ads riêng bị tính 2 lần.
+    const qtyByProduct: Record<string, number> = {}
+    for (const o of list as any[]) {
+      for (const it of o.items) {
+        if (it.sp_code && adsByProduct[it.sp_code] != null) {
+          qtyByProduct[it.sp_code] = (qtyByProduct[it.sp_code] ?? 0) + it.qty
+        }
+      }
+    }
+    // Đơn "chưa được ads riêng chạm tới" — nhóm sẽ gánh phần chi phí mức shop.
+    const ordersForShopLevel = (list as any[]).filter(
+      o => !o.items.some((it: any) => it.sp_code && adsByProduct[it.sp_code] != null))
+    const shopLevelPerOrder = ordersForShopLevel.length > 0
+      ? adsShopLevel / ordersForShopLevel.length
+      : 0
+
+    const adsOfOrder = (o: any): number => {
+      let sum = 0
+      for (const it of o.items) {
+        const code = it.sp_code
+        if (code && adsByProduct[code] != null && qtyByProduct[code] > 0) {
+          sum += adsByProduct[code] * (it.qty / qtyByProduct[code])
+        }
+      }
+      // Đơn không dính SP nào có ads riêng thì nhận suất chi phí mức shop.
+      if (sum === 0) sum = shopLevelPerOrder
+      return Math.round(sum)
+    }
 
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
     const result = list.map((o: any) => {
+      const adsPerOrder = adsOfOrder(o)
       // Fullfill 5.000đ chỉ tính cho đơn đã tra được giá vốn — giống bảng ngày, để
       // đơn chưa khai vốn không tạo ra khoản lỗ ảo.
       const fullfill = o.revenue_costed > 0 ? FULLFILL_PER_ORDER : 0
@@ -322,7 +367,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       orders: result,
       totals,
       ads_cost_day: adsDay,
-      ads_per_order: adsPerOrder,
+      // Số đơn có ads riêng theo SP vs phần còn lại chia đều — để UI nói rõ đang
+      // dùng cách nào, tránh hiểu nhầm mọi đơn đều là số phân bổ thô.
+      ads_by_product: adsShopLevel < adsDay,
+      ads_product_count: Object.keys(adsByProduct).length,
+      ads_shop_level: adsShopLevel,
+      ads_per_order: ordersForShopLevel.length > 0 ? Math.round(shopLevelPerOrder) : 0,
       ads_missing: !hasAdsEntry,
       myr_to_vnd_rate: market === "MY" ? rate : null,
     })
