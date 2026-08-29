@@ -56,9 +56,15 @@ interface MktProduct {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtNumber(v: string): string {
-  const n = parseFloat(v.replace(/[^0-9.-]/g, ""))
+  // Số trong sheet viết kiểu VN: dấu CHẤM ngăn nghìn, dấu PHẨY thập phân ("1.674.000",
+  // "11,12"). Phải chuẩn hoá về dạng máy hiểu TRƯỚC khi parseFloat — nếu đưa thẳng
+  // "11.120" vào parseFloat thì dấu chấm bị hiểu là thập phân, ra 11,12 (mất 1000 lần).
+  // Đo được: "1.674.000" hiện thành "1,674" và "11.120" thành "11,12".
+  const n = parseFloat(parseViNum(String(v)).replace(/[^0-9.-]/g, ""))
   if (isNaN(n)) return v
-  return new Intl.NumberFormat("vi-VN").format(n)
+  // maximumFractionDigits: giữ phần thập phân thật (giá vốn lẻ như 11,12) thay vì
+  // làm tròn mất — mặc định của Intl là 3 nên khai báo rõ cho khỏi phụ thuộc.
+  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(n)
 }
 
 function parseViNum(s: string): string {
