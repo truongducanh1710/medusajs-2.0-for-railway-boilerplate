@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useEffect, useState, useCallback, useMemo, useRef } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from "react"
 import { apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -82,7 +82,7 @@ function NhapChiPhiPage() {
       </div>
 
       {tab === "google" && <GoogleAdsCost />}
-      {tab === "san" && <MarketplaceAdsCost />}
+      {tab === "san" && <MarketplaceAdsCostTab />}
       {tab === "tong" && <TongHopTab />}
     </div>
   )
@@ -207,7 +207,336 @@ function GoogleAdsCost() {
   )
 }
 
+// ─── Sàn TMĐT · Nhập nhanh nhiều dòng ────────────────────────────────────────
+/**
+ * Bảng nhập dạng danh sách (Ngày · Sản phẩm · Chi phí) — đúng cách nhân sự đang làm
+ * trên Excel: điền hết SP của một ngày rồi xuống ngày tiếp theo.
+ *
+ * Vì sao cần: form điền lẻ mỗi lần chỉ lưu 1 ô, 5 SP × 7 ngày = 35 lần chọn-điền-lưu.
+ * Ở đây gõ thẳng vào lưới, Enter xuống dòng, dán được cột số từ Excel, bấm lưu 1 lần.
+ *
+ * Ngày nào KHÔNG tách được theo SP thì điền dòng "Chung cả shop" — báo cáo vẫn chia
+ * trung bình cho mọi đơn ngày đó, y như trước. Điền tới đâu chính xác tới đó.
+ */
+function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
+  const [shops, setShops] = useState<any[]>([])
+  const [products, setProducts] = useState<any[]>([])
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [ok, setOk] = useState<string | null>(null)
+
+  const [platform, setPlatform] = useSticky<string>("san_platform", "tiktok")
+  const [market, setMarket] = useSticky<string>("san_market", "VN")
+  const [shop, setShop] = useSticky<string>("san_shop", "")
+
+  // grid[date][product_code] = chuỗi tiền đang gõ. Mã "" = dòng "Chung cả shop".
+  const [grid, setGrid] = useState<Record<string, Record<string, string>>>({})
+  const [dates, setDates] = useState<string[]>([todayVN()])
+  // SP hiện trong lưới — mặc định lấy SP shop đang bán, nhân sự bỏ bớt/thêm được.
+  const [picked, setPicked] = useState<string[]>([])
+
+  const from = daysAgoVN(60), to = todayVN()
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null)
+    try {
+      const d = await apiJson(`/admin/pancake-sync/report/mkt-cost-marketplace?from=${from}&to=${to}`)
+      setShops(d?.shops ?? []); setProducts(d?.products ?? []); setRows(d?.rows ?? [])
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }, [from, to])
+  useEffect(() => { load() }, [load])
+
+  const shopOptions = useMemo(
+    () => shops.filter(s => s.platform === platform && s.market === market),
+    [shops, platform, market])
+  useEffect(() => {
+    if (shop && !shopOptions.some(s => s.shop === shop)) { setShop(""); return }
+    if (!shop && shopOptions.length === 1) setShop(shopOptions[0].shop)
+  }, [shopOptions, shop])
+
+  const productOptions = useMemo(
+    () => products.filter(p => p.platform === platform && p.market === market && p.shop === shop),
+    [products, platform, market, shop])
+
+  // Thứ tự dòng trong 1 ngày: các SP đã chọn, rồi tới dòng "Chung cả shop".
+  const allCodes = useMemo(() => [...picked, ""], [picked])
+
+  // Đổi shop: nạp lại lưới từ số ĐÃ LƯU của shop đó, để nhân sự thấy ngay đã điền gì
+  // và sửa trực tiếp — không phải nhớ hôm qua khai tới đâu.
+  useEffect(() => {
+    if (!shop) { setGrid({}); setPicked([]); return }
+    const mine = rows.filter(r =>
+      r.platform === platform && r.market === market && (r.shop ?? "") === shop)
+    const g: Record<string, Record<string, string>> = {}
+    for (const r of mine) {
+      (g[r.date] ??= {})[r.product_code ?? ""] = String(r.cost)
+    }
+    setGrid(g)
+    const usedDates = Object.keys(g).sort().reverse().slice(0, 14)
+    setDates(usedDates.length ? usedDates : [todayVN()])
+    // SP đã từng điền + SP đang bán nhiều nhất, tối đa 8 dòng cho gọn.
+    const used = new Set<string>()
+    for (const r of mine) if (r.product_code) used.add(r.product_code)
+    for (const p of products.filter(x => x.platform === platform && x.market === market && x.shop === shop).slice(0, 8)) {
+      used.add(p.product_code)
+    }
+    setPicked([...used])
+  }, [shop, platform, market, rows, products])
+
+  const nameOf = (code: string) =>
+    code === "" ? "Chung cả shop (chia đều)"
+      : (productOptions.find(p => p.product_code === code)?.product_name ?? code)
+
+  const onlyDigits = (v: string) => v.replace(/[^0-9]/g, "")
+
+  const setCell = (date: string, code: string, v: string) =>
+    setGrid(g => ({ ...g, [date]: { ...(g[date] ?? {}), [code]: v } }))
+
+  const dayTotal = (date: string) =>
+    Object.values(grid[date] ?? {}).reduce((a, v) => a + (Number(onlyDigits(String(v))) || 0), 0)
+
+  const addDate = () => {
+    // Ngày mới = lùi 1 ngày so với ngày cũ nhất đang hiện, theo đúng nhịp điền lùi dần.
+    const oldest = dates.length ? dates[dates.length - 1] : todayVN()
+    const d = new Date(oldest + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1)
+    const iso = d.toISOString().slice(0, 10)
+    if (!dates.includes(iso)) setDates(ds => [...ds, iso])
+  }
+
+  /** Dán 1 cột số từ Excel vào các dòng của cùng ngày, theo thứ tự đang hiện. */
+  const onPaste = (date: string, startIdx: number) => (e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData("text")
+    // 1 ô đơn lẻ thì để trình duyệt dán như thường.
+    if (!/[\n\t]/.test(text)) return
+    e.preventDefault()
+    const vals = text.split(/\r?\n/).map(x => x.trim()).filter(x => x !== "")
+    setGrid(g => {
+      const day = { ...(g[date] ?? {}) }
+      vals.forEach((v, i) => {
+        const code = allCodes[startIdx + i]
+        if (code !== undefined) day[code] = onlyDigits(v)
+      })
+      return { ...g, [date]: day }
+    })
+  }
+
+  const save = async () => {
+    setSaving(true); setErr(null); setOk(null)
+    try {
+      const entries: any[] = []
+      for (const date of dates) {
+        for (const code of allCodes) {
+          const raw = grid[date]?.[code]
+          // Ô chưa từng chạm thì không gửi — tránh xoá nhầm số người khác đã điền.
+          if (raw === undefined) continue
+          entries.push({ date, product_code: code, cost: onlyDigits(String(raw)) })
+        }
+      }
+      if (!entries.length) { setErr("Chưa điền ô nào"); return }
+      const d = await apiJson("/admin/pancake-sync/report/mkt-cost-marketplace", "POST", {
+        platform, market, shop, entries,
+      })
+      const parts = [`Đã lưu ${d?.saved ?? 0} dòng`]
+      if (d?.deleted) parts.push(`xoá ${d.deleted}`)
+      if (d?.skipped?.length) parts.push(`bỏ qua ${d.skipped.length} (${d.skipped[0].reason})`)
+      setOk(parts.join(" · "))
+      await load(); onDone()
+    } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
+  }
+
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Đang tải…</div>
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border rounded-xl p-4 shadow-sm space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Field label="Thị trường">
+            <div className="flex gap-2">
+              {MARKETS.map(m => (
+                <button key={m.key} type="button" onClick={() => setMarket(m.key)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    market === m.key ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Sàn">
+            <div className="flex gap-2">
+              {PLATFORMS.map(p => (
+                <button key={p.key} type="button" onClick={() => setPlatform(p.key)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    platform === p.key ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Shop">
+            <select value={shop} onChange={e => setShop(e.target.value)}
+              className={`${inputCls} ${shop ? "" : "border-amber-300"}`}>
+              <option value="">— Chọn shop —</option>
+              {shopOptions.map(s => (
+                <option key={s.shop} value={s.shop}>{s.shop || "(không tên)"} · {s.orders} đơn</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="rounded-lg bg-blue-50 px-3 py-2 text-[12px] text-blue-800">
+          💡 Gõ số rồi <b>Enter</b> để xuống dòng · <b>dán cả cột từ Excel</b> vào ô đầu của ngày ·
+          ngày nào không tách được theo SP thì điền dòng <b>"Chung cả shop"</b>, báo cáo vẫn chia
+          trung bình như cũ.
+        </div>
+      </div>
+
+      {!shop ? (
+        <div className="bg-white border rounded-xl p-8 text-center text-sm text-gray-400">
+          Chọn shop để bắt đầu điền.
+        </div>
+      ) : (
+        <>
+          {productOptions.length === 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-[12.5px] text-amber-800">
+              Chưa thấy sản phẩm nào có đủ đơn ở shop này trong 90 ngày — vẫn điền được dòng "Chung cả shop".
+            </div>
+          )}
+
+          {/* Chọn SP nào hiện trong lưới — mỗi shop chỉ chạy vài SP, không cần đủ 51 dòng. */}
+          {productOptions.length > 0 && (
+            <div className="bg-white border rounded-xl p-3 shadow-sm">
+              <div className="text-[11.5px] font-semibold text-gray-500 mb-2">Sản phẩm hiện trong bảng</div>
+              <div className="flex flex-wrap gap-1.5">
+                {productOptions.map(p => {
+                  const on = picked.includes(p.product_code)
+                  return (
+                    <button key={p.product_code} type="button"
+                      onClick={() => setPicked(ps => on ? ps.filter(c => c !== p.product_code) : [...ps, p.product_code])}
+                      className={`rounded-md border px-2 py-1 text-[11.5px] font-medium ${
+                        on ? "border-violet-300 bg-violet-50 text-violet-700" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}`}>
+                      {on ? "✓ " : "+ "}{p.product_name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b text-xs text-gray-500">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 w-32">Ngày</th>
+                    <th className="text-left px-3 py-2.5">Sản phẩm</th>
+                    <th className="text-right px-3 py-2.5 w-44">Chi phí (VNĐ)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {dates.map(date => {
+                    const dd = new Date(date + "T00:00:00Z")
+                    const wd = ["CN", "Th2", "Th3", "Th4", "Th5", "Th6", "Th7"][dd.getUTCDay()]
+                    return (
+                      <Fragment key={date}>
+                        {allCodes.map((code, i) => (
+                          <tr key={`${date}-${code}`} className={code === "" ? "bg-amber-50/40" : ""}>
+                            <td className="px-4 py-1.5 text-gray-500 whitespace-nowrap">
+                              {i === 0 && (
+                                <span className="font-semibold text-gray-700">
+                                  {date.slice(8, 10)}/{date.slice(5, 7)}
+                                  <span className="ml-1 font-normal text-gray-400">({wd})</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className={`px-3 py-1.5 ${code === "" ? "text-amber-700 font-medium" : "text-gray-700"}`}>
+                              {nameOf(code)}
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <input
+                                value={grid[date]?.[code] ?? ""}
+                                onChange={e => setCell(date, code, onlyDigits(e.target.value))}
+                                onPaste={onPaste(date, i)}
+                                onKeyDown={e => {
+                                  if (e.key !== "Enter") return
+                                  e.preventDefault()
+                                  const body = e.currentTarget.closest("tbody") as HTMLElement | null
+                                  if (!body) return
+                                  const inputs = Array.from(body.querySelectorAll("input")) as HTMLInputElement[]
+                                  const idx = inputs.indexOf(e.currentTarget)
+                                  inputs[idx + 1]?.focus()
+                                }}
+                                inputMode="numeric" placeholder="—"
+                                className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-right text-sm text-gray-900 outline-none focus:border-violet-400" />
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-50 border-t">
+                          <td className="px-4 py-1.5" />
+                          <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold text-gray-500">
+                            Tổng ngày {date.slice(8, 10)}/{date.slice(5, 7)}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-[12.5px] font-bold text-gray-900">
+                            {fmtMoney(dayTotal(date))}
+                          </td>
+                        </tr>
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-4 py-3 border-t bg-gray-50/60 flex items-center gap-2 flex-wrap">
+              <button type="button" onClick={addDate}
+                className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-violet-700 hover:bg-violet-50">
+                + Thêm ngày
+              </button>
+              <span className="text-[11.5px] text-gray-400">
+                Đang hiện {dates.length} ngày × {allCodes.length} dòng
+              </span>
+            </div>
+          </div>
+
+          <Alerts err={err} ok={ok} />
+
+          <button onClick={save} disabled={saving || !shop}
+            className={`w-full rounded-lg px-4 py-2.5 text-sm font-bold text-white ${
+              !saving && shop ? "bg-green-600 hover:bg-green-700" : "bg-gray-300 cursor-not-allowed"}`}>
+            {saving ? "Đang lưu…" : "Lưu tất cả"}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Sàn TMĐT ────────────────────────────────────────────────────────────────
+/**
+ * Tab "Sàn TMĐT" — 2 cách nhập cho cùng một dữ liệu:
+ *  • Nhập nhanh (mặc định): lưới Ngày · SP · Chi phí, điền cả tuần rồi lưu 1 lần.
+ *  • Điền lẻ: form từng ô như trước, giữ lại cho ai quen dùng và để xoá dòng.
+ */
+function MarketplaceAdsCostTab() {
+  const [mode, setMode] = useState<"bulk" | "single">("bulk")
+  const [reloadKey, setReloadKey] = useState(0)
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1.5">
+        {([["bulk", "⚡ Nhập nhanh nhiều dòng"], ["single", "✏️ Điền lẻ từng ô"]] as const).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setMode(k)}
+            className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold ${
+              mode === k ? "border-violet-600 bg-violet-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {mode === "bulk"
+        ? <MarketplaceBulkEntry key={reloadKey} onDone={() => setReloadKey(k => k + 1)} />
+        : <MarketplaceAdsCost />}
+    </div>
+  )
+}
+
 function MarketplaceAdsCost() {
   const [rows, setRows] = useState<any[]>([])
   const [totals, setTotals] = useState<any[]>([])

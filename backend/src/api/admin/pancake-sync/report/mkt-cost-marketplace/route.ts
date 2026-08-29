@@ -302,3 +302,103 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     return res.status(500).json({ error: err.message })
   }
 }
+
+/**
+ * POST /admin/pancake-sync/report/mkt-cost-marketplace
+ * body: { platform, market, shop, entries: [{ date, product_code, cost }] }
+ *
+ * Lưu HÀNG LOẠT cho bảng nhập dạng danh sách (Ngày · SP · Chi phí) — nhân sự điền cả
+ * tuần rồi bấm "Lưu tất cả" một lần, thay vì mỗi ô một request như PUT.
+ *
+ * cost rỗng/null = XOÁ dòng đó, để bỏ số điền nhầm ngay trong lưới.
+ *
+ * Quyền ghi đè giống PUT: người thường chỉ ghi được ô trống hoặc ô của chính mình;
+ * admin ghi đè được. Ô bị chặn KHÔNG làm hỏng cả mẻ — trả về danh sách `skipped` để UI
+ * báo đúng dòng nào không lưu được, phần còn lại vẫn lưu.
+ */
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const me = await getAuth(req)
+    if (!me) return res.status(401).json({ error: "Unauthenticated" })
+
+    const b = req.body as any
+    const platform = String(b?.platform ?? "").toLowerCase()
+    if (!PLATFORMS.includes(platform as any)) {
+      return res.status(400).json({ error: `Sàn không hợp lệ — chỉ nhận: ${PLATFORMS.join(", ")}` })
+    }
+    const market = String(b?.market ?? "VN").toUpperCase()
+    if (!MARKETS.includes(market as any)) {
+      return res.status(400).json({ error: `Thị trường không hợp lệ — chỉ nhận: ${MARKETS.join(", ")}` })
+    }
+    const shop = String(b?.shop ?? "").trim().slice(0, 64)
+    if (!shop) return res.status(400).json({ error: "Thiếu shop — chi phí phải điền theo từng shop." })
+
+    const entries = Array.isArray(b?.entries) ? b.entries : []
+    if (entries.length === 0) return res.status(400).json({ error: "Không có dòng nào để lưu" })
+    // Chặn mẻ quá lớn: 1 shop × 31 ngày × ~30 SP vẫn dưới ngưỡng này.
+    if (entries.length > 1000) return res.status(400).json({ error: "Quá nhiều dòng trong một lần lưu (tối đa 1000)" })
+
+    const svc = req.scope.resolve("cskhAnalysisModule") as any
+    await ensureTable(svc)
+
+    let saved = 0, deleted = 0
+    const skipped: { date: string; product_code: string; reason: string }[] = []
+
+    for (const e of entries) {
+      const date = String(e?.date ?? "")
+      if (!isDate(date)) { skipped.push({ date, product_code: "", reason: "Ngày không hợp lệ" }); continue }
+      const productCode = String(e?.product_code ?? "").trim().toUpperCase().slice(0, 64)
+
+      // Người thường không được đè số của người khác — kiểm từng ô, ô nào vướng thì bỏ
+      // qua ô đó chứ không huỷ cả mẻ (nhân sự điền 30 dòng, hỏng 1 dòng vẫn lưu 29).
+      if (!me.isAdmin) {
+        const owner = await svc.sql(
+          `SELECT created_by FROM mkt_ads_cost_marketplace
+            WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
+              AND product_code = $5 AND deleted_at IS NULL`,
+          [date, platform, market, shop, productCode]
+        )
+        if (owner.length && owner[0].created_by && owner[0].created_by !== me.email) {
+          skipped.push({ date, product_code: productCode, reason: `do ${owner[0].created_by} điền` })
+          continue
+        }
+      }
+
+      const raw = e?.cost
+      const isEmpty = raw === null || raw === undefined || String(raw).trim() === ""
+      if (isEmpty) {
+        const del = await svc.sql(
+          `UPDATE mkt_ads_cost_marketplace SET deleted_at = now(), updated_at = now()
+            WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
+              AND product_code = $5 AND deleted_at IS NULL
+            RETURNING id`,
+          [date, platform, market, shop, productCode]
+        )
+        if (del.length) deleted++
+        continue
+      }
+
+      const cost = Math.round(Number(String(raw).replace(/[^\d]/g, "")))
+      if (!Number.isFinite(cost) || cost < 0) {
+        skipped.push({ date, product_code: productCode, reason: "Chi phí không hợp lệ" }); continue
+      }
+
+      await svc.sql(`
+        INSERT INTO mkt_ads_cost_marketplace (date, platform, market, shop, product_code, cost, note, created_by)
+        VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (date, platform, market, shop, product_code) DO UPDATE SET
+          cost       = EXCLUDED.cost,
+          note       = EXCLUDED.note,
+          created_by = EXCLUDED.created_by,
+          deleted_at = NULL,
+          updated_at = now()
+      `, [date, platform, market, shop, productCode, cost, e?.note ?? null, me.email])
+      saved++
+    }
+
+    return res.json({ ok: true, saved, deleted, skipped })
+  } catch (err: any) {
+    console.error("[mkt-cost-marketplace POST]", err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}
