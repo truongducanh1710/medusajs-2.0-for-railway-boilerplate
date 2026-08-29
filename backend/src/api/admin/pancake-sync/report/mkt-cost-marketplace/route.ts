@@ -186,8 +186,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
            GROUP BY 1,2,3,4,5,6
         ) v
        GROUP BY platform, market, shop, product_code
-      HAVING SUM(orders) >= 3
+      -- Ngưỡng 1 đơn: SP mới lên sàn / bán chậm vẫn phải điền được chi phí ads. Ngưỡng 3
+      -- trước đây ẩn đúng nhóm cần đo nhất — mới chạy quảng cáo thì chưa kịp có đơn.
+      HAVING SUM(orders) >= 1
        ORDER BY market, platform, shop, SUM(orders) DESC
+    `)
+
+    // Toàn bộ danh mục SP — cho tuỳ chọn "Thêm SP từ danh mục" khi SP mới chạy ads mà
+    // CHƯA phát sinh đơn nào, nên không thể xuất hiện trong `products` (vốn dựng từ đơn
+    // thật). Không trộn vào `products` để danh sách mặc định vẫn gọn theo thứ đang bán.
+    const catalog = await svc.sql(`
+      SELECT code AS product_code, name AS product_name
+        FROM mkt_product
+       WHERE active = true
+       ORDER BY name
     `)
 
     // Kênh CÓ đơn trong kỳ nhưng CHƯA điền chi phí ngày đó — dấu hiệu bỏ sót.
@@ -217,7 +229,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `, me.isAdmin ? [from, to] : [from, to, me.email])
 
     return res.json({
-      rows, totals, by_day: byDay, shops, products, missing,
+      rows, totals, by_day: byDay, shops, products, catalog, missing,
       is_admin: me.isAdmin, my_email: me.email,
       platforms: PLATFORMS, markets: MARKETS, from, to,
     })

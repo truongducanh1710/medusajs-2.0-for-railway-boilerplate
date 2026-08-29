@@ -221,6 +221,10 @@ function GoogleAdsCost() {
 function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
   const [shops, setShops] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
+  // Toàn bộ danh mục — để thêm tay SP chưa phát sinh đơn (mới chạy ads ngày đầu).
+  const [catalog, setCatalog] = useState<any[]>([])
+  // SP người dùng tự thêm ngoài danh sách tự nhận diện.
+  const [extra, setExtra] = useState<string[]>([])
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -244,6 +248,7 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     try {
       const d = await apiJson(`/admin/pancake-sync/report/mkt-cost-marketplace?from=${from}&to=${to}`)
       setShops(d?.shops ?? []); setProducts(d?.products ?? []); setRows(d?.rows ?? [])
+      setCatalog(d?.catalog ?? [])
     } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
   }, [from, to])
   useEffect(() => { load() }, [load])
@@ -256,9 +261,19 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     if (!shop && shopOptions.length === 1) setShop(shopOptions[0].shop)
   }, [shopOptions, shop])
 
-  const productOptions = useMemo(
-    () => products.filter(p => p.platform === platform && p.market === market && p.shop === shop),
-    [products, platform, market, shop])
+  const productOptions = useMemo(() => {
+    const auto = products.filter(p => p.platform === platform && p.market === market && p.shop === shop)
+    const have = new Set(auto.map(p => p.product_code))
+    // SP tự thêm: lấy tên từ danh mục, xếp sau nhóm tự nhận diện.
+    const manual = extra
+      .filter(c => !have.has(c))
+      .map(c => ({
+        product_code: c,
+        product_name: catalog.find((x: any) => x.product_code === c)?.product_name ?? c,
+        orders: 0, variant_codes: [c], manual: true,
+      }))
+    return [...auto, ...manual]
+  }, [products, catalog, extra, platform, market, shop])
 
   // Thứ tự dòng trong 1 ngày: các SP đã chọn, rồi tới dòng "Chung cả shop".
   const allCodes = useMemo(() => [...picked, ""], [picked])
@@ -404,7 +419,7 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
           )}
 
           {/* Chọn SP nào hiện trong lưới — mỗi shop chỉ chạy vài SP, không cần đủ 51 dòng. */}
-          {productOptions.length > 0 && (
+          {(productOptions.length > 0 || catalog.length > 0) && (
             <div className="bg-white border rounded-xl p-3 shadow-sm">
               <div className="text-[11.5px] font-semibold text-gray-500 mb-2">Sản phẩm hiện trong bảng</div>
               <div className="flex flex-wrap gap-1.5">
@@ -422,9 +437,31 @@ Gồm ${p.variant_codes.length} mã biến thể: ${p.variant_codes.join(", ")}`
                       {p.variant_codes?.length > 1 && (
                         <span className="ml-1 text-[10px] opacity-60">×{p.variant_codes.length}</span>
                       )}
+                      {p.manual && <span className="ml-1 text-[10px] opacity-60">(tự thêm)</span>}
                     </button>
                   )
                 })}
+              </div>
+              {/* SP mới chạy ads chưa có đơn nào thì không tự hiện được — thêm tay từ
+                  danh mục để vẫn điền được chi phí ngay ngày đầu. */}
+              <div className="mt-2.5 pt-2.5 border-t border-dashed flex items-center gap-2 flex-wrap">
+                <span className="text-[11.5px] text-gray-400">Không thấy sản phẩm?</span>
+                <select value="" onChange={e => {
+                  const c = e.target.value
+                  if (!c) return
+                  setExtra(xs => xs.includes(c) ? xs : [...xs, c])
+                  setPicked(ps => ps.includes(c) ? ps : [...ps, c])
+                }}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11.5px] text-gray-700 outline-none focus:border-violet-400">
+                  <option value="">+ Thêm sản phẩm từ danh mục…</option>
+                  {catalog
+                    .filter((c: any) => !productOptions.some(p => p.product_code === c.product_code))
+                    .map((c: any) => (
+                      <option key={c.product_code} value={c.product_code}>
+                        {c.product_name} · {c.product_code}
+                      </option>
+                    ))}
+                </select>
               </div>
             </div>
           )}
