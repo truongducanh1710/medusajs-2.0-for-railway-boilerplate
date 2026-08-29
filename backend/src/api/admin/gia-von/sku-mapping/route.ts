@@ -87,6 +87,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const cols = await sql(`SELECT id, position FROM cost_sheet_column ORDER BY position`)
     const rowsSheet = await sql(`SELECT position, data FROM cost_sheet_row ORDER BY position`)
     const accessory: Record<string, number> = {}
+    // Phụ kiện tra được cả theo MÃ (cột K), không chỉ theo tên — xem ghi chú bên dưới.
+    const accessoryByCode: Record<string, number> = {}
     if (rowsSheet.length > 1) {
       const posToId: Record<number, string> = {}
       for (const c of cols) posToId[c.position] = c.id
@@ -96,12 +98,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const cTen = h2id["Sản phẩm"] ?? posToId[1]
       const cTC = h2id["Tính chất"] ?? posToId[2]
       const cGia = h2id["Giá về kho/sp"] ?? posToId[9]
+      const cNhom = posToId[10] // cột K = mã SP của dòng
       for (const r of rowsSheet.slice(1)) {
         const d = r.data as Record<string, string>
         const ten = (d[cTen] ?? "").trim()
         if (!ten || (d[cTC] ?? "").trim() === "Sản phẩm chính") continue
         const g = parseFloat(String(d[cGia] ?? "").replace(/\./g, "").replace(",", ".")) || 0
-        if (g > 0) accessory[ten.toUpperCase()] = Math.round(g)
+        if (g <= 0) continue
+        accessory[ten.toUpperCase()] = Math.round(g)
+        // Đánh chỉ mục thêm theo MÃ ở cột K. Phụ kiện bán lẻ trên sàn về với mã riêng
+        // (vd PHVVN008_GLNTV "giẻ lau nhà phun sương"), mà computeAvgCost chỉ đưa dòng
+        // "Sản phẩm chính" vào costs — nên tra theo mã sẽ trượt và báo "chưa có giá vốn"
+        // dù dòng phụ kiện đã khai đủ. Chỉ ghi khi mã CHƯA có chủ: không đè giá vốn của
+        // sản phẩm chính cùng mã (bộ lau nhà đắt hơn nhiều giẻ rời).
+        const ma = (cNhom ? d[cNhom] : "")?.trim().toUpperCase() ?? ""
+        if (ma && accessoryByCode[ma] == null) accessoryByCode[ma] = Math.round(g)
       }
     }
 
@@ -112,6 +123,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (avg.byName[c] != null) return avg.byName[c]
       const alias = DISPLAY_ID_ALIASES[c] ?? c
       if (avg.costs[alias] != null) return avg.costs[alias]
+      // Mã của dòng PHỤ KIỆN — sau costs để sản phẩm chính luôn được ưu tiên.
+      if (accessoryByCode[c] != null) return accessoryByCode[c]
+      if (accessoryByCode[alias] != null) return accessoryByCode[alias]
       const m = alias.match(/^(PHVVN\d{2,3})/)
       if (m && avg.byPrefix[m[1]] != null) return avg.byPrefix[m[1]]
       return null

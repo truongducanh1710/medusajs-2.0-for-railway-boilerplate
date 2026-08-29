@@ -134,6 +134,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const sheetCols = await sql(`SELECT id, position FROM cost_sheet_column ORDER BY position`)
     const sheetRows = await sql(`SELECT position, data FROM cost_sheet_row ORDER BY position`)
     const accessoryCost: Record<string, number> = {}
+    // Phụ kiện tra thêm theo MÃ ở cột K: phụ kiện bán lẻ trên sàn về với mã riêng
+    // (vd PHVVN008_GLNTV "giẻ lau nhà phun sương") mà computeAvgCost chỉ đưa dòng
+    // "Sản phẩm chính" vào costs — thiếu map này thì tra theo mã trượt, báo thiếu giá vốn.
+    const accessoryByCode: Record<string, number> = {}
     if (sheetRows.length > 1) {
       const posToId: Record<number, string> = {}
       for (const c2 of sheetCols) posToId[c2.position] = c2.id
@@ -148,17 +152,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const ten = (d[colTen] ?? "").trim()
         if (!ten || (d[colTinhChat] ?? "").trim() === "Sản phẩm chính") continue
         const gia = parseFloat(String(d[colGiaKho] ?? "").replace(/\./g, "").replace(",", ".")) || 0
-        if (gia > 0) accessoryCost[ten.toUpperCase()] = Math.round(gia)
+        if (gia <= 0) continue
+        accessoryCost[ten.toUpperCase()] = Math.round(gia)
+        // Chỉ ghi khi mã chưa có chủ — không đè giá vốn của sản phẩm chính cùng mã.
+        const maK = (posToId[10] ? d[posToId[10]] : "")?.trim().toUpperCase() ?? ""
+        if (maK && accessoryByCode[maK] == null) accessoryByCode[maK] = Math.round(gia)
       }
     }
 
     // Thứ tự tra giá vốn: phụ kiện (tên) → tên SP chính → mã → prefix. Xem oi2 bên dưới.
     // SKU sàn khai tay ở tab "Khớp SP sàn" — tra TRƯỚC mọi nấc tự động bên dưới.
-    const skuMapCost = await loadSkuMapCosts(getPool(), avgCost, accessoryCost)
+    const skuMapCost = await loadSkuMapCosts(getPool(), avgCost, accessoryCost, accessoryByCode)
 
     const costEntries = [
       ...Object.entries(skuMapCost).map(([k, v]) => ["skumap", k, v] as const),
       ...Object.entries(accessoryCost).map(([k, v]) => ["accessory", k, v] as const),
+      ...Object.entries(accessoryByCode).map(([k, v]) => ["acccode", k, v] as const),
       ...Object.entries(avgCost.costs).map(([k, v]) => ["code", k, v] as const),
       ...Object.entries(avgCost.byPrefix).map(([k, v]) => ["prefix", k, v] as const),
       ...Object.entries(avgCost.byName).map(([k, v]) => ["name", k, v] as const),
@@ -210,6 +219,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
+            -- Mã của dòng PHỤ KIỆN trong cost_sheet — sau 'code' để SP chính ưu tiên hơn.
+            (SELECT unit FROM cost_map c WHERE c.kind = 'acccode' AND c.key = upper(oi.sp_code)),
             (SELECT unit FROM cost_map c WHERE c.kind = 'prefix' AND c.key = (regexp_match(upper(oi.sp_code), '^(PHVVN[0-9]{2,3})'))[1]),
             0
           ) AS unit_cost
@@ -304,6 +315,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
+            -- Mã của dòng PHỤ KIỆN trong cost_sheet — sau 'code' để SP chính ưu tiên hơn.
+            (SELECT unit FROM cost_map c WHERE c.kind = 'acccode' AND c.key = upper(oi.sp_code)),
             (SELECT unit FROM cost_map c WHERE c.kind = 'prefix' AND c.key = (regexp_match(upper(oi.sp_code), '^(PHVVN[0-9]{2,3})'))[1]),
             0
           ) AS unit_cost

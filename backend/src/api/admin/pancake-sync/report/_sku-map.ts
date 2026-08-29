@@ -20,6 +20,10 @@ export async function loadSkuMapCosts(
   pool: Pool,
   avg: AvgCostResult,
   accessoryCost: Record<string, number>,
+  // Phụ kiện tra theo MÃ ở cột K của cost_sheet. Phụ kiện bán lẻ trên sàn về với mã
+  // riêng (vd PHVVN008_GLNTV) mà computeAvgCost chỉ đưa dòng "Sản phẩm chính" vào
+  // costs, nên thiếu map này thì khai tay trỏ vào mã phụ kiện vẫn ra "chưa có giá vốn".
+  accessoryByCode: Record<string, number> = {},
 ): Promise<Record<string, number>> {
   const out: Record<string, number> = {}
   let rows: any[]
@@ -36,6 +40,9 @@ export async function loadSkuMapCosts(
     if (avg.byName[c] != null) return avg.byName[c]
     const alias = DISPLAY_ID_ALIASES[c] ?? c
     if (avg.costs[alias] != null) return avg.costs[alias]
+    // Sau costs để sản phẩm chính luôn được ưu tiên hơn dòng phụ kiện cùng mã.
+    if (accessoryByCode[c] != null) return accessoryByCode[c]
+    if (accessoryByCode[alias] != null) return accessoryByCode[alias]
     const m = alias.match(/^(PHVVN\d{2,3})/)
     if (m && avg.byPrefix[m[1]] != null) return avg.byPrefix[m[1]]
     return null
