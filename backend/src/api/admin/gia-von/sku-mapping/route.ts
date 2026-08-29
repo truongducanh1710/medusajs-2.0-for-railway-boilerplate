@@ -139,8 +139,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY orders DESC
     `, [String(days), market])
 
-    // Danh mục mã SP để dropdown chọn — nguồn duy nhất là mkt_product.
-    const products = await sql(`SELECT code, name FROM mkt_product WHERE active = true ORDER BY code`)
+    // Danh mục để dropdown chọn. Gồm 2 nhóm vì SKU sàn có thể là cả hai:
+    //  • Sản phẩm chính — có mã trong mkt_product.
+    //  • PHỤ KIỆN / quà tặng kèm — chỉ tồn tại thành dòng trong cost_sheet, KHÔNG có mã
+    //    POS (vd "GIẺ LAU TAY TREO TƯỜNG" 3.230đ, "Quà tặng khăn lau cao cấp"). Thiếu
+    //    nhóm này thì những SKU đó không bao giờ khớp được vì không có gì để chọn.
+    // costOf() tra accessory theo TÊN trước tiên nên dùng thẳng tên làm product_code.
+    const prodRows = await sql(`SELECT code, name FROM mkt_product WHERE active = true ORDER BY code`)
+    const products = [
+      ...prodRows.map((p: any) => ({
+        code: p.code, name: p.name, kind: "product" as const, cost: costOf(p.code),
+      })),
+      ...Object.entries(accessory)
+        .map(([name, cost]) => ({ code: name, name, kind: "accessory" as const, cost }))
+        .sort((a, b) => a.name.localeCompare(b.name, "vi")),
+    ]
 
     const unmatched: any[] = []
     const matched: any[] = []

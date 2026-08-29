@@ -2421,6 +2421,8 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
               <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
                 SKU này gồm những sản phẩm nào? Combo thì thêm nhiều dòng —
                 giá vốn sẽ được <b>cộng lại</b> theo số lượng.
+                {" "}Quà tặng kèm / phụ kiện không có mã POS thì chọn ở nhóm
+                <b> "Phụ kiện / quà tặng kèm"</b> cuối danh sách.
               </div>
               {editing.parts.map((p: any, i: number) => (
                 <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
@@ -2431,9 +2433,22 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
                     })}
                     style={{ flex: 1, padding: "7px 10px", fontSize: 12.5, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#111827" }}>
                     <option value="">— chọn sản phẩm —</option>
-                    {(data.products ?? []).map((pr: any) => (
-                      <option key={pr.code} value={pr.code}>{pr.code} — {pr.name}</option>
-                    ))}
+                    {/* Tách 2 nhóm: quà tặng/phụ kiện không có mã POS nên nếu trộn chung
+                        với SP chính thì rất khó tìm trong danh sách dài. */}
+                    <optgroup label="Sản phẩm chính">
+                      {(data.products ?? []).filter((pr: any) => pr.kind !== "accessory").map((pr: any) => (
+                        <option key={`p-${pr.code}`} value={pr.code}>
+                          {pr.code} — {pr.name}{pr.cost != null ? ` (${Number(pr.cost).toLocaleString("vi-VN")}đ)` : " (chưa có giá vốn)"}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Phụ kiện / quà tặng kèm (không có mã POS)">
+                      {(data.products ?? []).filter((pr: any) => pr.kind === "accessory").map((pr: any) => (
+                        <option key={`a-${pr.code}`} value={pr.code}>
+                          {pr.name}{pr.cost != null ? ` (${Number(pr.cost).toLocaleString("vi-VN")}đ)` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                   <input type="number" min={1} value={p.qty}
                     onChange={e => setEditing((s: any) => {
