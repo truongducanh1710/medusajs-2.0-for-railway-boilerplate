@@ -3585,6 +3585,7 @@ function DayOrdersModal({
                     <th className="text-right px-3 py-2.5" title="Đã trừ cả khuyến mãi và phí sàn">DT thực nhận</th>
                     <th className="text-right px-3 py-2.5">Giá vốn</th>
                     <th className="text-right px-3 py-2.5" title="Giá vốn ÷ doanh thu có giá vốn">%GV</th>
+                    <th className="text-right px-3 py-2.5" title="Chi phí đóng gói 6.000đ/đơn — chỉ tính đơn đã tra được giá vốn">Fullfill</th>
                     <th className="text-right px-3 py-2.5" title="Chi phí ads cả ngày chia đều số đơn">Ads (TB)</th>
                     <th className="text-right px-3 py-2.5">LNG sau ads</th>
                     <th className="text-right px-3 py-2.5">%LNG</th>
@@ -3592,7 +3593,7 @@ function DayOrdersModal({
                 </thead>
                 <tbody className="divide-y text-gray-900">
                   {orders.length === 0 && (
-                    <tr><td colSpan={12} className="px-4 py-6 text-center text-gray-400 text-sm">Không có đơn nào</td></tr>
+                    <tr><td colSpan={13} className="px-4 py-6 text-center text-gray-400 text-sm">Không có đơn nào</td></tr>
                   )}
                   {orders.map((o: any) => {
                     const open = !!expanded[o.order_id]
@@ -3653,6 +3654,7 @@ function DayOrdersModal({
                           <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(o.revenue)}</td>
                           <td className="px-3 py-2.5 text-right text-gray-700">{money(o.cogs)}</td>
                           <td className="px-3 py-2.5 text-right">{pctCell(o.cogs_pct)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600">{money(o.fullfill)}</td>
                           <td className="px-3 py-2.5 text-right text-gray-500">{money(o.ads_cost)}</td>
                           <td className={`px-3 py-2.5 text-right font-semibold ${Number(o.lng_sau_ads) >= 0 ? "text-violet-700" : "text-red-500"}`}>
                             {money(o.lng_sau_ads)}
@@ -3661,7 +3663,7 @@ function DayOrdersModal({
                         </tr>
                         {open && (
                           <tr className="bg-gray-50/70">
-                            <td colSpan={12} className="px-8 py-2.5">
+                            <td colSpan={13} className="px-8 py-2.5">
                               {/* Mọi cách định danh đơn — mỗi hệ thống tra bằng một số khác nhau. */}
                               <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-gray-500">
                                 {o.pos_id && (
@@ -4352,7 +4354,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
         <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500">
           LNG ở bảng theo sản phẩm <b>chưa trừ ads</b> — chi phí ads chỉ điền được theo (ngày × sàn),
           không tách tới từng sản phẩm. Xem LNG sau ads ở thẻ tổng hoặc bảng theo ngày phía trên.
-          Ship do sàn trả (không tính). Fullfill 5.000đ/đơn giống các báo cáo khác.
+          Ship do sàn trả (không tính). Fullfill 6.000đ/đơn.
         </div>
       </div>
     </div>

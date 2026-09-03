@@ -19,7 +19,9 @@ async function sql(query: string, params?: any[]): Promise<any[]> {
   }
 }
 
-const FULLFILL_PER_ORDER = 5000
+// Phải khớp marketplace-lng/route.ts — hai nơi lệch nhau thì dòng ngày và bảng
+// chi tiết đơn của chính ngày đó ra hai số LNG khác nhau.
+const FULLFILL_PER_ORDER = 6000
 
 /**
  * GET /admin/pancake-sync/report/marketplace-lng/day-orders
@@ -33,7 +35,7 @@ const FULLFILL_PER_ORDER = 5000
  *  • doanh thu thực nhận = total_price_after_sub_discount (fallback cod_amount/total)
  *  • DT trước phí sàn    = thực nhận + fee_marketplace
  *  • giá vốn             = SKU khai tay → tên phụ kiện → tên SP → mã → prefix, × số lượng
- *  • fullfill            = 5.000đ/đơn, chỉ tính đơn đã tra được giá vốn
+ *  • fullfill            = 6.000đ/đơn, chỉ tính đơn đã tra được giá vốn
  *  • mode "thuc" chỉ status=3; mode "tt" gồm status 1,2,3,8 (đã xác nhận cho đi)
  *
  * ADS: sàn chỉ nhập chi phí theo (ngày × sàn), không có spend theo đơn. Ở đây CHIA
@@ -357,7 +359,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const result = list.map((o: any) => {
       const adsPerOrder = adsOfOrder(o)
-      // Fullfill 5.000đ chỉ tính cho đơn đã tra được giá vốn — giống bảng ngày, để
+      // Fullfill 6.000đ chỉ tính cho đơn đã tra được giá vốn — giống bảng ngày, để
       // đơn chưa khai vốn không tạo ra khoản lỗ ảo.
       const fullfill = o.revenue_costed > 0 ? FULLFILL_PER_ORDER : 0
       const lng = o.revenue_costed - (o.cogs + fullfill)
