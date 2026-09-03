@@ -3554,6 +3554,7 @@ function DayOrdersModal({
                       Đơn (ID trên POS)
                     </th>
                     <th className="text-left px-3 py-2.5">Khách</th>
+                    <th className="text-left px-3 py-2.5" title="Sản phẩm trong đơn — bấm dòng để xem giá vốn từng món">Sản phẩm</th>
                     <th className="text-right px-3 py-2.5">SL</th>
                     <th className="text-right px-3 py-2.5" title="Tiền khách trả, đã trừ khuyến mãi, CHƯA trừ phí sàn">DT trước phí sàn</th>
                     <th className="text-right px-3 py-2.5" title="Phí sàn giữ lại">Phí sàn</th>
@@ -3567,7 +3568,7 @@ function DayOrdersModal({
                 </thead>
                 <tbody className="divide-y text-gray-900">
                   {orders.length === 0 && (
-                    <tr><td colSpan={11} className="px-4 py-6 text-center text-gray-400 text-sm">Không có đơn nào</td></tr>
+                    <tr><td colSpan={12} className="px-4 py-6 text-center text-gray-400 text-sm">Không có đơn nào</td></tr>
                   )}
                   {orders.map((o: any) => {
                     const open = !!expanded[o.order_id]
@@ -3614,6 +3615,14 @@ function DayOrdersModal({
                             title={`${o.customer_name}${o.province ? " · " + o.province : ""}${o.status_name ? " · " + o.status_name : ""}`}>
                             {o.customer_name || <span className="text-gray-300">—</span>}
                           </td>
+                          {/* Tên SP gộp sẵn ở dòng đơn — trước đây phải bấm mở mới thấy,
+                              mà phần lớn đơn chỉ có 1 món nên mở ra chỉ để đọc một dòng. */}
+                          <td className="px-3 py-2.5 text-gray-700 max-w-[230px] truncate"
+                            title={(o.items ?? []).map((it: any) => `${it.sp_label}${it.qty > 1 ? ` ×${it.qty}` : ""}`).join(" · ")}>
+                            {(o.items ?? []).length === 0
+                              ? <span className="text-gray-300">—</span>
+                              : (o.items ?? []).map((it: any) => it.sp_label).join(" · ")}
+                          </td>
                           <td className="px-3 py-2.5 text-right font-mono text-gray-700">{fmtNum(o.qty)}</td>
                           <td className="px-3 py-2.5 text-right text-gray-600">{money(o.revenue_gross)}</td>
                           <td className="px-3 py-2.5 text-right text-gray-500">{money(o.fee_marketplace)}</td>
@@ -3628,7 +3637,7 @@ function DayOrdersModal({
                         </tr>
                         {open && (
                           <tr className="bg-gray-50/70">
-                            <td colSpan={11} className="px-8 py-2.5">
+                            <td colSpan={12} className="px-8 py-2.5">
                               {/* Mọi cách định danh đơn — mỗi hệ thống tra bằng một số khác nhau. */}
                               <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-gray-500">
                                 {o.pos_id && (
