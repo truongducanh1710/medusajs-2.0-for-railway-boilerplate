@@ -339,6 +339,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return Math.round(sum)
     }
 
+    // SP có điền chi phí ads nhưng NGÀY ĐÓ không bán được cái nào. Tiền này không
+    // đơn nào gánh, nên tổng các dòng đơn sẽ thấp hơn dòng ngày đúng bằng khoản đó —
+    // và quan trọng hơn: đó là tín hiệu camp đốt tiền không ra đơn, phải nói ra chứ
+    // không dồn sang đơn của SP khác gánh hộ.
+    const adsNoOrder = Object.entries(adsByProduct)
+      .filter(([code]) => !(qtyByProduct[code] > 0))
+      .map(([code, cost]) => ({
+        product_code: code,
+        product_name: codeToName[code] || null,
+        ads_cost: Number(cost) || 0,
+      }))
+      .sort((a, b) => b.ads_cost - a.ads_cost)
+    const adsUnallocated = adsNoOrder.reduce((s, r) => s + r.ads_cost, 0)
+
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
     const result = list.map((o: any) => {
@@ -401,6 +415,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ads_shop_level: adsShopLevel,
       ads_per_order: ordersForShopLevel.length > 0 ? Math.round(shopLevelPerOrder) : 0,
       ads_missing: !hasAdsEntry,
+      // Cảnh báo: SP có ads mà không ra đơn nào trong ngày.
+      ads_no_order: adsNoOrder,
+      ads_unallocated: adsUnallocated,
       myr_to_vnd_rate: market === "MY" ? rate : null,
     })
   } catch (err: any) {

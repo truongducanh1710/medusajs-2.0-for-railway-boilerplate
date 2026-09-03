@@ -3545,6 +3545,30 @@ function DayOrdersModal({
               </div>
             )}
 
+            {/* SP đốt tiền ads mà ngày đó không bán được cái nào. Khoản này không đơn
+                nào gánh nên tổng các dòng đơn thấp hơn dòng ngày đúng bằng nó — nói
+                đích danh mã SP thay vì dồn sang đơn khác gánh hộ. */}
+            {(data.ads_no_order ?? []).length > 0 && (
+              <div className="px-5 py-2.5 border-b bg-amber-50 text-[12px] text-amber-800">
+                <b>Chạy ads nhưng không ra đơn nào trong ngày — {money(data.ads_unallocated)}</b>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                  {(data.ads_no_order ?? []).map((p: any) => (
+                    <span key={p.product_code}>
+                      {p.product_name || p.product_code}
+                      {p.product_name && (
+                        <span className="text-amber-600 font-mono text-[10.5px]"> {p.product_code}</span>
+                      )}
+                      {" · "}<b>{money(p.ads_cost)}</b>
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-1 text-amber-600">
+                  Khoản này nằm trong "Ads cả ngày" nhưng không chia được cho đơn nào,
+                  nên tổng LNG các dòng dưới đây cao hơn dòng ngày đúng bằng số đó.
+                </div>
+              </div>
+            )}
+
             <div className="overflow-auto flex-1">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
