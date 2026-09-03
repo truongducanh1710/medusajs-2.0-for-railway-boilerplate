@@ -612,8 +612,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         dang_hoan: Number(r.dang_hoan || 0), da_huy: Number(r.da_huy || 0),
         delivered_qty: Number(r.delivered_qty || 0),
         list_price: Number(r.list_price || 0),
-        fee_marketplace: Number(r.fee_marketplace || 0),
-        fee_pct: pct(Number(r.fee_marketplace || 0), Number(r.list_price || 0)),
+        fee_marketplace: fee,
+        // Mẫu số là TIỀN KHÁCH TRẢ (doanh thu + phí), không phải list_price — giá
+        // niêm yết chưa trừ khuyến mãi nên %phí tính trên nó thấp hơn thực tế.
+        fee_pct: pct(fee, revGross),
         revenue_delivered: rev,
         revenue_costed: revCosted,
         revenue_no_cost: Number(r.revenue_no_cost || 0),
@@ -634,6 +636,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         revenue_tt: revTT,
         revenue_costed_tt: revCostedTT,
         fee_tt: feeTT,
+        fee_tt_pct: pct(feeTT, revGrossTT),
         revenue_gross_tt: revGrossTT,
         ads_gross_pct_tt: pct(ads, revGrossTT),
         ads_pct_tt: pct(ads, revTT),
