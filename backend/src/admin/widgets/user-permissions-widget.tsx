@@ -111,6 +111,8 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
       "page.gia-von.view",
       "page.gia-von.manage",
       "page.gia-von.summary",
+      "page.ton-kho.view",
+      "page.ton-kho.manage",
     ],
   },
   {

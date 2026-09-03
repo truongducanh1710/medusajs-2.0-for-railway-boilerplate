@@ -26,6 +26,8 @@ export const PERMISSIONS = {
   "page.gia-von.view": "Xem trang giá vốn",
   "page.gia-von.manage": "Nhập/sửa lô hàng giá vốn",
   "page.gia-von.summary": "Xem giá vốn — CHỈ tab Tổng kết giá TB",
+  "page.ton-kho.view": "Xem tồn kho + dự báo nhập hàng",
+  "page.ton-kho.manage": "Chốt số tồn kho hằng ngày",
   "page.bao-cao.camp-control": "Bật/tắt camp + chỉnh ngân sách FB Ads",
   "page.bao-cao.fb-accounts": "Xem và quản lý tài khoản FB Ads (manager only)",
   "page.bao-cao.care-rules": "Cài rule chăm sóc camp tự động (tắt/budget/notify)",

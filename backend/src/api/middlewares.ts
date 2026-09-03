@@ -237,6 +237,8 @@ export default defineMiddlewares({
     // Muốn che thật thì phải đổi tab sang đọc /avg-cost (chỉ trả mã + giá TB).
     { matcher: "/admin/gia-von*", method: ["GET"], middlewares: [requireAnyPerm("page.gia-von.view", "page.gia-von.summary")] },
     { matcher: "/admin/gia-von*", method: ["POST", "PUT", "DELETE"], middlewares: [requirePerm("page.gia-von.manage")] },
+    { matcher: "/admin/ton-kho*", method: ["GET"], middlewares: [requirePerm("page.ton-kho.view")] },
+    { matcher: "/admin/ton-kho*", method: ["POST"], middlewares: [requirePerm("page.ton-kho.manage")] },
     { matcher: "/admin/webcake-leads*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/webcake-leads*", method: ["PATCH"], middlewares: [requirePerm("page.don-hang.edit")] },
     { matcher: "/admin/pancake-sync/fb-accounts*", middlewares: [requirePerm("page.bao-cao.fb-accounts")] },

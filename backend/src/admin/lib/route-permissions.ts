@@ -14,6 +14,7 @@ export const ROUTE_PERMS: Record<string, string | string[]> = {
   "/pages": "page.pages.view",
   "/cskh": "page.cskh.view",
   "/gia-von": ["page.gia-von.view", "page.gia-von.summary"],
+  "/ton-kho": "page.ton-kho.view",
   "/ai-settings": "page.bao-cao.view",
   "/marketing-hub": "page.marketing-video.view",
   "/chat": "page.chat.view",
