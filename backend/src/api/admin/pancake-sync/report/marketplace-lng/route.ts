@@ -19,7 +19,14 @@ async function sql(query: string, params?: any[]): Promise<any[]> {
   }
 }
 
-const FULLFILL_PER_ORDER = 5000
+/**
+ * Chi phí đóng gói / xử lý mỗi đơn sàn.
+ *
+ * Tính từ chi phí kho thật: 45tr/tháng cố định (kho 20tr + nhân sự 25tr) cộng tiền
+ * công cụ đóng gói, chia cho tổng đơn. Mức đủ bù là ~16.500đ/đơn nhưng sẽ đẩy sàn
+ * lỗ nặng trên giấy tờ, nên chọn mức trung gian.
+ */
+const FULLFILL_PER_ORDER = 6000
 
 /**
  * GET /admin/pancake-sync/report/marketplace-lng?from=&to=&platform=&market=VN|MY
@@ -133,6 +140,39 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const feeExpr = `(COALESCE((raw->>'fee_marketplace')::numeric, 0) ${MONEY})::bigint`
     const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
 
+    // ── Ước tính phí sàn cho đơn CHƯA CHỐT (chỉ dùng ở bộ số TẠM TÍNH) ──────────
+    //
+    // Pancake nhận phí sàn theo từng đợt đối soát, mất khoảng 2 tuần mới đủ. Quan
+    // trọng: `total_price_after_sub_discount` là tiền CÒN LẠI SAU PHÍ, không phải
+    // tiền khách trả — đo trên Chổi cọ xoong 01 thì (doanh thu + phí) luôn bằng
+    // 28.000đ ở mọi tuổi đơn, đúng bằng giá bán. Nên phí về tới đâu, doanh thu tụt
+    // tới đó, và ngày gần nhất trông như lãi vì chưa bị trừ hết.
+    //
+    // Cách bù: với đơn dưới 15 ngày, tính lại phí = tiền khách trả × 30%.
+    // 30% là %phí đo được trên đơn ĐÃ chốt (15–60 ngày tuổi): TikTok 29,94% trên
+    // 2.964 đơn, Shopee 29,95% trên 519 đơn — hai sàn gần như bằng nhau nên dùng
+    // chung một mức.
+    //
+    // Đơn từ 15 ngày trở lên giữ nguyên phí thật từ POS. Bộ số THỰC không đụng tới.
+    const PHI_UOC_TINH_PCT = 0.30
+    const NGAY_CHOT_PHI = 15
+    const chuaChotPhi = `(CURRENT_DATE - (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) < ${NGAY_CHOT_PHI}`
+    // Tiền khách trả = doanh thu ghi nhận + phí đã ghi (xem giải thích ở trên).
+    const tienKhachTra = `(COALESCE((raw->>'total_price_after_sub_discount')::numeric, 0)
+      + COALESCE((raw->>'fee_marketplace')::numeric, 0))`
+    const feeTTExpr = `(CASE WHEN ${chuaChotPhi}
+      THEN ${tienKhachTra} * ${PHI_UOC_TINH_PCT}
+      ELSE COALESCE((raw->>'fee_marketplace')::numeric, 0) END ${MONEY})::bigint`
+    // Doanh thu tạm tính = tiền khách trả trừ phí (thật hoặc ước tính).
+    const revenueTTExpr = `(CASE WHEN ${chuaChotPhi}
+      THEN ${tienKhachTra} * ${1 - PHI_UOC_TINH_PCT}
+      ELSE COALESCE(
+        NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0),
+        NULLIF(cod_amount::numeric, 0),
+        NULLIF(total::numeric, 0),
+        0
+      ) END ${MONEY})::bigint`
+
     const platformFilter = platform && ["shopee", "tiktok"].includes(platform)
       ? `AND po.source = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
     const marketFilter = `AND COALESCE(NULLIF(po.market, ''), 'VN') = '${market}'`
@@ -211,6 +251,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             * COALESCE((mi->>'quantity')::numeric, 1)) AS retail_value,
           ${revenueExpr} AS order_revenue,
           ${feeExpr} AS fee_marketplace,
+          ${revenueTTExpr} AS order_revenue_tt,
+          ${feeTTExpr} AS fee_marketplace_tt,
           ${listPriceExpr} AS list_price
         FROM pancake_order po
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
@@ -286,10 +328,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- "SP bán chạy" phải đọc bộ số này — chỉ đếm đơn đã giao xong thì SP mới
         -- chạy quảng cáo hôm nay gần như không xuất hiện.
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8))::int AS orders_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue   * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue_tt   * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
         SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
         SUM(CASE WHEN status IN (1,2,3,8) THEN qty ELSE 0 END)::numeric AS qty_tt
       FROM oi3
@@ -314,6 +356,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             * COALESCE((mi->>'quantity')::numeric, 1)) AS retail_value,
           ${revenueExpr} AS order_revenue,
           ${feeExpr} AS fee_marketplace,
+          ${revenueTTExpr} AS order_revenue_tt,
+          ${feeTTExpr} AS fee_marketplace_tt,
           ${listPriceExpr} AS list_price
         FROM pancake_order po
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
@@ -370,15 +414,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- Loại 0/1 (chưa cho đi) và 4/5/6/7/-1/-2 (hoàn/huỷ/xoá) — xem ghi chú status
         -- ở đầu file: code 6 = ĐÃ HỦY, không phải "đã gửi VC" như GLOSSARY ghi.
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8))::int AS orders_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
         SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
         -- ── CHẤT LƯỢNG DỮ LIỆU (cho cảnh báo ngoài bảng) ────────────────────────
         -- Đếm theo ĐƠN chứ không theo dòng hàng: nhân sự đi xử lý từng đơn.
         -- Tính trên phạm vi TẠM TÍNH vì đó là mode mặc định đang xem.
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
+        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost = 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost = 0)::int AS orders_missing_cost,
         -- Đơn doanh thu 0đ = đơn gửi affiliate (hàng tặng KOL/reviewer), KHÔNG phải lỗi.
         -- Vẫn phải theo dõi vì chúng có giá vốn thật và vẫn được chia ads: gộp chung với

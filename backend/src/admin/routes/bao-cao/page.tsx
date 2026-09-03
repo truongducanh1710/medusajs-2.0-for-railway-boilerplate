@@ -3396,7 +3396,7 @@ function TargetSettingModal({ month, onClose, onSaved }: { month: string; onClos
  * không xuất hiện ở đâu. Doanh thu ở đây là tiền THỰC NHẬN (sàn đã trừ phí + khuyến mãi).
  */
 // Cột bảng "LNG theo ngày" — id trùng với sort key để header dùng chung một chỗ.
-type DayColId = "date" | "platform" | "orders" | "huyHoan" | "gross" | "rev" | "cogs" | "cogsPct" | "ads_cost" | "adsMetric" | "lng" | "pct"
+type DayColId = "date" | "platform" | "orders" | "huyHoan" | "gross" | "rev" | "cogs" | "cogsPct" | "fullfill" | "ads_cost" | "adsMetric" | "lng" | "pct"
 const SANTMDT_DAY_COLS: ColumnDef<DayColId>[] = [
   { id: "date",      label: "Ngày",             default: 130, min: 90 },
   { id: "platform",  label: "Sàn",              default: 110, min: 80 },
@@ -3406,6 +3406,7 @@ const SANTMDT_DAY_COLS: ColumnDef<DayColId>[] = [
   { id: "rev",       label: "DT thực nhận",     default: 130, min: 90 },
   { id: "cogs",      label: "Giá vốn",          default: 120, min: 80 },
   { id: "cogsPct",   label: "%GV",              default: 75,  min: 55 },
+  { id: "fullfill",  label: "Fullfill",         default: 110, min: 80 },
   { id: "ads_cost",  label: "Ads",              default: 120, min: 80 },
   { id: "adsMetric", label: "%Ads",             default: 85,  min: 60 },
   { id: "lng",       label: "LNG sau ads",      default: 140, min: 90 },
@@ -3778,16 +3779,16 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // Mỗi mode đọc bộ field riêng: "thực" = chỉ đơn đã giao, "tạm tính" = thêm đơn đang đi.
   const M = dayMode === "tt"
     ? { orders: "orders_tt", gross: "revenue_gross_tt", rev: "revenue_tt", cogs: "cogs_tt",
-        cogsPct: "cogs_tt_pct", adsGrossPct: "ads_gross_pct_tt",
+        cogsPct: "cogs_tt_pct", fullfill: "fullfill_tt", adsGrossPct: "ads_gross_pct_tt",
         lng: "lng_tt_sau_ads", pct: "lng_tt_sau_ads_pct" }
     : { orders: "da_nhan", gross: "revenue_gross", rev: "revenue_delivered", cogs: "cogs",
-        cogsPct: "cogs_pct", adsGrossPct: "ads_gross_pct",
+        cogsPct: "cogs_pct", fullfill: "fullfill", adsGrossPct: "ads_gross_pct",
         lng: "lng_sau_ads", pct: "lng_sau_ads_pct" }
   // Cột hiển thị đổi theo mode, nên sort key cũng phải map sang field tương ứng —
   // nếu không, bấm "LNG sau ads" ở mode tạm tính sẽ sort theo số của mode thực.
   const SORT_ALIAS: Record<string, string> = {
     orders: M.orders, gross: M.gross, rev: M.rev, cogs: M.cogs,
-    cogsPct: M.cogsPct, adsGrossPct: M.adsGrossPct, lng: M.lng, pct: M.pct,
+    cogsPct: M.cogsPct, fullfill: M.fullfill, adsGrossPct: M.adsGrossPct, lng: M.lng, pct: M.pct,
     huyHoan: "da_huy",
   }
   const byDay = [...byDayFiltered].sort((a: any, b: any) => {
@@ -3804,6 +3805,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     acc.gross += Number(r[M.gross] || 0)
     acc.rev += Number(r[M.rev] || 0)
     acc.cogs += Number(r[M.cogs] || 0)
+    acc.fullfill += Number(r[M.fullfill] || 0)
     acc.ads_cost += Number(r.ads_cost || 0)
     acc.lng += Number(r[M.lng] || 0)
     // Mẫu số cho %GV và %LNG là doanh thu CÓ giá vốn — phần chưa khai giá vốn bị loại
@@ -3812,7 +3814,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     acc.pending += Number(r.orders_pending || 0)
     if (r.ads_missing) acc.ads_missing_days += 1
     return acc
-  }, { orders: 0, huy: 0, hoan: 0, nhan: 0, gross: 0, rev: 0, cogs: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
+  }, { orders: 0, huy: 0, hoan: 0, nhan: 0, gross: 0, rev: 0, cogs: 0, fullfill: 0, ads_cost: 0, lng: 0, rev_costed: 0, pending: 0, ads_missing_days: 0 })
   const toggleDaySort = (key: string) =>
     setDaySort(s => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 })
   const sortIcon = (key: string) => daySort.key !== key ? "" : (daySort.dir === -1 ? " ▼" : " ▲")
@@ -4144,6 +4146,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r[M.rev])}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700">{money(r[M.cogs])}</td>
                     <td className="px-3 py-2.5 text-right">{pctCell(r[M.cogsPct])}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-600">{money(r[M.fullfill])}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700">
                       {r.ads_missing
                         ? <span className="text-amber-600" title="Chưa điền chi phí ads cho ngày này">⚠ chưa điền</span>
@@ -4203,6 +4206,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     {/* Mẫu số là doanh thu CÓ giá vốn (rev_costed), khớp cách tính từng dòng */}
                     {pctCell(dayTotal.rev_costed > 0 ? Math.round(dayTotal.cogs / dayTotal.rev_costed * 10000) / 100 : null)}
                   </td>
+                  <td className="px-3 py-2.5 text-right">{money(dayTotal.fullfill)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
                   <td className="px-3 py-2.5 text-right">
                     {adsMetric === "pct"
