@@ -94,7 +94,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     /** Quy 1 dòng hàng trên POS về danh sách (SP lẻ × số lượng). */
     const explode = (code: string, nameUp: string, qty: number) => {
-      const parts = partsByKey[nameUp] ?? partsByKey[code]
+      // Mã trước tên: biến thể cùng tên khác số lượng (CCX01 = 1 cây, CCX02 = 2 cây)
+      // chỉ phân biệt được bằng mã — tra theo tên sẽ trừ tồn sai bội số.
+      const parts = partsByKey[code] ?? partsByKey[nameUp]
       if (parts?.length) return parts.map(p => ({ code: p.code, qty: qty * p.qty }))
       return code ? [{ code, qty }] : []
     }

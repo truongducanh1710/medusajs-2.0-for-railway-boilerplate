@@ -210,8 +210,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi2 AS (
         SELECT oi.*,
           COALESCE(
-            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
+            -- skumap theo MÃ trước theo TÊN: các biến thể bán theo số lượng khác nhau
+            -- dùng chung một tên (CHỔI CỌ XOONG = CCX01/02/03 = 1/2/3 cây), nên khai
+            -- theo mã là thứ cụ thể hơn và phải thắng.
             (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = upper(oi.sp_code)),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
@@ -340,7 +343,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsPartsOf = (it: any): { key: string; qty: number }[] => {
       const direct = adsKeyOf(it.sp_code)
       if (direct) return [{ key: direct, qty: it.qty }]
-      const parts = skuParts[String(it.sp_name_up || "")] ?? skuParts[String(it.sp_code || "").toUpperCase()]
+      // Mã trước tên: biến thể cùng tên khác số lượng (CCX01/02/03) chỉ phân biệt được
+      // bằng mã.
+      const parts = skuParts[String(it.sp_code || "").toUpperCase()] ?? skuParts[String(it.sp_name_up || "")]
       if (!parts?.length) return []
       const out: { key: string; qty: number }[] = []
       for (const p of parts) {

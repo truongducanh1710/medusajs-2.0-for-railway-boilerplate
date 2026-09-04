@@ -152,7 +152,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const skus = await sql(`
       SELECT
         upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sku_name,
-        MAX(COALESCE(mi->'variation_info'->>'display_id', ''))                AS sku_code,
+        upper(trim(COALESCE(mi->'variation_info'->>'display_id', '')))        AS sku_code,
         MAX(po.source)                                                        AS platform,
         COUNT(DISTINCT po.id)::int                                            AS orders,
         SUM(COALESCE((mi->>'quantity')::numeric, 1))::numeric                 AS qty,
@@ -165,7 +165,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         AND po.status IN (1,2,3,8)
         AND po.pancake_created_at >= now() - ($1 || ' days')::interval
         AND po.raw->'items' IS NOT NULL
-      GROUP BY 1
+      -- Nhóm theo CẢ tên và mã. Gộp theo mỗi tên thì các biến thể bán theo SỐ LƯỢNG
+      -- khác nhau (CHỔI CỌ XOONG: CCX01 = 1 cây 45k, CCX02 = 2 cây 85k, CCX03 = 3 cây
+      -- 125k) dồn thành một dòng và chỉ khai được cho một mã — hai mã còn lại vẫn tính
+      -- vốn 1 cây, sai cả LNG lẫn số trừ tồn kho.
+      GROUP BY 1, 2
       ORDER BY orders DESC
     `, [String(days), market])
 
@@ -194,10 +198,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const s of skus) {
       const nameKey = normKey(s.sku_name)
       const codeKey = normKey(s.sku_code)
-      const map = mapped[nameKey] ?? (codeKey ? mapped[codeKey] : null)
+      // MÃ tra trước TÊN: nhiều biến thể dùng chung một tên nhưng khác số lượng
+      // (CHỔI CỌ XOONG có CCX01/02/03 = 1/2/3 cây), nên khai theo mã là thứ cụ thể hơn
+      // và phải thắng. Khai theo tên vẫn dùng được cho SKU sàn đặt tên tự do.
+      const map = (codeKey ? mapped[codeKey] : null) ?? mapped[nameKey]
 
-      // Giá vốn hiện tại theo đúng đường báo cáo đi: tên trước, rồi mã.
-      const auto = costOf(nameKey) ?? (codeKey ? costOf(codeKey) : null)
+      const auto = (codeKey ? costOf(codeKey) : null) ?? costOf(nameKey)
 
       if (map) {
         // Đã khai tay — tính giá vốn từ thành phần; thiếu 1 mã con thì báo chưa đủ.
@@ -211,7 +217,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           sku_name: s.sku_name, sku_code: s.sku_code || null, platform: s.platform,
           orders: s.orders, qty: Number(s.qty), last_seen: s.last_seen,
           parts, cost: ok ? sum : null, incomplete: !ok, note: map.note,
-          matched_key: mapped[nameKey] ? nameKey : codeKey,
+          matched_key: (codeKey && mapped[codeKey]) ? codeKey : nameKey,
         })
       } else if (auto == null) {
         // Chưa khớp được bằng cách nào — đây là dòng nhân sự cần xử lý.

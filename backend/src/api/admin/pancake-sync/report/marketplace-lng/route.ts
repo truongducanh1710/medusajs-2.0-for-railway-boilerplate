@@ -273,8 +273,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           -- Tên trong cost_sheet tách được "GIẺ LAU NHÀ TÁCH NƯỚC" (10.719đ) khỏi
           -- "BỘ LAU NHÀ TÁCH NƯỚC" (226.540đ) nên khớp tên mới ra đúng món.
           COALESCE(
-            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
+            -- skumap theo MÃ trước theo TÊN: các biến thể bán theo số lượng khác nhau
+            -- dùng chung một tên (CHỔI CỌ XOONG = CCX01/02/03 = 1/2/3 cây), nên khai
+            -- theo mã là thứ cụ thể hơn và phải thắng.
             (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = upper(oi.sp_code)),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
@@ -371,8 +374,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi2 AS (
         SELECT oi.*,
           COALESCE(
-            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
+            -- Mã trước tên (xem ghi chú ở truy vấn trên).
             (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = upper(oi.sp_code)),
+            (SELECT unit FROM cost_map c WHERE c.kind = 'skumap' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'accessory' AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'name'   AND c.key = oi.sp_name_up),
             (SELECT unit FROM cost_map c WHERE c.kind = 'code'   AND c.key = upper(oi.sp_code)),
