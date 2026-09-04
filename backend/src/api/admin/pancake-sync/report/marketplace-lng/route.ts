@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../lib/db"
-import { loadSkuMapCosts } from "../_sku-map"
+import { loadSkuMapCosts, loadSkuMapParts } from "../_sku-map"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -220,6 +220,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Thứ tự tra giá vốn: phụ kiện (tên) → tên SP chính → mã → prefix. Xem oi2 bên dưới.
     // SKU sàn khai tay ở tab "Khớp SP sàn" — tra TRƯỚC mọi nấc tự động bên dưới.
     const skuMapCost = await loadSkuMapCosts(getPool(), avgCost, accessoryCost, accessoryByCode)
+    const skuParts = await loadSkuMapParts(getPool())
 
     const costEntries = [
       ...Object.entries(skuMapCost).map(([k, v]) => ["skumap", k, v] as const),
@@ -440,15 +441,30 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
-    // Gom biến thể cùng mã về 1 dòng, tách theo (sàn × SP)
+    // Gom về MẶT HÀNG, không phải mã bao bì. CCX01/02/03 là 1/2/3 cây cùng một cây
+    // chổi, chi phí ads lại điền chung ở mã gốc — để riêng thì ads dồn hết vào biến thể
+    // bán chạy nhất và nó hiện lỗ nặng, trong khi mặt hàng gộp lại vẫn lãi. Người đọc
+    // bảng cần biết "cái chổi này lãi hay lỗ", không phải "gói 1 cây lãi hay lỗ".
+    // Quy về mã gốc theo bảng khai "Khớp SP sàn"; mã chưa khai giữ nguyên như cũ.
+    const baseCodeOf = (code: string | null | undefined): string | null => {
+      if (!code) return null
+      const c = String(code).toUpperCase()
+      const parts = skuParts[c]
+      // Chỉ gộp khi biến thể quy về ĐÚNG MỘT mã lẻ (gói N cái của cùng một món).
+      // Combo nhiều món (khay + hộp) không có mặt hàng gốc duy nhất nên giữ riêng.
+      if (parts?.length === 1) return parts[0].code
+      return c
+    }
     const merged: Record<string, any> = {}
     for (const row of rows) {
-      const codeKey = row.sp_code || row.sp_key
+      const codeKey = baseCodeOf(row.sp_code) || row.sp_key
       const key = `${row.platform}||${codeKey}`
       if (!merged[key]) {
-        const stdName = row.sp_code ? codeToName[String(row.sp_code).toUpperCase()] : null
+        const stdName = codeToName[String(codeKey).toUpperCase()]
+          ?? (row.sp_code ? codeToName[String(row.sp_code).toUpperCase()] : null)
         merged[key] = {
-          platform: row.platform, sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
+          platform: row.platform, sp_label: stdName || row.sp_label,
+          sp_code: row.sp_code ? codeKey : null,
           has_cost: true,
           total_orders: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           revenue_delivered: 0, fee_marketplace: 0, list_price: 0,
