@@ -281,3 +281,33 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(500).json({ error: err.message })
   }
 }
+
+/**
+ * DELETE /admin/ton-kho?product_code=…[&all=1]
+ *
+ * Xoá bản chốt tồn. Mặc định chỉ xoá bản MỚI NHẤT của mã đó — chốt nhầm thì rút lại
+ * đúng lần vừa nhập, các lần chốt cũ giữ nguyên làm lịch sử. `all=1` xoá sạch mọi bản
+ * chốt của mã (dùng khi mã bị nhập nhầm hẳn, vd đếm trùng một lô dưới hai mã).
+ */
+export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    await init()
+    const q: any = req.query ?? {}
+    const code = clean(q.product_code, 100).toUpperCase()
+    if (!code) return res.status(400).json({ error: "Thiếu product_code" })
+
+    const all = String(q.all ?? "") === "1"
+    const rows = all
+      ? await sql(`DELETE FROM ton_kho_snapshot WHERE product_code = $1 RETURNING id`, [code])
+      : await sql(
+          `DELETE FROM ton_kho_snapshot WHERE id = (
+             SELECT id FROM ton_kho_snapshot WHERE product_code = $1
+             ORDER BY counted_at DESC LIMIT 1
+           ) RETURNING id`,
+          [code],
+        )
+    return res.json({ deleted: rows.length, product_code: code, all })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+}

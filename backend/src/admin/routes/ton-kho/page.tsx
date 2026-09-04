@@ -88,6 +88,30 @@ function TonKhoPage() {
     }
   }
 
+  /**
+   * Xoá bản chốt tồn. Mặc định rút lại lần chốt GẦN NHẤT của mã đó — chốt nhầm số thì
+   * bỏ đúng lần vừa nhập. Giữ Shift để xoá sạch mọi bản chốt của mã (mã nhập nhầm hẳn,
+   * vd một lô hàng bị đếm hai lần dưới hai mã khác nhau).
+   */
+  async function removeSnapshot(r: Row, all: boolean) {
+    const what = all
+      ? `Xoá TOÀN BỘ lịch sử chốt tồn của mã này?`
+      : `Xoá lần chốt gần nhất (${nf(r.last_qty ?? 0)}) của mã này?`
+    if (!confirm(`${what}
+
+${r.product_name}
+${r.product_code}`)) return
+    try {
+      await apiJson(
+        `/admin/ton-kho?product_code=${encodeURIComponent(r.product_code)}${all ? "&all=1" : ""}`,
+        "DELETE",
+      )
+      load()
+    } catch (e: any) {
+      alert("Xoá thất bại: " + (e?.message ?? ""))
+    }
+  }
+
   const shown = useMemo(() => {
     const k = q.trim().toLowerCase()
     return rows.filter(r => {
@@ -235,11 +259,21 @@ function TonKhoPage() {
                     </td>
                     {canManage && (
                       <td className="px-3 py-2 text-right">
-                        <input type="number" min={0}
-                          value={draft[r.product_code] ?? ""}
-                          onChange={e => setDraft(d => ({ ...d, [r.product_code]: e.target.value }))}
-                          placeholder={r.on_hand != null ? String(r.on_hand) : "—"}
-                          className="border rounded-lg px-2 py-1 text-sm w-24 text-right font-mono outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <input type="number" min={0}
+                            value={draft[r.product_code] ?? ""}
+                            onChange={e => setDraft(d => ({ ...d, [r.product_code]: e.target.value }))}
+                            placeholder={r.on_hand != null ? String(r.on_hand) : "—"}
+                            className="border rounded-lg px-2 py-1 text-sm w-24 text-right font-mono outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                          {r.last_qty != null && (
+                            <button type="button"
+                              onClick={e => removeSnapshot(r, e.shiftKey)}
+                              title="Xoá lần chốt gần nhất — giữ Shift để xoá toàn bộ lịch sử chốt của mã này"
+                              className="px-1.5 py-1 text-gray-300 hover:text-red-600 leading-none">
+                              ×
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
