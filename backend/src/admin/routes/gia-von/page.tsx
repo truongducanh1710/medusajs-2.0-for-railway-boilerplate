@@ -2242,7 +2242,7 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
   const [days, setDays] = useState(30)
   // Đơn VN và MY ở 2 shop Pancake khác nhau, 2 nhóm nhân sự vận hành — xem riêng.
   const [market, setMarket] = useState<"VN" | "MY">("VN")
-  const [view, setView] = useState<"unmatched" | "matched">("unmatched")
+  const [view, setView] = useState<"unmatched" | "matched" | "auto">("unmatched")
   const [editing, setEditing] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -2283,7 +2283,9 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
   if (!data) return null
 
   const s = data.summary ?? {}
-  const list = view === "unmatched" ? data.unmatched : data.matched
+  const list = view === "unmatched" ? data.unmatched
+    : view === "matched" ? data.matched
+    : (data.auto_matched ?? [])
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
@@ -2303,7 +2305,8 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
         <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
         <div style={{ display: "flex", gap: 6 }}>
           {([["unmatched", `Chưa khớp (${s.unmatched ?? 0})`],
-             ["matched", `Đã khớp (${s.matched ?? 0})`]] as const).map(([k, label]) => (
+             ["matched", `Đã khớp (${s.matched ?? 0})`],
+             ["auto", `Tự khớp (${s.auto_matched ?? 0})`]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setView(k)}
               style={{
                 padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
@@ -2329,10 +2332,14 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
           <>SKU sàn xuất hiện trong đơn thật nhưng <b>chưa tra được giá vốn</b> — đơn chứa chúng
             đang bị đánh dấu "thiếu giá vốn" ở tab Sàn TMĐT và bị loại khỏi LNG.
             {" "}Bấm <b>Khớp</b> để chọn SP tương ứng; combo thì thêm nhiều dòng.
-            {" "}SKU tự khớp được rồi không hiện ở đây.</>
-        ) : (
+            {" "}SKU tự khớp được rồi nằm ở tab <b>Tự khớp</b>.</>
+        ) : view === "matched" ? (
           <>Các SKU đã khai tay. Khai tay <b>được ưu tiên hơn</b> mọi cách tự khớp,
             nên nếu số nào sai thì sửa ở đây là báo cáo đổi theo.</>
+        ) : (
+          <>SKU đã tự tra được giá vốn nên <b>không bắt buộc khai</b>. Nhưng <b>combo thì nên
+            khai thành phần</b>: có khai mới chia được chi phí ads về đúng sản phẩm và trừ
+            tồn kho theo hàng lẻ — vd "COMBO 2 KHAY 5 HỘP" khai 2× khay + 5× hộp.</>
         )}
         {" "}Danh sách tách theo thị trường, nhưng <b>khớp một lần dùng chung cả VN và MY</b> —
         một mã SP chỉ có một giá vốn, không phải khai lại cho từng shop.
@@ -2352,14 +2359,19 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
                   <th style={{ padding: "9px 12px", fontWeight: 700, width: 110, textAlign: "right" }}>Giá vốn</th>
                 </>
               )}
+              {view === "auto" && (
+                <th style={{ padding: "9px 12px", fontWeight: 700, width: 110, textAlign: "right" }}>Giá vốn</th>
+              )}
               <th style={{ padding: "9px 12px", fontWeight: 700, width: 120 }}></th>
             </tr>
           </thead>
           <tbody>
             {list.length === 0 && (
-              <tr><td colSpan={view === "matched" ? 7 : 5}
+              <tr><td colSpan={view === "matched" ? 7 : view === "auto" ? 6 : 5}
                 style={{ padding: "28px 12px", textAlign: "center", color: "#9ca3af" }}>
-                {view === "unmatched" ? "🎉 Không còn SKU nào thiếu giá vốn" : "Chưa khai SKU nào"}
+                {view === "unmatched" ? "🎉 Không còn SKU nào thiếu giá vốn"
+                  : view === "auto" ? "Không có SKU nào tự khớp trong kỳ này"
+                  : "Chưa khai SKU nào"}
               </td></tr>
             )}
             {list.map((r: any, i: number) => (
@@ -2373,6 +2385,11 @@ function SkuMappingTab({ canManage }: { canManage: boolean }) {
                 </td>
                 <td style={{ padding: "9px 12px", textAlign: "right", color: "#111827", fontWeight: 600 }}>{r.orders}</td>
                 <td style={{ padding: "9px 12px", textAlign: "right", color: "#6b7280" }}>{r.qty}</td>
+                {view === "auto" && (
+                  <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 700, color: "#111827" }}>
+                    {money(r.cost)}
+                  </td>
+                )}
                 {view === "matched" && (
                   <>
                     <td style={{ padding: "9px 12px", color: "#374151" }}>

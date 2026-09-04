@@ -20,8 +20,8 @@ async function sql(q: string, params?: any[]): Promise<any[]> {
  * mã nào trong bảng giá vốn nên báo cáo LNG sàn tra giá vốn ra 0 và đánh dấu "thiếu giá
  * vốn" — đúng cái nhân sự nhìn thấy trong drill-down đơn.
  *
- * Trước đây chỉ vá được bằng cách sửa code (DISPLAY_ID_ALIASES / COMBO_COMPOSITION),
- * nghĩa là mỗi SKU mới phải chờ kỹ thuật. Bảng này cho nhân sự tự khớp:
+ * Trước đây chỉ vá được bằng cách sửa code (DISPLAY_ID_ALIASES và một bảng combo khai
+ * cứng), nghĩa là mỗi SKU mới phải chờ kỹ thuật. Bảng này cho nhân sự tự khớp:
  *
  *   marketplace_sku_map: sku_key (mã hoặc TÊN sàn viết hoa) → product_code (+ qty)
  *
@@ -33,7 +33,10 @@ async function sql(q: string, params?: any[]): Promise<any[]> {
  * map dùng chung cả 2 — một mã SP chỉ có một giá vốn (VND), bán ở shop nào cũng vậy;
  * tách map ra sẽ bắt khai 2 lần cho cùng một sản phẩm.
  *
- * GET  ?days=30&market=VN|MY  → SKU sàn chưa có giá vốn (gom từ đơn thật) + map đã khai
+ * Giá vốn combo = Σ(vốn mã con × SL) — computeAvgCost() đọc thẳng bảng này, nên khai
+ * xong là báo cáo LNG, chia chi phí ads và trừ tồn kho đều dùng đúng thành phần.
+ *
+ * GET  ?days=30&market=VN|MY  → SKU chưa có giá vốn + map đã khai + SKU tự khớp được
  * POST { sku_key, parts: [{product_code, qty}] }  → lưu/ghi đè 1 map
  * DELETE ?sku_key=…                               → xoá map
  */
@@ -183,6 +186,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const unmatched: any[] = []
     const matched: any[] = []
+    // SKU tự tra được giá vốn (qua tên/mã/prefix) nên KHÔNG bắt buộc khai. Trước đây
+    // giấu hẳn đi cho đỡ nhiễu, nhưng thế thì combo tự khớp — vốn cần khai thành phần
+    // để chia ads và trừ tồn kho đúng — không có chỗ nào bấm vào được. Trả riêng nhóm
+    // này để tab hiện thành tuỳ chọn, không trộn vào danh sách việc phải làm.
+    const autoMatched: any[] = []
     for (const s of skus) {
       const nameKey = normKey(s.sku_name)
       const codeKey = normKey(s.sku_code)
@@ -211,17 +219,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           sku_name: s.sku_name, sku_code: s.sku_code || null, platform: s.platform,
           orders: s.orders, qty: Number(s.qty), last_seen: s.last_seen,
         })
+      } else {
+        // Tự khớp được — khai thêm là tuỳ chọn, chủ yếu cho combo cần tách thành phần.
+        autoMatched.push({
+          sku_name: s.sku_name, sku_code: s.sku_code || null, platform: s.platform,
+          orders: s.orders, qty: Number(s.qty), last_seen: s.last_seen, cost: auto,
+        })
       }
-      // auto != null && !map → đang tự khớp đúng, không cần hiện ra cho đỡ nhiễu.
     }
 
     return res.json({
-      unmatched, matched, products, days, market,
+      unmatched, matched, auto_matched: autoMatched, products, days, market,
       summary: {
         unmatched: unmatched.length,
         unmatched_orders: unmatched.reduce((s, u) => s + u.orders, 0),
         matched: matched.length,
         incomplete: matched.filter(m => m.incomplete).length,
+        auto_matched: autoMatched.length,
       },
     })
   } catch (err: any) {

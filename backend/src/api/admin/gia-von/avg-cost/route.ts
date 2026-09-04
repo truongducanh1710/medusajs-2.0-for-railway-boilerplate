@@ -33,28 +33,6 @@ export const DISPLAY_ID_ALIASES: Record<string, string> = {
   PHVVN041_GBCX: "PHVVN031_BCX",
 }
 
-/**
- * COMBO = nhiều SP đã có giá vốn gộp lại bán chung, POS sinh MÃ MỚI cho combo đó.
- *
- * Không dùng được DISPLAY_ID_ALIASES: alias map combo về MỘT mã nên chỉ lấy giá vốn của
- * một thành phần, bỏ hẳn phần còn lại (combo 2 khay 5 hộp map về hộp inox sẽ tính thiếu
- * 2 khay → lãi ảo). Ở đây khai thành phần để cộng đúng: giá vốn combo = Σ(vốn mã con × SL).
- *
- * Chỉ khai combo mà MỌI thành phần đều đã có giá vốn — thiếu 1 mã con thì combo bị bỏ qua
- * (trả về không có giá vốn) thay vì cộng ra số thiếu và im lặng báo lãi ảo.
- */
-export const COMBO_COMPOSITION: Record<string, { code: string; qty: number }[]> = {
-  // COMBO 2 KHAY 5 HỘP INOX
-  PHVVN050_CB1: [
-    { code: "PHVVN037_HDTP", qty: 5 },  // 5 HỘP ĐỰNG THỰC PHẨM INOX
-    { code: "PHVVN038_KLD", qty: 2 },   // 2 KHAY LỌC DẦU
-  ],
-  // COMBO 1 KHAY 3 HỘP
-  PHVVN051_CB2: [
-    { code: "PHVVN037_HDTP", qty: 3 },  // 3 HỘP ĐỰNG THỰC PHẨM INOX
-    { code: "PHVVN038_KLD", qty: 1 },   // 1 KHAY LỌC DẦU
-  ],
-}
 
 export function resolveDisplayId(displayId: string | null | undefined): string | null {
   if (!displayId) return null
@@ -250,22 +228,43 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     if (vals.size === 1) byPrefix[p] = [...vals][0]
   }
 
-  // Giá vốn COMBO = Σ(giá vốn mã con × SL). Tính SAU costs/byPrefix để thành phần tra
-  // được qua đúng chuỗi fallback như SP thường. Combo nào thiếu giá vốn của bất kỳ mã
-  // con nào thì KHÔNG ghi vào costs — thà báo "thiếu giá vốn" còn hơn cộng ra số thiếu
-  // rồi báo lãi ảo. Không ghi đè combo đã tự khai giá vốn trong sheet.
-  for (const [comboCode, parts] of Object.entries(COMBO_COMPOSITION)) {
-    if (costs[comboCode] != null) continue
+  // Giá vốn COMBO = Σ(giá vốn mã con × SL), lấy thành phần từ bảng khai tay
+  // marketplace_sku_map (tab "Khớp SP sàn"). Trước đây khai cứng trong file này nên mỗi
+  // combo mới phải chờ kỹ thuật; giờ nhân sự tự khai.
+  //
+  // Chỉ nhận map mà MỌI thành phần đều đã có giá vốn — thiếu 1 mã con thì bỏ qua combo
+  // thay vì cộng ra số thiếu rồi im lặng báo lãi ảo. Không đè combo đã tự khai giá vốn
+  // trong sheet: dòng khai tay ở bảng giá vốn vẫn là quyết định cuối cùng.
+  let comboRows: any[] = []
+  try {
+    const r = await pool.query(`SELECT sku_key, product_code, qty FROM marketplace_sku_map`)
+    comboRows = r.rows
+  } catch {
+    // bảng chưa tạo (chưa ai mở tab) — không có combo nào để cộng
+  }
+  const comboParts: Record<string, { code: string; qty: number }[]> = {}
+  for (const r of comboRows) {
+    const key = String(r.sku_key ?? "").trim().replace(/\s+/g, " ").toUpperCase()
+    const code = String(r.product_code ?? "").trim().toUpperCase()
+    if (!key || !code) continue
+    ;(comboParts[key] ??= []).push({ code, qty: Number(r.qty) || 1 })
+  }
+  for (const [key, parts] of Object.entries(comboParts)) {
+    if (costs[key] != null || byName[key] != null) continue
     let sum = 0
     let complete = true
     for (const part of parts) {
-      const partCode = part.code.toUpperCase()
-      const m = partCode.match(/^(PHVVN\d{2,3})/)
-      const unit = costs[partCode] ?? (m ? byPrefix[m[1]] : undefined)
+      const m = part.code.match(/^(PHVVN\d{2,3})/)
+      const unit = costs[part.code] ?? byName[part.code] ?? (m ? byPrefix[m[1]] : undefined)
       if (unit == null) { complete = false; break }
       sum += unit * part.qty
     }
-    if (complete) costs[comboCode] = sum
+    if (!complete) continue
+    // sku_key khai theo MÃ hoặc theo TÊN sàn (tab cho cả hai) — ghi vào đúng chỉ mục để
+    // báo cáo tra ra dù dòng hàng chỉ có một trong hai.
+    const total = Math.round(sum)
+    if (/^PHVVN/.test(key)) costs[key] = total
+    else byName[key] = total
   }
 
   return { costs, byName, byPrefix, mapped, total, unlinked }
