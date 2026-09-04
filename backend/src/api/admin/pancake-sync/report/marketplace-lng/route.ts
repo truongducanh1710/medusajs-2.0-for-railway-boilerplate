@@ -640,6 +640,47 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       r.ads_unassigned = ks.length === 0
     }
 
+    // ── FULLFILL: KHỚP VỚI SỐ ĐƠN THẬT ─────────────────────────────────────────
+    // orders_costed ở dòng SP là "số đơn CÓ CHỨA SP này", nên đơn mua 2 sản phẩm
+    // được đếm ở cả hai dòng và tổng fullfill vượt số đơn thật. Co lại theo tỷ lệ để
+    // tổng bảng khớp bảng theo ngày; dòng nào cũng chịu phần chênh như nhau.
+    // Số đơn THẬT theo sàn — lấy từ dayRows, nơi COUNT(DISTINCT order_id) đã chạy ở
+    // mức (ngày × sàn) nên không đếm trùng đơn nhiều SP.
+    const ordersCostedReal: Record<string, number> = {}
+    for (const r of dayRows as any[]) {
+      const plat = String(r.platform)
+      for (const k of ["orders_costed", "orders_costed_tt"]) {
+        ordersCostedReal[`${plat}||${k}`] = (ordersCostedReal[`${plat}||${k}`] ?? 0) + (Number(r[k]) || 0)
+      }
+    }
+    for (const plat of ["tiktok", "shopee"]) {
+      const pr = (result as any[]).filter(r => r.platform === plat)
+      if (pr.length === 0) continue
+      for (const [kOrders, kFf] of [["orders_costed", "fullfill"], ["orders_costed_tt", "fullfill_tt"]]) {
+        const sumRows = pr.reduce((a, r) => a + (Number(r[kFf]) || 0), 0)
+        if (sumRows <= 0) continue
+        // Số đơn THẬT của sàn = đơn distinct, lấy từ mkTotals (đã tính đúng).
+        const realOrders = ordersCostedReal[`${plat}||${kOrders}`] ?? 0
+        const target = FULLFILL_PER_ORDER * realOrders
+        if (target <= 0 || target === sumRows) continue
+        const k = target / sumRows
+        for (const r of pr) r[kFf] = Math.round((Number(r[kFf]) || 0) * k)
+      }
+      // LNG phải tính lại sau khi fullfill đổi — kể cả LNG sau ads, vốn đã được tính
+      // ở khối ads phía trên bằng fullfill cũ.
+      for (const r of pr) {
+        r.lng = r.revenue_costed - (r.cogs + r.fullfill)
+        r.lng_pct = pct(r.lng, r.revenue_costed)
+        r.lng_tt = r.revenue_costed_tt - (r.cogs_tt + r.fullfill_tt)
+        r.lng_tt_pct = pct(r.lng_tt, r.revenue_costed_tt)
+        const ads = Number(r.ads_cost) || 0
+        r.lng_sau_ads = r.lng - ads
+        r.lng_sau_ads_pct = pct(r.lng_sau_ads, r.revenue_costed)
+        r.lng_tt_sau_ads = r.lng_tt - ads
+        r.lng_tt_sau_ads_pct = pct(r.lng_tt_sau_ads, r.revenue_costed_tt)
+      }
+    }
+
     // ── ADS MỨC SHOP ──────────────────────────────────────────────────────────
     // Phần điền không kèm mã SP (27% chi phí, riêng Shopee là 100%) phải được gánh,
     // nếu không tổng bảng này lệch bảng theo ngày đúng bằng khoản đó — và mọi SP
@@ -651,11 +692,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const pool = adsShopLevel[plat] || 0
       if (pool <= 0) continue
       const cand = (result as any[]).filter(r => r.platform === plat && r.ads_unassigned)
-      const base = cand.reduce((a, r) => a + Math.max(0, Number(r.revenue_delivered) || 0), 0)
-      if (base <= 0) continue
+      // Chia theo doanh thu TẠM TÍNH, không phải doanh thu đã giao: kỳ mới hầu như
+      // chưa đơn nào giao xong nên revenue_delivered = 0 ở mọi dòng, base = 0 và cả
+      // khoản ads bị bỏ qua — đúng lỗi làm tổng bảng lệch bảng theo ngày.
+      const weightOf = (r: any) =>
+        Math.max(0, Number(r.revenue_tt) || 0) || Math.max(0, Number(r.revenue_delivered) || 0)
+      const base = cand.reduce((a, r) => a + weightOf(r), 0)
+      // Không có gì để chia theo (SP nào cũng doanh thu 0) — vẫn phải gánh, chia đều.
+      const perRow = cand.length > 0 ? pool / cand.length : 0
+      if (cand.length === 0) continue
       for (const r of cand) {
-        const share = Math.max(0, Number(r.revenue_delivered) || 0) / base
-        const add = Math.round(pool * share)
+        const add = base > 0 ? Math.round(pool * (weightOf(r) / base)) : Math.round(perRow)
         r.ads_cost = (r.ads_cost || 0) + add
         // Đánh dấu để giao diện nói rõ: đây là ads chia đều, không phải số điền riêng.
         r.ads_shop_share = add
