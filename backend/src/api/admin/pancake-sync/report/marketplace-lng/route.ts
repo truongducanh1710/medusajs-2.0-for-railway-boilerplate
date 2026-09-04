@@ -640,6 +640,34 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       r.ads_unassigned = ks.length === 0
     }
 
+    // ── ADS MỨC SHOP ──────────────────────────────────────────────────────────
+    // Phần điền không kèm mã SP (27% chi phí, riêng Shopee là 100%) phải được gánh,
+    // nếu không tổng bảng này lệch bảng theo ngày đúng bằng khoản đó — và mọi SP
+    // Shopee hiện lãi trong khi chưa trừ đồng ads nào.
+    //
+    // Chia cho các SP CHƯA nhận ads riêng, theo doanh thu: đơn đã có ads riêng mà
+    // gánh thêm phần shop thì bị tính hai lần. Cùng cách bảng chi tiết theo ngày làm.
+    for (const plat of Object.keys(adsShopLevel)) {
+      const pool = adsShopLevel[plat] || 0
+      if (pool <= 0) continue
+      const cand = (result as any[]).filter(r => r.platform === plat && r.ads_unassigned)
+      const base = cand.reduce((a, r) => a + Math.max(0, Number(r.revenue_delivered) || 0), 0)
+      if (base <= 0) continue
+      for (const r of cand) {
+        const share = Math.max(0, Number(r.revenue_delivered) || 0) / base
+        const add = Math.round(pool * share)
+        r.ads_cost = (r.ads_cost || 0) + add
+        // Đánh dấu để giao diện nói rõ: đây là ads chia đều, không phải số điền riêng.
+        r.ads_shop_share = add
+        r.ads_pct = pct(r.ads_cost, r.revenue_delivered)
+        r.ads_tt_pct = pct(r.ads_cost, r.revenue_tt)
+        r.lng_sau_ads = r.lng - r.ads_cost
+        r.lng_sau_ads_pct = pct(r.lng_sau_ads, r.revenue_costed)
+        r.lng_tt_sau_ads = r.lng_tt - r.ads_cost
+        r.lng_tt_sau_ads_pct = pct(r.lng_tt_sau_ads, r.revenue_costed_tt)
+      }
+    }
+
     const withAds = (t: any, ads: number) => ({
       ...t,
       ads_cost: ads,

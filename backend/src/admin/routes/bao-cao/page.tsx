@@ -4409,12 +4409,16 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r[PM.cogsPct])}</td>
                   <td className="px-3 py-2.5 text-right text-gray-500">{money(r[PM.fullfill])}</td>
                   <td className="px-3 py-2.5 text-right text-amber-700">
-                    {r.ads_unassigned
-                      ? <span className="text-gray-300" title="Chưa điền ads riêng cho SP này">—</span>
-                      : money(r.ads_cost)}
+                    {r.ads_cost > 0 ? money(r.ads_cost) : <span className="text-gray-300">—</span>}
+                    {r.ads_shop_share > 0 && (
+                      <span className="ml-1 text-[10px] text-gray-400"
+                        title={`Gồm ${money(r.ads_shop_share)} ads điền ở mức shop (không ghi rõ sản phẩm), chia theo doanh thu`}>
+                        ~
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    {r.ads_unassigned ? <span className="text-gray-300">—</span> : pctCell(r[PM.adsPct])}
+                    {r.ads_cost > 0 ? pctCell(r[PM.adsPct]) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className={`px-3 py-2.5 text-right ${r[PM.lng] >= 0 ? "text-gray-600" : "text-red-400"}`}>
                     {r.missing_cost ? "—" : money(r[PM.lng])}
@@ -4435,9 +4439,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           <b>LNG sau ads</b> = {prodMode === "tt" ? "DT tạm tính" : "DT thực nhận"} − giá vốn − fullfill − ads. Ads lấy phần đã điền cho
           từng sản phẩm ở trang Nhập chi phí, chia cho các biến thể theo số lượng bán.
           {data?.ads_shop_level_total > 0 && (
-            <> Còn <b>{money(data.ads_shop_level_total)}</b> điền ở mức shop (không ghi rõ sản phẩm)
-              nên <b>chưa nằm trong bảng này</b> — SP có dấu "—" ở cột Ads là chưa điền ads riêng,
-              LNG của nó đang tốt hơn thực tế.</>
+            <> Trong đó <b>{money(data.ads_shop_level_total)}</b> điền ở mức shop (không ghi rõ sản phẩm)
+              nên được <b>chia theo doanh thu</b> cho các SP chưa có ads riêng — ô có dấu <b>~</b> là
+              đã gồm phần chia này, không phải chi phí đo riêng cho SP đó. Điền mã SP khi nhập
+              chi phí thì số sẽ chính xác hơn.</>
           )}
           {" "}Ship do sàn trả (không tính). Fullfill 6.000đ/đơn.
         </div>
