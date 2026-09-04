@@ -3849,8 +3849,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     acc.fullfill += Number(r[M.fullfill] || 0)
     acc.ads_cost += Number(r.ads_cost || 0)
     acc.lng += Number(r[M.lng] || 0)
-    // Mẫu số cho %GV và %LNG là doanh thu CÓ giá vốn — phần chưa khai giá vốn bị loại
-    // khỏi LNG nên cũng không được nằm ở mẫu số, nếu không %  sẽ bị pha loãng.
+    // Giữ lại để cảnh báo dữ liệu thiếu giá vốn; mọi cột % đều lấy mẫu số là acc.gross.
     acc.rev_costed += Number(dayMode === "tt" ? (r.revenue_costed_tt || 0) : (r.revenue_costed || 0))
     acc.pending += Number(r.orders_pending || 0)
     if (r.ads_missing) acc.ads_missing_days += 1
@@ -4036,6 +4035,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               {dayMode === "tt"
                 ? "Gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."
                 : "Chỉ đơn đã giao thành công — tiền chắc chắn về. Đơn huỷ/hoàn KHÔNG tính vào doanh thu."}
+              {" "}Mọi cột <b>%</b> đều lấy mẫu số là <b>DT trước phí sàn</b>.
               {" "}<b>Bấm vào 1 dòng ngày để xem chi tiết từng đơn</b> của ngày đó.
               {" "}Dấu 🏷️ = đơn chưa khai giá vốn, 🎁 = đơn affiliate 0đ (di chuột để xem).
               {" "}Bấm tiêu đề cột để sắp xếp; riêng cột <b>{adsMetric === "pct" ? "%Ads" : "ROAS"}</b> bấm để đổi cách tính.
@@ -4101,7 +4101,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     huyHoan: "Số đơn huỷ + hoàn (và % trên số đơn đã ngã ngũ). Không tính vào doanh thu.",
                     gross: "Tiền khách trả (đã trừ khuyến mãi, CHƯA trừ phí sàn)",
                     rev: "Tiền thực nhận — đã trừ cả khuyến mãi và phí sàn",
-                    cogsPct: "Giá vốn ÷ doanh thu có giá vốn",
+                    cogsPct: "Giá vốn ÷ DT trước phí sàn",
+                    lng: "DT trước phí sàn − phí sàn − giá vốn − fullfill − ads",
+                    pct: "LNG sau ads ÷ DT trước phí sàn",
                     fee: "Phí sàn giữ lại. Ở mode Tạm tính, đơn dưới 15 ngày dùng mức ước tính 30% vì Pancake chưa nhận đủ số đối soát.",
                     feePct: "Phí sàn ÷ DT trước phí sàn (tiền khách trả)",
                   }
@@ -4252,8 +4254,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.rev)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.cogs)}</td>
                   <td className="px-3 py-2.5 text-right">
-                    {/* Mẫu số là doanh thu CÓ giá vốn (rev_costed), khớp cách tính từng dòng */}
-                    {pctCell(dayTotal.rev_costed > 0 ? Math.round(dayTotal.cogs / dayTotal.rev_costed * 10000) / 100 : null)}
+                    {/* Mẫu số là DT TRƯỚC PHÍ SÀN, khớp cách tính từng dòng */}
+                    {pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.cogs / dayTotal.gross * 10000) / 100 : null)}
                   </td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.fullfill)}</td>
                   <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
@@ -4267,7 +4269,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     {pctCell(
-                      dayTotal.rev_costed > 0 ? Math.round(dayTotal.lng / dayTotal.rev_costed * 10000) / 100 : null,
+                      dayTotal.gross > 0 ? Math.round(dayTotal.lng / dayTotal.gross * 10000) / 100 : null,
                       dayTotal.lng >= 0,
                     )}
                   </td>

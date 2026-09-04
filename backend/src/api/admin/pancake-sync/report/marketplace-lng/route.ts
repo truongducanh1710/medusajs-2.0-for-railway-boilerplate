@@ -619,13 +619,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         revenue_delivered: rev,
         revenue_costed: revCosted,
         revenue_no_cost: Number(r.revenue_no_cost || 0),
-        cogs, cogs_pct: pct(cogs, revCosted),
+        // MẪU SỐ CHUNG CHO MỌI CỘT % Ở BẢNG NGÀY = DT TRƯỚC PHÍ SÀN (tiền khách trả).
+        // Trước đây %GV và %LNG chia cho revenue_costed (DT thực nhận, chỉ phần đã khai
+        // giá vốn) trong khi %Phí và %Ads chia cho revGross — ba mẫu số trên một hàng
+        // nên các cột % không cộng trừ được với nhau và người đọc phải đoán từng cột.
+        cogs, cogs_pct: pct(cogs, revGross),
         fullfill: ff,
-        lng, lng_pct: pct(lng, revCosted),
+        lng, lng_pct: pct(lng, revGross),
         ads_cost: ads, ads_pct: pct(ads, rev),
         ads_missing: !hasAdsEntry && Number(r.orders_tt || 0) > 0,
         lng_sau_ads: lng - ads,
-        lng_sau_ads_pct: pct(lng - ads, revCosted),
+        lng_sau_ads_pct: pct(lng - ads, revGross),
 
         // Doanh thu trước phí sàn + %ads tính trên nó (mức thực)
         revenue_gross: revGross,
@@ -641,11 +645,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ads_gross_pct_tt: pct(ads, revGrossTT),
         ads_pct_tt: pct(ads, revTT),
         cogs_tt: cogsTT,
-        cogs_tt_pct: pct(cogsTT, revCostedTT),
+        cogs_tt_pct: pct(cogsTT, revGrossTT),
         fullfill_tt: ffTT,
         lng_tt: lngTT,
         lng_tt_sau_ads: lngTT - ads,
-        lng_tt_sau_ads_pct: pct(lngTT - ads, revCostedTT),
+        lng_tt_sau_ads_pct: pct(lngTT - ads, revGrossTT),
         // Số đơn đã rời kho nhưng chưa giao xong — càng lớn thì số "thực" càng
         // chưa phản ánh đủ, dùng để cảnh báo ngày quá mới.
         orders_pending: Number(r.orders_tt || 0) - Number(r.da_nhan || 0),
