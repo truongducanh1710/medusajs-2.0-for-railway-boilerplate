@@ -61,18 +61,54 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const days = Math.max(7, Math.min(Number(q.days) || 30, 90))
     const leadDays = Math.max(0, Math.min(Number(q.lead_days) || 25, 120))
 
-    // Tốc độ bán: lấy từ POS theo mã biến thể, quy về mã chuẩn trong mkt_product.
-    const velocity = await sql(`
+    // Kho đếm theo SẢN PHẨM LẺ, còn POS bán theo combo ("SET COMBO 2 Chổi" = 2 cái).
+    // Bảng marketplace_sku_map (tab "Khớp SP sàn") đã khai sẵn combo → SP lẻ kèm số
+    // lượng, nên quy đổi qua đó: bán 1 combo = trừ kho 2 cái SP lẻ.
+    const skuMap = await sql(
+      `SELECT sku_key, product_code, qty FROM marketplace_sku_map`,
+    ).catch(() => [])
+    // Một sku_key có thể gồm nhiều thành phần (combo nhiều món).
+    const partsByKey: Record<string, { code: string; qty: number }[]> = {}
+    for (const m of skuMap) {
+      const k = String(m.sku_key || "").trim().replace(/\s+/g, " ").toUpperCase()
+      if (!k) continue
+      ;(partsByKey[k] ??= []).push({
+        code: String(m.product_code || "").toUpperCase(),
+        qty: Number(m.qty) || 1,
+      })
+    }
+
+    // Lấy cả MÃ lẫn TÊN trên đơn — map khai được theo một trong hai.
+    const velocityRaw = await sql(`
       SELECT
         upper(COALESCE(it->'variation_info'->>'display_id','')) AS code,
+        upper(trim(COALESCE(it->'variation_info'->>'name', it->>'name',''))) AS name_up,
         SUM(COALESCE((it->>'quantity')::numeric,1))::int AS sold
       FROM pancake_order po
       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) it
       WHERE po.deleted_at IS NULL AND COALESCE(NULLIF(po.market,''),'VN') = 'VN'
         AND po.status IN ${SOLD_STATUS}
         AND po.pancake_created_at >= CURRENT_DATE - $1::int
-      GROUP BY 1
+      GROUP BY 1, 2
     `, [days])
+
+    /** Quy 1 dòng hàng trên POS về danh sách (SP lẻ × số lượng). */
+    const explode = (code: string, nameUp: string, qty: number) => {
+      const parts = partsByKey[nameUp] ?? partsByKey[code]
+      if (parts?.length) return parts.map(p => ({ code: p.code, qty: qty * p.qty }))
+      return code ? [{ code, qty }] : []
+    }
+
+    const velocity: { code: string; sold: number }[] = []
+    {
+      const acc: Record<string, number> = {}
+      for (const r of velocityRaw) {
+        for (const p of explode(String(r.code || ""), String(r.name_up || ""), Number(r.sold) || 0)) {
+          acc[p.code] = (acc[p.code] ?? 0) + p.qty
+        }
+      }
+      for (const [code, sold] of Object.entries(acc)) velocity.push({ code, sold })
+    }
 
     // Tồn chốt gần nhất của từng mã.
     const snaps = await sql(`
@@ -82,27 +118,68 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY product_code, counted_at DESC
     `)
 
-    // Đã bán KỂ TỪ lúc chốt — đây là phần trừ dần.
-    const soldSince = snaps.length === 0 ? [] : await sql(`
+    // Đã bán KỂ TỪ lúc chốt — phần trừ dần. Phải quy đổi combo giống trên, nên lấy
+    // mọi dòng hàng bán sau mốc chốt SỚM NHẤT rồi lọc theo từng mã trong JS: không
+    // join sẵn theo mã được, vì combo bán ra mang mã khác với mã SP lẻ đã chốt tồn.
+    const earliestSnap = snaps.reduce<Date | null>((min, s) => {
+      const d = new Date(s.counted_at)
+      return !min || d < min ? d : min
+    }, null)
+    const soldSinceRaw = !earliestSnap ? [] : await sql(`
       SELECT
         upper(COALESCE(it->'variation_info'->>'display_id','')) AS code,
-        SUM(COALESCE((it->>'quantity')::numeric,1))::int AS sold
+        upper(trim(COALESCE(it->'variation_info'->>'name', it->>'name',''))) AS name_up,
+        po.pancake_created_at AS at,
+        COALESCE((it->>'quantity')::numeric,1)::int AS qty
       FROM pancake_order po
       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) it
-      JOIN (VALUES ${snaps.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2}::timestamptz)`).join(",")})
-        AS s(code, since) ON s.code = upper(COALESCE(it->'variation_info'->>'display_id',''))
       WHERE po.deleted_at IS NULL AND COALESCE(NULLIF(po.market,''),'VN') = 'VN'
         AND po.status IN ${SOLD_STATUS}
-        AND po.pancake_created_at > s.since
-      GROUP BY 1
-    `, snaps.flatMap(s => [s.product_code, s.counted_at]))
+        AND po.pancake_created_at > $1::timestamptz
+    `, [earliestSnap.toISOString()])
 
+    const sinceBy: Record<string, number> = {}
+    for (const r of soldSinceRaw) {
+      const at = new Date(r.at)
+      for (const p of explode(String(r.code || ""), String(r.name_up || ""), Number(r.qty) || 0)) {
+        const snap = snaps.find(s => s.product_code === p.code)
+        // Chỉ trừ những gì bán SAU mốc chốt của chính mã đó.
+        if (snap && at > new Date(snap.counted_at)) {
+          sinceBy[p.code] = (sinceBy[p.code] ?? 0) + p.qty
+        }
+      }
+    }
+    const soldSince = Object.entries(sinceBy).map(([code, sold]) => ({ code, sold }))
+
+    // Tên SP: lấy thẳng từ dòng hàng đơn POS — đây là tên kho/POS đang dùng, và phủ
+    // được cả mã biến thể (PHVVN043_CCX01...) vốn không có trong mkt_product.
+    // Mỗi mã lấy tên xuất hiện nhiều nhất. mkt_product chỉ dùng để bù mã chưa bán đơn nào.
+    const posNames = await sql(`
+      SELECT upper(COALESCE(it->'variation_info'->>'display_id','')) AS code,
+             COALESCE(it->'variation_info'->>'name', it->>'name','') AS name,
+             COUNT(*)::int AS n
+      FROM pancake_order po
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items','[]'::jsonb)) it
+      WHERE po.deleted_at IS NULL
+        AND po.pancake_created_at >= CURRENT_DATE - 180
+        AND COALESCE(it->'variation_info'->>'display_id','') <> ''
+        AND COALESCE(it->'variation_info'->>'name', it->>'name','') <> ''
+      GROUP BY 1, 2
+    `).catch(() => [])
     const products = await sql(
       `SELECT code, name FROM mkt_product WHERE active IS NOT FALSE`,
     ).catch(() => [])
 
     const nameByCode: Record<string, string> = {}
     for (const p of products) nameByCode[String(p.code).toUpperCase()] = p.name
+    const nameFreq: Record<string, number> = {}
+    for (const r of posNames) {
+      const c = String(r.code || "").toUpperCase()
+      const n = Number(r.n) || 0
+      if (!c || n <= (nameFreq[c] ?? 0)) continue
+      nameFreq[c] = n
+      nameByCode[c] = String(r.name).trim()
+    }
 
     const soldMap: Record<string, number> = {}
     for (const r of velocity) if (r.code) soldMap[r.code] = Number(r.sold) || 0
@@ -131,7 +208,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
       return {
         product_code: code,
-        product_name: snap?.product_name || nameByCode[code] || code,
+        product_name: nameByCode[code] || snap?.product_name || code,
         // Tồn
         last_qty: snap ? Number(snap.qty) : null,
         counted_at: snap?.counted_at ?? null,
