@@ -3765,6 +3765,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // đơn còn đang giao nên bộ "thực" so doanh thu của số ít đơn đã xong với ads đã tiêu
   // của cả kỳ, ra lỗ giả rất lớn.
   const [prodMode, setProdMode] = useState<"tt" | "thuc">("tt")
+  const [prodPlatform, setProdPlatform] = useState<"all" | "tiktok" | "shopee">("all")
   const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
   // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
   // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
@@ -3795,7 +3796,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const cov = data.coverage ?? {}
   // Mặc định xếp theo LNG sau ads tăng dần: SP lỗ nặng nhất nằm trên cùng — đây là
   // cái người đọc bảng cần thấy trước, không phải SP doanh thu cao nhất.
-  const shownBase = showMissing ? rows : rows.filter(r => !r.missing_cost)
+  const rowsByPlatform = prodPlatform === "all"
+    ? rows : rows.filter((r: any) => r.platform === prodPlatform)
+  const shownBase = showMissing ? rowsByPlatform : rowsByPlatform.filter(r => !r.missing_cost)
   // Bộ field đổi theo mode, đúng như bảng theo ngày làm.
   const PM = prodMode === "tt"
     ? { qty: "qty_tt", orders: "orders_tt", fee: "fee_tt", rev: "revenue_tt", cogs: "cogs_tt",
@@ -4339,6 +4342,15 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               </span>
             )}
             <div className="flex gap-1">
+              {([["all", "Cả 2 sàn"], ["tiktok", "TikTok"], ["shopee", "Shopee"]] as const).map(([k, lb]) => (
+                <button key={k} onClick={() => setProdPlatform(k)}
+                  className={`px-2.5 py-1 text-[11px] rounded-md font-medium ${
+                    prodPlatform === k ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  {lb}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1">
               {([["tt", "Tạm tính"], ["thuc", "Thực"]] as const).map(([k, lb]) => (
                 <button key={k} onClick={() => setProdMode(k)}
                   title={k === "tt"
@@ -4361,7 +4373,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             </div>
             <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
               <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
-              Hiện cả SP chưa khai giá vốn ({rows.filter(r => r.missing_cost).length})
+              Hiện cả SP chưa khai giá vốn ({rowsByPlatform.filter(r => r.missing_cost).length})
             </label>
           </div>
         </div>
@@ -4369,7 +4381,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b text-xs text-gray-500">
               <tr>
-                <th className="text-left px-4 py-2.5">Sàn</th>
+                {prodPlatform === "all" && <th className="text-left px-4 py-2.5">Sàn</th>}
                 <th className="text-left px-4 py-2.5">Sản phẩm</th>
                 <th className="text-right px-3 py-2.5">SL</th>
                 <th className="text-right px-3 py-2.5">Đơn</th>
@@ -4387,15 +4399,17 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             </thead>
             <tbody className="divide-y text-gray-900">
               {shown.length === 0 && (
-                <tr><td colSpan={15} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+                <tr><td colSpan={prodPlatform === "all" ? 15 : 14} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
               {shown.map((r, i) => (
                 <tr key={`${r.platform}-${r.sp_code ?? r.sp_label}-${i}`} className={r.missing_cost ? "bg-amber-50/50" : ""}>
-                  <td className="px-4 py-2.5">
-                    <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                      r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                    }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
-                  </td>
+                  {prodPlatform === "all" && (
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 max-w-[260px]">
                     <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
                     {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
