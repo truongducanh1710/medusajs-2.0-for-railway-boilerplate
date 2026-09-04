@@ -67,3 +67,34 @@ export async function loadSkuMapCosts(
   }
   return out
 }
+
+/**
+ * Thành phần của SKU sàn khai tay, để phân bổ CHI PHÍ ADS.
+ *
+ * Combo mang mã riêng (PHVVN050_CB1 = 2 khay + 5 hộp inox) nên chi phí ads điền cho
+ * khay (PHVVN038) và hộp (PHVVN037) không chạm tới đơn combo: doanh thu combo được
+ * ghi nhận mà ads kéo ra đơn đó thì không, làm combo lãi ảo còn SP lẻ gánh nặng thêm.
+ * Map này cho báo cáo nổ 1 dòng combo thành các mã lẻ để chia ads đúng chỗ.
+ *
+ * Key trả về gồm CẢ sku_key đã chuẩn hoá VÀ mã SP, vì tab "Khớp SP sàn" cho khai theo
+ * mã lẫn theo tên hiển thị — dòng hàng chỉ có một trong hai là tra được.
+ */
+export async function loadSkuMapParts(
+  pool: Pool,
+): Promise<Record<string, { code: string; qty: number }[]>> {
+  const out: Record<string, { code: string; qty: number }[]> = {}
+  let rows: any[]
+  try {
+    const r = await pool.query(`SELECT sku_key, product_code, qty FROM marketplace_sku_map`)
+    rows = r.rows
+  } catch {
+    return out // bảng chưa tạo — không nổ combo, giữ nguyên hành vi cũ
+  }
+  for (const r of rows) {
+    const key = String(r.sku_key || "").trim().replace(/\s+/g, " ").toUpperCase()
+    const code = String(r.product_code || "").trim().toUpperCase()
+    if (!key || !code) continue
+    ;(out[key] ??= []).push({ code, qty: Number(r.qty) || 1 })
+  }
+  return out
+}

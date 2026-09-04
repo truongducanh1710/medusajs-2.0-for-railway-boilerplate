@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../../lib/db"
-import { loadSkuMapCosts } from "../../_sku-map"
+import { loadSkuMapCosts, loadSkuMapParts } from "../../_sku-map"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -84,16 +84,32 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const rate = market === "MY" ? await getMyrToVndRate(date) : 1
     const MONEY = market === "MY" ? `* ${rate} / 100.0` : ""
 
-    // NULLIF ở CẢ 3 nấc — xem ghi chú ở ../route.ts: cod_amount/total NOT NULL default 0
-    // nên COALESCE trần dừng ở cod_amount = 0, đơn sàn (khách trả trên app, cod = 0)
-    // bị tính doanh thu = 0.
-    const revenueExpr = `(COALESCE(
-      NULLIF((raw->>'total_price_after_sub_discount')::numeric, 0),
-      NULLIF(cod_amount::numeric, 0),
-      NULLIF(total::numeric, 0),
-      0
-    ) ${MONEY})::bigint`
-    const feeExpr = `(COALESCE((raw->>'fee_marketplace')::numeric, 0) ${MONEY})::bigint`
+    // Phí sàn: PHẢI khớp bảng ngày ở ../route.ts. POS chỉ chốt phí sau ~15 ngày, nên
+    // đơn mới hơn thế hiện phí gần 0 và "DT thực nhận" bị thổi lên. Dưới 15 ngày dùng
+    // ước tính 30% trên tiền khách trả; từ 15 ngày trở đi lấy phí thật trên POS.
+    const PHI_UOC_TINH_PCT = 0.30
+    const NGAY_CHOT_PHI = 15
+    const chuaChotPhi = `(CURRENT_DATE - (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) < ${NGAY_CHOT_PHI}`
+    // Tiền khách trả = DT sau chiết khấu (đã TRỪ phí) + phí sàn đã ghi nhận.
+    const tienKhachTra = `(COALESCE((po.raw->>'total_price_after_sub_discount')::numeric, 0)
+      + COALESCE((po.raw->>'fee_marketplace')::numeric, 0))`
+    const feeExpr = `(CASE WHEN ${chuaChotPhi}
+      THEN ${tienKhachTra} * ${PHI_UOC_TINH_PCT}
+      ELSE COALESCE((po.raw->>'fee_marketplace')::numeric, 0) END ${MONEY})::bigint`
+    const feeIsEstimatedExpr = `(${chuaChotPhi})`
+    // Doanh thu thực nhận = tiền khách trả trừ phí sàn (thật hoặc ước tính) — công thức
+    // phải trùng revenueTTExpr ở ../route.ts, nếu không tổng bảng chi tiết lệch dòng ngày.
+    // NULLIF ở CẢ 3 nấc (nhánh đã chốt phí) — xem ghi chú ở ../route.ts: cod_amount/total
+    // NOT NULL default 0 nên COALESCE trần dừng ở cod_amount = 0, đơn sàn (khách trả trên
+    // app, cod = 0) bị tính doanh thu = 0.
+    const revenueExpr = `(CASE WHEN ${chuaChotPhi}
+      THEN ${tienKhachTra} * ${1 - PHI_UOC_TINH_PCT}
+      ELSE COALESCE(
+        NULLIF((po.raw->>'total_price_after_sub_discount')::numeric, 0),
+        NULLIF(po.cod_amount::numeric, 0),
+        NULLIF(po.total::numeric, 0),
+        0
+      ) END ${MONEY})::bigint`
     const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
 
     const platform = ["shopee", "tiktok"].includes(String(platformRaw)) ? String(platformRaw) : null
@@ -138,6 +154,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // SKU sàn khai tay ở tab "Khớp SP sàn" — tra TRƯỚC mọi nấc tự động (giống ../route.ts).
     const skuMapCost = await loadSkuMapCosts(getPool(), avgCost, accessoryCost, accessoryByCode)
+    const skuParts = await loadSkuMapParts(getPool())
 
     const costEntries = [
       ...Object.entries(skuMapCost).map(([k, v]) => ["skumap", k, v] as const),
@@ -178,6 +195,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             * COALESCE((mi->>'quantity')::numeric, 1)) AS retail_value,
           ${revenueExpr} AS order_revenue,
           ${feeExpr} AS fee_marketplace,
+          ${feeIsEstimatedExpr} AS fee_estimated,
           ${listPriceExpr} AS list_price
         FROM pancake_order po
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(po.raw->'items', '[]'::jsonb)) AS mi
@@ -261,6 +279,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           // Tiền cấp ĐƠN — mọi dòng hàng của cùng đơn mang cùng giá trị, lấy 1 lần
           // là đủ (cộng dồn theo dòng sẽ nhân lên số lần bằng số SP trong đơn).
           revenue: Number(r.order_revenue || 0),
+          fee_estimated: r.fee_estimated === true,
           fee_marketplace: Number(r.fee_marketplace || 0),
           list_price: Number(r.list_price || 0),
           cogs: 0,
@@ -314,16 +333,33 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return m && adsByProduct[m[1]] != null ? m[1] : null
     }
 
+    // Combo mang mã riêng (PHVVN050_CB1 = 2 khay + 5 hộp) nên prefix của nó không khớp
+    // ads điền cho khay/hộp. Nổ dòng combo ra các mã lẻ đã khai ở tab "Khớp SP sàn" để
+    // đơn combo gánh đúng phần ads của thành phần; combo chưa khai giữ nguyên như cũ.
+    const adsPartsOf = (it: any): { key: string; qty: number }[] => {
+      const direct = adsKeyOf(it.sp_code)
+      if (direct) return [{ key: direct, qty: it.qty }]
+      const parts = skuParts[String(it.sp_name_up || "")] ?? skuParts[String(it.sp_code || "").toUpperCase()]
+      if (!parts?.length) return []
+      const out: { key: string; qty: number }[] = []
+      for (const p of parts) {
+        const k = adsKeyOf(p.code)
+        if (k) out.push({ key: k, qty: it.qty * p.qty })
+      }
+      return out
+    }
+
     const qtyByProduct: Record<string, number> = {}
     for (const o of list as any[]) {
       for (const it of o.items) {
-        const k = adsKeyOf(it.sp_code)
-        if (k) qtyByProduct[k] = (qtyByProduct[k] ?? 0) + it.qty
+        for (const p of adsPartsOf(it)) {
+          qtyByProduct[p.key] = (qtyByProduct[p.key] ?? 0) + p.qty
+        }
       }
     }
     // Đơn "chưa được ads riêng chạm tới" — nhóm sẽ gánh phần chi phí mức shop.
     const ordersForShopLevel = (list as any[]).filter(
-      o => !o.items.some((it: any) => adsKeyOf(it.sp_code)))
+      o => !o.items.some((it: any) => adsPartsOf(it).length > 0))
     const shopLevelPerOrder = ordersForShopLevel.length > 0
       ? adsShopLevel / ordersForShopLevel.length
       : 0
@@ -331,9 +367,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsOfOrder = (o: any): number => {
       let sum = 0
       for (const it of o.items) {
-        const k = adsKeyOf(it.sp_code)
-        if (k && qtyByProduct[k] > 0) {
-          sum += adsByProduct[k] * (it.qty / qtyByProduct[k])
+        for (const p of adsPartsOf(it)) {
+          if (qtyByProduct[p.key] > 0) {
+            sum += adsByProduct[p.key] * (p.qty / qtyByProduct[p.key])
+          }
         }
       }
       // Đơn không dính SP nào có ads riêng thì nhận suất chi phí mức shop.
