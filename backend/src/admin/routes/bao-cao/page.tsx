@@ -3761,6 +3761,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const [err, setErr] = useState<string | null>(null)
   const [showMissing, setShowMissing] = useState(false)
   const [prodSort, setProdSort] = useState<"lng" | "revenue" | "ads">("lng")
+  // Thực / Tạm tính — giống bảng theo ngày. Mặc định TẠM TÍNH: với kỳ mới, phần lớn
+  // đơn còn đang giao nên bộ "thực" so doanh thu của số ít đơn đã xong với ads đã tiêu
+  // của cả kỳ, ra lỗ giả rất lớn.
+  const [prodMode, setProdMode] = useState<"tt" | "thuc">("tt")
   const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
   // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
   // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
@@ -3792,12 +3796,25 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // Mặc định xếp theo LNG sau ads tăng dần: SP lỗ nặng nhất nằm trên cùng — đây là
   // cái người đọc bảng cần thấy trước, không phải SP doanh thu cao nhất.
   const shownBase = showMissing ? rows : rows.filter(r => !r.missing_cost)
+  // Bộ field đổi theo mode, đúng như bảng theo ngày làm.
+  const PM = prodMode === "tt"
+    ? { qty: "qty_tt", orders: "orders_tt", fee: "fee_tt", rev: "revenue_tt", cogs: "cogs_tt",
+        fullfill: "fullfill_tt", lng: "lng_tt", lngAds: "lng_tt_sau_ads",
+        lngPct: "lng_tt_sau_ads_pct", adsPct: "ads_tt_pct", cogsPct: "cogs_tt_pct" }
+    : { qty: "delivered_qty", orders: "da_nhan", fee: "fee_marketplace", rev: "revenue_delivered",
+        cogs: "cogs", fullfill: "fullfill", lng: "lng", lngAds: "lng_sau_ads",
+        lngPct: "lng_sau_ads_pct", adsPct: "ads_pct", cogsPct: "cogs_pct" }
   const shown = [...shownBase].sort((a, b) => {
-    if (prodSort === "revenue") return Number(b.revenue_delivered || 0) - Number(a.revenue_delivered || 0)
+    if (prodSort === "revenue") return Number(b[PM.rev] || 0) - Number(a[PM.rev] || 0)
     if (prodSort === "ads") return Number(b.ads_cost || 0) - Number(a.ads_cost || 0)
-    return Number(a.lng_sau_ads || 0) - Number(b.lng_sau_ads || 0)
+    return Number(a[PM.lngAds] || 0) - Number(b[PM.lngAds] || 0)
   })
-  const loCount = shownBase.filter(r => Number(r.lng_sau_ads || 0) < 0).length
+  const loCount = shownBase.filter(r => Number(r[PM.lngAds] || 0) < 0).length
+  // Tỷ lệ đơn chưa giao xong: bộ "thực" bỏ hết doanh thu của những đơn này nhưng ads
+  // thì đã tiêu, nên kỳ càng mới thì số lỗ càng phóng đại. Cảnh báo khi đáng kể.
+  const totOrders = shownBase.reduce((a, r) => a + Number(r.total_orders || 0), 0)
+  const totDone = shownBase.reduce((a, r) => a + Number(r.da_nhan || 0), 0)
+  const pendingPct = totOrders > 0 ? Math.round((1 - totDone / totOrders) * 100) : 0
   const money = (n: any) => fmtVND(Number(n || 0))
   const pctCell = (v: any, good?: boolean) =>
     v == null ? <span className="text-gray-300">—</span>
@@ -4308,6 +4325,12 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               Doanh thu = tiền thực nhận (sàn đã trừ phí + khuyến mãi). Mỗi dòng hàng tính giá vốn riêng.
               Cột <b>LNG sau ads</b> cho biết sản phẩm thực lãi hay lỗ.
             </p>
+            {prodMode === "thuc" && pendingPct >= 30 && (
+              <p className="text-[11px] text-amber-700 mt-1.5 bg-amber-50 rounded-md px-2 py-1 inline-block">
+                ⚠ {pendingPct}% đơn trong kỳ chưa giao xong nên chưa có doanh thu, trong khi ads đã tiêu đủ —
+                số lỗ ở chế độ <b>Thực</b> đang nặng hơn thực tế. Xem <b>Tạm tính</b> để so đúng kỳ.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             {loCount > 0 && (
@@ -4315,6 +4338,18 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 {loCount} SP đang lỗ sau ads
               </span>
             )}
+            <div className="flex gap-1">
+              {([["tt", "Tạm tính"], ["thuc", "Thực"]] as const).map(([k, lb]) => (
+                <button key={k} onClick={() => setProdMode(k)}
+                  title={k === "tt"
+                    ? "Gồm cả đơn đang trên đường — so được với chi phí ads đã tiêu trong kỳ"
+                    : "Chỉ đơn đã giao xong. Kỳ mới sẽ thấy lỗ lớn vì phần lớn đơn chưa giao xong trong khi ads đã tiêu đủ."}
+                  className={`px-2.5 py-1 text-[11px] rounded-md font-medium ${
+                    prodMode === k ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  {lb}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-1">
               {([["lng", "Lỗ nhiều nhất"], ["revenue", "Doanh thu"], ["ads", "Ads"]] as const).map(([k, lb]) => (
                 <button key={k} onClick={() => setProdSort(k)}
@@ -4339,7 +4374,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <th className="text-right px-3 py-2.5">SL</th>
                 <th className="text-right px-3 py-2.5">Đơn</th>
                 <th className="text-right px-3 py-2.5">Phí sàn</th>
-                <th className="text-right px-3 py-2.5">DT thực nhận</th>
+                <th className="text-right px-3 py-2.5">{prodMode === "tt" ? "DT tạm tính" : "DT thực nhận"}</th>
                 <th className="text-right px-3 py-2.5">Giá vốn</th>
                 <th className="text-right px-3 py-2.5">%GV</th>
                 <th className="text-right px-3 py-2.5" title="Fullfill 6.000đ/đơn">Fullfill</th>
@@ -4366,30 +4401,30 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
                     {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.delivered_qty)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.da_nhan)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fee_marketplace)}</td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r.cogs)}</td>
-                  <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.cogs_pct)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fullfill)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[PM.qty])}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[PM.orders])}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r[PM.fee])}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r[PM.rev])}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r[PM.cogs])}</td>
+                  <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r[PM.cogsPct])}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r[PM.fullfill])}</td>
                   <td className="px-3 py-2.5 text-right text-amber-700">
                     {r.ads_unassigned
                       ? <span className="text-gray-300" title="Chưa điền ads riêng cho SP này">—</span>
                       : money(r.ads_cost)}
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    {r.ads_unassigned ? <span className="text-gray-300">—</span> : pctCell(r.ads_pct)}
+                    {r.ads_unassigned ? <span className="text-gray-300">—</span> : pctCell(r[PM.adsPct])}
                   </td>
-                  <td className={`px-3 py-2.5 text-right ${r.lng >= 0 ? "text-gray-600" : "text-red-400"}`}>
-                    {r.missing_cost ? "—" : money(r.lng)}
+                  <td className={`px-3 py-2.5 text-right ${r[PM.lng] >= 0 ? "text-gray-600" : "text-red-400"}`}>
+                    {r.missing_cost ? "—" : money(r[PM.lng])}
                   </td>
                   <td className={`px-3 py-2.5 text-right font-bold bg-violet-50/60 ${
-                    r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-600"}`}>
-                    {r.missing_cost ? "—" : money(r.lng_sau_ads)}
+                    r[PM.lngAds] >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                    {r.missing_cost ? "—" : money(r[PM.lngAds])}
                   </td>
                   <td className="px-3 py-2.5 text-right bg-violet-50/60">
-                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.lng_sau_ads_pct, r.lng_sau_ads >= 0)}
+                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r[PM.lngPct], r[PM.lngAds] >= 0)}
                   </td>
                 </tr>
               ))}
@@ -4397,7 +4432,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           </table>
         </div>
         <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500 leading-relaxed">
-          <b>LNG sau ads</b> = DT thực nhận − giá vốn − fullfill − ads. Ads lấy phần đã điền cho
+          <b>LNG sau ads</b> = {prodMode === "tt" ? "DT tạm tính" : "DT thực nhận"} − giá vốn − fullfill − ads. Ads lấy phần đã điền cho
           từng sản phẩm ở trang Nhập chi phí, chia cho các biến thể theo số lượng bán.
           {data?.ads_shop_level_total > 0 && (
             <> Còn <b>{money(data.ads_shop_level_total)}</b> điền ở mức shop (không ghi rõ sản phẩm)

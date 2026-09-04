@@ -519,6 +519,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         revenue_tt: g.revenue_tt,
         fee_tt: g.fee_tt,
         cogs_tt: g.cogs_tt,
+        cogs_tt_pct: pct(g.cogs_tt, g.revenue_costed_tt),
         revenue_costed_tt: g.revenue_costed_tt,
         fullfill_tt: fullfillTT,
         lng_tt: lngTT,
@@ -634,6 +635,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // Tạm tính dùng CÙNG khoản ads (ads là chi phí đã tiêu, không phụ thuộc đơn về).
       r.lng_tt_sau_ads = r.lng_tt - ads
       r.lng_tt_sau_ads_pct = pct(r.lng_tt - ads, r.revenue_costed_tt)
+      r.ads_tt_pct = pct(ads, r.revenue_tt)
       // SP chưa điền ads riêng: LNG sau ads = LNG, cần nói rõ để không đọc nhầm là lãi.
       r.ads_unassigned = ks.length === 0
     }
