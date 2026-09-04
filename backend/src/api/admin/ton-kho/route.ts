@@ -120,10 +120,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY product_code, counted_at DESC
     `)
 
+    // Bản chốt tồn cũng phải quy đổi như lúc bán. Kho hay gõ mã bao bì trên sàn
+    // (PHVVN037_HDTP01 = gói 1 hộp) thay vì mã hàng lẻ (PHVVN037_HDTP), mà số bán ra
+    // đã quy về mã lẻ — không quy đổi thì một mặt hàng tách thành hai dòng: dòng có
+    // tồn nhưng "bán/ngày = 0" (không bao giờ cảnh báo hết hàng) và dòng có tốc độ bán
+    // nhưng "chưa chốt". Đúng cái đã xảy ra với hộp đựng thực phẩm.
+    const snapMap: Record<string, any> = {}
+    for (const s of snaps) {
+      const raw = String(s.product_code || "").toUpperCase()
+      // Chốt 600 gói loại 5 hộp = 3000 hộp lẻ.
+      for (const p of explode(raw, String(s.product_name || "").trim().toUpperCase(), Number(s.qty) || 0)) {
+        const prev = snapMap[p.code]
+        // Cùng một mã lẻ có thể nhận nhiều bản chốt (kho gõ 2 mã bao bì khác nhau):
+        // lấy bản MỚI NHẤT, vì bản cũ đã lỗi thời chứ không phải hàng nằm thêm kho.
+        if (prev && new Date(prev.counted_at) >= new Date(s.counted_at)) continue
+        snapMap[p.code] = { ...s, product_code: p.code, qty: p.qty }
+      }
+    }
+
     // Đã bán KỂ TỪ lúc chốt — phần trừ dần. Phải quy đổi combo giống trên, nên lấy
     // mọi dòng hàng bán sau mốc chốt SỚM NHẤT rồi lọc theo từng mã trong JS: không
     // join sẵn theo mã được, vì combo bán ra mang mã khác với mã SP lẻ đã chốt tồn.
-    const earliestSnap = snaps.reduce<Date | null>((min, s) => {
+    const snapList = Object.values(snapMap)
+    const earliestSnap = snapList.reduce<Date | null>((min, s: any) => {
       const d = new Date(s.counted_at)
       return !min || d < min ? d : min
     }, null)
@@ -144,7 +163,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const r of soldSinceRaw) {
       const at = new Date(r.at)
       for (const p of explode(String(r.code || ""), String(r.name_up || ""), Number(r.qty) || 0)) {
-        const snap = snaps.find(s => s.product_code === p.code)
+        // Tra trong bản chốt ĐÃ QUY ĐỔI: dòng hàng đã về mã lẻ, còn snaps thô vẫn
+        // mang mã kho gõ — so thẳng sẽ không khớp và tồn không bao giờ bị trừ.
+        const snap = snapMap[p.code]
         // Chỉ trừ những gì bán SAU mốc chốt của chính mã đó.
         if (snap && at > new Date(snap.counted_at)) {
           sinceBy[p.code] = (sinceBy[p.code] ?? 0) + p.qty
@@ -187,8 +208,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const r of velocity) if (r.code) soldMap[r.code] = Number(r.sold) || 0
     const sinceMap: Record<string, number> = {}
     for (const r of soldSince) if (r.code) sinceMap[r.code] = Number(r.sold) || 0
-    const snapMap: Record<string, any> = {}
-    for (const s of snaps) snapMap[s.product_code] = s
 
     // Gộp mọi mã: có bán trong kỳ HOẶC đã từng chốt tồn.
     const codes = Array.from(new Set([...Object.keys(soldMap), ...Object.keys(snapMap)]))
