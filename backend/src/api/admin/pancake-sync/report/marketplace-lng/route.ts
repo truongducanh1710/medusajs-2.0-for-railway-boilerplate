@@ -576,24 +576,41 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Ads sàn điền theo mã (PHVVN043) còn dòng hàng mang mã biến thể (PHVVN043_CCX01),
     // nên quy mã dòng về prefix để khớp — giống hệt cách bảng chi tiết theo ngày làm.
     // Nhờ vậy mọi biến thể/combo của cùng SP dùng chung khoản đã điền.
-    const adsKeyOf = (plat: string, code: string | null): string | null => {
-      if (!code) return null
+    // Một dòng hàng có thể khớp NHIỀU khoản ads điền ở các mức khác nhau: mã đầy đủ
+    // (PHVVN043_CCX01), mã gốc (PHVVN043_CCX) và prefix (PHVVN043) đều có thể có tiền
+    // điền riêng. Gom cả ba, nếu không khoản điền ở mức giữa sẽ không dòng nào gánh —
+    // đúng chỗ 835.084đ của PHVVN043_CCX bị bỏ rơi.
+    const adsKeysOf = (plat: string, code: string | null): string[] => {
+      if (!code) return []
       const c = String(code).toUpperCase()
-      if (adsByProduct[`${plat}||${c}`] != null) return `${plat}||${c}`
+      const keys = new Set<string>()
+      // Mọi tiền tố "có nghĩa": cắt dần theo dấu _ rồi tới prefix PHVVN043.
+      const cands = [c]
+      // Bỏ đuôi số: PHVVN043_CCX01 -> PHVVN043_CCX. Biến thể đánh số liền sau mã gốc,
+      // không có dấu _ ngăn cách, nên chỉ cắt theo _ là trượt khoản điền cho mã gốc.
+      const noNum = c.replace(/\d+$/, "")
+      if (noNum !== c && noNum.length > 0) cands.push(noNum)
+      for (let i = c.lastIndexOf("_"); i > 0; i = c.lastIndexOf("_", i - 1)) cands.push(c.slice(0, i))
       const m = c.match(/^(PHVVN\d{2,3})/)
-      return m && adsByProduct[`${plat}||${m[1]}`] != null ? `${plat}||${m[1]}` : null
+      if (m) cands.push(m[1])
+      for (const cand of cands) if (adsByProduct[`${plat}||${cand}`] != null) keys.add(`${plat}||${cand}`)
+      return [...keys]
     }
     // Chia theo SỐ LƯỢNG bán: SP bán 2 cái gánh gấp đôi SP bán 1 cái.
     const qtyByAdsKey: Record<string, number> = {}
     for (const r of result as any[]) {
-      const k = adsKeyOf(r.platform, r.sp_code)
-      if (k) qtyByAdsKey[k] = (qtyByAdsKey[k] ?? 0) + (r.delivered_qty || 0)
+      for (const k of adsKeysOf(r.platform, r.sp_code)) {
+        qtyByAdsKey[k] = (qtyByAdsKey[k] ?? 0) + (r.delivered_qty || 0)
+      }
     }
     for (const r of result as any[]) {
-      const k = adsKeyOf(r.platform, r.sp_code)
-      const ads = k && qtyByAdsKey[k] > 0
-        ? Math.round(adsByProduct[k] * ((r.delivered_qty || 0) / qtyByAdsKey[k]))
-        : 0
+      const ks = adsKeysOf(r.platform, r.sp_code)
+      let ads = 0
+      for (const k of ks) {
+        if (qtyByAdsKey[k] > 0) {
+          ads += Math.round(adsByProduct[k] * ((r.delivered_qty || 0) / qtyByAdsKey[k]))
+        }
+      }
       r.ads_cost = ads
       r.ads_pct = pct(ads, r.revenue_delivered)
       r.lng_sau_ads = r.lng - ads
@@ -602,7 +619,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       r.lng_tt_sau_ads = r.lng_tt - ads
       r.lng_tt_sau_ads_pct = pct(r.lng_tt - ads, r.revenue_costed_tt)
       // SP chưa điền ads riêng: LNG sau ads = LNG, cần nói rõ để không đọc nhầm là lãi.
-      r.ads_unassigned = !k
+      r.ads_unassigned = ks.length === 0
     }
 
     const withAds = (t: any, ads: number) => ({
