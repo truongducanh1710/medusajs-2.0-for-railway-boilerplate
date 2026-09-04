@@ -681,6 +681,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     }
 
+    // ── ADS ĐIỀN CHO SP KHÔNG BÁN ĐƯỢC GÌ ──────────────────────────────────────
+    // Tiền điền cho một mã mà kỳ này không bán nổi cái nào thì không dòng nào gánh —
+    // tổng bảng sẽ thấp hơn bảng theo ngày đúng bằng khoản đó. Không dồn sang SP khác
+    // (đổ oan chi phí), mà nêu thành dòng riêng: đây là camp đốt tiền không ra đơn,
+    // chính là thứ cần nhìn thấy chứ không phải thứ cần giấu đi.
+    const adsNoOrder: any[] = []
+    for (const [key, cost] of Object.entries(adsByProduct)) {
+      if ((qtyByAdsKey[key] ?? 0) > 0) continue
+      const [plat, code] = key.split("||")
+      adsNoOrder.push({
+        platform: plat,
+        product_code: code,
+        product_name: codeToName[code] ?? null,
+        ads_cost: Number(cost) || 0,
+      })
+    }
+    adsNoOrder.sort((a, b) => b.ads_cost - a.ads_cost)
+    const adsNoOrderTotal = adsNoOrder.reduce((a, r) => a + r.ads_cost, 0)
+
     // ── ADS MỨC SHOP ──────────────────────────────────────────────────────────
     // Phần điền không kèm mã SP (27% chi phí, riêng Shopee là 100%) phải được gánh,
     // nếu không tổng bảng này lệch bảng theo ngày đúng bằng khoản đó — và mọi SP
@@ -873,6 +892,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // Trả riêng để giao diện nói rõ, tránh cộng các dòng rồi tưởng đó là toàn bộ ads.
       ads_shop_level: Object.entries(adsShopLevel).map(([platform, cost]) => ({ platform, cost })),
       ads_shop_level_total: Object.values(adsShopLevel).reduce((a, b) => a + b, 0),
+      // Ads điền cho SP kỳ này không bán được cái nào — không dòng SP nào gánh.
+      ads_no_order: adsNoOrder,
+      ads_no_order_total: adsNoOrderTotal,
       // MY: mọi số tiền đã quy về VND theo tỷ giá này (VND/RM). VN: 1 (không quy đổi).
       myr_to_vnd_rate: market === "MY" ? rate : null,
     })

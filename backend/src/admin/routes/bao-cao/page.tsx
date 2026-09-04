@@ -3813,6 +3813,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     return Number(a[PM.lngAds] || 0) - Number(b[PM.lngAds] || 0)
   })
   const loCount = shownBase.filter(r => Number(r[PM.lngAds] || 0) < 0).length
+  // Ads điền cho SP không bán được gì trong kỳ — theo sàn đang lọc.
+  const adsNoOrder: any[] = (data?.ads_no_order ?? [])
+    .filter((a: any) => prodPlatform === "all" || a.platform === prodPlatform)
   // Tỷ lệ đơn chưa giao xong: bộ "thực" bỏ hết doanh thu của những đơn này nhưng ads
   // thì đã tiêu, nên kỳ càng mới thì số lỗ càng phóng đại. Cảnh báo khi đáng kể.
   const totOrders = shownBase.reduce((a, r) => a + Number(r.total_orders || 0), 0)
@@ -4446,6 +4449,39 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   </td>
                 </tr>
               ))}
+              {/* Ads điền cho SP kỳ này không bán được cái nào — không dòng nào gánh, nên
+                  nêu riêng thay vì dồn sang SP khác. Tổng bảng nhờ đó khớp bảng theo ngày. */}
+              {adsNoOrder.map((a: any) => (
+                <tr key={`noorder-${a.platform}-${a.product_code}`} className="bg-amber-50/60">
+                  {prodPlatform === "all" && (
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                        a.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{a.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                    </td>
+                  )}
+                  <td className="px-4 py-2.5 max-w-[260px]">
+                    <div className="truncate text-amber-800">
+                      ⚠ {a.product_name || a.product_code} — tiêu ads, không ra đơn
+                    </div>
+                    <div className="text-[10.5px] text-amber-600 font-mono">{a.product_code}</div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">0</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">0</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-amber-700">{money(a.ads_cost)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right font-bold bg-violet-50/60 text-red-600">
+                    {money(-a.ads_cost)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right bg-violet-50/60 text-gray-300">—</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -4457,6 +4493,11 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               nên được <b>chia theo doanh thu</b> cho các SP chưa có ads riêng — ô có dấu <b>~</b> là
               đã gồm phần chia này, không phải chi phí đo riêng cho SP đó. Điền mã SP khi nhập
               chi phí thì số sẽ chính xác hơn.</>
+          )}
+          {adsNoOrder.length > 0 && (
+            <> Dòng nền vàng là <b>ads tiêu nhưng không ra đơn nào</b> trong kỳ
+              ({money(adsNoOrder.reduce((x: number, a: any) => x + a.ads_cost, 0))}) — không dồn
+              sang SP khác nên tổng bảng khớp bảng theo ngày.</>
           )}
           {" "}Ship do sàn trả (không tính). Fullfill 6.000đ/đơn.
         </div>
