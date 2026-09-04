@@ -538,6 +538,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Chi phí ads theo (ngày × sàn) — nhân sự điền theo từng shop, ở đây gộp các shop
     // cùng sàn vì doanh thu chưa tách được tới shop.
     const adsByDay: Record<string, number> = {}
+    // Phần ads ĐIỀN THEO SẢN PHẨM (product_code <> ''), gộp theo (sàn, mã) — dùng để
+    // chia về từng dòng SP bên dưới. Phần điền ở mức shop nằm riêng ở adsShopLevel:
+    // không quy được về SP nào nên chỉ trừ ở mức tổng sàn.
+    const adsByProduct: Record<string, number> = {}
+    const adsShopLevel: Record<string, number> = {}
     try {
       const adsRows = await sql(`
         SELECT date::text AS date, platform, SUM(cost)::bigint AS cost
@@ -551,7 +556,54 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         adsByPlatform[String(r.platform)] = (adsByPlatform[String(r.platform)] ?? 0) + c
         adsByDay[`${r.date}||${r.platform}`] = c
       }
+      const adsProd = await sql(`
+        SELECT platform, COALESCE(product_code,'') AS product_code, SUM(cost)::bigint AS cost
+          FROM mkt_ads_cost_marketplace
+         WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
+           AND market = $3
+         GROUP BY platform, product_code
+      `, [from, to, market])
+      for (const r of adsProd) {
+        const c = Number(r.cost) || 0
+        const code = String(r.product_code || "").trim().toUpperCase()
+        const plat = String(r.platform)
+        if (code) adsByProduct[`${plat}||${code}`] = (adsByProduct[`${plat}||${code}`] ?? 0) + c
+        else adsShopLevel[plat] = (adsShopLevel[plat] ?? 0) + c
+      }
     } catch { /* bảng chưa tạo (chưa chạy migration) — coi như chưa có chi phí ads */ }
+
+    // ── ADS VỀ TỪNG SẢN PHẨM ───────────────────────────────────────────────────
+    // Ads sàn điền theo mã (PHVVN043) còn dòng hàng mang mã biến thể (PHVVN043_CCX01),
+    // nên quy mã dòng về prefix để khớp — giống hệt cách bảng chi tiết theo ngày làm.
+    // Nhờ vậy mọi biến thể/combo của cùng SP dùng chung khoản đã điền.
+    const adsKeyOf = (plat: string, code: string | null): string | null => {
+      if (!code) return null
+      const c = String(code).toUpperCase()
+      if (adsByProduct[`${plat}||${c}`] != null) return `${plat}||${c}`
+      const m = c.match(/^(PHVVN\d{2,3})/)
+      return m && adsByProduct[`${plat}||${m[1]}`] != null ? `${plat}||${m[1]}` : null
+    }
+    // Chia theo SỐ LƯỢNG bán: SP bán 2 cái gánh gấp đôi SP bán 1 cái.
+    const qtyByAdsKey: Record<string, number> = {}
+    for (const r of result as any[]) {
+      const k = adsKeyOf(r.platform, r.sp_code)
+      if (k) qtyByAdsKey[k] = (qtyByAdsKey[k] ?? 0) + (r.delivered_qty || 0)
+    }
+    for (const r of result as any[]) {
+      const k = adsKeyOf(r.platform, r.sp_code)
+      const ads = k && qtyByAdsKey[k] > 0
+        ? Math.round(adsByProduct[k] * ((r.delivered_qty || 0) / qtyByAdsKey[k]))
+        : 0
+      r.ads_cost = ads
+      r.ads_pct = pct(ads, r.revenue_delivered)
+      r.lng_sau_ads = r.lng - ads
+      r.lng_sau_ads_pct = pct(r.lng - ads, r.revenue_costed)
+      // Tạm tính dùng CÙNG khoản ads (ads là chi phí đã tiêu, không phụ thuộc đơn về).
+      r.lng_tt_sau_ads = r.lng_tt - ads
+      r.lng_tt_sau_ads_pct = pct(r.lng_tt - ads, r.revenue_costed_tt)
+      // SP chưa điền ads riêng: LNG sau ads = LNG, cần nói rõ để không đọc nhầm là lãi.
+      r.ads_unassigned = !k
+    }
 
     const withAds = (t: any, ads: number) => ({
       ...t,
@@ -707,6 +759,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       rows: result, by_platform: byPlatform, by_day: byDay,
       totals, coverage, data_issues: dataIssues, affiliate,
       has_ads: hasAds, market, from, to,
+      // Ads điền ở mức shop — không quy được về SP nào, nên KHÔNG nằm trong dòng SP.
+      // Trả riêng để giao diện nói rõ, tránh cộng các dòng rồi tưởng đó là toàn bộ ads.
+      ads_shop_level: Object.entries(adsShopLevel).map(([platform, cost]) => ({ platform, cost })),
+      ads_shop_level_total: Object.values(adsShopLevel).reduce((a, b) => a + b, 0),
       // MY: mọi số tiền đã quy về VND theo tỷ giá này (VND/RM). VN: 1 (không quy đổi).
       myr_to_vnd_rate: market === "MY" ? rate : null,
     })

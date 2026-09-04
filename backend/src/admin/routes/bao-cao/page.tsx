@@ -3760,6 +3760,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [showMissing, setShowMissing] = useState(false)
+  const [prodSort, setProdSort] = useState<"lng" | "revenue" | "ads">("lng")
   const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
   // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
   // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
@@ -3788,7 +3789,15 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
 
   const rows: any[] = data.rows ?? []
   const cov = data.coverage ?? {}
-  const shown = showMissing ? rows : rows.filter(r => !r.missing_cost)
+  // Mặc định xếp theo LNG sau ads tăng dần: SP lỗ nặng nhất nằm trên cùng — đây là
+  // cái người đọc bảng cần thấy trước, không phải SP doanh thu cao nhất.
+  const shownBase = showMissing ? rows : rows.filter(r => !r.missing_cost)
+  const shown = [...shownBase].sort((a, b) => {
+    if (prodSort === "revenue") return Number(b.revenue_delivered || 0) - Number(a.revenue_delivered || 0)
+    if (prodSort === "ads") return Number(b.ads_cost || 0) - Number(a.ads_cost || 0)
+    return Number(a.lng_sau_ads || 0) - Number(b.lng_sau_ads || 0)
+  })
+  const loCount = shownBase.filter(r => Number(r.lng_sau_ads || 0) < 0).length
   const money = (n: any) => fmtVND(Number(n || 0))
   const pctCell = (v: any, good?: boolean) =>
     v == null ? <span className="text-gray-300">—</span>
@@ -4297,12 +4306,29 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             <h3 className="font-semibold text-gray-800">LNG theo sản phẩm</h3>
             <p className="text-xs text-gray-400 mt-0.5">
               Doanh thu = tiền thực nhận (sàn đã trừ phí + khuyến mãi). Mỗi dòng hàng tính giá vốn riêng.
+              Cột <b>LNG sau ads</b> cho biết sản phẩm thực lãi hay lỗ.
             </p>
           </div>
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
-            Hiện cả SP chưa khai giá vốn ({rows.filter(r => r.missing_cost).length})
-          </label>
+          <div className="flex items-center gap-3 flex-wrap">
+            {loCount > 0 && (
+              <span className="rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold">
+                {loCount} SP đang lỗ sau ads
+              </span>
+            )}
+            <div className="flex gap-1">
+              {([["lng", "Lỗ nhiều nhất"], ["revenue", "Doanh thu"], ["ads", "Ads"]] as const).map(([k, lb]) => (
+                <button key={k} onClick={() => setProdSort(k)}
+                  className={`px-2.5 py-1 text-[11px] rounded-md font-medium ${
+                    prodSort === k ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  {lb}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
+              Hiện cả SP chưa khai giá vốn ({rows.filter(r => r.missing_cost).length})
+            </label>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -4316,13 +4342,17 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <th className="text-right px-3 py-2.5">DT thực nhận</th>
                 <th className="text-right px-3 py-2.5">Giá vốn</th>
                 <th className="text-right px-3 py-2.5">%GV</th>
-                <th className="text-right px-3 py-2.5">LNG</th>
-                <th className="text-right px-3 py-2.5">%LNG</th>
+                <th className="text-right px-3 py-2.5" title="Fullfill 6.000đ/đơn">Fullfill</th>
+                <th className="text-right px-3 py-2.5" title="Ads đã điền cho SP này, chia theo số lượng bán">Ads</th>
+                <th className="text-right px-3 py-2.5" title="Ads ÷ DT thực nhận">%Ads</th>
+                <th className="text-right px-3 py-2.5">LNG trước ads</th>
+                <th className="text-right px-3 py-2.5 bg-violet-50">LNG sau ads</th>
+                <th className="text-right px-3 py-2.5 bg-violet-50">%LNG</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
               {shown.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+                <tr><td colSpan={15} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
               {shown.map((r, i) => (
                 <tr key={`${r.platform}-${r.sp_code ?? r.sp_label}-${i}`} className={r.missing_cost ? "bg-amber-50/50" : ""}>
@@ -4342,21 +4372,39 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue_delivered)}</td>
                   <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r.cogs)}</td>
                   <td className="px-3 py-2.5 text-right">{r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.cogs_pct)}</td>
-                  <td className={`px-3 py-2.5 text-right font-semibold ${r.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
-                    {r.missing_cost ? "—" : money(r.lng)}
+                  <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fullfill)}</td>
+                  <td className="px-3 py-2.5 text-right text-amber-700">
+                    {r.ads_unassigned
+                      ? <span className="text-gray-300" title="Chưa điền ads riêng cho SP này">—</span>
+                      : money(r.ads_cost)}
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.lng_pct, r.lng >= 0)}
+                    {r.ads_unassigned ? <span className="text-gray-300">—</span> : pctCell(r.ads_pct)}
+                  </td>
+                  <td className={`px-3 py-2.5 text-right ${r.lng >= 0 ? "text-gray-600" : "text-red-400"}`}>
+                    {r.missing_cost ? "—" : money(r.lng)}
+                  </td>
+                  <td className={`px-3 py-2.5 text-right font-bold bg-violet-50/60 ${
+                    r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                    {r.missing_cost ? "—" : money(r.lng_sau_ads)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right bg-violet-50/60">
+                    {r.missing_cost ? <span className="text-gray-300">—</span> : pctCell(r.lng_sau_ads_pct, r.lng_sau_ads >= 0)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500">
-          LNG ở bảng theo sản phẩm <b>chưa trừ ads</b> — chi phí ads chỉ điền được theo (ngày × sàn),
-          không tách tới từng sản phẩm. Xem LNG sau ads ở thẻ tổng hoặc bảng theo ngày phía trên.
-          Ship do sàn trả (không tính). Fullfill 6.000đ/đơn.
+        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500 leading-relaxed">
+          <b>LNG sau ads</b> = DT thực nhận − giá vốn − fullfill − ads. Ads lấy phần đã điền cho
+          từng sản phẩm ở trang Nhập chi phí, chia cho các biến thể theo số lượng bán.
+          {data?.ads_shop_level_total > 0 && (
+            <> Còn <b>{money(data.ads_shop_level_total)}</b> điền ở mức shop (không ghi rõ sản phẩm)
+              nên <b>chưa nằm trong bảng này</b> — SP có dấu "—" ở cột Ads là chưa điền ads riêng,
+              LNG của nó đang tốt hơn thực tế.</>
+          )}
+          {" "}Ship do sàn trả (không tính). Fullfill 6.000đ/đơn.
         </div>
       </div>
     </div>
