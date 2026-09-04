@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { DISPLAY_ID_ALIASES, type AvgCostResult } from "../../gia-von/avg-cost/route"
+import { COMBO_COMPOSITION, DISPLAY_ID_ALIASES, type AvgCostResult } from "../../gia-von/avg-cost/route"
 
 /**
  * Giá vốn cho SKU sàn khai tay ở tab "Khớp SP sàn" (bảng marketplace_sku_map).
@@ -83,18 +83,26 @@ export async function loadSkuMapParts(
   pool: Pool,
 ): Promise<Record<string, { code: string; qty: number }[]>> {
   const out: Record<string, { code: string; qty: number }[]> = {}
-  let rows: any[]
+  let rows: any[] = []
   try {
     const r = await pool.query(`SELECT sku_key, product_code, qty FROM marketplace_sku_map`)
     rows = r.rows
   } catch {
-    return out // bảng chưa tạo — không nổ combo, giữ nguyên hành vi cũ
+    // bảng chưa tạo (chưa ai mở tab) — vẫn dùng combo khai trong code bên dưới
   }
   for (const r of rows) {
     const key = String(r.sku_key || "").trim().replace(/\s+/g, " ").toUpperCase()
     const code = String(r.product_code || "").trim().toUpperCase()
     if (!key || !code) continue
     ;(out[key] ??= []).push({ code, qty: Number(r.qty) || 1 })
+  }
+  // Combo khai sẵn trong code (COMBO_COMPOSITION) không nằm ở bảng khai tay và cũng
+  // không hiện ở tab "Khớp SP sàn" — tab đó chỉ liệt kê SKU CHƯA tra được giá vốn, mà
+  // combo này đã có. Nạp thêm ở đây, không đè lên khai tay của nhân sự.
+  for (const [comboCode, parts] of Object.entries(COMBO_COMPOSITION)) {
+    const key = comboCode.toUpperCase()
+    if (out[key]) continue
+    out[key] = parts.map(p => ({ code: p.code.toUpperCase(), qty: p.qty }))
   }
   return out
 }

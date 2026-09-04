@@ -334,8 +334,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Combo mang mã riêng (PHVVN050_CB1 = 2 khay + 5 hộp) nên prefix của nó không khớp
-    // ads điền cho khay/hộp. Nổ dòng combo ra các mã lẻ đã khai ở tab "Khớp SP sàn" để
-    // đơn combo gánh đúng phần ads của thành phần; combo chưa khai giữ nguyên như cũ.
+    // ads điền cho khay (PHVVN038) / hộp (PHVVN037). Nổ dòng combo ra các mã lẻ — lấy từ
+    // COMBO_COMPOSITION trong code và bảng khai tay "Khớp SP sàn" — để đơn combo gánh
+    // đúng phần ads của thành phần. Combo không khai ở đâu cả thì giữ nguyên như cũ.
     const adsPartsOf = (it: any): { key: string; qty: number }[] => {
       const direct = adsKeyOf(it.sp_code)
       if (direct) return [{ key: direct, qty: it.qty }]
