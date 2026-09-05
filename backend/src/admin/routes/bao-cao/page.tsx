@@ -3816,6 +3816,27 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // Ads điền cho SP không bán được gì trong kỳ — theo sàn đang lọc.
   const adsNoOrder: any[] = (data?.ads_no_order ?? [])
     .filter((a: any) => prodPlatform === "all" || a.platform === prodPlatform)
+
+  // Dòng tổng. Tiền thì cộng, còn % phải tính LẠI từ tổng — cộng trung bình các dòng
+  // ra số vô nghĩa (SP bán 2 cái nặng bằng SP bán 6.000 cái). Ads của SP không ra đơn
+  // cộng vào tổng ads và trừ thẳng vào LNG, để tổng khớp bảng theo ngày.
+  const sumBy = (k: string) => shown.reduce((a: number, r: any) => a + (Number(r[k]) || 0), 0)
+  const tAdsNoOrder = adsNoOrder.reduce((a: number, x: any) => a + (Number(x.ads_cost) || 0), 0)
+  const tot = {
+    qty: sumBy(PM.qty), orders: sumBy(PM.orders), fee: sumBy(PM.fee), rev: sumBy(PM.rev),
+    cogs: sumBy(PM.cogs), fullfill: sumBy(PM.fullfill),
+    ads: sumBy("ads_cost") + tAdsNoOrder,
+    lng: sumBy(PM.lng) - tAdsNoOrder,
+  }
+  const totLngBeforeAds = sumBy(PM.lng)
+  // %GV và %LNG ở từng dòng chia cho doanh thu CÓ giá vốn (phần chưa khai vốn bị loại
+  // khỏi LNG nên cũng không nằm ở mẫu số) — dòng tổng phải dùng đúng mẫu số đó.
+  const totRevCosted = sumBy(prodMode === "tt" ? "revenue_costed_tt" : "revenue_costed")
+  const p2 = (part: number, whole: number) =>
+    whole > 0 ? Math.round(part / whole * 10000) / 100 : null
+  const totCogsPct = p2(tot.cogs, totRevCosted)
+  const totAdsPct = p2(tot.ads, tot.rev)
+  const totLngPct = p2(tot.lng, totRevCosted)
   // Tỷ lệ đơn chưa giao xong: bộ "thực" bỏ hết doanh thu của những đơn này nhưng ads
   // thì đã tiêu, nên kỳ càng mới thì số lỗ càng phóng đại. Cảnh báo khi đáng kể.
   const totOrders = shownBase.reduce((a, r) => a + Number(r.total_orders || 0), 0)
@@ -4482,6 +4503,36 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   <td className="px-3 py-2.5 text-right bg-violet-50/60 text-gray-300">—</td>
                 </tr>
               ))}
+              {shown.length > 0 && (
+                <tr className="bg-violet-50 font-semibold border-t-2 border-violet-200">
+                  {prodPlatform === "all" && <td className="px-4 py-2.5" />}
+                  <td className="px-4 py-2.5 text-gray-900">
+                    TỔNG
+                    <span className="ml-1.5 font-normal text-[11px] text-gray-500">
+                      {shown.length} SP{adsNoOrder.length > 0 && ` + ${adsNoOrder.length} ads không ra đơn`}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(tot.qty)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(tot.orders)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600">{money(tot.fee)}</td>
+                  <td className="px-3 py-2.5 text-right text-green-700">{money(tot.rev)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700">{money(tot.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right">{pctCell(totCogsPct)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600">{money(tot.fullfill)}</td>
+                  <td className="px-3 py-2.5 text-right text-amber-700">{money(tot.ads)}</td>
+                  <td className="px-3 py-2.5 text-right">{pctCell(totAdsPct)}</td>
+                  <td className={`px-3 py-2.5 text-right ${totLngBeforeAds >= 0 ? "text-gray-600" : "text-red-400"}`}>
+                    {money(totLngBeforeAds)}
+                  </td>
+                  <td className={`px-3 py-2.5 text-right font-bold bg-violet-100/70 ${
+                    tot.lng >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                    {money(tot.lng)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right bg-violet-100/70">
+                    {pctCell(totLngPct, tot.lng >= 0)}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
