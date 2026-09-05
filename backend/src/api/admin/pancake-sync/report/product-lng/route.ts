@@ -444,7 +444,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         tong_giao: g.da_nhan, tong_don_giao: nGui,
         ty_le_hoan, ty_le_huy, ty_le_giao: pctN(g.da_nhan),
         hoan_huy: Math.round((ty_le_hoan + ty_le_huy) * 10) / 10,
-        du_kien_hoan_huy: pctN(g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang / 3),
+        // Dùng tỷ lệ nền cho MỌI dòng — cùng con số với dòng TỔNG và với tỷ lệ nhận
+        // đang dựng doanh thu tạm tính, nên bảng không tự mâu thuẫn.
+        du_kien_hoan_huy: Math.round(dkhh * 1000) / 10,
         // LNG thực
         total_orders: g.total_orders, revenue_total: g.revenue_total,
         revenue_delivered: g.revenue_delivered, cogs, ship_cost: g.ship_cost, ads_cost,
