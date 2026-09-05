@@ -597,37 +597,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // (PHVVN043_CCX01), mã gốc (PHVVN043_CCX) và prefix (PHVVN043) đều có thể có tiền
     // điền riêng. Gom cả ba, nếu không khoản điền ở mức giữa sẽ không dòng nào gánh —
     // đúng chỗ 835.084đ của PHVVN043_CCX bị bỏ rơi.
-    const adsKeysOf = (plat: string, code: string | null): string[] => {
-      if (!code) return []
+    // Khớp ads theo ĐÚNG cách bảng chi tiết theo ngày làm (adsKeyOf ở day-orders):
+    // lấy MỘT khoá — mã đầy đủ nếu có tiền điền đúng mã đó, nếu không thì prefix.
+    // Không gom nhiều mức cùng lúc: hai bảng phải cho ra cùng một con số.
+    const adsKeyOf = (plat: string, code: string | null): string | null => {
+      if (!code) return null
       const c = String(code).toUpperCase()
-      const keys = new Set<string>()
-      // Mọi tiền tố "có nghĩa": cắt dần theo dấu _ rồi tới prefix PHVVN043.
-      const cands = [c]
-      // Bỏ đuôi số: PHVVN043_CCX01 -> PHVVN043_CCX. Biến thể đánh số liền sau mã gốc,
-      // không có dấu _ ngăn cách, nên chỉ cắt theo _ là trượt khoản điền cho mã gốc.
-      const noNum = c.replace(/\d+$/, "")
-      if (noNum !== c && noNum.length > 0) cands.push(noNum)
-      for (let i = c.lastIndexOf("_"); i > 0; i = c.lastIndexOf("_", i - 1)) cands.push(c.slice(0, i))
+      if (adsByProduct[`${plat}||${c}`] != null) return `${plat}||${c}`
       const m = c.match(/^(PHVVN\d{2,3})/)
-      if (m) cands.push(m[1])
-      for (const cand of cands) if (adsByProduct[`${plat}||${cand}`] != null) keys.add(`${plat}||${cand}`)
-      return [...keys]
+      return m && adsByProduct[`${plat}||${m[1]}`] != null ? `${plat}||${m[1]}` : null
     }
 
-    // Combo phải NỔ RA THÀNH PHẦN trước khi khớp ads — đúng như bảng chi tiết theo ngày
-    // (adsPartsOf ở day-orders). COMBO 2 KHAY 5 HỘP mang mã PHVVN050 nên không khớp
-    // khoản điền cho PHVVN038/PHVVN037, khiến toàn bộ ads kéo đơn combo bị ghi hết vào
-    // dòng khay lọc dầu: khay hiện %Ads 143% còn combo chỉ 3,5%, dù chúng bán kèm nhau.
-    // Trả về từng (khoá ads, số đơn vị) để chia theo đúng lượng thành phần đã bán.
+    // Combo nổ ra thành phần trước khi khớp — cũng đúng như adsPartsOf ở day-orders.
     const adsSharesOf = (plat: string, code: string | null, qty: number)
       : { key: string; qty: number }[] => {
-      const direct = adsKeysOf(plat, code)
-      if (direct.length) return direct.map(k => ({ key: k, qty }))
+      const direct = adsKeyOf(plat, code)
+      if (direct) return [{ key: direct, qty }]
       const parts = skuParts[String(code || "").toUpperCase()]
       if (!parts?.length) return []
       const out: { key: string; qty: number }[] = []
       for (const p of parts) {
-        for (const k of adsKeysOf(plat, p.code)) out.push({ key: k, qty: qty * p.qty })
+        const k = adsKeyOf(plat, p.code)
+        if (k) out.push({ key: k, qty: qty * p.qty })
       }
       return out
     }
