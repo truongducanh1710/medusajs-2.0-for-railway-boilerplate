@@ -269,6 +269,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
         -- Giá vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (đã gồm SP tặng kèm).
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_cost ELSE 0 END)::bigint AS cogs_order,
+        -- Giá vốn của đơn CÒN TREO (chưa ngã ngũ) — dùng cho khối tạm tính. Cùng tập đơn
+        -- với revenue_treo, nên vốn và doanh thu tạm tính đi cùng một nhịp.
+        SUM(CASE WHEN status IN (0, 1, 2, 8, 9, 11) AND NOT ${excludeCond} THEN sp_cost ELSE 0 END)::bigint AS cogs_treo,
         -- Chi tiết quà tặng kèm (chỉ để hiển thị) — giá vốn quà ĐÃ nằm trong cogs_order.
         COALESCE(jsonb_agg(gift_items) FILTER (
           WHERE is_main AND status = 3 AND NOT ${excludeCond} AND gift_items IS NOT NULL
@@ -305,7 +308,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
           total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, revenue_treo: 0,
           revenue_shipped: 0, ship_cost: 0,
-          delivered_qty: 0, cogs_order: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
+          delivered_qty: 0, cogs_order: 0, cogs_treo: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
           da_xac_nhan: 0, dang_dong_hang: 0, cho_chuyen_hang: 0,
           gift_qty: {} as Record<string, { qty: number; label: string; unit: number | null }>,
@@ -314,7 +317,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const g = merged[key]
       for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "revenue_treo",
         "revenue_shipped", "ship_cost",
-        "delivered_qty", "cogs_order", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
+        "delivered_qty", "cogs_order", "cogs_treo", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
         "da_xoa", "da_gui_hang", "moi", "cho_hang", "da_xac_nhan", "dang_dong_hang",
         "cho_chuyen_hang"]) {
         g[k] += Number(row[k] ?? 0)
@@ -411,7 +414,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const nGiao = g.total_orders
       const tyLeNhan = tyLeNhanNen
       const dkhh = dkhhNen
-      const pctVon = g.revenue_delivered > 0 ? cogs / g.revenue_delivered : 0
+      // Giá vốn tạm tính = vốn đơn ĐÃ NHẬN + vốn đơn CÒN TREO × tỷ lệ nhận. Cùng công
+      // thức với doanh thu tạm tính nên hai vế đi cùng tập đơn, và khi hết tháng (đơn
+      // treo = 0) nó hội tụ về đúng vốn thực.
+      //
+      // Trước đây suy ra từ %GV của đơn đã nhận, nên SP chưa có đơn nào giao xong thì
+      // %GV = 0 và vốn tạm tính = 0 dù doanh thu tạm tính khác 0 — nồi sứ hoa văn hiện
+      // lãi gộp 100% chỉ vì 9 đơn của nó còn đang trên đường.
       // %VC phải chia cho doanh thu của ĐÚNG TẬP ĐƠN đã phát sinh phí ship. ship_cost gồm
       // cả đơn đang trên đường, nên chia cho revenue_delivered (chỉ đơn đã nhận) là hai vế
       // khác tập: tháng 9 có 195/359 đơn đang giao và %VC vọt lên 29,9% trong khi mức thật
@@ -419,7 +428,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const revenueDaGui = g.revenue_shipped || g.revenue_delivered
       const pctShip = revenueDaGui > 0 ? g.ship_cost / revenueDaGui : 0
       const revenueTamTinh = Math.round(g.revenue_delivered + g.revenue_treo * tyLeNhan)
-      const cogsTamTinh = Math.round(revenueTamTinh * pctVon)
+      const cogsTamTinh = Math.round(cogs + Number(g.cogs_treo || 0) * tyLeNhan)
       const shipTamTinh = Math.round(revenueTamTinh * pctShip)
       const fullfillTamTinh = FULLFILL_PER_ORDER * g.main_orders
       const lngTamTinh = revenueTamTinh - (cogsTamTinh + shipTamTinh + ads_cost + fullfillTamTinh)
