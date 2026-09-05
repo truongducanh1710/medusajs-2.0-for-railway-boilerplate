@@ -624,14 +624,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Chia theo SỐ LƯỢNG bán: SP bán 2 cái gánh gấp đôi SP bán 1 cái.
+    // Trọng số là SỐ LƯỢNG TẠM TÍNH (gồm đơn đang giao), không phải số đã giao xong:
+    // ads tiêu ngay trong ngày còn đơn thì vài hôm sau mới tới nơi. Dùng delivered_qty
+    // thì một ngày mới tinh có trọng số 0 ở mọi dòng, và TOÀN BỘ ads bị đẩy sang
+    // "không ra đơn" dù hàng vẫn bán — đúng cái đã xảy ra với ngày 04/09.
+    // Bảng chi tiết theo ngày cũng đếm theo đơn tạm tính, nên đây mới là khớp nhau.
+    const adsQtyOf = (r: any) => Number(r.qty_tt) || Number(r.delivered_qty) || 0
     const qtyByAdsKey: Record<string, number> = {}
     for (const r of result as any[]) {
-      for (const p of adsSharesOf(r.platform, r.sp_code, r.delivered_qty || 0)) {
+      for (const p of adsSharesOf(r.platform, r.sp_code, adsQtyOf(r))) {
         qtyByAdsKey[p.key] = (qtyByAdsKey[p.key] ?? 0) + p.qty
       }
     }
     for (const r of result as any[]) {
-      const shares = adsSharesOf(r.platform, r.sp_code, r.delivered_qty || 0)
+      const shares = adsSharesOf(r.platform, r.sp_code, adsQtyOf(r))
       const ks = shares.map(x => x.key)
       let ads = 0
       for (const p of shares) {
