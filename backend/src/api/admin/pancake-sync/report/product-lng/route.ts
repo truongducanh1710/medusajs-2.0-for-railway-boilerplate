@@ -342,11 +342,33 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // chung của kỳ, và nếu kỳ cũng chưa đủ thì về mức mặc định.
     const MIN_DON_CHOT = 20
     const TY_LE_HOAN_MAC_DINH = 0.11
-    // Tỷ lệ hoàn CHUNG của kỳ — tính trước vòng map vì mỗi dòng SP có thể phải lùi về nó.
+    // Tỷ lệ hoàn nền = TRUNG BÌNH 3 THÁNG GẦN NHẤT TRƯỚC kỳ đang xem, tính trên đơn đã
+    // ngã ngũ (đã nhận + hoàn). Lấy ngoài kỳ vì đầu tháng gần như chưa đơn nào chốt —
+    // tự tính trong kỳ sẽ ra 0% và không ước lượng được gì.
+    const hoanBaseRows = await sql(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 3)::int      AS da_nhan,
+        COUNT(*) FILTER (WHERE status IN (4, 5))::int AS hoan
+      FROM pancake_order
+      WHERE deleted_at IS NULL
+        AND COALESCE(NULLIF(market, ''), 'VN') = 'VN'
+        AND source NOT IN ('shopee', 'tiktok')
+        AND pancake_created_at >= (date_trunc('month', $1::date) - interval '3 months')
+        AND pancake_created_at <  date_trunc('month', $1::date)
+        AND NOT ${excludeCond}
+    `, [from, to]).catch(() => [])
+    const hb = hoanBaseRows[0] ?? {}
+    const chotNen = Number(hb.da_nhan || 0) + Number(hb.hoan || 0)
+    const tyLeHoanNen = chotNen >= MIN_DON_CHOT
+      ? Number(hb.hoan || 0) / chotNen
+      : TY_LE_HOAN_MAC_DINH
+
+    // Tỷ lệ hoàn CHUNG của kỳ — dùng khi kỳ đã có đủ đơn chốt (cuối tháng), vì lúc đó
+    // dữ liệu của chính kỳ sát thực tế hơn số nền.
     const grpAll = Object.values(merged) as any[]
     const chotAll = grpAll.reduce((a, g) => a + g.da_nhan + g.da_hoan + g.dang_hoan, 0)
     const hoanAll = grpAll.reduce((a, g) => a + g.da_hoan + g.dang_hoan, 0)
-    const tyLeHoanChung = chotAll >= MIN_DON_CHOT ? hoanAll / chotAll : TY_LE_HOAN_MAC_DINH
+    const tyLeHoanChung = chotAll >= MIN_DON_CHOT ? hoanAll / chotAll : tyLeHoanNen
 
     const result = Object.entries(merged).map(([key, g]: [string, any]) => {
       // Giá vốn = vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (tính sẵn trong SQL,
