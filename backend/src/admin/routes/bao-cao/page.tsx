@@ -3826,7 +3826,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     qty: sumBy(PM.qty), orders: sumBy(PM.orders), fee: sumBy(PM.fee), rev: sumBy(PM.rev),
     cogs: sumBy(PM.cogs), fullfill: sumBy(PM.fullfill),
     ads: sumBy("ads_cost") + tAdsNoOrder,
-    lng: sumBy(PM.lng) - tAdsNoOrder,
+    // PM.lngAds đã trừ ads của chính dòng đó; ở đây chỉ trừ thêm phần ads mồ côi.
+    // Dùng PM.lng ở đây là bỏ quên toàn bộ ads chính — tổng ra bằng LNG TRƯỚC ads.
+    lng: sumBy(PM.lngAds) - tAdsNoOrder,
   }
   const totLngBeforeAds = sumBy(PM.lng)
   // %GV và %LNG ở từng dòng chia cho doanh thu CÓ giá vốn (phần chưa khai vốn bị loại
