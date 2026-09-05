@@ -50,12 +50,18 @@ export async function getChatAuthInfo(req: MedusaRequest): Promise<ChatAuthInfo 
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
   const perms = resolveUserPerms(user.metadata)
   const isAdmin = isSuper || perms.includes("users.manage")
+  // CSKH trả lời khách trên MỌI page, không chia page theo người như bên marketing.
+  // Trước đây ai không phải admin đều bị lọc theo metadata.fb_page_ids, mà nhân sự CSKH
+  // chưa từng được gán page nào → danh sách rỗng → hộp thư trống trơn, dù quyền đủ.
+  // Chỗ gán page chỉ nằm trong Marketing Hub và cũng chỉ liệt kê user marketing, nên
+  // không ai gán được cho họ.
+  const isCskh = perms.includes("page.chat.view")
   const raw = (user.metadata as any)?.fb_page_ids
   return {
     email: user.email || "",
     isSuper,
     isAdmin,
-    fbPageIds: isAdmin ? null : (Array.isArray(raw) ? raw.map(String) : []),
+    fbPageIds: (isAdmin || isCskh) ? null : (Array.isArray(raw) ? raw.map(String) : []),
   }
 }
 
