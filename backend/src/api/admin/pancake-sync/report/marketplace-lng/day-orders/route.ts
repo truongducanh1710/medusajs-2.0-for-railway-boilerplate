@@ -188,6 +188,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           po.tracking_code,
           (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS created_at_vn,
           ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
+          -- Mã gốc chưa qua alias — ads điền theo mã này (xem ../route.ts).
+          upper(trim(COALESCE(mi->'variation_info'->>'display_id',''))) AS sp_code_raw,
           upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
           COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label,
           COALESCE((mi->>'quantity')::numeric, 1) AS qty,
@@ -309,6 +311,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const code = r.sp_code ? String(r.sp_code).toUpperCase() : null
       o.items.push({
         sp_code: code,
+        // Mã gốc chưa alias — cần cho việc khớp ads, không hiển thị.
+        sp_code_raw: r.sp_code_raw ? String(r.sp_code_raw).toUpperCase() : null,
         sp_label: (code && codeToName[code]) || r.sp_label,
         qty: Number(r.qty || 0),
         unit_cost: Number(r.unit_cost || 0),
@@ -352,8 +356,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ở tab "Khớp SP sàn" để đơn combo gánh đúng phần ads của thành phần; combo chưa
     // khai thì giữ nguyên như cũ.
     const adsPartsOf = (it: any): { key: string; qty: number }[] => {
-      const direct = adsKeysOf(it.sp_code)
-      if (direct.length) return direct.map(k => ({ key: k, qty: it.qty }))
+      // Thử cả mã đã alias lẫn mã gốc: alias đổi PHVVN027_CV -> PHVVN026_CV cho đúng
+      // giá vốn, nhưng ads lại điền theo mã gốc PHVVN027.
+      const keys = new Set<string>(adsKeysOf(it.sp_code))
+      for (const k of adsKeysOf(it.sp_code_raw)) keys.add(k)
+      if (keys.size) return [...keys].map(k => ({ key: k, qty: it.qty }))
       // Mã trước tên: biến thể cùng tên khác số lượng (CCX01/02/03) chỉ phân biệt được
       // bằng mã.
       const parts = skuParts[String(it.sp_code || "").toUpperCase()] ?? skuParts[String(it.sp_name_up || "")]

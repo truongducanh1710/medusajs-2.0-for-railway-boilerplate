@@ -243,6 +243,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           po.source AS platform,
           po.status,
           ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
+          -- Mã GỐC chưa qua alias. Alias gộp PHVVN027_CV vào PHVVN026_CV cho đúng giá
+          -- vốn, nhưng ads lại điền theo mã gốc (PHVVN027) — mất mã này thì tiền không
+          -- tìm được dòng nào và rơi vào "ads không ra đơn".
+          upper(trim(COALESCE(mi->'variation_info'->>'display_id',''))) AS sp_code_raw,
           upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
           COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label,
           COALESCE((mi->>'quantity')::numeric, 1) AS qty,
@@ -308,6 +312,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         sp_key,
         MAX(sp_label) AS sp_label,
         MAX(NULLIF(sp_code, '')) AS sp_code,
+        MAX(NULLIF(sp_code_raw, '')) AS sp_code_raw,
         bool_and(unit_cost > 0) AS has_cost,
         -- Đếm "đơn" ở đây = số đơn có chứa SP này (1 đơn nhiều SP sẽ đếm ở nhiều dòng).
         COUNT(DISTINCT order_id) FILTER (WHERE NOT ${excludeCond})::int AS total_orders,
@@ -465,6 +470,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         merged[key] = {
           platform: row.platform, sp_label: stdName || row.sp_label,
           sp_code: row.sp_code ? codeKey : null,
+          // Giữ mã gốc để khớp ads (xem ghi chú ở sp_code_raw trong SQL).
+          sp_codes_raw: new Set<string>(),
           has_cost: true,
           total_orders: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           revenue_delivered: 0, fee_marketplace: 0, list_price: 0,
@@ -482,6 +489,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         g[k] += Number(row[k] ?? 0)
       }
       if (!row.has_cost) g.has_cost = false
+      if (row.sp_code_raw) g.sp_codes_raw.add(String(row.sp_code_raw).toUpperCase())
     }
 
     const result = Object.values(merged).map((g: any) => {
@@ -500,6 +508,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         platform: g.platform,
         platform_label: g.platform === "tiktok" ? "TikTok Shop" : "Shopee",
         sp_label: g.sp_label, sp_code: g.sp_code,
+        sp_codes_raw: [...g.sp_codes_raw],
         missing_cost: !g.has_cost,
         total_orders: g.total_orders, da_nhan: g.da_nhan, da_hoan: g.da_hoan,
         dang_hoan: g.dang_hoan, da_huy: g.da_huy,
@@ -617,10 +626,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Combo nổ ra thành phần trước khi khớp — cũng đúng như adsPartsOf ở day-orders.
-    const adsSharesOf = (plat: string, code: string | null, qty: number)
+    const adsSharesOf = (plat: string, code: string | null, qty: number, rawCodes: string[] = [])
       : { key: string; qty: number }[] => {
-      const direct = adsKeysOf(plat, code)
-      if (direct.length) return direct.map(k => ({ key: k, qty }))
+      // Thử cả mã đã alias lẫn mã GỐC: ads điền theo mã trên đơn (PHVVN027), còn dòng
+      // đã được alias sang mã khác (PHVVN026_CV) để lấy đúng giá vốn.
+      const keys = new Set<string>(adsKeysOf(plat, code))
+      for (const rc of rawCodes) for (const k of adsKeysOf(plat, rc)) keys.add(k)
+      if (keys.size) return [...keys].map(k => ({ key: k, qty }))
       const parts = skuParts[String(code || "").toUpperCase()]
       if (!parts?.length) return []
       const out: { key: string; qty: number }[] = []
@@ -640,12 +652,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsQtyOf = (r: any) => Number(r.qty_tt) || Number(r.delivered_qty) || 0
     const qtyByAdsKey: Record<string, number> = {}
     for (const r of result as any[]) {
-      for (const p of adsSharesOf(r.platform, r.sp_code, adsQtyOf(r))) {
+      for (const p of adsSharesOf(r.platform, r.sp_code, adsQtyOf(r), r.sp_codes_raw ?? [])) {
         qtyByAdsKey[p.key] = (qtyByAdsKey[p.key] ?? 0) + p.qty
       }
     }
     for (const r of result as any[]) {
-      const shares = adsSharesOf(r.platform, r.sp_code, adsQtyOf(r))
+      const shares = adsSharesOf(r.platform, r.sp_code, adsQtyOf(r), r.sp_codes_raw ?? [])
       const ks = shares.map(x => x.key)
       let ads = 0
       for (const p of shares) {
