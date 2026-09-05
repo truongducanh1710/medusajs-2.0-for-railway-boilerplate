@@ -613,19 +613,39 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       for (const cand of cands) if (adsByProduct[`${plat}||${cand}`] != null) keys.add(`${plat}||${cand}`)
       return [...keys]
     }
+
+    // Combo phải NỔ RA THÀNH PHẦN trước khi khớp ads — đúng như bảng chi tiết theo ngày
+    // (adsPartsOf ở day-orders). COMBO 2 KHAY 5 HỘP mang mã PHVVN050 nên không khớp
+    // khoản điền cho PHVVN038/PHVVN037, khiến toàn bộ ads kéo đơn combo bị ghi hết vào
+    // dòng khay lọc dầu: khay hiện %Ads 143% còn combo chỉ 3,5%, dù chúng bán kèm nhau.
+    // Trả về từng (khoá ads, số đơn vị) để chia theo đúng lượng thành phần đã bán.
+    const adsSharesOf = (plat: string, code: string | null, qty: number)
+      : { key: string; qty: number }[] => {
+      const direct = adsKeysOf(plat, code)
+      if (direct.length) return direct.map(k => ({ key: k, qty }))
+      const parts = skuParts[String(code || "").toUpperCase()]
+      if (!parts?.length) return []
+      const out: { key: string; qty: number }[] = []
+      for (const p of parts) {
+        for (const k of adsKeysOf(plat, p.code)) out.push({ key: k, qty: qty * p.qty })
+      }
+      return out
+    }
+
     // Chia theo SỐ LƯỢNG bán: SP bán 2 cái gánh gấp đôi SP bán 1 cái.
     const qtyByAdsKey: Record<string, number> = {}
     for (const r of result as any[]) {
-      for (const k of adsKeysOf(r.platform, r.sp_code)) {
-        qtyByAdsKey[k] = (qtyByAdsKey[k] ?? 0) + (r.delivered_qty || 0)
+      for (const p of adsSharesOf(r.platform, r.sp_code, r.delivered_qty || 0)) {
+        qtyByAdsKey[p.key] = (qtyByAdsKey[p.key] ?? 0) + p.qty
       }
     }
     for (const r of result as any[]) {
-      const ks = adsKeysOf(r.platform, r.sp_code)
+      const shares = adsSharesOf(r.platform, r.sp_code, r.delivered_qty || 0)
+      const ks = shares.map(x => x.key)
       let ads = 0
-      for (const k of ks) {
-        if (qtyByAdsKey[k] > 0) {
-          ads += Math.round(adsByProduct[k] * ((r.delivered_qty || 0) / qtyByAdsKey[k]))
+      for (const p of shares) {
+        if (qtyByAdsKey[p.key] > 0) {
+          ads += Math.round(adsByProduct[p.key] * (p.qty / qtyByAdsKey[p.key]))
         }
       }
       r.ads_cost = ads
