@@ -600,26 +600,33 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Khớp ads theo ĐÚNG cách bảng chi tiết theo ngày làm (adsKeyOf ở day-orders):
     // lấy MỘT khoá — mã đầy đủ nếu có tiền điền đúng mã đó, nếu không thì prefix.
     // Không gom nhiều mức cùng lúc: hai bảng phải cho ra cùng một con số.
-    const adsKeyOf = (plat: string, code: string | null): string | null => {
-      if (!code) return null
+    // Gom HẾT mọi mức đã điền cho cùng SP (prefix / mã gốc / mã biến thể) — xem ghi
+    // chú ở day-orders/adsKeysOf. Dừng ở mức đầu tiên sẽ bỏ rơi khoản điền ở mức khác.
+    const adsKeysOf = (plat: string, code: string | null): string[] => {
+      if (!code) return []
       const c = String(code).toUpperCase()
-      if (adsByProduct[`${plat}||${c}`] != null) return `${plat}||${c}`
+      const keys = new Set<string>()
+      const cands = [c]
+      const noNum = c.replace(/\d+$/, "")
+      if (noNum !== c && noNum.length > 0) cands.push(noNum)
+      for (let i = c.lastIndexOf("_"); i > 0; i = c.lastIndexOf("_", i - 1)) cands.push(c.slice(0, i))
       const m = c.match(/^(PHVVN\d{2,3})/)
-      return m && adsByProduct[`${plat}||${m[1]}`] != null ? `${plat}||${m[1]}` : null
+      if (m) cands.push(m[1])
+      for (const cand of cands) if (adsByProduct[`${plat}||${cand}`] != null) keys.add(`${plat}||${cand}`)
+      return [...keys]
     }
 
     // Combo nổ ra thành phần trước khi khớp — cũng đúng như adsPartsOf ở day-orders.
     const adsSharesOf = (plat: string, code: string | null, qty: number)
       : { key: string; qty: number }[] => {
-      const direct = adsKeyOf(plat, code)
-      if (direct) return [{ key: direct, qty }]
+      const direct = adsKeysOf(plat, code)
+      if (direct.length) return direct.map(k => ({ key: k, qty }))
       const parts = skuParts[String(code || "").toUpperCase()]
       if (!parts?.length) return []
       const out: { key: string; qty: number }[] = []
       for (const p of parts) {
-        const k = adsKeyOf(plat, p.code)
         // Không nhân số linh kiện — xem ghi chú ở day-orders/adsPartsOf.
-        if (k) out.push({ key: k, qty })
+        for (const k of adsKeysOf(plat, p.code)) out.push({ key: k, qty })
       }
       return out
     }

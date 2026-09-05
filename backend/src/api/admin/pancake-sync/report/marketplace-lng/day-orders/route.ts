@@ -328,12 +328,23 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Chi phí điền theo SP được lưu theo PREFIX (PHVVN043), còn dòng hàng mang mã biến
     // thể đầy đủ (PHVVN043_CCX01/_CCX02). Quy mã dòng hàng về prefix để khớp — nhờ vậy
     // mọi biến thể/combo của cùng một SP dùng chung khoản chi phí đã điền.
-    const adsKeyOf = (code: string | null): string | null => {
-      if (!code) return null
+    // Tiền ads có thể được điền ở NHIỀU MỨC cho cùng một sản phẩm: prefix (PHVVN043),
+    // mã gốc (PHVVN043_CCX), hoặc mã biến thể đầy đủ. Phải gom HẾT, không dừng ở mức
+    // đầu tiên khớp được: tháng 8 có 71,7tr điền ở prefix và 835k ở mã gốc, dừng sớm
+    // thì dòng chổi cọ xoong chỉ nhận 835k còn 71,7tr rơi vào "ads không ra đơn".
+    const adsKeysOf = (code: string | null): string[] => {
+      if (!code) return []
       const c = String(code).toUpperCase()
-      if (adsByProduct[c] != null) return c            // điền bằng mã đầy đủ (dữ liệu cũ)
+      const keys = new Set<string>()
+      const cands = [c]
+      // Biến thể đánh số liền sau mã gốc (PHVVN043_CCX01 -> PHVVN043_CCX).
+      const noNum = c.replace(/\d+$/, "")
+      if (noNum !== c && noNum.length > 0) cands.push(noNum)
+      for (let i = c.lastIndexOf("_"); i > 0; i = c.lastIndexOf("_", i - 1)) cands.push(c.slice(0, i))
       const m = c.match(/^(PHVVN\d{2,3})/)
-      return m && adsByProduct[m[1]] != null ? m[1] : null
+      if (m) cands.push(m[1])
+      for (const cand of cands) if (adsByProduct[cand] != null) keys.add(cand)
+      return [...keys]
     }
 
     // Combo mang mã riêng (PHVVN050_CB1 = 2 khay + 5 hộp) nên prefix của nó không khớp
@@ -341,19 +352,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ở tab "Khớp SP sàn" để đơn combo gánh đúng phần ads của thành phần; combo chưa
     // khai thì giữ nguyên như cũ.
     const adsPartsOf = (it: any): { key: string; qty: number }[] => {
-      const direct = adsKeyOf(it.sp_code)
-      if (direct) return [{ key: direct, qty: it.qty }]
+      const direct = adsKeysOf(it.sp_code)
+      if (direct.length) return direct.map(k => ({ key: k, qty: it.qty }))
       // Mã trước tên: biến thể cùng tên khác số lượng (CCX01/02/03) chỉ phân biệt được
       // bằng mã.
       const parts = skuParts[String(it.sp_code || "").toUpperCase()] ?? skuParts[String(it.sp_name_up || "")]
       if (!parts?.length) return []
       const out: { key: string; qty: number }[] = []
       for (const p of parts) {
-        const k = adsKeyOf(p.code)
         // KHÔNG nhân số linh kiện. Camp chạy cho bộ khay, và đơn combo là đơn camp đó
         // kéo về — 1 đơn combo là 1 lần camp có tác dụng, không phải 2 lần vì combo
         // chứa 2 khay. Nhân lên sẽ rút tiền ads khỏi chính SP mà camp đang chạy.
-        if (k) out.push({ key: k, qty: it.qty })
+        for (const k of adsKeysOf(p.code)) out.push({ key: k, qty: it.qty })
       }
       return out
     }
