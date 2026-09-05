@@ -262,6 +262,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- dùng cho công thức tạm tính B (ước lượng phần chưa ngã ngũ).
         SUM(CASE WHEN status IN (0, 1, 2, 8, 9, 11) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_treo,
         SUM(CASE WHEN is_main AND status NOT IN (-2) AND NOT ${excludeCond} THEN partner_fee ELSE 0 END)::bigint AS ship_cost,
+        -- Doanh thu của ĐÚNG TẬP ĐƠN đã phát sinh phí ship (đơn đã rời kho: đang giao,
+        -- đã nhận, hoàn). Dùng làm mẫu số cho %VC — chia cho revenue_delivered là hai vế
+        -- khác tập và %VC bị thổi lên khi nhiều đơn còn đang trên đường.
+        SUM(CASE WHEN status IN (2, 3, 4, 5, 8) AND NOT ${excludeCond} THEN sp_revenue ELSE 0 END)::bigint AS revenue_shipped,
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_qty ELSE 0 END)::numeric AS delivered_qty,
         -- Giá vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (đã gồm SP tặng kèm).
         SUM(CASE WHEN status = 3 AND NOT ${excludeCond} THEN sp_cost ELSE 0 END)::bigint AS cogs_order,
@@ -299,7 +303,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const stdName = row.sp_code ? codeToName[String(row.sp_code).toUpperCase()] : null
         merged[key] = {
           sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
-          total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, revenue_treo: 0, ship_cost: 0,
+          total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, revenue_treo: 0,
+          revenue_shipped: 0, ship_cost: 0,
           delivered_qty: 0, cogs_order: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
           don_nhap_trung: 0, da_xoa: 0, da_gui_hang: 0, moi: 0, cho_hang: 0,
           da_xac_nhan: 0, dang_dong_hang: 0, cho_chuyen_hang: 0,
@@ -307,7 +312,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         }
       }
       const g = merged[key]
-      for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "revenue_treo", "ship_cost",
+      for (const k of ["total_orders", "main_orders", "revenue_total", "revenue_delivered", "revenue_treo",
+        "revenue_shipped", "ship_cost",
         "delivered_qty", "cogs_order", "da_nhan", "da_hoan", "dang_hoan", "da_huy", "don_nhap_trung",
         "da_xoa", "da_gui_hang", "moi", "cho_hang", "da_xac_nhan", "dang_dong_hang",
         "cho_chuyen_hang"]) {
@@ -327,6 +333,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
+
+    // DỰ KIẾN HOÀN HỦY — thay giả định "1/3 đơn đang giao sẽ hoàn" bằng tỷ lệ hoàn THẬT.
+    // Tỷ lệ hoàn thực tế của kênh ổn định quanh 10–12,6% suốt tháng 4–8, nên 1/3 (33,3%)
+    // thổi con số lên gấp ba: đầu tháng khi phần lớn đơn còn đang giao, DKHH bị đội và
+    // doanh thu tạm tính bị cắt oan, khiến bảng tạm tính không dùng được.
+    // Mỗi SP dùng tỷ lệ hoàn của CHÍNH NÓ trong kỳ; chưa đủ đơn đã chốt thì lùi về tỷ lệ
+    // chung của kỳ, và nếu kỳ cũng chưa đủ thì về mức mặc định.
+    const MIN_DON_CHOT = 20
+    const TY_LE_HOAN_MAC_DINH = 0.11
+    // Tỷ lệ hoàn CHUNG của kỳ — tính trước vòng map vì mỗi dòng SP có thể phải lùi về nó.
+    const grpAll = Object.values(merged) as any[]
+    const chotAll = grpAll.reduce((a, g) => a + g.da_nhan + g.da_hoan + g.dang_hoan, 0)
+    const hoanAll = grpAll.reduce((a, g) => a + g.da_hoan + g.dang_hoan, 0)
+    const tyLeHoanChung = chotAll >= MIN_DON_CHOT ? hoanAll / chotAll : TY_LE_HOAN_MAC_DINH
 
     const result = Object.entries(merged).map(([key, g]: [string, any]) => {
       // Giá vốn = vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (tính sẵn trong SQL,
@@ -365,9 +385,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const nGiao = g.total_orders
       const nDaChot = g.da_nhan + g.da_hoan + g.dang_hoan + g.da_huy
       const tyLeNhan = nDaChot > 0 ? g.da_nhan / nDaChot : 0.8
-      const dkhh = nGiao > 0 ? (g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang / 3) / nGiao : 0
+      // Tỷ lệ hoàn của chính SP này (trên đơn đã ngã ngũ), lùi dần khi thiếu dữ liệu.
+      const chotSP = g.da_nhan + g.da_hoan + g.dang_hoan
+      const tyLeHoanSP = chotSP >= MIN_DON_CHOT
+        ? (g.da_hoan + g.dang_hoan) / chotSP
+        : tyLeHoanChung
+      const dkhh = nGiao > 0
+        ? (g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang * tyLeHoanSP) / nGiao
+        : 0
       const pctVon = g.revenue_delivered > 0 ? cogs / g.revenue_delivered : 0
-      const pctShip = g.revenue_delivered > 0 ? g.ship_cost / g.revenue_delivered : 0
+      // %VC phải chia cho doanh thu của ĐÚNG TẬP ĐƠN đã phát sinh phí ship. ship_cost gồm
+      // cả đơn đang trên đường, nên chia cho revenue_delivered (chỉ đơn đã nhận) là hai vế
+      // khác tập: tháng 9 có 195/359 đơn đang giao và %VC vọt lên 29,9% trong khi mức thật
+      // của kênh là ~7%. Cộng thêm doanh thu đơn còn treo vào mẫu số.
+      const revenueDaGui = g.revenue_shipped || g.revenue_delivered
+      const pctShip = revenueDaGui > 0 ? g.ship_cost / revenueDaGui : 0
       const revenueTamTinh = Math.round(g.revenue_delivered + g.revenue_treo * tyLeNhan)
       const cogsTamTinh = Math.round(revenueTamTinh * pctVon)
       const shipTamTinh = Math.round(revenueTamTinh * pctShip)
@@ -404,7 +436,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         cogs_gift_pct: pct(cogs_gift, g.revenue_delivered),
         fullfill, lng, lng_thuc: lng,
         cogs_pct: pct(cogs, g.revenue_delivered),
-        ship_pct: pct(g.ship_cost, g.revenue_delivered),
+        // Mẫu số là doanh thu của đơn ĐÃ GỬI (gồm đơn đang đi) — cùng tập với ship_cost.
+        ship_pct: pct(g.ship_cost, revenueDaGui),
         ads_pct: pct(ads_cost, g.revenue_total),
         fullfill_pct: pct(fullfill, g.revenue_delivered),
         lng_pct: pct(lng, g.revenue_delivered),
@@ -444,7 +477,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       cho_chuyen_hang: sum("cho_chuyen_hang"), tong_giao: sum("da_nhan"), tong_don_giao: N,
       ty_le_hoan: tlh, ty_le_huy: tlhuy, ty_le_giao: pctT(sum("da_nhan")),
       hoan_huy: Math.round((tlh + tlhuy) * 10) / 10,
-      du_kien_hoan_huy: pctT(sum("da_hoan") + sum("dang_hoan") + sum("da_huy") + sum("da_gui_hang") / 3),
+      du_kien_hoan_huy: pctT(sum("da_hoan") + sum("dang_hoan") + sum("da_huy")
+        + sum("da_gui_hang") * tyLeHoanChung),
     }
 
     return res.json({ rows: result, totals, from, to })
