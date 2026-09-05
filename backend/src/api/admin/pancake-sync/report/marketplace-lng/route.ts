@@ -618,7 +618,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const out: { key: string; qty: number }[] = []
       for (const p of parts) {
         const k = adsKeyOf(plat, p.code)
-        if (k) out.push({ key: k, qty: qty * p.qty })
+        // Không nhân số linh kiện — xem ghi chú ở day-orders/adsPartsOf.
+        if (k) out.push({ key: k, qty })
       }
       return out
     }

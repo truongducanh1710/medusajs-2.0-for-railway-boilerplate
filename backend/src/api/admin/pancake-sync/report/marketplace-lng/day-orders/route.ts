@@ -350,7 +350,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const out: { key: string; qty: number }[] = []
       for (const p of parts) {
         const k = adsKeyOf(p.code)
-        if (k) out.push({ key: k, qty: it.qty * p.qty })
+        // KHÔNG nhân số linh kiện. Camp chạy cho bộ khay, và đơn combo là đơn camp đó
+        // kéo về — 1 đơn combo là 1 lần camp có tác dụng, không phải 2 lần vì combo
+        // chứa 2 khay. Nhân lên sẽ rút tiền ads khỏi chính SP mà camp đang chạy.
+        if (k) out.push({ key: k, qty: it.qty })
       }
       return out
     }
