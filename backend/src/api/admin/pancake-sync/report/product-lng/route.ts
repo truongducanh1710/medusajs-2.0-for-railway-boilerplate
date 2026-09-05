@@ -340,35 +340,39 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // doanh thu tạm tính bị cắt oan, khiến bảng tạm tính không dùng được.
     // Mỗi SP dùng tỷ lệ hoàn của CHÍNH NÓ trong kỳ; chưa đủ đơn đã chốt thì lùi về tỷ lệ
     // chung của kỳ, và nếu kỳ cũng chưa đủ thì về mức mặc định.
-    const MIN_DON_CHOT = 20
-    const TY_LE_HOAN_MAC_DINH = 0.11
-    // Tỷ lệ hoàn nền = TRUNG BÌNH 3 THÁNG GẦN NHẤT TRƯỚC kỳ đang xem, tính trên đơn đã
-    // ngã ngũ (đã nhận + hoàn). Lấy ngoài kỳ vì đầu tháng gần như chưa đơn nào chốt —
-    // tự tính trong kỳ sẽ ra 0% và không ước lượng được gì.
-    const hoanBaseRows = await sql(`
+    // ── TỶ LỆ NHẬN NỀN (chỉ dùng cho khối TẠM TÍNH) ────────────────────────────
+    // Tạm tính cần một con số ĐỨNG YÊN trong suốt tháng, để nhìn ngày này so ngày kia
+    // biết đang chạy tốt hay không. Nếu lấy tỷ lệ nhận của chính kỳ thì đầu tháng mẫu
+    // quá nhỏ: tháng 9 có 20 đơn huỷ trên 80 đơn đã chốt → 73,8%, và mỗi ngày vài đơn
+    // về là số lại nhảy, không so sánh được gì.
+    //
+    // Nên lấy trung bình 3 THÁNG TRƯỚC kỳ đang xem — rất ổn định (78,8% / 81,1% / 80,3%
+    // cho tháng 6–8, gộp lại đúng 80%). Mỗi tháng cập nhật một lần, trong tháng đứng yên.
+    //
+    // KHỐI THỰC không đụng tới: nó chỉ dùng đơn đã giao xong, không ước lượng gì.
+    const MIN_DON_NEN = 100
+    const TY_LE_NHAN_MAC_DINH = 0.8
+    const nhanBaseRows = await sql(`
       SELECT
-        COUNT(*) FILTER (WHERE status = 3)::int      AS da_nhan,
-        COUNT(*) FILTER (WHERE status IN (4, 5))::int AS hoan
+        COUNT(*) FILTER (WHERE status = 3)::int           AS da_nhan,
+        COUNT(*) FILTER (WHERE status IN (4, 5))::int     AS hoan,
+        COUNT(*) FILTER (WHERE status IN (6, -1))::int    AS huy
       FROM pancake_order
       WHERE deleted_at IS NULL
         AND COALESCE(NULLIF(market, ''), 'VN') = 'VN'
-        AND source NOT IN ('shopee', 'tiktok')
+        AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
         AND pancake_created_at >= (date_trunc('month', $1::date) - interval '3 months')
         AND pancake_created_at <  date_trunc('month', $1::date)
         AND NOT ${excludeCond}
     `, [from, to]).catch(() => [])
-    const hb = hoanBaseRows[0] ?? {}
-    const chotNen = Number(hb.da_nhan || 0) + Number(hb.hoan || 0)
-    const tyLeHoanNen = chotNen >= MIN_DON_CHOT
-      ? Number(hb.hoan || 0) / chotNen
-      : TY_LE_HOAN_MAC_DINH
-
-    // Tỷ lệ hoàn CHUNG của kỳ — dùng khi kỳ đã có đủ đơn chốt (cuối tháng), vì lúc đó
-    // dữ liệu của chính kỳ sát thực tế hơn số nền.
-    const grpAll = Object.values(merged) as any[]
-    const chotAll = grpAll.reduce((a, g) => a + g.da_nhan + g.da_hoan + g.dang_hoan, 0)
-    const hoanAll = grpAll.reduce((a, g) => a + g.da_hoan + g.dang_hoan, 0)
-    const tyLeHoanChung = chotAll >= MIN_DON_CHOT ? hoanAll / chotAll : tyLeHoanNen
+    const nb = nhanBaseRows[0] ?? {}
+    const chotNen = Number(nb.da_nhan || 0) + Number(nb.hoan || 0) + Number(nb.huy || 0)
+    const tyLeNhanNen = chotNen >= MIN_DON_NEN
+      ? Number(nb.da_nhan || 0) / chotNen
+      : TY_LE_NHAN_MAC_DINH
+    // Dự kiến hoàn huỷ hiển thị = phần bù của tỷ lệ nhận, cùng một con số nền nên dòng
+    // TỔNG và dòng SP không còn mâu thuẫn nhau.
+    const dkhhNen = 1 - tyLeNhanNen
 
     const result = Object.entries(merged).map(([key, g]: [string, any]) => {
       // Giá vốn = vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (tính sẵn trong SQL,
@@ -405,16 +409,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // DT tạm tính = DT đã nhận (thực) + DT đơn còn treo × tỷ lệ nhận kỳ vọng.
       // Hết tháng → đơn treo = 0 → tạm tính hội tụ về thực.
       const nGiao = g.total_orders
-      const nDaChot = g.da_nhan + g.da_hoan + g.dang_hoan + g.da_huy
-      const tyLeNhan = nDaChot > 0 ? g.da_nhan / nDaChot : 0.8
-      // Tỷ lệ hoàn của chính SP này (trên đơn đã ngã ngũ), lùi dần khi thiếu dữ liệu.
-      const chotSP = g.da_nhan + g.da_hoan + g.dang_hoan
-      const tyLeHoanSP = chotSP >= MIN_DON_CHOT
-        ? (g.da_hoan + g.dang_hoan) / chotSP
-        : tyLeHoanChung
-      const dkhh = nGiao > 0
-        ? (g.da_hoan + g.dang_hoan + g.da_huy + g.da_gui_hang * tyLeHoanSP) / nGiao
-        : 0
+      const tyLeNhan = tyLeNhanNen
+      const dkhh = dkhhNen
       const pctVon = g.revenue_delivered > 0 ? cogs / g.revenue_delivered : 0
       // %VC phải chia cho doanh thu của ĐÚNG TẬP ĐƠN đã phát sinh phí ship. ship_cost gồm
       // cả đơn đang trên đường, nên chia cho revenue_delivered (chỉ đơn đã nhận) là hai vế
@@ -499,8 +495,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       cho_chuyen_hang: sum("cho_chuyen_hang"), tong_giao: sum("da_nhan"), tong_don_giao: N,
       ty_le_hoan: tlh, ty_le_huy: tlhuy, ty_le_giao: pctT(sum("da_nhan")),
       hoan_huy: Math.round((tlh + tlhuy) * 10) / 10,
-      du_kien_hoan_huy: pctT(sum("da_hoan") + sum("dang_hoan") + sum("da_huy")
-        + sum("da_gui_hang") * tyLeHoanChung),
+      // Cùng con số nền với các dòng SP — xem ghi chú ở tyLeNhanNen.
+      du_kien_hoan_huy: Math.round(dkhhNen * 1000) / 10,
     }
 
     return res.json({ rows: result, totals, from, to })
