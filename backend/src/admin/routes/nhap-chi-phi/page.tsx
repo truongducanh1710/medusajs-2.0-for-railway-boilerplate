@@ -303,8 +303,14 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
       day[code] = String(prev + Number(r.cost || 0))
     }
     setGrid(g)
-    const usedDates = Object.keys(g).sort().reverse().slice(0, 14)
-    setDates(usedDates.length ? usedDates : [todayVN()])
+    // Lưới phải luôn có các NGÀY GẦN ĐÂY kể cả chưa ai điền — trước đây chỉ lấy ngày
+    // đã có dữ liệu, nên shop nào nhập tới 05/09 thì lưới dừng ở 05/09 và không còn
+    // dòng nào để điền cho 06 và 07, dù hôm nay là 07.
+    // Luôn chèn 3 ngày gần nhất, rồi bù thêm ngày đã điền cho tới tối đa 14 dòng.
+    const recent = [todayVN(), daysAgoVN(1), daysAgoVN(2)]
+    const usedDates = Object.keys(g)
+    const merged = [...new Set([...recent, ...usedDates])].sort().reverse().slice(0, 14)
+    setDates(merged)
     // SP đã từng điền + SP đang bán nhiều nhất, tối đa 8 dòng cho gọn.
     const used = new Set<string>()
     for (const r of mine) {
@@ -340,6 +346,12 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     const d = new Date(oldest + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1)
     const iso = d.toISOString().slice(0, 10)
     if (!dates.includes(iso)) setDates(ds => [...ds, iso])
+  }
+
+  /** Thêm một ngày bất kỳ (dùng khi cần điền bù ngày đã trôi qua khỏi 14 dòng). */
+  const addSpecificDate = (iso: string) => {
+    if (!iso || dates.includes(iso)) return
+    setDates(ds => [...ds, iso].sort().reverse())
   }
 
   /** Dán 1 cột số từ Excel vào các dòng của cùng ngày, theo thứ tự đang hiện. */
@@ -567,6 +579,12 @@ Gồm ${p.variant_codes.length} mã biến thể: ${p.variant_codes.join(", ")}`
                 className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-violet-700 hover:bg-violet-50">
                 + Thêm ngày
               </button>
+              <label className="flex items-center gap-1.5 text-[12px] text-gray-600">
+                hoặc chọn ngày cụ thể
+                <input type="date" max={todayVN()}
+                  onChange={e => { addSpecificDate(e.target.value); e.currentTarget.value = "" }}
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-[12.5px]" />
+              </label>
               <span className="text-[11.5px] text-gray-400">
                 Đang hiện {dates.length} ngày × {allCodes.length} dòng
               </span>
