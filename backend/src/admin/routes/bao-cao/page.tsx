@@ -3755,6 +3755,185 @@ function DayOrdersModal({
   )
 }
 
+/**
+ * LÀM GIÁ SÀN — giải ngược công thức LNG tạm tính để tìm giá bán đạt biên mong muốn.
+ *
+ * Công thức xuôi (xem api/.../marketplace-lng/route.ts):
+ *   DT tạm tính = tiền khách trả × (1 − phí sàn)
+ *   LNG sau ads = DT tạm tính − giá vốn − fullfill − ads
+ *
+ * Đặt P = giá khách trả, f = %phí sàn, v = vốn/đơn, F = fullfill, a = %ads, m = %LNG:
+ *   P(1−f)(1 − a − m) = v + F   ⟹   P = (v + F) / [(1−f)(1 − a − m)]
+ *
+ * Đơn HOÀN vẫn tốn vốn nhưng không thu tiền, nên vốn thực mỗi đơn bán được là v/(1−h):
+ *   P = (v/(1−h) + F) / [(1−f)(1 − a − m)]
+ *
+ * Vô nghiệm khi a + m ≥ 1 — ads tính theo % doanh thu nên tăng giá thì ads tăng theo,
+ * không cách nào bù. Lúc đó phải hạ %ads trước, và hàm trả về ngưỡng ads tối đa.
+ */
+function tinhGiaBan(o: {
+  von: number; adsPct: number; hoanPct: number
+  bienPct: number; phiPct: number; fullfill: number
+}): { gia: number | null; adsToiDa: number } {
+  const a = o.adsPct / 100, m = o.bienPct / 100, f = o.phiPct / 100, h = o.hoanPct / 100
+  const adsToiDa = Math.max(0, (1 - m) * 100)
+  const mauSo = (1 - f) * (1 - a - m)
+  if (mauSo <= 0 || h >= 1) return { gia: null, adsToiDa }
+  const vonThuc = o.von / (1 - h)
+  return { gia: Math.ceil((vonThuc + o.fullfill) / mauSo / 1000) * 1000, adsToiDa }
+}
+
+/** Khối tính giá cho SP/combo CHƯA bán — nhân sự tự nhập vốn, %ads và %hoàn dự kiến. */
+function PricingNewItem({ fmtVND, defAds, defHoan, bien, phi, fullfill }: {
+  fmtVND: (n: number) => string
+  defAds: number; defHoan: number; bien: number; phi: number; fullfill: number
+}) {
+  const [mode, setMode] = useState<"don" | "combo">("don")
+  const [von, setVon] = useState("")
+  const [ads, setAds] = useState(String(defAds))
+  const [hoan, setHoan] = useState(String(defHoan))
+  const [parts, setParts] = useState<{ ten: string; von: string; sl: string }[]>([
+    { ten: "", von: "", sl: "1" },
+  ])
+
+  const vonCombo = parts.reduce((a, p) => a + (Number(p.von) || 0) * (Number(p.sl) || 0), 0)
+  const vonDung = mode === "combo" ? vonCombo : (Number(von) || 0)
+  const adsN = Number(ads) || 0, hoanN = Number(hoan) || 0
+  const { gia, adsToiDa } = tinhGiaBan({
+    von: vonDung, adsPct: adsN, hoanPct: hoanN, bienPct: bien, phiPct: phi, fullfill })
+
+  // Bảng phân rã: cho thấy tiền đi đâu, không bắt tin một con số từ hộp đen.
+  const dt = gia != null ? gia * (1 - phi / 100) : 0
+  const vonThuc = hoanN < 100 ? vonDung / (1 - hoanN / 100) : 0
+  const adsTien = dt * adsN / 100
+  const lai = dt - vonThuc - fullfill - adsTien
+  const onlyNum = (v: string) => v.replace(/[^0-9]/g, "")
+  const onlyDec = (v: string) => v.replace(/[^0-9.]/g, "")
+  const inp = "w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-right tabular-nums outline-none focus:ring-2 focus:ring-violet-500/20"
+
+  return (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-semibold text-gray-800">Tính giá sản phẩm mới</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Nhập giá vốn và mức ads/hoàn dự kiến để ra giá bán cần đặt.
+          </p>
+        </div>
+        <div className="flex gap-1">
+          {([["don", "1 sản phẩm"], ["combo", "Combo nhiều món"]] as const).map(([k, lb]) => (
+            <button key={k} onClick={() => setMode(k)}
+              className={`px-2.5 py-1 text-[11px] rounded-md font-medium ${
+                mode === k ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              {lb}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-5 grid gap-5 lg:grid-cols-2">
+        <div className="space-y-3">
+          {mode === "don" ? (
+            <label className="block">
+              <span className="text-xs text-gray-500">Giá vốn / đơn</span>
+              <input value={von} onChange={e => setVon(onlyNum(e.target.value))}
+                placeholder="0" className={inp} />
+            </label>
+          ) : (
+            <div>
+              <span className="text-xs text-gray-500">Thành phần combo</span>
+              <div className="mt-1 space-y-1.5">
+                {parts.map((p, i) => (
+                  <div key={i} className="flex gap-1.5 items-center">
+                    <input value={p.ten} placeholder="Tên món"
+                      onChange={e => setParts(ps => ps.map((x, j) => j === i ? { ...x, ten: e.target.value } : x))}
+                      className="flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm outline-none" />
+                    <input value={p.von} placeholder="Giá vốn"
+                      onChange={e => setParts(ps => ps.map((x, j) => j === i ? { ...x, von: onlyNum(e.target.value) } : x))}
+                      className="w-24 rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-right tabular-nums outline-none" />
+                    <span className="text-gray-400 text-sm">×</span>
+                    <input value={p.sl}
+                      onChange={e => setParts(ps => ps.map((x, j) => j === i ? { ...x, sl: onlyNum(e.target.value) } : x))}
+                      className="w-14 rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-right tabular-nums outline-none" />
+                    {parts.length > 1 && (
+                      <button onClick={() => setParts(ps => ps.filter((_, j) => j !== i))}
+                        className="px-1.5 text-gray-300 hover:text-red-600">×</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setParts(ps => [...ps, { ten: "", von: "", sl: "1" }])}
+                className="mt-1.5 text-[11.5px] font-semibold text-violet-700 hover:underline">
+                + Thêm thành phần
+              </button>
+              <div className="mt-2 text-sm text-gray-700">
+                Tổng giá vốn combo: <b>{fmtVND(vonCombo)}</b>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs text-gray-500">%Ads dự kiến</span>
+              <input value={ads} onChange={e => setAds(onlyDec(e.target.value))} className={inp} />
+              <span className="text-[10.5px] text-gray-400">TB sàn kỳ này: {defAds}%</span>
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-500">%Hoàn dự kiến</span>
+              <input value={hoan} onChange={e => setHoan(onlyDec(e.target.value))} className={inp} />
+              <span className="text-[10.5px] text-gray-400">TB sàn kỳ này: {defHoan}%</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-gray-50 border p-4">
+          {vonDung <= 0 ? (
+            <div className="text-sm text-gray-400">Nhập giá vốn để tính giá bán.</div>
+          ) : gia == null ? (
+            <div className="text-sm text-red-700">
+              <div className="font-semibold">✗ Không đạt được LNG {bien}%</div>
+              <p className="mt-1.5 text-[12.5px] text-red-600">
+                Ads {adsN}% cộng biên {bien}% đã vượt doanh thu. Ads tính theo % doanh thu nên
+                tăng giá thì ads tăng theo, không giá nào bù được.
+                {" "}Phải hạ %Ads xuống dưới <b>{adsToiDa.toFixed(0)}%</b> trước.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="text-xs text-gray-500 uppercase tracking-wide">Giá bán cần đặt</div>
+              <div className="text-3xl font-bold text-violet-700 mt-1">{fmtVND(gia)}</div>
+              <table className="w-full mt-3 text-[12.5px] tabular-nums">
+                <tbody className="text-gray-600">
+                  <tr><td className="py-0.5">Khách trả</td>
+                    <td className="py-0.5 text-right text-gray-900">{fmtVND(gia)}</td></tr>
+                  <tr><td className="py-0.5">Sàn trừ phí {phi}%</td>
+                    <td className="py-0.5 text-right text-red-600">−{fmtVND(gia - dt)}</td></tr>
+                  <tr className="border-t"><td className="py-0.5 font-medium">Bạn nhận</td>
+                    <td className="py-0.5 text-right font-medium text-gray-900">{fmtVND(dt)}</td></tr>
+                  <tr><td className="py-0.5">Giá vốn{hoanN > 0 ? " (gồm phần đơn hoàn)" : ""}</td>
+                    <td className="py-0.5 text-right text-red-600">−{fmtVND(vonThuc)}</td></tr>
+                  <tr><td className="py-0.5">Fullfill</td>
+                    <td className="py-0.5 text-right text-red-600">−{fmtVND(fullfill)}</td></tr>
+                  <tr><td className="py-0.5">Ads {adsN}%</td>
+                    <td className="py-0.5 text-right text-red-600">−{fmtVND(adsTien)}</td></tr>
+                  <tr className="border-t-2 border-gray-300">
+                    <td className="py-1 font-bold text-gray-900">LÃI</td>
+                    <td className="py-1 text-right font-bold text-violet-700">
+                      {fmtVND(lai)}
+                      <span className="ml-1.5 font-normal text-gray-500">
+                        = {dt > 0 ? (lai / dt * 100).toFixed(1) : 0}% trên DT
+                      </span>
+                    </td></tr>
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -3837,6 +4016,50 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
     })
     .filter((r: any) => r.total_orders > 0)
     .sort((a: any, b: any) => b.hoan - a.hoan || b.total_orders - a.total_orders)
+  // ── Làm giá ──────────────────────────────────────────────────────────────────
+  // Giải ngược công thức LNG tạm tính để tìm giá bán đạt biên mong muốn. Hai tham số
+  // nhân sự chỉnh nhiều nhất là %Ads và %Hoàn nên cho sửa ngay trên từng dòng; giá trị
+  // ban đầu lấy đúng số đang chạy thật của SP đó.
+  const [pxBien, setPxBien] = useState("10")
+  const [pxPhi, setPxPhi] = useState("30")
+  const [pxFullfill, setPxFullfill] = useState("6000")
+  const [pxEdit, setPxEdit] = useState<Record<string, { ads?: string; hoan?: string }>>({})
+  const bienN = Number(pxBien) || 0
+  const phiN = Number(pxPhi) || 0
+  const fullfillN = Number(pxFullfill) || 0
+
+  const pricingRows = shownBase
+    .filter((r: any) => (r.orders_tt || 0) >= 3 && (r.cogs_tt || 0) > 0)
+    .map((r: any) => {
+      const key = `${r.platform}|${r.sp_code ?? r.sp_label}`
+      const don = r.orders_tt || 1
+      const von = Math.round((r.cogs_tt || 0) / don)
+      // Giá đang bán = tiền khách trả/đơn = DT tạm tính ÷ (1 − phí sàn).
+      const giaNay = phiN < 100 ? Math.round((r.revenue_tt || 0) / don / (1 - phiN / 100)) : 0
+      const hoanThat = (r.da_hoan || 0) + (r.dang_hoan || 0)
+      const chot = (r.da_nhan || 0) + hoanThat
+      const adsGoc = Number(r.ads_tt_pct) || 0
+      const hoanGoc = chot > 0 ? Math.round(hoanThat / chot * 1000) / 10 : 0
+      const e = pxEdit[key] ?? {}
+      const adsPct = e.ads !== undefined ? (Number(e.ads) || 0) : adsGoc
+      const hoanPct = e.hoan !== undefined ? (Number(e.hoan) || 0) : hoanGoc
+      const { gia, adsToiDa } = tinhGiaBan({
+        von, adsPct, hoanPct, bienPct: bienN, phiPct: phiN, fullfill: fullfillN })
+      return {
+        ...r, key, von, giaNay, adsGoc, hoanGoc, adsPct, hoanPct, gia, adsToiDa,
+        chenh: gia != null && giaNay > 0 ? Math.round((gia - giaNay) / giaNay * 1000) / 10 : null,
+        suaTay: e.ads !== undefined || e.hoan !== undefined,
+      }
+    })
+    .sort((a: any, b: any) => (b.orders_tt || 0) - (a.orders_tt || 0))
+
+  // Mốc gợi ý cho SP mới: mức trung bình đang chạy của chính kỳ đang xem.
+  const pxAdsTB = (() => {
+    const dt = pricingRows.reduce((a: number, r: any) => a + (r.revenue_tt || 0), 0)
+    const ads = pricingRows.reduce((a: number, r: any) => a + (r.ads_cost || 0), 0)
+    return dt > 0 ? Math.round(ads / dt * 1000) / 10 : 35
+  })()
+
   const hoanTot = (() => {
     const sum = (k: string) => hoanRows.reduce((a: number, r: any) => a + (Number(r[k]) || 0), 0)
     const hoan = sum("hoan"), chot = sum("chot"), tot = sum("total_orders"), huy = sum("da_huy")
@@ -3847,6 +4070,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
       pctHoanHuy: tot > 0 ? r1((hoan + huy) / tot * 100) : 0,
     }
   })()
+
+  // Mốc %hoàn gợi ý cho SP mới — khai sau hoanTot vì phụ thuộc nó.
+  const pxHoanTB = hoanTot.pctHoan || 10
 
   // Dòng tổng. Tiền thì cộng, còn % phải tính LẠI từ tổng — cộng trung bình các dòng
   // ra số vô nghĩa (SP bán 2 cái nặng bằng SP bán 6.000 cái). Ads của SP không ra đơn
@@ -4684,6 +4910,132 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           giống bảng LNG phía trên.
         </div>
       </div>
+
+      {/* ── LÀM GIÁ ─────────────────────────────────────────────────────────────── */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800">Làm giá — tính giá bán để đạt LNG mục tiêu</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Giải ngược công thức LNG tạm tính. Sửa <b>%Ads</b> và <b>%Hoàn</b> ngay trên dòng
+              để thử kịch bản — giá đề xuất tính lại ngay.
+            </p>
+          </div>
+          <div className="flex items-end gap-2 flex-wrap text-xs">
+            <label className="flex flex-col gap-0.5">
+              <span className="text-gray-500">LNG mục tiêu</span>
+              <div className="flex items-center gap-1">
+                <input value={pxBien} onChange={e => setPxBien(e.target.value.replace(/[^0-9.]/g, ""))}
+                  className="w-14 rounded-lg border border-gray-200 px-2 py-1 text-right tabular-nums outline-none" />
+                <span className="text-gray-400">%</span>
+              </div>
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-gray-500">Phí sàn</span>
+              <div className="flex items-center gap-1">
+                <input value={pxPhi} onChange={e => setPxPhi(e.target.value.replace(/[^0-9.]/g, ""))}
+                  className="w-14 rounded-lg border border-gray-200 px-2 py-1 text-right tabular-nums outline-none" />
+                <span className="text-gray-400">%</span>
+              </div>
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-gray-500">Fullfill</span>
+              <input value={pxFullfill} onChange={e => setPxFullfill(e.target.value.replace(/[^0-9]/g, ""))}
+                className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-right tabular-nums outline-none" />
+            </label>
+            {Object.keys(pxEdit).length > 0 && (
+              <button onClick={() => setPxEdit({})}
+                className="rounded-lg border border-gray-200 px-2.5 py-1 font-medium text-gray-600 hover:bg-gray-50">
+                Đặt lại
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+              <tr>
+                {prodPlatform === "all" && <th className="text-left px-4 py-2.5">Sàn</th>}
+                <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                <th className="text-right px-3 py-2.5">Vốn/đơn</th>
+                <th className="text-right px-3 py-2.5 w-24">%Ads</th>
+                <th className="text-right px-3 py-2.5 w-24">%Hoàn</th>
+                <th className="text-right px-3 py-2.5">Giá đang bán</th>
+                <th className="text-right px-3 py-2.5 bg-violet-50">GIÁ ĐỀ XUẤT</th>
+                <th className="text-right px-3 py-2.5">Chênh</th>
+                <th className="text-right px-3 py-2.5">LNG nay</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {pricingRows.length === 0 && (
+                <tr><td colSpan={prodPlatform === "all" ? 9 : 8}
+                  className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+              )}
+              {pricingRows.map((r: any) => (
+                <tr key={r.key} className={r.gia == null ? "bg-red-50/50" : ""}>
+                  {prodPlatform === "all" && (
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                    </td>
+                  )}
+                  <td className="px-4 py-2.5 max-w-[240px]">
+                    <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
+                    {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                    {r.hoanPct >= 20 && (
+                      <div className="text-[10.5px] text-amber-600">⚠ hoàn {r.hoanPct}% quá cao</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-700">{money(r.von)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <input value={r.adsPct}
+                      onChange={e => setPxEdit(x => ({ ...x, [r.key]: { ...(x[r.key] ?? {}), ads: e.target.value.replace(/[^0-9.]/g, "") } }))}
+                      className={`w-16 rounded border px-1.5 py-1 text-right text-[12.5px] tabular-nums outline-none ${
+                        r.adsPct !== r.adsGoc ? "border-violet-400 bg-violet-50" : "border-gray-200"}`} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <input value={r.hoanPct}
+                      onChange={e => setPxEdit(x => ({ ...x, [r.key]: { ...(x[r.key] ?? {}), hoan: e.target.value.replace(/[^0-9.]/g, "") } }))}
+                      className={`w-16 rounded border px-1.5 py-1 text-right text-[12.5px] tabular-nums outline-none ${
+                        r.hoanPct !== r.hoanGoc ? "border-violet-400 bg-violet-50" : "border-gray-200"}`} />
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-600">{money(r.giaNay)}</td>
+                  <td className="px-3 py-2.5 text-right bg-violet-50/60">
+                    {r.gia == null ? (
+                      <span className="text-red-600 text-[12px] font-semibold" title={`Phải hạ %Ads xuống dưới ${r.adsToiDa.toFixed(0)}%`}>
+                        ✗ không đạt
+                      </span>
+                    ) : (
+                      <span className="font-bold text-violet-700">{money(r.gia)}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {r.chenh == null ? <span className="text-gray-300">—</span> : (
+                      <span className={r.chenh > 5 ? "text-red-600 font-semibold"
+                        : r.chenh < -5 ? "text-green-600 font-semibold" : "text-gray-500"}>
+                        {r.chenh > 0 ? "+" : ""}{r.chenh}%
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {pctCell(r.lng_tt_sau_ads_pct, (r.lng_tt_sau_ads ?? 0) >= 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500 leading-relaxed">
+          <b>Giá đề xuất</b> = (giá vốn ÷ (1 − %hoàn) + fullfill) ÷ [(1 − %phí sàn) × (1 − %ads − %LNG)],
+          làm tròn lên nghìn. Đây là <b>giá khách trả</b> — con số niêm yết trên sàn, chưa trừ phí.
+          {" "}Dòng <b className="text-red-600">✗ không đạt</b> nghĩa là %ads cộng biên mục tiêu đã vượt
+          doanh thu: ads tính theo % doanh thu nên tăng giá thì ads tăng theo, phải hạ %ads trước.
+        </div>
+      </div>
+
+      <PricingNewItem fmtVND={money} defAds={pxAdsTB} defHoan={pxHoanTB}
+        bien={bienN} phi={phiN} fullfill={fullfillN} />
     </div>
   )
 }
