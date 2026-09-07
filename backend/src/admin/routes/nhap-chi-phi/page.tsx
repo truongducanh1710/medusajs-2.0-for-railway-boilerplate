@@ -922,6 +922,8 @@ function TongHopTab() {
 
   const rows: any[] = data?.rows ?? []
   const missing: any[] = data?.missing ?? []
+  const noCode: any[] = data?.no_code ?? []
+  const noCodeTotal: number = Number(data?.no_code_total ?? 0)
   const grand = rows.reduce((s, r) => s + Number(r.cost || 0), 0)
   const isAdminView = !!data?.is_admin
 
@@ -971,6 +973,60 @@ function TongHopTab() {
         <b>Tổng chi phí sàn trong kỳ: {fmtMoney(grand)}</b>
         <span className="text-violet-700"> · {rows.length} dòng đã điền</span>
       </div>
+
+      {/* Đã điền nhưng THIẾU MÃ SP — nguy hiểm hơn "chưa điền" vì báo cáo vẫn trừ tiền,
+          chỉ là trừ nhầm vào vài SP nhỏ và đẩy chúng thành lỗ giả. */}
+      {noCode.length > 0 && (
+        <div className="bg-white border-2 border-amber-300 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b bg-amber-50 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-amber-900 text-sm">⚠ Đã điền nhưng chưa chọn sản phẩm</h3>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Tiền không gắn mã SP sẽ bị chia cho các SP chưa có ads riêng — dồn vào vài SP nhỏ
+                thì %Ads của chúng vọt lên hàng trăm phần trăm. Bấm vào dòng để mở đúng ngày và điền lại.
+              </p>
+            </div>
+            <span className="rounded-md bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">
+              {fmtMoney(noCodeTotal)} · {noCode.length} dòng
+            </span>
+          </div>
+          <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-left">Ngày</th>
+                  <th className="px-4 py-2 text-left">TT</th>
+                  <th className="px-4 py-2 text-left">Sàn</th>
+                  <th className="px-4 py-2 text-left">Shop</th>
+                  <th className="px-4 py-2 text-right">Tiền chưa gắn mã</th>
+                  <th className="px-4 py-2 text-right">Cả ngày</th>
+                  <th className="px-4 py-2 text-right">Tỷ trọng</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-900">
+                {noCode.map((r: any, i: number) => {
+                  const ca = Number(r.cost_ca_ngay || 0)
+                  const kh = Number(r.cost_khong_ma || 0)
+                  const pct = ca > 0 ? Math.round(kh / ca * 100) : 100
+                  const p = PLATFORMS.find(x => x.key === r.platform)
+                  return (
+                    <tr key={`nc-${i}`} className={pct >= 80 ? "bg-amber-50/60" : ""}>
+                      <td className="px-4 py-2 font-mono text-[12.5px]">{r.date}</td>
+                      <td className="px-4 py-2 text-gray-600">{r.market}</td>
+                      <td className="px-4 py-2">{p?.label ?? r.platform}</td>
+                      <td className="px-4 py-2 text-gray-600 max-w-[220px] truncate" title={r.shop}>{r.shop || "—"}</td>
+                      <td className="px-4 py-2 text-right font-semibold text-amber-700">{fmtMoney(kh)}</td>
+                      <td className="px-4 py-2 text-right text-gray-500">{fmtMoney(ca)}</td>
+                      <td className={`px-4 py-2 text-right font-semibold ${
+                        pct >= 80 ? "text-red-600" : pct >= 40 ? "text-amber-600" : "text-gray-500"}`}>{pct}%</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Cảnh báo bỏ sót — kênh có đơn nhưng chưa điền chi phí ngày đó */}
       <div className="bg-white border rounded-xl overflow-hidden">

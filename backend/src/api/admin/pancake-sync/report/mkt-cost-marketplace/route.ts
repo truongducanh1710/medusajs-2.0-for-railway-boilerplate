@@ -228,8 +228,33 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        LIMIT 200
     `, me.isAdmin ? [from, to] : [from, to, me.email])
 
+    // ── ĐÃ ĐIỀN NHƯNG THIẾU MÃ SP ──────────────────────────────────────────────
+    // Tiền điền mà bỏ trống product_code thì không quy được về sản phẩm nào: báo cáo
+    // phải chia nó cho các SP chưa có ads riêng, và khi nhóm đó chỉ còn vài SP nhỏ thì
+    // một khoản lớn dồn hết vào chúng — tháng 9 có 15,6tr rơi vào 3 SP tổng doanh thu
+    // 1,18tr, đẩy %Ads lên 1319% và biến chúng thành lỗ nặng giả.
+    // Liệt kê ra để nhân sự bổ sung mã, kèm tỷ trọng để biết ngày nào đáng sửa trước.
+    const noCode = await svc.sql(`
+      SELECT date::text AS date, platform, market, shop,
+             SUM(cost)::bigint AS cost_khong_ma,
+             (SELECT COALESCE(SUM(c2.cost), 0)::bigint FROM mkt_ads_cost_marketplace c2
+               WHERE c2.deleted_at IS NULL AND c2.date = c.date AND c2.platform = c.platform
+                 AND c2.market = c.market AND c2.shop = c.shop
+                 ${me.isAdmin ? "" : "AND c2.created_by = $3"}) AS cost_ca_ngay
+        FROM mkt_ads_cost_marketplace c
+       WHERE deleted_at IS NULL
+         AND date >= $1::date AND date <= $2::date
+         AND COALESCE(NULLIF(TRIM(product_code), ''), '') = ''
+         ${me.isAdmin ? "" : "AND created_by = $3"}
+       GROUP BY date, platform, market, shop
+       ORDER BY SUM(cost) DESC
+       LIMIT 200
+    `, me.isAdmin ? [from, to] : [from, to, me.email])
+
     return res.json({
       rows, totals, by_day: byDay, shops, products, catalog, missing,
+      no_code: noCode,
+      no_code_total: noCode.reduce((a: number, r: any) => a + Number(r.cost_khong_ma || 0), 0),
       is_admin: me.isAdmin, my_email: me.email,
       platforms: PLATFORMS, markets: MARKETS, from, to,
     })
