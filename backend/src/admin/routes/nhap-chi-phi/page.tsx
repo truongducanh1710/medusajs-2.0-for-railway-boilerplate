@@ -308,13 +308,15 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     // không còn dòng nào để điền cho 06 và 07, dù hôm nay là 07.
     // Bỏ trống bao nhiêu ngày thì hiện đủ bấy nhiêu, không để hở ngày nào.
     const usedDates = Object.keys(g)
-    const today = todayVN()
-    const newest = usedDates.length ? usedDates.sort().reverse()[0] : today
+    // Chạy tới ngày điền CŨ NHẤT, không phải mới nhất: dừng ở ngày mới nhất thì các ngày
+    // trống nằm GIỮA các ngày đã điền không được sinh ra. Shop Vietmate có 01–04 và 06
+    // nhưng bỏ 05, lưới nhảy thẳng 06 → 04 và không có dòng nào để điền 05.
+    const oldestUsed = usedDates.length ? [...usedDates].sort()[0] : todayVN()
     const span: string[] = []
     for (let i = 0; i < 60; i++) {
       const iso = daysAgoVN(i)
       span.push(iso)
-      if (iso <= newest) break   // đã chạm ngày điền gần nhất thì dừng
+      if (iso <= oldestUsed) break
     }
     // Ghép với ngày đã điền (kể cả ngày cũ hơn) rồi cắt còn tối đa 14 dòng cho gọn;
     // ngày cũ hơn nữa vẫn điền được qua ô chọn ngày bên dưới bảng.
