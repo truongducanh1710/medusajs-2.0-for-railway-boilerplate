@@ -303,13 +303,22 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
       day[code] = String(prev + Number(r.cost || 0))
     }
     setGrid(g)
-    // Lưới phải luôn có các NGÀY GẦN ĐÂY kể cả chưa ai điền — trước đây chỉ lấy ngày
-    // đã có dữ liệu, nên shop nào nhập tới 05/09 thì lưới dừng ở 05/09 và không còn
-    // dòng nào để điền cho 06 và 07, dù hôm nay là 07.
-    // Luôn chèn 3 ngày gần nhất, rồi bù thêm ngày đã điền cho tới tối đa 14 dòng.
-    const recent = [todayVN(), daysAgoVN(1), daysAgoVN(2)]
+    // Lưới phải phủ LIÊN TỤC từ hôm nay ngược về ngày đã điền gần nhất — trước đây chỉ
+    // lấy ngày đã có dữ liệu, nên shop nào nhập tới 05/09 thì lưới dừng ở 05/09 và
+    // không còn dòng nào để điền cho 06 và 07, dù hôm nay là 07.
+    // Bỏ trống bao nhiêu ngày thì hiện đủ bấy nhiêu, không để hở ngày nào.
     const usedDates = Object.keys(g)
-    const merged = [...new Set([...recent, ...usedDates])].sort().reverse().slice(0, 14)
+    const today = todayVN()
+    const newest = usedDates.length ? usedDates.sort().reverse()[0] : today
+    const span: string[] = []
+    for (let i = 0; i < 60; i++) {
+      const iso = daysAgoVN(i)
+      span.push(iso)
+      if (iso <= newest) break   // đã chạm ngày điền gần nhất thì dừng
+    }
+    // Ghép với ngày đã điền (kể cả ngày cũ hơn) rồi cắt còn tối đa 14 dòng cho gọn;
+    // ngày cũ hơn nữa vẫn điền được qua ô chọn ngày bên dưới bảng.
+    const merged = [...new Set([...span, ...usedDates])].sort().reverse().slice(0, 14)
     setDates(merged)
     // SP đã từng điền + SP đang bán nhiều nhất, tối đa 8 dòng cho gọn.
     const used = new Set<string>()
