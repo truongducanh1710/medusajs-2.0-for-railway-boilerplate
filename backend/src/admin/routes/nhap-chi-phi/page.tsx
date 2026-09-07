@@ -924,6 +924,34 @@ function TongHopTab() {
   const missing: any[] = data?.missing ?? []
   const noCode: any[] = data?.no_code ?? []
   const noCodeTotal: number = Number(data?.no_code_total ?? 0)
+
+  // Xoay danh sách thành lưới NGÀY × KÊNH: mỗi ngày một dòng nhỏ, mỗi kênh một cột,
+  // để nhìn hết cả tháng trong một màn hình thay vì cuộn qua từng dòng rời.
+  const ncCols = (() => {
+    const m = new Map<string, any>()
+    for (const r of noCode) {
+      const key = `${r.market}|${r.platform}|${r.shop ?? ""}`
+      if (!m.has(key)) {
+        m.set(key, {
+          key, market: r.market, platform: r.platform, shop: r.shop ?? "",
+          platformLabel: PLATFORMS.find(x => x.key === r.platform)?.label ?? r.platform,
+          total: 0,
+        })
+      }
+      m.get(key).total += Number(r.cost_khong_ma || 0)
+    }
+    // Kênh nào thiếu nhiều tiền nhất đứng trước — cái cần sửa gấp nằm ngay bên trái.
+    return [...m.values()].sort((a, b) => b.total - a.total)
+  })()
+  const ncGrid: Record<string, Record<string, { kh: number; ca: number }>> = {}
+  for (const r of noCode) {
+    const key = `${r.market}|${r.platform}|${r.shop ?? ""}`
+    ;(ncGrid[r.date] ??= {})[key] = {
+      kh: Number(r.cost_khong_ma || 0),
+      ca: Number(r.cost_ca_ngay || 0),
+    }
+  }
+  const ncDates = Object.keys(ncGrid).sort().reverse()
   const grand = rows.reduce((s, r) => s + Number(r.cost || 0), 0)
   const isAdminView = !!data?.is_admin
 
@@ -974,56 +1002,73 @@ function TongHopTab() {
         <span className="text-violet-700"> · {rows.length} dòng đã điền</span>
       </div>
 
-      {/* Đã điền nhưng THIẾU MÃ SP — nguy hiểm hơn "chưa điền" vì báo cáo vẫn trừ tiền,
-          chỉ là trừ nhầm vào vài SP nhỏ và đẩy chúng thành lỗ giả. */}
+      {/* Đã điền nhưng THIẾU MÃ SP — lưới NGÀY × KÊNH, mỗi ngày một dòng nhỏ để nhìn
+          hết cả tháng trong một màn hình, không phải cuộn qua từng dòng rời. */}
       {noCode.length > 0 && (
         <div className="bg-white border-2 border-amber-300 rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 border-b bg-amber-50 flex items-center justify-between gap-3 flex-wrap">
             <div>
               <h3 className="font-semibold text-amber-900 text-sm">⚠ Đã điền nhưng chưa chọn sản phẩm</h3>
               <p className="text-[11px] text-amber-700 mt-0.5">
-                Tiền không gắn mã SP sẽ bị chia cho các SP chưa có ads riêng — dồn vào vài SP nhỏ
-                thì %Ads của chúng vọt lên hàng trăm phần trăm. Bấm vào dòng để mở đúng ngày và điền lại.
+                Tiền không gắn mã SP bị chia cho các SP chưa có ads riêng — dồn vào vài SP nhỏ
+                thì %Ads của chúng vọt lên hàng trăm phần trăm. Ô trống = ngày đó đã gắn mã đủ.
               </p>
             </div>
             <span className="rounded-md bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">
-              {fmtMoney(noCodeTotal)} · {noCode.length} dòng
+              {fmtMoney(noCodeTotal)} · {noCode.length} ngày-kênh
             </span>
           </div>
-          <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead className="bg-gray-50 border-b text-[11px] text-gray-500">
                 <tr>
-                  <th className="px-4 py-2 text-left">Ngày</th>
-                  <th className="px-4 py-2 text-left">TT</th>
-                  <th className="px-4 py-2 text-left">Sàn</th>
-                  <th className="px-4 py-2 text-left">Shop</th>
-                  <th className="px-4 py-2 text-right">Tiền chưa gắn mã</th>
-                  <th className="px-4 py-2 text-right">Cả ngày</th>
-                  <th className="px-4 py-2 text-right">Tỷ trọng</th>
+                  <th className="px-2 py-1.5 text-left sticky left-0 bg-gray-50">Ngày</th>
+                  {ncCols.map(c => (
+                    <th key={c.key} className="px-2 py-1.5 text-right whitespace-nowrap"
+                      title={`${c.market} · ${c.platformLabel} · ${c.shop}`}>
+                      <div>{c.platformLabel}</div>
+                      <div className="font-normal text-gray-400 truncate max-w-[110px]">{c.shop || "—"}</div>
+                    </th>
+                  ))}
+                  <th className="px-2 py-1.5 text-right whitespace-nowrap bg-amber-50">Cả ngày</th>
                 </tr>
               </thead>
-              <tbody className="divide-y text-gray-900">
-                {noCode.map((r: any, i: number) => {
-                  const ca = Number(r.cost_ca_ngay || 0)
-                  const kh = Number(r.cost_khong_ma || 0)
-                  const pct = ca > 0 ? Math.round(kh / ca * 100) : 100
-                  const p = PLATFORMS.find(x => x.key === r.platform)
+              <tbody className="divide-y">
+                {ncDates.map(date => {
+                  const rowTot = ncCols.reduce((a, c) => a + (ncGrid[date]?.[c.key]?.kh ?? 0), 0)
                   return (
-                    <tr key={`nc-${i}`} className={pct >= 80 ? "bg-amber-50/60" : ""}>
-                      <td className="px-4 py-2 font-mono text-[12.5px]">{r.date}</td>
-                      <td className="px-4 py-2 text-gray-600">{r.market}</td>
-                      <td className="px-4 py-2">{p?.label ?? r.platform}</td>
-                      <td className="px-4 py-2 text-gray-600 max-w-[220px] truncate" title={r.shop}>{r.shop || "—"}</td>
-                      <td className="px-4 py-2 text-right font-semibold text-amber-700">{fmtMoney(kh)}</td>
-                      <td className="px-4 py-2 text-right text-gray-500">{fmtMoney(ca)}</td>
-                      <td className={`px-4 py-2 text-right font-semibold ${
-                        pct >= 80 ? "text-red-600" : pct >= 40 ? "text-amber-600" : "text-gray-500"}`}>{pct}%</td>
+                    <tr key={date} className="hover:bg-gray-50">
+                      <td className="px-2 py-1 font-mono whitespace-nowrap sticky left-0 bg-white">
+                        {date.slice(8)}/{date.slice(5, 7)}
+                      </td>
+                      {ncCols.map(c => {
+                        const cell = ncGrid[date]?.[c.key]
+                        if (!cell) return <td key={c.key} className="px-2 py-1 text-right text-gray-200">·</td>
+                        const pct = cell.ca > 0 ? Math.round(cell.kh / cell.ca * 100) : 100
+                        return (
+                          <td key={c.key}
+                            title={`Chưa gắn mã ${fmtMoney(cell.kh)} / cả ngày ${fmtMoney(cell.ca)} = ${pct}%`}
+                            className={`px-2 py-1 text-right whitespace-nowrap font-medium ${
+                              pct >= 40 ? "bg-red-100 text-red-700"
+                                : pct >= 10 ? "bg-amber-100 text-amber-800"
+                                : "text-gray-500"}`}>
+                            {fmtMoney(cell.kh)}
+                          </td>
+                        )
+                      })}
+                      <td className="px-2 py-1 text-right font-semibold bg-amber-50/60 whitespace-nowrap">
+                        {rowTot > 0 ? fmtMoney(rowTot) : <span className="text-gray-300">—</span>}
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="px-4 py-2 border-t bg-gray-50 text-[11px] text-gray-500">
+            Nền <b className="text-red-700">đỏ</b> = từ 40% tiền trong ngày chưa gắn mã ·
+            {" "}<b className="text-amber-800">vàng</b> = 10–40% · dấu <b>·</b> = ngày đó đã gắn mã đủ.
+            Di chuột lên ô để xem chi tiết.
           </div>
         </div>
       )}
