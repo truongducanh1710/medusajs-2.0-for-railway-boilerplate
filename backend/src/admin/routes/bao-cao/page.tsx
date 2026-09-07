@@ -3986,11 +3986,12 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const shownBase = showMissing ? rowsByPlatform : rowsByPlatform.filter(r => !r.missing_cost)
   // Bộ field đổi theo mode, đúng như bảng theo ngày làm.
   const PM = prodMode === "tt"
-    ? { qty: "qty_tt", orders: "orders_tt", fee: "fee_tt", rev: "revenue_tt", cogs: "cogs_tt",
+    ? { qty: "qty_tt", orders: "orders_tt", fee: "fee_tt", rev: "revenue_tt",
+        gross: "revenue_gross_tt", cogs: "cogs_tt",
         fullfill: "fullfill_tt", lng: "lng_tt", lngAds: "lng_tt_sau_ads",
         lngPct: "lng_tt_sau_ads_pct", adsPct: "ads_tt_pct", cogsPct: "cogs_tt_pct" }
     : { qty: "delivered_qty", orders: "da_nhan", fee: "fee_marketplace", rev: "revenue_delivered",
-        cogs: "cogs", fullfill: "fullfill", lng: "lng", lngAds: "lng_sau_ads",
+        gross: "revenue_gross", cogs: "cogs", fullfill: "fullfill", lng: "lng", lngAds: "lng_sau_ads",
         lngPct: "lng_sau_ads_pct", adsPct: "ads_pct", cogsPct: "cogs_pct" }
   const shown = [...shownBase].sort((a, b) => {
     if (prodSort === "revenue") return Number(b[PM.rev] || 0) - Number(a[PM.rev] || 0)
@@ -4083,6 +4084,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const tAdsNoOrder = adsNoOrder.reduce((a: number, x: any) => a + (Number(x.ads_cost) || 0), 0)
   const tot = {
     qty: sumBy(PM.qty), orders: sumBy(PM.orders), fee: sumBy(PM.fee), rev: sumBy(PM.rev),
+    gross: sumBy(PM.gross),
     cogs: sumBy(PM.cogs), fullfill: sumBy(PM.fullfill),
     ads: sumBy("ads_cost") + tAdsNoOrder,
     // PM.lngAds đã trừ ads của chính dòng đó; ở đây chỉ trừ thêm phần ads mồ côi.
@@ -4096,7 +4098,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const p2 = (part: number, whole: number) =>
     whole > 0 ? Math.round(part / whole * 10000) / 100 : null
   const totCogsPct = p2(tot.cogs, totRevCosted)
-  const totAdsPct = p2(tot.ads, tot.rev)
+  // %Ads chia cho DT TRƯỚC phí sàn — cùng mẫu số với bảng theo ngày.
+  const totAdsPct = p2(tot.ads, tot.gross)
   const totLngPct = p2(tot.lng, totRevCosted)
   // Tỷ lệ đơn chưa giao xong: bộ "thực" bỏ hết doanh thu của những đơn này nhưng ads
   // thì đã tiêu, nên kỳ càng mới thì số lỗ càng phóng đại. Cảnh báo khi đáng kể.
@@ -4670,6 +4673,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <th className="text-left px-4 py-2.5">Sản phẩm</th>
                 <th className="text-right px-3 py-2.5">SL</th>
                 <th className="text-right px-3 py-2.5">Đơn</th>
+                <th className="text-right px-3 py-2.5" title="Tiền khách trả — mẫu số của mọi cột %">DT trước phí sàn</th>
                 <th className="text-right px-3 py-2.5">Phí sàn</th>
                 <th className="text-right px-3 py-2.5">{prodMode === "tt" ? "DT tạm tính" : "DT thực nhận"}</th>
                 <th className="text-right px-3 py-2.5">Giá vốn</th>
@@ -4684,7 +4688,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             </thead>
             <tbody className="divide-y text-gray-900">
               {shown.length === 0 && (
-                <tr><td colSpan={prodPlatform === "all" ? 15 : 14} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+                <tr><td colSpan={prodPlatform === "all" ? 16 : 15} className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
               )}
               {shown.map((r, i) => (
                 <tr key={`${r.platform}-${r.sp_code ?? r.sp_label}-${i}`} className={r.missing_cost ? "bg-amber-50/50" : ""}>
@@ -4702,6 +4706,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[PM.qty])}</td>
                   <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[PM.orders])}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-700">{money(r[PM.gross])}</td>
                   <td className="px-3 py-2.5 text-right text-gray-500">{money(r[PM.fee])}</td>
                   <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r[PM.rev])}</td>
                   <td className="px-3 py-2.5 text-right text-gray-700">{r.missing_cost ? "—" : money(r[PM.cogs])}</td>
@@ -4755,6 +4760,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   <td className="px-3 py-2.5 text-right text-gray-300">—</td>
                   <td className="px-3 py-2.5 text-right text-gray-300">—</td>
                   <td className="px-3 py-2.5 text-right text-gray-300">—</td>
+                  <td className="px-3 py-2.5 text-right text-gray-300">—</td>
                   <td className="px-3 py-2.5 text-right font-semibold text-amber-700">{money(a.ads_cost)}</td>
                   <td className="px-3 py-2.5 text-right text-gray-300">—</td>
                   <td className="px-3 py-2.5 text-right text-gray-300">—</td>
@@ -4775,6 +4781,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono">{fmtNum(tot.qty)}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{fmtNum(tot.orders)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{money(tot.gross)}</td>
                   <td className="px-3 py-2.5 text-right text-gray-600">{money(tot.fee)}</td>
                   <td className="px-3 py-2.5 text-right text-green-700">{money(tot.rev)}</td>
                   <td className="px-3 py-2.5 text-right text-gray-700">{money(tot.cogs)}</td>

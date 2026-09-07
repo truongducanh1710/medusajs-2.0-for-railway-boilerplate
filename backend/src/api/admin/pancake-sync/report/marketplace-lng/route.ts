@@ -526,6 +526,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         orders_tt: g.orders_tt,
         qty_tt: g.qty_tt,
         revenue_tt: g.revenue_tt,
+        // DT TRƯỚC phí sàn = tiền khách trả. Bảng theo ngày lấy cột này làm mẫu số cho
+        // mọi cột %, nên dòng SP phải có nó thì hai bảng mới cho cùng một %Ads.
+        revenue_gross_tt: g.revenue_tt + g.fee_tt,
         fee_tt: g.fee_tt,
         cogs_tt: g.cogs_tt,
         cogs_tt_pct: pct(g.cogs_tt, g.revenue_costed_tt),
@@ -666,13 +669,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         }
       }
       r.ads_cost = ads
-      r.ads_pct = pct(ads, r.revenue_delivered)
+      // Mẫu số là DT TRƯỚC phí sàn — cùng cách bảng theo ngày tính, nếu không hai bảng
+      // cho hai con số %Ads khác nhau trên cùng một khoản tiền (26,5% vs 37,9%).
+      r.ads_pct = pct(ads, (r.revenue_delivered || 0) + (r.fee_marketplace || 0))
       r.lng_sau_ads = r.lng - ads
       r.lng_sau_ads_pct = pct(r.lng - ads, r.revenue_costed)
       // Tạm tính dùng CÙNG khoản ads (ads là chi phí đã tiêu, không phụ thuộc đơn về).
       r.lng_tt_sau_ads = r.lng_tt - ads
       r.lng_tt_sau_ads_pct = pct(r.lng_tt - ads, r.revenue_costed_tt)
-      r.ads_tt_pct = pct(ads, r.revenue_tt)
+      r.ads_tt_pct = pct(ads, r.revenue_gross_tt)
       // SP chưa điền ads riêng: LNG sau ads = LNG, cần nói rõ để không đọc nhầm là lãi.
       r.ads_unassigned = ks.length === 0
     }
@@ -764,8 +769,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         r.ads_cost = (r.ads_cost || 0) + add
         // Đánh dấu để giao diện nói rõ: đây là ads chia đều, không phải số điền riêng.
         r.ads_shop_share = add
-        r.ads_pct = pct(r.ads_cost, r.revenue_delivered)
-        r.ads_tt_pct = pct(r.ads_cost, r.revenue_tt)
+        r.ads_pct = pct(r.ads_cost, (r.revenue_delivered || 0) + (r.fee_marketplace || 0))
+        r.ads_tt_pct = pct(r.ads_cost, r.revenue_gross_tt)
         r.lng_sau_ads = r.lng - r.ads_cost
         r.lng_sau_ads_pct = pct(r.lng_sau_ads, r.revenue_costed)
         r.lng_tt_sau_ads = r.lng_tt - r.ads_cost
