@@ -748,11 +748,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const pool = adsShopLevel[plat] || 0
       if (pool <= 0) continue
       const cand = (result as any[]).filter(r => r.platform === plat && r.ads_unassigned)
-      // Chia theo doanh thu TẠM TÍNH, không phải doanh thu đã giao: kỳ mới hầu như
-      // chưa đơn nào giao xong nên revenue_delivered = 0 ở mọi dòng, base = 0 và cả
-      // khoản ads bị bỏ qua — đúng lỗi làm tổng bảng lệch bảng theo ngày.
+      // Chia theo SỐ ĐƠN, không theo doanh thu: chi phí chung là tiền chạy cho cả shop,
+      // nên đơn nào cũng hưởng như nhau — SP giá cao không vì thế mà gánh nhiều hơn.
+      // Dùng số đơn TẠM TÍNH (gồm đơn đang giao) chứ không phải đơn đã nhận: kỳ mới hầu
+      // như chưa đơn nào giao xong nên đếm đơn đã nhận sẽ ra 0 ở mọi dòng, base = 0 và
+      // cả khoản ads bị bỏ qua — đúng lỗi từng làm tổng bảng lệch bảng theo ngày.
       const weightOf = (r: any) =>
-        Math.max(0, Number(r.revenue_tt) || 0) || Math.max(0, Number(r.revenue_delivered) || 0)
+        Math.max(0, Number(r.orders_tt) || 0) || Math.max(0, Number(r.da_nhan) || 0)
       const base = cand.reduce((a, r) => a + weightOf(r), 0)
       // Không có gì để chia theo (SP nào cũng doanh thu 0) — vẫn phải gánh, chia đều.
       const perRow = cand.length > 0 ? pool / cand.length : 0
