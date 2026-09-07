@@ -3945,6 +3945,12 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // của cả kỳ, ra lỗ giả rất lớn.
   const [prodMode, setProdMode] = useState<"tt" | "thuc">("tt")
   const [prodPlatform, setProdPlatform] = useState<"all" | "tiktok" | "shopee">("all")
+  // Hook PHAI khai truoc cac return som ben duoi (loading/err/!data) — de sau se lam
+  // so luong hook thay doi giua cac lan render va React nem loi, trang trang hoan toan.
+  const [pxBien, setPxBien] = useState("10")
+  const [pxPhi, setPxPhi] = useState("30")
+  const [pxFullfill, setPxFullfill] = useState("6000")
+  const [pxEdit, setPxEdit] = useState<Record<string, { ads?: string; hoan?: string }>>({})
   const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
   // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
   // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
@@ -4020,10 +4026,6 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // Giải ngược công thức LNG tạm tính để tìm giá bán đạt biên mong muốn. Hai tham số
   // nhân sự chỉnh nhiều nhất là %Ads và %Hoàn nên cho sửa ngay trên từng dòng; giá trị
   // ban đầu lấy đúng số đang chạy thật của SP đó.
-  const [pxBien, setPxBien] = useState("10")
-  const [pxPhi, setPxPhi] = useState("30")
-  const [pxFullfill, setPxFullfill] = useState("6000")
-  const [pxEdit, setPxEdit] = useState<Record<string, { ads?: string; hoan?: string }>>({})
   const bienN = Number(pxBien) || 0
   const phiN = Number(pxPhi) || 0
   const fullfillN = Number(pxFullfill) || 0
