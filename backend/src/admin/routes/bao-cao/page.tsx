@@ -3817,6 +3817,37 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const adsNoOrder: any[] = (data?.ads_no_order ?? [])
     .filter((a: any) => prodPlatform === "all" || a.platform === prodPlatform)
 
+  // ── Bảng hoàn huỷ ────────────────────────────────────────────────────────────
+  // Dùng chính rows của báo cáo (đã gộp biến thể) và cùng bộ lọc sàn với bảng LNG.
+  // %Hoàn chia cho đơn ĐÃ NGÃ NGŨ: đơn đang giao chưa biết kết cục, để vào mẫu số
+  // sẽ làm tỷ lệ thấp giả ở kỳ mới. %Huỷ chia tổng đơn vì huỷ xảy ra trước khi gửi.
+  const r1 = (v: number) => Math.round(v * 10) / 10
+  const hoanRows = rowsByPlatform
+    .map((r: any) => {
+      const hoan = (r.da_hoan || 0) + (r.dang_hoan || 0)
+      const chot = (r.da_nhan || 0) + hoan
+      const tot = r.total_orders || 0
+      return {
+        ...r, hoan, chot,
+        dang_giao: Math.max(0, tot - chot - (r.da_huy || 0)),
+        pctHoan: chot > 0 ? r1(hoan / chot * 100) : 0,
+        pctHuy: tot > 0 ? r1((r.da_huy || 0) / tot * 100) : 0,
+        pctHoanHuy: tot > 0 ? r1((hoan + (r.da_huy || 0)) / tot * 100) : 0,
+      }
+    })
+    .filter((r: any) => r.total_orders > 0)
+    .sort((a: any, b: any) => b.hoan - a.hoan || b.total_orders - a.total_orders)
+  const hoanTot = (() => {
+    const sum = (k: string) => hoanRows.reduce((a: number, r: any) => a + (Number(r[k]) || 0), 0)
+    const hoan = sum("hoan"), chot = sum("chot"), tot = sum("total_orders"), huy = sum("da_huy")
+    return {
+      total_orders: tot, da_nhan: sum("da_nhan"), dang_giao: sum("dang_giao"), hoan, da_huy: huy,
+      pctHoan: chot > 0 ? r1(hoan / chot * 100) : 0,
+      pctHuy: tot > 0 ? r1(huy / tot * 100) : 0,
+      pctHoanHuy: tot > 0 ? r1((hoan + huy) / tot * 100) : 0,
+    }
+  })()
+
   // Dòng tổng. Tiền thì cộng, còn % phải tính LẠI từ tổng — cộng trung bình các dòng
   // ra số vô nghĩa (SP bán 2 cái nặng bằng SP bán 6.000 cái). Ads của SP không ra đơn
   // cộng vào tổng ads và trừ thẳng vào LNG, để tổng khớp bảng theo ngày.
@@ -4553,6 +4584,104 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               sang SP khác nên tổng bảng khớp bảng theo ngày.</>
           )}
           {" "}Ship do sàn trả (không tính). Fullfill 6.000đ/đơn.
+        </div>
+      </div>
+
+      {/* Hoàn huỷ theo sản phẩm — cùng cách gộp biến thể và cùng bộ lọc sàn với bảng LNG
+          ở trên, nên hai bảng đọc được cạnh nhau. Tách riêng vì bảng LNG đã quá nhiều cột. */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-800">Hoàn huỷ theo sản phẩm</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              %Hoàn tính trên đơn đã ngã ngũ (đã nhận + hoàn) — đơn đang giao chưa biết kết quả nên
+              không nằm ở mẫu số. %Huỷ tính trên tổng đơn vì đơn bị huỷ trước khi gửi.
+            </p>
+          </div>
+          {hoanRows.length > 0 && (
+            <div className="text-xs text-gray-600">
+              Toàn kỳ: <b className={hoanTot.pctHoan > 10 ? "text-red-600" : "text-gray-800"}>
+                {hoanTot.pctHoan}% hoàn</b>
+              {" · "}<b>{hoanTot.pctHuy}% huỷ</b>
+            </div>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b text-xs text-gray-500">
+              <tr>
+                {prodPlatform === "all" && <th className="text-left px-4 py-2.5">Sàn</th>}
+                <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                <th className="text-right px-3 py-2.5">Tổng đơn</th>
+                <th className="text-right px-3 py-2.5">Đã nhận</th>
+                <th className="text-right px-3 py-2.5">Đang giao</th>
+                <th className="text-right px-3 py-2.5">Hoàn</th>
+                <th className="text-right px-3 py-2.5 bg-red-50">%Hoàn</th>
+                <th className="text-right px-3 py-2.5">Huỷ</th>
+                <th className="text-right px-3 py-2.5">%Huỷ</th>
+                <th className="text-right px-3 py-2.5">Hoàn+Huỷ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-gray-900">
+              {hoanRows.length === 0 && (
+                <tr><td colSpan={prodPlatform === "all" ? 10 : 9}
+                  className="px-4 py-6 text-center text-gray-400 text-sm">Không có dữ liệu</td></tr>
+              )}
+              {hoanRows.map((r: any, i: number) => (
+                <tr key={`hh-${r.platform}-${r.sp_code ?? r.sp_label}-${i}`}
+                  className={r.pctHoan >= 20 ? "bg-red-50/50" : ""}>
+                  {prodPlatform === "all" && (
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                    </td>
+                  )}
+                  <td className="px-4 py-2.5 max-w-[260px]">
+                    <div className="truncate text-gray-900" title={r.sp_label}>
+                      {r.pctHoan >= 20 && <span title="Tỷ lệ hoàn cao bất thường">⚠ </span>}
+                      {r.sp_label}
+                    </div>
+                    {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.total_orders)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-600">{fmtNum(r.da_nhan)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-400">{fmtNum(r.dang_giao)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r.hoan)}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold bg-red-50/60 ${
+                    r.pctHoan >= 20 ? "text-red-600" : r.pctHoan >= 10 ? "text-amber-600" : "text-gray-700"}`}>
+                    {r.chot > 0 ? `${r.pctHoan}%` : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-600">{fmtNum(r.da_huy)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-500">
+                    {r.total_orders > 0 ? `${r.pctHuy}%` : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-gray-500">
+                    {r.total_orders > 0 ? `${r.pctHoanHuy}%` : <span className="text-gray-300">—</span>}
+                  </td>
+                </tr>
+              ))}
+              {hoanRows.length > 0 && (
+                <tr className="bg-violet-50 font-semibold border-t-2 border-violet-200">
+                  {prodPlatform === "all" && <td className="px-4 py-2.5" />}
+                  <td className="px-4 py-2.5 text-gray-900">TỔNG</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(hoanTot.total_orders)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(hoanTot.da_nhan)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-gray-500">{fmtNum(hoanTot.dang_giao)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(hoanTot.hoan)}</td>
+                  <td className="px-3 py-2.5 text-right bg-red-100/60 text-red-700">{hoanTot.pctHoan}%</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{fmtNum(hoanTot.da_huy)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600">{hoanTot.pctHuy}%</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600">{hoanTot.pctHoanHuy}%</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500 leading-relaxed">
+          Dòng nền đỏ = tỷ lệ hoàn từ <b>20%</b> trở lên. Hoàn gồm cả đơn <b>đang hoàn</b> (hàng
+          đang quay về kho) vì kết cục đã rõ. Biến thể của cùng một mặt hàng được gộp chung,
+          giống bảng LNG phía trên.
         </div>
       </div>
     </div>
