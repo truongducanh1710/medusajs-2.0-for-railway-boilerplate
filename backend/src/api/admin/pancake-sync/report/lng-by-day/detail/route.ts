@@ -251,15 +251,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         donKhongCoAds += x.r.tong_don
       }
     }
-    // Camp không rõ SP (tên không theo quy ước + Google Ads) chia đều cho các đơn của
-    // những SP chưa có camp riêng — không dồn vào SP đã có ads đo được.
-    const adsChungMoiDon = donKhongCoAds > 0 ? adsKhongRoSP / donKhongCoAds : 0
+    // Camp chạy cho SP mà ngày đó KHÔNG bán được đơn nào: prefix có tiền nhưng không
+    // dòng nào mang nó, tiền sẽ rơi mất khỏi bảng. Dồn vào nhóm chung để tổng khớp thực
+    // chi — và đó cũng là tín hiệu đáng biết: camp tiêu tiền mà không ra đơn.
+    for (const [px, v] of Object.entries(adsByPrefix)) {
+      if (!(donTheoPrefix[px] > 0)) adsKhongRoSP += v
+    }
+    // Camp không rõ SP (tên không theo quy ước + Google Ads) ưu tiên chia cho các SP
+    // CHƯA có camp riêng. Nhưng khi mọi SP đều đã có camp riêng thì nhóm đó rỗng và
+    // khoản này rơi mất — ngày 01/09 có 1.017.212đ biến khỏi bảng. Lúc đó chia cho
+    // TOÀN BỘ đơn để tiền không mất, tổng vẫn khớp thực chi.
+    const donNhanAdsChung = donKhongCoAds > 0 ? donKhongCoAds : donCoSP
+    const adsChungMoiDon = donNhanAdsChung > 0 ? adsKhongRoSP / donNhanAdsChung : 0
+    const chiaChungChoTatCa = donKhongCoAds === 0
 
     const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, cogsTamTinhRieng, ship }) => {
       const adsCuaSP = adsRieng[r.sp_key]
-      const ads = adsCuaSP != null
-        ? Math.round(adsCuaSP)                       // camp riêng: SP gánh trọn
-        : Math.round(adsChungMoiDon * r.tong_don)    // chưa có camp riêng: chia đều theo đơn
+      const ads = Math.round(
+        (adsCuaSP ?? 0)
+        + ((adsCuaSP == null || chiaChungChoTatCa) ? adsChungMoiDon * r.tong_don : 0))
       // Giá vốn thật trọn đơn (gồm quà tặng kèm) — không kéo về %vốn trung bình ngày,
       // vì làm thế thì mọi SP ra cùng %GV và bảng không nói được SP nào lỗ.
       const cogsTT = cogsTamTinhRieng
@@ -339,9 +349,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsMoiDonTheoSP: Record<string, number> = {}
     for (const x of tmp) {
       const v = adsRieng[x.r.sp_key]
-      adsMoiDonTheoSP[x.r.sp_key] = x.r.tong_don > 0
-        ? (v != null ? v / x.r.tong_don : adsChungMoiDon)
-        : 0
+      const rieng = x.r.tong_don > 0 && v != null ? v / x.r.tong_don : 0
+      const chung = (v == null || chiaChungChoTatCa) ? adsChungMoiDon : 0
+      adsMoiDonTheoSP[x.r.sp_key] = rieng + chung
     }
     const donTmp = orderRows.map((o: any) => {
       const daNhan = o.status === 3
