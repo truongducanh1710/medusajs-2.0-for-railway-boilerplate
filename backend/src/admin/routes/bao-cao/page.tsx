@@ -2218,6 +2218,8 @@ function PlatformLngTable({ range, market, sub, heads, buildCells }: {
 // thấp/âm (đơn chưa kịp giao xong) còn tạm tính đã dự phóng nên phản ánh đúng hơn.
 function LngTrendChart({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<{ rows: any[]; not_supported?: boolean } | null>(null)
+  // Ngày đang mở chi tiết — bấm vào dòng để soi SP/đơn nào kéo LNG xuống.
+  const [detailDay, setDetailDay] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const fmt = useFmtMoney()
 
@@ -2276,7 +2278,9 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
               const neg = r.lng_tam_tinh < 0
               const w = Math.round(Math.abs(r.lng_tam_tinh) / maxAbs * 100)
               return (
-                <tr key={r.date} className="hover:bg-gray-50 text-sm">
+                <tr key={r.date} className="hover:bg-violet-50/60 text-sm cursor-pointer"
+                  onClick={() => setDetailDay(r)}
+                  title="Bấm để xem chi tiết theo sản phẩm / theo đơn">
                   <td className="px-3 py-2 whitespace-nowrap sticky left-0 bg-white border-r border-gray-100 font-medium text-gray-700">{r.date.slice(5)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(r.revenue_mkt)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: carePctColor(r.ads_pct_of_revenue_mkt) }}>
@@ -2302,6 +2306,226 @@ function LngTrendChart({ range, market }: { range: DateRange; market: Market }) 
       </div>
       <div className="px-5 py-2 border-t text-[10px] text-gray-400">
         LNG thực = DT đã nhận − (giá vốn + vận chuyển + ads + fullfill). Ngày gần nhất LNG thực thấp/âm là bình thường (đơn chưa kịp giao xong) — xem cột tạm tính.
+        {" "}<b>Bấm vào 1 dòng ngày</b> để xem chi tiết theo sản phẩm / theo đơn.
+      </div>
+      {detailDay && (
+        <LngDayDetailModal date={detailDay.date} market={market} dayRow={detailDay}
+          onClose={() => setDetailDay(null)} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Chi tiết LNG của MỘT NGÀY — mở khi bấm vào dòng ở bảng "LNG theo ngày".
+ *
+ * Hai tab cùng một ngày, cùng bộ lọc, cùng tham số dự phóng nên tổng khớp nhau và khớp
+ * dòng ngày: "Theo sản phẩm" trả lời món nào lỗ, "Theo đơn" để soi ca cụ thể.
+ *
+ * dayRow truyền vào mang sẵn 3 tham số dự phóng (_ty_le_nhan/_pct_von/_pct_ship) mà bảng
+ * ngày đã dùng — gửi lại cho API để hai bên không tính lệch nhau.
+ */
+function LngDayDetailModal({ date, market, dayRow, onClose }: {
+  date: string; market: Market; dayRow: any; onClose: () => void
+}) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<"sp" | "don">("sp")
+
+  useEffect(() => {
+    const q = new URLSearchParams({ date, market })
+    if (dayRow?._ty_le_nhan != null) q.set("ty_le_nhan", String(dayRow._ty_le_nhan))
+    if (dayRow?._pct_von != null) q.set("pct_von", String(dayRow._pct_von))
+    if (dayRow?._pct_ship != null) q.set("pct_ship", String(dayRow._pct_ship))
+    setLoading(true)
+    apiJson(`/admin/pancake-sync/report/lng-by-day/detail?${q}`)
+      .then(setData)
+      .finally(() => setLoading(false))
+  }, [date, market])
+
+  const money = (n: any) => fmtVND(Number(n || 0))
+  const sp: any[] = data?.by_product ?? []
+  const don: any[] = data?.by_order ?? []
+  const t = data?.totals ?? {}
+  // Lệch so với dòng ngày — nếu có thì nói ra, không giấu.
+  const lech = dayRow?.lng_tam_tinh != null && t.lng_tam_tinh != null
+    ? Math.round(dayRow.lng_tam_tinh - t.lng_tam_tinh) : 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
+      onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl my-8" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-gray-800">
+              Chi tiết LNG — ngày {date.slice(8)}/{date.slice(5, 7)}
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              LNG tạm tính = DT tạm tính − giá vốn − vận chuyển − ads − fullfill.
+              {data?.ty_le_nhan != null && <> Tỷ lệ nhận dự phóng: <b>{data.ty_le_nhan}%</b>.</>}
+              {data?.ads_ngay > 0 && <> Ads cả ngày <b>{money(data.ads_ngay)}</b> chia theo doanh thu.</>}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
+        </div>
+
+        <div className="px-5 py-2.5 border-b flex items-center gap-2 flex-wrap">
+          {([["sp", `Theo sản phẩm (${sp.length})`], ["don", `Theo đơn (${don.length})`]] as const).map(([k, lb]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`px-3 py-1 text-xs rounded-md font-semibold ${
+                tab === k ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              {lb}
+            </button>
+          ))}
+          {loading && <span className="text-xs text-gray-400 animate-pulse">Đang tải…</span>}
+          {!loading && lech !== 0 && (
+            <span className="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-0.5">
+              ⚠ lệch {money(lech)} so với dòng ngày (làm tròn khi chia)
+            </span>
+          )}
+        </div>
+
+        <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
+          {tab === "sp" ? (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+                <tr>
+                  <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                  <th className="text-right px-3 py-2.5">Đơn</th>
+                  <th className="text-right px-3 py-2.5">Nhận</th>
+                  <th className="text-right px-3 py-2.5">Hoàn</th>
+                  <th className="text-right px-3 py-2.5">DT tạm tính</th>
+                  <th className="text-right px-3 py-2.5">Giá vốn</th>
+                  <th className="text-right px-3 py-2.5">%GV</th>
+                  <th className="text-right px-3 py-2.5">Vận chuyển</th>
+                  <th className="text-right px-3 py-2.5">Ads</th>
+                  <th className="text-right px-3 py-2.5">Fullfill</th>
+                  <th className="text-right px-3 py-2.5 bg-violet-50">LNG tạm tính</th>
+                  <th className="text-right px-3 py-2.5 bg-violet-50">%LNG</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-900">
+                {!loading && sp.length === 0 && (
+                  <tr><td colSpan={12} className="px-4 py-6 text-center text-gray-400">Không có dữ liệu</td></tr>
+                )}
+                {sp.map((r, i) => (
+                  <tr key={i} className={r.lng_tam_tinh < 0 ? "bg-red-50/50" : ""}>
+                    <td className="px-4 py-2 max-w-[240px]">
+                      <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
+                      {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                      {r.ty_le_hoan >= 20 && (
+                        <div className="text-[10.5px] text-amber-600">⚠ hoàn {r.ty_le_hoan}%</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-700">{fmtNum(r.tong_don)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-500">{fmtNum(r.da_nhan)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-500">{fmtNum(r.hoan)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-green-700">{money(r.dt_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-gray-700">{money(r.cogs_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-gray-400">{r.cogs_pct}%</td>
+                    <td className="px-3 py-2 text-right text-amber-700">{money(r.ship_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-amber-700">{money(r.ads)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500">{money(r.fullfill)}</td>
+                    <td className={`px-3 py-2 text-right font-bold bg-violet-50/60 ${
+                      r.lng_tam_tinh >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                      {money(r.lng_tam_tinh)}
+                    </td>
+                    <td className={`px-3 py-2 text-right bg-violet-50/60 ${
+                      r.lng_tam_tinh >= 0 ? "text-green-600" : "text-red-600"}`}>{r.lng_pct}%</td>
+                  </tr>
+                ))}
+                {!loading && sp.length > 0 && (
+                  <tr className="bg-violet-50 font-semibold border-t-2 border-violet-200">
+                    <td className="px-4 py-2.5 text-gray-900">TỔNG</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{fmtNum(t.tong_don)}</td>
+                    <td className="px-3 py-2.5" colSpan={2} />
+                    <td className="px-3 py-2.5 text-right text-green-700">{money(t.dt_tam_tinh)}</td>
+                    <td className="px-3 py-2.5 text-right">{money(t.cogs_tam_tinh)}</td>
+                    <td className="px-3 py-2.5" />
+                    <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ship_tam_tinh)}</td>
+                    <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ads)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-600">{money(t.fullfill)}</td>
+                    <td className={`px-3 py-2.5 text-right font-bold bg-violet-100/70 ${
+                      (t.lng_tam_tinh ?? 0) >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                      {money(t.lng_tam_tinh)}
+                    </td>
+                    <td className="px-3 py-2.5 bg-violet-100/70" />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+                <tr>
+                  <th className="text-left px-4 py-2.5">Đơn</th>
+                  <th className="text-left px-3 py-2.5">Trạng thái</th>
+                  <th className="text-left px-3 py-2.5">Sản phẩm</th>
+                  <th className="text-right px-3 py-2.5">DT tạm tính</th>
+                  <th className="text-right px-3 py-2.5">Giá vốn</th>
+                  <th className="text-right px-3 py-2.5">Vận chuyển</th>
+                  <th className="text-right px-3 py-2.5">Ads</th>
+                  <th className="text-right px-3 py-2.5">Fullfill</th>
+                  <th className="text-right px-3 py-2.5 bg-violet-50">LNG tạm tính</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-900">
+                {!loading && don.length === 0 && (
+                  <tr><td colSpan={9} className="px-4 py-6 text-center text-gray-400">Không có dữ liệu</td></tr>
+                )}
+                {don.map((o, i) => (
+                  <tr key={i} className={o.lng_tam_tinh < 0 ? "bg-red-50/50" : ""}>
+                    <td className="px-4 py-2">
+                      <div className="font-mono text-[12px] text-gray-900">{o.pos_id ?? o.order_id}</div>
+                      <div className="text-[10.5px] text-gray-400">
+                        {o.customer_name || "—"}{o.province ? ` · ${o.province}` : ""}
+                        {o.sale_name ? ` · ${o.sale_name}` : ""}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-[12px] text-gray-600 whitespace-nowrap">{o.status_name || o.status}</td>
+                    <td className="px-3 py-2 max-w-[260px]">
+                      {(o.san_pham ?? []).map((x: any, j: number) => (
+                        <div key={j} className="truncate text-[12px] text-gray-700" title={x.label}>
+                          {x.qty > 1 && <b>{x.qty}× </b>}{x.label}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-green-700">{money(o.dt_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-gray-700">{money(o.cogs_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-amber-700">{money(o.ship_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-amber-700">{money(o.ads)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500">{money(o.fullfill)}</td>
+                    <td className={`px-3 py-2 text-right font-bold bg-violet-50/60 ${
+                      o.lng_tam_tinh >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                      {money(o.lng_tam_tinh)}
+                    </td>
+                  </tr>
+                ))}
+                {!loading && don.length > 0 && (
+                  <tr className="bg-violet-50 font-semibold border-t-2 border-violet-200">
+                    <td className="px-4 py-2.5 text-gray-900" colSpan={3}>TỔNG {fmtNum(t.tong_don)} đơn</td>
+                    <td className="px-3 py-2.5 text-right text-green-700">{money(t.dt_tam_tinh)}</td>
+                    <td className="px-3 py-2.5 text-right">{money(t.cogs_tam_tinh)}</td>
+                    <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ship_tam_tinh)}</td>
+                    <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ads)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-600">{money(t.fullfill)}</td>
+                    <td className={`px-3 py-2.5 text-right font-bold bg-violet-100/70 ${
+                      (t.lng_tam_tinh ?? 0) >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                      {money(t.lng_tam_tinh)}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="px-5 py-2.5 border-t bg-gray-50 text-[11px] text-gray-500 leading-relaxed">
+          Hai tab cùng một ngày nên <b>tổng khớp nhau</b> và khớp dòng ngày.
+          {" "}Ads ở kênh này chỉ đo được ở mức ngày nên được <b>chia theo doanh thu</b> —
+          không phải chi phí đo riêng cho từng SP/đơn.
+          {" "}Đơn chưa giao xong được dự phóng theo tỷ lệ nhận, nên LNG là <b>tạm tính</b>.
+        </div>
       </div>
     </div>
   )
