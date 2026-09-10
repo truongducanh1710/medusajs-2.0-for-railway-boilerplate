@@ -201,6 +201,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         lng_pct: revTamTinh > 0 ? Math.round(lngTamTinh / revTamTinh * 1000) / 10 : 0,
         lng_thuc_pct: revDeliv > 0 ? Math.round(lngThuc / revDeliv * 1000) / 10 : 0,
         roas: ads > 0 ? Math.round(revTamTinh / ads * 100) / 100 : null,
+        // Ba tham số dự phóng đã dùng cho ngày này — trang chi tiết nhận lại đúng chúng
+        // để tổng khớp dòng này tuyệt đối. Tính lại bên đó sẽ ra số khác vì quy tắc
+        // "ngày chưa chín thì mượn tỷ lệ kỳ" phụ thuộc cả kỳ, không suy ra từ một ngày.
+        _ty_le_nhan: tyLeNhan,
+        _pct_von: pctVon,
+        _pct_ship: pctShip,
       }
     })
 
