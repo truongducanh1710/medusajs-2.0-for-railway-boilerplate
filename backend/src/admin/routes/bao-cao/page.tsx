@@ -3681,6 +3681,7 @@ function DayOrdersModal({
   // Phản hồi "đã copy" cho ID vừa bấm — nhân sự copy liên tục nhiều đơn nên cần biết
   // cái nào vừa lấy. Tự tắt sau 1,2s.
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [tab, setTab] = useState<"don" | "sp">("don")
   const copyId = (v: string) => {
     navigator.clipboard?.writeText(v).then(() => {
       setCopiedId(v)
@@ -3717,6 +3718,56 @@ function DayOrdersModal({
 
   const orders: any[] = data?.orders ?? []
   const t = data?.totals ?? {}
+
+  // Gộp theo SẢN PHẨM ngay tại đây từ chính danh sách đơn — không gọi API riêng, nên
+  // tổng hai tab luôn khớp nhau và khớp thẻ tổng phía trên.
+  //
+  // Đơn nhiều SP: doanh thu và phí sàn đã được API chia sẵn cho từng dòng hàng
+  // (it.revenue), còn ads/fullfill tính theo ĐƠN nên chia theo tỷ trọng doanh thu dòng
+  // để không cộng trùng — một đơn 2 món vẫn chỉ tốn một suất fullfill.
+  const byProduct = (() => {
+    const m = new Map<string, any>()
+    for (const o of orders) {
+      const items: any[] = Array.isArray(o.items) ? o.items : []
+      const tongRev = items.reduce((a, it) => a + (Number(it.revenue) || 0), 0)
+      for (const it of items) {
+        const key = it.sp_code || it.sp_label || "CHƯA RÕ SP"
+        if (!m.has(key)) {
+          m.set(key, {
+            key, sp_code: it.sp_code ?? null, sp_label: it.sp_label ?? "CHƯA RÕ SP",
+            don: new Set<string>(), qty: 0, revenue: 0, revenue_gross: 0,
+            fee: 0, cogs: 0, ads: 0, fullfill: 0, missing_cost: false,
+          })
+        }
+        const g = m.get(key)
+        // Tỷ trọng dòng trong đơn — dùng chia các khoản tính theo đơn.
+        const w = tongRev > 0 ? (Number(it.revenue) || 0) / tongRev : 1 / (items.length || 1)
+        g.don.add(String(o.order_id))
+        g.qty += Number(it.qty) || 0
+        g.revenue += Number(it.revenue) || 0
+        g.revenue_gross += (Number(o.revenue_gross) || 0) * w
+        g.fee += (Number(o.fee_marketplace) || 0) * w
+        g.cogs += Number(it.item_cost) || 0
+        g.ads += (Number(o.ads_cost) || 0) * w
+        g.fullfill += (Number(o.fullfill) || 0) * w
+        if (it.missing_cost) g.missing_cost = true
+      }
+    }
+    return [...m.values()].map(g => {
+      const rev = Math.round(g.revenue)
+      const cogs = Math.round(g.cogs)
+      const ads = Math.round(g.ads)
+      const ff = Math.round(g.fullfill)
+      const lng = rev - cogs - ff
+      const lngAds = lng - ads
+      const pct = (part: number) => rev > 0 ? Math.round(part / rev * 1000) / 10 : null
+      return {
+        ...g, don: g.don.size, revenue: rev, revenue_gross: Math.round(g.revenue_gross),
+        fee: Math.round(g.fee), cogs, ads, fullfill: ff, lng, lng_sau_ads: lngAds,
+        cogs_pct: pct(cogs), ads_pct: pct(ads), lng_pct: pct(lngAds),
+      }
+    }).sort((a, b) => a.lng_sau_ads - b.lng_sau_ads)
+  })()
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -3811,6 +3862,98 @@ function DayOrdersModal({
               </div>
             )}
 
+            <div className="px-5 py-2 border-b flex items-center gap-2">
+              {([["don", `Theo đơn (${orders.length})`], ["sp", `Theo sản phẩm (${byProduct.length})`]] as const).map(([k, lb]) => (
+                <button key={k} onClick={() => setTab(k)}
+                  className={`px-3 py-1 text-xs rounded-md font-semibold ${
+                    tab === k ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  {lb}
+                </button>
+              ))}
+            </div>
+
+            {tab === "sp" ? (
+              <div className="overflow-auto flex-1">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
+                    <tr>
+                      <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                      <th className="text-right px-3 py-2.5">Đơn</th>
+                      <th className="text-right px-3 py-2.5">SL</th>
+                      <th className="text-right px-3 py-2.5">DT trước phí sàn</th>
+                      <th className="text-right px-3 py-2.5">Phí sàn</th>
+                      <th className="text-right px-3 py-2.5">DT thực nhận</th>
+                      <th className="text-right px-3 py-2.5">Giá vốn</th>
+                      <th className="text-right px-3 py-2.5">%GV</th>
+                      <th className="text-right px-3 py-2.5">Fullfill</th>
+                      <th className="text-right px-3 py-2.5">Ads</th>
+                      <th className="text-right px-3 py-2.5">%Ads</th>
+                      <th className="text-right px-3 py-2.5 bg-violet-50">LNG sau ads</th>
+                      <th className="text-right px-3 py-2.5 bg-violet-50">%LNG</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y text-gray-900">
+                    {byProduct.length === 0 && (
+                      <tr><td colSpan={13} className="px-4 py-6 text-center text-gray-400">Không có dữ liệu</td></tr>
+                    )}
+                    {byProduct.map((r: any) => (
+                      <tr key={r.key} className={r.lng_sau_ads < 0 ? "bg-red-50/50" : ""}>
+                        <td className="px-4 py-2.5 max-w-[240px]">
+                          <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
+                          {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                          {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-700">{fmtNum(r.don)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-500">{fmtNum(r.qty)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-700">{money(r.revenue_gross)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fee)}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700">{money(r.cogs)}</td>
+                        <td className="px-3 py-2.5 text-right">{pctCell(r.cogs_pct)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fullfill)}</td>
+                        <td className="px-3 py-2.5 text-right text-amber-700">{money(r.ads)}</td>
+                        <td className={`px-3 py-2.5 text-right ${
+                          (r.ads_pct ?? 0) >= 50 ? "text-red-600 font-semibold"
+                            : (r.ads_pct ?? 0) >= 35 ? "text-amber-600" : "text-gray-500"}`}>
+                          {r.ads_pct == null ? "—" : `${r.ads_pct}%`}
+                        </td>
+                        <td className={`px-3 py-2.5 text-right font-bold bg-violet-50/60 ${
+                          r.lng_sau_ads >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                          {money(r.lng_sau_ads)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right bg-violet-50/60">
+                          {pctCell(r.lng_pct, r.lng_sau_ads >= 0)}
+                        </td>
+                      </tr>
+                    ))}
+                    {byProduct.length > 0 && (
+                      <tr className="bg-violet-50 font-semibold border-t-2 border-violet-200">
+                        <td className="px-4 py-2.5 text-gray-900">TỔNG</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{fmtNum(t.orders)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{fmtNum(t.qty)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{money(t.revenue_gross)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-600">{money(t.fee_marketplace)}</td>
+                        <td className="px-3 py-2.5 text-right text-green-700">{money(t.revenue)}</td>
+                        <td className="px-3 py-2.5 text-right">{money(t.cogs)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-500">{t.cogs_pct}%</td>
+                        <td className="px-3 py-2.5 text-right text-gray-600">{money(t.fullfill)}</td>
+                        <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ads_cost)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-500">
+                          {t.revenue > 0 ? `${Math.round(t.ads_cost / t.revenue * 1000) / 10}%` : "—"}
+                        </td>
+                        <td className={`px-3 py-2.5 text-right font-bold bg-violet-100/70 ${
+                          (t.lng_sau_ads ?? 0) >= 0 ? "text-violet-700" : "text-red-600"}`}>
+                          {money(t.lng_sau_ads)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right bg-violet-100/70 text-gray-600">
+                          {t.lng_sau_ads_pct}%
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
             <div className="overflow-auto flex-1">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
@@ -3982,6 +4125,7 @@ function DayOrdersModal({
                 )}
               </table>
             </div>
+            )}
 
             {Number(t.revenue_no_cost) > 0 && (
               <div className="px-5 py-2.5 border-t bg-amber-50 text-[12px] text-amber-800">
