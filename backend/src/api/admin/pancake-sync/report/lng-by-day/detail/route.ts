@@ -160,6 +160,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Ads chia theo tỷ trọng DOANH THU TẠM TÍNH — số chia, không phải số đo riêng SP.
     const tongDT = tmp.reduce((a, x) => a + x.dtTamTinh, 0)
+    // Fullfill: mỗi ĐƠN chịu một lần. tong_don ở dòng SP là "số đơn CÓ CHỨA SP này", nên
+    // đơn nhiều SP bị đếm ở mọi dòng và tổng vượt số đơn thật (160 vs 114 ngày 08/09).
+    // Chia theo tỷ trọng doanh thu để tổng khớp đúng số đơn distinct của ngày.
+    const soDonThat = await sql(`
+      SELECT COUNT(*)::int AS n FROM pancake_order
+      WHERE deleted_at IS NULL
+        AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
+        AND NOT ${excludeCond}
+        AND status NOT IN (-2)
+        AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+    `, [date])
+    const fullfillNgay = FULLFILL_PER_ORDER * Number(soDonThat[0]?.n || 0)
 
     const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, pctVon, ship }) => {
       const ads = tongDT > 0 ? Math.round(adsNgay * (dtTamTinh / tongDT)) : 0
@@ -167,7 +180,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const shipTT = pctShipIn != null
         ? Math.round(dtTamTinh * pctShipIn)
         : (dtTamTinh > 0 && dtNhan > 0 ? Math.round(dtTamTinh * (ship / dtNhan)) : ship)
-      const fullfill = FULLFILL_PER_ORDER * r.tong_don
+      const fullfill = tongDT > 0 ? Math.round(fullfillNgay * (dtTamTinh / tongDT)) : 0
       const lngTT = dtTamTinh - (cogsTT + shipTT + ads + fullfill)
       const lngThuc = dtNhan - (cogs + ship + ads + fullfill)
       const chot = r.da_nhan + r.hoan
