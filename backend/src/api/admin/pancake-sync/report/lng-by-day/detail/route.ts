@@ -143,13 +143,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       if (a.prefix) adsByPrefix[String(a.prefix)] = (adsByPrefix[String(a.prefix)] ?? 0) + v
       else adsKhongRoSP += v
     }
-    // Google Ads chưa gắn được SP — luôn nằm ở nhóm không rõ.
+    // Google Ads: bảng mkt_ads_cost_gg không có cột sản phẩm (chỉ ngày + người chạy),
+    // nhưng thực tế GG chỉ chạy CHẢO VÀNG nên gán trọn về mã đó. Khi nào GG chạy thêm
+    // món khác thì phải thêm cột product_code vào bảng thay vì sửa hằng số ở đây.
+    const GG_PRODUCT_PREFIX = "PHVVN026"   // CHẢO VÀNG CHỐNG DÍNH KÈM KHAY HẤP
     const adsGgRows = await sql(
       `SELECT COALESCE(SUM(cost), 0)::bigint AS c FROM mkt_ads_cost_gg
         WHERE deleted_at IS NULL AND date = $1::date`, [date])
-    adsKhongRoSP += Number(adsGgRows[0]?.c || 0)
-    const prefixOf = (code: string | null) =>
-      code ? (String(code).toUpperCase().match(/^(PHVVN\d{2,3})/)?.[1] ?? null) : null
+    const adsGg = Number(adsGgRows[0]?.c || 0)
+    if (adsGg > 0) {
+      adsByPrefix[GG_PRODUCT_PREFIX] = (adsByPrefix[GG_PRODUCT_PREFIX] ?? 0) + adsGg
+    }
+    // Quy mã dòng hàng về prefix để khớp mã trong tên camp. Phải qua resolveDisplayId
+    // trước: đơn chảo vàng mang mã PHVVN027_CV còn camp đặt tên PHVVN026CV, alias nối
+    // hai mã đó lại — bỏ qua thì tiền camp chảo vàng không tìm được dòng nào để gánh.
+    const prefixOf = (code: string | null) => {
+      const c = resolveDisplayId(code) ?? (code ? String(code).toUpperCase() : "")
+      return c.match(/^(PHVVN\d{2,3})/)?.[1] ?? null
+    }
 
     const cogsOf = (items: any): number => {
       if (!Array.isArray(items)) return 0
