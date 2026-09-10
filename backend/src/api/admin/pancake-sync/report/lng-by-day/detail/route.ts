@@ -88,13 +88,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         FROM don d
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(d.items, '[]'::jsonb)) it
       ),
-      chia AS (
+      -- SP CHÍNH của đơn = dòng hàng giá trị cao nhất. Quà tặng kèm có giá 0 nên không
+      -- bao giờ thành SP chính, và KHÔNG được tách thành dòng riêng: trước đây quà tặng
+      -- ra một dòng có doanh thu 0đ, vốn 0đ nhưng vẫn gánh ads và fullfill, nên hiện lỗ
+      -- giả (BỘ KHAY LỌC DẦU: 36 đơn, DT 0đ, lỗ 388.813đ).
+      -- Cả đơn quy về SP chính: doanh thu, phí ship, ads, fullfill đều tính cho nó.
+      xep_hang AS (
         SELECT dong.*,
-          CASE WHEN SUM(gia_tri) OVER (PARTITION BY id) > 0
-            THEN gia_tri / SUM(gia_tri) OVER (PARTITION BY id)
-            ELSE 1.0 / COUNT(*) OVER (PARTITION BY id)
-          END AS ty_trong
+          ROW_NUMBER() OVER (
+            PARTITION BY id
+            ORDER BY gia_tri DESC, COALESCE(NULLIF(sp_code,''), sp_name_up) ASC
+          ) AS hang
         FROM dong
+      ),
+      -- Mỗi đơn còn đúng một dòng, mang SP chính; qty gộp cả đơn để biết bán mấy món.
+      don_sp AS (
+        SELECT
+          x.id, x.status, x.order_revenue, x.ship,
+          x.sp_code, x.sp_label, x.sp_name_up,
+          (SELECT SUM(y.qty) FROM xep_hang y WHERE y.id = x.id) AS qty,
+          (SELECT jsonb_agg(jsonb_build_object('code', y.sp_code, 'name', y.sp_name_up, 'qty', y.qty))
+             FROM xep_hang y WHERE y.id = x.id) AS items
+        FROM xep_hang x
+        WHERE x.hang = 1
       )
       SELECT
         COALESCE(NULLIF(sp_code,''), sp_name_up) AS sp_key,
@@ -106,16 +122,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(DISTINCT id) FILTER (WHERE status IN (4,5))::int AS hoan,
         COUNT(DISTINCT id) FILTER (WHERE status IN (6,-1))::int AS huy,
         SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS sl_da_nhan,
-        SUM(CASE WHEN status = 3 THEN order_revenue * ty_trong ELSE 0 END)::bigint AS dt_da_nhan,
-        SUM(CASE WHEN status IN (0,1,2,8,9,11) THEN order_revenue * ty_trong ELSE 0 END)::bigint AS dt_treo,
-        SUM(ship * ty_trong)::bigint AS ship,
-        jsonb_agg(jsonb_build_object('code', sp_code, 'name', sp_name_up, 'qty', qty))
-          FILTER (WHERE status = 3) AS items_da_nhan,
-        jsonb_agg(jsonb_build_object('code', sp_code, 'name', sp_name_up, 'qty', qty))
-          FILTER (WHERE status IN (0,1,2,8,9,11)) AS items_treo
-      FROM chia
+        SUM(CASE WHEN status = 3 THEN order_revenue ELSE 0 END)::bigint AS dt_da_nhan,
+        SUM(CASE WHEN status IN (0,1,2,8,9,11) THEN order_revenue ELSE 0 END)::bigint AS dt_treo,
+        SUM(ship)::bigint AS ship,
+        jsonb_agg(items) FILTER (WHERE status = 3) AS items_da_nhan,
+        jsonb_agg(items) FILTER (WHERE status IN (0,1,2,8,9,11)) AS items_treo
+      FROM don_sp
       GROUP BY sp_key
-      ORDER BY SUM(CASE WHEN status = 3 THEN order_revenue * ty_trong ELSE 0 END) DESC
+      ORDER BY SUM(CASE WHEN status = 3 THEN order_revenue ELSE 0 END) DESC
     `, [date])
 
     // Ads cả ngày (FB + Google).
@@ -164,14 +178,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return c.match(/^(PHVVN\d{2,3})/)?.[1] ?? null
     }
 
-    const cogsOf = (items: any): number => {
-      if (!Array.isArray(items)) return 0
+    // items giờ là mảng-của-mảng (mỗi đơn một mảng dòng hàng) vì SQL gom theo đơn rồi
+    // mới gom theo SP — duyệt hai tầng. Giá vốn tính TRỌN ĐƠN, gồm cả quà tặng kèm,
+    // và gán hết cho SP chính.
+    const cogsOf = (groups: any): number => {
+      if (!Array.isArray(groups)) return 0
       let c = 0
-      for (const it of items) {
-        const qty = Number(it?.qty ?? 0)
-        if (!qty) continue
-        const unit = lookupCost(avgCost, resolveDisplayId(it?.code), String(it?.name ?? ""))
-        if (unit != null) c += unit * qty
+      for (const items of groups) {
+        if (!Array.isArray(items)) continue
+        for (const it of items) {
+          const qty = Number(it?.qty ?? 0)
+          if (!qty) continue
+          const unit = lookupCost(avgCost, resolveDisplayId(it?.code), String(it?.name ?? ""))
+          if (unit != null) c += unit * qty
+        }
       }
       return c
     }
@@ -220,38 +240,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Camp không rõ SP (tên không theo quy ước + Google Ads) chia đều cho các đơn của
     // những SP chưa có camp riêng — không dồn vào SP đã có ads đo được.
     const adsChungMoiDon = donKhongCoAds > 0 ? adsKhongRoSP / donKhongCoAds : 0
-    // Fullfill: mỗi ĐƠN chịu một lần. tong_don ở dòng SP là "số đơn CÓ CHỨA SP này", nên
-    // đơn nhiều SP bị đếm ở mọi dòng và tổng vượt số đơn thật (160 vs 114 ngày 08/09).
-    // Chia theo tỷ trọng doanh thu để tổng khớp đúng số đơn distinct của ngày.
-    const soDonThat = await sql(`
-      SELECT COUNT(*)::int AS n FROM pancake_order
-      WHERE deleted_at IS NULL
-        AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
-        AND NOT ${excludeCond}
-        AND status NOT IN (-2)
-        AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-    `, [date])
-    const fullfillNgay = FULLFILL_PER_ORDER * Number(soDonThat[0]?.n || 0)
-
-    // Tổng giá vốn theo số thật của từng SP có thể lệch mức ngày (SP chưa khai giá vốn,
-    // hoặc đơn treo chưa biết món gì). Cân phần chênh theo tỷ trọng doanh thu để tổng
-    // khớp dòng ngày mà vẫn giữ được khác biệt giữa các SP.
-    const cogsTheoSP = tmp.reduce((a, x) => a + x.cogsTamTinhRieng, 0)
-    const cogsMucNgay = pctVonIn != null ? Math.round(tongDT * pctVonIn) : cogsTheoSP
-    const buCogs = cogsMucNgay - cogsTheoSP
 
     const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, cogsTamTinhRieng, ship }) => {
       const adsCuaSP = adsRieng[r.sp_key]
       const ads = adsCuaSP != null
         ? Math.round(adsCuaSP)                       // camp riêng: SP gánh trọn
         : Math.round(adsChungMoiDon * r.tong_don)    // chưa có camp riêng: chia đều theo đơn
+      // Giá vốn thật trọn đơn (gồm quà tặng kèm) — không kéo về %vốn trung bình ngày,
+      // vì làm thế thì mọi SP ra cùng %GV và bảng không nói được SP nào lỗ.
       const cogsTT = cogsTamTinhRieng
-        + (tongDT > 0 ? Math.round(buCogs * (dtTamTinh / tongDT)) : 0)
       const shipTT = pctShipIn != null
         ? Math.round(dtTamTinh * pctShipIn)
         : (dtTamTinh > 0 && dtNhan > 0 ? Math.round(dtTamTinh * (ship / dtNhan)) : ship)
-      const fullfill = donCoSP > 0 ? Math.round(fullfillNgay * (r.tong_don / donCoSP)) : 0
+      // Mỗi đơn giờ chỉ thuộc đúng một SP (đã quy về SP chính) nên đếm thẳng, không
+      // còn cảnh đơn nhiều món bị tính fullfill ở mọi dòng.
+      const fullfill = FULLFILL_PER_ORDER * r.tong_don
       const lngTT = dtTamTinh - (cogsTT + shipTT + ads + fullfill)
       const lngThuc = dtNhan - (cogs + ship + ads + fullfill)
       const chot = r.da_nhan + r.hoan
