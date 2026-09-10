@@ -116,7 +116,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY SUM(CASE WHEN status = 3 THEN order_revenue * ty_trong ELSE 0 END) DESC
     `, [date])
 
-    // Ads cả ngày (FB + Google) — chỉ có ở mức ngày, không tách được theo SP.
+    // Ads cả ngày (FB + Google).
     const adsRows = await sql(`
       SELECT SUM(spend)::bigint AS spend FROM (
         SELECT spend FROM mkt_ads_cost WHERE deleted_at IS NULL AND date = $1::date
@@ -125,6 +125,31 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ) u
     `, [date])
     const adsNgay = Number(adsRows[0]?.spend || 0)
+
+    // Ads THEO SẢN PHẨM: tên camp mở đầu bằng mã SP (PHVVN042KGV_28/6_ANHNT_KỆ GIA VỊ…),
+    // nên bóc prefix ra để biết tiền chạy cho món nào. Camp không theo quy ước đặt tên
+    // rơi vào nhóm "không rõ SP" và được chia đều cho các đơn còn lại.
+    const adsByProdRows = await sql(`
+      SELECT (regexp_match(upper(campaign_name), '(PHVVN[0-9]{2,3})'))[1] AS prefix,
+             SUM(spend)::bigint AS spend
+      FROM mkt_ads_cost
+      WHERE deleted_at IS NULL AND date = $1::date
+      GROUP BY 1
+    `, [date])
+    const adsByPrefix: Record<string, number> = {}
+    let adsKhongRoSP = 0
+    for (const a of adsByProdRows) {
+      const v = Number(a.spend) || 0
+      if (a.prefix) adsByPrefix[String(a.prefix)] = (adsByPrefix[String(a.prefix)] ?? 0) + v
+      else adsKhongRoSP += v
+    }
+    // Google Ads chưa gắn được SP — luôn nằm ở nhóm không rõ.
+    const adsGgRows = await sql(
+      `SELECT COALESCE(SUM(cost), 0)::bigint AS c FROM mkt_ads_cost_gg
+        WHERE deleted_at IS NULL AND date = $1::date`, [date])
+    adsKhongRoSP += Number(adsGgRows[0]?.c || 0)
+    const prefixOf = (code: string | null) =>
+      code ? (String(code).toUpperCase().match(/^(PHVVN\d{2,3})/)?.[1] ?? null) : null
 
     const cogsOf = (items: any): number => {
       if (!Array.isArray(items)) return 0
@@ -159,8 +184,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return { r, dtNhan, dtTamTinh, cogs, pctVon: pctVonRieng, ship: Number(r.ship) }
     })
 
-    // Ads chia theo tỷ trọng DOANH THU TẠM TÍNH — số chia, không phải số đo riêng SP.
     const tongDT = tmp.reduce((a, x) => a + x.dtTamTinh, 0)
+    const donCoSP = tmp.reduce((a, x) => a + x.r.tong_don, 0)
+
+    // ── ADS VỀ ĐÚNG SẢN PHẨM ────────────────────────────────────────────────────
+    // Tiền camp của SP nào thì SP đó gánh, chia cho SỐ ĐƠN của chính nó — 100k ads cho
+    // SP A có 10 đơn thì mỗi đơn A chịu 10k. Chia theo doanh thu là sai: đơn mua 3 món
+    // sẽ gánh gấp ba dù cũng chỉ là một đơn mà camp mang về, che mất chuyện đơn nhiều
+    // món mới là đơn lãi tốt (cùng một suất ads, doanh thu cao hơn).
+    const adsRieng: Record<string, number> = {}   // sp_key -> tổng ads của SP đó
+    let donKhongCoAds = 0
+    for (const x of tmp) {
+      const px = prefixOf(x.r.sp_code)
+      const v = px ? (adsByPrefix[px] ?? 0) : 0
+      if (v > 0) adsRieng[x.r.sp_key] = v
+      else donKhongCoAds += x.r.tong_don
+    }
+    // Camp không rõ SP (tên không theo quy ước + Google Ads) chia đều cho các đơn của
+    // những SP chưa có camp riêng — không dồn vào SP đã có ads đo được.
+    const adsChungMoiDon = donKhongCoAds > 0 ? adsKhongRoSP / donKhongCoAds : 0
     // Fullfill: mỗi ĐƠN chịu một lần. tong_don ở dòng SP là "số đơn CÓ CHỨA SP này", nên
     // đơn nhiều SP bị đếm ở mọi dòng và tổng vượt số đơn thật (160 vs 114 ngày 08/09).
     // Chia theo tỷ trọng doanh thu để tổng khớp đúng số đơn distinct của ngày.
@@ -183,13 +225,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const buCogs = cogsMucNgay - cogsTheoSP
 
     const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, pctVon, ship }) => {
-      const ads = tongDT > 0 ? Math.round(adsNgay * (dtTamTinh / tongDT)) : 0
+      const adsCuaSP = adsRieng[r.sp_key]
+      const ads = adsCuaSP != null
+        ? Math.round(adsCuaSP)                       // camp riêng: SP gánh trọn
+        : Math.round(adsChungMoiDon * r.tong_don)    // chưa có camp riêng: chia đều theo đơn
       const cogsTT = Math.round(dtTamTinh * pctVon)
         + (tongDT > 0 ? Math.round(buCogs * (dtTamTinh / tongDT)) : 0)
       const shipTT = pctShipIn != null
         ? Math.round(dtTamTinh * pctShipIn)
         : (dtTamTinh > 0 && dtNhan > 0 ? Math.round(dtTamTinh * (ship / dtNhan)) : ship)
-      const fullfill = tongDT > 0 ? Math.round(fullfillNgay * (dtTamTinh / tongDT)) : 0
+      const fullfill = donCoSP > 0 ? Math.round(fullfillNgay * (r.tong_don / donCoSP)) : 0
       const lngTT = dtTamTinh - (cogsTT + shipTT + ads + fullfill)
       const lngThuc = dtNhan - (cogs + ship + ads + fullfill)
       const chot = r.da_nhan + r.hoan
@@ -204,6 +249,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ship, ship_tam_tinh: shipTT,
         ship_pct: dtTamTinh > 0 ? Math.round(shipTT / dtTamTinh * 1000) / 10 : 0,
         ads, ads_pct: dtTamTinh > 0 ? Math.round(ads / dtTamTinh * 1000) / 10 : 0,
+        ads_moi_don: r.tong_don > 0 ? Math.round(ads / r.tong_don) : 0,
+        ads_co_camp_rieng: adsCuaSP != null,
         fullfill,
         lng_tam_tinh: lngTT,
         lng_pct: dtTamTinh > 0 ? Math.round(lngTT / dtTamTinh * 1000) / 10 : 0,
@@ -250,18 +297,46 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return c
     }
 
-    // Ads chia đều theo doanh thu tạm tính của từng đơn, cùng tổng với tab theo SP.
+    // Ads của mỗi ĐƠN = suất ads của SP CHÍNH trong đơn đó (SP có giá trị cao nhất).
+    // Cùng nguyên tắc với tab theo SP: tiền camp của SP nào thì đơn chứa SP đó gánh,
+    // mỗi đơn một suất — đơn mua 3 món vẫn chỉ tốn một suất, nên LNG cao hơn hẳn.
+    // adsMoiDonTheoSP tính từ tab SP ở trên để hai tab ra cùng một con số.
+    const adsMoiDonTheoSP: Record<string, number> = {}
+    for (const x of tmp) {
+      const v = adsRieng[x.r.sp_key]
+      adsMoiDonTheoSP[x.r.sp_key] = x.r.tong_don > 0
+        ? (v != null ? v / x.r.tong_don : adsChungMoiDon)
+        : 0
+    }
     const donTmp = orderRows.map((o: any) => {
       const daNhan = o.status === 3
       const treo = [0, 1, 2, 8, 9, 11].includes(o.status)
       const rev = Number(o.revenue) || 0
       const dtTamTinh = daNhan ? rev : (treo ? Math.round(rev * tyLeNhan) : 0)
-      return { o, daNhan, dtTamTinh, cogsThuc: daNhan ? Math.round(cogsOfRaw(o.items)) : 0 }
+      // SP chính của đơn = dòng hàng có giá trị niêm yết cao nhất — đơn gánh suất ads
+      // của món đó, giống cách bảng LNG vẫn quy đơn về một SP chính.
+      let spChinh: string | null = null
+      let maxVal = -1
+      for (const it of (Array.isArray(o.items) ? o.items : [])) {
+        const vi = it?.variation_info ?? {}
+        const val = Number(vi.retail_price ?? it?.price ?? 0) * Number(it?.quantity ?? 1)
+        if (val > maxVal) {
+          maxVal = val
+          spChinh = String(vi.display_id ?? "").trim().toUpperCase()
+            || String(vi.name ?? it?.name ?? "").trim().toUpperCase()
+        }
+      }
+      return {
+        o, daNhan, dtTamTinh, spChinh,
+        cogsThuc: daNhan ? Math.round(cogsOfRaw(o.items)) : 0,
+      }
     })
-    const tongDTDon = donTmp.reduce((a, x) => a + x.dtTamTinh, 0)
 
-    const byOrder = donTmp.map(({ o, daNhan, dtTamTinh, cogsThuc }) => {
-      const ads = tongDTDon > 0 ? Math.round(adsNgay * (dtTamTinh / tongDTDon)) : 0
+    const byOrder = donTmp.map(({ o, daNhan, dtTamTinh, cogsThuc, spChinh }) => {
+      const ads = Math.round(
+        (spChinh && adsMoiDonTheoSP[spChinh] != null)
+          ? adsMoiDonTheoSP[spChinh]
+          : adsChungMoiDon)
       const ship = Number(o.ship) || 0
       // Giá vốn thật của chính đơn; đơn treo chưa biết kết cục thì ước theo %vốn ngày.
       const cogsTT = cogsThuc > 0 ? cogsThuc
