@@ -286,6 +286,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ads_moi_don: r.tong_don > 0 ? Math.round(ads / r.tong_don) : 0,
         ads_co_camp_rieng: adsCuaSP != null,
         fullfill,
+        fullfill_pct: dtTamTinh > 0 ? Math.round(fullfill / dtTamTinh * 1000) / 10 : 0,
         lng_tam_tinh: lngTT,
         lng_pct: dtTamTinh > 0 ? Math.round(lngTT / dtTamTinh * 1000) / 10 : 0,
         lng_thuc: lngThuc,

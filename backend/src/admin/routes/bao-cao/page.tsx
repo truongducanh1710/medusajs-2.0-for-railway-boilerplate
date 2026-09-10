@@ -2344,6 +2344,11 @@ function LngDayDetailModal({ date, market, dayRow, onClose }: {
   }, [date, market])
 
   const money = (n: any) => fmtVND(Number(n || 0))
+  // % của dòng TỔNG phải tính lại từ tổng, không cộng trung bình các dòng.
+  const pctOf = (part: any, whole: any) => {
+    const w = Number(whole) || 0
+    return w > 0 ? `${Math.round(Number(part || 0) / w * 1000) / 10}%` : "—"
+  }
   const sp: any[] = data?.by_product ?? []
   const don: any[] = data?.by_order ?? []
   const t = data?.totals ?? {}
@@ -2398,15 +2403,18 @@ function LngDayDetailModal({ date, market, dayRow, onClose }: {
                   <th className="text-right px-3 py-2.5">Giá vốn</th>
                   <th className="text-right px-3 py-2.5">%GV</th>
                   <th className="text-right px-3 py-2.5">Vận chuyển</th>
+                  <th className="text-right px-3 py-2.5">%VC</th>
                   <th className="text-right px-3 py-2.5">Ads</th>
+                  <th className="text-right px-3 py-2.5">%Ads</th>
                   <th className="text-right px-3 py-2.5">Fullfill</th>
+                  <th className="text-right px-3 py-2.5">%FF</th>
                   <th className="text-right px-3 py-2.5 bg-violet-50">LNG tạm tính</th>
                   <th className="text-right px-3 py-2.5 bg-violet-50">%LNG</th>
                 </tr>
               </thead>
               <tbody className="divide-y text-gray-900">
                 {!loading && sp.length === 0 && (
-                  <tr><td colSpan={12} className="px-4 py-6 text-center text-gray-400">Không có dữ liệu</td></tr>
+                  <tr><td colSpan={15} className="px-4 py-6 text-center text-gray-400">Không có dữ liệu</td></tr>
                 )}
                 {sp.map((r, i) => (
                   <tr key={i} className={r.lng_tam_tinh < 0 ? "bg-red-50/50" : ""}>
@@ -2424,8 +2432,13 @@ function LngDayDetailModal({ date, market, dayRow, onClose }: {
                     <td className="px-3 py-2 text-right text-gray-700">{money(r.cogs_tam_tinh)}</td>
                     <td className="px-3 py-2 text-right text-gray-400">{r.cogs_pct}%</td>
                     <td className="px-3 py-2 text-right text-amber-700">{money(r.ship_tam_tinh)}</td>
+                    <td className="px-3 py-2 text-right text-gray-400">{r.ship_pct}%</td>
                     <td className="px-3 py-2 text-right text-amber-700">{money(r.ads)}</td>
+                    <td className={`px-3 py-2 text-right ${
+                      r.ads_pct >= 50 ? "text-red-600 font-semibold"
+                        : r.ads_pct >= 35 ? "text-amber-600" : "text-gray-400"}`}>{r.ads_pct}%</td>
                     <td className="px-3 py-2 text-right text-gray-500">{money(r.fullfill)}</td>
+                    <td className="px-3 py-2 text-right text-gray-400">{r.fullfill_pct}%</td>
                     <td className={`px-3 py-2 text-right font-bold bg-violet-50/60 ${
                       r.lng_tam_tinh >= 0 ? "text-violet-700" : "text-red-600"}`}>
                       {money(r.lng_tam_tinh)}
@@ -2443,13 +2456,18 @@ function LngDayDetailModal({ date, market, dayRow, onClose }: {
                     <td className="px-3 py-2.5 text-right">{money(t.cogs_tam_tinh)}</td>
                     <td className="px-3 py-2.5" />
                     <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ship_tam_tinh)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-500">{pctOf(t.ship_tam_tinh, t.dt_tam_tinh)}</td>
                     <td className="px-3 py-2.5 text-right text-amber-700">{money(t.ads)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-500">{pctOf(t.ads, t.dt_tam_tinh)}</td>
                     <td className="px-3 py-2.5 text-right text-gray-600">{money(t.fullfill)}</td>
+                    <td className="px-3 py-2.5 text-right text-gray-500">{pctOf(t.fullfill, t.dt_tam_tinh)}</td>
                     <td className={`px-3 py-2.5 text-right font-bold bg-violet-100/70 ${
                       (t.lng_tam_tinh ?? 0) >= 0 ? "text-violet-700" : "text-red-600"}`}>
                       {money(t.lng_tam_tinh)}
                     </td>
-                    <td className="px-3 py-2.5 bg-violet-100/70" />
+                    <td className="px-3 py-2.5 bg-violet-100/70 text-right text-gray-600">
+                      {pctOf(t.lng_tam_tinh, t.dt_tam_tinh)}
+                    </td>
                   </tr>
                 )}
               </tbody>
