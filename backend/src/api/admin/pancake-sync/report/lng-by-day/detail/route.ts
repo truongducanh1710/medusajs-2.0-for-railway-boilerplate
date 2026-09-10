@@ -110,7 +110,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status IN (0,1,2,8,9,11) THEN order_revenue * ty_trong ELSE 0 END)::bigint AS dt_treo,
         SUM(ship * ty_trong)::bigint AS ship,
         jsonb_agg(jsonb_build_object('code', sp_code, 'name', sp_name_up, 'qty', qty))
-          FILTER (WHERE status = 3) AS items_da_nhan
+          FILTER (WHERE status = 3) AS items_da_nhan,
+        jsonb_agg(jsonb_build_object('code', sp_code, 'name', sp_name_up, 'qty', qty))
+          FILTER (WHERE status IN (0,1,2,8,9,11)) AS items_treo
       FROM chia
       GROUP BY sp_key
       ORDER BY SUM(CASE WHEN status = 3 THEN order_revenue * ty_trong ELSE 0 END) DESC
@@ -187,12 +189,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const dtTreo = Number(r.dt_treo)
       const dtTamTinh = Math.round(dtNhan + dtTreo * tyLeNhan)
       const cogs = Math.round(cogsOf(r.items_da_nhan))
-      // Giá vốn dùng số THẬT của từng SP (tra bảng giá vốn), không áp %vốn mức ngày:
-      // áp % chung thì mọi SP ra cùng một %GV và cùng một %LNG — bảng khớp tổng nhưng
-      // không còn nói được SP nào lỗ, đúng thứ người xem cần.
-      // Phần chênh so với mức ngày được cân lại sau, theo tỷ trọng doanh thu.
-      const pctVonRieng = dtNhan > 0 ? cogs / dtNhan : (pctVonIn ?? 0)
-      return { r, dtNhan, dtTamTinh, cogs, pctVon: pctVonRieng, ship: Number(r.ship) }
+      // Giá vốn tạm tính = vốn thật đơn đã nhận + vốn thật đơn treo × tỷ lệ nhận —
+      // cùng nhịp với doanh thu tạm tính. Suy từ %vốn trung bình ngày là sai: chảo vàng
+      // vốn 381.233đ bị tính thành 363.483đ vì %vốn ngày (45,6%) thấp hơn %vốn của nó.
+      const cogsTreo = Math.round(cogsOf(r.items_treo))
+      const cogsTamTinhRieng = cogs + Math.round(cogsTreo * tyLeNhan)
+      return {
+        r, dtNhan, dtTamTinh, cogs, cogsTamTinhRieng,
+        pctVon: dtTamTinh > 0 ? cogsTamTinhRieng / dtTamTinh : (pctVonIn ?? 0),
+        ship: Number(r.ship),
+      }
     })
 
     const tongDT = tmp.reduce((a, x) => a + x.dtTamTinh, 0)
@@ -231,16 +237,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Tổng giá vốn theo số thật của từng SP có thể lệch mức ngày (SP chưa khai giá vốn,
     // hoặc đơn treo chưa biết món gì). Cân phần chênh theo tỷ trọng doanh thu để tổng
     // khớp dòng ngày mà vẫn giữ được khác biệt giữa các SP.
-    const cogsTheoSP = tmp.reduce((a, x) => a + Math.round(x.dtTamTinh * x.pctVon), 0)
+    const cogsTheoSP = tmp.reduce((a, x) => a + x.cogsTamTinhRieng, 0)
     const cogsMucNgay = pctVonIn != null ? Math.round(tongDT * pctVonIn) : cogsTheoSP
     const buCogs = cogsMucNgay - cogsTheoSP
 
-    const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, pctVon, ship }) => {
+    const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, cogsTamTinhRieng, ship }) => {
       const adsCuaSP = adsRieng[r.sp_key]
       const ads = adsCuaSP != null
         ? Math.round(adsCuaSP)                       // camp riêng: SP gánh trọn
         : Math.round(adsChungMoiDon * r.tong_don)    // chưa có camp riêng: chia đều theo đơn
-      const cogsTT = Math.round(dtTamTinh * pctVon)
+      const cogsTT = cogsTamTinhRieng
         + (tongDT > 0 ? Math.round(buCogs * (dtTamTinh / tongDT)) : 0)
       const shipTT = pctShipIn != null
         ? Math.round(dtTamTinh * pctShipIn)
@@ -339,19 +345,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
       return {
         o, daNhan, dtTamTinh, spChinh,
+        // Giá vốn tra được cho MỌI đơn, không riêng đơn đã nhận: món trong đơn đã biết
+        // ngay từ lúc đặt. Chỉ tính đơn đã nhận thì đơn đang giao rơi vào ước theo %vốn
+        // trung bình ngày — chảo vàng vốn thật 381.233đ bị tính thành 363.483đ.
+        cogsFull: Math.round(cogsOfRaw(o.items)),
         cogsThuc: daNhan ? Math.round(cogsOfRaw(o.items)) : 0,
       }
     })
 
-    const byOrder = donTmp.map(({ o, daNhan, dtTamTinh, cogsThuc, spChinh }) => {
+    const byOrder = donTmp.map(({ o, daNhan, dtTamTinh, cogsThuc, cogsFull, spChinh }) => {
       const ads = Math.round(
         (spChinh && adsMoiDonTheoSP[spChinh] != null)
           ? adsMoiDonTheoSP[spChinh]
           : adsChungMoiDon)
       const ship = Number(o.ship) || 0
       // Giá vốn thật của chính đơn; đơn treo chưa biết kết cục thì ước theo %vốn ngày.
-      const cogsTT = cogsThuc > 0 ? cogsThuc
-        : (pctVonIn != null ? Math.round(dtTamTinh * pctVonIn) : 0)
+      // Đơn đã nhận: vốn thật trọn đơn. Đơn còn treo: vốn thật × tỷ lệ nhận, cùng nhịp
+      // với doanh thu tạm tính. Chỉ khi không tra được vốn (SP chưa khai) mới ước theo
+      // %vốn trung bình ngày.
+      const cogsTT = daNhan
+        ? cogsThuc
+        : (cogsFull > 0
+            ? Math.round(cogsFull * tyLeNhan)
+            : (pctVonIn != null ? Math.round(dtTamTinh * pctVonIn) : 0))
       const shipTT = pctShipIn != null ? Math.round(dtTamTinh * pctShipIn) : ship
       const lngTT = dtTamTinh - (cogsTT + shipTT + ads + FULLFILL_PER_ORDER)
       return {
