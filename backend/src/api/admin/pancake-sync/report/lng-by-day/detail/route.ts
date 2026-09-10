@@ -382,10 +382,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
 
     const byOrder = donTmp.map(({ o, daNhan, dtTamTinh, cogsThuc, cogsFull, spChinh }) => {
+      // Đơn không có dòng hàng nào (đơn rỗng trên POS) không xuất hiện ở tab theo SP,
+      // nên cũng không được gánh ads — nếu không hai tab lệch đúng bằng suất của nó
+      // (ngày 08/09: đơn 82127 rỗng nhưng ôm 1.686.965đ).
       const ads = Math.round(
         (spChinh && adsMoiDonTheoSP[spChinh] != null)
           ? adsMoiDonTheoSP[spChinh]
-          : adsChungMoiDon)
+          : (spChinh ? adsChungMoiDon : 0))
       const ship = Number(o.ship) || 0
       // Giá vốn thật của chính đơn; đơn treo chưa biết kết cục thì ước theo %vốn ngày.
       // Đơn đã nhận: vốn thật trọn đơn. Đơn còn treo: vốn thật × tỷ lệ nhận, cùng nhịp
