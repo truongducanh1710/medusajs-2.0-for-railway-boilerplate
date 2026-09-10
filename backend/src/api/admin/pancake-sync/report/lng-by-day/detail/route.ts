@@ -229,13 +229,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // SP A có 10 đơn thì mỗi đơn A chịu 10k. Chia theo doanh thu là sai: đơn mua 3 món
     // sẽ gánh gấp ba dù cũng chỉ là một đơn mà camp mang về, che mất chuyện đơn nhiều
     // món mới là đơn lãi tốt (cùng một suất ads, doanh thu cao hơn).
-    const adsRieng: Record<string, number> = {}   // sp_key -> tổng ads của SP đó
+    // Nhiều biến thể có thể chung một prefix (PHVVN020_TDH_MEDIUM và _LARGE đều là
+    // PHVVN020). Tiền camp của prefix đó phải CHIA cho các biến thể theo số đơn, không
+    // để mỗi dòng nhận trọn — nếu không tổng ads vượt thực chi (19,4tr vs 18,2tr).
+    const donTheoPrefix: Record<string, number> = {}
+    for (const x of tmp) {
+      const px = prefixOf(x.r.sp_code)
+      if (px && (adsByPrefix[px] ?? 0) > 0) {
+        donTheoPrefix[px] = (donTheoPrefix[px] ?? 0) + x.r.tong_don
+      }
+    }
+    const adsRieng: Record<string, number> = {}   // sp_key -> ads phần của SP đó
     let donKhongCoAds = 0
     for (const x of tmp) {
       const px = prefixOf(x.r.sp_code)
-      const v = px ? (adsByPrefix[px] ?? 0) : 0
-      if (v > 0) adsRieng[x.r.sp_key] = v
-      else donKhongCoAds += x.r.tong_don
+      const pool = px ? (adsByPrefix[px] ?? 0) : 0
+      const donPx = px ? (donTheoPrefix[px] ?? 0) : 0
+      if (pool > 0 && donPx > 0) {
+        adsRieng[x.r.sp_key] = pool * (x.r.tong_don / donPx)
+      } else {
+        donKhongCoAds += x.r.tong_don
+      }
     }
     // Camp không rõ SP (tên không theo quy ước + Google Ads) chia đều cho các đơn của
     // những SP chưa có camp riêng — không dồn vào SP đã có ads đo được.
