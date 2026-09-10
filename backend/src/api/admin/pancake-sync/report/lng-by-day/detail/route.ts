@@ -151,11 +151,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const dtTreo = Number(r.dt_treo)
       const dtTamTinh = Math.round(dtNhan + dtTreo * tyLeNhan)
       const cogs = Math.round(cogsOf(r.items_da_nhan))
-      // %vốn và %ship lấy MỨC NGÀY (bảng ngày truyền sang) chứ không tính riêng từng SP:
-      // SP mới bán vài đơn có dtNhan rất nhỏ, tỷ lệ riêng dao động mạnh và tổng lệch dòng
-      // ngày. Mức ngày cho tổng khớp, và vẫn đủ để so SP nào lỗ nặng hơn.
-      const pctVon = pctVonIn ?? (dtNhan > 0 ? cogs / dtNhan : 0)
-      return { r, dtNhan, dtTamTinh, cogs, pctVon, ship: Number(r.ship) }
+      // Giá vốn dùng số THẬT của từng SP (tra bảng giá vốn), không áp %vốn mức ngày:
+      // áp % chung thì mọi SP ra cùng một %GV và cùng một %LNG — bảng khớp tổng nhưng
+      // không còn nói được SP nào lỗ, đúng thứ người xem cần.
+      // Phần chênh so với mức ngày được cân lại sau, theo tỷ trọng doanh thu.
+      const pctVonRieng = dtNhan > 0 ? cogs / dtNhan : (pctVonIn ?? 0)
+      return { r, dtNhan, dtTamTinh, cogs, pctVon: pctVonRieng, ship: Number(r.ship) }
     })
 
     // Ads chia theo tỷ trọng DOANH THU TẠM TÍNH — số chia, không phải số đo riêng SP.
@@ -174,9 +175,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `, [date])
     const fullfillNgay = FULLFILL_PER_ORDER * Number(soDonThat[0]?.n || 0)
 
+    // Tổng giá vốn theo số thật của từng SP có thể lệch mức ngày (SP chưa khai giá vốn,
+    // hoặc đơn treo chưa biết món gì). Cân phần chênh theo tỷ trọng doanh thu để tổng
+    // khớp dòng ngày mà vẫn giữ được khác biệt giữa các SP.
+    const cogsTheoSP = tmp.reduce((a, x) => a + Math.round(x.dtTamTinh * x.pctVon), 0)
+    const cogsMucNgay = pctVonIn != null ? Math.round(tongDT * pctVonIn) : cogsTheoSP
+    const buCogs = cogsMucNgay - cogsTheoSP
+
     const result = tmp.map(({ r, dtNhan, dtTamTinh, cogs, pctVon, ship }) => {
       const ads = tongDT > 0 ? Math.round(adsNgay * (dtTamTinh / tongDT)) : 0
       const cogsTT = Math.round(dtTamTinh * pctVon)
+        + (tongDT > 0 ? Math.round(buCogs * (dtTamTinh / tongDT)) : 0)
       const shipTT = pctShipIn != null
         ? Math.round(dtTamTinh * pctShipIn)
         : (dtTamTinh > 0 && dtNhan > 0 ? Math.round(dtTamTinh * (ship / dtNhan)) : ship)
@@ -254,7 +263,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const byOrder = donTmp.map(({ o, daNhan, dtTamTinh, cogsThuc }) => {
       const ads = tongDTDon > 0 ? Math.round(adsNgay * (dtTamTinh / tongDTDon)) : 0
       const ship = Number(o.ship) || 0
-      const cogsTT = pctVonIn != null ? Math.round(dtTamTinh * pctVonIn) : cogsThuc
+      // Giá vốn thật của chính đơn; đơn treo chưa biết kết cục thì ước theo %vốn ngày.
+      const cogsTT = cogsThuc > 0 ? cogsThuc
+        : (pctVonIn != null ? Math.round(dtTamTinh * pctVonIn) : 0)
       const shipTT = pctShipIn != null ? Math.round(dtTamTinh * pctShipIn) : ship
       const lngTT = dtTamTinh - (cogsTT + shipTT + ads + FULLFILL_PER_ORDER)
       return {
