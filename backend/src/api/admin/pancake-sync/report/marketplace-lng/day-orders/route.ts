@@ -291,6 +291,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           revenue_costed: 0,
           revenue_no_cost: 0,
           qty: 0,
+          qty_gift: 0,
           has_cost: true,
           items: [] as any[],
         }
@@ -307,8 +308,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         o.has_cost = false
         o.revenue_no_cost += itemRev
       }
-      o.qty += Number(r.qty || 0)
       const code = r.sp_code ? String(r.sp_code).toUpperCase() : null
+      // SL chỉ đếm hàng BÁN, quà tặng kèm đếm riêng — nếu không, đơn "1 hộp + 1 khăn
+      // tặng" hiện SL=2 làm người xem tưởng khách mua 2 món.
+      //
+      // Nhận diện quà bằng TÊN chứ không bằng "thiếu mã SP": nhiều hàng bán thật trên
+      // sàn cũng không có mã (vd "234734215074 - SET 2 Bộ Khay…"), loại theo mã sẽ ăn
+      // nhầm cả hàng bán.
+      const isGift = /quà tặng|qua tang|tặng kèm|tang kem/i.test(String(r.sp_label || ""))
+      if (isGift) o.qty_gift += Number(r.qty || 0)
+      else o.qty += Number(r.qty || 0)
       o.items.push({
         sp_code: code,
         // Mã gốc chưa alias — cần cho việc khớp ads, không hiển thị.
@@ -319,6 +328,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         item_cost: itemCost,
         revenue: itemRev,
         missing_cost: !hasCost,
+        is_gift: isGift,
       })
     }
 
@@ -453,6 +463,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const totals = {
       orders: result.length,
       qty: sum("qty"),
+      qty_gift: sum("qty_gift"),
       list_price: sum("list_price"),
       fee_marketplace: sum("fee_marketplace"),
       revenue: sum("revenue"),

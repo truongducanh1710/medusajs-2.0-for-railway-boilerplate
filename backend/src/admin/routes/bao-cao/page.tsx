@@ -3719,39 +3719,58 @@ function DayOrdersModal({
   const orders: any[] = data?.orders ?? []
   const t = data?.totals ?? {}
 
+  /**
+   * SP CHÍNH của đơn = dòng hàng có giá vốn cao nhất; hoà thì lấy dòng có mã SP.
+   *
+   * Quà tặng kèm không được tách thành dòng riêng: API chia doanh thu đơn cho MỌI dòng
+   * hàng theo giá niêm yết, nên khăn tặng (khách không trả tiền) vẫn được gán doanh thu
+   * và tự gánh ads — làm méo cả dòng quà lẫn dòng hàng thật. Đơn 82713 là ví dụ: chổi
+   * 75.000đ bị tách thành chổi 35.666đ + khăn tặng 16.834đ.
+   *
+   * Quà tặng do API đánh dấu bằng cờ is_gift (nhận theo TÊN món). KHÔNG nhận diện bằng
+   * "thiếu mã SP": nhiều hàng bán thật trên sàn cũng không có mã.
+   */
+  const spChinhCuaDon = (items: any[]) => {
+    if (items.length === 0) return null
+    const hangBan = items.filter(it => !it.is_gift)
+    const ungVien = hangBan.length > 0 ? hangBan : items
+    return ungVien.reduce((a, b) =>
+      (Number(b.item_cost) || 0) > (Number(a.item_cost) || 0) ? b : a)
+  }
+
   // Gộp theo SẢN PHẨM ngay tại đây từ chính danh sách đơn — không gọi API riêng, nên
   // tổng hai tab luôn khớp nhau và khớp thẻ tổng phía trên.
   //
-  // Đơn nhiều SP: doanh thu và phí sàn đã được API chia sẵn cho từng dòng hàng
-  // (it.revenue), còn ads/fullfill tính theo ĐƠN nên chia theo tỷ trọng doanh thu dòng
-  // để không cộng trùng — một đơn 2 món vẫn chỉ tốn một suất fullfill.
+  // Cả đơn quy về SP chính: doanh thu, phí sàn, giá vốn, ads, fullfill đều tính cho nó,
+  // nên một đơn chỉ sinh đúng một dòng và không có khoản nào bị cộng trùng.
   const byProduct = (() => {
     const m = new Map<string, any>()
     for (const o of orders) {
       const items: any[] = Array.isArray(o.items) ? o.items : []
-      const tongRev = items.reduce((a, it) => a + (Number(it.revenue) || 0), 0)
-      for (const it of items) {
-        const key = it.sp_code || it.sp_label || "CHƯA RÕ SP"
-        if (!m.has(key)) {
-          m.set(key, {
-            key, sp_code: it.sp_code ?? null, sp_label: it.sp_label ?? "CHƯA RÕ SP",
-            don: new Set<string>(), qty: 0, revenue: 0, revenue_gross: 0,
-            fee: 0, cogs: 0, ads: 0, fullfill: 0, missing_cost: false,
-          })
-        }
-        const g = m.get(key)
-        // Tỷ trọng dòng trong đơn — dùng chia các khoản tính theo đơn.
-        const w = tongRev > 0 ? (Number(it.revenue) || 0) / tongRev : 1 / (items.length || 1)
-        g.don.add(String(o.order_id))
-        g.qty += Number(it.qty) || 0
-        g.revenue += Number(it.revenue) || 0
-        g.revenue_gross += (Number(o.revenue_gross) || 0) * w
-        g.fee += (Number(o.fee_marketplace) || 0) * w
-        g.cogs += Number(it.item_cost) || 0
-        g.ads += (Number(o.ads_cost) || 0) * w
-        g.fullfill += (Number(o.fullfill) || 0) * w
-        if (it.missing_cost) g.missing_cost = true
+      const chinh = spChinhCuaDon(items)
+      if (!chinh) continue
+      const key = chinh.sp_code || chinh.sp_label || "CHƯA RÕ SP"
+      if (!m.has(key)) {
+        m.set(key, {
+          key, sp_code: chinh.sp_code ?? null, sp_label: chinh.sp_label ?? "CHƯA RÕ SP",
+          don: new Set<string>(), qty: 0, revenue: 0, revenue_gross: 0,
+          fee: 0, cogs: 0, ads: 0, fullfill: 0, missing_cost: false, qua_tang: 0,
+        })
       }
+      const g = m.get(key)
+      g.don.add(String(o.order_id))
+      // SL chỉ đếm hàng BÁN, không đếm quà tặng — khách mua 1 hộp thì là 1, không phải 2.
+      g.qty += items.reduce((a, it) => a + (it.is_gift ? 0 : (Number(it.qty) || 0)), 0)
+      g.qua_tang += items.reduce((a, it) => a + (it.is_gift ? (Number(it.qty) || 0) : 0), 0)
+      // Lấy thẳng số của ĐƠN, không chia theo dòng.
+      g.revenue += Number(o.revenue) || 0
+      g.revenue_gross += Number(o.revenue_gross) || 0
+      g.fee += Number(o.fee_marketplace) || 0
+      // Giá vốn tính TRỌN ĐƠN, gồm cả quà tặng — quà cũng tốn tiền nhập.
+      g.cogs += items.reduce((a, it) => a + (Number(it.item_cost) || 0), 0)
+      g.ads += Number(o.ads_cost) || 0
+      g.fullfill += Number(o.fullfill) || 0
+      if (o.missing_cost) g.missing_cost = true
     }
     return [...m.values()].map(g => {
       const rev = Math.round(g.revenue)
@@ -3768,6 +3787,12 @@ function DayOrdersModal({
       }
     }).sort((a, b) => a.lng_sau_ads - b.lng_sau_ads)
   })()
+
+  // Ads chạy nhưng không ra đơn nào trong ngày: nằm trong "Ads cả ngày" của dòng tổng
+  // nhưng không gắn được vào đơn nào, nên cộng các dòng chi tiết sẽ KHÔNG ra dòng tổng.
+  // Hiện thành một dòng riêng ngay trên dòng TỔNG để phép cộng nhìn thấy được.
+  const adsLe = Math.round(
+    (Number(t.ads_cost) || 0) - orders.reduce((a, o) => a + (Number(o.ads_cost) || 0), 0))
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -3877,9 +3902,12 @@ function DayOrdersModal({
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b text-xs text-gray-500 sticky top-0">
                     <tr>
-                      <th className="text-left px-4 py-2.5">Sản phẩm</th>
+                      <th className="text-left px-4 py-2.5"
+                        title="Cả đơn được quy về SP chính (món có giá vốn cao nhất). Quà tặng kèm không tách thành dòng riêng nhưng giá vốn của quà vẫn được tính vào đơn.">
+                        Sản phẩm chính
+                      </th>
                       <th className="text-right px-3 py-2.5">Đơn</th>
-                      <th className="text-right px-3 py-2.5">SL</th>
+                      <th className="text-right px-3 py-2.5" title="Số lượng hàng bán, không tính quà tặng kèm">SL</th>
                       <th className="text-right px-3 py-2.5">DT trước phí sàn</th>
                       <th className="text-right px-3 py-2.5">Phí sàn</th>
                       <th className="text-right px-3 py-2.5">DT thực nhận</th>
@@ -3904,7 +3932,14 @@ function DayOrdersModal({
                           {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-gray-700">{fmtNum(r.don)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-gray-500">{fmtNum(r.qty)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-500">
+                          {fmtNum(r.qty)}
+                          {r.qua_tang > 0 && (
+                            <div className="text-[10.5px] text-gray-400" title="Quà tặng kèm, không tính vào SL bán">
+                              +{fmtNum(r.qua_tang)} quà
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-right font-mono text-gray-700">{money(r.revenue_gross)}</td>
                         <td className="px-3 py-2.5 text-right text-gray-500">{money(r.fee)}</td>
                         <td className="px-3 py-2.5 text-right font-semibold text-green-700">{money(r.revenue)}</td>
@@ -3926,6 +3961,18 @@ function DayOrdersModal({
                         </td>
                       </tr>
                     ))}
+                    {byProduct.length > 0 && adsLe !== 0 && (
+                      <tr className="bg-amber-50/60 text-amber-800 text-[12.5px] border-t">
+                        <td className="px-4 py-2" colSpan={9}>
+                          Ads chạy nhưng không ra đơn nào trong ngày
+                          <span className="text-amber-600"> — không gắn được vào sản phẩm nào phía trên</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold">+{money(adsLe)}</td>
+                        <td />
+                        <td className="px-3 py-2 text-right font-semibold">−{money(adsLe)}</td>
+                        <td />
+                      </tr>
+                    )}
                     {byProduct.length > 0 && (
                       <tr className="bg-violet-50 font-semibold border-t-2 border-violet-200">
                         <td className="px-4 py-2.5 text-gray-900">TỔNG</td>
@@ -3971,7 +4018,7 @@ function DayOrdersModal({
                     <th className="text-right px-3 py-2.5">Giá vốn</th>
                     <th className="text-right px-3 py-2.5" title="Giá vốn ÷ doanh thu có giá vốn">%GV</th>
                     <th className="text-right px-3 py-2.5" title="Chi phí đóng gói 6.000đ/đơn — chỉ tính đơn đã tra được giá vốn">Fullfill</th>
-                    <th className="text-right px-3 py-2.5" title="Chi phí ads cả ngày chia đều số đơn">Ads (TB)</th>
+                    <th className="text-right px-3 py-2.5" title="Ads của SP nào chia cho các đơn chứa SP đó; phần ads không rõ SP mới chia đều cho các đơn còn lại">Ads</th>
                     <th className="text-right px-3 py-2.5">LNG sau ads</th>
                     <th className="text-right px-3 py-2.5">%LNG</th>
                   </tr>
@@ -4107,6 +4154,17 @@ function DayOrdersModal({
                 </tbody>
                 {orders.length > 0 && (
                   <tfoot>
+                    {adsLe !== 0 && (
+                      <tr className="border-t bg-amber-50/60 text-amber-800 text-[12.5px]">
+                        <td className="px-4 py-2" colSpan={8}>
+                          Ads chạy nhưng không ra đơn nào trong ngày
+                          <span className="text-amber-600"> — không gắn được vào đơn nào phía trên</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold">+{money(adsLe)}</td>
+                        <td className="px-3 py-2 text-right font-semibold">−{money(adsLe)}</td>
+                        <td />
+                      </tr>
+                    )}
                     <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
                       <td className="px-4 py-2.5" colSpan={2}>Tổng {orders.length} đơn</td>
                       <td className="px-3 py-2.5 text-right font-mono">{fmtNum(t.qty)}</td>
