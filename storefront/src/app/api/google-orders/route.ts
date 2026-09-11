@@ -434,6 +434,7 @@ export async function GET(req: NextRequest) {
       `<a class="qb ${from === f && to === t ? "on" : ""}" href="?from=${f}&to=${t}">${label}</a>`
     const quickHtml = [
       quick("Hôm nay", today, today),
+      quick("Hôm qua", addDaysISO(today, -1), addDaysISO(today, -1)),
       quick("7 ngày", addDaysISO(today, -6), today),
       quick("30 ngày", addDaysISO(today, -29), today),
       quick("Tháng này", today.slice(0, 8) + "01", today),
