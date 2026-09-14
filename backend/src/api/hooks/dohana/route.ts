@@ -46,6 +46,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (body?.event !== "video.create") return
 
     const slug = body?.data?.slug
+    const orderCode = String(body?.data?.orderCode ?? "").trim()
+    const loai = String(body?.data?.type ?? "").trim().toLowerCase()
+
+    // HÀNG HOÀN VỀ KHO — chạy TRƯỚC và độc lập với việc lưu video.
+    //
+    // Payload webhook đã có sẵn orderCode + type, nên không cần gọi API Dohana để biết
+    // đơn nào vừa được nhận lại. Quan trọng vì API Dohana đang bị khoá 429 từ 30/08/2026:
+    // nếu phụ thuộc vào fetchAndUpsertBySlug thì tính năng này cũng chết theo.
+    if (loai === "inbound" && orderCode) {
+      syncService.markReturnedByOrderCode(orderCode)
+        .then((r: any) => {
+          if (r.updated) console.log(`[Dohana Webhook] ${orderCode}: ${r.reason}`)
+          else console.log(`[Dohana Webhook] ${orderCode}: bỏ qua — ${r.reason}`)
+        })
+        .catch((err: any) => {
+          console.error(`[Dohana Webhook] markReturnedByOrderCode(${orderCode}) lỗi:`, err.message)
+        })
+    }
+
     if (!slug) return
 
     syncService.fetchAndUpsertBySlug(slug).catch((err: any) => {

@@ -180,6 +180,9 @@ export default defineMiddlewares({
     { matcher: "/admin/dohana-sync/videos*", method: ["GET"], middlewares: [requirePerm("page.dohana-sync.view")] },
     { matcher: "/admin/dohana-sync/status*", method: ["GET"], middlewares: [requirePerm("page.dohana-sync.view")] },
     { matcher: "/admin/dohana-sync/genlink*", method: ["POST"], middlewares: [requirePerm("page.dohana-sync.view")] },
+    // Đánh dấu hàng hoàn đã về kho — GHI trạng thái lên Pancake POS, khó rút lại, nên
+    // đòi quyền chạy sync chứ không chỉ quyền xem.
+    { matcher: "/admin/dohana-sync/hang-hoan", method: ["POST"], middlewares: [requirePerm("page.dohana-sync.run")] },
     { matcher: "/admin/ity-cdr-sync", method: ["POST"], middlewares: [requirePerm("page.ity-cdr.run")] },
     { matcher: "/admin/ity-cdr-sync/status*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/calls*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },

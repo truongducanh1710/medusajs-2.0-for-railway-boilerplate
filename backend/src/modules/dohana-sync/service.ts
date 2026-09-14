@@ -328,6 +328,118 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
   }
 
   /**
+   * Hàng hoàn đã về kho: đẩy đơn Pancake từ "Đang hoàn về" (4) sang "Đã hoàn về kho" (5).
+   *
+   * Kho quay video "nhập hàng hoàn" khi nhận lại hàng, nên video type=inbound là BẰNG
+   * CHỨNG VẬT LÝ hàng đã nằm trong kho. Pancake không tự đổi status trong trường hợp này
+   * — hiện ~2.500 đơn kẹt ở status 4, làm sai lệch báo cáo lẫn tồn kho.
+   *
+   * Không có nguồn nào khác thay thế được: `partner.extend_update` của Pancake chỉ lưu
+   * vài mốc đầu hành trình (dừng ở "đến kho phân loại"), đơn Shopee không có trường này,
+   * còn đơn PKE thì action_code toàn null — đã kiểm 25 đơn mẫu.
+   *
+   * ĐẨY LÊN POS chứ không sửa thẳng DB: POS là nguồn sự thật, sửa DB sẽ bị ghi đè ở lần
+   * sync sau. Sau khi POS đổi, webhook Pancake tự bắn về cập nhật DB (đã đo: ~6 giây).
+   *
+   * Chỉ đụng vào đơn đang ở đúng status 4. Mọi trạng thái khác bỏ qua — video nhập hoàn
+   * không phải lý do để đổi một đơn đã giao thành công hay đã huỷ.
+   */
+  /**
+   * Xem trước cho markReturnedByOrderCode: tra đơn và nói rõ SẼ đổi hay không, nhưng
+   * KHÔNG ghi gì lên POS. Dùng cho chế độ dry-run khi xử lý hàng loạt đơn tồn đọng —
+   * xử lý ~2.500 đơn mà không xem trước thì sai một nhịp là hỏng hàng loạt.
+   */
+  async xemTruocHangHoan(
+    orderCode: string,
+  ): Promise<{ se_doi: boolean; reason: string; don_id?: string; status?: number }> {
+    const ma = String(orderCode || "").trim()
+    if (!ma) return { se_doi: false, reason: "Thiếu mã đơn" }
+
+    const mgr = (this as any).__container?.manager
+    if (!mgr) return { se_doi: false, reason: "Không lấy được kết nối DB" }
+
+    const rows = await mgr.execute(
+      `SELECT id, status, source, raw->>'id' AS pos_id
+         FROM pancake_order
+        WHERE deleted_at IS NULL
+          AND upper(trim(tracking_code)) = upper(trim($1))
+        LIMIT 1`,
+      [ma],
+    )
+    const don = Array.isArray(rows) ? rows[0] : (rows?.rows ?? [])[0]
+    if (!don) return { se_doi: false, reason: `Không tìm thấy đơn có mã vận đơn ${ma}` }
+
+    const st = Number(don.status)
+    if (st === 5) return { se_doi: false, reason: "Đã là 'Đã hoàn về kho'", don_id: don.id, status: st }
+    if (st !== 4) {
+      return { se_doi: false, reason: `Đang ở status ${st}, không phải "đang hoàn về"`, don_id: don.id, status: st }
+    }
+    if (!don.pos_id) {
+      return { se_doi: false, reason: "Đơn không có pos_id để gọi Pancake", don_id: don.id, status: st }
+    }
+    return { se_doi: true, reason: "SẼ chuyển 4 → 5 (Đã hoàn về kho)", don_id: don.id, status: st }
+  }
+
+  async markReturnedByOrderCode(
+    orderCode: string,
+  ): Promise<{ updated: boolean; reason: string; posId?: string }> {
+    const ma = String(orderCode || "").trim()
+    if (!ma) return { updated: false, reason: "Thiếu mã đơn" }
+
+    const apiKey = process.env.PANCAKE_API_KEY || ""
+    const shopId = process.env.PANCAKE_SHOP_ID || ""
+    if (!apiKey || !shopId) {
+      return { updated: false, reason: "Chưa cấu hình PANCAKE_API_KEY / PANCAKE_SHOP_ID" }
+    }
+
+    const mgr = (this as any).__container?.manager
+    if (!mgr) return { updated: false, reason: "Không lấy được kết nối DB" }
+
+    // Video Dohana mang MÃ VẬN ĐƠN của hãng ship, khớp với tracking_code bên Pancake.
+    const rows = await mgr.execute(
+      `SELECT id, raw->>'id' AS pos_id, status
+         FROM pancake_order
+        WHERE deleted_at IS NULL
+          AND upper(trim(tracking_code)) = upper(trim($1))
+        LIMIT 1`,
+      [ma],
+    )
+    const don = Array.isArray(rows) ? rows[0] : (rows?.rows ?? [])[0]
+    if (!don) return { updated: false, reason: `Không tìm thấy đơn có mã vận đơn ${ma}` }
+    if (Number(don.status) !== 4) {
+      return { updated: false, reason: `Đơn đang ở status ${don.status}, không phải "đang hoàn về"` }
+    }
+    const posId = String(don.pos_id || "")
+    if (!posId) return { updated: false, reason: "Đơn không có pos_id để gọi Pancake" }
+
+    const base = "https://pos.pages.fm/api/v1"
+    const url = `${base}/shops/${shopId}/orders/${posId}?api_key=${apiKey}`
+
+    // Đọc lại từ POS trước khi ghi: DB có thể cũ hơn thực tế.
+    const rGet = await fetch(url)
+    if (!rGet.ok) return { updated: false, reason: `Không đọc được đơn trên POS (HTTP ${rGet.status})`, posId }
+    const dGet: any = await rGet.json()
+    const o = dGet?.data ?? dGet?.order ?? dGet
+    if (Number(o?.status) === 5) return { updated: false, reason: "POS đã là 'đã hoàn về kho'", posId }
+    if (Number(o?.status) !== 4) {
+      return { updated: false, reason: `POS đang ở status ${o?.status}, bỏ qua`, posId }
+    }
+
+    const rPut = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: 5 }),
+    })
+    if (!rPut.ok) {
+      const t = await rPut.text().catch(() => "")
+      return { updated: false, reason: `PUT thất bại (HTTP ${rPut.status}): ${t.slice(0, 150)}`, posId }
+    }
+
+    console.log(`[Dohana] Hàng hoàn ${ma} đã về kho — đẩy POS ${posId}: status 4 → 5`)
+    return { updated: true, reason: "Đã chuyển sang 'Đã hoàn về kho'", posId }
+  }
+
+  /**
    * Verify header x-dhn-sign gửi kèm webhook Dohana — HMAC-SHA256(body, verifyKey).
    * Verify key do người dùng tự đặt lúc cấu hình webhook trên Dohana dashboard.
    */
