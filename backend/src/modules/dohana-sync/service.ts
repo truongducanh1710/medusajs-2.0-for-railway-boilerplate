@@ -27,7 +27,14 @@ export async function fetchWithRetry(
     try {
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { "x-api-key": apiKey },
+        headers: {
+          "x-api-key": apiKey,
+          // BẮT BUỘC: be.dhn.io.vn đứng sau Cloudflare, request không có User-Agent bị
+          // chặn bằng "error code: 1010" (403) trước khi tới API — khi đó không đọc được
+          // lỗi thật của Dohana, chỉ thấy 403 trống nghĩa.
+          "User-Agent": "PhanVietSync/1.0 (+https://api.phanviet.vn)",
+          Accept: "application/json",
+        },
       }).finally(() => clearTimeout(timeout))
       if (res.status === 429) {
         rateLimitAttempts++
@@ -277,7 +284,10 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
     const { jobId } = await this.pullByDateRange(from, to)
 
     // Đợi job hoàn tất (cron chạy độc lập, không cần trả UI ngay) trước khi log kết quả.
-    for (let i = 0; i < 60; i++) {
+    // 10 phút: quét 24h có thể tới ~34 trang, mỗi trang nghỉ 1,5s để né rate limit, chưa
+    // kể các lần lùi 3s+ khi gặp 429 — mốc 2 phút cũ luôn hết giờ trước khi job xong nên
+    // log báo imported=0 dù job thực tế vẫn đang chạy và có thể thành công.
+    for (let i = 0; i < 300; i++) {
       await delay(2000)
       const jobs = await this.listDohanaSyncJobs({ id: jobId }, { take: 1 })
       const job = jobs[0] as any

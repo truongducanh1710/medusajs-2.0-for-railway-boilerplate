@@ -10,9 +10,14 @@ export default async function dohanaIncrementalSync(container: MedusaContainer) 
   }
 
   try {
-    // Quét lại 2h gần nhất — bù trường hợp webhook video.create bị miss (Dohana tắt webhook
-    // nếu server của mình lỗi liên tiếp 25 lần, hoặc timeout).
-    const result = await syncService.pullRecent(2)
+    // Quét lại 24h gần nhất — LƯỚI AN TOÀN, không phải kênh chính. Video mới về qua
+    // webhook /hooks/dohana; cron chỉ bù trường hợp webhook bị miss.
+    //
+    // Gói free Dohana chỉ cho 100 request/NGÀY. Mỗi lần quét phân trang ~34 trang, nên
+    // chạy 2 lần/ngày đã tốn ~68 request. Bản cũ chạy mỗi 15 phút (96 lần/ngày × 34
+    // trang ≈ 3.000 request) — vượt hạn mức gấp 30 lần, khiến MỌI job 429 liên tục từ
+    // 30/08/2026 và không job nào lấy được dữ liệu nữa.
+    const result = await syncService.pullRecent(24)
     logger?.info?.(
       `[DohanaJob] imported=${result.imported} updated=${result.updated} errors=${result.errors}`
     )
@@ -23,5 +28,7 @@ export default async function dohanaIncrementalSync(container: MedusaContainer) 
 
 export const config = {
   name: "dohana-incremental-sync",
-  schedule: "*/15 * * * *",
+  // 2 lần/ngày (03:20 và 15:20 giờ VN) — xem ghi chú hạn mức 100 request/ngày ở trên.
+  // Lệch 20 phút để không trùng giờ chẵn với các cron khác.
+  schedule: "20 20,8 * * *",
 }
