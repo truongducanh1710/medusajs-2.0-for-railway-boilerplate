@@ -3,7 +3,11 @@ import { createHmac } from "crypto"
 import DohanaVideo from "./models/dohana-video"
 import DohanaSyncJob from "./models/dohana-sync-job"
 
-export const DOHANA_API_BASE = "https://be.dhn.io.vn/dpm/v1"
+// Dohana đổi domain API 14/09/2026 (be.dhn.io.vn → openapi.dhn.io.vn). Domain cũ vẫn
+// trỏ về cùng backend nên chưa chết, nhưng dùng link chính thức để khỏi hỏng khi họ tắt.
+// Cho phép ghi đè bằng env để lần đổi sau không phải deploy lại.
+export const DOHANA_API_BASE =
+  process.env.DOHANA_API_BASE || "https://openapi.dhn.io.vn/dpm/v1"
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
