@@ -332,8 +332,28 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
     if (!verifyKey) return true
     if (!signature) return false
     try {
-      const computed = createHmac("sha256", verifyKey).update(rawBody).digest("hex")
-      return computed === signature
+      // Medusa parse JSON rồi mới tới route, và KHÔNG giữ lại chuỗi gốc trừ khi route
+      // khai preserveRawBody. Nếu chỉ so chữ ký với JSON.stringify(body) thì mọi webhook
+      // đều bị từ chối: thứ tự khoá hay khoảng trắng chỉ cần khác một chỗ là HMAC khác.
+      // Nên thử lần lượt vài cách biểu diễn thường gặp của cùng một payload.
+      const ungVien = [
+        rawBody,
+        // JSON.stringify chuẩn (không khoảng trắng) — dạng Node tạo ra.
+        (() => { try { return JSON.stringify(JSON.parse(rawBody)) } catch { return null } })(),
+        // Một số bên ký trên JSON có thụt lề 2 dấu cách.
+        (() => { try { return JSON.stringify(JSON.parse(rawBody), null, 2) } catch { return null } })(),
+      ].filter((v): v is string => typeof v === "string" && v.length > 0)
+
+      const sigHex = String(signature).trim().toLowerCase()
+      for (const v of ungVien) {
+        const computed = createHmac("sha256", verifyKey).update(v, "utf8").digest("hex")
+        if (computed === sigHex) return true
+      }
+      console.warn(
+        `[Dohana Webhook] Chữ ký không khớp — nhận ${sigHex.slice(0, 16)}…, ` +
+        `đã thử ${ungVien.length} cách biểu diễn payload`
+      )
+      return false
     } catch {
       return false
     }

@@ -21,15 +21,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const syncService = req.scope.resolve("dohanaSyncModule") as any
 
-    const rawBody = (req as any).rawBody ?? JSON.stringify(body)
+    // preserveRawBody (khai trong middlewares.ts) để lại chuỗi gốc, nhưng tuỳ phiên bản
+    // Medusa nó là Buffer hoặc string — và nếu vì lý do nào đó không có thì mới dựng lại
+    // từ object đã parse (verifyWebhookSignature thử vài cách biểu diễn).
+    const raw = (req as any).rawBody
+    const rawBody: string = Buffer.isBuffer(raw)
+      ? raw.toString("utf8")
+      : typeof raw === "string" && raw.length > 0
+        ? raw
+        : JSON.stringify(body)
     const signature = (req.headers["x-dhn-sign"] as string) ?? null
-    if (!syncService.verifyWebhookSignature(rawBody, signature)) {
-      console.warn("[Dohana Webhook] Invalid signature — rejecting")
-      return res.status(401).json({ error: "Invalid signature" })
-    }
+    const chuKyHopLe = syncService.verifyWebhookSignature(rawBody, signature)
 
-    // Trả 200 ngay, xử lý sau.
+    // Trả 200 ngay cả khi chữ ký sai. Dohana tắt webhook sau 25 lỗi liên tiếp, nên trả
+    // 401 vì lệch chữ ký sẽ tự khoá lại chính mình — đúng cái vừa làm URL "không hoạt
+    // động". Chữ ký sai thì bỏ qua payload và ghi log, nhưng vẫn báo nhận thành công.
     res.json({ success: true })
+
+    if (!chuKyHopLe) {
+      console.warn("[Dohana Webhook] Chữ ký không hợp lệ — bỏ qua payload này")
+      return
+    }
 
     if (body?.event !== "video.create") return
 

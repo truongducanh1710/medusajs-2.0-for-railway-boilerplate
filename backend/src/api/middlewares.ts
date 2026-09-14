@@ -139,6 +139,15 @@ export default defineMiddlewares({
       bodyParser: { sizeLimit: "20mb" },
     },
 
+    // Webhook Dohana: chữ ký x-dhn-sign là HMAC-SHA256 của CHUỖI BODY GỐC, nên phải giữ
+    // lại raw body. Không có cờ này thì Medusa chỉ để lại object đã parse, và mọi webhook
+    // đều bị từ chối vì JSON.stringify dựng lại không trùng byte với bản Dohana đã ký.
+    {
+      matcher: "/hooks/dohana",
+      method: ["POST"],
+      bodyParser: { preserveRawBody: true },
+    },
+
     // MKT chat upload - multipart image/file payloads, parsed vào req.files bằng multer (memory storage)
     {
       matcher: "/admin/mkt-chat/channels/*/upload",
