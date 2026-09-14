@@ -233,6 +233,9 @@ export default defineMiddlewares({
     { matcher: "/admin/product-tests/:id/daily-results/:resultId/mkt-decision", method: ["POST"], middlewares: [requirePerm("page.product-test.marketing")] },
     { matcher: "/admin/product-tests/:id/actions", method: ["POST"], middlewares: [requirePerm("page.product-test.view")] },
     { matcher: "/admin/pancake-status*", middlewares: [requirePerm("page.don-hang.view")] },
+    // GHI trạng thái lên POS — thao tác khó rút lại trên hệ thống thật, nên đòi quyền
+    // chạy sync chứ không chỉ quyền xem đơn (wildcard ở trên chỉ cần .view).
+    { matcher: "/admin/pancake-status/update", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
     { matcher: "/admin/cskh/orders*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
     { matcher: "/admin/cskh/analyze*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
     { matcher: "/admin/cskh/analyze*", method: ["POST"], middlewares: [requirePerm("page.cskh.analyze")] },
