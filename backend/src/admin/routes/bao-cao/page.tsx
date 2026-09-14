@@ -4131,17 +4131,38 @@ function DayOrdersModal({
                                 </thead>
                                 <tbody className="text-gray-700">
                                   {o.items.map((it: any, i: number) => (
-                                    <tr key={i}>
-                                      <td className="py-1">
-                                        {it.sp_label}
-                                        {it.sp_code && <span className="ml-1.5 text-[11px] text-gray-400">{it.sp_code}</span>}
-                                        {it.missing_cost && <span className="ml-1.5 text-[11px] text-amber-600">⚠ chưa khai giá vốn</span>}
-                                      </td>
-                                      <td className="text-right py-1 font-mono">{fmtNum(it.qty)}</td>
-                                      <td className="text-right py-1">{it.unit_cost > 0 ? money(it.unit_cost) : <span className="text-gray-300">—</span>}</td>
-                                      <td className="text-right py-1">{it.item_cost > 0 ? money(it.item_cost) : <span className="text-gray-300">—</span>}</td>
-                                      <td className="text-right py-1">{money(it.revenue)}</td>
-                                    </tr>
+                                    <Fragment key={i}>
+                                      <tr>
+                                        <td className="py-1">
+                                          {it.sp_label}
+                                          {it.sp_code && <span className="ml-1.5 text-[11px] text-gray-400">{it.sp_code}</span>}
+                                          {it.missing_cost && <span className="ml-1.5 text-[11px] text-amber-600">⚠ chưa khai giá vốn</span>}
+                                        </td>
+                                        <td className="text-right py-1 font-mono">{fmtNum(it.qty)}</td>
+                                        <td className="text-right py-1">{it.unit_cost > 0 ? money(it.unit_cost) : <span className="text-gray-300">—</span>}</td>
+                                        <td className="text-right py-1">{it.item_cost > 0 ? money(it.item_cost) : <span className="text-gray-300">—</span>}</td>
+                                        <td className="text-right py-1">{money(it.revenue)}</td>
+                                      </tr>
+                                      {/* POS chỉ ghi MỘT dòng cho cả combo, nên giá vốn nhìn như sai
+                                          (CCX03 hiện "1 chổi" nhưng vốn 17.078đ). Bung thành phần đã
+                                          khai ở tab "Khớp SP sàn" để con số tự giải thích. */}
+                                      {Array.isArray(it.parts) && it.parts.map((p: any, j: number) => (
+                                        <tr key={`${i}-${j}`} className="text-[11.5px] text-gray-400">
+                                          <td className="py-0.5 pl-4">
+                                            └ {p.qty} × {p.label}
+                                            {p.code !== p.label && <span className="ml-1.5 text-[10.5px] text-gray-300">{p.code}</span>}
+                                          </td>
+                                          <td className="text-right py-0.5 font-mono">{fmtNum(p.qty * (Number(it.qty) || 1))}</td>
+                                          <td className="text-right py-0.5">
+                                            {p.unit_cost == null ? <span className="text-amber-500">chưa có</span> : money(p.unit_cost)}
+                                          </td>
+                                          <td className="text-right py-0.5">
+                                            {p.cost == null ? <span className="text-gray-300">—</span> : money(p.cost * (Number(it.qty) || 1))}
+                                          </td>
+                                          <td />
+                                        </tr>
+                                      ))}
+                                    </Fragment>
                                   ))}
                                 </tbody>
                               </table>

@@ -264,6 +264,44 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     } catch { /* bảng chưa tạo / chưa có cột product_code — coi như chưa có chi phí ads */ }
 
+    // ── THÀNH PHẦN CỦA SKU KHAI TAY ────────────────────────────────────────────
+    // Chỉ để HIỂN THỊ: giải thích giá vốn một dòng hàng gồm những gì. Giá vốn thật vẫn
+    // do SQL tính qua cost_map, không lấy từ đây.
+    const tenTheoMa: Record<string, string> = {}
+    for (const [k, v] of Object.entries(codeToName)) tenTheoMa[k.toUpperCase()] = v
+
+    /** Giá vốn 1 đơn vị của một mã thành phần — đi qua đúng các nấc mà loadSkuMapCosts dùng. */
+    const donGiaCua = (code: string): number | null => {
+      const c = code.trim().toUpperCase()
+      if (accessoryCost[c] != null) return accessoryCost[c]
+      if (avgCost.byName[c] != null) return avgCost.byName[c]
+      const alias = DISPLAY_ID_ALIASES[c] ?? c
+      if (avgCost.costs[alias] != null) return avgCost.costs[alias]
+      if (accessoryByCode[c] != null) return accessoryByCode[c]
+      if (accessoryByCode[alias] != null) return accessoryByCode[alias]
+      const m = alias.match(/^(PHVVN\d{2,3})/)
+      if (m && avgCost.byPrefix[m[1]] != null) return avgCost.byPrefix[m[1]]
+      return null
+    }
+
+    const partsOf = (code: string | null, nameUp: string) => {
+      const key = (code || "").toUpperCase()
+      const parts = skuParts[key] ?? skuParts[nameUp]
+      // Chỉ trả khi SKU thật sự nổ ra nhiều thứ — combo 1-1 không cần giải thích gì.
+      if (!parts?.length) return null
+      if (parts.length === 1 && parts[0].qty === 1) return null
+      return parts.map((p) => {
+        const unit = donGiaCua(p.code)
+        return {
+          code: p.code,
+          label: tenTheoMa[p.code.toUpperCase()] || p.code,
+          qty: p.qty,
+          unit_cost: unit,
+          cost: unit == null ? null : Math.round(unit * p.qty),
+        }
+      })
+    }
+
     // Gộp dòng hàng về đơn.
     const orders: Record<string, any> = {}
     for (const r of itemRows) {
@@ -329,6 +367,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         revenue: itemRev,
         missing_cost: !hasCost,
         is_gift: isGift,
+        // Thành phần đã khai ở tab "Khớp SP sàn", để UI giải thích giá vốn đến từ đâu.
+        // Cần thiết vì POS chỉ ghi MỘT dòng cho cả combo: đơn CCX03 hiện "CHỔI CỌ XOONG
+        // × 1" nhưng giá vốn 17.078đ (3 chổi + 1 giẻ lau tặng kèm) — không hiện thành
+        // phần thì con số đó trông như sai.
+        parts: partsOf(code, String(r.sp_name_up || "")),
       })
     }
 
