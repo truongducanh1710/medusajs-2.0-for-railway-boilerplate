@@ -1,7 +1,17 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import { createHmac } from "crypto"
+import { Pool } from "pg"
 import DohanaVideo from "./models/dohana-video"
 import DohanaSyncJob from "./models/dohana-sync-job"
+
+// Pool riêng cho truy vấn SQL thô. __container.manager KHÔNG dùng được ở các method gọi
+// từ webhook/route (chỉ có trong ngữ cảnh job của _executeSync), nên tra pancake_order
+// phải đi đường này — giống mọi route khác trong dự án.
+let _sqlPool: Pool | null = null
+function sqlPool(): Pool {
+  if (!_sqlPool) _sqlPool = new Pool({ connectionString: process.env.DATABASE_URL })
+  return _sqlPool
+}
 
 // Dohana đổi domain API 14/09/2026 (be.dhn.io.vn → openapi.dhn.io.vn). Domain cũ vẫn
 // trỏ về cùng backend nên chưa chết, nhưng dùng link chính thức để khỏi hỏng khi họ tắt.
@@ -355,10 +365,7 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
     const ma = String(orderCode || "").trim()
     if (!ma) return { se_doi: false, reason: "Thiếu mã đơn" }
 
-    const mgr = (this as any).__container?.manager
-    if (!mgr) return { se_doi: false, reason: "Không lấy được kết nối DB" }
-
-    const rows = await mgr.execute(
+    const r = await sqlPool().query(
       `SELECT id, status, source, raw->>'id' AS pos_id
          FROM pancake_order
         WHERE deleted_at IS NULL
@@ -366,7 +373,7 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
         LIMIT 1`,
       [ma],
     )
-    const don = Array.isArray(rows) ? rows[0] : (rows?.rows ?? [])[0]
+    const don = r.rows[0]
     if (!don) return { se_doi: false, reason: `Không tìm thấy đơn có mã vận đơn ${ma}` }
 
     const st = Number(don.status)
@@ -392,11 +399,8 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
       return { updated: false, reason: "Chưa cấu hình PANCAKE_API_KEY / PANCAKE_SHOP_ID" }
     }
 
-    const mgr = (this as any).__container?.manager
-    if (!mgr) return { updated: false, reason: "Không lấy được kết nối DB" }
-
     // Video Dohana mang MÃ VẬN ĐƠN của hãng ship, khớp với tracking_code bên Pancake.
-    const rows = await mgr.execute(
+    const r = await sqlPool().query(
       `SELECT id, raw->>'id' AS pos_id, status
          FROM pancake_order
         WHERE deleted_at IS NULL
@@ -404,7 +408,7 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
         LIMIT 1`,
       [ma],
     )
-    const don = Array.isArray(rows) ? rows[0] : (rows?.rows ?? [])[0]
+    const don = r.rows[0]
     if (!don) return { updated: false, reason: `Không tìm thấy đơn có mã vận đơn ${ma}` }
     if (Number(don.status) !== 4) {
       return { updated: false, reason: `Đơn đang ở status ${don.status}, không phải "đang hoàn về"` }
