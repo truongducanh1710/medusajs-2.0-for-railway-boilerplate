@@ -365,11 +365,21 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
     const ma = String(orderCode || "").trim()
     if (!ma) return { se_doi: false, reason: "Thiếu mã đơn" }
 
+    // Dohana ghi orderCode theo mã hãng ship in trên vận đơn, mà mã đó KHÔNG phải lúc
+    // nào cũng là tracking_code bên Pancake:
+    //   - Đơn sàn (TikTok 862..., Shopee SPX...) → trùng tracking_code
+    //   - Đơn Pancake tự giao → Dohana ghi mã NGẮN (PKE1513317474, 13 ký tự) còn
+    //     tracking_code là mã DÀI (PKE90085132227588, 18 ký tự). Mã ngắn nằm ở
+    //     raw.partner.order_number_vtp — đã đối chiếu 4/4 mẫu.
+    // Thiếu nhánh thứ hai thì 31/91 video nhập hoàn (toàn bộ đơn PKE) không khớp được.
     const r = await sqlPool().query(
       `SELECT id, status, source, raw->>'id' AS pos_id
          FROM pancake_order
         WHERE deleted_at IS NULL
-          AND upper(trim(tracking_code)) = upper(trim($1))
+          AND (
+                upper(trim(tracking_code)) = upper(trim($1))
+             OR upper(trim(COALESCE(raw->'partner'->>'order_number_vtp',''))) = upper(trim($1))
+          )
         LIMIT 1`,
       [ma],
     )
@@ -404,7 +414,10 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
       `SELECT id, raw->>'id' AS pos_id, status
          FROM pancake_order
         WHERE deleted_at IS NULL
-          AND upper(trim(tracking_code)) = upper(trim($1))
+          AND (
+                upper(trim(tracking_code)) = upper(trim($1))
+             OR upper(trim(COALESCE(raw->'partner'->>'order_number_vtp',''))) = upper(trim($1))
+          )
         LIMIT 1`,
       [ma],
     )
