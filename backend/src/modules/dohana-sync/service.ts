@@ -199,70 +199,91 @@ class DohanaSyncService extends MedusaService({ DohanaVideo, DohanaSyncJob }) {
 
       const limit = 100
 
-      while (page < totalPages) {
-        try {
-          const params = new URLSearchParams({
-            page: String(page),
-            limit: String(limit),
-            type: opts?.type ?? "package",
-            from: from.toISOString(),
-            to: to.toISOString(),
-          })
-          const url = `${DOHANA_API_BASE}/partner/video/search?${params.toString()}`
-          const res = await fetchWithRetry(url, apiKey)
-          const body: any = await res.json()
+      // API v2 dùng keyset cursor, không phải page/limit: truyền cursor = timestamp của
+      // bản ghi cuối trang trước, lặp tới khi hasNextPage = false.
+      //
+      // Bắt buộc phải đổi: /partner/video/search (legacy) đã bị Dohana khoá từ 17/08/2026
+      // — gọi vào trả 404 "Video không tồn tại". Cursor cũng đỡ tốn request hơn hẳn vì
+      // không phải dò tổng số trang.
+      //
+      // Kéo CẢ 4 LOẠI video, không chỉ 'package'. Bản cũ hardcode package nên trong 3.382
+      // video đã sync KHÔNG có video 'inbound' nào — mà inbound chính là bằng chứng hàng
+      // hoàn đã về kho, thứ cần để chuyển đơn từ "đang hoàn" sang "đã hoàn về kho".
+      const cacLoai = opts?.type ? [opts.type] : ["package", "inbound", "outbound", "prepare"]
 
-          const videos: any[] = body.data ?? []
-          const total: number = body.total ?? 0
-          totalPages = Math.max(1, Math.ceil(total / limit))
+      for (const loai of cacLoai) {
+        let cursor: string | null = null
+        let trang = 0
 
-          for (const raw of videos) {
-            try {
-              const mapped = mapDohanaVideo(raw)
-              if (!mapped.id) continue
-
-              const existing = await (this as any).listDohanaVideos({ id: mapped.id }, { take: 1 })
-              if (existing.length > 0) {
-                await (this as any).updateDohanaVideos(mapped)
-                updated++
-              } else {
-                await (this as any).createDohanaVideos([mapped])
-                imported++
-              }
-            } catch (videoErr: any) {
-              console.error(`[DohanaSync] Error upserting video ${raw.id}:`, videoErr.message)
-              errors.push({ videoId: String(raw.id ?? ""), message: videoErr.message })
-            }
-          }
-
+        while (true) {
           try {
-            await this.updateDohanaSyncJobs({
-              id: jobId,
-              stats: {
-                imported,
-                updated,
-                current_page: page,
-                total_pages: totalPages,
-                failed_pages: failedPages,
-                errors: errors.slice(0, 100),
-                duration_ms: Date.now() - startedAt,
-              },
-            } as any)
-          } catch {}
+            const params = new URLSearchParams({
+              limit: String(limit),
+              type: loai,
+              p: "custom",
+              from: from.toISOString(),
+              to: to.toISOString(),
+            })
+            if (cursor) params.set("cursor", cursor)
 
-          console.log(`[DohanaSync] Page ${page}/${totalPages - 1} done — imported=${imported} updated=${updated}`)
+            const url = `${DOHANA_API_BASE}/partner/v2/video/search?${params.toString()}`
+            const res = await fetchWithRetry(url, apiKey)
+            const body: any = await res.json()
 
-          if (page < totalPages - 1) {
-            await delay(1500) // rate limit buffer — Dohana free tier chỉ 2 RPS, cần buffer rộng
+            const videos: any[] = body.data ?? []
+            for (const raw of videos) {
+              try {
+                const mapped = mapDohanaVideo(raw)
+                if (!mapped.id) continue
+
+                const existing = await (this as any).listDohanaVideos({ id: mapped.id }, { take: 1 })
+                if (existing.length > 0) {
+                  await (this as any).updateDohanaVideos(mapped)
+                  updated++
+                } else {
+                  await (this as any).createDohanaVideos([mapped])
+                  imported++
+                }
+              } catch (videoErr: any) {
+                console.error(`[DohanaSync] Error upserting video ${raw.id}:`, videoErr.message)
+                errors.push({ videoId: String(raw.id ?? ""), message: videoErr.message })
+              }
+            }
+
+            page++
+            try {
+              await this.updateDohanaSyncJobs({
+                id: jobId,
+                stats: {
+                  imported,
+                  updated,
+                  current_page: page,
+                  total_pages: page,
+                  failed_pages: failedPages,
+                  errors: errors.slice(0, 100),
+                  duration_ms: Date.now() - startedAt,
+                },
+              } as any)
+            } catch {}
+
+            console.log(
+              `[DohanaSync] ${loai} trang ${trang} — ${videos.length} video, ` +
+              `tổng imported=${imported} updated=${updated}`
+            )
+
+            if (!body.hasNextPage || !body.nextCursor) break
+            cursor = String(body.nextCursor)
+            trang++
+            await delay(1500) // đệm rate limit — gói cơ bản 10 RPS, để rộng cho chắc
+          } catch (pageErr: any) {
+            console.error(`[DohanaSync] ${loai} trang ${trang} lỗi:`, pageErr.message)
+            failedPages.push(page)
+            errors.push({ message: `${loai} trang ${trang}: ${pageErr.message}` })
+            break // hỏng một loại thì bỏ loại đó, vẫn chạy tiếp loại sau
           }
-        } catch (pageErr: any) {
-          console.error(`[DohanaSync] Page ${page} failed:`, pageErr.message)
-          failedPages.push(page)
-          errors.push({ message: `Page ${page}: ${pageErr.message}` })
         }
-
-        page++
       }
+      totalPages = page
 
       if (mgr) {
         await mgr.execute(`SELECT pg_advisory_unlock(hashtext('dohana-sync'))`)
