@@ -1032,19 +1032,45 @@ function ShopBreakdownBlock({ data, totalRevenue }: { data: any; totalRevenue: n
 function ShippingCostTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  // "gui" = ngày hàng rời kho (mốc Viettel Post dùng) — mặc định, để số đối chiếu
+  // thẳng được với bảng kê của họ. "tao" = ngày khách đặt.
+  const [moc, setMoc] = useState<"gui" | "tao">("gui")
 
   useEffect(() => {
     setLoading(true)
     const from = toISO(range.from), to = toISO(range.to, true)
-    apiFetch(`/admin/pancake-sync/report/shipping-cost?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}`)
+    apiFetch(`/admin/pancake-sync/report/shipping-cost?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}&moc=${moc}`)
       .then(r => r.json()).then(setData).catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [range.from, range.to, market])
+  }, [range.from, range.to, market, moc])
 
   const fmt = useFmtMoney()
 
-  if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
-  if (!data || data.error) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
+  // Nút chuyển mốc phải hiển thị cả khi đang tải / rỗng — nếu không, chọn nhầm mốc
+  // ra 0 đơn là người dùng mắc kẹt, không có đường đổi lại.
+  const chonMoc = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-gray-500">Tính theo:</span>
+      <div className="inline-flex rounded-lg border overflow-hidden">
+        {([["gui", "Ngày gửi hàng"], ["tao", "Ngày tạo đơn"]] as const).map(([k, nhan]) => (
+          <button key={k} onClick={() => setMoc(k)}
+            className={`px-3 py-1.5 text-xs font-medium ${
+              moc === k ? "bg-teal-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+            }`}>
+            {nhan}
+          </button>
+        ))}
+      </div>
+      <span className="text-xs text-gray-400">
+        {moc === "gui"
+          ? "Khớp với bảng kê Viettel Post"
+          : "Theo ngày khách đặt — sẽ lệch với số của Viettel Post"}
+      </span>
+    </div>
+  )
+
+  if (loading) return <div className="space-y-4">{chonMoc}<div className="text-center py-16 text-gray-400">Đang tải…</div></div>
+  if (!data || data.error) return <div className="space-y-4">{chonMoc}<div className="text-center py-16 text-gray-400">Không có dữ liệu</div></div>
 
   const s = data.summary ?? {}
   const thang: any[] = data.theo_thang ?? []
@@ -1074,6 +1100,8 @@ function ShippingCostTab({ range, market }: { range: DateRange; market: Market }
 
   return (
     <div className="space-y-5">
+      {chonMoc}
+
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Tổng phí vận chuyển" value={fmt(s.tong_phi)}
@@ -1095,6 +1123,7 @@ function ShippingCostTab({ range, market }: { range: DateRange; market: Market }
             <h3 className="font-semibold text-gray-700 text-sm">Phí trung bình mỗi đơn, theo tháng</h3>
             <p className="text-xs text-gray-400 mt-0.5">
               12 tháng gần nhất — không phụ thuộc khoảng lọc phía trên. Đường đi lên nghĩa là giá cước tăng.
+              Gom theo {moc === "gui" ? "ngày gửi hàng" : "ngày tạo đơn"}.
             </p>
           </div>
           <div className="p-5">
