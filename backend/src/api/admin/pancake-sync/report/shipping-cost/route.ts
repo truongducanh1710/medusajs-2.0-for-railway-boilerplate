@@ -95,7 +95,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE ${PHI} > 0)         AS don_co_phi,
         ROUND(SUM(${PHI}))                         AS tong_phi,
         ROUND(AVG(${PHI}) FILTER (WHERE ${PHI} > 0)) AS tb_phi,
-        ROUND(SUM(total))                          AS tong_doanh_thu,
+        -- Doanh thu CHỈ của đơn có cước, không phải toàn bộ đơn trong kỳ.
+        -- Lấy SUM(total) trên mọi đơn rồi đem chia cho số đơn có cước là ghép hai mẫu
+        -- số khác nhau: 30 ngày tính tới 16/09/2026 có 2.951 đơn / 2,18 tỷ nhưng chỉ
+        -- 1.974 đơn thực sự gửi đi. Phần chênh 893tr nằm ở 683 đơn huỷ (611tr),
+        -- 148 đơn chờ hàng, 139 đơn mới — chưa rời kho nên không phát sinh cước.
+        -- Ghép nhầm cho ra %cước/doanh thu 3,4% thay vì 5,7%, và giá trị đơn TB
+        -- vọt lên 1,1tr trong khi thực tế là 653k.
+        ROUND(SUM(total) FILTER (WHERE ${PHI} > 0)) AS tong_doanh_thu,
+        ROUND(AVG(total) FILTER (WHERE ${PHI} > 0)) AS tb_gia_tri_don,
+        ROUND(SUM(total))                          AS doanh_thu_moi_don,
         ROUND(SUM(${PHI}) FILTER (WHERE status IN (4,5))) AS phi_don_hoan,
         COUNT(*) FILTER (WHERE status IN (4,5) AND ${PHI} > 0) AS don_hoan_co_phi
       FROM pancake_order
@@ -112,7 +121,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE ${PHI} > 0)          AS don,
         ROUND(AVG(${PHI}) FILTER (WHERE ${PHI} > 0)) AS tb_phi,
         ROUND(SUM(${PHI}))                          AS tong_phi,
-        ROUND(SUM(${PHI}) * 100.0 / NULLIF(SUM(total), 0), 2) AS pct_doanh_thu
+        -- Cùng mẫu số với tử: chỉ doanh thu của đơn có cước (xem ghi chú ở summary).
+        ROUND(SUM(${PHI}) * 100.0 / NULLIF(SUM(total) FILTER (WHERE ${PHI} > 0), 0), 2) AS pct_doanh_thu
       FROM pancake_order
       WHERE ${loc12Thang(moc)}
         AND ${NGUON_TU_CHAY} AND market = $1
@@ -215,6 +225,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         tong_phi: tongPhi,
         tb_phi: Number(s.tb_phi ?? 0),
         tong_doanh_thu: doanhThu,
+        tb_gia_tri_don: Number(s.tb_gia_tri_don ?? 0),
+        doanh_thu_moi_don: Number(s.doanh_thu_moi_don ?? 0),
         pct_doanh_thu: doanhThu > 0 ? Math.round(tongPhi / doanhThu * 1000) / 10 : 0,
         phi_don_hoan: Number(s.phi_don_hoan ?? 0),
         don_hoan_co_phi: Number(s.don_hoan_co_phi ?? 0),

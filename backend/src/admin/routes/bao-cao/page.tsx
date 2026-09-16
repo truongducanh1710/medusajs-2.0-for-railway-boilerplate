@@ -1109,12 +1109,24 @@ function ShippingCostTab({ range, market }: { range: DateRange; market: Market }
           accent="border-l-4 border-l-teal-500" />
         <KpiCard label="Phí TB / đơn" value={fmt(s.tb_phi)} />
         <KpiCard label="% trên doanh thu" value={`${s.pct_doanh_thu ?? 0}%`}
-          sub="Shop chịu phí"
+          sub={`DT đơn có gửi: ${fmt(s.tong_doanh_thu)}`}
           accent={Number(s.pct_doanh_thu) > 6 ? "border-l-4 border-l-red-400" : ""} />
         <KpiCard label="Phí đơn hoàn" value={fmt(s.phi_don_hoan)}
           sub={`${fmtNum(s.don_hoan_co_phi)} đơn — mất trắng`}
           accent={Number(s.phi_don_hoan) > 0 ? "border-l-4 border-l-orange-400" : ""} />
       </div>
+
+      {/* Nói rõ mẫu số: mọi tỷ lệ ở trên chỉ tính trên đơn đã thực sự gửi đi.
+          Đơn huỷ/chờ hàng/đơn mới chưa rời kho nên không phát sinh cước — gộp chúng
+          vào doanh thu sẽ làm loãng tỷ lệ và cho ra giá trị đơn trung bình sai. */}
+      {Number(s.tong_don) > Number(s.don_co_phi) && (
+        <div className="text-xs text-gray-500 bg-gray-50 border rounded-lg px-3 py-2">
+          Mọi tỷ lệ tính trên <b className="text-gray-700">{fmtNum(s.don_co_phi)} đơn đã gửi</b> (giá trị TB{" "}
+          {fmt(s.tb_gia_tri_don)}/đơn). Kỳ này có tổng {fmtNum(s.tong_don)} đơn —{" "}
+          {fmtNum(Number(s.tong_don) - Number(s.don_co_phi))} đơn còn lại chưa rời kho
+          (huỷ, chờ hàng, đơn mới) nên không phát sinh cước.
+        </div>
+      )}
 
       {/* Xu hướng theo tháng */}
       {thang.length > 1 && (
