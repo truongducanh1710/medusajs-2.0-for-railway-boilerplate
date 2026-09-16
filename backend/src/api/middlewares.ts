@@ -19,6 +19,19 @@ function mktChatUploadHandler(req: MedusaRequest, res: MedusaResponse, next: Med
   })
 }
 
+// Upload tai lieu noi bo — cung cau hinh voi mkt-chat (memory storage, 50MB).
+function taiLieuUploadHandler(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  mktChatUpload.single("file")(req as any, res as any, (err: any) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "File vượt quá 50MB. Vui lòng chọn file nhỏ hơn." })
+      }
+      return res.status(400).json({ error: err.message || "Upload file thất bại" })
+    }
+    next()
+  })
+}
+
 export function resolveUserPerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
   const role: string = metadata?.role ?? ""
@@ -154,6 +167,12 @@ export default defineMiddlewares({
       method: ["POST"],
       middlewares: [mktChatUploadHandler],
     },
+    // Upload tai lieu — multipart, parse vao req.file bang multer
+    {
+      matcher: "/admin/tai-lieu/upload",
+      method: ["POST"],
+      middlewares: [taiLieuUploadHandler],
+    },
     // CORS cho Chrome Extension — phải đứng trước auth middleware
     {
       matcher: "/admin/1688-import",
@@ -165,6 +184,13 @@ export default defineMiddlewares({
       method: ["POST", "OPTIONS"],
       middlewares: [extensionCors],
     },
+
+    // Tai lieu noi bo. Trang mo cho moi nguoi dang nhap — phan quyen nam o TUNG THU MUC
+    // (view_roles/edit_roles), duoc kiem tra trong chinh route chu khong o middleware,
+    // vi middleware khong biet request dang dong toi thu muc nao.
+    // Rieng thao tac tren THU MUC (tao/sua/xoa = dat phan quyen) thi chan cung o day.
+    { matcher: "/admin/tai-lieu/folders", method: ["POST"], middlewares: [requirePerm("page.tai-lieu.manage")] },
+    { matcher: "/admin/tai-lieu/folders/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.tai-lieu.manage")] },
 
     // Custom routes — permission guards
     { matcher: "/admin/pancake-sync", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
