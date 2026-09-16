@@ -241,7 +241,11 @@ export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string,
     customer_phone: raw.bill_phone_number ?? raw.customer?.phone ?? "",
     province: raw.shipping_address?.province_name ?? raw.customer?.province ?? "",
     total: raw.total_price ?? raw.total ?? 0,
-    shipping_fee: raw.shipping_fee ?? 0,
+    // Phí vận chuyển THẬT nằm ở `partner_fee`, không phải `shipping_fee`.
+    // Pancake để shipping_fee = 0 gần như mọi đơn (30 ngày: 2/1970 đơn có giá trị)
+    // còn partner_fee mới là số hãng vận chuyển thu (VTP). Map sai khiến cột này
+    // rỗng suốt và mọi báo cáo phí ship đều bằng 0.
+    shipping_fee: raw.partner_fee ?? raw.shipping_fee ?? 0,
     cod_amount: raw.cod ?? 0,
     items,
     items_count: items.length,

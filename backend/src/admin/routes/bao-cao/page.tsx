@@ -1026,6 +1026,306 @@ function ShopBreakdownBlock({ data, totalRevenue }: { data: any; totalRevenue: n
 }
 
 // ---- Shipping Tab ----
+// ---- Shipping Cost Tab ----
+// Theo dõi & phân tích giá vận chuyển. Tách riêng khỏi tab "Vận đơn" vì tab kia nói về
+// giao/hoàn/huỷ (số lượng đơn) còn tab này nói về TIỀN cước — hai câu hỏi khác nhau.
+function ShippingCostTab({ range, market }: { range: DateRange; market: Market }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    const from = toISO(range.from), to = toISO(range.to, true)
+    apiFetch(`/admin/pancake-sync/report/shipping-cost?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&market=${market}`)
+      .then(r => r.json()).then(setData).catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [range.from, range.to, market])
+
+  const fmt = useFmtMoney()
+
+  if (loading) return <div className="text-center py-16 text-gray-400">Đang tải…</div>
+  if (!data || data.error) return <div className="text-center py-16 text-gray-400">Không có dữ liệu</div>
+
+  const s = data.summary ?? {}
+  const thang: any[] = data.theo_thang ?? []
+  const bienDong: any[] = data.bien_dong_sp ?? []
+  const theoSp: any[] = data.theo_sp ?? []
+  const theoTinh: any[] = data.theo_tinh ?? []
+  const theoHang: any[] = data.theo_hang ?? []
+
+  // Trục Y của biểu đồ xu hướng: kẹp theo min/max thật rồi nới 10% để đường không chạm mép.
+  const dsTb = thang.map(m => Number(m.tb_phi) || 0).filter(v => v > 0)
+  const yMax = dsTb.length ? Math.max(...dsTb) * 1.1 : 1
+  const yMin = dsTb.length ? Math.min(...dsTb) * 0.9 : 0
+  const CH_W = 980, CH_H = 240, PAD_L = 8, PAD_R = 8
+  const toaDo = (i: number, v: number) => {
+    const x = thang.length > 1
+      ? PAD_L + (CH_W - PAD_L - PAD_R) * i / (thang.length - 1)
+      : CH_W / 2
+    const y = CH_H - ((v - yMin) / (yMax - yMin || 1)) * CH_H
+    return { x, y: Math.max(4, Math.min(CH_H - 4, y)) }
+  }
+  const diem = thang.map((m, i) => ({ ...toaDo(i, Number(m.tb_phi) || 0), m }))
+  const duong = diem.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L")
+  const cuoi = diem[diem.length - 1]
+
+  const maxTongSp = Math.max(...theoSp.map(p => Number(p.tong_phi) || 0), 1)
+  const maxTbTinh = Math.max(...theoTinh.map(p => Number(p.tb_phi) || 0), 1)
+
+  return (
+    <div className="space-y-5">
+      {/* KPI */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="Tổng phí vận chuyển" value={fmt(s.tong_phi)}
+          sub={`${fmtNum(s.don_co_phi)} đơn có phí`}
+          accent="border-l-4 border-l-teal-500" />
+        <KpiCard label="Phí TB / đơn" value={fmt(s.tb_phi)} />
+        <KpiCard label="% trên doanh thu" value={`${s.pct_doanh_thu ?? 0}%`}
+          sub="Shop chịu phí"
+          accent={Number(s.pct_doanh_thu) > 6 ? "border-l-4 border-l-red-400" : ""} />
+        <KpiCard label="Phí đơn hoàn" value={fmt(s.phi_don_hoan)}
+          sub={`${fmtNum(s.don_hoan_co_phi)} đơn — mất trắng`}
+          accent={Number(s.phi_don_hoan) > 0 ? "border-l-4 border-l-orange-400" : ""} />
+      </div>
+
+      {/* Xu hướng theo tháng */}
+      {thang.length > 1 && (
+        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b">
+            <h3 className="font-semibold text-gray-700 text-sm">Phí trung bình mỗi đơn, theo tháng</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              12 tháng gần nhất — không phụ thuộc khoảng lọc phía trên. Đường đi lên nghĩa là giá cước tăng.
+            </p>
+          </div>
+          <div className="p-5">
+            <svg viewBox={`0 0 ${CH_W} ${CH_H + 34}`} className="w-full h-auto block" style={{ overflow: "visible" }}>
+              {/* lưới ngang */}
+              {[0, 0.25, 0.5, 0.75, 1].map(f => (
+                <line key={f} x1={0} x2={CH_W} y1={CH_H * f} y2={CH_H * f}
+                  stroke="#e5e7eb" strokeWidth={1} />
+              ))}
+              <path d={`M${duong} L${cuoi.x.toFixed(1)},${CH_H} L${diem[0].x.toFixed(1)},${CH_H} Z`}
+                fill="#0d9488" opacity={0.10} />
+              <path d={`M${duong}`} fill="none" stroke="#0d9488" strokeWidth={2.5}
+                strokeLinejoin="round" strokeLinecap="round" />
+              {diem.slice(0, -1).map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#0d9488" />
+              ))}
+              <circle cx={cuoi.x} cy={cuoi.y} r={6} fill="#0d9488" stroke="#fff" strokeWidth={2.5} />
+              <text x={Math.min(cuoi.x, CH_W - 40)} y={cuoi.y - 14} textAnchor="middle"
+                fontSize={13} fontWeight={600} fill="#0d9488">
+                {fmtNum(Math.round(Number(cuoi.m.tb_phi)))}đ
+              </text>
+              {diem.map((p, i) => (
+                <text key={i} x={p.x} y={CH_H + 22} textAnchor="middle" fontSize={12} fill="#9ca3af">
+                  {String(p.m.thang).slice(5)}
+                </text>
+              ))}
+            </svg>
+          </div>
+          <div className="px-5 py-3 border-t bg-gray-50 text-xs text-gray-500">
+            {(() => {
+              const dau = thang.find(m => Number(m.tb_phi) > 0)
+              const cu = thang[thang.length - 1]
+              if (!dau || !cu || !Number(dau.tb_phi)) return null
+              const pct = Math.round((Number(cu.tb_phi) - Number(dau.tb_phi)) / Number(dau.tb_phi) * 1000) / 10
+              return (
+                <>
+                  Từ <b className="text-gray-700">{String(dau.thang).slice(5)}/{String(dau.thang).slice(0, 4)}</b> đến{" "}
+                  <b className="text-gray-700">{String(cu.thang).slice(5)}/{String(cu.thang).slice(0, 4)}</b>:{" "}
+                  {fmtNum(Math.round(Number(dau.tb_phi)))}đ → {fmtNum(Math.round(Number(cu.tb_phi)))}đ{" "}
+                  <b className={pct > 0 ? "text-red-500" : "text-green-600"}>
+                    ({pct > 0 ? "+" : ""}{pct}%)
+                  </b>
+                  . Tháng cuối có thể chưa đủ ngày.
+                </>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Sản phẩm cần theo dõi */}
+      {bienDong.length > 0 && (
+        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b">
+            <h3 className="font-semibold text-gray-700 text-sm">Sản phẩm cần theo dõi</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              So tháng gần nhất với tháng liền trước. Chỉ tính đơn một sản phẩm, tối thiểu 5 đơn mỗi tháng.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b text-xs text-gray-500">
+                <tr>
+                  <th className="text-left px-4 py-2">Sản phẩm</th>
+                  <th className="text-right px-4 py-2">Tháng trước</th>
+                  <th className="text-right px-4 py-2">Tháng này</th>
+                  <th className="text-right px-4 py-2">Chênh</th>
+                  <th className="text-right px-4 py-2">Thay đổi</th>
+                  <th className="text-right px-4 py-2">Đơn</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-900">
+                {bienDong.map((r: any) => {
+                  const pct = Number(r.pct_thay_doi) || 0
+                  // >5% tăng là đáng gọi hãng vận chuyển hỏi; dưới đó coi như dao động thường.
+                  const mau = pct > 5 ? "border-l-red-500" : pct < -5 ? "border-l-green-500" : "border-l-gray-200"
+                  const pill = pct > 5
+                    ? "bg-red-50 text-red-600"
+                    : pct < -5 ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
+                  return (
+                    <tr key={r.sp}>
+                      <td className={`px-4 py-2.5 font-medium border-l-4 ${mau}`}>{r.sp}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-400">{fmtNum(r.tb_truoc)}đ</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs">{fmtNum(r.tb_nay)}đ</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs">
+                        {Number(r.chenh) > 0 ? "+" : ""}{fmtNum(r.chenh)}đ
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${pill}`}>
+                          {pct > 0 ? "▲" : pct < 0 ? "▼" : ""} {Math.abs(pct)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-400">{r.don_nay}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-5 py-3 border-t bg-gray-50 text-xs text-gray-500">
+            Thanh màu bên trái: <b className="text-red-500">đỏ</b> tăng trên 5% ·{" "}
+            <b className="text-gray-600">xám</b> đi ngang · <b className="text-green-600">xanh</b> giảm.
+          </div>
+        </div>
+      )}
+
+      {/* Chi tiết theo sản phẩm */}
+      {theoSp.length > 0 && (
+        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b">
+            <h3 className="font-semibold text-gray-700 text-sm">Phí theo sản phẩm</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Trong khoảng đang lọc. Cột biên độ là khoảng dao động thấp nhất – cao nhất của cùng sản phẩm.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b text-xs text-gray-500">
+                <tr>
+                  <th className="text-left px-4 py-2">Sản phẩm</th>
+                  <th className="text-right px-4 py-2">Đơn</th>
+                  <th className="text-right px-4 py-2">TB / đơn</th>
+                  <th className="text-right px-4 py-2">Biên độ</th>
+                  <th className="text-right px-4 py-2">% giá bán</th>
+                  <th className="text-right px-4 py-2">Tổng phí</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-900">
+                {theoSp.map((p: any) => {
+                  const pct = Number(p.pct_gia) || 0
+                  const cao = Number(p.phi_cao) || 0
+                  const thap = Number(p.phi_thap) || 0
+                  const tb = Number(p.tb_phi) || 0
+                  const dai = maxTongSp > 0 ? (cao / Math.max(...theoSp.map(x => Number(x.phi_cao) || 0), 1)) * 100 : 0
+                  const viTri = cao > thap ? ((tb - thap) / (cao - thap)) * 100 : 50
+                  return (
+                    <tr key={p.sp}>
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium">{p.sp}</div>
+                        <div className="text-xs text-gray-400">{fmtNum(p.gia_ban)}đ</div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-400">{fmtNum(p.don)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs">{fmtNum(p.tb_phi)}đ</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="font-mono text-[11px] text-gray-400">{Math.round(thap / 1000)}k</span>
+                          <div className="relative w-24 h-1.5 bg-gray-100 rounded flex-shrink-0">
+                            <div className="absolute h-1.5 bg-gray-300 rounded" style={{ width: `${dai}%` }} />
+                            <div className="absolute w-2.5 h-2.5 rounded-full bg-teal-600 border-2 border-white"
+                              style={{ left: `calc(${Math.min(Math.max(viTri, 0), 100) * dai / 100}% - 5px)`, top: "-3px" }} />
+                          </div>
+                          <span className="font-mono text-[11px] text-gray-400">{Math.round(cao / 1000)}k</span>
+                        </div>
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-mono text-xs ${pct > 10 ? "text-red-500 font-bold" : ""}`}>
+                        {pct}%
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs">{fmt(p.tong_phi)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-5 py-3 border-t bg-gray-50 text-xs text-gray-500">
+            Chỉ tính đơn có <b className="text-gray-600">đúng một sản phẩm</b> — đơn nhiều sản phẩm tính cước
+            theo tổng kiện nên không tách phí cho từng món một cách trung thực được.
+            <b className="text-red-500"> % giá bán trên 10%</b> là sản phẩm cần xem lại giá hoặc quy cách đóng gói.
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Tỉnh */}
+        {theoTinh.length > 0 && (
+          <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm">Tỉnh có phí cao nhất</div>
+            <div className="p-5 space-y-2.5">
+              {theoTinh.slice(0, 10).map((t: any) => {
+                const w = (Number(t.tb_phi) / maxTbTinh) * 100
+                return (
+                  <div key={t.tinh}>
+                    <div className="flex justify-between items-baseline text-sm mb-1">
+                      <span className="text-gray-700">{t.tinh}</span>
+                      <span className="font-mono text-xs text-gray-500">
+                        {fmtNum(t.tb_phi)}đ <span className="text-gray-300">· {t.don} đơn</span>
+                      </span>
+                    </div>
+                    <Bar pct={w} color={w > 90 ? "bg-amber-500" : "bg-teal-600"} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Hãng vận chuyển */}
+        {theoHang.length > 0 && (
+          <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b font-semibold text-gray-700 text-sm">Theo hãng vận chuyển</div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b text-xs text-gray-500">
+                <tr>
+                  <th className="text-left px-4 py-2">Hãng</th>
+                  <th className="text-right px-4 py-2">Đơn</th>
+                  <th className="text-right px-4 py-2">TB / đơn</th>
+                  <th className="text-right px-4 py-2">Tổng</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-900">
+                {theoHang.map((h: any) => (
+                  <tr key={h.hang}>
+                    <td className="px-4 py-2.5 font-medium">{h.hang}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-400">{fmtNum(h.don)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">{fmtNum(h.tb_phi)}đ</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">{fmt(h.tong_phi)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="px-5 py-3 border-t bg-gray-50 text-xs text-gray-500">
+              Đơn sàn (Shopee/TikTok) do nền tảng tự giao nên không có phí trong hệ thống —
+              mọi số trên trang này chỉ nói về đơn tự chạy.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ShippingTab({ range, market }: { range: DateRange; market: Market }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -5515,9 +5815,9 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
 }
 
 // ---- Main Page ----
-type TabKey = "overview" | "combined" | "shipping" | "product" | "sale" | "nv-mkt" | "lng" | "sanTMDT" | "errors" | "marketing"
+type TabKey = "overview" | "combined" | "shipping" | "phi-vc" | "product" | "sale" | "nv-mkt" | "lng" | "sanTMDT" | "errors" | "marketing"
 
-const VALID_TABS: TabKey[] = ["overview", "combined", "shipping", "product", "sale", "nv-mkt", "lng", "sanTMDT", "errors", "marketing"]
+const VALID_TABS: TabKey[] = ["overview", "combined", "shipping", "phi-vc", "product", "sale", "nv-mkt", "lng", "sanTMDT", "errors", "marketing"]
 
 // Quyền hẹp mở riêng từng tab. page.bao-cao.view vẫn thấy TẤT CẢ tab như trước —
 // đây chỉ là đường vào cho nhân sự KHÔNG có quyền xem full báo cáo.
@@ -5606,6 +5906,7 @@ const BaoCaoPage = () => {
     { key: "overview",  label: "Tổng quan",   icon: "📊" },
     { key: "combined",  label: "Tổng 2 TT",   icon: "🌏" },
     { key: "shipping",  label: "Vận đơn",     icon: "🚚" },
+    { key: "phi-vc",    label: "Phí vận chuyển", icon: "💸" },
     { key: "product",   label: "Sản phẩm & Lợi nhuận", icon: "💰" },
     { key: "sale",      label: "Sale & Funnel", icon: "🎯" },
     { key: "nv-mkt",   label: "NV MKT",        icon: "📦" },
@@ -5658,6 +5959,7 @@ const BaoCaoPage = () => {
         {/* Gộp 2 thị trường → luôn hiển thị VND, không phụ thuộc dropdown market. */}
         {activeTab === "combined"  && <CombinedTab range={range} />}
         {activeTab === "shipping"  && <ShippingTab range={range} market={market} />}
+        {activeTab === "phi-vc"    && <ShippingCostTab range={range} market={market} />}
         {activeTab === "product"   && <ProductTab range={range} market={market} />}
         {activeTab === "sale"      && <SaleTab range={range} market={market} />}
         {activeTab === "nv-mkt"   && <NvMktTab range={range} market={market} />}
