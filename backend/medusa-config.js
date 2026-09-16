@@ -39,6 +39,11 @@ const medusaConfig = {
       authCors: AUTH_CORS,
       storeCors: STORE_CORS,
       jwtSecret: JWT_SECRET,
+      // Phiên đăng nhập 7 ngày. Mặc định của Medusa là "1d" — nhân sự phải đăng nhập
+      // lại mỗi ngày, quá phiền với người dùng trang admin cả ngày.
+      // Đặt qua JWT_EXPIRES_IN trên Railway nếu cần đổi mà không phải deploy lại.
+      // LƯU Ý: đổi JWT_SECRET sẽ vô hiệu mọi token đang có, mọi người phải đăng nhập lại.
+      jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
       cookieSecret: COOKIE_SECRET,
       uploadFileSizeLimit: 104857600, // 100MB
       jsonLimit: "100mb",
