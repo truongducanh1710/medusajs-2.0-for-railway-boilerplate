@@ -793,8 +793,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Chỉ ĐẾM ĐƠN, không tính cước: đơn sàn luôn có partner_fee = 0 vì sàn tự trả tiền
     // vận chuyển cho hãng, nên mọi con số tiền ở đây sẽ ra 0 và gây hiểu nhầm.
     //
-    // Đếm theo status = 3 (đã giao thành công) để khớp với con số "đơn giao thành công"
-    // ngay trên card; dùng mẫu khác thì hai số cạnh nhau không cộng lại được.
+    // Đếm theo status = 3 (đã giao thành công) để khớp con số "đơn giao thành công"
+    // ngay trên card. Phải lặp lại ĐÚNG điều kiện `raw->'items' IS NOT NULL` của truy
+    // vấn chính: da_nhan đếm DISTINCT order_id sau khi đã nổ items, nên đơn không có
+    // dòng hàng không nằm trong đó. Thiếu điều kiện này thì tổng các hãng vượt số đơn
+    // trên card (đo thực tế: TikTok 4.185 vs 4.166, Shopee 154 vs 121) và người đọc
+    // không biết tin số nào.
     const shipRows = await sql(`
       SELECT
         po.source AS platform,
@@ -805,6 +809,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ${platformFilter}
         ${marketFilter}
         AND po.status = 3
+        AND po.raw->'items' IS NOT NULL
+        AND jsonb_array_length(COALESCE(po.raw->'items', '[]'::jsonb)) > 0
         AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
         AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       GROUP BY 1, 2
