@@ -186,6 +186,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           po.province,
           po.shop_name,
           po.tracking_code,
+          -- Hãng vận chuyển. Đơn sàn KHÔNG có partner_fee (sàn tự trả cước) nhưng vẫn
+          -- có partner_name — báo cáo phí vận chuyển lọc partner_fee > 0 nên bỏ sót
+          -- nhóm này, ở đây chỉ đếm đơn nên không cần điều kiện phí.
+          NULLIF(trim(COALESCE(po.raw->'partner'->>'partner_name', '')), '') AS partner_name,
           (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS created_at_vn,
           ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
           -- Mã gốc chưa qua alias — ads điền theo mã này (xem ../route.ts).
@@ -318,6 +322,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           province: r.province || "",
           shop_name: r.shop_name || "",
           tracking_code: r.tracking_code || "",
+          partner_name: r.partner_name || null,
           created_at: r.created_at_vn,
           // Tiền cấp ĐƠN — mọi dòng hàng của cùng đơn mang cùng giá trị, lấy 1 lần
           // là đủ (cộng dồn theo dòng sẽ nhân lên số lần bằng số SP trong đơn).
@@ -473,6 +478,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
+    // ── ĐƠN THEO HÃNG VẬN CHUYỂN ───────────────────────────────────────────────
+    // Chỉ ĐẾM ĐƠN, không tính cước: đơn sàn luôn có partner_fee = 0 vì sàn tự trả tiền
+    // vận chuyển, nên mọi phép tính phí ở đây sẽ ra 0 và gây hiểu nhầm.
+    // Đơn chưa đẩy sang hãng (mới tạo/chờ xử lý) gom vào nhóm "Chưa có" thay vì bỏ đi —
+    // giấu đi thì tổng các hãng không khớp số đơn của ngày, người đọc tưởng mất đơn.
+    const shipCount: Record<string, number> = {}
+    for (const o of list as any[]) {
+      const k = o.partner_name || "Chưa có"
+      shipCount[k] = (shipCount[k] ?? 0) + 1
+    }
+    const byShippingPartner = Object.entries(shipCount)
+      .map(([partner_name, orders]) => ({
+        partner_name,
+        orders,
+        pct: pct(orders, list.length),
+      }))
+      .sort((a, b) => b.orders - a.orders)
+
     const result = list.map((o: any) => {
       const adsPerOrder = adsOfOrder(o)
       // Fullfill 6.000đ chỉ tính cho đơn đã tra được giá vốn — giống bảng ngày, để
@@ -526,6 +549,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       date, platform, market, mode,
       orders: result,
       totals,
+      // Đếm đơn theo hãng vận chuyển (không kèm cước — xem ghi chú ở trên).
+      by_shipping_partner: byShippingPartner,
       ads_cost_day: adsDay,
       // Số đơn có ads riêng theo SP vs phần còn lại chia đều — để UI nói rõ đang
       // dùng cách nào, tránh hiểu nhầm mọi đơn đều là số phân bổ thô.

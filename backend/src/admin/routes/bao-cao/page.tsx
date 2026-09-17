@@ -4057,6 +4057,26 @@ function DayOrdersModal({
     return m ? m[1] : ""
   }
 
+  // Ký hiệu hãng vận chuyển: viết tắt để vừa một dòng đơn, màu theo hãng để quét
+  // nhanh bằng mắt. Tên đầy đủ từ POS khá dài ("Giao hàng nhanh") nên rút gọn, còn
+  // hãng lạ thì lấy nguyên tên — thà dài còn hơn hiện sai tên hãng.
+  const SHIP_BADGE: Record<string, { s: string; c: string }> = {
+    "J&T": { s: "J&T", c: "bg-red-50 text-red-700 border-red-200" },
+    "J&T Malay": { s: "J&T MY", c: "bg-red-50 text-red-600 border-red-200" },
+    "Giao hàng nhanh": { s: "GHN", c: "bg-orange-50 text-orange-700 border-orange-200" },
+    "Giao hàng tiết kiệm": { s: "GHTK", c: "bg-green-50 text-green-700 border-green-200" },
+    "Viettel Post": { s: "VTP", c: "bg-sky-50 text-sky-700 border-sky-200" },
+    "Vietnam Post": { s: "VNPost", c: "bg-blue-50 text-blue-700 border-blue-200" },
+    "Ninja Van": { s: "Ninja", c: "bg-purple-50 text-purple-700 border-purple-200" },
+    "Best Express": { s: "BEST", c: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+    "SPX Express": { s: "SPX", c: "bg-amber-50 text-amber-700 border-amber-200" },
+    "Be": { s: "Be", c: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+  }
+  const shipBadge = (name: any) => {
+    if (!name) return { s: "—", c: "bg-gray-50 text-gray-400 border-gray-200" }
+    return SHIP_BADGE[String(name)] ?? { s: String(name), c: "bg-gray-100 text-gray-600 border-gray-300" }
+  }
+
   const orders: any[] = data?.orders ?? []
   const t = data?.totals ?? {}
 
@@ -4228,6 +4248,26 @@ function DayOrdersModal({
               </div>
             )}
 
+            {/* Đơn theo hãng vận chuyển. Chỉ đếm đơn — đơn sàn không có cước vì sàn tự
+                trả, nên ở đây cố ý không hiện tiền. */}
+            {(data.by_shipping_partner ?? []).length > 0 && (
+              <div className="px-5 py-2 border-b text-[12px] text-gray-600 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-gray-400">Đơn vị vận chuyển:</span>
+                {(data.by_shipping_partner ?? []).map((p: any) => (
+                  <span key={p.partner_name} className="inline-flex items-center gap-1">
+                    <span className={`px-1 py-px rounded border text-[10px] font-semibold ${shipBadge(p.partner_name === "Chưa có" ? null : p.partner_name).c}`}>
+                      {p.partner_name === "Chưa có" ? "—" : shipBadge(p.partner_name).s}
+                    </span>
+                    <b className="text-gray-800">{p.orders}</b>
+                    <span className="text-gray-400">{p.pct != null ? `${p.pct}%` : ""}</span>
+                  </span>
+                ))}
+                <span className="text-gray-400">
+                  — <b className="text-gray-600">—</b> là đơn chưa đẩy sang hãng
+                </span>
+              </div>
+            )}
+
             <div className="px-5 py-2 border-b flex items-center gap-2">
               {([["don", `Theo đơn (${orders.length})`], ["sp", `Theo sản phẩm (${byProduct.length})`]] as const).map(([k, lb]) => (
                 <button key={k} onClick={() => setTab(k)}
@@ -4394,6 +4434,15 @@ function DayOrdersModal({
                             {timeVN(o.created_at) && (
                               <span className="ml-1.5 text-[11px] text-gray-400">{timeVN(o.created_at)}</span>
                             )}
+                            {/* Hãng vận chuyển — đơn chưa đẩy sang hãng hiện "—" chứ không
+                                ẩn, để phân biệt "chưa gửi" với "không có dữ liệu". */}
+                            <span
+                              className={`ml-1.5 px-1 py-px rounded border text-[10px] font-semibold align-middle ${shipBadge(o.partner_name).c}`}
+                              title={o.partner_name
+                                ? `Hãng vận chuyển: ${o.partner_name}${o.tracking_code ? ` · ${o.tracking_code}` : ""}`
+                                : "Đơn chưa đẩy sang hãng vận chuyển"}>
+                              {shipBadge(o.partner_name).s}
+                            </span>
                             {o.missing_cost && (
                               <span className="ml-1.5 text-[10.5px] text-amber-600"
                                 title="Đơn có sản phẩm chưa khai giá vốn — LNG chỉ tính trên phần đã khai">
