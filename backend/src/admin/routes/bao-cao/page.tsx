@@ -13,6 +13,57 @@ const CurrencyCtx = createContext<{ market: Market; currencyMode: CurrencyMode; 
 })
 
 // ---- Helpers ----
+// Ký hiệu hãng vận chuyển: viết tắt để vừa một dòng đơn, màu theo hãng để quét nhanh
+// bằng mắt. Tên đầy đủ từ POS khá dài ("Giao hàng nhanh") nên rút gọn, còn hãng lạ thì
+// lấy nguyên tên — thà dài còn hơn hiện sai tên hãng.
+const SHIP_BADGE: Record<string, { s: string; c: string }> = {
+  "J&T": { s: "J&T", c: "bg-red-50 text-red-700 border-red-200" },
+  "J&T Malay": { s: "J&T MY", c: "bg-red-50 text-red-600 border-red-200" },
+  "Giao hàng nhanh": { s: "GHN", c: "bg-orange-50 text-orange-700 border-orange-200" },
+  "Giao hàng tiết kiệm": { s: "GHTK", c: "bg-green-50 text-green-700 border-green-200" },
+  "Viettel Post": { s: "VTP", c: "bg-sky-50 text-sky-700 border-sky-200" },
+  "Vietnam Post": { s: "VNPost", c: "bg-blue-50 text-blue-700 border-blue-200" },
+  "Ninja Van": { s: "Ninja", c: "bg-purple-50 text-purple-700 border-purple-200" },
+  "Best Express": { s: "BEST", c: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  "SPX Express": { s: "SPX", c: "bg-amber-50 text-amber-700 border-amber-200" },
+  "Be": { s: "Be", c: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+}
+/** Đơn chưa đẩy sang hãng (null hoặc "Chưa có") hiện "—" xám. */
+function shipBadge(name: any) {
+  if (!name || name === "Chưa có") return { s: "—", c: "bg-gray-50 text-gray-400 border-gray-200" }
+  return SHIP_BADGE[String(name)] ?? { s: String(name), c: "bg-gray-100 text-gray-600 border-gray-300" }
+}
+
+/**
+ * Dòng "đơn theo hãng vận chuyển" dưới chân card tổng của mỗi sàn.
+ * Chỉ SỐ ĐƠN, không có tiền cước: đơn sàn luôn partner_fee = 0 vì sàn tự trả cho hãng.
+ * Số đơn ở đây tính trên đơn đã giao thành công, khớp mẫu với dòng "đơn giao thành
+ * công" ngay phía trên card.
+ */
+function ShippingSplit({ rows }: { rows?: { partner_name: string; orders: number; pct: number | null }[] }) {
+  if (!rows?.length) return null
+  return (
+    <div className="mt-2 pt-2 border-t border-dashed border-gray-200">
+      <div className="text-[10.5px] text-gray-400 mb-1">Đơn theo đơn vị vận chuyển</div>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        {rows.map((r) => {
+          const b = shipBadge(r.partner_name)
+          return (
+            <span key={r.partner_name} className="inline-flex items-center gap-1"
+              title={r.partner_name === "Chưa có"
+                ? "Đơn chưa đẩy sang hãng vận chuyển"
+                : `${r.partner_name} — ${r.orders} đơn`}>
+              <span className={`px-1 py-px rounded border text-[10px] font-semibold ${b.c}`}>{b.s}</span>
+              <b className="text-[11px] text-gray-700">{fmtNum(r.orders)}</b>
+              {r.pct != null && <span className="text-[10px] text-gray-400">{r.pct}%</span>}
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function fmtVND(n: number | null | undefined) {
   if (n == null || isNaN(Number(n))) return "—"
   const v = Number(n)
@@ -4057,26 +4108,6 @@ function DayOrdersModal({
     return m ? m[1] : ""
   }
 
-  // Ký hiệu hãng vận chuyển: viết tắt để vừa một dòng đơn, màu theo hãng để quét
-  // nhanh bằng mắt. Tên đầy đủ từ POS khá dài ("Giao hàng nhanh") nên rút gọn, còn
-  // hãng lạ thì lấy nguyên tên — thà dài còn hơn hiện sai tên hãng.
-  const SHIP_BADGE: Record<string, { s: string; c: string }> = {
-    "J&T": { s: "J&T", c: "bg-red-50 text-red-700 border-red-200" },
-    "J&T Malay": { s: "J&T MY", c: "bg-red-50 text-red-600 border-red-200" },
-    "Giao hàng nhanh": { s: "GHN", c: "bg-orange-50 text-orange-700 border-orange-200" },
-    "Giao hàng tiết kiệm": { s: "GHTK", c: "bg-green-50 text-green-700 border-green-200" },
-    "Viettel Post": { s: "VTP", c: "bg-sky-50 text-sky-700 border-sky-200" },
-    "Vietnam Post": { s: "VNPost", c: "bg-blue-50 text-blue-700 border-blue-200" },
-    "Ninja Van": { s: "Ninja", c: "bg-purple-50 text-purple-700 border-purple-200" },
-    "Best Express": { s: "BEST", c: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-    "SPX Express": { s: "SPX", c: "bg-amber-50 text-amber-700 border-amber-200" },
-    "Be": { s: "Be", c: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  }
-  const shipBadge = (name: any) => {
-    if (!name) return { s: "—", c: "bg-gray-50 text-gray-400 border-gray-200" }
-    return SHIP_BADGE[String(name)] ?? { s: String(name), c: "bg-gray-100 text-gray-600 border-gray-300" }
-  }
-
   const orders: any[] = data?.orders ?? []
   const t = data?.totals ?? {}
 
@@ -4255,8 +4286,8 @@ function DayOrdersModal({
                 <span className="text-gray-400">Đơn vị vận chuyển:</span>
                 {(data.by_shipping_partner ?? []).map((p: any) => (
                   <span key={p.partner_name} className="inline-flex items-center gap-1">
-                    <span className={`px-1 py-px rounded border text-[10px] font-semibold ${shipBadge(p.partner_name === "Chưa có" ? null : p.partner_name).c}`}>
-                      {p.partner_name === "Chưa có" ? "—" : shipBadge(p.partner_name).s}
+                    <span className={`px-1 py-px rounded border text-[10px] font-semibold ${shipBadge(p.partner_name).c}`}>
+                      {shipBadge(p.partner_name).s}
                     </span>
                     <b className="text-gray-800">{p.orders}</b>
                     <span className="text-gray-400">{p.pct != null ? `${p.pct}%` : ""}</span>
@@ -5176,6 +5207,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <span className={p.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>{money(p.lng_sau_ads)} ({p.lng_sau_ads_pct}%)</span>
               </div>
             </div>
+            <ShippingSplit rows={p.by_shipping_partner} />
           </div>
         ))}
         {data.totals && (
@@ -5193,6 +5225,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                 <span className={data.totals.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>{money(data.totals.lng_sau_ads)} ({data.totals.lng_sau_ads_pct}%)</span>
               </div>
             </div>
+            <ShippingSplit rows={data.totals.by_shipping_partner} />
           </div>
         )}
       </div>

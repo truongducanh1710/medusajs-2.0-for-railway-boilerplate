@@ -786,14 +786,53 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       lng_sau_ads_pct: pct(t.lng - ads, t.revenue_costed),
     })
 
+    // ── ĐƠN THEO HÃNG VẬN CHUYỂN ───────────────────────────────────────────────
+    // Query RIÊNG, không gộp từ `result`: result là dòng theo SẢN PHẨM nên một đơn
+    // nhiều SP nằm ở nhiều dòng — cộng lại sẽ đếm trùng đơn. Ở đây cần số đơn duy nhất.
+    //
+    // Chỉ ĐẾM ĐƠN, không tính cước: đơn sàn luôn có partner_fee = 0 vì sàn tự trả tiền
+    // vận chuyển cho hãng, nên mọi con số tiền ở đây sẽ ra 0 và gây hiểu nhầm.
+    //
+    // Đếm theo status = 3 (đã giao thành công) để khớp với con số "đơn giao thành công"
+    // ngay trên card; dùng mẫu khác thì hai số cạnh nhau không cộng lại được.
+    const shipRows = await sql(`
+      SELECT
+        po.source AS platform,
+        COALESCE(NULLIF(trim(COALESCE(po.raw->'partner'->>'partner_name', '')), ''), 'Chưa có') AS partner_name,
+        COUNT(*)::int AS orders
+      FROM pancake_order po
+      WHERE po.deleted_at IS NULL
+        ${platformFilter}
+        ${marketFilter}
+        AND po.status = 3
+        AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      GROUP BY 1, 2
+    `, [from, to])
+
+    /** Gom số đơn theo hãng cho 1 sàn (hoặc cả 2 khi platform = null). */
+    const shipOf = (platform: string | null) => {
+      const acc: Record<string, number> = {}
+      for (const r of shipRows) {
+        if (platform && r.platform !== platform) continue
+        const k = String(r.partner_name)
+        acc[k] = (acc[k] ?? 0) + Number(r.orders || 0)
+      }
+      const tong = Object.values(acc).reduce((s, v) => s + v, 0)
+      return Object.entries(acc)
+        .map(([partner_name, orders]) => ({ partner_name, orders, pct: pct(orders, tong) }))
+        .sort((a, b) => b.orders - a.orders)
+    }
+
     const byPlatform = ["tiktok", "shopee"].map(p => ({
       platform: p,
       platform_label: p === "tiktok" ? "TikTok Shop" : "Shopee",
       ...withAds(mkTotals(result.filter(r => r.platform === p)), adsByPlatform[p] ?? 0),
+      by_shipping_partner: shipOf(p),
     })).filter(p => p.total_orders > 0)
 
     const totalAds = Object.values(adsByPlatform).reduce((s, v) => s + v, 0)
-    const totals = withAds(mkTotals(result), totalAds)
+    const totals = { ...withAds(mkTotals(result), totalAds), by_shipping_partner: shipOf(null) }
     const hasAds = totalAds > 0
     // Cảnh báo mức phủ giá vốn — biết số LNG đang đại diện cho bao nhiêu % doanh thu.
     const coverage = {
