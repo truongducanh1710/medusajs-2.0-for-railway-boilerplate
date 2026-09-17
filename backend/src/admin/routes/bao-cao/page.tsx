@@ -42,9 +42,16 @@ function shipBadge(name: any) {
  */
 function ShippingSplit({ rows }: { rows?: { partner_name: string; orders: number; pct: number | null }[] }) {
   if (!rows?.length) return null
+  const tong = rows.reduce((s, r) => s + r.orders, 0)
   return (
     <div className="mt-2 pt-2 border-t border-dashed border-gray-200">
-      <div className="text-[10.5px] text-gray-400 mb-1">Đơn theo đơn vị vận chuyển</div>
+      <div className="text-[10.5px] text-gray-400 mb-1"
+        title={"Đếm trên số đơn thật. Số 'đơn giao thành công' phía trên cộng dồn qua từng "
+          + "dòng sản phẩm nên đơn mua nhiều món bị tính nhiều lần — vì vậy tổng ở đây "
+          + "thường thấp hơn một chút. Cả hai đều đúng, chỉ khác cách đếm."}>
+        Đơn theo đơn vị vận chuyển
+        <span className="ml-1 text-gray-300">· {fmtNum(tong)} đơn thật ⓘ</span>
+      </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {rows.map((r) => {
           const b = shipBadge(r.partner_name)

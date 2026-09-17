@@ -793,8 +793,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Chỉ ĐẾM ĐƠN, không tính cước: đơn sàn luôn có partner_fee = 0 vì sàn tự trả tiền
     // vận chuyển cho hãng, nên mọi con số tiền ở đây sẽ ra 0 và gây hiểu nhầm.
     //
-    // Đếm theo status = 3 (đã giao thành công) để khớp với con số "đơn giao thành công"
-    // ngay trên card; dùng mẫu khác thì hai số cạnh nhau không cộng lại được.
+    // Đếm theo status = 3 (đã giao thành công), cùng mốc với "đơn giao thành công" trên card.
+    //
+    // TỔNG CÁC HÃNG THẤP HƠN SỐ ĐƠN TRÊN CARD LÀ ĐÚNG, ĐỪNG "SỬA".
+    // da_nhan của card = sum("da_nhan") cộng dồn qua các DÒNG SẢN PHẨM, mỗi dòng đếm
+    // COUNT(DISTINCT order_id) của riêng nó — nên đơn mua 2 SP khác nhau được cộng 2 lần.
+    // Số ở đây đếm trực tiếp trên bảng đơn nên là số đơn THẬT.
+    // Đo 01–17/09/2026: TikTok card 4.185 / thật 4.166 (19 đơn nhiều SP),
+    // Shopee card 154 / thật 121. Chênh càng lớn khi càng nhiều đơn mua nhiều món.
     const shipRows = await sql(`
       SELECT
         po.source AS platform,
