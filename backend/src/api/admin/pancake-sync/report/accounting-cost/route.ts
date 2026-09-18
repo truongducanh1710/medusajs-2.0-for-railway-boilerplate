@@ -24,10 +24,17 @@ export const AD_ACCOUNTS: { account_id: string; ads_code: string }[] = [
   { account_id: "act_1397084955139677", ads_code: "ADS344" },
   { account_id: "act_1133464788237858", ads_code: "ADS327" },
   { account_id: "act_2801056226892845", ads_code: "ADS346" },
-  // Verify qua Graph API 18/09/2026: "PHV - Ads347 - PHV (1217486343156251) BMPHV_USA_ANHTD".
-  // Thiếu dòng này thì tiêu thực của tài khoản vẫn vào mkt_ads_cost nhưng không chọn
-  // được để nhập tiền nạp (tháng 08/2026: 729.362đ của NAMDV không nhập được).
-  { account_id: "act_1217486343156251", ads_code: "ADS347" },
+  // Bổ sung 18/09/2026 — verify từng cái qua Graph API (field `name`), không suy đoán.
+  // Thiếu ở đây thì tiêu thực vẫn vào mkt_ads_cost nhưng tài khoản KHÔNG hiện trong ô
+  // chọn "Tài khoản Ads" nên không nhập được tiền nạp, và phần tiền đó rơi vào "KHÁC".
+  // Tra lại khi có TK mới:
+  //   curl "https://graph.facebook.com/v21.0/act_<id>?fields=name&access_token=<token>"
+  { account_id: "act_1217486343156251", ads_code: "ADS347" },  // BMPHV_USA_ANHTD
+  { account_id: "act_467272752744880",  ads_code: "ADS328" },  // BMPHANVIET_ANHTD
+  { account_id: "act_1169258974603627", ads_code: "ADS341" },  // BMPHANVIET_ANHTD
+  { account_id: "act_741222868885235",  ads_code: "ADS342" },  // BMPHANVIET_ANHTD
+  { account_id: "act_2087764658730081", ads_code: "ADS345" },  // BMPHV_USA_ANHNT
+  { account_id: "act_27214643188160995", ads_code: "ADS348" }, // BMPHV2_VN_ANHTD
 ]
 export const codeToAccount: Record<string, string> = {}
 for (const a of AD_ACCOUNTS) codeToAccount[a.ads_code] = a.account_id
