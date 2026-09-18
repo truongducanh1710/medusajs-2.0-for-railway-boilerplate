@@ -24,6 +24,10 @@ export const AD_ACCOUNTS: { account_id: string; ads_code: string }[] = [
   { account_id: "act_1397084955139677", ads_code: "ADS344" },
   { account_id: "act_1133464788237858", ads_code: "ADS327" },
   { account_id: "act_2801056226892845", ads_code: "ADS346" },
+  // Verify qua Graph API 18/09/2026: "PHV - Ads347 - PHV (1217486343156251) BMPHV_USA_ANHTD".
+  // Thiếu dòng này thì tiêu thực của tài khoản vẫn vào mkt_ads_cost nhưng không chọn
+  // được để nhập tiền nạp (tháng 08/2026: 729.362đ của NAMDV không nhập được).
+  { account_id: "act_1217486343156251", ads_code: "ADS347" },
 ]
 export const codeToAccount: Record<string, string> = {}
 for (const a of AD_ACCOUNTS) codeToAccount[a.ads_code] = a.account_id
