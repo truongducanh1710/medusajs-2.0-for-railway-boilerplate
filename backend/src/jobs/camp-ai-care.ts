@@ -32,6 +32,10 @@ const ALLOWED_TABLES = new Set([
   "camp_hourly_snapshot", "agent_prediction",
   "agent_insight", "agent_memory", "agent_camp_recommendation",
   "camp_action_log",
+  // Tầng video — đơn vị quyết định thật. Camp chạy nhiều video cùng lúc nên ROAS camp
+  // không nói được video nào kéo, video nào ăn hại.
+  "v_video_roas", "video_budget_state", "video_decision_log",
+  "agent_budget_grant", "v_agent_video_activity",
 ])
 
 // Reject SQL nếu có DDL/DML hoặc reference table ngoài whitelist
