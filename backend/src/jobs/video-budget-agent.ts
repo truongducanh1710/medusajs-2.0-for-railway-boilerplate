@@ -1,6 +1,7 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
+import { AGENT_EMAIL } from "./camp-ai-care"
 
 /**
  * Agent phân bổ ngân sách theo VIDEO — mô hình giống Smart Performance của TikTok:
@@ -245,7 +246,23 @@ export default async function videoBudgetAgent(container: MedusaContainer) {
               : qd.budget != null ? `/${c.campaign_id}?daily_budget=${qd.budget}` : ""
             if (!path) continue
             fbResp = await callFbApi("POST", path)
-            if (fbResp?.ok) thucThi = true
+            if (fbResp?.ok) {
+              thucThi = true
+              // Ghi vao camp_action_log — cung bang voi thao tac cua NGUOI, de mot
+              // truy van duy nhat tra loi duoc "camp nay ai da dong vao".
+              await sql.sql(
+                `INSERT INTO camp_action_log
+                 (campaign_id, campaign_name, action, old_value, new_value, source,
+                  user_email, fb_response, success)
+                 VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'agent', $6, $7::jsonb, true)`,
+                [
+                  c.campaign_id, v.vd_code, qd.action,
+                  JSON.stringify({ daily_budget: Number(state?.daily_budget) || 0 }),
+                  JSON.stringify({ daily_budget: qd.budget ?? null }),
+                  AGENT_EMAIL, JSON.stringify(fbResp.data ?? {}),
+                ]
+              ).catch(() => {})
+            }
           }
         }
 

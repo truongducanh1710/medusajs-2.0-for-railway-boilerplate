@@ -4,6 +4,11 @@ import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 import { logAiUsage } from "../lib/ai-usage"
 
+// Danh tinh agent khi ghi log — tai khoan nay co san page.bao-cao.camp-control
+// (bat/tat camp + chinh ngan sach). Truoc day code ghi "agent@phanviet.vn" nhung
+// tai khoan do KHONG ton tai, nen moi dong log deu tro toi mot user ma.
+export const AGENT_EMAIL = "camp-agent@phanviet.vn"
+
 const MODEL = process.env.CAMP_AI_MODEL ?? "deepseek-v4-pro"
 const EVALUATOR_MODEL = process.env.CAMP_AI_EVALUATOR_MODEL ?? "google/gemini-3.5-flash"
 const DEEPSEEK_DIRECT_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"])
@@ -429,7 +434,7 @@ export default async function campAiCare(container: MedusaContainer, opts?: { mk
           if (fbResp.ok) {
             await sql.sql(
               `INSERT INTO camp_action_log (campaign_id, campaign_name, action, old_value, new_value, source, user_email, fb_response, success)
-               VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'agent', 'agent@phanviet.vn', $6::jsonb, $7)`,
+               VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'agent', '${AGENT_EMAIL}', $6::jsonb, $7)`,
               [args.campaign_id, camp.campaign_name, args.action,
                JSON.stringify(oldValue), JSON.stringify(suggestedValue ?? {}),
                JSON.stringify(fbResp.data), true]
