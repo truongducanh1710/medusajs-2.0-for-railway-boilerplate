@@ -77,7 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     } catch {}
 
     // Lấy thông tin camp từ chi phí gần nhất — không bắt người nhập tay.
-    const { rows } = await pool.query(`
+    const { rows: tuChiPhi } = await pool.query(`
       SELECT DISTINCT ON (campaign_id)
         campaign_id, campaign_name, ad_account_id, mkt_name
       FROM mkt_ads_cost
@@ -85,7 +85,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ORDER BY campaign_id, date DESC
     `, [ids])
 
-    if (!rows.length) return res.status(400).json({ error: "Không tìm thấy camp trong dữ liệu chi phí" })
+    // Camp agent VỪA TẠO chưa có dòng nào trong mkt_ads_cost — cron sync chạy mỗi
+    // giờ mới kéo về. Không được bắt chờ: camp phải vào sổ NGAY lúc tạo, nếu không
+    // agent sẽ không nhận ra camp của chính mình ở vòng chạy kế tiếp.
+    // Với các camp đó, nhận thông tin từ body thay vì bắt lỗi.
+    const daCo = new Set(tuChiPhi.map((r: any) => r.campaign_id))
+    const thieu = ids.filter(id => !daCo.has(id))
+    const tuBody = thieu.map(id => ({
+      campaign_id: id,
+      campaign_name: String(b?.campaign_names?.[id] ?? ""),
+      ad_account_id: String(b?.ad_account_id ?? ""),
+      mkt_name: String(b?.mkt_name ?? ""),
+    }))
+
+    const rows = [...tuChiPhi, ...tuBody]
+    if (!rows.length) return res.status(400).json({ error: "Không có camp nào để giao" })
 
     for (const c of rows) {
       await pool.query(`
