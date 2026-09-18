@@ -14,21 +14,19 @@ export const MKT_ALIASES: Record<string, string> = {
 }
 
 /**
- * Mã MKT của agent tự động. Agent được đối xử như một marketer bình thường:
- * có mã riêng, tài khoản Ads riêng, và số liệu hiện song song với người trong
- * MỌI báo cáo — doanh số MKT, LNG theo MKT, chi phí, ROAS.
+ * Camp do agent lên đặt tên theo ĐÚNG quy ước cũ, chỉ thêm hậu tố _AGENT ở cuối:
+ *   PHVVN026CV_18/9_ANHTD_CHẢO VÀNG HẤP_ADS342_VD133_30ALL_AGENT
  *
- * Nhờ vậy không cần thêm cột hay nhánh xử lý nào: camp đặt tên chứa "AGENT"
- * thì extractMkt() trả về "AGENT", và toàn bộ pipeline sẵn có tự chạy đúng.
- *
- * Quy ước đặt tên camp cho agent, giống hệt camp của người:
- *   PHVVN026CV_18/9_AGENT_CHẢO VÀNG HẤP_ADS349_VD133_30ALL
+ * Giữ mã MKT gốc (ANHTD) là cố ý: chi phí vẫn quy về đúng tài khoản Ads và đúng
+ * người chịu trách nhiệm, nên mọi báo cáo hiện có không đổi. Hậu tố chỉ để tách
+ * người vs máy khi cần so sánh hiệu quả — không tạo ra một MKT giả trong báo cáo.
  */
-export const AGENT_MKT_CODE = "AGENT"
+const HAU_TO_AGENT = "AGENT"
 
-/** Camp này do agent quản lý? Dùng để tách số liệu người vs máy khi so sánh. */
+/** Camp này do agent lên? Nhận biết qua hậu tố _AGENT ở cuối tên camp. */
 export function laCampAgent(campaignName: string): boolean {
-  return extractMkt(campaignName) === AGENT_MKT_CODE
+  const t = (campaignName ?? "").trim().toUpperCase()
+  return t.endsWith(`_${HAU_TO_AGENT}`) || t.endsWith(`-${HAU_TO_AGENT}`)
 }
 
 /**
@@ -38,7 +36,11 @@ export function laCampAgent(campaignName: string): boolean {
  * Bỏ prefix: TEST_, MESS_, TEST_MESS_
  */
 export function extractMkt(campaignName: string): string {
-  const cleaned = campaignName.replace(/^(TEST[_-]|MESS[_-])+/gi, "")
+  // Bỏ hậu tố _AGENT trước khi quét: nếu không, camp thiếu mã MKT sẽ khớp nhầm
+  // vào chính chữ AGENT và tạo ra một MKT không có thật trong báo cáo.
+  const cleaned = campaignName
+    .replace(/^(TEST[_-]|MESS[_-])+/gi, "")
+    .replace(/[_-]AGENT$/i, "")
   for (const sep of ["_", "-"]) {
     const parts = cleaned.split(sep)
     for (let i = 1; i < parts.length; i++) {

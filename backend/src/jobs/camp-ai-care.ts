@@ -3,7 +3,7 @@ import OpenAI from "openai"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 import { logAiUsage } from "../lib/ai-usage"
-import { AGENT_MKT_CODE } from "../lib/mkt-code"
+import { laCampAgent } from "../lib/mkt-code"
 
 // Danh tinh agent khi ghi log — tai khoan nay co san page.bao-cao.camp-control
 // (bat/tat camp + chinh ngan sach). Truoc day code ghi "agent@phanviet.vn" nhung
@@ -275,10 +275,16 @@ async function canAutoExecute(campaignId: string, action: string, suggestedBudge
     if (!rows.length || suggestedBudget >= Number(rows[0].daily_budget)) return false
   }
 
-  // Camp do CHINH AGENT quan ly (mkt_code = AGENT) thi luon duoc tu dong — day la
-  // camp cua no, khong phai cua ai khac. Camp cua NGUOI thi chi tu dong khi nguoi do
-  // da bat co agent_auto, tuc dong y giao quyen.
-  if (mktName !== AGENT_MKT_CODE) {
+  // Camp CO HAU TO _AGENT la camp do chinh agent len — luon duoc tu dong, khong
+  // can ai bat co. Camp cua NGUOI thi van phai nguoi do bat agent_auto, tuc dong
+  // y giao quyen dieu khien.
+  const campRow = await sql.sql(
+    `SELECT campaign_name FROM mkt_ads_cost WHERE campaign_id = $1 ORDER BY date DESC LIMIT 1`,
+    [campaignId]
+  ).catch(() => [])
+  const tenCamp = campRow[0]?.campaign_name ?? ""
+
+  if (!laCampAgent(tenCamp)) {
     const autoUsers = await sql.sql(
       `SELECT metadata->>'mkt_code' as mkt_code FROM "user" WHERE metadata->>'agent_auto' = 'true' AND deleted_at IS NULL`
     ).catch(() => [])

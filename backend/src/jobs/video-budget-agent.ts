@@ -2,7 +2,6 @@ import { MedusaContainer } from "@medusajs/framework"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 import { AGENT_EMAIL } from "./camp-ai-care"
-import { AGENT_MKT_CODE } from "../lib/mkt-code"
 
 /**
  * Agent phân bổ ngân sách theo VIDEO — mô hình giống Smart Performance của TikTok:
