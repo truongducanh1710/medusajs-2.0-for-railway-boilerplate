@@ -32,6 +32,7 @@ export const ROUTE_PERMS: Record<string, string | string[]> = {
   "/nhap-chi-phi": "page.nhap-chi-phi.manage",
   "/1688-import": "page.san-pham.edit",
   "/qa": "page.qa.view",
+  "/agent-video": "page.agent-video.view",
 }
 
 export const NATIVE_PERMS: Record<string, string> = {

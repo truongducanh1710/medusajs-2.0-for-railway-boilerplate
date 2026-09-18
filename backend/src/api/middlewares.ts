@@ -185,6 +185,13 @@ export default defineMiddlewares({
       middlewares: [extensionCors],
     },
 
+    // Agent Video — xem thi chi can view, moi thao tac GHI (cap han muc, khoa video)
+    // deu doi manage: day la cac nut dieu khien truc tiep viec agent tieu tien.
+    { matcher: "/admin/agent-video/videos", method: ["GET"], middlewares: [requirePerm("page.agent-video.view")] },
+    { matcher: "/admin/agent-video/decisions", method: ["GET"], middlewares: [requirePerm("page.agent-video.view")] },
+    { matcher: "/admin/agent-video/grant", method: ["POST", "DELETE"], middlewares: [requirePerm("page.agent-video.manage")] },
+    { matcher: "/admin/agent-video/lock", method: ["POST"], middlewares: [requirePerm("page.agent-video.manage")] },
+
     // Tai lieu noi bo. Trang mo cho moi nguoi dang nhap — phan quyen nam o TUNG THU MUC
     // (view_roles/edit_roles), duoc kiem tra trong chinh route chu khong o middleware,
     // vi middleware khong biet request dang dong toi thu muc nao.
