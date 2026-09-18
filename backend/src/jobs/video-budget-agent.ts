@@ -2,6 +2,7 @@ import { MedusaContainer } from "@medusajs/framework"
 import { randomUUID } from "crypto"
 import { callFbApi } from "../api/admin/pancake-sync/report/camp-control/_lib"
 import { AGENT_EMAIL } from "./camp-ai-care"
+import { AGENT_MKT_CODE } from "../lib/mkt-code"
 
 /**
  * Agent phân bổ ngân sách theo VIDEO — mô hình giống Smart Performance của TikTok:
@@ -185,12 +186,21 @@ export default async function videoBudgetAgent(container: MedusaContainer) {
 
   for (const g of grants) {
     try {
+      // Grant cho AGENT = camp cua chinh agent. Grant cho mot MKT nguoi = agent
+      // duoc uy quyen quan ly camp cua nguoi do. Loc theo mkt_name cua camp chu
+      // khong lay tat ca, neu khong hai grant se tranh nhau cung mot video.
       const videos: VideoRow[] = await sql.sql(
-        `SELECT vd_code, spend, don_tong, don_nhan, dt_nhan,
-                roas_that, roas_est, ty_le_huy, last_spend_date
-         FROM v_video_roas
-         WHERE spend > 0
-         ORDER BY spend DESC`
+        `SELECT r.vd_code, r.spend, r.don_tong, r.don_nhan, r.dt_nhan,
+                r.roas_that, r.roas_est, r.ty_le_huy, r.last_spend_date
+         FROM v_video_roas r
+         WHERE r.spend > 0
+           AND ($1 = '' OR EXISTS (
+             SELECT 1 FROM mkt_ads_cost_ad a
+             WHERE a.vd_code = r.vd_code AND a.mkt_name = $1
+               AND a.date > current_date - 31
+           ))
+         ORDER BY r.spend DESC`,
+        [g.mkt_name || ""]
       ).catch(() => [])
 
       const states = await sql.sql(

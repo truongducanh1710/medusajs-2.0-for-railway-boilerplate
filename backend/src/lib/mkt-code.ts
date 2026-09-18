@@ -14,6 +14,24 @@ export const MKT_ALIASES: Record<string, string> = {
 }
 
 /**
+ * Mã MKT của agent tự động. Agent được đối xử như một marketer bình thường:
+ * có mã riêng, tài khoản Ads riêng, và số liệu hiện song song với người trong
+ * MỌI báo cáo — doanh số MKT, LNG theo MKT, chi phí, ROAS.
+ *
+ * Nhờ vậy không cần thêm cột hay nhánh xử lý nào: camp đặt tên chứa "AGENT"
+ * thì extractMkt() trả về "AGENT", và toàn bộ pipeline sẵn có tự chạy đúng.
+ *
+ * Quy ước đặt tên camp cho agent, giống hệt camp của người:
+ *   PHVVN026CV_18/9_AGENT_CHẢO VÀNG HẤP_ADS349_VD133_30ALL
+ */
+export const AGENT_MKT_CODE = "AGENT"
+
+/** Camp này do agent quản lý? Dùng để tách số liệu người vs máy khi so sánh. */
+export function laCampAgent(campaignName: string): boolean {
+  return extractMkt(campaignName) === AGENT_MKT_CODE
+}
+
+/**
  * Extract MKT code từ campaign name.
  * Hỗ trợ 2 format delimiter: _ và -
  * Format: MÃSP_DD/MM_MKTCODE_SẢN PHẨM_... hoặc DD/MM-MKTCODE-...
