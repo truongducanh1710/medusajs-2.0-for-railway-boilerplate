@@ -191,6 +191,8 @@ export default defineMiddlewares({
     { matcher: "/admin/agent-video/decisions", method: ["GET"], middlewares: [requirePerm("page.agent-video.view")] },
     { matcher: "/admin/agent-video/grant", method: ["POST", "DELETE"], middlewares: [requirePerm("page.agent-video.manage")] },
     { matcher: "/admin/agent-video/lock", method: ["POST"], middlewares: [requirePerm("page.agent-video.manage")] },
+    { matcher: "/admin/agent-video/campaigns", method: ["GET"], middlewares: [requirePerm("page.agent-video.view")] },
+    { matcher: "/admin/agent-video/campaigns", method: ["POST", "DELETE"], middlewares: [requirePerm("page.agent-video.manage")] },
 
     // Tai lieu noi bo. Trang mo cho moi nguoi dang nhap — phan quyen nam o TUNG THU MUC
     // (view_roles/edit_roles), duoc kiem tra trong chinh route chu khong o middleware,

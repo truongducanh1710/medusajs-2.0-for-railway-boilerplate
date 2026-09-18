@@ -50,8 +50,21 @@ const PHASE = {
   KILLED: "killed",
 } as const
 
+/**
+ * Nới ngưỡng cắt cho camp mới chạy.
+ *
+ * Facebook đắt hơn 30-50% trong 1-2 tuần đầu ở tài khoản/camp mới (learning phase),
+ * nên ROAS thấp giả tạo. Chấm bằng ngưỡng thường sẽ cắt sạch video tốt chỉ vì
+ * tài khoản chưa ổn định.
+ */
+function nguongTheoTuoi(soNgay: number, g: Grant): { kill: number; mien: boolean } {
+  if (soNgay < 7)  return { kill: g.roas_kill * 0.5, mien: true }   // tuần đầu: gần như miễn
+  if (soNgay < 14) return { kill: g.roas_kill * 0.7, mien: false }  // tuần hai: nới 30%
+  return { kill: g.roas_kill, mien: false }
+}
+
 /** Quyết định cho một video. Trả về null nghĩa là không đụng vào. */
-function quyetDinh(v: VideoRow, state: any, g: Grant): {
+function quyetDinh(v: VideoRow & { so_ngay_chay?: number }, state: any, g: Grant): {
   action: string
   rule: string
   reason: string
@@ -113,14 +126,33 @@ function quyetDinh(v: VideoRow, state: any, g: Grant): {
   }
 
   const r = Math.round(roas * 100) / 100
+  const soNgay = Number(v.so_ngay_chay ?? 999)
+  const nguong = nguongTheoTuoi(soNgay, g)
 
   // ---- Dưới ngưỡng sống: cắt ----
-  if (r < g.roas_kill) {
+  if (r < nguong.kill) {
+    // Tuần đầu chỉ cắt khi ROAS thảm hại, kèm ghi chú để người đọc log hiểu vì sao
+    // ngưỡng khác thường ngày.
     return {
       action: "kill",
-      rule: "roas_kill",
-      reason: `ROAS ${r} dưới ngưỡng ${g.roas_kill} sau khi tiêu ${Math.round(spend / 1000)}k — cắt`,
+      rule: soNgay < 14 ? "roas_kill_newacc" : "roas_kill",
+      reason: soNgay < 14
+        ? `ROAS ${r} dưới ngưỡng nới ${nguong.kill.toFixed(2)} (camp mới ${soNgay} ngày, đã nới từ ${g.roas_kill}) — cắt`
+        : `ROAS ${r} dưới ngưỡng ${g.roas_kill} sau khi tiêu ${Math.round(spend / 1000)}k — cắt`,
     }
+  }
+
+  // Tuần đầu: không tăng tiền dù ROAS đẹp. Số liệu learning phase chưa đáng tin,
+  // tăng sớm rồi tụt còn tệ hơn là chờ thêm vài ngày.
+  if (nguong.mien && r >= g.roas_scale) {
+    if (state?.phase !== PHASE.HOLDING) {
+      return {
+        action: "hold",
+        rule: "new_camp_observe",
+        reason: `ROAS ${r} tốt nhưng camp mới ${soNgay} ngày, chờ qua learning phase rồi mới tăng`,
+      }
+    }
+    return null
   }
 
   // ---- Vùng giữa: giữ nguyên, theo dõi thêm ----
@@ -185,19 +217,22 @@ export default async function videoBudgetAgent(container: MedusaContainer) {
 
   for (const g of grants) {
     try {
-      // Grant cho AGENT = camp cua chinh agent. Grant cho mot MKT nguoi = agent
-      // duoc uy quyen quan ly camp cua nguoi do. Loc theo mkt_name cua camp chu
-      // khong lay tat ca, neu khong hai grant se tranh nhau cung mot video.
-      const videos: VideoRow[] = await sql.sql(
+      // CHI lay video thuoc camp DA GIAO cho agent. Day la rao chan quan trong nhat:
+      // agent khong bao gio dung vao camp chua ai giao, du no co quyen ky thuat.
+      //
+      // so_ngay_chay lay tu camp cu nhat chua video do — dung cho luat bao ve tai
+      // khoan moi ben duoi.
+      const videos: (VideoRow & { so_ngay_chay: number })[] = await sql.sql(
         `SELECT r.vd_code, r.spend, r.don_tong, r.don_nhan, r.dt_nhan,
-                r.roas_that, r.roas_est, r.ty_le_huy, r.last_spend_date
+                r.roas_that, r.roas_est, r.ty_le_huy, r.last_spend_date,
+                COALESCE(MIN(EXTRACT(day FROM now() - m.started_at))::int, 999) so_ngay_chay
          FROM v_video_roas r
+         JOIN mkt_ads_cost_ad a ON a.vd_code = r.vd_code AND a.date > current_date - 31
+         JOIN agent_managed_campaign m ON m.campaign_id = a.campaign_id AND m.active = true
          WHERE r.spend > 0
-           AND ($1 = '' OR EXISTS (
-             SELECT 1 FROM mkt_ads_cost_ad a
-             WHERE a.vd_code = r.vd_code AND a.mkt_name = $1
-               AND a.date > current_date - 31
-           ))
+           AND ($1 = '' OR m.mkt_name = $1)
+         GROUP BY r.vd_code, r.spend, r.don_tong, r.don_nhan, r.dt_nhan,
+                  r.roas_that, r.roas_est, r.ty_le_huy, r.last_spend_date
          ORDER BY r.spend DESC`,
         [g.mkt_name || ""]
       ).catch(() => [])
