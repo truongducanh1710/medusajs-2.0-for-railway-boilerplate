@@ -144,6 +144,20 @@ export const PANCAKE_SHOPS: PancakeShopConfig[] = [
     label: 'Việt Nam',
   },
   {
+    // Shop TikTok Shop VN thứ 2 ("Vietmate House TiktokShop VN") — cùng market VN với
+    // kho Hà Nội, phân biệt bằng source='tiktok' (order_sources_name = "Tiktok" nên
+    // detectSource tự nhận, không cần map thêm). Cùng currency VND nên báo cáo tab VN
+    // gộp thẳng, không cần quy đổi tỷ giá.
+    // KHÔNG chạy nếu thiếu PANCAKE_VN_TIKTOK_API_KEY — xem filter bên dưới.
+    market: 'VN',
+    shopId: process.env.PANCAKE_VN_TIKTOK_SHOP_ID || '1636075312',
+    apiKey: process.env.PANCAKE_VN_TIKTOK_API_KEY || '',
+    warehouseId: process.env.PANCAKE_VN_TIKTOK_WAREHOUSE_ID || '',
+    currency: 'VND',
+    label: 'Việt Nam (TikTok - Vietmate)',
+    platform: 'tiktok',
+  },
+  {
     market: 'MY',
     shopId: process.env.PANCAKE_MY_SHOP_ID || '120193131',
     apiKey: process.env.PANCAKE_MY_API_KEY || '',
