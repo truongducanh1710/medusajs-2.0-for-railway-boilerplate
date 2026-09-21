@@ -5000,6 +5000,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   const totDone = shownBase.reduce((a, r) => a + Number(r.da_nhan || 0), 0)
   const pendingPct = totOrders > 0 ? Math.round((1 - totDone / totOrders) * 100) : 0
   const money = (n: any) => fmtVND(Number(n || 0))
+  // Tiền đầy đủ tới từng đồng — chỉ dùng ở dòng TỔNG. fmtVND rút gọn "473.9tr" làm tròn
+  // mất tới hàng trăm nghìn nên kế toán không đối chiếu sổ sách được.
+  const moneyFull = (n: any) =>
+    new Intl.NumberFormat("vi-VN").format(Math.round(Number(n || 0))) + "đ"
   const pctCell = (v: any, good?: boolean) =>
     v == null ? <span className="text-gray-300">—</span>
       : <span className={good == null ? "text-gray-600" : good ? "text-green-600" : "text-red-600"}>{v}%</span>
@@ -5203,15 +5207,19 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             style={{ borderTop: `3px solid ${p.platform === "tiktok" ? "#111827" : "#ee4d2d"}` }}>
             <div className="text-xs text-gray-500 uppercase tracking-wide">{p.platform_label}</div>
             <div className="text-2xl font-bold mt-1 text-gray-900">{money(p.revenue_delivered)}</div>
+            {/* Số tới từng đồng cho kế toán đối chiếu — con số lớn phía trên đã làm tròn. */}
+            <div className="text-[11px] text-gray-500 font-mono">{moneyFull(p.revenue_delivered)}</div>
             <div className="text-xs text-gray-400 mt-0.5">{fmtNum(p.da_nhan)} đơn giao thành công</div>
             <div className="mt-2 pt-2 border-t border-dashed border-gray-200 space-y-1 text-xs">
-              <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700">{money(p.fee_marketplace)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700">{money(p.cogs)} {pctCell(p.cogs_pct)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">LNG trước ads</span><span className="text-gray-700">{money(p.lng)} {pctCell(p.lng_pct)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">Chi phí ads</span><span className="text-gray-700">{money(p.ads_cost)} {pctCell(p.ads_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700 font-mono">{moneyFull(p.fee_marketplace)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700"><span className="font-mono">{moneyFull(p.cogs)}</span> {pctCell(p.cogs_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">LNG trước ads</span><span className="text-gray-700"><span className="font-mono">{moneyFull(p.lng)}</span> {pctCell(p.lng_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Chi phí ads</span><span className="text-gray-700"><span className="font-mono">{moneyFull(p.ads_cost)}</span> {pctCell(p.ads_pct)}</span></div>
               <div className="flex justify-between font-semibold pt-1 border-t border-dashed border-gray-200">
                 <span className="text-gray-500">LNG sau ads</span>
-                <span className={p.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>{money(p.lng_sau_ads)} ({p.lng_sau_ads_pct}%)</span>
+                <span className={p.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>
+                  <span className="font-mono">{moneyFull(p.lng_sau_ads)}</span> ({p.lng_sau_ads_pct}%)
+                </span>
               </div>
             </div>
             <ShippingSplit rows={p.by_shipping_partner} />
@@ -5221,15 +5229,18 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
           <div className="bg-white border rounded-xl p-5 shadow-sm" style={{ borderTop: "3px solid #7c3aed" }}>
             <div className="text-xs text-gray-500 uppercase tracking-wide">Tổng 2 sàn</div>
             <div className="text-2xl font-bold mt-1 text-gray-900">{money(data.totals.revenue_delivered)}</div>
+            <div className="text-[11px] text-gray-500 font-mono">{moneyFull(data.totals.revenue_delivered)}</div>
             <div className="text-xs text-gray-400 mt-0.5">{fmtNum(data.totals.da_nhan)} đơn · huỷ {fmtNum(data.totals.da_huy)}</div>
             <div className="mt-2 pt-2 border-t border-dashed border-gray-200 space-y-1 text-xs">
-              <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700">{money(data.totals.fee_marketplace)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700">{money(data.totals.cogs)} {pctCell(data.totals.cogs_pct)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">LNG trước ads</span><span className="text-gray-700">{money(data.totals.lng)} {pctCell(data.totals.lng_pct)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">Chi phí ads</span><span className="text-gray-700">{money(data.totals.ads_cost)} {pctCell(data.totals.ads_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Phí sàn giữ</span><span className="text-gray-700 font-mono">{moneyFull(data.totals.fee_marketplace)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Giá vốn</span><span className="text-gray-700"><span className="font-mono">{moneyFull(data.totals.cogs)}</span> {pctCell(data.totals.cogs_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">LNG trước ads</span><span className="text-gray-700"><span className="font-mono">{moneyFull(data.totals.lng)}</span> {pctCell(data.totals.lng_pct)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Chi phí ads</span><span className="text-gray-700"><span className="font-mono">{moneyFull(data.totals.ads_cost)}</span> {pctCell(data.totals.ads_pct)}</span></div>
               <div className="flex justify-between font-semibold pt-1 border-t border-dashed border-gray-200">
                 <span className="text-gray-500">LNG sau ads</span>
-                <span className={data.totals.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>{money(data.totals.lng_sau_ads)} ({data.totals.lng_sau_ads_pct}%)</span>
+                <span className={data.totals.lng_sau_ads >= 0 ? "text-green-600" : "text-red-600"}>
+                  <span className="font-mono">{moneyFull(data.totals.lng_sau_ads)}</span> ({data.totals.lng_sau_ads_pct}%)
+                </span>
               </div>
             </div>
             <ShippingSplit rows={data.totals.by_shipping_partner} />
@@ -5458,26 +5469,26 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                       )
                     })()}
                   </td>
-                  <td className="px-3 py-2.5 text-right text-gray-600">{money(dayTotal.gross)}</td>
-                  <td className="px-3 py-2.5 text-right text-gray-600">{money(dayTotal.fee)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600 whitespace-nowrap">{moneyFull(dayTotal.gross)}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-600 whitespace-nowrap">{moneyFull(dayTotal.fee)}</td>
                   <td className="px-3 py-2.5 text-right">
                     {pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.fee / dayTotal.gross * 10000) / 100 : null)}
                   </td>
-                  <td className="px-3 py-2.5 text-right text-green-700">{money(dayTotal.rev)}</td>
-                  <td className="px-3 py-2.5 text-right">{money(dayTotal.cogs)}</td>
+                  <td className="px-3 py-2.5 text-right text-green-700 whitespace-nowrap">{moneyFull(dayTotal.rev)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{moneyFull(dayTotal.cogs)}</td>
                   <td className="px-3 py-2.5 text-right">
                     {/* Mẫu số là DT TRƯỚC PHÍ SÀN, khớp cách tính từng dòng */}
                     {pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.cogs / dayTotal.gross * 10000) / 100 : null)}
                   </td>
-                  <td className="px-3 py-2.5 text-right">{money(dayTotal.fullfill)}</td>
-                  <td className="px-3 py-2.5 text-right">{money(dayTotal.ads_cost)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{moneyFull(dayTotal.fullfill)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{moneyFull(dayTotal.ads_cost)}</td>
                   <td className="px-3 py-2.5 text-right">
                     {adsMetric === "pct"
                       ? pctCell(dayTotal.gross > 0 ? Math.round(dayTotal.ads_cost / dayTotal.gross * 10000) / 100 : null)
                       : roasCell(dayTotal.gross, dayTotal.ads_cost)}
                   </td>
-                  <td className={`px-3 py-2.5 text-right ${dayTotal.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
-                    {money(dayTotal.lng)}
+                  <td className={`px-3 py-2.5 text-right whitespace-nowrap ${dayTotal.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>
+                    {moneyFull(dayTotal.lng)}
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     {pctCell(
