@@ -106,6 +106,50 @@ async function ensureBang(): Promise<void> {
     `CREATE INDEX IF NOT EXISTS fb_account_alert_log_acc_idx
      ON fb_account_alert_log (account_id, sent_at DESC)`
   )
+
+  // Ngưỡng thanh toán + ngày tới hạn + hạn thẻ: Marketing API KHÔNG trả các trường
+  // này (billing_threshold / next_bill_date / threshold_amount đều "nonexisting field"
+  // ở v25, /transactions và /invoices cũng không có; token đã đủ ads_read +
+  // business_management nên không phải vấn đề quyền — Meta bỏ dữ liệu tài chính
+  // khỏi API). Vì vậy nhập tay từ Ads Manager > Lập hóa đơn và thanh toán.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fb_account_billing (
+      account_id TEXT PRIMARY KEY,
+      ten_ngan TEXT,
+      nguong_thanh_toan BIGINT,      -- "Số dư của bạn đạt X" → Facebook trừ tiền
+      ngay_thanh_toan DATE,          -- "Và vào ngày này" (NULL nếu chỉ theo ngưỡng)
+      theo_nguong BOOLEAN DEFAULT true,
+      gioi_han_ngay BIGINT,          -- Giới hạn chi tiêu hàng ngày do Meta đặt
+      the_mac_dinh TEXT,
+      the_het_han DATE,              -- quy về ngày cuối tháng hết hạn
+      la_quy BOOLEAN DEFAULT false,  -- tài khoản trả trước (nạp quỹ)
+      tu_dong_nap BOOLEAN DEFAULT false,
+      ghi_chu TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+
+  // Seed lần đầu từ ảnh Ads Manager 22/09/2026. ON CONFLICT DO NOTHING để lần chạy
+  // sau không ghi đè khi anh sửa lại trong DB.
+  await pool.query(`
+    INSERT INTO fb_account_billing
+      (account_id, ten_ngan, nguong_thanh_toan, ngay_thanh_toan, theo_nguong,
+       gioi_han_ngay, the_mac_dinh, the_het_han, la_quy, tu_dong_nap, ghi_chu)
+    VALUES
+      ('act_1133464788237858','Ads327',   7948357,'2026-09-30',true, 10278859,'Visa 4359','2031-04-30',false,false,null),
+      ('act_467272752744880', 'Ads328',    213420,'2026-09-23',true,  7879358,'Visa 3793','2029-03-31',false,false,null),
+      -- Ads329: Facebook ghi "khoảng 1 lần/ngày" thay vì một ngày cố định,
+      -- nên chỉ cảnh báo theo ngưỡng số dư (theo_nguong=true, ngay_thanh_toan=NULL).
+      ('act_899712815703406', 'Ads329',   9970092, NULL,       true, 63191491,'Visa 3793','2029-03-31',false,false,'Tru khoang 1 lan/ngay'),
+      ('act_1169258974603627','Ads341',      NULL, NULL,       false, 3218515,'Visa 4065', NULL,       true, false,'Quy het tien - ads dang dung'),
+      ('act_741222868885235', 'Ads342',      NULL, NULL,       false, 6533727,'Visa 5281','2031-02-28',true, true, 'Tu dong nap 2tr khi duoi 1tr'),
+      ('act_1397084955139677','Ads344',  13451583,'2026-09-30',true, 37329535,'Visa 3793','2029-03-31',false,false,null),
+      ('act_2801056226892845','Ads346',  23697306,'2026-09-28',true, 29722003,'Visa 4359','2031-04-30',false,false,null),
+      ('act_27214643188160995','Ads348',  1102692,'2026-10-16',true,  7579385,'MasterCard 2746','2030-05-31',false,false,null),
+      ('act_1108526648426194','Ads349',     52500,'2026-09-30',true,  7198433,'Visa 3793','2029-03-31',false,false,null)
+    ON CONFLICT (account_id) DO NOTHING
+  `)
+
   bangDaTao = true
 }
 
@@ -175,6 +219,120 @@ async function tocDoChi(accountId: string): Promise<number> {
     [accountId]
   )
   return Math.round(Number(rows[0]?.chi_ngay || 0))
+}
+
+type Billing = {
+  ten_ngan: string | null
+  nguong_thanh_toan: number | null
+  ngay_thanh_toan: string | null
+  theo_nguong: boolean
+  gioi_han_ngay: number | null
+  the_mac_dinh: string | null
+  the_het_han: string | null
+  la_quy: boolean
+  tu_dong_nap: boolean
+}
+
+async function docBilling(accountId: string): Promise<Billing | null> {
+  const { rows } = await getPool().query(
+    `SELECT ten_ngan, nguong_thanh_toan, ngay_thanh_toan, theo_nguong, gioi_han_ngay,
+            the_mac_dinh, the_het_han, la_quy, tu_dong_nap
+     FROM fb_account_billing WHERE account_id = $1`,
+    [accountId]
+  )
+  if (!rows.length) return null
+  const r = rows[0]
+  return {
+    ten_ngan: r.ten_ngan,
+    nguong_thanh_toan: r.nguong_thanh_toan === null ? null : Number(r.nguong_thanh_toan),
+    ngay_thanh_toan: r.ngay_thanh_toan ? new Date(r.ngay_thanh_toan).toISOString().slice(0, 10) : null,
+    theo_nguong: !!r.theo_nguong,
+    gioi_han_ngay: r.gioi_han_ngay === null ? null : Number(r.gioi_han_ngay),
+    the_mac_dinh: r.the_mac_dinh,
+    the_het_han: r.the_het_han ? new Date(r.the_het_han).toISOString().slice(0, 10) : null,
+    la_quy: !!r.la_quy,
+    tu_dong_nap: !!r.tu_dong_nap,
+  }
+}
+
+// Cảnh báo khi số dư đạt 80% ngưỡng — anh cần thời gian mở thẻ trước khi Facebook trừ.
+const TY_LE_CANH_BAO = 0.8
+// Hoặc trước ngày thanh toán 2 ngày, cái nào đến trước.
+const NGAY_TRUOC_HAN = 2
+// Thẻ sắp hết hạn: báo trước 30 ngày.
+const NGAY_TRUOC_HET_THE = 30
+
+/**
+ * Sắp bị trừ tiền chưa. Tách riêng khỏi danhGia() vì đây là cảnh báo "cần mở thẻ",
+ * khác bản chất với "tài khoản đang chết".
+ */
+function danhGiaThanhToan(
+  acc: any, b: Billing | null, chiMoiNgay: number
+): VanDe | null {
+  if (!b) return null
+  const id = acc.id || `act_${acc.account_id}`
+  const ten = b.ten_ngan || String(acc.name || id).slice(0, 40)
+  const balance = Number(acc.balance || 0)
+  const the = b.the_mac_dinh ? ` (thẻ ${b.the_mac_dinh})` : ""
+
+  // --- Tài khoản quỹ (prepay): không tự đánh giá được ---
+  // Với tài khoản quỹ, `balance` của API KHÔNG phải số tiền còn lại. Kiểm chứng
+  // 22/09/2026: Ads342 có 2.000.000đ trong quỹ và Ads341 có 0đ — API trả balance=0
+  // cho CẢ HAI. Marketing API không có trường nào đọc được số dư quỹ, nên mọi suy
+  // đoán từ balance đều sai.
+  //
+  // Bù lại, khi quỹ cạn thì Facebook tự chặn phân phối và bơm failed_delivery_checks
+  // — danhGia() đã bắt ở mức đỏ (Ads341 hôm nay: "Đã đạt giới hạn chi tiêu").
+  // Nên ở đây không làm gì: thà báo chậm một nhịp còn hơn báo sai mỗi 30 phút.
+  if (b.la_quy) return null
+
+  // --- Trả sau: sắp đạt ngưỡng trừ tiền ---
+  if (b.theo_nguong && b.nguong_thanh_toan && b.nguong_thanh_toan > 0) {
+    const tyLe = balance / b.nguong_thanh_toan
+    if (tyLe >= TY_LE_CANH_BAO) {
+      const conThieu = b.nguong_thanh_toan - balance
+      const soNgay = chiMoiNgay > 0 ? Math.round((conThieu / chiMoiNgay) * 10) / 10 : null
+      return {
+        account_id: id, ten, muc: "vang", ma: "sap_tru_tien",
+        mo_ta: `Sắp bị trừ tiền: ${vnd(balance)} / ${vnd(b.nguong_thanh_toan)} (${Math.round(tyLe * 100)}%)`,
+        chi_tiet: soNgay !== null
+          ? `Đang chi ~${vnd(chiMoiNgay)}/ngày → dự kiến trừ trong ~${soNgay} ngày${the}`
+          : `Cần mở thẻ${the}`,
+      }
+    }
+  }
+
+  // --- Trả sau: sắp tới ngày thanh toán định kỳ ---
+  if (b.ngay_thanh_toan) {
+    const conNgay = Math.ceil(
+      (new Date(b.ngay_thanh_toan + "T00:00:00+07:00").getTime() - Date.now()) / 86400_000
+    )
+    if (conNgay >= 0 && conNgay <= NGAY_TRUOC_HAN) {
+      return {
+        account_id: id, ten, muc: "vang", ma: "sap_den_han",
+        mo_ta: conNgay === 0
+          ? `Hôm nay là ngày thanh toán — ${vnd(balance)}`
+          : `Còn ${conNgay} ngày tới hạn thanh toán — ${vnd(balance)}`,
+        chi_tiet: `Ngày ${b.ngay_thanh_toan}${the}`,
+      }
+    }
+  }
+
+  // --- Thẻ sắp hết hạn: mất thẻ là mất cả tài khoản ---
+  if (b.the_het_han) {
+    const conNgay = Math.ceil(
+      (new Date(b.the_het_han + "T00:00:00+07:00").getTime() - Date.now()) / 86400_000
+    )
+    if (conNgay >= 0 && conNgay <= NGAY_TRUOC_HET_THE) {
+      return {
+        account_id: id, ten, muc: "vang", ma: "the_sap_het_han",
+        mo_ta: `Thẻ ${b.the_mac_dinh} sắp hết hạn (còn ${conNgay} ngày)`,
+        chi_tiet: `Hết hạn ${b.the_het_han} — cần đổi thẻ trước khi bị chặn`,
+      }
+    }
+  }
+
+  return null
 }
 
 function danhGia(acc: any, chiMoiNgay: number): {
@@ -263,6 +421,10 @@ async function vanDeLanTruoc(accountId: string): Promise<string | null> {
   return rows[0]?.ma_van_de ?? null
 }
 
+// Cảnh báo thanh toán nhắc thưa hơn: nó không "hỏng thêm" theo giờ, nhưng cần
+// nhắc lại mỗi ngày cho tới khi mở thẻ — 4h thì thành 6 tin/ngày, quá nhiều.
+const COOLDOWN_THANH_TOAN_MS = 20 * 3600_000
+
 async function dangCooldown(accountId: string, ma: string): Promise<boolean> {
   const { rows } = await getPool().query(
     `SELECT sent_at FROM fb_account_alert_log
@@ -271,7 +433,10 @@ async function dangCooldown(accountId: string, ma: string): Promise<boolean> {
     [accountId, ma]
   )
   if (!rows.length) return false
-  return Date.now() - new Date(rows[0].sent_at).getTime() < COOLDOWN_MS
+  const nguong = ["sap_tru_tien", "sap_den_han", "the_sap_het_han"].includes(ma)
+    ? COOLDOWN_THANH_TOAN_MS
+    : COOLDOWN_MS
+  return Date.now() - new Date(rows[0].sent_at).getTime() < nguong
 }
 
 export default async function fbAccountHealth(container: MedusaContainer) {
@@ -301,7 +466,15 @@ export default async function fbAccountHealth(container: MedusaContainer) {
     for (const acc of accounts) {
       const id = acc.id || `act_${acc.account_id}`
       const chiMoiNgay = await tocDoChi(id)
-      const { van_de, conLai, soNgay } = danhGia(acc, chiMoiNgay)
+      const b = await docBilling(id)
+      const kq = danhGia(acc, chiMoiNgay)
+      const { conLai, soNgay } = kq
+
+      // Tài khoản chết (đỏ) ưu tiên hơn cảnh báo thanh toán: nếu Facebook đã chặn
+      // thì mở thẻ cũng chưa chạy lại được, phải xử lý cái chặn trước.
+      const van_de = kq.van_de?.muc === "do"
+        ? kq.van_de
+        : (danhGiaThanhToan(acc, b, chiMoiNgay) ?? kq.van_de)
 
       const maTruoc = await vanDeLanTruoc(id)
 
@@ -333,20 +506,28 @@ export default async function fbAccountHealth(container: MedusaContainer) {
       const { mkts, camps, budget } = await nguoiDangChay(id)
       const emails = await emailTheoMkt(userModule, mkts)
 
-      const dong = [
-        van_de.muc === "do" ? "🔴 <b>TÀI KHOẢN ADS BỊ CHẶN</b>" : "⚠️ <b>TÀI KHOẢN ADS SẮP DỪNG</b>",
-        "",
-        `<b>${van_de.ten}</b>`,
-        van_de.mo_ta,
-      ]
+      const laThanhToan = ["sap_tru_tien", "sap_den_han", "the_sap_het_han"].includes(van_de.ma)
+      const tieuDe = van_de.muc === "do"
+        ? "🔴 <b>TÀI KHOẢN ADS BỊ CHẶN</b>"
+        : laThanhToan ? "💳 <b>SẮP PHẢI THANH TOÁN</b>" : "⚠️ <b>TÀI KHOẢN ADS SẮP DỪNG</b>"
+
+      const dong = ["", `<b>${van_de.ten}</b>`, van_de.mo_ta]
+      dong.unshift(tieuDe)
       if (van_de.chi_tiet) dong.push(van_de.chi_tiet)
       if (camps > 0) {
         dong.push("", `Camp đang chạy: ${camps}` + (budget > 0 ? ` (tổng ${vnd(budget)}/ngày)` : ""))
       }
       if (mkts.length) dong.push(`Người chạy: ${mkts.join(", ")}`)
+      // Giới hạn ngày do Meta đặt — không đọc được qua API, chỉ có trong bảng cấu hình.
+      // Hữu ích để biết tài khoản này còn gánh thêm được bao nhiêu.
+      if (b?.gioi_han_ngay && chiMoiNgay > 0) {
+        dong.push(`Giới hạn ngày (Meta): ${vnd(b.gioi_han_ngay)} — đang dùng ${Math.round(chiMoiNgay / b.gioi_han_ngay * 100)}%`)
+      }
       dong.push("", van_de.muc === "do"
-        ? "→ Camp trên tài khoản này không phân phối được. Kiểm tra Ads Manager."
-        : "→ Cần nạp thêm / nâng hạn mức, hoặc chuyển camp sang tài khoản khác.")
+        ? "→ Camp trên tài khoản này không phân phối được. Kiểm tra Ads Manager / nạp tiền."
+        : laThanhToan
+          ? "→ Mở thẻ trước khi Facebook trừ tiền, tránh bị khoá tài khoản."
+          : "→ Cần nạp thêm / nâng hạn mức, hoặc chuyển camp sang tài khoản khác.")
 
       await notifyTelegramByEmail(userModule, emails, dong.join("\n"), "fb-account-health")
       await pool.query(
