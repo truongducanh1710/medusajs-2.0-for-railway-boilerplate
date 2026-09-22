@@ -20,7 +20,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
     const today = todayVN()
 
-    const [todayStats, lastSync, accountsWithData, permErrorAccounts, ggConfigured, ggToday, ggLastSync] = await Promise.all([
+    const [todayStats, lastSync, accountsWithData, permErrorAccounts, ggConfigured, ggToday, ggLastSync, accountIssues] = await Promise.all([
       // Tổng campaigns + spend hôm nay (theo giờ VN)
       cskhService.sql(`
         SELECT
@@ -81,6 +81,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       cskhService.sql(`
         SELECT MAX(updated_at) AS last_sync FROM mkt_ads_cost_gg WHERE deleted_at IS NULL
       `).catch(() => [{ last_sync: null }]),
+
+      // Tài khoản ads đang có vấn đề — lấy bản ghi mới nhất của từng account.
+      // Nguồn là job fb-account-health (30 phút/lần). Bảng chưa tồn tại (job chưa
+      // chạy lần nào) thì trả rỗng, không làm vỡ cả endpoint.
+      cskhService.sql(`
+        SELECT DISTINCT ON (h.account_id)
+               h.account_id, h.account_name, h.muc, h.ma_van_de, h.mo_ta,
+               h.con_lai, h.chi_moi_ngay, h.so_ngay_con_lai, h.checked_at
+        FROM fb_account_health h
+        WHERE h.muc IN ('do', 'vang')
+          AND h.checked_at > now() - interval '2 hours'
+        ORDER BY h.account_id, h.checked_at DESC
+      `).catch(() => []),
     ])
 
     const stats = todayStats[0] ?? {}
@@ -113,6 +126,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         today_by_mkt: ggToday,
         last_sync: ggLastSync[0]?.last_sync ?? null,
       },
+      account_issues: (accountIssues ?? []).map((r: any) => ({
+        account_id: r.account_id,
+        account_name: r.account_name,
+        muc: r.muc,                       // do | vang
+        ma_van_de: r.ma_van_de,
+        mo_ta: r.mo_ta,
+        con_lai: r.con_lai === null ? null : Number(r.con_lai),
+        chi_moi_ngay: Number(r.chi_moi_ngay ?? 0),
+        so_ngay_con_lai: r.so_ngay_con_lai === null ? null : Number(r.so_ngay_con_lai),
+        checked_at: r.checked_at,
+      })),
     })
   } catch (err: any) {
     console.error("[mkt-cost-status]", err.message)

@@ -896,6 +896,32 @@ function BaoCaoMktPage() {
             {s.missing_accounts > 0 && (
               <span style={{ color: t.red }}>⚠ {s.missing_accounts} account chưa có data hôm nay</span>
             )}
+            {/* Tài khoản ads bị chặn / sắp hết hạn mức — nguồn: job fb-account-health.
+                Camp vẫn hiện ACTIVE khi tài khoản chết, nên phải báo riêng ở đây. */}
+            {(s.account_issues ?? []).map((a: any) => {
+              const do_ = a.muc === "do"
+              const ten = String(a.account_name || a.account_id)
+                .replace(/^PHV\s*[-_]\s*/, "").split("(")[0].trim() || a.account_id
+              return (
+                <span
+                  key={a.account_id}
+                  title={
+                    a.so_ngay_con_lai !== null
+                      ? `Còn ${Number(a.con_lai ?? 0).toLocaleString("vi-VN")}đ · đang chi ~${Number(a.chi_moi_ngay ?? 0).toLocaleString("vi-VN")}đ/ngày`
+                      : a.mo_ta || ""
+                  }
+                  style={{
+                    color: do_ ? t.red : t.amber,
+                    fontWeight: 700,
+                    cursor: "help",
+                    borderLeft: `2px solid ${do_ ? t.red : t.amber}`,
+                    paddingLeft: 8,
+                  }}
+                >
+                  {do_ ? "🔴" : "⚠️"} {ten}: {a.mo_ta}
+                </span>
+              )
+            })}
           </div>
         )
       })()}
