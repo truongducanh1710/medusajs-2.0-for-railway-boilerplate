@@ -263,10 +263,21 @@ async function docBilling(accountId: string): Promise<Billing | null> {
   }
 }
 
-// Cảnh báo khi số dư đạt 80% ngưỡng — anh cần thời gian mở thẻ trước khi Facebook trừ.
-const TY_LE_CANH_BAO = 0.8
-// Hoặc trước ngày thanh toán 2 ngày, cái nào đến trước.
-const NGAY_TRUOC_HAN = 2
+// Mục tiêu: KHÔNG BAO GIỜ để tài khoản bị khoá vì thanh toán. Nên cảnh báo phải
+// đến sớm, khi còn kịp mở thẻ — chứ báo lúc đã chạm ngưỡng thì vô nghĩa.
+//
+// Hai mốc, cái nào đến trước thì báo:
+//   - 60% ngưỡng: còn xa nhưng đã nên để mắt
+//   - còn dưới 1,5 ngày chi tiêu là chạm ngưỡng: đây mới là mốc quyết định
+// Mốc thứ hai quan trọng hơn: Ads329 chi ~4tr/ngày, từ 60% lên 100% chỉ mất
+// một ngày, trong khi Ads346 chi 2tr/ngày thì 60% còn cách ngưỡng cả tuần.
+const TY_LE_CANH_BAO = 0.6
+// Từ 80% trở đi nhắc dày hơn hẳn: đây là vùng có thể bị trừ trong ngày.
+const TY_LE_DON_DAP = 0.8
+const NGAY_TRUOC_CHAM_NGUONG = 1.5
+
+// Ngày thanh toán định kỳ: báo trước 3 ngày (cuối tuần vẫn kịp xoay thẻ).
+const NGAY_TRUOC_HAN = 3
 // Thẻ sắp hết hạn: báo trước 30 ngày.
 const NGAY_TRUOC_HET_THE = 30
 
@@ -297,15 +308,33 @@ function danhGiaThanhToan(
   // --- Trả sau: sắp đạt ngưỡng trừ tiền ---
   if (b.theo_nguong && b.nguong_thanh_toan && b.nguong_thanh_toan > 0) {
     const tyLe = balance / b.nguong_thanh_toan
-    if (tyLe >= TY_LE_CANH_BAO) {
-      const conThieu = b.nguong_thanh_toan - balance
-      const soNgay = chiMoiNgay > 0 ? Math.round((conThieu / chiMoiNgay) * 10) / 10 : null
+    const conThieu = b.nguong_thanh_toan - balance
+    const soNgay = chiMoiNgay > 0 ? Math.round((conThieu / chiMoiNgay) * 10) / 10 : null
+    // Gấp khi sắp chạm ngưỡng theo thời gian, hoặc đã vượt rồi
+    const gap = (soNgay !== null && soNgay <= NGAY_TRUOC_CHAM_NGUONG) || tyLe >= 1
+
+    if (gap || tyLe >= TY_LE_CANH_BAO) {
+      const daVuot = tyLe >= 1
+      const donDap = tyLe >= TY_LE_DON_DAP
+      const pct = Math.round(tyLe * 100)
+      const conLaiTien = vnd(Math.max(0, conThieu))
+
+      // Ba mức, mã khác nhau để áp cooldown riêng (xem dangCooldown):
+      //   sap_tru_tien       60-79%  → nhắc 20h/lần, chỉ trong giờ làm
+      //   sap_tru_tien_gap   80-99%  → nhắc 4h/lần, gửi cả ngoài giờ
+      //   da_vuot_nguong     >=100%  → nhắc 2h/lần, gửi cả ngoài giờ
       return {
-        account_id: id, ten, muc: "vang", ma: "sap_tru_tien",
-        mo_ta: `Sắp bị trừ tiền: ${vnd(balance)} / ${vnd(b.nguong_thanh_toan)} (${Math.round(tyLe * 100)}%)`,
-        chi_tiet: soNgay !== null
-          ? `Đang chi ~${vnd(chiMoiNgay)}/ngày → dự kiến trừ trong ~${soNgay} ngày${the}`
-          : `Cần mở thẻ${the}`,
+        account_id: id, ten,
+        muc: (daVuot || donDap) ? "do" : "vang",
+        ma: daVuot ? "da_vuot_nguong" : donDap ? "sap_tru_tien_gap" : "sap_tru_tien",
+        mo_ta: daVuot
+          ? `ĐÃ VƯỢT ngưỡng trừ tiền: ${vnd(balance)} / ${vnd(b.nguong_thanh_toan)} (${pct}%)`
+          : `${donDap ? "GẤP — sắp" : "Sắp"} bị trừ tiền: ${vnd(balance)} / ${vnd(b.nguong_thanh_toan)} (${pct}%)`,
+        chi_tiet: daVuot
+          ? `Facebook có thể trừ bất cứ lúc nào — mở thẻ NGAY${the}`
+          : (soNgay !== null
+              ? `Còn ${conLaiTien} nữa là chạm ngưỡng · chi ~${vnd(chiMoiNgay)}/ngày → ~${soNgay} ngày${the}`
+              : `Còn ${conLaiTien} nữa là chạm ngưỡng${the}`),
       }
     }
   }
@@ -365,17 +394,21 @@ function danhGia(acc: any, chiMoiNgay: number): {
     : null
 
   // --- Mức đỏ: tài khoản không chạy được ---
-  // status 3 (UNSETTLED) KHÔNG phải lỗi: với tài khoản trả sau, nó chỉ có nghĩa
-  // "đang có số dư chưa thanh toán" — trạng thái bình thường giữa hai kỳ trừ tiền.
-  // Kiểm chứng 23/09: Ads329/344/346 đều status=3 mà vẫn chạy (Ads329 chi 2,1tr
-  // hôm đó, failed_delivery_checks rỗng). Báo đỏ ở đây là báo động giả, và tệ hơn
-  // là làm loãng các cảnh báo thật. Phần sắp-bị-trừ-tiền đã do danhGiaThanhToan lo.
-  if (status !== 1 && status !== 3) {
+  // status 3 (UNSETTLED) LÀ LỖI THẬT, không phải trạng thái bình thường.
+  // Ads Manager hiển thị "Tài khoản quảng cáo bị vô hiệu hóa do phương thức thanh
+  // toán" — kiểm chứng 23/09 trên Ads329, Ads344, Ads346. Đừng nhầm vì tài khoản
+  // vẫn có `spend` hôm đó: đó là tiền tiêu TRƯỚC khi bị khoá trong ngày, không phải
+  // bằng chứng tài khoản còn chạy.
+  if (status !== 1) {
     return {
       van_de: {
         account_id: id, ten, muc: "do", ma: `status_${status}`,
-        mo_ta: `Tài khoản ${TEN_STATUS[status] || `trạng thái ${status}`}`,
-        chi_tiet: disable ? `Lý do: ${TEN_DISABLE[disable] || disable}` : "",
+        mo_ta: status === 3
+          ? "Tài khoản bị vô hiệu hoá do phương thức thanh toán"
+          : `Tài khoản ${TEN_STATUS[status] || `trạng thái ${status}`}`,
+        chi_tiet: status === 3
+          ? "Mở thẻ và thanh toán dư nợ để chạy lại"
+          : (disable ? `Lý do: ${TEN_DISABLE[disable] || disable}` : ""),
       }, conLai, soNgay,
     }
   }
@@ -434,9 +467,11 @@ async function vanDeLanTruoc(accountId: string): Promise<string | null> {
   return rows[0]?.ma_van_de ?? null
 }
 
-// Cảnh báo thanh toán nhắc thưa hơn: nó không "hỏng thêm" theo giờ, nhưng cần
-// nhắc lại mỗi ngày cho tới khi mở thẻ — 4h thì thành 6 tin/ngày, quá nhiều.
-const COOLDOWN_THANH_TOAN_MS = 20 * 3600_000
+// Nhịp nhắc lại theo mức độ gấp. Mục tiêu là không bao giờ để tài khoản bị khoá,
+// nên càng gần ngưỡng càng phải nhắc dày — nhưng vùng còn xa thì nhắc thưa để
+// người nhận không chai.
+const COOLDOWN_XA_MS = 20 * 3600_000   // 60-79%, hạn định kỳ, thẻ sắp hết hạn: 1 lần/ngày
+const COOLDOWN_GAP_MS = 2 * 3600_000   // >= 80% hoặc đã vượt: 2 tiếng
 
 async function dangCooldown(accountId: string, ma: string): Promise<boolean> {
   const { rows } = await getPool().query(
@@ -446,8 +481,9 @@ async function dangCooldown(accountId: string, ma: string): Promise<boolean> {
     [accountId, ma]
   )
   if (!rows.length) return false
-  const nguong = ["sap_tru_tien", "sap_den_han", "the_sap_het_han"].includes(ma)
-    ? COOLDOWN_THANH_TOAN_MS
+  const nguong =
+    ["da_vuot_nguong", "sap_tru_tien_gap"].includes(ma) ? COOLDOWN_GAP_MS
+    : ["sap_tru_tien", "sap_den_han", "the_sap_het_han"].includes(ma) ? COOLDOWN_XA_MS
     : COOLDOWN_MS
   return Date.now() - new Date(rows[0].sent_at).getTime() < nguong
 }
@@ -519,10 +555,14 @@ export default async function fbAccountHealth(container: MedusaContainer) {
       const { mkts, camps, budget } = await nguoiDangChay(id)
       const emails = await emailTheoMkt(userModule, mkts)
 
-      const laThanhToan = ["sap_tru_tien", "sap_den_han", "the_sap_het_han"].includes(van_de.ma)
-      const tieuDe = van_de.muc === "do"
-        ? "🔴 <b>TÀI KHOẢN ADS BỊ CHẶN</b>"
-        : laThanhToan ? "💳 <b>SẮP PHẢI THANH TOÁN</b>" : "⚠️ <b>TÀI KHOẢN ADS SẮP DỪNG</b>"
+      const laThanhToan = ["sap_tru_tien", "sap_tru_tien_gap", "da_vuot_nguong",
+                           "sap_den_han", "the_sap_het_han"].includes(van_de.ma)
+      const tieuDe =
+        van_de.ma === "da_vuot_nguong" ? "🔴💳 <b>ĐÃ VƯỢT NGƯỠNG — MỞ THẺ NGAY</b>"
+        : van_de.ma === "sap_tru_tien_gap" ? "🟠💳 <b>GẤP — SẮP BỊ TRỪ TIỀN</b>"
+        : van_de.muc === "do" ? "🔴 <b>TÀI KHOẢN ADS BỊ CHẶN</b>"
+        : laThanhToan ? "💳 <b>SẮP PHẢI THANH TOÁN</b>"
+        : "⚠️ <b>TÀI KHOẢN ADS SẮP DỪNG</b>"
 
       const dong = ["", `<b>${van_de.ten}</b>`, van_de.mo_ta]
       dong.unshift(tieuDe)
@@ -568,7 +608,11 @@ export default async function fbAccountHealth(container: MedusaContainer) {
   }
 }
 
+// Chạy 15 phút/lần. Số dư ở vùng 80% nhảy rất nhanh — Ads329 chi ~4tr/ngày,
+// tức ~160k mỗi 15 phút, nên 30 phút là quá thưa để bắt kịp lúc chạm ngưỡng.
+// Mỗi lần chạy chỉ là 1 call Facebook cho cả 13 tài khoản, chi phí không đáng kể;
+// phần chống ồn do cooldown theo mức độ gấp lo (2h khi >= 80%, 20h khi còn xa).
 export const config = {
   name: "fb-account-health",
-  schedule: "*/30 * * * *",
+  schedule: "*/15 * * * *",
 }
