@@ -82,17 +82,25 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SELECT MAX(updated_at) AS last_sync FROM mkt_ads_cost_gg WHERE deleted_at IS NULL
       `).catch(() => [{ last_sync: null }]),
 
-      // Tài khoản ads đang có vấn đề — lấy bản ghi mới nhất của từng account.
-      // Nguồn là job fb-account-health (30 phút/lần). Bảng chưa tồn tại (job chưa
-      // chạy lần nào) thì trả rỗng, không làm vỡ cả endpoint.
+      // Tài khoản ads đang có vấn đề. Nguồn là job fb-account-health (15 phút/lần).
+      //
+      // Phải lấy BẢN GHI MỚI NHẤT của từng account rồi mới lọc theo `muc`, chứ
+      // không lọc `muc` trước: lọc trước thì một cảnh báo cũ vẫn lọt vào cửa sổ
+      // thời gian dù lần kiểm tra gần nhất đã 'ok'. Gặp thật 23/09 — Ads344/346
+      // thanh toán xong lúc 08:45, job ghi 'ok' lúc 09:00, nhưng bản ghi 'do'
+      // lúc 08:30 vẫn hiện vì còn trong 2 giờ.
+      //
+      // Bảng chưa tồn tại (job chưa chạy lần nào) thì trả rỗng, không vỡ endpoint.
       cskhService.sql(`
-        SELECT DISTINCT ON (h.account_id)
-               h.account_id, h.account_name, h.muc, h.ma_van_de, h.mo_ta,
-               h.con_lai, h.chi_moi_ngay, h.so_ngay_con_lai, h.checked_at
-        FROM fb_account_health h
-        WHERE h.muc IN ('do', 'vang')
-          AND h.checked_at > now() - interval '2 hours'
-        ORDER BY h.account_id, h.checked_at DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON (h.account_id)
+                 h.account_id, h.account_name, h.muc, h.ma_van_de, h.mo_ta,
+                 h.con_lai, h.chi_moi_ngay, h.so_ngay_con_lai, h.checked_at
+          FROM fb_account_health h
+          WHERE h.checked_at > now() - interval '2 hours'
+          ORDER BY h.account_id, h.checked_at DESC
+        ) t
+        WHERE t.muc IN ('do', 'vang')
       `).catch(() => []),
     ])
 

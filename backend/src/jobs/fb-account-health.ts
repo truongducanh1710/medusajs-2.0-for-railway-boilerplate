@@ -467,6 +467,29 @@ async function vanDeLanTruoc(accountId: string): Promise<string | null> {
   return rows[0]?.ma_van_de ?? null
 }
 
+/**
+ * Facebook trả dữ liệu không nhất quán ngay sau khi thanh toán: đo được thật
+ * 23/09 trên Ads329 — 08:45 trả balance 343.777đ (đã trừ), 09:00 lại trả
+ * 10.394.784đ (số cũ), rồi mới ổn định. Nếu tin ngay lần đọc đầu thì gửi
+ * cảnh báo sai vào đúng lúc người ta vừa xử lý xong — mất lòng tin vào hệ thống.
+ *
+ * Nên với các cảnh báo dựa trên `balance`, đòi hai lần đọc liên tiếp cùng kết
+ * luận mới gửi. Tài khoản bị khoá (status/disable/failed_delivery) thì không
+ * áp dụng: đó là trạng thái Facebook trả dứt khoát, và chậm một nhịp là mất tiền.
+ */
+const CAN_XAC_NHAN_HAI_LAN = ["da_vuot_nguong", "sap_tru_tien_gap", "sap_tru_tien"]
+
+async function daXacNhanHaiLan(accountId: string, ma: string): Promise<boolean> {
+  if (!CAN_XAC_NHAN_HAI_LAN.includes(ma)) return true
+  const { rows } = await getPool().query(
+    `SELECT ma_van_de FROM fb_account_health
+     WHERE account_id = $1 ORDER BY checked_at DESC LIMIT 2`,
+    [accountId]
+  )
+  // rows[0] là lần vừa ghi (chính nó), rows[1] là lần trước đó
+  return rows.length >= 2 && rows[1]?.ma_van_de === ma
+}
+
 // Nhịp nhắc lại theo mức độ gấp. Mục tiêu là không bao giờ để tài khoản bị khoá,
 // nên càng gần ngưỡng càng phải nhắc dày — nhưng vùng còn xa thì nhắc thưa để
 // người nhận không chai.
@@ -545,6 +568,13 @@ export default async function fbAccountHealth(container: MedusaContainer) {
 
       if (!van_de) continue
       soVanDe++
+
+      // Cảnh báo dựa trên balance: đợi hai lần đọc liên tiếp cùng kết luận, vì
+      // Facebook trả số cũ xen kẽ ngay sau khi thanh toán (xem daXacNhanHaiLan).
+      if (!(await daXacNhanHaiLan(id, van_de.ma))) {
+        logger?.info?.(`[FbAccountHealth] ${van_de.ten}: ${van_de.ma} — chờ xác nhận lần 2`)
+        continue
+      }
 
       // Chỉ gửi khi: vấn đề MỚI xuất hiện, hoặc đổi sang vấn đề khác.
       // Cùng một vấn đề kéo dài thì cooldown lo phần nhắc lại.
