@@ -205,17 +205,52 @@ async function emailTheoMkt(userModule: any, maMkt: string[]): Promise<string[]>
   return [...out]
 }
 
-async function docTaiKhoan(): Promise<any[]> {
-  const fields = [
-    "id", "account_id", "name", "account_status", "disable_reason",
-    "balance", "amount_spent", "spend_cap", "is_prepay_account",
-    "failed_delivery_checks",
-  ].join(",")
-  const url = `${FB_GRAPH_BASE}/me/adaccounts?fields=${fields}&limit=100&access_token=${TOKEN}`
+const FIELDS_TK = [
+  "id", "account_id", "name", "account_status", "disable_reason",
+  "balance", "amount_spent", "spend_cap", "is_prepay_account",
+  "failed_delivery_checks",
+].join(",")
+
+async function docMotLan(): Promise<any[]> {
+  const url = `${FB_GRAPH_BASE}/me/adaccounts?fields=${FIELDS_TK}&limit=100&access_token=${TOKEN}`
   const res = await fetch(url)
   const json = (await res.json()) as any
   if (json?.error) throw new Error(json.error.message || "Facebook trả lỗi")
   return json?.data ?? []
+}
+
+/**
+ * Facebook đọc `balance` từ nhiều máy chủ không đồng bộ: đo thật 23/09 lúc
+ * 09:07 trên Ads329 — ba lần gọi trong 6 giây trả 343.777đ / 10.394.784đ /
+ * 10.373.335đ. Hai số sau là bản cũ chưa cập nhật sau khi anh thanh toán.
+ *
+ * Đọc ba lần rồi lấy số NHỎ NHẤT. Lý do chọn nhỏ nhất thay vì trung vị: số dư
+ * chỉ tăng dần giữa hai kỳ trừ tiền, nên bản ghi mới nhất luôn là bản có số
+ * nhỏ nhất ngay sau khi trừ — lấy nhỏ nhất là lấy bản mới nhất. Rủi ro bỏ sót
+ * cảnh báo một nhịp 15 phút, đổi lại không bao giờ báo sai lúc vừa thanh toán.
+ *
+ * Chỉ áp dụng cho `balance`. Các trường trạng thái (account_status,
+ * disable_reason, failed_delivery_checks) lấy từ lần đọc cuối — chúng không
+ * dao động kiểu này và cần phản ánh tức thì.
+ */
+async function docTaiKhoan(): Promise<any[]> {
+  const lan: any[][] = []
+  for (let i = 0; i < 3; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1500))
+    lan.push(await docMotLan())
+  }
+
+  const cuoi = lan[lan.length - 1]
+  return cuoi.map((acc) => {
+    const id = acc.id
+    const cacBalance = lan
+      .map((ds) => ds.find((x: any) => x.id === id))
+      .filter(Boolean)
+      .map((x: any) => Number(x.balance || 0))
+    return cacBalance.length > 1
+      ? { ...acc, balance: Math.min(...cacBalance) }
+      : acc
+  })
 }
 
 /** Tốc độ chi 7 ngày qua của 1 tài khoản (đồng/ngày). */
@@ -467,29 +502,6 @@ async function vanDeLanTruoc(accountId: string): Promise<string | null> {
   return rows[0]?.ma_van_de ?? null
 }
 
-/**
- * Facebook trả dữ liệu không nhất quán ngay sau khi thanh toán: đo được thật
- * 23/09 trên Ads329 — 08:45 trả balance 343.777đ (đã trừ), 09:00 lại trả
- * 10.394.784đ (số cũ), rồi mới ổn định. Nếu tin ngay lần đọc đầu thì gửi
- * cảnh báo sai vào đúng lúc người ta vừa xử lý xong — mất lòng tin vào hệ thống.
- *
- * Nên với các cảnh báo dựa trên `balance`, đòi hai lần đọc liên tiếp cùng kết
- * luận mới gửi. Tài khoản bị khoá (status/disable/failed_delivery) thì không
- * áp dụng: đó là trạng thái Facebook trả dứt khoát, và chậm một nhịp là mất tiền.
- */
-const CAN_XAC_NHAN_HAI_LAN = ["da_vuot_nguong", "sap_tru_tien_gap", "sap_tru_tien"]
-
-async function daXacNhanHaiLan(accountId: string, ma: string): Promise<boolean> {
-  if (!CAN_XAC_NHAN_HAI_LAN.includes(ma)) return true
-  const { rows } = await getPool().query(
-    `SELECT ma_van_de FROM fb_account_health
-     WHERE account_id = $1 ORDER BY checked_at DESC LIMIT 2`,
-    [accountId]
-  )
-  // rows[0] là lần vừa ghi (chính nó), rows[1] là lần trước đó
-  return rows.length >= 2 && rows[1]?.ma_van_de === ma
-}
-
 // Nhịp nhắc lại theo mức độ gấp. Mục tiêu là không bao giờ để tài khoản bị khoá,
 // nên càng gần ngưỡng càng phải nhắc dày — nhưng vùng còn xa thì nhắc thưa để
 // người nhận không chai.
@@ -568,13 +580,6 @@ export default async function fbAccountHealth(container: MedusaContainer) {
 
       if (!van_de) continue
       soVanDe++
-
-      // Cảnh báo dựa trên balance: đợi hai lần đọc liên tiếp cùng kết luận, vì
-      // Facebook trả số cũ xen kẽ ngay sau khi thanh toán (xem daXacNhanHaiLan).
-      if (!(await daXacNhanHaiLan(id, van_de.ma))) {
-        logger?.info?.(`[FbAccountHealth] ${van_de.ten}: ${van_de.ma} — chờ xác nhận lần 2`)
-        continue
-      }
 
       // Chỉ gửi khi: vấn đề MỚI xuất hiện, hoặc đổi sang vấn đề khác.
       // Cùng một vấn đề kéo dài thì cooldown lo phần nhắc lại.
