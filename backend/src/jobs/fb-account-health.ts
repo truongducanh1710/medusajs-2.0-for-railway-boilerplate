@@ -177,11 +177,19 @@ async function nguoiDangChay(accountId: string): Promise<{ mkts: string[]; camps
   }
 }
 
-/** Email của các MKT theo mã — để gửi Telegram. Luôn kèm super admin. */
+// Người luôn nhận mọi cảnh báo tài khoản, bất kể tài khoản đó ai chạy — người
+// giữ thẻ / lo thanh toán cần biết hết để kịp mở thẻ. Tách khỏi mkt_code vì họ
+// không chạy camp nào nên không tra ra được theo cách thông thường.
+// Đổi danh sách qua env FB_ALERT_ALWAYS (các email cách nhau bởi dấu phẩy).
+const NHAN_LUON = (process.env.FB_ALERT_ALWAYS || "hoanpd@phanviet.vn")
+  .split(",").map((s) => s.trim()).filter(Boolean)
+
+/** Email của các MKT theo mã — để gửi Telegram. Luôn kèm super admin + NHAN_LUON. */
 async function emailTheoMkt(userModule: any, maMkt: string[]): Promise<string[]> {
   const superEmail = process.env.SUPER_ADMIN_EMAIL
   const out = new Set<string>()
   if (superEmail) out.add(superEmail)
+  for (const e of NHAN_LUON) out.add(e)
   if (!maMkt.length) return [...out]
   try {
     const users = await userModule.listUsers({}, { select: ["email", "metadata"] })
@@ -357,7 +365,12 @@ function danhGia(acc: any, chiMoiNgay: number): {
     : null
 
   // --- Mức đỏ: tài khoản không chạy được ---
-  if (status !== 1) {
+  // status 3 (UNSETTLED) KHÔNG phải lỗi: với tài khoản trả sau, nó chỉ có nghĩa
+  // "đang có số dư chưa thanh toán" — trạng thái bình thường giữa hai kỳ trừ tiền.
+  // Kiểm chứng 23/09: Ads329/344/346 đều status=3 mà vẫn chạy (Ads329 chi 2,1tr
+  // hôm đó, failed_delivery_checks rỗng). Báo đỏ ở đây là báo động giả, và tệ hơn
+  // là làm loãng các cảnh báo thật. Phần sắp-bị-trừ-tiền đã do danhGiaThanhToan lo.
+  if (status !== 1 && status !== 3) {
     return {
       van_de: {
         account_id: id, ten, muc: "do", ma: `status_${status}`,
