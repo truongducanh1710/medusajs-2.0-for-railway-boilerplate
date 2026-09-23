@@ -26,11 +26,17 @@ export const DISPLAY_ID_ALIASES: Record<string, string> = {
   PHVVN030_NAS_CAM: "PHVVN030_NAS",
   PHVVN030_NAS_TRANG: "PHVVN030_NAS",
   PHVVN032_NASV: "PHVVN032_NASĐN",
-  // Phụ kiện bán lẻ độc lập — giá vốn riêng không tách được khỏi SP chính trong sheet,
-  // dùng tạm giá vốn SP chính (số lượng bán lẻ rất nhỏ, không đáng kể với LNG tổng).
-  PHVVN004_GBLN: "PHVVN003_BLN",
+  // PHVVN004_GBLN / PHVVN041_GBCX ĐÃ BỎ khỏi đây (18/09/2026): chúng từng trỏ về SP chính
+  // vì "số lượng bán lẻ không đáng kể", nhưng giẻ lẻ bán 30.000đ mà gánh giá vốn 118.297đ
+  // của cả bộ cây lau nhà = 394% giá bán. Riêng ANHNT T8/2026 bán 33 cái giẻ lẻ → thổi
+  // giá vốn ~3,5tr. Giờ computeAvgCost đọc giá thật từ chính dòng phụ kiện trong sheet
+  // (GIẺ CÂY LAU NHÀ XANH = 11.375đ, GIẺ LAU NHÀ TÁCH NƯỚC = 10.718đ).
+  //
+  // PHVVN015_MXCLN GIỮ NGUYÊN alias: dòng sheet tên "MÚT XỐP CÂY LAU NHÀ BỌT XỐP" còn
+  // mkt_product ghi "MÚT XỐP CÂY LAU NHÀ TỰ VẮT" — không khớp tên nên không tra được giá
+  // riêng. Bỏ alias thì mã này MẤT HẲN giá vốn (tệ hơn là sai giá). Sửa bằng cách đổi tên
+  // hai bên cho khớp, rồi mới bỏ dòng dưới.
   PHVVN015_MXCLN: "PHVVN010_CLXOP",
-  PHVVN041_GBCX: "PHVVN031_BCX",
 }
 
 
@@ -136,6 +142,15 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   type Group = { tenChinh: string; nhom: string; soLuong: number; tongTienChinh: number; tongTienPhuKien: number }
   const groupMap: Record<string, Group> = {}
 
+  // Giá vốn RIÊNG của dòng phụ kiện, gom theo tên dòng — để phụ kiện BÁN LẺ tra được giá
+  // của chính nó. Dòng phụ kiện vẫn cộng bình thường vào nhóm SP chính bên dưới (bán kèm
+  // trong bộ thì giá vốn nằm trong bộ); đây chỉ là chỉ mục song song, không đổi cách tính bộ.
+  //
+  // Trước đây phụ kiện bán lẻ dùng alias trỏ về SP chính (giẻ lau 30k gánh giá vốn 118k của
+  // cả bộ cây lau nhà = 394% giá bán), với lý do "số lượng bán lẻ không đáng kể". Đo T8/2026:
+  // riêng ANHNT bán 33 cái giẻ lẻ, giá vốn bị thổi ~3,5tr.
+  const accessoryAcc: Record<string, { tien: number; sl: number }> = {}
+
   for (const r of sheetRows.slice(1)) {
     const d = r.data as Record<string, string>
     const ten = (d[colSanPham] ?? "").trim()
@@ -144,6 +159,12 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
     const nhom = (colNhom ? d[colNhom] : "")?.trim() ?? ""
     const soLuong = parseNum(d[colSoLuong] ?? "")
     const tongTien = parseNum(d[colTongTien] ?? "")
+
+    if (tinhChat !== "Sản phẩm chính" && soLuong > 0 && tongTien > 0) {
+      const acc = (accessoryAcc[ten.toUpperCase()] ??= { tien: 0, sl: 0 })
+      acc.tien += tongTien
+      acc.sl += soLuong
+    }
 
     const key = nhom || ten
     if (!groupMap[key]) {
@@ -210,6 +231,19 @@ export async function computeAvgCost(pool: Pool): Promise<AvgCostResult> {
   // không chia được — bỏ qua để khỏi sinh Infinity/NaN lọt vào báo cáo LNG.
   for (const [code, acc] of Object.entries(accByCode)) {
     if (acc.sl > 0) costs[code] = Math.round(acc.tien / acc.sl)
+  }
+
+  // ── PHỤ KIỆN BÁN LẺ ────────────────────────────────────────────────────────
+  // Gán giá vốn của CHÍNH phụ kiện cho mã riêng của nó, tra qua mkt_product theo tên dòng
+  // (vd dòng "GIẺ CÂY LAU NHÀ XANH" → mã PHVVN041_GBCX, 11.375đ thay vì 118.297đ của cả bộ).
+  //
+  // Đặt SAU vòng bình quân ở trên và chỉ ghi khi mã CHƯA có giá: mã nào vừa là SP chính
+  // của nhóm nào đó thì giữ nguyên giá nhóm, không để dòng phụ kiện trùng tên đè lên.
+  for (const [tenPK, acc] of Object.entries(accessoryAcc)) {
+    if (acc.sl <= 0) continue
+    const code = nameToCode[tenPK]
+    if (!code || costs[code] != null) continue
+    costs[code] = Math.round(acc.tien / acc.sl)
   }
 
   // Dựng byPrefix TỪ costs (sau khi đã gom + bình quân gia quyền), không tích lũy trong
