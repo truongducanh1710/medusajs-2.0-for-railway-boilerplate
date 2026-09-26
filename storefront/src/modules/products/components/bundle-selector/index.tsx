@@ -5,6 +5,8 @@ import { HttpTypes } from "@medusajs/types"
 import { addToCart } from "@lib/data/cart"
 import { generateEventId } from "@lib/pixel"
 import { useParams, useRouter } from "next/navigation"
+import CheckoutPopup from "@modules/products/components/checkout-popup"
+import CheckoutTracker from "@components/CheckoutTracker"
 
 type GiftItem = {
   image?: string
@@ -153,9 +155,42 @@ export default function BundleSelector({ product, region }: Props) {
     }))
   }, [selected, activeVariantIdx, selectedOpt?.price])
 
+  // Cart line for the current pick: quantity = số thật khách chọn, bundle_price = tổng giá bundle,
+  // bundle_options lưu lại để cart-drawer / checkout tính lại giá khi +/-
+  const cartLine = {
+    variantId: variant?.id ?? "",
+    quantity: selected,
+    countryCode,
+    // Xóa mọi dòng của SP này trước khi add (đổi gói thay vì cộng dồn).
+    // Làm ở server action vì cookie _medusa_cart_id là httpOnly, JS không đọc được.
+    replaceVariantIds: product.variants?.map(v => v.id) ?? [],
+    metadata: {
+      bundle_qty: selected,
+      bundle_price: selectedOpt.price,
+      bundle_label: selectedOpt.label,
+      bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts }))),
+      ...(selectedOpt.gifts?.length ? { gifts: JSON.stringify(selectedOpt.gifts) } : {}),
+    },
+  }
+
+  // Popup đặt hàng ngay trên trang SP (mặc định). metadata.checkout_mode = "page" → luồng cũ /checkout
+  const popupMode = product.metadata?.checkout_mode !== "page"
+  const [popupOpen, setPopupOpen] = useState(false)
+  const [popupEverOpened, setPopupEverOpened] = useState(false)
+
+  const changeVariant = (vi: number) => {
+    setActiveVariantIdx(vi)
+    setSelected(1)
+    const vc = variantConfigs2[vi]
+    const imgUrl = vc?.image || vc?.options?.[0]?.image
+    if (imgUrl && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("variant-image-change", { detail: imgUrl }))
+    }
+  }
+
   const handleAdd = async () => {
-    if (!variant?.id || adding) return
-    setAdding(true)
+    if (!variant?.id || adding || popupOpen) return
+    if (!popupMode) setAdding(true)
 
     // Fire ATC immediately so Meta captures intent even if /checkout redirect fails.
     // Store the eventID in sessionStorage so CheckoutTracker reuses the same ID → Meta dedup.
@@ -172,25 +207,15 @@ export default function BundleSelector({ product, region }: Props) {
       }, { eventID: atcEventId })
     }
 
+    if (popupMode) {
+      // Popup tự tạo/cập nhật giỏ ngầm trong lúc khách điền form
+      setPopupOpen(true)
+      setPopupEverOpened(true)
+      return
+    }
+
     try {
-      const giftsToSave = selectedOpt.gifts || []
-      // quantity = số thật khách chọn, bundle_price = tổng giá bundle
-      // bundle_options lưu lại để cart-drawer tính lại giá khi +/-
-      await addToCart({
-        variantId: variant.id,
-        quantity: selected,
-        countryCode,
-        // Xóa mọi dòng của SP này trước khi add (đổi gói thay vì cộng dồn).
-        // Làm ở server action vì cookie _medusa_cart_id là httpOnly, JS không đọc được.
-        replaceVariantIds: product.variants?.map(v => v.id) ?? [],
-        metadata: {
-          bundle_qty: selected,
-          bundle_price: selectedOpt.price,
-          bundle_label: selectedOpt.label,
-          bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts }))),
-          ...(giftsToSave.length > 0 ? { gifts: JSON.stringify(giftsToSave) } : {}),
-        },
-      })
+      await addToCart(cartLine)
       // Client navigation thay full page reload — nhanh hơn rõ rệt.
       // addToCart đã revalidateTag("cart") nên server component checkout fetch cart mới.
       router.push(`/${countryCode}/checkout`)
@@ -213,8 +238,35 @@ export default function BundleSelector({ product, region }: Props) {
     window.dispatchEvent(new CustomEvent("pvb-order-state", { detail: { adding } }))
   }, [adding])
 
+  const productMeta = (product.metadata ?? {}) as Record<string, any>
+
   return (
     <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+      {popupOpen && (
+        <CheckoutPopup
+          product={product}
+          options={options}
+          variantLabels={isMultiVariant ? variantConfigs2.map(vc => vc.label ?? "") : []}
+          activeVariantIdx={activeVariantIdx}
+          onVariantChange={changeVariant}
+          selected={selected}
+          onSelect={setSelected}
+          cartLine={cartLine}
+          onClose={() => setPopupOpen(false)}
+        />
+      )}
+      {/* InitiateCheckout 1 lần/trang khi mở popup lần đầu (trang /checkout có tracker riêng) */}
+      {popupEverOpened && (
+        <CheckoutTracker
+          contentIds={[variant?.id ?? ""]}
+          value={selectedOpt.price}
+          currency={(region.currency_code ?? "vnd").toUpperCase()}
+          numItems={selected}
+          productPixelId={productMeta.fb_pixel_id}
+          productCapiToken={productMeta.fb_capi_token}
+          skipProductPixelInit
+        />
+      )}
       <div className="bg-gray-100 py-2 text-center text-xs font-semibold text-gray-500 tracking-widest uppercase">
         — Đổi trả 7 ngày — Hài lòng hoặc hoàn tiền —
       </div>
@@ -233,14 +285,7 @@ export default function BundleSelector({ product, region }: Props) {
             {variantConfigs2.map((vc, vi) => (
               <button
                 key={vc.variantId}
-                onClick={() => {
-                  setActiveVariantIdx(vi)
-                  setSelected(1)
-                  const imgUrl = vc.image || vc.options?.[0]?.image
-                  if (imgUrl && typeof window !== "undefined") {
-                    window.dispatchEvent(new CustomEvent("variant-image-change", { detail: imgUrl }))
-                  }
-                }}
+                onClick={() => changeVariant(vi)}
                 className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition-all ${
                   activeVariantIdx === vi
                     ? "border-blue-600 bg-blue-600 text-white"

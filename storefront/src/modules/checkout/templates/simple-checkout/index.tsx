@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, type ReactNode } from "react"
 import { HttpTypes } from "@medusajs/types"
 import {
   updateCart,
@@ -335,11 +335,42 @@ function useCountdown(minutes: number) {
   return { m, s, expired: secs === 0 }
 }
 
-export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTypes.StoreCart, shippingOptions: any[] | null }) {
+type SimpleCheckoutProps = {
+  // null while the checkout popup is still creating the cart in the background
+  cart: HttpTypes.StoreCart | null
+  shippingOptions: any[] | null
+  // Popup mode (product page): no page header, single column, bundle picker instead of bundle line
+  embedded?: boolean
+  onClose?: () => void
+  bundlePicker?: ReactNode
+  // Variants rendered by bundlePicker — their cart lines are hidden from the item list
+  bundleVariantIds?: string[]
+  // Price of the picked bundle, used for totals until the cart catches up
+  pendingBundlePrice?: number
+  syncing?: boolean
+  // Resolves (with the cart's shipping options) once the cart reflects the picked bundle;
+  // awaited before submitting
+  ensureReady?: () => Promise<any[] | null>
+}
+
+const EMPTY_CART = { id: "", items: [] } as unknown as HttpTypes.StoreCart
+
+export default function SimpleCheckout({
+  cart: cartProp,
+  shippingOptions,
+  embedded = false,
+  onClose,
+  bundlePicker,
+  bundleVariantIds,
+  pendingBundlePrice,
+  syncing = false,
+  ensureReady,
+}: SimpleCheckoutProps) {
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
   const countdown = useCountdown(12)
+  const cart = cartProp ?? EMPTY_CART
 
   const [form, setForm] = useState({ name: "", phone: "", street: "", note: "", province: "", ward: "" })
   const [provinces, setProvinces] = useState<{ code: number; name: string }[]>([])
@@ -362,6 +393,13 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
   const [localItems, setLocalItems] = useState<any[] | null>(null)
   const [liveDiscount, setLiveDiscount] = useState<number | null>(null)
+
+  // Popup swaps in a fresh cart after each bundle switch — drop local overrides of the old one
+  // (Medusa re-applies promo codes itself, new discount_total comes with the cart)
+  useEffect(() => {
+    setLocalItems(null)
+    setLiveDiscount(null)
+  }, [cartProp])
 
   const roundThousand = (n: number) => Math.round(n / 1000) * 1000
 
@@ -571,12 +609,20 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     (a.created_at ?? "") > (b.created_at ?? "") ? -1 : 1
   )
 
+  const bundleVariantSet = new Set(bundleVariantIds ?? [])
+  // Popup: lines of the picked product are shown by bundlePicker, only other cart lines listed
+  const displayItems = sortedItems.filter((item: any) => !bundleVariantSet.has(item.variant_id))
+
   // Use bundle_price from metadata if available (bundle selector stores correct total there)
   // Medusa unit_price × qty is wrong for bundles (qty is always 1, bundle_price = real total)
-  const subtotal = sortedItems.reduce((sum, item) => {
+  const lineTotal = (item: any) => {
     const bundlePrice = (item.metadata as any)?.bundle_price
-    return sum + (bundlePrice != null ? Number(bundlePrice) : item.unit_price * item.quantity)
-  }, 0)
+    return bundlePrice != null ? Number(bundlePrice) : item.unit_price * item.quantity
+  }
+  const cartPending = embedded && pendingBundlePrice != null && (syncing || !cartProp)
+  const subtotal = cartPending
+    ? pendingBundlePrice + displayItems.reduce((sum, item) => sum + lineTotal(item), 0)
+    : sortedItems.reduce((sum, item) => sum + lineTotal(item), 0)
   const rawPromoDiscount = liveDiscount ?? (cart as any).discount_total ?? 0
   const promoDiscount = Math.min(subtotal, roundDiscountUp(rawPromoDiscount))
   const promoDiscountRoundingAdjustment = Math.max(0, promoDiscount - rawPromoDiscount)
@@ -588,7 +634,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
 
   const handleApplyPromo = async (codeOverride?: string) => {
     const code = (codeOverride ?? promoCode).trim().toUpperCase()
-    if (!code) return
+    if (!code || !cart.id) return
     setPromoCode(code)
     setPromoLoading(true)
     setPromoError("")
@@ -630,6 +676,10 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
     setSubmitError("")
 
     try {
+      // Popup: wait for the background add-to-cart / bundle switch to land first
+      // (its shipping options win — the prop may still be null when the button was pressed)
+      const availableShippingOptions = (ensureReady ? await ensureReady() : null) ?? shippingOptions
+
       console.info("[SimpleCheckout] submit start", {
         cartId: cart.id,
         payment,
@@ -662,6 +712,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         metadata: {
           note: form.note,
           payment_method: payment,
+          // So sánh tỷ lệ chốt đơn popup trên trang SP vs trang /checkout
+          checkout_mode: embedded ? "popup" : "page",
           province: form.province || "",
           ward: form.ward || "",
           ...(promoDiscountRoundingAdjustment > 0
@@ -683,8 +735,8 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       // Set shipping method — ưu tiên option miễn phí (amount=0), bỏ qua nếu không có
-      if (shippingOptions && shippingOptions.length > 0) {
-        const freeOption = shippingOptions.find((o: any) => (o.amount ?? 0) === 0)
+      if (availableShippingOptions && availableShippingOptions.length > 0) {
+        const freeOption = availableShippingOptions.find((o: any) => (o.amount ?? 0) === 0)
         if (freeOption) {
           await setShippingMethod({
             cartId: updatedCart.id,
@@ -698,7 +750,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
           // Không có free shipping option — bỏ qua, không tính phí ship
           console.info("[SimpleCheckout] no free shipping option found, skipping", {
             cartId: updatedCart.id,
-            options: shippingOptions.map((o: any) => ({ id: o.id, amount: o.amount, name: o.name })),
+            options: availableShippingOptions.map((o: any) => ({ id: o.id, amount: o.amount, name: o.name })),
           })
         }
       }
@@ -800,41 +852,66 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         />
       )}
 
-      <div className="min-h-screen bg-gray-50">
-        {/* Header — 1 hàng gọn: back + logo + bước hiện tại */}
-        <div className="bg-white border-b border-gray-200 px-4 py-2.5">
-          <div className="max-w-5xl mx-auto flex items-center gap-3">
-            <button
-              onClick={() => router.back()}
-              aria-label="Quay lại"
-              className="text-gray-500 text-xl leading-none p-1 -ml-1"
-            >‹</button>
-            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-7 object-contain" />
-            <span className="text-gray-300">|</span>
-            <span className="text-gray-500 text-sm">Đặt hàng</span>
+      <div className={embedded ? "bg-gray-50" : "min-h-screen bg-gray-50"}>
+        {embedded ? (
+          // Popup: title + close + countdown dính trên cùng vùng cuộn của popup
+          <div className="sticky top-0 z-40">
+            <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <span className="font-black text-base text-gray-900">🛒 Đặt hàng</span>
+              <button
+                onClick={onClose}
+                aria-label="Đóng"
+                className="w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none"
+              >✕</button>
+            </div>
+            <div className={`px-4 py-2 text-center text-xs font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
+              {countdown.expired
+                ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào!"
+                : <>🎁 Giá ưu đãi được giữ cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
+              }
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Header — 1 hàng gọn: back + logo + bước hiện tại */}
+            <div className="bg-white border-b border-gray-200 px-4 py-2.5">
+              <div className="max-w-5xl mx-auto flex items-center gap-3">
+                <button
+                  onClick={() => router.back()}
+                  aria-label="Quay lại"
+                  className="text-gray-500 text-xl leading-none p-1 -ml-1"
+                >‹</button>
+                <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-7 object-contain" />
+                <span className="text-gray-300">|</span>
+                <span className="text-gray-500 text-sm">Đặt hàng</span>
+              </div>
+            </div>
 
-        {/* Countdown banner — sticky để giữ urgency khi cuộn, header phía trên cuộn mất */}
-        <div className={`sticky top-0 z-40 px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
-          {countdown.expired
-            ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
-            : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
-          }
-        </div>
+            {/* Countdown banner — sticky để giữ urgency khi cuộn, header phía trên cuộn mất */}
+            <div className={`sticky top-0 z-40 px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
+              {countdown.expired
+                ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
+                : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
+              }
+            </div>
+          </>
+        )}
 
-        <div className="max-w-5xl mx-auto px-4 py-6">
-          <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className={embedded ? "px-3 py-4" : "max-w-5xl mx-auto px-4 py-6"}>
+          <div className={embedded ? "flex flex-col gap-4" : "flex flex-col lg:flex-row gap-6 items-start"}>
 
           {/* ĐƠN HÀNG — luôn hiện trên cùng */}
-          <div className="lg:w-[420px] lg:sticky lg:top-6 flex-shrink-0">
+          <div className={embedded ? "" : "lg:w-[420px] lg:sticky lg:top-6 flex-shrink-0"}>
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
             <div className="bg-orange-500 px-5 py-3 flex items-center justify-between">
-              <h2 className="font-black text-white text-base">📦 Đơn hàng của bạn</h2>
-              <span className="text-orange-100 text-xs font-semibold">{sortedItems.length} sản phẩm</span>
+              <h2 className="font-black text-white text-base">{embedded ? "📦 Chọn gói" : "📦 Đơn hàng của bạn"}</h2>
+              {!embedded && (
+                <span className="text-orange-100 text-xs font-semibold">{sortedItems.length} sản phẩm</span>
+              )}
             </div>
-            <div className="p-5 space-y-4">
-              {sortedItems.map((item) => {
+            <div className={embedded ? "p-3 space-y-4" : "p-5 space-y-4"}>
+              {embedded && bundlePicker}
+              {displayItems.map((item) => {
                 const gifts = (() => {
                   try {
                     const parsed = JSON.parse((item.metadata?.gifts as string) || "[]")
@@ -1122,7 +1199,7 @@ return parsed
             )}
             <button
               onClick={handleSubmit}
-              disabled={submitting || sortedItems.length === 0}
+              disabled={submitting || (!embedded && sortedItems.length === 0)}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-5 rounded-xl transition-all active:scale-95 disabled:opacity-70 shadow-lg shadow-orange-200"
             >
               {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY →"}

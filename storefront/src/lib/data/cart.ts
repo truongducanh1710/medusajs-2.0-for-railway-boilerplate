@@ -98,20 +98,45 @@ export async function updateCart(data: HttpTypes.StoreUpdateCart) {
     })
 }
 
-export async function addToCart({
-  variantId,
-  quantity,
-  countryCode,
-  metadata,
-  replaceVariantIds,
-}: {
+type AddToCartInput = {
   variantId: string
   quantity: number
   countryCode: string
   metadata?: Record<string, unknown>
   // Remove existing lines of these variants first (switch bundle instead of stacking)
   replaceVariantIds?: string[]
-}) {
+}
+
+export async function addToCart(input: AddToCartInput) {
+  await addLineItemToCart(input)
+  revalidateTag("cart")
+}
+
+// Checkout popup on the product page: add/switch bundle and return the fresh cart in one
+// round trip. No revalidateTag — it would make Next re-render the whole product page RSC
+// on every bundle switch; checkout data is fetched uncached anyway.
+export async function prepareQuickCheckout(input: AddToCartInput) {
+  const cartId = await addLineItemToCart(input)
+  const [cart, shippingOptions] = await Promise.all([
+    retrieveCart(),
+    sdk.store.fulfillment
+      .listCartOptions({ cart_id: cartId }, await getAuthHeaders())
+      .then(({ shipping_options }) => shipping_options)
+      .catch(() => null),
+  ])
+  if (!cart) {
+    throw new Error("Cart not found after adding item")
+  }
+  return { cart, shippingOptions }
+}
+
+async function addLineItemToCart({
+  variantId,
+  quantity,
+  countryCode,
+  metadata,
+  replaceVariantIds,
+}: AddToCartInput): Promise<string> {
   if (!variantId) {
     throw new Error("Missing variant ID when adding to cart")
   }
@@ -145,9 +170,6 @@ export async function addToCart({
       {},
       await getAuthHeaders()
     )
-    .then(() => {
-      revalidateTag("cart")
-    })
     .catch((error) => {
       logCartActionError("addToCart failed", error, {
         cartId: cart.id,
@@ -156,6 +178,8 @@ export async function addToCart({
       })
       return medusaError(error)
     })
+
+  return cart.id
 }
 
 export async function updateLineItem({

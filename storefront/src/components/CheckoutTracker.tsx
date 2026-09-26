@@ -13,6 +13,7 @@ export default function CheckoutTracker({
   numItems,
   productPixelId,
   productCapiToken,
+  skipProductPixelInit = false,
 }: {
   contentIds: string[]
   value: number
@@ -20,6 +21,8 @@ export default function CheckoutTracker({
   numItems: number
   productPixelId?: string
   productCapiToken?: string
+  // Checkout popup on the product page: ProductPixelTracker already inited the product pixel
+  skipProductPixelInit?: boolean
 }) {
   const fired = useRef(false)
 
@@ -32,7 +35,7 @@ export default function CheckoutTracker({
 
       // Init product pixel — needed on hard load of /checkout where only
       // the store pixel was inited by FacebookPixel in layout
-      if (productPixelId) {
+      if (productPixelId && !skipProductPixelInit) {
         window.fbq?.("init", productPixelId)
       }
 
