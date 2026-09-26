@@ -121,6 +121,8 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     KIENLB:  "5587fee3-74e1-4a16-aee9-27097685e2f4",
     LINHMT:  "727ca757-a2b8-42a3-a9d8-b9b70c2a8149",
     NAMDV:   "e1ca9829-695e-40c6-947c-a986fd40b464",
+    // Lấy từ raw.marketer của 80 đơn Pancake đã gán ANHTD; khớp pke_mkter trong link Webcake /giamgiasoc
+    ANHTD:   "2b727738-e7b0-4be4-8c94-e9ab2efc66ef",
     XUANLT:  "9a01ac6e-7a93-4f19-8740-92b7be47902e",
     DUPD:    "ef25c657-e2f4-4e5c-854e-5b29268da253", // BICHNTN alias — update nếu có UUID riêng
   }
