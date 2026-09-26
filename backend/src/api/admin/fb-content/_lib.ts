@@ -432,6 +432,28 @@ export async function getAuthInfo(req: MedusaRequest): Promise<AuthInfo | null> 
   return { email: user.email || "", isSuper, isAdmin, fbPageIds, mktCode }
 }
 
+/**
+ * Non-admin chỉ được lên camp trên ad account có mkt_name = mkt_code của mình hoặc
+ * mkt_code nằm trong allowed_mkt_codes — cùng luật lọc dropdown ở boost/meta. Trước
+ * đây chỉ dropdown lọc, POST /boost nhận mọi ad_account_id (gọi API/ChatGPT là lách được).
+ */
+export async function isAdAccountAllowed(req: MedusaRequest, auth: AuthInfo, adAccountId: string): Promise<boolean> {
+  if (auth.isAdmin) return true
+  const myCode = (auth.mktCode || "").toUpperCase()
+  if (!myCode) return false
+  const svc = req.scope.resolve("cskhAnalysisModule") as any
+  const id = String(adAccountId || "").replace(/^act_/, "")
+  const rows: any[] = await svc.sql(
+    `SELECT mkt_name, allowed_mkt_codes FROM fb_ad_account
+     WHERE deleted_at IS NULL AND (account_id = $1 OR account_id = $2)`,
+    [id, `act_${id}`]
+  )
+  return rows.some(r =>
+    String(r.mkt_name || "").toUpperCase() === myCode ||
+    (r.allowed_mkt_codes || []).map((c: string) => String(c).toUpperCase()).includes(myCode)
+  )
+}
+
 const CACHE_TTL_HOURS = 24
 
 /**

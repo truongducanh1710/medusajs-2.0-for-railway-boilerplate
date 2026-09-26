@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getPool, getAuthInfo, ensureTables, callFb, getFbAdInfo, createUnpublishedPost, getPageTokens, uploadVideoToFbFromDrive, waitForFbVideoReady } from "../_lib"
+import { getPool, getAuthInfo, isAdAccountAllowed, ensureTables, callFb, getFbAdInfo, createUnpublishedPost, getPageTokens, uploadVideoToFbFromDrive, waitForFbVideoReady } from "../_lib"
 
 // ── Naming helpers (mirror src/admin/lib/camp-naming.ts) ────────────────────
 const UTM_STATIC =
@@ -192,6 +192,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const b = req.body as any
     const mode: string = b.mode || "existing_adset"
     if (!b.ad_account_id) return res.status(400).json({ error: "Thiếu ad_account_id" })
+
+    if (!(await isAdAccountAllowed(req, auth, b.ad_account_id))) {
+      return res.status(403).json({ error: `Ad account ${b.ad_account_id} không thuộc MKT Code của bạn` })
+    }
 
     const pool = getPool()
     await ensureTables(pool)
