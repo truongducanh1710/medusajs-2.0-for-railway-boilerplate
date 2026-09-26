@@ -386,10 +386,6 @@ export default function SimpleCheckout({
   const [submitError, setSubmitError] = useState("")
   const [showQR, setShowQR] = useState(false)
   const [orderId, setOrderId] = useState("")
-  const [promoCode, setPromoCode] = useState("")
-  const [promoApplied, setPromoApplied] = useState(false)
-  const [promoError, setPromoError] = useState("")
-  const [promoLoading, setPromoLoading] = useState(false)
   const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
   const [localItems, setLocalItems] = useState<any[] | null>(null)
   const [liveDiscount, setLiveDiscount] = useState<number | null>(null)
@@ -511,8 +507,8 @@ export default function SimpleCheckout({
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
+        // Chỉ khôi phục thông tin giao hàng — phương thức thanh toán luôn mặc định COD
         setForm(parsed.form || { name: "", phone: "", street: "", note: "", province: "", ward: "" })
-        setPayment(parsed.payment || "cod")
       } catch (e) {
         // ignore
       }
@@ -632,31 +628,6 @@ export default function SimpleCheckout({
   const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 
-  const handleApplyPromo = async (codeOverride?: string) => {
-    const code = (codeOverride ?? promoCode).trim().toUpperCase()
-    if (!code || !cart.id) return
-    setPromoCode(code)
-    setPromoLoading(true)
-    setPromoError("")
-    try {
-      // Gọi thẳng Medusa API — không dùng server action để tránh revalidateTag → reload
-      const res = await fetch(`${backendUrl}/store/carts/${cart.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
-        body: JSON.stringify({ promo_codes: [code] }),
-      })
-      if (!res.ok) throw new Error("invalid")
-      const data = await res.json()
-      const discount = data.cart?.discount_total ?? 0
-      setLiveDiscount(discount)
-      setPromoApplied(true)
-    } catch (e: any) {
-      setPromoError("Mã không hợp lệ hoặc đã hết hạn")
-      setPromoApplied(false)
-    } finally {
-      setPromoLoading(false)
-    }
-  }
 
   const buildAddress = () =>
     [form.street, form.ward, form.province].filter(Boolean).join(", ")
@@ -1013,56 +984,7 @@ return parsed
                 )
               })}
 
-              {/* Promo code */}
-              <div className="border-t border-gray-100 pt-4">
-                {promoApplied || (cart as any).promotions?.length > 0 ? (
-                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
-                    <span className="text-green-500 text-lg">✅</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-green-700">Mã giảm giá đã áp dụng!</p>
-                      <p className="text-xs text-green-600">Bạn tiết kiệm thêm {formatVND(promoDiscount)}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-2">🏷️ Mã giảm giá</p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={promoCode}
-                        onChange={e => { setPromoCode(e.target.value); setPromoError("") }}
-                        onKeyDown={e => e.key === "Enter" && handleApplyPromo()}
-                        placeholder="Nhập mã (VD: LANHDAU5)"
-                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-orange-400 uppercase placeholder:normal-case"
-                      />
-                      <button
-                        onClick={() => handleApplyPromo()}
-                        disabled={promoLoading || !promoCode.trim()}
-                        className="bg-gray-900 text-white text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-40 hover:bg-gray-700 transition-colors whitespace-nowrap"
-                      >
-                        {promoLoading ? "..." : "Áp dụng"}
-                      </button>
-                    </div>
-                    {promoError && <p className="text-red-500 text-xs mt-1.5">{promoError}</p>}
-                    {/* Chip áp mã 1 chạm — không bắt khách gõ tay */}
-                    <button
-                      onClick={() => handleApplyPromo("LANHDAU5")}
-                      disabled={promoLoading}
-                      className="mt-2 w-full flex items-center gap-2 bg-blue-50 border border-dashed border-blue-300 rounded-xl px-3 py-2.5 text-left active:bg-blue-100 transition-colors disabled:opacity-60"
-                    >
-                      <span className="text-lg flex-shrink-0">💡</span>
-                      <span className="text-xs text-blue-700 font-semibold flex-1">
-                        Lần đầu mua? Mã <strong className="font-black">LANHDAU5</strong> giảm 5%
-                      </span>
-                      <span className="text-xs font-black text-white bg-blue-600 px-2.5 py-1 rounded-lg flex-shrink-0">
-                        {promoLoading ? "..." : "Áp ngay"}
-                      </span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Totals */}
+              {/* Totals — ô nhập mã giảm giá đã bỏ; giỏ có promotion sẵn vẫn hiện dòng giảm */}
               <div className="border-t border-gray-100 pt-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Tạm tính</span>
