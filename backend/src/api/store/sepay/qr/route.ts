@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { cartIdFromOrderCode, confirmSepayPayment, findOrderIdForCart } from "../../../../lib/sepay-order"
 
 function logSePayRouteError(stage: string, error: unknown, extra?: Record<string, unknown>) {
   const payload =
@@ -105,6 +106,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ message: "Thiếu orderCode" })
     }
 
+    const cartId = cartIdFromOrderCode(orderCode)
+
+    // Webhook (hoặc lần poll trước) đã tạo đơn → trả luôn, không gọi SePay API
+    const existingOrderId = await findOrderIdForCart(req.scope, cartId)
+    if (existingOrderId) {
+      return res.json({ paid: true, orderId: existingOrderId })
+    }
+
     const apiToken = process.env.SEPAY_API_TOKEN
     const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER
     if (!apiToken) {
@@ -147,25 +156,33 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Match theo nội dung CK hoặc sub_account (VA)
     const targetOrderCode = `PV${orderCode}`.toUpperCase()
-    const matchedTx = transactions.find((tx: any) => {
+    const matchedTxs = transactions.filter((tx: any) => {
       // Chỉ lấy giao dịch tiền vào: amount_in > 0 (transfer_type không có trong SePay API response)
       const isIncoming = parseFloat(tx.amount_in || "0") > 0
       if (!isIncoming) return false
       // Match nội dung chuyển khoản chứa orderCode
-      if (tx.transaction_content?.toUpperCase().includes(targetOrderCode)) return true
-      return false
+      return Boolean(tx.transaction_content?.toUpperCase().includes(targetOrderCode))
     })
 
-    if (matchedTx) {
-      return res.json({
-        paid: true,
-        amount: matchedTx.amount_in,
-        transactionDate: matchedTx.transaction_date,
-        referenceCode: matchedTx.reference_number,
-      })
+    if (matchedTxs.length === 0) {
+      return res.json({ paid: false })
     }
 
-    return res.json({ paid: false })
+    // Khách có thể CK nhiều lần cho cùng 1 mã (thiếu rồi bù) → cộng dồn
+    const latest = matchedTxs[0]
+    const result = await confirmSepayPayment(req.scope, cartId, {
+      amount: matchedTxs.reduce((sum: number, tx: any) => sum + parseFloat(tx.amount_in || "0"), 0),
+      content: latest.transaction_content,
+      reference: latest.reference_number,
+      transactionDate: latest.transaction_date,
+      gateway: latest.bank_brand_name,
+    })
+
+    if (!result.ok) {
+      return res.json({ paid: false, reason: result.reason, expected: result.expected, received: result.received })
+    }
+
+    return res.json({ paid: true, orderId: result.orderId })
 
   } catch (err: any) {
     logSePayRouteError("GET failed", err, {

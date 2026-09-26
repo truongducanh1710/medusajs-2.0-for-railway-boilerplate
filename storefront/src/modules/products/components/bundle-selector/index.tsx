@@ -173,34 +173,6 @@ export default function BundleSelector({ product, region }: Props) {
     }
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
-      const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
-
-      // Xóa tất cả items của cùng product trước khi add (replace thay vì cộng thêm)
-      const cartIdMatch = document.cookie.match(/(?:^|;\s*)_medusa_cart_id=([^;]+)/)
-      const cartId = cartIdMatch?.[1]
-      if (cartId) {
-        const cartRes = await fetch(
-          `${backendUrl}/store/carts/${cartId}?fields=id,+items.id,+items.variant_id`,
-          { headers: { "x-publishable-api-key": pubKey } }
-        ).then(r => r.ok ? r.json() : null).catch(() => null)
-
-        const items: any[] = cartRes?.cart?.items || []
-        // Lấy tất cả variantId của product này để xóa dù chọn variant nào
-        const productVariantIds = new Set(product.variants?.map(v => v.id) || [])
-        const itemsToRemove = items.filter(
-          (i: any) => productVariantIds.has(i.variant_id)
-        )
-        await Promise.all(
-          itemsToRemove.map((i: any) =>
-            fetch(`${backendUrl}/store/carts/${cartId}/line-items/${i.id}`, {
-              method: "DELETE",
-              headers: { "x-publishable-api-key": pubKey },
-            }).catch(() => {})
-          )
-        )
-      }
-
       const giftsToSave = selectedOpt.gifts || []
       // quantity = số thật khách chọn, bundle_price = tổng giá bundle
       // bundle_options lưu lại để cart-drawer tính lại giá khi +/-
@@ -208,6 +180,9 @@ export default function BundleSelector({ product, region }: Props) {
         variantId: variant.id,
         quantity: selected,
         countryCode,
+        // Xóa mọi dòng của SP này trước khi add (đổi gói thay vì cộng dồn).
+        // Làm ở server action vì cookie _medusa_cart_id là httpOnly, JS không đọc được.
+        replaceVariantIds: product.variants?.map(v => v.id) ?? [],
         metadata: {
           bundle_qty: selected,
           bundle_price: selectedOpt.price,

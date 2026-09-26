@@ -103,11 +103,14 @@ export async function addToCart({
   quantity,
   countryCode,
   metadata,
+  replaceVariantIds,
 }: {
   variantId: string
   quantity: number
   countryCode: string
   metadata?: Record<string, unknown>
+  // Remove existing lines of these variants first (switch bundle instead of stacking)
+  replaceVariantIds?: string[]
 }) {
   if (!variantId) {
     throw new Error("Missing variant ID when adding to cart")
@@ -116,6 +119,19 @@ export async function addToCart({
   const cart = await getOrSetCart(countryCode)
   if (!cart) {
     throw new Error("Error retrieving or creating cart")
+  }
+
+  if (replaceVariantIds?.length) {
+    const replaceSet = new Set(replaceVariantIds)
+    const staleItems = (cart.items ?? []).filter(
+      (item) => item.variant_id && replaceSet.has(item.variant_id)
+    )
+    const authHeaders = await getAuthHeaders()
+    await Promise.allSettled(
+      staleItems.map((item) =>
+        sdk.store.cart.deleteLineItem(cart.id, item.id, {}, authHeaders)
+      )
+    )
   }
 
   await sdk.store.cart
@@ -196,7 +212,7 @@ export async function deleteLineItem(lineId: string) {
   }
 
   await sdk.store.cart
-    .deleteLineItem(cartId, lineId, await getAuthHeaders())
+    .deleteLineItem(cartId, lineId, {}, await getAuthHeaders())
     .then(() => {
       revalidateTag("cart")
     })
@@ -305,19 +321,26 @@ async function retrieveCartWithPaymentContext(cartId: string) {
     .then(({ cart }) => cart)
 }
 
+// preferredProviderId omitted → keep whatever session exists (placeOrder).
+// Given → replace a session of another provider (customer switched QR → COD).
 export async function ensurePaymentSession(
   cartId: string,
-  preferredProviderId = "pp_system_default"
+  preferredProviderId?: string
 ) {
   const cart = await retrieveCartWithPaymentContext(cartId)
   const regionId = cart.region_id as string
-  const existingSessionProviderIds =
+  const existingSessionProviderIds: string[] =
     cart.payment_collection?.payment_sessions
       ?.map((session: any) => session.provider_id)
       .filter(Boolean) ?? []
 
   if (existingSessionProviderIds.length > 0) {
-    return existingSessionProviderIds[0] as string
+    if (!preferredProviderId) {
+      return existingSessionProviderIds[0]
+    }
+    if (existingSessionProviderIds.includes(preferredProviderId)) {
+      return preferredProviderId
+    }
   }
 
   const providers = await sdk.store.payment
@@ -334,7 +357,7 @@ export async function ensurePaymentSession(
       return []
     })
 
-  const normalizedPreferredProvider = preferredProviderId?.trim()
+  const normalizedPreferredProvider = preferredProviderId?.trim() || "pp_system_default"
   const hasPreferredProvider = providers.some(
     (provider: any) =>
       provider.id === normalizedPreferredProvider && provider.is_enabled
@@ -545,6 +568,12 @@ export async function placeOrder() {
   })
 
   return cartRes.cart
+}
+
+// SePay: backend completes the cart itself (webhook / status poll) — client only drops the cookie
+export async function clearCompletedCart() {
+  await removeCartId()
+  revalidateTag("cart")
 }
 
 /**

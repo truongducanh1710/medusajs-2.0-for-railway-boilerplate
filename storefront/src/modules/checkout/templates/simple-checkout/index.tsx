@@ -7,6 +7,7 @@ import {
   placeOrder,
   setShippingMethod,
   ensurePaymentSession,
+  clearCompletedCart,
 } from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
@@ -17,6 +18,13 @@ import { getUtmFromCookie } from "@lib/utm"
 const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
 const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 const SEPAY_DISCOUNT = 20000
+const ORDER_ERROR_MESSAGE =
+  "Đặt hàng chưa thành công, vui lòng thử lại hoặc gọi 0967 993 609 để được hỗ trợ."
+
+function isRedirectError(err: unknown) {
+  const digest = (err as any)?.digest
+  return typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")
+}
 
 const sepayHeaders = {
   "Content-Type": "application/json",
@@ -73,11 +81,12 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   orderCode: string
   amount: number
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (orderId: string) => void
 }) {
   const [qrUrl, setQrUrl] = useState("")
   const [info, setInfo] = useState<any>(null)
   const [paid, setPaid] = useState(false)
+  const [shortfall, setShortfall] = useState<number | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [showBankPicker, setShowBankPicker] = useState(false)
 
@@ -179,15 +188,19 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
           return
         }
 
-        if (body?.paid) {
+        // Backend đã kiểm tra số tiền + tạo đơn (orderId) — client chỉ chuyển trang
+        if (body?.paid && body?.orderId) {
           console.info("[SimpleCheckout][SePay] payment confirmed", {
             orderCode,
             body,
           })
           setPaid(true)
           clearInterval(iv)
-          setTimeout(onSuccess, 1500)
+          setTimeout(() => onSuccess(body.orderId), 1500)
         } else {
+          if (body?.reason === "amount_mismatch" && body.expected != null) {
+            setShortfall(Math.max(0, Number(body.expected) - Number(body.received ?? 0)))
+          }
           console.info("[SimpleCheckout][SePay] payment not found yet", {
             orderCode,
             body,
@@ -268,6 +281,11 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
                   🏦 Mở app ngân hàng
                 </button>
               )}
+              {shortfall != null && shortfall > 0 && (
+                <p className="text-center text-xs font-semibold text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3">
+                  Đã nhận tiền nhưng còn thiếu {formatVND(shortfall)} — vui lòng chuyển thêm với cùng nội dung PV{orderCode}
+                </p>
+              )}
               <p className="text-center text-xs text-gray-400 mb-3">🔄 Tự động xác nhận khi nhận được tiền</p>
               <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Quay lại chọn COD</button>
 
@@ -334,6 +352,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const [payment, setPayment] = useState<"cod" | "sepay">("cod")
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitError, setSubmitError] = useState("")
   const [showQR, setShowQR] = useState(false)
   const [orderId, setOrderId] = useState("")
   const [promoCode, setPromoCode] = useState("")
@@ -608,6 +627,7 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
   const handleSubmit = async () => {
     if (!validate()) return
     setSubmitting(true)
+    setSubmitError("")
 
     try {
       console.info("[SimpleCheckout] submit start", {
@@ -710,10 +730,12 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
       })
 
       const result: any = await placeOrder().catch((error) => {
-        logCheckoutError("placeOrder failed for COD", error, {
-          cartId: updatedCart.id,
-          payment,
-        })
+        if (!isRedirectError(error)) {
+          logCheckoutError("placeOrder failed for COD", error, {
+            cartId: updatedCart.id,
+            payment,
+          })
+        }
         throw error
       })
 
@@ -727,54 +749,44 @@ export default function SimpleCheckout({ cart, shippingOptions }: { cart: HttpTy
         // Đặt hàng thành công → khóa đơn nháp để không bắn trùng khi rời trang
         abandonStateRef.current.placed = true
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
+      } else if (result) {
+        // placeOrder thành công sẽ redirect; trả về cart nghĩa là complete thất bại
+        setSubmitError(ORDER_ERROR_MESSAGE)
       }
     } catch (err) {
+      // placeOrder() redirect sang /order/confirmed: Next đã điều hướng rồi mới reject
+      // action promise bằng NEXT_REDIRECT — thành công, không phải lỗi
+      if (isRedirectError(err)) {
+        abandonStateRef.current.placed = true
+        return
+      }
       logCheckoutError("handleSubmit failed", err, {
         cartId: cart.id,
         payment,
         countryCode,
       })
+      setSubmitError(ORDER_ERROR_MESSAGE)
     } finally {
       setSubmitting(false)
     }
   }
 
-  const handleSepaySuccess = async () => {
+  // Backend (webhook hoặc status poll) đã kiểm tra số tiền + tạo đơn → chỉ xoá cookie giỏ và chuyển trang
+  const handleSepaySuccess = async (createdOrderId: string) => {
     setShowQR(false)
     setSubmitting(true)
+    abandonStateRef.current.placed = true
+    console.info("[SimpleCheckout] SePay confirmed, order created by backend", {
+      cartId: cart.id,
+      orderCode: orderId,
+      orderId: createdOrderId,
+    })
     try {
-      console.info("[SimpleCheckout] SePay confirmed, placing order", {
-        cartId: cart.id,
-        orderCode: orderId,
-      })
-
-      const result: any = await placeOrder().catch((error) => {
-        logCheckoutError("placeOrder failed after SePay success", error, {
-          cartId: cart.id,
-          orderCode: orderId,
-        })
-        throw error
-      })
-
-      console.info("[SimpleCheckout] placeOrder result after SePay", {
-        cartId: cart.id,
-        orderCode: orderId,
-        resultType: result?.type,
-        orderId: result?.order?.id,
-      })
-
-      if (result?.type === "order") {
-        abandonStateRef.current.placed = true
-        router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
-      }
+      await clearCompletedCart()
     } catch (err) {
-      logCheckoutError("handleSepaySuccess failed", err, {
-        cartId: cart.id,
-        orderCode: orderId,
-      })
-    } finally {
-      setSubmitting(false)
+      logCheckoutError("clearCompletedCart failed", err, { cartId: cart.id })
     }
+    router.push(`/${countryCode}/order/confirmed/${createdOrderId}`)
   }
 
   return (
@@ -1103,9 +1115,14 @@ return parsed
             </div>
 
             {/* CTA */}
+            {submitError && (
+              <p className="text-center text-sm font-semibold text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                {submitError}
+              </p>
+            )}
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || sortedItems.length === 0}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-5 rounded-xl transition-all active:scale-95 disabled:opacity-70 shadow-lg shadow-orange-200"
             >
               {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY →"}
