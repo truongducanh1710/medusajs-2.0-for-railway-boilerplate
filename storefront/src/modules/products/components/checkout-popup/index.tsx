@@ -125,8 +125,71 @@ export default function CheckoutPopup({
 
   const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
-  const bundlePicker = (
+  // Thu gọn mặc định: khách vừa chọn gói ở trang SP, popup chỉ nhắc lại gói + cho "Đổi gói"
+  // để form nhập thông tin lên ngay màn hình đầu
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const selectedSummary = selectedOpt && (
+    <div className="flex items-center gap-2.5">
+      {(selectedOpt.image || product.thumbnail) && (
+        <img
+          src={selectedOpt.image || product.thumbnail!}
+          alt={selectedOpt.label}
+          className="w-12 h-12 object-cover rounded-lg flex-shrink-0 border border-gray-100"
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="font-black text-sm text-gray-900 line-clamp-2 leading-snug">{selectedOpt.label}</p>
+        {variantLabels.length > 1 && (
+          <p className="text-[11px] text-gray-500 line-clamp-1">{variantLabels[activeVariantIdx]}</p>
+        )}
+        <p className="mt-0.5">
+          <span className="font-black text-sm text-orange-500">{formatVND(selectedOpt.price)}</span>
+          {selectedOpt.originalPrice > selectedOpt.price && (
+            <span className="ml-1.5 text-[11px] text-gray-400 line-through">{formatVND(selectedOpt.originalPrice)}</span>
+          )}
+        </p>
+      </div>
+      <button
+        onClick={() => setPickerOpen(true)}
+        className="flex-shrink-0 text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 rounded-lg px-2.5 py-1.5"
+      >
+        Đổi gói ▾
+      </button>
+    </div>
+  )
+
+  const selectedGifts = selectedOpt?.gifts?.length ? (
+    <div className="bg-orange-50 border border-orange-100 rounded-lg px-2.5 py-1.5 space-y-0.5">
+      {selectedOpt.gifts.map((g, i) => (
+        <p key={i} className="text-[11px] text-gray-700 font-semibold line-clamp-1">
+          🎁 <span className="text-orange-600 font-black">TẶNG</span> {g.name}
+        </p>
+      ))}
+    </div>
+  ) : null
+
+  const syncErrorLine = syncError && (
+    <p className="text-xs text-red-600 font-semibold">
+      Chưa cập nhật được giỏ hàng —{" "}
+      <button className="underline" onClick={() => syncCart(cartLine)}>thử lại</button>
+    </p>
+  )
+
+  const bundlePicker = !pickerOpen ? (
     <div className="space-y-2">
+      {selectedSummary}
+      {selectedGifts}
+      {syncErrorLine}
+    </div>
+  ) : (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="font-black text-sm text-gray-900">Chọn gói</p>
+        <button onClick={() => setPickerOpen(false)} className="text-xs font-bold text-gray-500 px-1">
+          Thu gọn ▴
+        </button>
+      </div>
       {variantLabels.length > 1 && (
         <div className="flex gap-2 flex-wrap pb-1">
           {variantLabels.map((label, vi) => (
@@ -149,7 +212,10 @@ export default function CheckoutPopup({
         return (
           <button
             key={opt.qty}
-            onClick={() => onSelect(opt.qty)}
+            onClick={() => {
+              onSelect(opt.qty)
+              setPickerOpen(false)
+            }}
             className={`w-full text-left rounded-xl border-2 transition-all overflow-hidden ${
               isSelected ? "border-blue-600 bg-blue-50/40" : "border-gray-200"
             }`}
@@ -196,12 +262,7 @@ export default function CheckoutPopup({
           </button>
         )
       })}
-      {syncError && (
-        <p className="text-xs text-red-600 font-semibold">
-          Chưa cập nhật được giỏ hàng —{" "}
-          <button className="underline" onClick={() => syncCart(cartLine)}>thử lại</button>
-        </p>
-      )}
+      {syncErrorLine}
     </div>
   )
 
@@ -228,6 +289,7 @@ export default function CheckoutPopup({
           bundlePicker={bundlePicker}
           bundleVariantIds={bundleVariantIds}
           pendingBundlePrice={selectedOpt?.price}
+          compareAtBundlePrice={selectedOpt?.originalPrice}
           syncing={syncing}
           ensureReady={ensureReady}
         />

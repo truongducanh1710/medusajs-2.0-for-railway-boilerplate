@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, type ReactNode } from "react"
+import { useState, useEffect, useRef, type FocusEvent, type ReactNode } from "react"
 import { HttpTypes } from "@medusajs/types"
 import {
   updateCart,
@@ -347,6 +347,8 @@ type SimpleCheckoutProps = {
   bundleVariantIds?: string[]
   // Price of the picked bundle, used for totals until the cart catches up
   pendingBundlePrice?: number
+  // Original (strike-through) price of the picked bundle — popup footer shows the saving
+  compareAtBundlePrice?: number
   syncing?: boolean
   // Resolves (with the cart's shipping options) once the cart reflects the picked bundle;
   // awaited before submitting
@@ -363,6 +365,7 @@ export default function SimpleCheckout({
   bundlePicker,
   bundleVariantIds,
   pendingBundlePrice,
+  compareAtBundlePrice,
   syncing = false,
   ensureReady,
 }: SimpleCheckoutProps) {
@@ -384,6 +387,7 @@ export default function SimpleCheckout({
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState("")
+  const [showNote, setShowNote] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [orderId, setOrderId] = useState("")
   const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
@@ -636,7 +640,7 @@ export default function SimpleCheckout({
     const e: Record<string, string> = {}
     if (!form.name.trim()) e.name = "Vui lòng nhập họ tên"
     if (!/^(0|\+84)[0-9]{8,9}$/.test(form.phone.replace(/\s/g, ""))) e.phone = "Số điện thoại không hợp lệ"
-    if (!form.street.trim()) e.street = "Vui lòng nhập số nhà, tên đường"
+    if (!form.street.trim()) e.street = "Vui lòng nhập địa chỉ nhận hàng"
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -685,6 +689,8 @@ export default function SimpleCheckout({
           payment_method: payment,
           // So sánh tỷ lệ chốt đơn popup trên trang SP vs trang /checkout
           checkout_mode: embedded ? "popup" : "page",
+          // Phiên bản bố cục popup — đổi khi thay layout để so tỷ lệ chốt giữa các bản
+          ...(embedded ? { checkout_layout: "popup_v2" } : {}),
           province: form.province || "",
           ward: form.ward || "",
           ...(promoDiscountRoundingAdjustment > 0
@@ -812,76 +818,212 @@ export default function SimpleCheckout({
     router.push(`/${countryCode}/order/confirmed/${createdOrderId}`)
   }
 
-  return (
-    <>
-      {showQR && (
-        <SepayModal
-          orderCode={orderId}
-          amount={sepayTotal}
-          onClose={() => setShowQR(false)}
-          onSuccess={handleSepaySuccess}
-        />
-      )}
+  const sepayModal = showQR && (
+    <SepayModal
+      orderCode={orderId}
+      amount={sepayTotal}
+      onClose={() => setShowQR(false)}
+      onSuccess={handleSepaySuccess}
+    />
+  )
 
-      <div className={embedded ? "bg-gray-50" : "min-h-screen bg-gray-50"}>
-        {embedded ? (
-          // Popup: title + close + countdown dính trên cùng vùng cuộn của popup
-          <div className="sticky top-0 z-40">
-            <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <span className="font-black text-base text-gray-900">🛒 Đặt hàng</span>
-              <button
-                onClick={onClose}
-                aria-label="Đóng"
-                className="w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none"
-              >✕</button>
-            </div>
-            <div className={`px-4 py-2 text-center text-xs font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
-              {countdown.expired
-                ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào!"
-                : <>🎁 Giá ưu đãi được giữ cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
-              }
-            </div>
+  // iOS: bàn phím + footer dính có thể che ô đang nhập — cuộn ô đó ra giữa vùng popup
+  const scrollFieldIntoView = (e: FocusEvent<HTMLElement>) => {
+    const el = e.currentTarget
+    setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 300)
+  }
+
+  const fieldClass = (hasError?: boolean) =>
+    `w-full border rounded-xl px-4 py-3 text-base outline-none focus:border-orange-400 transition-colors ${hasError ? "border-red-400" : "border-gray-200"}`
+
+  // Popup trên trang SP: form lên màn hình đầu, gói thu gọn, nút đặt hàng dính đáy
+  if (embedded) {
+    const compareAt = compareAtBundlePrice != null && pendingBundlePrice != null && compareAtBundlePrice > pendingBundlePrice
+      ? compareAtBundlePrice - pendingBundlePrice
+      : 0
+    const totalSaved = compareAt + Math.max(0, subtotal - finalTotal)
+
+    return (
+      <>
+        {sepayModal}
+        <div className="bg-gray-50">
+          {/* Header 1 dòng: tiêu đề + countdown + đóng */}
+          <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-2">
+            <span className="font-black text-base text-gray-900">🛒 Đặt hàng</span>
+            <span className={`ml-auto text-[11px] font-black text-white rounded-full px-2 py-1 ${countdown.expired ? "bg-red-600" : "bg-orange-500"}`}>
+              {countdown.expired ? "⏰ Sắp hết ưu đãi" : <>⏰ Giữ giá <span className="tabular-nums">{countdown.m}:{countdown.s}</span></>}
+            </span>
+            <button
+              onClick={onClose}
+              aria-label="Đóng"
+              className="w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none"
+            >✕</button>
           </div>
-        ) : (
-          <>
-            {/* Header — 1 hàng gọn: back + logo + bước hiện tại */}
-            <div className="bg-white border-b border-gray-200 px-4 py-2.5">
-              <div className="max-w-5xl mx-auto flex items-center gap-3">
-                <button
-                  onClick={() => router.back()}
-                  aria-label="Quay lại"
-                  className="text-gray-500 text-xl leading-none p-1 -ml-1"
-                >‹</button>
-                <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-7 object-contain" />
-                <span className="text-gray-300">|</span>
-                <span className="text-gray-500 text-sm">Đặt hàng</span>
+
+          <div className="px-3 pt-3 pb-4 space-y-3">
+            {/* Gói đang chọn (thu gọn, bấm để đổi) */}
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 space-y-2">
+              {bundlePicker}
+              {displayItems.map((item: any) => (
+                <div key={item.id} className="flex justify-between gap-2 text-xs text-gray-600 border-t border-gray-100 pt-2">
+                  <span className="line-clamp-1">{item.title} × {item.metadata?.bundle_qty ?? item.quantity}</span>
+                  <span className="font-bold flex-shrink-0">{formatVND(lineTotal(item))}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Thông tin giao hàng — ngay màn hình đầu */}
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 space-y-2.5">
+              <p className="font-black text-sm text-gray-900">🚚 Thông tin nhận hàng</p>
+              <div>
+                <input
+                  type="text"
+                  name="name"
+                  autoComplete="name"
+                  enterKeyHint="next"
+                  placeholder="Họ và tên *"
+                  value={form.name}
+                  onFocus={scrollFieldIntoView}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  className={fieldClass(!!errors.name)}
+                />
+                {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
               </div>
-            </div>
-
-            {/* Countdown banner — sticky để giữ urgency khi cuộn, header phía trên cuộn mất */}
-            <div className={`sticky top-0 z-40 px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
-              {countdown.expired
-                ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
-                : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
-              }
-            </div>
-          </>
-        )}
-
-        <div className={embedded ? "px-3 py-4" : "max-w-5xl mx-auto px-4 py-6"}>
-          <div className={embedded ? "flex flex-col gap-4" : "flex flex-col lg:flex-row gap-6 items-start"}>
-
-          {/* ĐƠN HÀNG — luôn hiện trên cùng */}
-          <div className={embedded ? "" : "lg:w-[420px] lg:sticky lg:top-6 flex-shrink-0"}>
-          <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
-            <div className="bg-orange-500 px-5 py-3 flex items-center justify-between">
-              <h2 className="font-black text-white text-base">{embedded ? "📦 Chọn gói" : "📦 Đơn hàng của bạn"}</h2>
-              {!embedded && (
-                <span className="text-orange-100 text-xs font-semibold">{sortedItems.length} sản phẩm</span>
+              <div>
+                <input
+                  type="tel"
+                  name="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  enterKeyHint="next"
+                  placeholder="Số điện thoại *"
+                  value={form.phone}
+                  onFocus={scrollFieldIntoView}
+                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  className={fieldClass(!!errors.phone)}
+                />
+                {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+              </div>
+              <div>
+                <input
+                  type="text"
+                  name="street-address"
+                  autoComplete="street-address"
+                  enterKeyHint="done"
+                  placeholder="Địa chỉ (số nhà, phường, tỉnh) *"
+                  value={form.street}
+                  onFocus={scrollFieldIntoView}
+                  onChange={e => setForm(f => ({ ...f, street: e.target.value }))}
+                  className={fieldClass(!!errors.street)}
+                />
+                {errors.street && <p className="text-red-500 text-xs mt-1">{errors.street}</p>}
+              </div>
+              {showNote || form.note ? (
+                <textarea
+                  placeholder="Ghi chú (màu sắc, giờ nhận hàng...)"
+                  value={form.note}
+                  onFocus={scrollFieldIntoView}
+                  onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+                  rows={2}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base outline-none focus:border-orange-400 transition-colors resize-none"
+                />
+              ) : (
+                <button onClick={() => setShowNote(true)} className="text-xs font-semibold text-blue-600">
+                  + Thêm ghi chú
+                </button>
               )}
             </div>
-            <div className={embedded ? "p-3 space-y-4" : "p-5 space-y-4"}>
-              {embedded && bundlePicker}
+
+            {/* Thanh toán — gọn, COD mặc định */}
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 space-y-2">
+              <p className="font-black text-sm text-gray-900">💳 Thanh toán</p>
+              <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "cod" ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
+                <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
+                <span className="flex-1 text-sm font-bold text-gray-900">Thanh toán khi nhận hàng</span>
+                <span className="text-[11px] text-gray-500">Kiểm tra rồi trả</span>
+              </label>
+              <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
+                <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
+                <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR</span>
+                <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(SEPAY_DISCOUNT)}</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Footer dính đáy: tổng tiền + nút đặt + cam kết */}
+          <div className="sticky bottom-0 z-40 bg-white border-t border-gray-200 px-3 pt-2.5 pb-3 space-y-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+            {submitError && (
+              <p className="text-center text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {submitError}
+              </p>
+            )}
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-gray-500">
+                Tổng cộng
+                {promoDiscount > 0 && <span className="text-green-600"> · đã giảm {formatVND(promoDiscount)}</span>}
+                {payment === "sepay" && <span className="text-green-600"> · QR -{formatVND(SEPAY_DISCOUNT)}</span>}
+              </span>
+              <span className="text-right">
+                <span className="font-black text-xl text-orange-500">{formatVND(finalTotal)}</span>
+                {totalSaved > 0 && (
+                  <span className="block text-[11px] font-bold text-green-600">Tiết kiệm {formatVND(totalSaved)}</span>
+                )}
+              </span>
+            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-lg py-3.5 rounded-xl transition-all active:scale-[0.98] disabled:opacity-70 shadow-lg shadow-orange-200"
+            >
+              {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY"}
+            </button>
+            <p className="text-center text-[11px] text-gray-500">
+              ✅ Kiểm tra hàng trước · 🔄 Đổi trả 7 ngày · 🛡️ Bảo hành
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <>
+      {sepayModal}
+
+      <div className="min-h-screen bg-gray-50">
+        {/* Header — 1 hàng gọn: back + logo + bước hiện tại */}
+        <div className="bg-white border-b border-gray-200 px-4 py-2.5">
+          <div className="max-w-5xl mx-auto flex items-center gap-3">
+            <button
+              onClick={() => router.back()}
+              aria-label="Quay lại"
+              className="text-gray-500 text-xl leading-none p-1 -ml-1"
+            >‹</button>
+            <img src="/logo-vietmate.png.png" alt="Vietmate" className="h-7 object-contain" />
+            <span className="text-gray-300">|</span>
+            <span className="text-gray-500 text-sm">Đặt hàng</span>
+          </div>
+        </div>
+
+        {/* Countdown banner — sticky để giữ urgency khi cuộn, header phía trên cuộn mất */}
+        <div className={`sticky top-0 z-40 px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
+          {countdown.expired
+            ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
+            : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
+          }
+        </div>
+
+        <div className="max-w-5xl mx-auto px-4 py-6">
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
+
+          {/* ĐƠN HÀNG — luôn hiện trên cùng */}
+          <div className="lg:w-[420px] lg:sticky lg:top-6 flex-shrink-0">
+          <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+            <div className="bg-orange-500 px-5 py-3 flex items-center justify-between">
+              <h2 className="font-black text-white text-base">📦 Đơn hàng của bạn</h2>
+              <span className="text-orange-100 text-xs font-semibold">{sortedItems.length} sản phẩm</span>
+            </div>
+            <div className="p-5 space-y-4">
               {displayItems.map((item) => {
                 const gifts = (() => {
                   try {
@@ -1121,7 +1263,7 @@ return parsed
             )}
             <button
               onClick={handleSubmit}
-              disabled={submitting || (!embedded && sortedItems.length === 0)}
+              disabled={submitting || sortedItems.length === 0}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-5 rounded-xl transition-all active:scale-95 disabled:opacity-70 shadow-lg shadow-orange-200"
             >
               {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY →"}
