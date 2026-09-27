@@ -1,5 +1,5 @@
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from './constants'
-import { getPancakeProvinceId, getPancakeCommuneId } from './pancake-address'
+import { getPancakeProvinceId, getPancakeCommuneId, detectProvinceFromText } from './pancake-address'
 
 // Cache Pancake variation map: SKU (display_id) → variation UUID
 let variationMapCache: Map<string, string> | null = null
@@ -40,6 +40,30 @@ async function getPancakeVariationMap(): Promise<Map<string, string>> {
   variationMapCachedAt = now
   console.info(`[Pancake] Loaded ${map.size} variations into map`)
   return map
+}
+
+// Map MKT code → Pancake marketer UUID (từ raw data đã verify trong DB)
+export const MKT_PANCAKE_UUID: Record<string, string> = {
+  ANHNT:   "79c371d0-b20f-41ab-a7d7-f9b43d7d3073",
+  KIENLB:  "5587fee3-74e1-4a16-aee9-27097685e2f4",
+  LINHMT:  "727ca757-a2b8-42a3-a9d8-b9b70c2a8149",
+  NAMDV:   "e1ca9829-695e-40c6-947c-a986fd40b464",
+  // Lấy từ raw.marketer của 80 đơn Pancake đã gán ANHTD; khớp pke_mkter trong link Webcake /giamgiasoc
+  ANHTD:   "2b727738-e7b0-4be4-8c94-e9ab2efc66ef",
+  XUANLT:  "9a01ac6e-7a93-4f19-8740-92b7be47902e",
+  DUPD:    "ef25c657-e2f4-4e5c-854e-5b29268da253", // BICHNTN alias — update nếu có UUID riêng
+}
+
+// Extract MKT code từ utm_campaign: "{PRODUCT}_{DD/M}_{MKTCODE}_..." → "MKTCODE"
+// Format: PHVVN026CV_12/6_ANHTD_CHAO VANG → parts[2] = "ANHTD"
+// Date token DD/M hoặc D/M phải có mặt ở parts[1]
+export function extractMktCode(campaign: string | undefined): string | undefined {
+  if (!campaign) return undefined
+  const parts = campaign.split("_")
+  // Tìm index của date token (DD/M hoặc D/M)
+  const dateIdx = parts.findIndex(p => /^\d{1,2}\/\d{1,2}$/.test(p))
+  if (dateIdx < 0) return undefined
+  return parts[dateIdx + 1]?.trim() || undefined
 }
 
 export async function pushOrderToPancake(order: any, shippingAddress: any) {
@@ -115,30 +139,6 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const utmContent = order.metadata?.utm_content as string | undefined
   const utmTerm = order.metadata?.utm_term as string | undefined
 
-  // Map MKT code → Pancake marketer UUID (từ raw data đã verify trong DB)
-  const MKT_PANCAKE_UUID: Record<string, string> = {
-    ANHNT:   "79c371d0-b20f-41ab-a7d7-f9b43d7d3073",
-    KIENLB:  "5587fee3-74e1-4a16-aee9-27097685e2f4",
-    LINHMT:  "727ca757-a2b8-42a3-a9d8-b9b70c2a8149",
-    NAMDV:   "e1ca9829-695e-40c6-947c-a986fd40b464",
-    // Lấy từ raw.marketer của 80 đơn Pancake đã gán ANHTD; khớp pke_mkter trong link Webcake /giamgiasoc
-    ANHTD:   "2b727738-e7b0-4be4-8c94-e9ab2efc66ef",
-    XUANLT:  "9a01ac6e-7a93-4f19-8740-92b7be47902e",
-    DUPD:    "ef25c657-e2f4-4e5c-854e-5b29268da253", // BICHNTN alias — update nếu có UUID riêng
-  }
-
-  // Extract MKT code từ utm_campaign: "{PRODUCT}_{DD/M}_{MKTCODE}_..." → "MKTCODE"
-  // Format: PHVVN026CV_12/6_ANHTD_CHAO VANG → parts[2] = "ANHTD"
-  // Date token DD/M hoặc D/M phải có mặt ở parts[1]
-  function extractMktCode(campaign: string | undefined): string | undefined {
-    if (!campaign) return undefined
-    const parts = campaign.split("_")
-    // Tìm index của date token (DD/M hoặc D/M)
-    const dateIdx = parts.findIndex(p => /^\d{1,2}\/\d{1,2}$/.test(p))
-    if (dateIdx < 0) return undefined
-    return parts[dateIdx + 1]?.trim() || undefined
-  }
-
   let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)
 
   // Ghi chú: kết hợp ghi chú khách + gifts + UTM (giống format Webcake để sale xem nhanh)
@@ -178,7 +178,10 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const provinceName = order.metadata?.province as string || shippingAddress.city || ''
   const wardName = order.metadata?.ward as string || shippingAddress.province || ''
 
+  // Form web gộp cả địa chỉ vào address_1 và ghi "Việt Nam" vào city, nên tên tỉnh
+  // thường không tra được — khi đó đoán tỉnh từ chính chuỗi địa chỉ.
   const provinceId = getPancakeProvinceId(provinceName)
+    ?? detectProvinceFromText(`${shippingAddress.address_1 || ''} ${shippingAddress.address_2 || ''}`)
   console.info(`[Pancake] Address lookup: province="${provinceName}" → ${provinceId}, ward="${wardName}" (not mapped — Pancake uses GHN format)`)
 
   const payload: Record<string, any> = {
@@ -229,21 +232,55 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   }
 
   const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}`
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
+  const guiDon = async (body: Record<string, any>) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
     const text = await response.text()
-    throw new Error(`Pancake API error ${response.status}: ${text}`)
+    return { ok: response.ok, status: response.status, text }
   }
 
-  const result = await response.json()
+  let lan = await guiDon(payload)
+  let hetHang = false
+
+  // Pancake chặn đơn khi sản phẩm có mã tồn kho mà hết hàng:
+  //   422 "PHVVN026_CV - PHVVN027_CV có số lượng hàng sắp về không đủ!"
+  // Đơn Webcake vẫn vào được (trạng thái Chờ hàng) nhưng đơn web thì bị từ chối hẳn —
+  // 27/09 mất 4 đơn web vì lỗi này, không ai biết vì lỗi chỉ nằm trong log.
+  // Đẩy lại với sản phẩm dạng thủ công (không gắn variation_id → Pancake không kiểm
+  // tồn). Cách này đã chạy được lúc hết hàng: route checkout-abandon dùng đúng kiểu
+  // item này và tạo đơn nháp thành công 27/09 11:57 khi Chảo vàng đang hết.
+  // Đánh đổi: đơn không trừ tồn kho tự động → gắn tag + ghi chú để kho gán lại SP.
+  if (!lan.ok && lan.status === 422 && /không đủ|hết hàng|tồn kho|số lượng/i.test(lan.text)) {
+    hetHang = true
+    console.warn(`[Pancake] Hết hàng — đẩy lại với sản phẩm thủ công. Lỗi gốc: ${lan.text.slice(0, 200)}`)
+    const skuCuaItem = (order.items || []).map((it: any) => it.variant?.sku).filter(Boolean)
+    const fallback = {
+      ...payload,
+      items: payload.items.map((it: any, i: number) => ({
+        ...it,
+        variation_id: null,
+        one_time_product: true,
+        variation_info: {
+          ...it.variation_info,
+          name: `${it.variation_info?.name || 'Sản phẩm'}${skuCuaItem[i] ? ` [${skuCuaItem[i]}]` : ''}`,
+        },
+      })),
+      note: `[HẾT HÀNG LÚC ĐẶT — kho cần gán lại sản phẩm: ${skuCuaItem.join(', ') || 'xem tên SP'}]\n${payload.note || ''}`.trim(),
+      tags: [...(payload.tags || []), { name: 'Web hết hàng - cần gán SP' }],
+    }
+    lan = await guiDon(fallback)
+  }
+
+  if (!lan.ok) {
+    throw new Error(`Pancake API error ${lan.status}: ${lan.text}`)
+  }
+
+  const result = JSON.parse(lan.text || '{}')
   const pancakeOrderId = result?.id ?? result?.order?.id ?? result?.data?.id ?? 'unknown'
-  console.log(`[Pancake] Order pushed successfully, Pancake order ID: ${pancakeOrderId}`)
-  console.log(`[Pancake] Response keys: ${Object.keys(result || {}).join(', ')}`)
+  console.log(`[Pancake] Order pushed successfully${hetHang ? ' (dạng hết hàng)' : ''}, Pancake order ID: ${pancakeOrderId}`)
+  if (hetHang) result._het_hang = true
   return result
 }

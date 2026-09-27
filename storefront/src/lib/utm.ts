@@ -13,7 +13,30 @@ export type UtmData = {
   fbc?: string   // FB click cookie _fbc (derived from fbclid)
 }
 
+// Cookie dùng chung cho www.phanviet.vn và phanviet.vn — cả hai đều phục vụ trực
+// tiếp (không redirect), cookie không có domain chỉ gắn với đúng host khách vào.
+function cookieDomain(): string {
+  if (typeof location === "undefined") return ""
+  return /(^|\.)phanviet\.vn$/.test(location.hostname) ? "; domain=.phanviet.vn" : ""
+}
+
+function readUtmCookie(): UtmData {
+  if (typeof document === "undefined") return {}
+  const match = document.cookie.split("; ").find((row) => row.startsWith(`${UTM_COOKIE}=`))
+  if (!match) return {}
+  try {
+    return JSON.parse(decodeURIComponent(match.split("=").slice(1).join("=")))
+  } catch {
+    return {}
+  }
+}
+
 export function saveUtmToCookie(searchParams: URLSearchParams) {
+  // Gộp vào cookie cũ thay vì ghi đè. Hàm này chạy MỖI LẦN chuyển trang
+  // (TrackingBeacon). Trước đây trang không có UTM (vd trang thanh toán) mà đã có
+  // cookie _fbp thì cookie bị ghi đè chỉ còn {fbp} → mất utm_campaign → đơn không
+  // ghép được về camp. UTM chỉ bị thay khi URL mới mang UTM mới.
+  const cu = readUtmCookie()
   const data: UtmData = {}
   let hasData = false
 
@@ -48,9 +71,20 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
 
   if (!hasData && !data.fbp && !data.fbc) return
 
+  // URL có UTM mới → bộ UTM mới thay hẳn bộ cũ (lượt click quảng cáo mới nhất).
+  // URL không có UTM → giữ nguyên UTM cũ, chỉ cập nhật fbp/fbc.
+  const merged: UtmData = hasData
+    ? { ...data, fbp: data.fbp ?? cu.fbp, fbc: data.fbc ?? cu.fbc }
+    : { ...cu, ...(data.fbp ? { fbp: data.fbp } : {}), ...(data.fbc ? { fbc: data.fbc } : {}) }
+
+  const domain = cookieDomain()
+  // Khách cũ còn cookie gắn riêng host (trước khi có domain) — đã gộp vào `cu`
+  // ở trên, xoá đi để không tồn tại 2 cookie trùng tên.
+  if (domain) document.cookie = `${UTM_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+
   const expires = new Date()
   expires.setDate(expires.getDate() + 7)
-  document.cookie = `${UTM_COOKIE}=${encodeURIComponent(JSON.stringify(data))}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`
+  document.cookie = `${UTM_COOKIE}=${encodeURIComponent(JSON.stringify(merged))}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${domain}`
 }
 
 export function getUtmFromCookie(): UtmData {

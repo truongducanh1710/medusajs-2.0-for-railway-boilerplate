@@ -2,7 +2,7 @@ import { Modules } from '@medusajs/framework/utils'
 import { INotificationModuleService, IOrderModuleService, IProductModuleService, IStoreModuleService } from '@medusajs/framework/types'
 import { SubscriberArgs, SubscriberConfig } from '@medusajs/medusa'
 import { EmailTemplates } from '../modules/email-notifications/templates'
-import { pushOrderToPancake } from '../lib/pancake'
+import { pushAndRecord } from '../lib/pancake-push'
 import { sendCompleteRegistrationEvent } from '../lib/fb-capi'
 
 export default async function orderPlacedHandler({
@@ -116,18 +116,8 @@ export default async function orderPlacedHandler({
     console.error('[FB CAPI] CompleteRegistration error in order-placed:', capiErr.message)
   }
 
-  try {
-    const pancakeResult = await pushOrderToPancake(order, shippingAddress)
-    if (pancakeResult) {
-      const pancakeOrderId = pancakeResult?.id ?? pancakeResult?.order?.id ?? pancakeResult?.data?.id
-      if (pancakeOrderId) {
-        await orderModuleService.updateOrders([{ id: order.id, metadata: { ...order.metadata, pancake_order_id: String(pancakeOrderId) } }] as any)
-        console.info(`[Pancake] Saved pancake_order_id=${pancakeOrderId} to order ${order.id}`)
-      }
-    }
-  } catch (error: any) {
-    console.error('[Pancake] Error pushing order to Pancake POS:', error?.message || error)
-  }
+  // Đẩy sang Pancake + lưu kết quả vào đơn + nhắn Telegram nếu lỗi (không throw)
+  await pushAndRecord(container, order, shippingAddress)
 }
 
 export const config: SubscriberConfig = {

@@ -571,6 +571,8 @@ export default function SimpleCheckout({
       }))
 
       const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "https://api.phanviet.vn"
+      // Kèm UTM để đơn nháp trên Pancake ghép được về camp/video quảng cáo
+      const utm = getUtmFromCookie()
       const payload = JSON.stringify({
         cartId: st.cartId,
         name: st.form.name,
@@ -580,6 +582,11 @@ export default function SimpleCheckout({
         ward: st.form.ward,
         note: st.form.note,
         items,
+        utm_source: utm.utm_source,
+        utm_medium: utm.utm_medium,
+        utm_campaign: utm.utm_campaign,
+        utm_content: utm.utm_content,
+        utm_term: utm.utm_term,
       })
 
       // fetch + keepalive: gửi được kể cả khi tab đóng (như sendBeacon)

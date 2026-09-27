@@ -70,6 +70,61 @@ const PROVINCE_CODE_MAP: Record<string, string> = {
   "Tỉnh Cà Mau": "84_VN196",
 }
 
+// Viết tắt khách hay gõ ở cuối địa chỉ
+const PROVINCE_ALIAS: Record<string, string> = {
+  "hn": "Thành phố Hà Nội",
+  "ha noi": "Thành phố Hà Nội",
+  "hcm": "Thành phố Hồ Chí Minh",
+  "tphcm": "Thành phố Hồ Chí Minh",
+  "tp hcm": "Thành phố Hồ Chí Minh",
+  "sai gon": "Thành phố Hồ Chí Minh",
+  "saigon": "Thành phố Hồ Chí Minh",
+  "sg": "Thành phố Hồ Chí Minh",
+  "hp": "Thành phố Hải Phòng",
+  "dn": "Thành phố Đà Nẵng",
+}
+
+function khongDau(s: string): string {
+  return s.toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+/**
+ * Đoán tỉnh từ chuỗi địa chỉ tự do.
+ *
+ * Form checkout trên web cho khách gõ cả địa chỉ vào một ô (address_1) và ghi
+ * "Việt Nam" vào city, nên getPancakeProvinceId(city) luôn null — đơn vào Pancake
+ * thiếu tỉnh, sale phải sửa tay. Kiểm chứng 27/09 trên 5 đơn web: cả 5 có city =
+ * "Việt Nam", tỉnh nằm ở cuối address_1 ("...hải phòng", "...tây hồ hn").
+ *
+ * Lấy tỉnh xuất hiện MUỘN NHẤT trong chuỗi — tỉnh thường đứng cuối, còn phần
+ * đầu có thể trùng tên phường/quận (vd "phường Hà Nam" ở tỉnh khác).
+ */
+export function detectProvinceFromText(text: string): string | null {
+  if (!text) return null
+  const t = ` ${khongDau(text)} `
+  let best: { pos: number; len: number; id: string } | null = null
+  const consider = (ten: string, id: string) => {
+    const n = ` ${khongDau(ten)} `
+    const pos = t.lastIndexOf(n)
+    if (pos < 0) return
+    if (!best || pos > best.pos || (pos === best.pos && n.length > best.len)) {
+      best = { pos, len: n.length, id }
+    }
+  }
+  for (const [key, id] of Object.entries(PROVINCE_CODE_MAP)) {
+    consider(key.replace(/^(Tỉnh|Thành phố) /, ""), id)
+  }
+  for (const [alias, key] of Object.entries(PROVINCE_ALIAS)) {
+    const id = PROVINCE_CODE_MAP[key]
+    if (id) consider(alias, id)
+  }
+  return best ? (best as { id: string }).id : null
+}
+
 // Cache ward lookup: provinceName+wardName → commune_id
 const wardCache = new Map<string, string | null>()
 

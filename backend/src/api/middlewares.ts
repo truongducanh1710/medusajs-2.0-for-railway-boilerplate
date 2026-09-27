@@ -211,6 +211,7 @@ export default defineMiddlewares({
     { matcher: "/admin/pancake-sync/jobs*", method: ["GET"], middlewares: [requirePerm("page.pancake-sync.view")] },
     { matcher: "/admin/pancake-sync/logs*", method: ["GET"], middlewares: [requirePerm("page.pancake-sync.view")] },
     { matcher: "/admin/pancake-sync/pull-by-status", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
+    { matcher: "/admin/pancake-sync/repush-order", method: ["GET", "POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
     { matcher: "/admin/dohana-sync", method: ["POST"], middlewares: [requirePerm("page.dohana-sync.run")] },
     { matcher: "/admin/dohana-sync/videos*", method: ["GET"], middlewares: [requirePerm("page.dohana-sync.view")] },
     { matcher: "/admin/dohana-sync/status*", method: ["GET"], middlewares: [requirePerm("page.dohana-sync.view")] },

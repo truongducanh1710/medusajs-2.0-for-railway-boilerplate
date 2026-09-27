@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from "../../../lib/constants"
-import { getPancakeProvinceId } from "../../../lib/pancake-address"
+import { getPancakeProvinceId, detectProvinceFromText } from "../../../lib/pancake-address"
+import { MKT_PANCAKE_UUID, extractMktCode } from "../../../lib/pancake"
 
 // Chống bắn trùng: mỗi cartId/phone chỉ tạo 1 đơn nháp trong cửa sổ thời gian.
 // In-memory (per-instance) — đủ chặn các beacon liên tiếp từ cùng 1 client.
@@ -20,7 +21,8 @@ function isDuplicate(key: string): boolean {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const { name, phone, street, province, ward, note, items, cartId } = req.body as any
+  const { name, phone, street, province, ward, note, items, cartId,
+    utm_source, utm_medium, utm_campaign, utm_content, utm_term } = req.body as any
 
   if (!phone || !/^(0|\+84)[0-9]{8,9}$/.test(String(phone).replace(/\s/g, ""))) {
     return res.status(400).json({ error: "invalid phone" })
@@ -55,7 +57,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return sum + (item.bundle_price || (item.unit_price * (item.bundle_qty || item.quantity || 1)) || 0)
     }, 0)
 
-    const provinceId = getPancakeProvinceId(province || "")
+    const provinceId = getPancakeProvinceId(province || "") ?? detectProvinceFromText(street || "")
 
     const noteParts = ["[ĐƠN NHÁP - phanviet.vn]", "[Khách điền form nhưng chưa bấm đặt hàng]"]
     if (note) noteParts.push(note)
@@ -93,8 +95,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       cod: totalPrice,
       status: 0,
       tags: [{ name: "Đơn nháp" }, { name: "phanviet-web" }],
+      // Giữ p_utm_source = "checkout-abandon" để vẫn nhận ra đơn nháp.
+      // Trước 27/09 đơn nháp CHỈ có trường này — mất mã camp/video, không ghép được
+      // về camp (vd đơn 90684 từ camp Chảo vàng Ads327). Giờ mang theo UTM từ cookie.
       p_utm_source: "checkout-abandon",
+      ...(utm_campaign ? { p_utm_campaign: String(utm_campaign) } : {}),
+      ...(utm_content ? { p_utm_content: String(utm_content) } : {}),
+      ...(utm_medium ? { p_utm_medium: String(utm_medium) } : {}),
+      ...(utm_term ? { p_utm_term: String(utm_term) } : {}),
     }
+    if (utm_source) payload.note = `${payload.note}\ncamp: ${utm_source}`
+    const mktCode = extractMktCode(utm_campaign) || extractMktCode(utm_source)
+    if (mktCode && MKT_PANCAKE_UUID[mktCode]) payload.pke_mkter = MKT_PANCAKE_UUID[mktCode]
 
     if (PANCAKE_WAREHOUSE_ID) payload.warehouse_id = PANCAKE_WAREHOUSE_ID
 
