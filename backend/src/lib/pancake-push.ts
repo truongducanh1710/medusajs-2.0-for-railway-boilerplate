@@ -1,6 +1,7 @@
 import { Modules } from '@medusajs/framework/utils'
 import { pushOrderToPancake } from './pancake'
 import { notifyTelegramByEmail } from './notify'
+import { recoverUtmFromFbclid } from './fbclid-attribution'
 
 // Đẩy đơn web sang Pancake và GHI LẠI kết quả vào chính đơn đó.
 //
@@ -49,6 +50,14 @@ export async function pushAndRecord(container: any, order: any, shippingAddress:
     } catch (e: any) {
       console.error(`[Pancake] Không lưu được kết quả vào đơn ${order.id}: ${e.message}`)
     }
+  }
+
+  // Mất cookie UTM nhưng còn fbclid → tra ngược camp từ ad id trong fbclid.
+  const recovered = await recoverUtmFromFbclid(order.metadata)
+  if (recovered) {
+    order.metadata = { ...(order.metadata || {}), ...recovered }
+    await luu(recovered)
+    console.info(`[Pancake] UTM ghép lại từ fbclid cho đơn ${order.id}: adid ${recovered.fb_click_adid} → ${recovered.utm_source}`)
   }
 
   try {
