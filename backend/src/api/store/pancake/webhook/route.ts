@@ -5,6 +5,7 @@ import { PANCAKE_WEBHOOK_SECRET, getPancakeShopsForMarket } from "../../../../li
 import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/service"
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
 import { sendPurchaseEvent } from "../../../../lib/fb-capi"
+import { fixMarketerFromUtm } from "../../../../lib/pancake"
 
 /**
  * Verify HMAC signature from Pancake webhook.
@@ -168,6 +169,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           }
           upsertSuccess = true
           console.log(`[Pancake Webhook] ✓ Synced order #${pancakeOrderId} → ${label} (full)`)
+
+          // Marketer theo tên camp (utm_source), không theo landing. PUT này kích hoạt
+          // webhook mới → lần đó marketer đã khớp nên không lặp.
+          if (market === "VN") {
+            fixMarketerFromUtm(rawOrder, { shopId: chosenShop.shopId, apiKey: chosenShop.apiKey })
+              .then((code) => { if (code) console.log(`[Pancake Webhook] Marketer #${pancakeOrderId} → ${code} (theo utm)`) })
+              .catch((e: any) => console.warn(`[Pancake Webhook] Fix marketer #${pancakeOrderId} lỗi:`, e.message))
+          }
         } else {
           // Fallback: upsert minimal from webhook body
           fallbackUsed = true

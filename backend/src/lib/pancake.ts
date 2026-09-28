@@ -66,6 +66,40 @@ export function extractMktCode(campaign: string | undefined): string | undefined
   return parts[dateIdx + 1]?.trim() || undefined
 }
 
+// MKT codes whose UUID mapping is not verified — never auto-reassign these.
+// XUANLT has 2 Pancake UUIDs in use; DUPD is an alias.
+const MKT_AUTOFIX_SKIP = new Set(["XUANLT", "DUPD"])
+
+/**
+ * Webcake landing pages carry a hidden "mkt" field that sets the Pancake marketer.
+ * When one MKT runs ads to another MKT's landing (e.g. ANHTD's POSTWIN camp using
+ * ANHNT's /kedunggiavianhnt post), orders get credited to the landing owner.
+ * The campaign name in p_utm_source is the real owner — reassign to it.
+ * Returns the MKT code it switched to, or undefined if nothing changed.
+ */
+export async function fixMarketerFromUtm(
+  rawOrder: any,
+  shop: { shopId: string | number; apiKey: string }
+): Promise<string | undefined> {
+  const code = extractMktCode(rawOrder?.p_utm_source) || extractMktCode(rawOrder?.p_utm_campaign)
+  if (!code || MKT_AUTOFIX_SKIP.has(code)) return undefined
+  const uuid = MKT_PANCAKE_UUID[code]
+  if (!uuid) return undefined
+
+  const norm = (s: any) => String(s ?? "").replace(/\s+/g, "").toUpperCase()
+  const currentId = rawOrder?.marketer?.id ?? rawOrder?.pke_mkter
+  if (currentId === uuid || norm(rawOrder?.marketer?.name) === code) return undefined
+
+  const url = `${PANCAKE_API_BASE}/shops/${shop.shopId}/orders/${rawOrder.id}?api_key=${shop.apiKey}`
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pke_mkter: uuid }),
+  })
+  if (!res.ok) throw new Error(`PUT marketer ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  return code
+}
+
 export async function pushOrderToPancake(order: any, shippingAddress: any) {
   if (!PANCAKE_API_KEY || !PANCAKE_SHOP_ID) {
     console.warn('[Pancake] PANCAKE_API_KEY or PANCAKE_SHOP_ID is not set, skipping push')
