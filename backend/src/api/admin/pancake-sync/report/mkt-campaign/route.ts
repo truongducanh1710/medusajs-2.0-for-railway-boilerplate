@@ -84,7 +84,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           SUM(CASE WHEN status IN (1,2,3,4,5) THEN cod_amount ELSE 0 END)::bigint AS cod_confirmed
         FROM pancake_order
         WHERE deleted_at IS NULL
-          AND source IN ('manual','webcake')
+          AND source IN ('manual','webcake','medusa')
           AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb)
           AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
           AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
