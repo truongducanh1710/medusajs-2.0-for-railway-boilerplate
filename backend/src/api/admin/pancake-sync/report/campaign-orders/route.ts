@@ -3,7 +3,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 const excludedOrderFilter = `
   deleted_at IS NULL
   AND source IN ('manual','webcake','facebook','medusa')
-  AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+  AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb AND status IN (0, 11, 6, 7, -1))
   AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
 `
 

@@ -52,7 +52,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
              jsonb_array_elements(COALESCE(po.items, '[]'::jsonb)) AS item
         WHERE po.deleted_at IS NULL
           AND po.source IN ('manual', 'webcake', 'medusa')
-          AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+          AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb AND po.status IN (0, 11, 6, 7, -1))
           AND NOT (po.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
           AND po.pancake_created_at >= (now() - interval '365 days')
       ),
@@ -87,7 +87,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         FROM pancake_order po
         WHERE po.deleted_at IS NULL
           AND po.source IN ('manual', 'webcake', 'medusa')
-          AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+          AND NOT (po.tags @> '[{"name":"Đơn nháp"}]'::jsonb AND po.status IN (0, 11, 6, 7, -1))
           AND NOT (po.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
           AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.pancake_created_at <  (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')

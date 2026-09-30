@@ -85,7 +85,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         FROM pancake_order
         WHERE deleted_at IS NULL
           AND source IN ('manual','webcake','medusa')
-          AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+          AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb AND status IN (0, 11, 6, 7, -1))
           AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
           AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
