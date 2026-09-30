@@ -6,6 +6,7 @@ import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/s
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
 import { sendPurchaseEvent } from "../../../../lib/fb-capi"
 import { fixMarketerFromUtm } from "../../../../lib/pancake"
+import { pixelOfCampaign, systemToken, fbcFromLink, isMarketplaceOrder } from "../../../../lib/campaign-pixel"
 
 /**
  * Verify HMAC signature from Pancake webhook.
@@ -229,7 +230,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         }
 
         // Bắn FB CAPI Purchase khi đơn giao thành công (status=3)
-        if (pancakeStatus === 3) {
+        if (pancakeStatus === 3 && !isMarketplaceOrder(rawOrder ?? body)) {
           try {
             const order = rawOrder ?? body
             const phone = order?.bill_phone_number ?? order?.customer?.phone ?? ""
@@ -278,8 +279,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
               // Lấy pixel + token riêng từ sản phẩm đầu tiên trong đơn
               const firstItem = medusaOrder?.items?.[0]
-              const productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
-              const productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
+              let productPixelId = firstItem?.variant?.product?.metadata?.fb_pixel_id as string | undefined
+              let productCapiToken = firstItem?.variant?.product?.metadata?.fb_capi_token as string | undefined
+              // Đơn Webcake/POS không có trên Medusa → lấy pixel mà camp của đơn đang tối ưu
+              if (!productPixelId || !/^\d+$/.test(productPixelId)) {
+                const campPixel = await pixelOfCampaign(order?.p_utm_campaign)
+                if (campPixel) { productPixelId = campPixel; productCapiToken = systemToken() }
+              }
 
               // content_ids cho catalog matching
               const contentIds = medusaOrder?.items?.map((i: any) => i.variant_id || i.id).filter(Boolean)
@@ -293,7 +299,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
                 city,
                 fbclid: meta.fbclid,
                 fbp: meta.fbp,
-                fbc: meta.fbc,
+                fbc: meta.fbc ?? fbcFromLink(order?.link, order?.inserted_at),
                 client_user_agent: meta.client_user_agent,
                 value: total,
                 storePixelId,

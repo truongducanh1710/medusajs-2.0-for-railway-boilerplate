@@ -77,7 +77,7 @@ export default function TrackingBeacon() {
     })
 
     const apiBase = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "https://api.phanviet.vn"
-    const pubKey = process.env.NEXT_PUBLIC_PUBLISHABLE_KEY || ""
+    const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 
     // sendBeacon fire-and-forget; không block navigation
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
