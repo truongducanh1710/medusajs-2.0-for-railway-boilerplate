@@ -10,6 +10,7 @@
 
 import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
+import { decide } from "./auto-scale-decide"
 
 const GRAPH = "https://graph.facebook.com/v25.0"
 
@@ -143,7 +144,10 @@ const DON_HOP_LE = `
 async function ordersSince(campaignId: string, campaignName: string, since: string): Promise<number> {
   const { rows } = await getPool().query(
     `SELECT COUNT(*)::int n FROM pancake_order
-      WHERE (raw->>'p_utm_campaign' = $1 OR raw->>'p_utm_source' = $2)
+      WHERE (raw->>'p_utm_campaign' = $1
+             -- Tên camp chỉ dùng khi đơn không mang ID camp: XUANLT có nhiều camp TRÙNG TÊN,
+             -- ghép theo tên sẽ cộng đơn của camp này sang camp kia.
+             OR (COALESCE(raw->>'p_utm_campaign','') !~ '^[0-9]{10,}$' AND raw->>'p_utm_source' = $2))
         AND pancake_created_at >= $3::timestamptz AND ${DON_HOP_LE}`,
     [campaignId, campaignName, since]
   )
@@ -274,6 +278,15 @@ async function resetDoneToday(campaignId: string): Promise<boolean> {
   return rows.length > 0
 }
 
+async function revertedToday(campaignId: string, dryRun: boolean): Promise<boolean> {
+  const { rows } = await getPool().query(
+    `SELECT 1 FROM auto_scale_log WHERE campaign_id = $1 AND action = 'lui' AND dry_run = $2 AND success
+        AND created_at >= $3::timestamptz LIMIT 1`,
+    [campaignId, dryRun, startOfTodayVN()]
+  )
+  return rows.length > 0
+}
+
 async function note(campaignId: string, reason: string, metrics: any) {
   await getPool().query(
     `UPDATE auto_scale_camp SET last_checked_at = now(), last_reason = $2, last_metrics = $3::jsonb WHERE campaign_id = $1`,
@@ -313,71 +326,48 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       camp.campaign_name = fb.data.name
     }
 
-    // 1. Reset đêm: từ 00:30 tới 06:00, mỗi camp 1 lần/ngày
-    if (rule.nightly_reset && hour < 6 && (hour > 0 || minute >= 30)) {
-      if (!(await resetDoneToday(camp.campaign_id))) {
-        const m = { budget: cur, base }
-        if (cur !== base) {
-          if (await apply({ camp, rule, action: "reset", from: cur, to: base, reason: "Reset đêm về mức nền", metrics: m, userModule })) actions++
-        } else {
-          await pool.query(
-            `INSERT INTO auto_scale_log (campaign_id, campaign_name, rule_id, action, old_budget, new_budget, reason, dry_run, success)
-             VALUES ($1,$2,$3,'reset',$4,$4,'Đã ở mức nền',$5,true)`,
-            [camp.campaign_id, camp.campaign_name, rule.id, cur, rule.dry_run]
-          )
-          await pool.query(`UPDATE auto_scale_camp SET step_at=NULL, step_from=NULL, step_to=NULL, step_spend=NULL WHERE campaign_id=$1`, [camp.campaign_id])
-        }
-      }
-      continue
-    }
-
-    if (hour < rule.hour_from || hour >= rule.hour_to) { await note(camp.campaign_id, `Ngoài khung giờ ${rule.hour_from}h–${rule.hour_to}h`, { budget: cur }); continue }
-    if (fb.data.effective_status !== "ACTIVE") { await note(camp.campaign_id, `Camp đang ${fb.data.effective_status}`, { budget: cur }); continue }
-
     const spend = await spendToday(camp.campaign_id)
     const orders = await ordersSince(camp.campaign_id, camp.campaign_name, startOfTodayVN())
     const cpa = orders > 0 ? Math.round(spend / orders) : null
     const metrics: any = { budget: cur, base, spend_today: spend, orders_today: orders, cpa_today: cpa, hour: `${hour}:${String(minute).padStart(2, "0")}` }
 
-    // 2. Lùi: sau lần tăng gần nhất mà đơn không về tương xứng
-    if (camp.step_at && Number(camp.step_to) === cur && Date.now() - new Date(camp.step_at).getTime() >= 60 * 60_000) {
-      const dSpend = spend - Number(camp.step_spend || 0)
-      const dOrders = await ordersSince(camp.campaign_id, camp.campaign_name, new Date(camp.step_at).toISOString())
-      const nguong = rule.target_cpa * rule.revert_factor
-      metrics.since_step = { spend: dSpend, orders: dOrders }
-      const xau = dSpend >= rule.target_cpa && (dOrders === 0 ? dSpend >= nguong : dSpend / dOrders > nguong)
-      if (xau) {
-        const to = Math.max(base, Number(camp.step_from || base))
-        if (to < cur) {
-          const reason = `Từ lần tăng: chi ${vnd(dSpend)}, ${dOrders} đơn (vượt ${vnd(nguong)}/đơn)`
-          if (await apply({ camp, rule, action: "lui", from: cur, to, reason, metrics, userModule })) actions++
-          await note(camp.campaign_id, `Đã lùi: ${reason}`, metrics)
-          continue
-        }
-      }
-    }
-
-    // 3. Tăng
-    const lyDo: string[] = []
-    if (orders < rule.min_orders) lyDo.push(`mới ${orders}/${rule.min_orders} đơn`)
-    if (cpa === null || cpa > rule.target_cpa) lyDo.push(`CPA ${cpa === null ? "—" : vnd(cpa)} > ${vnd(rule.target_cpa)}`)
-    if (spend < rule.spend_ratio * cur) lyDo.push(`đã tiêu ${Math.round((spend / cur) * 100)}% < ${Math.round(rule.spend_ratio * 100)}% ngân sách`)
+    // Lần tăng gần nhất — chỉ tính nếu xảy ra HÔM NAY (tắt reset đêm thì state hôm qua còn sót)
+    const stepAt = camp.step_at ? new Date(camp.step_at) : null
+    const stepToday = stepAt && stepAt.getTime() >= new Date(startOfTodayVN()).getTime()
+    const step = stepToday && stepAt ? {
+      from: Number(camp.step_from), to: Number(camp.step_to), spend_at_step: Number(camp.step_spend || 0),
+      minutes_ago: Math.floor((Date.now() - stepAt.getTime()) / 60_000),
+      orders_since: await ordersSince(camp.campaign_id, camp.campaign_name, stepAt.toISOString()),
+    } : null
+    if (step) metrics.since_step = { spend: spend - step.spend_at_step, orders: step.orders_since }
     const last = await lastActionAt(camp.campaign_id, rule.dry_run)
-    if (last && Date.now() - last.getTime() < rule.cooldown_min * 60_000) {
-      lyDo.push(`chờ ${rule.cooldown_min - Math.floor((Date.now() - last.getTime()) / 60_000)} phút nữa`)
-    }
-    const to = Math.min(Math.round((cur * rule.multiplier) / 1000) * 1000, rule.max_budget)
-    if (to <= cur) lyDo.push(`đã chạm trần ${vnd(rule.max_budget)}`)
-    if (!lyDo.length) {
-      const block = await accountBlocked(camp.ad_account_id)
-      if (block) lyDo.push(block)
+
+    const d = decide({
+      hour, minute, rule, base, budget: cur, status: fb.data.effective_status,
+      spend_today: spend, orders_today: orders, step,
+      minutes_since_last_action: last ? Math.floor((Date.now() - last.getTime()) / 60_000) : null,
+      reverted_today: await revertedToday(camp.campaign_id, rule.dry_run),
+      reset_done_today: await resetDoneToday(camp.campaign_id),
+      account_block: await accountBlocked(camp.ad_account_id),
+    })
+
+    if (d.action === "none") { await note(camp.campaign_id, d.reason, metrics); continue }
+
+    if (d.action === "reset" && d.to === cur) {
+      // Đã ở mức nền — chỉ đánh dấu đã reset + xoá state bước tăng
+      await pool.query(
+        `INSERT INTO auto_scale_log (campaign_id, campaign_name, rule_id, action, old_budget, new_budget, reason, dry_run, success)
+         VALUES ($1,$2,$3,'reset',$4,$4,$5,$6,true)`,
+        [camp.campaign_id, camp.campaign_name, rule.id, cur, d.reason, rule.dry_run]
+      )
+      await pool.query(`UPDATE auto_scale_camp SET step_at=NULL, step_from=NULL, step_to=NULL, step_spend=NULL WHERE campaign_id=$1`, [camp.campaign_id])
+      await note(camp.campaign_id, d.reason, metrics)
+      continue
     }
 
-    if (lyDo.length) { await note(camp.campaign_id, `Chưa tăng: ${lyDo.join("; ")}`, metrics); continue }
-
-    const reason = `Hôm nay ${orders} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${Math.round((spend / cur) * 100)}% ngân sách`
-    if (await apply({ camp, rule, action: "tang", from: cur, to, reason, metrics, userModule })) actions++
-    await note(camp.campaign_id, `${rule.dry_run ? "Lẽ ra đã tăng" : "Đã tăng"} ${vnd(cur)} → ${vnd(to)}: ${reason}`, metrics)
+    if (await apply({ camp, rule, action: d.action, from: cur, to: d.to, reason: d.reason, metrics, userModule })) actions++
+    const nhan = d.action === "tang" ? (rule.dry_run ? "Lẽ ra đã tăng" : "Đã tăng") : d.action === "lui" ? (rule.dry_run ? "Lẽ ra đã lùi" : "Đã lùi") : (rule.dry_run ? "Lẽ ra đã reset" : "Đã reset")
+    await note(camp.campaign_id, `${nhan} ${vnd(cur)} → ${vnd(d.to)}: ${d.reason}`, metrics)
   }
   return { checked: camps.length, actions }
 }
