@@ -87,7 +87,7 @@ export default async function orderPlacedHandler({
       storeCapiToken = storeMeta.fb_capi_token
     } catch {}
 
-    await sendCompleteRegistrationEvent({
+    const capiKq = await sendCompleteRegistrationEvent({
       orderId: order.id,
       phone: shippingAddress?.phone,
       email: order.email,
@@ -112,6 +112,14 @@ export default async function orderPlacedHandler({
       adsetId: meta.adset_id ?? meta.utm_term ?? meta.fb_adset_id,
       adId: meta.ad_id ?? meta.fb_ad_id,
     })
+    // Lưu kết quả vào đơn để đối chiếu đo lường (log Railway không giữ lâu)
+    const cur = await orderModuleService.retrieveOrder(order.id, { select: ['id', 'metadata'] as any })
+    await orderModuleService.updateOrders([{ id: order.id, metadata: {
+      ...(cur.metadata || {}),
+      capi_cr_sent_at: new Date().toISOString(),
+      capi_cr_result: capiKq,
+    } }] as any)
+    order.metadata = { ...(order.metadata || {}), ...(cur.metadata || {}) }
   } catch (capiErr: any) {
     console.error('[FB CAPI] CompleteRegistration error in order-placed:', capiErr.message)
   }

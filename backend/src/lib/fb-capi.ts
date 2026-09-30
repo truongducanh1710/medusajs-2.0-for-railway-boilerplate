@@ -132,9 +132,13 @@ export async function sendCompleteRegistrationEvent(params: {
   campaignId?: string
   adsetId?: string
   adId?: string
-}): Promise<void> {
+}): Promise<Record<string, string>> {
   const eventTime = Math.floor(Date.now() / 1000)
-  const eventId = `complete_registration_${params.orderId}`
+  // Phải trùng với event_id trình duyệt bắn (PurchaseTracker: `${eventName.toLowerCase()}_${orderId}`
+  // = "completeregistration_<id>"). Trước đây là "complete_registration_" → FB không dedup,
+  // 1 đơn bị đếm 2 CompleteRegistration khi cả browser lẫn server cùng bắn.
+  const eventId = `completeregistration_${params.orderId}`
+  const ketQua: Record<string, string> = {}
 
   const nameParts = params.customerName?.trim().split(/\s+/) ?? []
   const firstName = nameParts[0]
@@ -187,11 +191,14 @@ export async function sendCompleteRegistrationEvent(params: {
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const json = await res.json() as any
       if (json.error) {
+        ketQua[pixelId] = `loi: ${String(json.error.message).slice(0, 150)}`
         console.error(`[FB CAPI] CompleteRegistration error pixel=${pixelId}: ${json.error.message}`)
       } else {
+        ketQua[pixelId] = `ok: ${json.events_received}`
         console.log(`[FB CAPI] ✓ CompleteRegistration → pixel ${pixelId} | order=${params.orderId} | received=${json.events_received}`)
       }
     } catch (err: any) {
+      ketQua[pixelId] = `loi: ${String(err.message).slice(0, 150)}`
       console.error(`[FB CAPI] CompleteRegistration fetch error pixel=${pixelId}:`, err.message)
     }
   }
@@ -206,6 +213,7 @@ export async function sendCompleteRegistrationEvent(params: {
   if (params.productPixelId && params.productCapiToken && params.productPixelId !== pxChung) {
     await sendToPixel(params.productPixelId, params.productCapiToken)
   }
+  return ketQua
 }
 
 /**
