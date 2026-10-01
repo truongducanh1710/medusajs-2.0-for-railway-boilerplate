@@ -358,16 +358,25 @@ export default defineMiddlewares({
     // Mobile app đăng ký/gỡ Expo push token của chính mình — mọi user vào được chat đều cần gọi được.
     { matcher: "/admin/mkt-chat/push-token", method: ["POST", "DELETE"], middlewares: [requirePerm("page.mkt-chat.view")] },
 
-    // Chấm công GPS chủ động — mọi nhân viên tự bấm vào/ra. Matcher cụ thể phải đứng
-    // TRƯỚC wildcard /admin/cham-cong* bên dưới, nếu không wildcard nuốt mất route này.
+    // Chấm công GPS chủ động — mọi nhân viên tự bấm vào/ra.
+    //
+    // KHÔNG dùng wildcard /admin/cham-cong* cho phần quản lý: Medusa chạy MỌI middleware
+    // có matcher khớp (không phải "khớp trước thắng"), nên wildcard cũ đòi thêm
+    // page.cham-cong.view cho cả checkin/overtime → mọi nhân viên không phải quản lý bị
+    // 403 khi mở trang chấm công. Gặp 01/10/2026: chỉ 2 tài khoản role admin chấm được.
+    // Liệt kê đúng từng route quản lý bên dưới thay vì wildcard.
     { matcher: "/admin/cham-cong/checkin*", method: ["GET", "POST", "PATCH"], middlewares: [requirePerm("page.cham-cong-nv.checkin")] },
     // Giờ làm thêm (OT) — mọi nhân viên xem OT của mình; duyệt/sửa người khác cần page.overtime.approve
-    // (handler tự check thêm). Matcher cụ thể cũng phải đứng TRƯỚC wildcard /admin/cham-cong* GET bên dưới.
+    // (handler tự check thêm).
     { matcher: "/admin/cham-cong/overtime*", method: ["GET"], middlewares: [requirePerm("page.overtime.view")] },
     { matcher: "/admin/cham-cong/overtime", method: ["POST"], middlewares: [requirePerm("page.overtime.view")] },
     { matcher: "/admin/cham-cong/overtime/*", method: ["PATCH"], middlewares: [requirePerm("page.overtime.view")] },
     // Chấm công — báo cáo giờ online + việc đã làm + export CSV. Chỉ lead/manager/admin.
-    { matcher: "/admin/cham-cong*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
+    // Thêm route quản lý mới dưới /admin/cham-cong/ thì phải thêm dòng ở đây.
+    { matcher: "/admin/cham-cong/team*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
+    { matcher: "/admin/cham-cong/report*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
+    { matcher: "/admin/cham-cong/timeline*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
+    { matcher: "/admin/cham-cong/export*", method: ["GET"], middlewares: [requirePerm("page.cham-cong.view")] },
 
     // Xin nghỉ phép — mọi nhân viên xem/tạo đơn của mình; duyệt đơn người khác cần
     // page.leave-request.approve (handler tự check thêm cho action decision).
