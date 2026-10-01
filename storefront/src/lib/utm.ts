@@ -1,5 +1,50 @@
 const UTM_COOKIE = "pvw_utm"
-const UTM_PARAMS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id"]
+export const UTM_PARAMS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id"]
+
+// Bản sao dự phòng trong localStorage. Cookie có thể biến mất giữa lúc vào trang và
+// lúc đặt hàng: đơn #79 (01/10/2026) mở trong trình duyệt của app Facebook trên iOS,
+// cookie có UTM lúc 10:47:30 nhưng tới 10:53 đặt hàng thì không còn → đơn mất camp.
+// Đọc cookie trước, mất thì lấy bản này.
+const UTM_LOCAL_KEY = "pvw_utm"
+const UTM_TTL_MS = 7 * 24 * 3600_000 // khớp hạn cookie
+
+/** Có ít nhất một trường đủ để ghép đơn về camp. */
+export function hasUtm(d: Record<string, any> | null | undefined): boolean {
+  return !!(d && (d.utm_campaign || d.utm_id || d.utm_source))
+}
+
+/** Chỉ lấy các trường UTM + fbclid, bỏ mọi thứ khác (vd metadata giỏ hàng). */
+export function pickUtm(d: Record<string, any> | null | undefined): UtmData {
+  const out: Record<string, string> = {}
+  if (!d) return out
+  for (const k of [...UTM_PARAMS, "fbclid"]) {
+    if (d[k]) out[k] = String(d[k])
+  }
+  return out
+}
+
+function writeUtmLocal(data: UtmData) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return
+    window.localStorage.setItem(UTM_LOCAL_KEY, JSON.stringify({ ...data, _ts: Date.now() }))
+  } catch {
+    // Chế độ riêng tư / bị chặn bộ nhớ — cookie vẫn là nguồn chính
+  }
+}
+
+function readUtmLocal(): UtmData {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return {}
+    const raw = window.localStorage.getItem(UTM_LOCAL_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed?._ts || Date.now() - parsed._ts > UTM_TTL_MS) return {}
+    const { _ts, ...data } = parsed
+    return data
+  } catch {
+    return {}
+  }
+}
 
 export type UtmData = {
   utm_source?: string
@@ -85,9 +130,21 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
   const expires = new Date()
   expires.setDate(expires.getDate() + 7)
   document.cookie = `${UTM_COOKIE}=${encodeURIComponent(JSON.stringify(merged))}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${domain}`
+
+  // Chỉ ghi đè bản dự phòng khi có UTM: lượt xem trang không có UTM không được xoá
+  // mất UTM của lượt bấm quảng cáo trước đó.
+  if (hasUtm(merged)) writeUtmLocal(merged)
 }
 
 export function getUtmFromCookie(): UtmData {
+  const fromCookie = readUtmFromCookieOnly()
+  if (hasUtm(fromCookie)) return fromCookie
+  // Cookie mất UTM → lấy UTM từ bản dự phòng, giữ fbp/fbc mới nhất từ cookie FB
+  const local = pickUtm(readUtmLocal())
+  return hasUtm(local) ? { ...fromCookie, ...local } : fromCookie
+}
+
+function readUtmFromCookieOnly(): UtmData {
   if (typeof document === "undefined") return {}
 
   const match = document.cookie

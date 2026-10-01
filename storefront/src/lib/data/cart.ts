@@ -5,8 +5,10 @@ import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { omit } from "lodash"
 import { revalidateTag } from "next/cache"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { getAuthHeaders, getCartId, removeCartId, setCartId } from "./cookies"
+import { hasUtm, pickUtm, UTM_PARAMS } from "@lib/utm"
 import { getProductsById } from "./products"
 import { getRegion } from "./regions"
 
@@ -130,6 +132,50 @@ export async function prepareQuickCheckout(input: AddToCartInput) {
   return { cart, shippingOptions }
 }
 
+/**
+ * Ghi UTM của lượt bấm quảng cáo vào metadata GIỎ HÀNG ngay lúc khách bấm mua.
+ *
+ * Trước đây UTM chỉ được đọc từ cookie trình duyệt ở bước cuối (đặt hàng). Cookie mất
+ * giữa chừng là đơn mất camp — đơn #79 ngày 01/10/2026: vào trang 10:47 có đủ UTM,
+ * đặt hàng 10:53 thì cookie đã không còn. Lưu lên server từ sớm thì bước đặt hàng
+ * không còn phụ thuộc trình duyệt.
+ *
+ * Không bao giờ làm hỏng việc thêm vào giỏ: mọi lỗi chỉ ghi log rồi bỏ qua.
+ */
+async function rememberUtmOnCart(cart: HttpTypes.StoreCart) {
+  try {
+    const raw = (await cookies()).get("pvw_utm")?.value
+    if (!raw) return
+
+    // Tuỳ phiên bản Next, giá trị có thể đã được giải mã hoặc chưa — thử cả hai.
+    let parsed: Record<string, any> | null = null
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      parsed = JSON.parse(decodeURIComponent(raw))
+    }
+    const utm = pickUtm(parsed)
+    if (!hasUtm(utm)) return
+
+    const meta = (cart.metadata ?? {}) as Record<string, unknown>
+    // Đã lưu đúng bộ này rồi thì thôi — tránh 1 request thừa mỗi lần đổi combo.
+    const daCo = [...UTM_PARAMS, "fbclid"].every(
+      (k) => String(meta[k] ?? "") === String((utm as any)[k] ?? "")
+    )
+    if (daCo) return
+
+    // Gộp vào metadata cũ, không ghi đè các khoá khác của giỏ.
+    await sdk.store.cart.update(
+      cart.id,
+      { metadata: { ...meta, ...utm } },
+      {},
+      await getAuthHeaders()
+    )
+  } catch (error) {
+    logCartActionError("rememberUtmOnCart failed", error, { cartId: cart.id })
+  }
+}
+
 async function addLineItemToCart({
   variantId,
   quantity,
@@ -145,6 +191,8 @@ async function addLineItemToCart({
   if (!cart) {
     throw new Error("Error retrieving or creating cart")
   }
+
+  await rememberUtmOnCart(cart)
 
   if (replaceVariantIds?.length) {
     const replaceSet = new Set(replaceVariantIds)

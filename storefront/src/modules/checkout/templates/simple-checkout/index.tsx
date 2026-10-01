@@ -8,12 +8,13 @@ import {
   setShippingMethod,
   ensurePaymentSession,
   clearCompletedCart,
+  retrieveCart,
 } from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
 import { useParams } from "next/navigation"
 import Thumbnail from "@modules/products/components/thumbnail"
-import { getUtmFromCookie } from "@lib/utm"
+import { getUtmFromCookie, hasUtm, pickUtm, type UtmData } from "@lib/utm"
 
 const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
 const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
@@ -652,6 +653,22 @@ export default function SimpleCheckout({
     return Object.keys(e).length === 0
   }
 
+  // UTM cho đơn, theo thứ tự tin cậy: trình duyệt (cookie → localStorage) → UTM đã lưu
+  // vào giỏ lúc bấm mua (rememberUtmOnCart). Đọc lại giỏ từ server chỉ khi hai nguồn
+  // đầu đều trống — tức gần như chỉ đơn tự nhiên, không làm chậm đơn từ quảng cáo.
+  // Phải truyền vào metadata đơn chứ không trông vào metadata giỏ: updateCart bên dưới
+  // ghi metadata mới cho giỏ, UTM không nằm trong đó là mất.
+  const resolveOrderUtm = async (): Promise<UtmData> => {
+    const fromBrowser = getUtmFromCookie()
+    if (hasUtm(fromBrowser)) return fromBrowser
+    let fromCart = pickUtm(cart?.metadata as Record<string, any> | undefined)
+    if (!hasUtm(fromCart)) {
+      const fresh = await retrieveCart().catch(() => null)
+      fromCart = pickUtm(fresh?.metadata as Record<string, any> | undefined)
+    }
+    return hasUtm(fromCart) ? { ...fromBrowser, ...fromCart } : fromBrowser
+  }
+
   const handleSubmit = async () => {
     if (!validate()) return
     setSubmitting(true)
@@ -670,6 +687,7 @@ export default function SimpleCheckout({
 
       // Cập nhật cart với thông tin giao hàng
       const fullAddress = buildAddress()
+      const orderUtm = await resolveOrderUtm()
       const updatedCart = await updateCart({
         email: `guest${Date.now()}@example.com`,
         shipping_address: {
@@ -708,7 +726,7 @@ export default function SimpleCheckout({
               }
             : {}),
           ...(payment === "sepay" ? { sepay_discount: SEPAY_DISCOUNT } : {}),
-          ...getUtmFromCookie(),
+          ...orderUtm,
           client_user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
         }
       })
