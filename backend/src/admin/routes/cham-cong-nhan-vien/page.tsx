@@ -33,10 +33,67 @@ function getPosition(): Promise<GeolocationPosition> {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
-      (err) => reject(new Error(GEO_ERROR_MESSAGE[err.code] || "Không lấy được vị trí, vui lòng thử lại.")),
+      (err) => {
+        // Giữ mã lỗi để UI phân biệt "bị chặn quyền" (1) với lỗi tạm thời (2, 3)
+        const e = new Error(GEO_ERROR_MESSAGE[err.code] || "Không lấy được vị trí, vui lòng thử lại.") as Error & { code?: number }
+        e.code = err.code
+        reject(e)
+      },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     )
   })
+}
+
+/**
+ * Hướng dẫn mở lại quyền vị trí, theo đúng máy + trình duyệt đang dùng.
+ *
+ * Trang web KHÔNG thể tự hiện lại hộp thoại xin quyền sau khi người dùng đã từ chối —
+ * trình duyệt khoá việc đó. Cách duy nhất là chỉ người dùng tự mở lại trong cài đặt.
+ * Gặp thật 01/10/2026: cài đặt chung của Safari là "Cho phép" nhưng vẫn bị chặn, vì
+ * cài đặt RIÊNG cho trang (hoặc Dịch vụ định vị cấp iOS) ghi đè lên.
+ */
+function locationHelp(): { thietBi: string; buoc: string[] } {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
+  const ios = /iPhone|iPad|iPod/i.test(ua)
+  const android = /Android/i.test(ua)
+  const chromeIos = /CriOS/i.test(ua)
+  if (ios && !chromeIos) {
+    return {
+      thietBi: "iPhone · Safari",
+      buoc: [
+        "Trên thanh địa chỉ, bấm biểu tượng \"AA\" → \"Cài đặt trang web\" → \"Vị trí\" → chọn \"Cho phép\".",
+        "Nếu vẫn lỗi: vào Cài đặt của iPhone → Quyền riêng tư & Bảo mật → Dịch vụ định vị → bật lên, rồi kéo xuống \"Trang web Safari\" → chọn \"Khi dùng ứng dụng\".",
+        "Quay lại đây và bấm \"Đã bật xong — tải lại trang\".",
+      ],
+    }
+  }
+  if (ios && chromeIos) {
+    return {
+      thietBi: "iPhone · Chrome",
+      buoc: [
+        "Vào Cài đặt của iPhone → Quyền riêng tư & Bảo mật → Dịch vụ định vị → bật lên.",
+        "Trong danh sách ứng dụng, chọn \"Chrome\" → \"Khi dùng ứng dụng\", và bật \"Vị trí chính xác\".",
+        "Quay lại đây và bấm \"Đã bật xong — tải lại trang\".",
+      ],
+    }
+  }
+  if (android) {
+    return {
+      thietBi: "Điện thoại Android",
+      buoc: [
+        "Bấm biểu tượng bên trái thanh địa chỉ (ổ khoá / cài đặt) → \"Quyền\" → \"Vị trí\" → chọn \"Cho phép\".",
+        "Kéo thanh thông báo xuống, bật \"Vị trí\" của máy.",
+        "Quay lại đây và bấm \"Đã bật xong — tải lại trang\".",
+      ],
+    }
+  }
+  return {
+    thietBi: "Máy tính",
+    buoc: [
+      "Bấm biểu tượng bên trái thanh địa chỉ → \"Vị trí\" → chọn \"Cho phép\".",
+      "Bấm \"Đã bật xong — tải lại trang\".",
+    ],
+  }
 }
 
 type ChamCongConfig = {
@@ -113,6 +170,29 @@ function ChamCongSection() {
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState("")
+  // Trình duyệt đang chặn quyền vị trí cho trang này → hiện hướng dẫn mở lại thay
+  // vì chỉ một dòng lỗi.
+  const [viTriBiChan, setViTriBiChan] = useState(false)
+
+  // Biết TRƯỚC khi bấm nếu trình duyệt hỗ trợ Permissions API (Safari 16+, Chrome),
+  // để người dùng không phải bấm thử rồi mới thấy lỗi. Tự cập nhật khi họ mở lại
+  // quyền ở tab khác mà không tải lại trang.
+  useEffect(() => {
+    let status: PermissionStatus | null = null
+    const perms = (navigator as any).permissions
+    if (!perms?.query) return
+    perms
+      .query({ name: "geolocation" as PermissionName })
+      .then((s: PermissionStatus) => {
+        status = s
+        setViTriBiChan(s.state === "denied")
+        s.onchange = () => setViTriBiChan(s.state === "denied")
+      })
+      .catch(() => {})
+    return () => {
+      if (status) status.onchange = null
+    }
+  }, [])
 
   const [cursor, setCursor] = useState(() => new Date())
   const [monthLogs, setMonthLogs] = useState<ChamCongLog[]>([])
@@ -184,9 +264,11 @@ function ChamCongSection() {
         lng: pos.coords.longitude,
         accuracy_m: pos.coords.accuracy,
       })
+      setViTriBiChan(false)
       await load()
       await loadMonth()
     } catch (e: any) {
+      if (e?.code === 1) setViTriBiChan(true)
       setErr(e.message || "Chấm công thất bại")
     } finally {
       setSubmitting(false)
@@ -234,7 +316,31 @@ function ChamCongSection() {
         Bấm nút bên dưới để chấm công. Bắt buộc cho phép truy cập vị trí (GPS) — nếu từ chối sẽ không chấm công được.
       </p>
 
-      {err && <div className="mb-4 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
+      {viTriBiChan ? (
+        (() => {
+          const huongDan = locationHelp()
+          return (
+            <div className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
+              <div className="mb-1 font-semibold">Trình duyệt đang chặn quyền vị trí cho trang này</div>
+              <div className="mb-2 text-xs opacity-80">
+                Trang web không tự hỏi lại được sau khi đã bị từ chối — cần bật lại trong cài đặt ({huongDan.thietBi}):
+              </div>
+              <ol className="mb-3 list-decimal space-y-1 pl-5">
+                {huongDan.buoc.map((b, i) => <li key={i}>{b}</li>)}
+              </ol>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Đã bật xong — tải lại trang
+              </button>
+            </div>
+          )
+        })()
+      ) : (
+        err && <div className="mb-4 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>
+      )}
 
       <button
         onClick={handleCheckin}
