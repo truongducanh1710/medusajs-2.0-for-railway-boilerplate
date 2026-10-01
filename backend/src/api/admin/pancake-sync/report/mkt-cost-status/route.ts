@@ -101,6 +101,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           ORDER BY h.account_id, h.checked_at DESC
         ) t
         WHERE t.muc IN ('do', 'vang')
+          -- Tài khoản đã tắt ở tab "Tài khoản FB" thì không báo nữa. Lọc cả ở đây chứ
+          -- không chỉ trong job: bản ghi cũ còn nằm trong cửa sổ 2 giờ, thiếu dòng này
+          -- thì cảnh báo vẫn treo tới 2 tiếng sau khi tắt.
+          AND NOT EXISTS (
+            SELECT 1 FROM fb_ad_account a
+            WHERE a.account_id = t.account_id AND a.active = false
+          )
       `).catch(() => []),
     ])
 

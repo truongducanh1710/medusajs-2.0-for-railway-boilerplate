@@ -541,6 +541,18 @@ export default async function fbAccountHealth(container: MedusaContainer) {
 
     const userModule = container.resolve(Modules.USER) as any
     const pool = getPool()
+
+    // Bỏ qua tài khoản đã tắt ở tab "Tài khoản FB" (active = false, kể cả đã xoá).
+    // Danh sách lấy từ /me/adaccounts nên gồm MỌI tài khoản token thấy được — tài khoản
+    // đã ngừng dùng (Ads340 bị khoá, Ads341 bị chặn phân phối, 01/10/2026) cứ thế báo đỏ
+    // mãi, làm cảnh báo thật bị chìm. Hai job sync chi phí đã lọc theo cờ này từ trước;
+    // job này đi theo cùng quy tắc để "tắt tài khoản" có một nghĩa duy nhất.
+    // Tài khoản CHƯA có trong bảng thì vẫn kiểm tra — mặc định là theo dõi.
+    const { rows: tatRows } = await pool
+      .query(`SELECT account_id FROM fb_ad_account WHERE active = false`)
+      .catch(() => ({ rows: [] as any[] }))
+    const daTat = new Set<string>(tatRows.map((r: any) => String(r.account_id)))
+
     const gioVN = new Date(Date.now() + 7 * 3600_000).getUTCHours()
     const trongGioLam = gioVN >= GIO_VN_TU && gioVN < GIO_VN_DEN
 
@@ -549,6 +561,7 @@ export default async function fbAccountHealth(container: MedusaContainer) {
 
     for (const acc of accounts) {
       const id = acc.id || `act_${acc.account_id}`
+      if (daTat.has(id)) continue
       const chiMoiNgay = await tocDoChi(id)
       const b = await docBilling(id)
       const kq = danhGia(acc, chiMoiNgay)
