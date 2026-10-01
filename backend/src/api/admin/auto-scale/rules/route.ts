@@ -21,7 +21,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     name,
     num(b.target_cpa, 20000, 5_000_000, 200000),
     num(b.min_orders, 1, 50, 2),
-    num(b.spend_ratio, 0.1, 1, 0.7),
+    num(b.spend_ratio, 0.3, 3, 1),
     num(b.multiplier, 1.1, 5, 2),
     num(b.max_budget, 100000, 50_000_000, 4_000_000),
     num(b.cooldown_min, 30, 720, 120),

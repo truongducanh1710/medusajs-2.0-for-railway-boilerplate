@@ -43,7 +43,7 @@ export function ensureTables(): Promise<void> {
         name TEXT NOT NULL,
         target_cpa BIGINT NOT NULL DEFAULT 200000,
         min_orders INT NOT NULL DEFAULT 2,
-        spend_ratio NUMERIC(4,2) NOT NULL DEFAULT 0.70,
+        spend_ratio NUMERIC(4,2) NOT NULL DEFAULT 1.00,  -- nhịp tiêu: 1 = cứ đà này sẽ tiêu hết ngân sách
         multiplier NUMERIC(4,2) NOT NULL DEFAULT 2,
         max_budget BIGINT NOT NULL DEFAULT 4000000,
         cooldown_min INT NOT NULL DEFAULT 120,

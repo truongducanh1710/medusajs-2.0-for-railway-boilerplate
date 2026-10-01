@@ -24,7 +24,7 @@ type Log = {
 
 // Mặc định theo cách XUANLT scale (rà 115 lần tăng ngân sách trên Ads344)
 const MAC_DINH: Rule = {
-  name: "Kiểu XUANLT — nhân đôi khi ra đơn", target_cpa: 200000, min_orders: 2, spend_ratio: 0.7, multiplier: 2,
+  name: "Kiểu XUANLT — nhân đôi khi ra đơn", target_cpa: 200000, min_orders: 2, spend_ratio: 1, multiplier: 2,
   max_budget: 4000000, cooldown_min: 120, revert_factor: 1.5, hour_from: 9, hour_to: 19,
   nightly_reset: true, dry_run: true, active: true,
 }
@@ -106,7 +106,7 @@ function TuScalePage() {
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tự scale camp theo giờ</h1>
       <p style={{ color: "#4b5563", fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
         Chỉ camp <b>được gắn bộ điều kiện</b> mới được hệ thống tự đổi ngân sách. Cứ 15 phút, trong khung giờ của bộ điều kiện:
-        camp đủ số đơn, chi phí/đơn ≤ mục tiêu và đã tiêu gần hết ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
+        camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
         sau lần tăng mà đơn không về tương xứng → <b>lùi</b> về mức trước. Từ <b>0h30</b> mỗi đêm → <b>reset</b> về mức nền.
         Chỉ hỗ trợ camp CBO. Mọi thay đổi nhắn Telegram cho MKT của camp + super admin.
         <br />Bộ điều kiện ở chế độ <b>CHẠY THỬ</b> chỉ ghi nhật ký "lẽ ra đã tăng", không đổi ngân sách thật.
@@ -122,7 +122,7 @@ function TuScalePage() {
         <div style={{ overflowX: "auto" }}>
           <table style={tbl}>
             <thead><tr>
-              {["Tên", "CPA mục tiêu", "Đơn tối thiểu", "Đã tiêu ≥", "Nhân", "Trần/ngày", "Chờ giữa 2 lần", "Lùi khi CPA >", "Khung giờ", "Reset 0h30", "Chế độ", "Camp", ""].map((h) => <th key={h} style={th}>{h}</th>)}
+              {["Tên", "CPA mục tiêu", "Đơn tối thiểu", "Nhịp tiêu ≥", "Nhân", "Trần/ngày", "Chờ giữa 2 lần", "Lùi khi CPA >", "Khung giờ", "Reset 0h30", "Chế độ", "Camp", ""].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>
               {rules.map((r) => (
@@ -130,7 +130,7 @@ function TuScalePage() {
                   <td style={td}><b>{r.name}</b></td>
                   <td style={td}>{vnd(r.target_cpa)}</td>
                   <td style={td}>{r.min_orders}</td>
-                  <td style={td}>{Math.round(Number(r.spend_ratio) * 100)}% ngân sách</td>
+                  <td style={td}>{Number(r.spend_ratio)}× ngân sách (dự kiến cả ngày)</td>
                   <td style={td}>×{Number(r.multiplier)}</td>
                   <td style={td}>{vnd(r.max_budget)}</td>
                   <td style={td}>{r.cooldown_min} phút</td>
@@ -159,7 +159,7 @@ function TuScalePage() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
               {F("target_cpa", "CPA mục tiêu (đ)", "Chi phí/đơn hôm nay phải ≤ mức này")}
               {F("min_orders", "Số đơn tối thiểu hôm nay", "Đơn thật, bỏ trùng/nháp chưa chốt/huỷ")}
-              {F("spend_ratio", "Đã tiêu ≥ (0–1)", "0.7 = đã tiêu 70% ngân sách hiện tại", 0.05)}
+              {F("spend_ratio", "Nhịp tiêu ≥ (× ngân sách)", "1 = cứ đà này cả ngày sẽ tiêu hết ngân sách", 0.1)}
               {F("multiplier", "Nhân ngân sách", "2 = gấp đôi mỗi lần tăng", 0.1)}
               {F("max_budget", "Trần ngân sách/ngày (đ)", "Không tăng quá mức này")}
               {F("cooldown_min", "Chờ giữa 2 lần (phút)", "Để đơn kịp về trước khi tăng tiếp")}

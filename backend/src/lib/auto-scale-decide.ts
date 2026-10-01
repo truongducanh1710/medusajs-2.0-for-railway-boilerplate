@@ -37,6 +37,19 @@ export type Decision =
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`
 
+// Phần chi tiêu cả ngày thường đã tiêu xong TRƯỚC mỗi mốc giờ (index = giờ VN), lấy từ
+// hourly insights các camp XUANLT chạy đủ 24h (22, 27, 29/09). Camp tiêu gần nửa số tiền
+// vào tối/đêm — nên so "đã tiêu ≥ 70% ngân sách" là quá muộn (thường tới tối mới chạm).
+const DUONG_CHI_TIEU = [0, 0.02, 0.04, 0.055, 0.07, 0.085, 0.10, 0.14, 0.175, 0.205, 0.235, 0.27, 0.29,
+  0.32, 0.34, 0.36, 0.40, 0.45, 0.525, 0.60, 0.68, 0.77, 0.86, 0.93, 1]
+
+/** Ước chi tiêu cả ngày từ số đã tiêu tới hh:mm. */
+export function projectDaySpend(spentSoFar: number, hour: number, minute: number): number {
+  const h = Math.max(0, Math.min(23, hour))
+  const share = DUONG_CHI_TIEU[h] + (DUONG_CHI_TIEU[h + 1] - DUONG_CHI_TIEU[h]) * (minute / 60)
+  return spentSoFar / Math.max(share, 0.05)
+}
+
 export function decide(x: DecideInput): Decision {
   const { rule } = x
   if (!x.budget) return { action: "none", reason: "Camp không có ngân sách cấp campaign (ABO) — không hỗ trợ" }
@@ -77,8 +90,11 @@ export function decide(x: DecideInput): Decision {
   const cpa = x.orders_today > 0 ? x.spend_today / x.orders_today : null
   if (x.orders_today < rule.min_orders) lyDo.push(`mới ${x.orders_today}/${rule.min_orders} đơn`)
   if (cpa === null || cpa > rule.target_cpa) lyDo.push(`CPA ${cpa === null ? "—" : vnd(cpa)} > ${vnd(rule.target_cpa)}`)
-  if (x.spend_today < rule.spend_ratio * x.budget) {
-    lyDo.push(`đã tiêu ${Math.round((x.spend_today / x.budget) * 100)}% < ${Math.round(rule.spend_ratio * 100)}% ngân sách`)
+  // Nhịp tiêu: ước cả ngày theo đường chi tiêu chuẩn. spend_ratio = 1 nghĩa là "cứ đà này
+  // sẽ tiêu hết ngân sách" → camp sắp chạm trần, tăng mới có tác dụng.
+  const duKien = projectDaySpend(x.spend_today, x.hour, x.minute)
+  if (duKien < rule.spend_ratio * x.budget) {
+    lyDo.push(`nhịp tiêu chưa chạm trần (cả ngày dự kiến ${vnd(duKien)} < ${Math.round(rule.spend_ratio * 100)}% của ${vnd(x.budget)})`)
   }
   if (x.minutes_since_last_action !== null && x.minutes_since_last_action < rule.cooldown_min) {
     lyDo.push(`chờ ${rule.cooldown_min - x.minutes_since_last_action} phút nữa`)
@@ -90,6 +106,6 @@ export function decide(x: DecideInput): Decision {
 
   return {
     action: "tang", to,
-    reason: `Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${Math.round((x.spend_today / x.budget) * 100)}% ngân sách`,
+    reason: `Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${vnd(x.spend_today)} — cứ đà này cả ngày ~${vnd(duKien)} (ngân sách ${vnd(x.budget)})`,
   }
 }
