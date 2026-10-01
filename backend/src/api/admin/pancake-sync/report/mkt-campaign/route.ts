@@ -21,8 +21,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const params: any[] = [fromDate, toDate]
     const filters: string[] = []
-    if (mkt) params.push(mkt)
-    if (mkt) filters.push(`mkt_name = $${params.length}`)
+    // Nhận 1 mã hoặc danh sách "KIENLB,ANHNT,NAMDV" — người được bàn giao camp của MKT
+    // khác (metadata.mkt_codes) phải thấy camp của tất cả các mã đó, giống all-schedules.
+    const mktCodes = String(mkt).split(",").map(s => s.trim().toUpperCase()).filter(Boolean)
+    if (mktCodes.length === 1) {
+      params.push(mktCodes[0])
+      filters.push(`mkt_name = $${params.length}`)
+    } else if (mktCodes.length > 1) {
+      params.push(mktCodes)
+      filters.push(`mkt_name = ANY($${params.length})`)
+    }
     if (accountId) {
       params.push(accountId.startsWith("act_") ? accountId : `act_${accountId}`)
       filters.push(`ad_account_id = $${params.length}`)

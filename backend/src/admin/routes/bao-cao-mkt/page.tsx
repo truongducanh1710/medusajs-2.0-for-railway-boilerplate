@@ -746,10 +746,18 @@ function BaoCaoMktPage() {
     }).catch(() => {})
   }, [])
 
-  // Set default MKT filter to current user's mktCode on first load
+  // Mặc định tab Theo Camp hiện camp của MỌI mã user được giao (metadata.mkt_codes —
+  // ô "Codes bàn giao"), không chỉ mã chính. Trước đây đặt cứng = mktCode nên người
+  // được bàn giao camp (vd KIENLB nhận ANHNT, NAMDV) mở trang chỉ thấy camp của mình,
+  // dù đã có quyền bật/tắt camp kia. mktCodes luôn chứa mktCode (fallback ở /permissions/me).
+  // Phụ thuộc vào CHUỖI mã, không phải mảng: nếu hook trả mảng mới mỗi lần render thì
+  // effect sẽ chạy lại và đặt lại bộ lọc ngay sau khi người dùng tự chọn MKT khác.
+  const mktCodesKey = mktCodes.join(",")
   useEffect(() => {
-    if (mktCode && !isSuper) setCampMktFilter(mktCode)
-  }, [mktCode, isSuper])
+    if (isSuper) return
+    if (mktCodesKey.includes(",")) setCampMktFilter(mktCodesKey)
+    else if (mktCode) setCampMktFilter(mktCode)
+  }, [mktCode, mktCodesKey, isSuper])
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
@@ -1152,7 +1160,12 @@ function BaoCaoMktPage() {
             <select value={campMktFilter} onChange={e => setCampMktFilter(e.target.value)}
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 6, padding: "6px 10px", color: t.inputText, fontSize: 13 }}>
               <option value="">Tất cả MKT</option>
-              {[...mktOrder, ...mktNames.filter(m => !mktOrder.includes(m) && m !== "KHÁC")].map(m => (
+              {!isSuper && mktCodes.length > 1 && (
+                <option value={mktCodes.join(",")}>Camp tôi phụ trách ({mktCodes.join(", ")})</option>
+              )}
+              {/* Gộp mã được giao vào danh sách: /permissions/mkt-users chỉ trả user có quyền
+                  Marketing Hub, nên MKT chỉ có quyền báo cáo (vd ANHNT, NAMDV) bị thiếu. */}
+              {[...new Set([...mktCodes, ...mktOrder, ...mktNames.filter(m => m !== "KHÁC")])].map(m => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
