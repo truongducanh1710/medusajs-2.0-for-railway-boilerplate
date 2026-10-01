@@ -1,5 +1,6 @@
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from './constants'
 import { getPancakeProvinceId, getPancakeCommuneId, detectProvinceFromText } from './pancake-address'
+import { getPool } from './db'
 
 // Cache Pancake variation map: SKU (display_id) → variation UUID
 let variationMapCache: Map<string, string> | null = null
@@ -70,6 +71,55 @@ export function extractMktCode(campaign: string | undefined): string | undefined
 // XUANLT has 2 Pancake UUIDs in use; DUPD is an alias.
 const MKT_AUTOFIX_SKIP = new Set(["XUANLT", "DUPD"])
 
+type HandoverRule = { from_code: string; to_code: string; effective_from: string; effective_to: string | null }
+
+let handoverCache: HandoverRule[] | null = null
+let handoverCachedAt = 0
+const HANDOVER_TTL_MS = 5 * 60 * 1000
+
+async function loadHandoverRules(): Promise<HandoverRule[]> {
+  const now = Date.now()
+  if (handoverCache && now - handoverCachedAt < HANDOVER_TTL_MS) return handoverCache
+  try {
+    const { rows } = await getPool().query(
+      `SELECT from_code, to_code, effective_from::text, effective_to::text FROM mkt_handover WHERE deleted_at IS NULL`
+    )
+    handoverCache = rows
+  } catch {
+    handoverCache = [] // bảng chưa tồn tại
+  }
+  handoverCachedAt = now
+  return handoverCache!
+}
+
+// Pancake inserted_at is UTC without a zone suffix — reports use the same convention
+// (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh').
+function vnDateOf(insertedAt: string | undefined): string {
+  const s = insertedAt ? (/[zZ]|[+-]\d{2}:?\d{2}$/.test(insertedAt) ? insertedAt : insertedAt + "Z") : undefined
+  const d = s ? new Date(s) : new Date()
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(isNaN(d.getTime()) ? new Date() : d)
+}
+
+/**
+ * Apply mkt_handover rules (same table + semantics as the MKT reports): a camp still
+ * named after the old MKT belongs to the new MKT from effective_from (VN date).
+ * Follows chains (A→B→C) with a hop limit to guard against cycles.
+ */
+export async function resolveHandoverCode(code: string, vnDate: string): Promise<string> {
+  const rules = await loadHandoverRules()
+  let current = code
+  for (let hop = 0; hop < 5; hop++) {
+    const rule = rules.find(r =>
+      r.from_code === current &&
+      vnDate >= r.effective_from &&
+      (!r.effective_to || vnDate <= r.effective_to)
+    )
+    if (!rule || rule.to_code === current) break
+    current = rule.to_code
+  }
+  return current
+}
+
 /**
  * Webcake landing pages carry a hidden "mkt" field that sets the Pancake marketer.
  * When one MKT runs ads to another MKT's landing (e.g. ANHTD's POSTWIN camp using
@@ -81,8 +131,11 @@ export async function fixMarketerFromUtm(
   rawOrder: any,
   shop: { shopId: string | number; apiKey: string }
 ): Promise<string | undefined> {
-  const code = extractMktCode(rawOrder?.p_utm_source) || extractMktCode(rawOrder?.p_utm_campaign)
-  if (!code || MKT_AUTOFIX_SKIP.has(code)) return undefined
+  const campCode = extractMktCode(rawOrder?.p_utm_source) || extractMktCode(rawOrder?.p_utm_campaign)
+  if (!campCode) return undefined
+  // Camp ANHNT handed over to KIENLB → order belongs to KIENLB, not the name in the camp.
+  const code = await resolveHandoverCode(campCode, vnDateOf(rawOrder?.inserted_at))
+  if (MKT_AUTOFIX_SKIP.has(code)) return undefined
   const uuid = MKT_PANCAKE_UUID[code]
   if (!uuid) return undefined
 
