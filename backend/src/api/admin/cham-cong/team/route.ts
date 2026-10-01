@@ -106,7 +106,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     })
 
     // ── Top check-in sớm nhất / về sớm hôm nay ─────────────────────────────
-    const topEarly = dayRows.filter((r: any) => r.first_in).sort((a: any, b: any) => a.first_in.localeCompare(b.first_in)).slice(0, 5)
+    // first_in là Date (created_at từ module), KHÔNG phải chuỗi — localeCompare làm route 500
+    // ngay khi có từ 2 người chấm công trong ngày (sort mới gọi comparator). Gặp 01/10/2026.
+    const ms = (v: any) => new Date(v).getTime()
+    const topEarly = dayRows.filter((r: any) => r.first_in).sort((a: any, b: any) => ms(a.first_in) - ms(b.first_in)).slice(0, 5)
     const [eh, em] = effectiveShiftEnd(date, config).split(":").map(Number)
     const earlyLeavers = dayRows.filter((r: any) => {
       if (!r.last_out) return false
