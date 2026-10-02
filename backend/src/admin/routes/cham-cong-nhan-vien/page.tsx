@@ -259,13 +259,34 @@ function ChamCongSection() {
   const lastAction = logs.length > 0 ? logs[logs.length - 1].action : null
   const nextAction: "in" | "out" = lastAction === "in" ? "out" : "in"
 
-  const handleCheckin = async () => {
+  // Quên chấm vào: chưa có lượt nào hôm nay mà đã quá GIỮA CA thì gần như chắc là
+  // người dùng đang muốn chấm RA. Nút cũ vẫn ghi "vào" → bị tính đi muộn cả buổi và mất
+  // giờ ra (gặp 01/10/2026: chấm lúc 17:31 thành "vào, muộn 536 phút"). Hỏi lại thay vì
+  // đoán; chọn "ra" thì ngày đó hiện "Thiếu giờ vào" trong bảng công để quản lý xử lý.
+  const [hoiQuenVao, setHoiQuenVao] = useState(false)
+  const quaGiuaCa = () => {
+    const ketThuc = (config.half_day_saturdays || []).includes(toDayKey(new Date())) ? "12:00" : config.shift_end
+    const giua = (hhmmToMinutes(config.shift_start) + hhmmToMinutes(ketThuc)) / 2
+    const vn = new Date(Date.now() + 7 * 3600_000)
+    return vn.getUTCHours() * 60 + vn.getUTCMinutes() >= giua
+  }
+
+  const onBamChamCong = () => {
+    if (logs.length === 0 && quaGiuaCa()) {
+      setHoiQuenVao(true)
+      return
+    }
+    handleCheckin(nextAction)
+  }
+
+  const handleCheckin = async (action: "in" | "out") => {
+    setHoiQuenVao(false)
     setSubmitting(true)
     setErr("")
     try {
       const pos = await getPosition()
       await apiJson("/admin/cham-cong/checkin", "POST", {
-        action: nextAction,
+        action,
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         accuracy_m: pos.coords.accuracy,
@@ -363,9 +384,29 @@ function ChamCongSection() {
         </div>
       )}
 
+      {hoiQuenVao && (
+        <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="mb-2 font-semibold">Bạn chưa chấm vào hôm nay, và đã quá giữa ca.</div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => handleCheckin("out")}
+              className="flex-1 rounded bg-rose-600 px-3 py-2 font-medium text-white hover:bg-rose-700">
+              Tôi quên chấm vào — ghi là CHẤM RA
+            </button>
+            <button type="button" onClick={() => handleCheckin("in")}
+              className="flex-1 rounded bg-green-600 px-3 py-2 font-medium text-white hover:bg-green-700">
+              Tôi mới đến — ghi là CHẤM VÀO
+            </button>
+          </div>
+          <div className="mt-2 text-xs opacity-80">
+            Chọn "chấm ra" thì hôm nay sẽ ghi là thiếu giờ vào — báo quản lý để bổ sung.
+            <button type="button" onClick={() => setHoiQuenVao(false)} className="ml-2 underline">Huỷ</button>
+          </div>
+        </div>
+      )}
+
       <button
-        onClick={handleCheckin}
-        disabled={submitting || (khungGio ? !khungGio.allowed : false)}
+        onClick={onBamChamCong}
+        disabled={submitting || hoiQuenVao || (khungGio ? !khungGio.allowed : false)}
         className={`mb-1 w-full rounded-lg py-4 text-base font-semibold text-white transition-colors disabled:opacity-50 ${
           nextAction === "in" ? "bg-green-600 hover:bg-green-700" : "bg-rose-600 hover:bg-rose-700"
         }`}

@@ -75,6 +75,21 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: window.reason, window })
     }
 
+    // Chống bấm trùng: lượt mới cách lượt gần nhất dưới 2 phút thì bỏ. Gặp 01/10/2026:
+    // một người bấm vào–ra–vào trong 24 giây khi thử nút, ngày đó kết thúc ở trạng thái
+    // "vào" và giờ ra bị mất. Không nhân viên nào thực sự vào rồi ra trong 2 phút.
+    const DEDUP_MS = 2 * 60_000
+    const [lastLog] = await svc.listChamCongLogs(
+      { user_email: email, day_key: today, deleted_at: null },
+      { order: { created_at: "DESC" }, take: 1 }
+    )
+    if (lastLog && Date.now() - new Date(lastLog.created_at).getTime() < DEDUP_MS) {
+      const hhmm = new Date(new Date(lastLog.created_at).getTime() + 7 * 3600_000).toISOString().slice(11, 16)
+      return res.status(400).json({
+        error: `Bạn vừa chấm ${lastLog.action === "in" ? "vào" : "ra"} lúc ${hhmm}. Đợi 2 phút nếu cần chấm lại.`,
+      })
+    }
+
     const log = await svc.createChamCongLogs({
       user_email: email,
       action,
