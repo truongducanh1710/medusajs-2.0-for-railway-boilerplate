@@ -8,6 +8,7 @@ async function getConfig(svc: any) {
     id: "default", shift_start: "08:30", shift_end: "17:30",
     work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [],
     ot_min_threshold_min: 15, phep_nam_per_month: 1, phep_nam_max_per_year: 12,
+    checkin_open: "08:00", checkin_cutoff: "21:00",
   })
 }
 
@@ -34,7 +35,13 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     const {
       shift_start, shift_end, work_days, late_grace_min, half_day_saturdays,
       ot_min_threshold_min, phep_nam_per_month, phep_nam_max_per_year,
+      checkin_open, checkin_cutoff,
     } = req.body as any
+    for (const [k, v] of [["checkin_open", checkin_open], ["checkin_cutoff", checkin_cutoff]] as const) {
+      if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
+        return res.status(400).json({ error: `${k} phai dang HH:mm` })
+      }
+    }
     if (shift_start && !/^\d{2}:\d{2}$/.test(shift_start)) {
       return res.status(400).json({ error: "shift_start phai dang HH:mm" })
     }
@@ -60,6 +67,21 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (typeof ot_min_threshold_min === "number") update.ot_min_threshold_min = ot_min_threshold_min
     if (typeof phep_nam_per_month === "number") update.phep_nam_per_month = phep_nam_per_month
     if (typeof phep_nam_max_per_year === "number") update.phep_nam_max_per_year = phep_nam_max_per_year
+    if (checkin_open) update.checkin_open = checkin_open
+    if (checkin_cutoff) update.checkin_cutoff = checkin_cutoff
+
+    // Khung giờ phải hợp lệ: mở < giờ vào ca < giờ tan ca < khoá. Sai thứ tự là khoá
+    // luôn cả giờ làm bình thường.
+    const cur = await getConfig(svc)
+    const eff = { ...cur, ...update }
+    const mm = (s: string) => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m }
+    if (eff.checkin_open && eff.checkin_cutoff) {
+      if (!(mm(eff.checkin_open) <= mm(eff.shift_start) && mm(eff.shift_end) < mm(eff.checkin_cutoff))) {
+        return res.status(400).json({
+          error: `Khung giờ không hợp lệ: cần ${eff.checkin_open} (mở) ≤ ${eff.shift_start} (vào ca) và ${eff.shift_end} (tan ca) < ${eff.checkin_cutoff} (khoá)`,
+        })
+      }
+    }
 
     const config = await svc.updateChamCongConfigs(update)
     res.json({ config })

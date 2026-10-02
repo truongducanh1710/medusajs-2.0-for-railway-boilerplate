@@ -103,6 +103,8 @@ type ChamCongConfig = {
   late_grace_min: number
   half_day_saturdays: string[]
   ot_min_threshold_min: number
+  checkin_open?: string
+  checkin_cutoff?: string
   phep_nam_per_month: number
   phep_nam_max_per_year: number
 }
@@ -173,6 +175,9 @@ function ChamCongSection() {
   // Trình duyệt đang chặn quyền vị trí cho trang này → hiện hướng dẫn mở lại thay
   // vì chỉ một dòng lỗi.
   const [viTriBiChan, setViTriBiChan] = useState(false)
+  // Khung giờ được chấm công do server quyết định (xem checkinWindow ở route checkin).
+  // Giao diện chỉ hiển thị — server vẫn chặn kể cả khi ai đó bấm được nút.
+  const [khungGio, setKhungGio] = useState<{ allowed: boolean; open: string; cutoff: string; reason: string | null; early_by_ot?: boolean } | null>(null)
 
   // Biết TRƯỚC khi bấm nếu trình duyệt hỗ trợ Permissions API (Safari 16+, Chrome),
   // để người dùng không phải bấm thử rồi mới thấy lỗi. Tự cập nhật khi họ mở lại
@@ -209,6 +214,7 @@ function ChamCongSection() {
     try {
       const d = await apiJson("/admin/cham-cong/checkin")
       setLogs(d?.logs || [])
+      setKhungGio(d?.window ?? null)
     } catch (e: any) {
       setErr(e.message || "Lỗi tải lịch sử chấm công")
     } finally {
@@ -346,15 +352,29 @@ function ChamCongSection() {
         err && <div className="mb-4 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>
       )}
 
+      {khungGio && !khungGio.allowed && (
+        <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+          🔒 {khungGio.reason}
+        </div>
+      )}
+      {khungGio?.early_by_ot && (
+        <div className="mb-3 rounded bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:bg-blue-500/10 dark:text-blue-300">
+          Bạn có lịch tăng ca hôm nay nên được chấm công trước {khungGio.open}.
+        </div>
+      )}
+
       <button
         onClick={handleCheckin}
-        disabled={submitting}
-        className={`mb-6 w-full rounded-lg py-4 text-base font-semibold text-white transition-colors disabled:opacity-50 ${
+        disabled={submitting || (khungGio ? !khungGio.allowed : false)}
+        className={`mb-1 w-full rounded-lg py-4 text-base font-semibold text-white transition-colors disabled:opacity-50 ${
           nextAction === "in" ? "bg-green-600 hover:bg-green-700" : "bg-rose-600 hover:bg-rose-700"
         }`}
       >
         {submitting ? "Đang xử lý..." : nextAction === "in" ? "Chấm công vào" : "Chấm công ra"}
       </button>
+      <p className="mb-6 text-center text-xs text-ui-fg-muted">
+        Giờ chấm công: {khungGio?.open ?? "08:00"} – {khungGio?.cutoff ?? "21:00"} (trước {khungGio?.open ?? "08:00"} cần có lịch tăng ca)
+      </p>
 
       <h2 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Lịch sử hôm nay</h2>
       <div className="mb-6 rounded border border-ui-border-base">
@@ -925,6 +945,8 @@ function QuanLySection() {
   const [cfgHalfDaySaturdays, setCfgHalfDaySaturdays] = useState<string[]>([])
   const [newHalfDay, setNewHalfDay] = useState("")
   const [cfgOtThreshold, setCfgOtThreshold] = useState(15)
+  const [cfgCheckinOpen, setCfgCheckinOpen] = useState("08:00")
+  const [cfgCheckinCutoff, setCfgCheckinCutoff] = useState("21:00")
   const [cfgPhepPerMonth, setCfgPhepPerMonth] = useState(1)
   const [cfgPhepMaxYear, setCfgPhepMaxYear] = useState(12)
   const [exportMonth, setExportMonth] = useState(() => toDayKey(new Date()).slice(0, 7))
@@ -941,6 +963,8 @@ function QuanLySection() {
       setCfgGrace(d.config.late_grace_min)
       setCfgHalfDaySaturdays(d.config.half_day_saturdays || [])
       setCfgOtThreshold(d.config.ot_min_threshold_min ?? 15)
+      setCfgCheckinOpen(d.config.checkin_open ?? "08:00")
+      setCfgCheckinCutoff(d.config.checkin_cutoff ?? "21:00")
       setCfgPhepPerMonth(d.config.phep_nam_per_month ?? 1)
       setCfgPhepMaxYear(d.config.phep_nam_max_per_year ?? 12)
     } catch (e: any) {
@@ -959,6 +983,7 @@ function QuanLySection() {
         shift_start: cfgShiftStart, shift_end: cfgShiftEnd, work_days: cfgWorkDays, late_grace_min: cfgGrace,
         half_day_saturdays: cfgHalfDaySaturdays,
         ot_min_threshold_min: cfgOtThreshold, phep_nam_per_month: cfgPhepPerMonth, phep_nam_max_per_year: cfgPhepMaxYear,
+        checkin_open: cfgCheckinOpen, checkin_cutoff: cfgCheckinCutoff,
       })
       await load()
     } catch (e: any) {
@@ -1230,6 +1255,20 @@ function QuanLySection() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="mb-4 border-t border-ui-border-base pt-4">
+              <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Khung giờ được chấm công</span>
+              <div className="flex flex-wrap gap-4">
+                <label className="block text-sm">
+                  <span className="mb-1 block text-ui-fg-muted">Mở từ (trước giờ này cần có lịch tăng ca)</span>
+                  <input type="time" value={cfgCheckinOpen} onChange={(e) => setCfgCheckinOpen(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-ui-fg-muted">Khoá từ (không ai chấm được, sáng mai mở lại)</span>
+                  <input type="time" value={cfgCheckinCutoff} onChange={(e) => setCfgCheckinCutoff(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+                </label>
+              </div>
             </div>
 
             <div className="mb-4 border-t border-ui-border-base pt-4">

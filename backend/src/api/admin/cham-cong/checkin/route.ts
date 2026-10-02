@@ -3,6 +3,36 @@ import { vnDayKey } from "../../mkt-chat/_presence"
 import { getCurrentUserEmail } from "../_lib"
 import { recomputeOvertimeForDay } from "../overtime/route"
 
+/**
+ * Khung giờ được phép chấm công hiện tại cho 1 người (giờ VN).
+ *  - Từ checkin_cutoff (mặc định 21:00) tới hết ngày: khoá hẳn, không ngoại lệ.
+ *  - Trước checkin_open (mặc định 08:00): chỉ mở nếu hôm nay có lịch tăng ca —
+ *    overtime_request của người này cho hôm nay, trạng thái chưa bị từ chối. Đơn OT
+ *    tạo tay chỉ quản lý tạo được (route overtime POST), nên đây đúng là "lịch đã xếp".
+ * Kiểm tra ở server, không tin vào việc giao diện ẩn nút.
+ */
+async function checkinWindow(svc: any, email: string, today: string) {
+  const [config] = await svc.listChamCongConfigs({ id: "default" })
+  const open: string = config?.checkin_open || "08:00"
+  const cutoff: string = config?.checkin_cutoff || "21:00"
+  const mm = (s: string) => { const [h, m] = s.split(":").map(Number); return h * 60 + m }
+  const vnNow = new Date(Date.now() + 7 * 3600_000)
+  const nowMin = vnNow.getUTCHours() * 60 + vnNow.getUTCMinutes()
+
+  if (nowMin >= mm(cutoff)) {
+    return { allowed: false, open, cutoff, reason: `Đã quá ${cutoff}, hệ thống khoá chấm công hôm nay. Sáng mai từ ${open} mới chấm được.` }
+  }
+  if (nowMin < mm(open)) {
+    const ot = await svc.listOvertimeRequests({ user_email: email, day_key: today, deleted_at: null })
+    const coLich = ot.some((r: any) => r.status !== "rejected")
+    if (!coLich) {
+      return { allowed: false, open, cutoff, reason: `Chưa tới ${open}. Chỉ được chấm công sớm hơn khi có lịch tăng ca hôm nay — liên hệ quản lý để xếp lịch.` }
+    }
+    return { allowed: true, open, cutoff, reason: null, early_by_ot: true }
+  }
+  return { allowed: true, open, cutoff, reason: null }
+}
+
 // GET /admin/cham-cong/checkin — lịch sử chấm công hôm nay của người đang đăng nhập
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -15,8 +45,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       { user_email: email, day_key: today, deleted_at: null },
       { order: { created_at: "ASC" } }
     )
+    const window = await checkinWindow(svc, email, today)
 
-    res.json({ logs })
+    res.json({ logs, window })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
@@ -38,6 +69,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const svc = req.scope.resolve("mktTaskModule") as any
     const today = vnDayKey()
+
+    const window = await checkinWindow(svc, email, today)
+    if (!window.allowed) {
+      return res.status(400).json({ error: window.reason, window })
+    }
 
     const log = await svc.createChamCongLogs({
       user_email: email,
