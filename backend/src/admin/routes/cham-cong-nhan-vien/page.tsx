@@ -279,7 +279,11 @@ function ChamCongSection() {
   const today = toDayKey(new Date())
   const logsByDay: Record<string, ChamCongLog[]> = {}
   for (const l of monthLogs) {
-    const key = toDayKey(new Date(new Date(l.created_at).getTime() + 7 * 3600_000))
+    // Ngày VN của lượt chấm: cộng 7h rồi đọc theo UTC (giống tính phút đi muộn trong
+    // classifyDay). KHÔNG dùng toDayKey ở đây — nó đọc theo giờ máy, mà máy ở VN đã +7
+    // sẵn, thành cộng 14h: mọi lượt chấm sau 17:00 bị xếp sang ngày hôm sau. Gặp 02/10/2026:
+    // Hương chấm 17:31 ngày 01 → lịch hiện ngày 01 trống, ngày 02 "vào 17:31, muộn 536 phút".
+    const key = new Date(new Date(l.created_at).getTime() + 7 * 3600_000).toISOString().slice(0, 10)
     ;(logsByDay[key] ||= []).push(l)
   }
 
