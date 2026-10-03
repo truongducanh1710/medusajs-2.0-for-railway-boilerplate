@@ -66,16 +66,36 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "Invalid date format" })
     }
 
-    const syncService = req.scope.resolve("pancakeSyncModule") as any
     const rate = await getMyrToVndRate(to.slice(0, 10))
+    const sqlSvc = req.scope.resolve("cskhAnalysisModule") as any
 
-    const orders = await syncService.listPancakeOrders(
-      { pancake_created_at: { $gte: fromDate, $lte: toDate } },
-      {
-        take: 20000, // 2 thi truong trong 1 lan goi -> gap doi han cua report thuong
-        select: ["id", "source", "status", "cod_amount", "market", "tags", "pancake_created_at"],
-        order: { pancake_created_at: "ASC" },
-      }
+    // Cộng dồn NGAY TRONG SQL theo (market, source, ngày địa phương, có phải đơn rác).
+    //
+    // Bản cũ tải từng đơn với take: 20000 + order ASC: kỳ 3 tháng (01/07–30/09/2026) có
+    // 52.862 đơn, đơn thứ 20.000 rơi vào 10/08 → báo cáo "3 tháng" thực chất chỉ tính
+    // tới 10/08, phần sau = 0 (biểu đồ đi ngang về 0). Gom trong DB thì không còn trần
+    // số đơn, và chỉ trả vài trăm dòng thay vì hàng chục nghìn đơn.
+    //
+    // is_junk phải khớp isJunkOrder() ở trên (và report/route.ts) — sửa 1 bên phải sửa cả hai.
+    const internal = [...INTERNAL_SOURCES]
+    const groups: any[] = await sqlSvc.sql(
+      `SELECT market, COALESCE(source, '') AS source,
+              to_char(pancake_created_at + (CASE WHEN market = 'MY' THEN interval '8 hours' ELSE interval '7 hours' END), 'YYYY-MM-DD') AS d,
+              (
+                COALESCE(tags, '[]'::jsonb) @> '[{"name":"Đơn trùng"}]'::jsonb
+                OR (COALESCE(source, '') = ANY($3) AND (
+                      status IN (-2, 7)
+                      OR (status IN (0, 11, 6, -1) AND COALESCE(tags, '[]'::jsonb) @> '[{"name":"Đơn nháp"}]'::jsonb)
+                   ))
+                OR (NOT (COALESCE(source, '') = ANY($3)) AND status IN (6, 7, -1) AND COALESCE(tags, '[]'::jsonb) @> '[{"name":"Đơn nháp"}]'::jsonb)
+              ) IS TRUE AS is_junk,
+              COUNT(*)::int AS n,
+              COALESCE(SUM(cod_amount), 0)::numeric AS cod
+         FROM pancake_order
+        WHERE deleted_at IS NULL
+          AND pancake_created_at >= $1 AND pancake_created_at <= $2
+        GROUP BY 1, 2, 3, 4`,
+      [fromDate.toISOString(), toDate.toISOString(), internal]
     )
 
     // Khung ngay lay tu khoang loc (theo ngay VN) de moi ngay deu co dong,
@@ -89,29 +109,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const d of dayKeys) byDay.set(d, blank())
 
     let ordersVn = 0, ordersMy = 0, junkCount = 0
-    for (const o of orders) {
-      if (!o.pancake_created_at) continue
-      if (isJunkOrder(o)) { junkCount++; continue }
-      const isMy = o.market === "MY"
-      const date = localDateStr(new Date(o.pancake_created_at), isMy ? 8 : 7)
-      const cell = byDay.get(date)
+    for (const g of groups) {
+      const n = Number(g.n) || 0
+      if (g.is_junk) { junkCount += n; continue }
+      const isMy = g.market === "MY"
+      const cell = byDay.get(String(g.d))
       if (!cell) continue // don ngoai khung ngay (bien mui gio) — bo qua
 
-      const src = String(o.source ?? "")
+      const src = String(g.source ?? "")
+      const cod = Number(g.cod) || 0
       if (isMy) {
         // sen -> RM -> VND
-        const vnd = Math.round((Number(o.cod_amount ?? 0) / MY_SEN_PER_RM) * rate)
+        const vnd = Math.round((cod / MY_SEN_PER_RM) * rate)
         if (src === "shopee") cell.my_sp += vnd
         else cell.my_tt += vnd // TikTok Shop la san chu dao cua MY; con lai gom vao day
-        cell.orders_my++
-        ordersMy++
+        cell.orders_my += n
+        ordersMy += n
       } else {
-        const vnd = Number(o.cod_amount ?? 0)
-        if (src === "tiktok") cell.vn_tt += vnd
-        else if (src === "shopee") cell.vn_sp += vnd
-        else cell.vn_fb += vnd // phan con lai coi nhu Facebook (theo yeu cau nghiep vu)
-        cell.orders_vn++
-        ordersVn++
+        if (src === "tiktok") cell.vn_tt += cod
+        else if (src === "shopee") cell.vn_sp += cod
+        else cell.vn_fb += cod // phan con lai coi nhu Facebook (theo yeu cau nghiep vu)
+        cell.orders_vn += n
+        ordersVn += n
       }
     }
 
