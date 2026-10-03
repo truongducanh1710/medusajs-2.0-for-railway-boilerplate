@@ -94,6 +94,8 @@ export function ProductTestDrawer({
   onChanged: () => void;
 }) {
   const [detail, setDetail] = useState<any>(null);
+  // Ảnh đang xem phóng to: danh sách + vị trí. null = đóng.
+  const [viewer, setViewer] = useState<{ urls: string[]; index: number } | null>(null);
   const [purchase, setPurchase] =
     useState<ProductTestPurchaseCheck>(emptyPurchase);
   const [proposal, setProposal] = useState<ProductTestProposal>(emptyProposal);
@@ -480,17 +482,15 @@ export function ProductTestDrawer({
               )}
             </div>
             <div className="pt-images">
-              {purchase.image_urls.map((url) => (
+              {purchase.image_urls.map((url, i) => (
                 <button
-                  title="Chọn làm ảnh đại diện"
+                  type="button"
+                  title="Bấm để xem ảnh lớn và tải về"
                   key={url}
                   className={
                     purchase.representative_image_url === url ? "selected" : ""
                   }
-                  onClick={() =>
-                    purchaseEditable &&
-                    setPurchase({ ...purchase, representative_image_url: url })
-                  }
+                  onClick={() => setViewer({ urls: purchase.image_urls, index: i })}
                 >
                   <img src={url} alt="Ảnh sản phẩm" />
                 </button>
@@ -721,6 +721,10 @@ export function ProductTestDrawer({
                 url={
                   purchase.representative_image_url || purchase.image_urls[0]
                 }
+                onOpen={(url) => {
+                  const urls = purchase.image_urls.length ? purchase.image_urls : [url];
+                  setViewer({ urls, index: Math.max(0, urls.indexOf(url)) });
+                }}
               />
               <div>
                 <b>Combo (nối từ Đề xuất)</b>
@@ -967,6 +971,24 @@ export function ProductTestDrawer({
           </section>
         </div>
       </aside>
+      {viewer && (
+        // Chặn mousedown: nền drawer đóng cả hồ sơ khi nhận mousedown, thiếu dòng này
+        // thì bấm vào ảnh lớn sẽ đóng luôn drawer.
+        <div onMouseDown={(e) => e.stopPropagation()}>
+          <ImageViewer
+            urls={viewer.urls}
+            index={viewer.index}
+            onIndex={(i) => setViewer({ ...viewer, index: i })}
+            onClose={() => setViewer(null)}
+            representative={purchase.representative_image_url}
+            onSetRepresentative={
+              purchaseEditable
+                ? (url) => setPurchase({ ...purchase, representative_image_url: url })
+                : undefined
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1326,11 +1348,111 @@ function OwnerBadge({
     </span>
   );
 }
-function LinkedImage({ url }: { url?: string }) {
+function LinkedImage({ url, onOpen }: { url?: string; onOpen?: (url: string) => void }) {
   return url ? (
-    <img src={url} alt="Ảnh nối từ Check giá" />
+    <button type="button" className="pt-linked-btn" title="Bấm để xem ảnh lớn" onClick={() => onOpen?.(url)}>
+      <img src={url} alt="Ảnh nối từ Check giá" />
+    </button>
   ) : (
     <div className="pt-linked-image">Chưa có ảnh</div>
+  );
+}
+
+/** Tên file khi tải về: lấy phần cuối URL, bỏ query; thiếu đuôi thì thêm .jpg. */
+function fileNameFromUrl(url: string, index: number): string {
+  try {
+    const last = decodeURIComponent(new URL(url, window.location.href).pathname.split("/").pop() || "");
+    if (last) return /\.[a-z0-9]{2,5}$/i.test(last) ? last : `${last}.jpg`;
+  } catch {
+    /* URL lạ — dùng tên mặc định */
+  }
+  return `anh-san-pham-${index + 1}.jpg`;
+}
+
+/**
+ * Xem ảnh lớn + tải về. Tải bằng fetch → blob để ép trình duyệt LƯU file: thẻ
+ * <a download> bị bỏ qua khi ảnh nằm ở domain khác (kho file), lúc đó trình duyệt chỉ
+ * mở ảnh. Nếu kho file chặn fetch (CORS) thì mở ảnh ở tab mới để người dùng tự lưu.
+ */
+function ImageViewer({
+  urls,
+  index,
+  onIndex,
+  onClose,
+  representative,
+  onSetRepresentative,
+}: {
+  urls: string[];
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+  representative?: string;
+  onSetRepresentative?: (url: string) => void;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const url = urls[index];
+  const many = urls.length > 1;
+  const go = (d: number) => onIndex((index + d + urls.length) % urls.length);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+      else if (many && e.key === "ArrowRight") go(1);
+      else if (many && e.key === "ArrowLeft") go(-1);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = fileNameFromUrl(url, index);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 1000);
+    } catch {
+      window.open(url, "_blank", "noopener");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="pt-viewer" role="dialog" aria-modal="true" aria-label="Xem ảnh sản phẩm" onClick={onClose}>
+      <div className="pt-viewer-bar" onClick={(e) => e.stopPropagation()}>
+        <span className="pt-viewer-count">{many ? `Ảnh ${index + 1} / ${urls.length}` : "Ảnh sản phẩm"}</span>
+        <div className="pt-viewer-actions">
+          {onSetRepresentative && (
+            representative === url ? (
+              <span className="pt-viewer-tag">Ảnh đại diện</span>
+            ) : (
+              <button type="button" onClick={() => onSetRepresentative(url)}>Đặt làm ảnh đại diện</button>
+            )
+          )}
+          <button type="button" onClick={download} disabled={downloading}>
+            {downloading ? "Đang tải…" : "⬇ Tải về máy"}
+          </button>
+          <button type="button" onClick={onClose} aria-label="Đóng">✕</button>
+        </div>
+      </div>
+      <div className="pt-viewer-stage">
+        {many && (
+          <button type="button" className="pt-viewer-nav prev" aria-label="Ảnh trước" onClick={(e) => { e.stopPropagation(); go(-1); }}>‹</button>
+        )}
+        <img src={url} alt={`Ảnh sản phẩm ${index + 1}`} onClick={(e) => e.stopPropagation()} />
+        {many && (
+          <button type="button" className="pt-viewer-nav next" aria-label="Ảnh sau" onClick={(e) => { e.stopPropagation(); go(1); }}>›</button>
+        )}
+      </div>
+    </div>
   );
 }
 function toNumber(value: string) {
@@ -1508,4 +1630,24 @@ const DRAWER_CSS = `
 .pt-history-body p{margin:4px 0 0;font-size:12px;color:var(--fg-subtle,#4b5563);background:var(--bg-subtle,#f8fafc);border-radius:6px;padding:6px 8px}
 .pt-history-empty{color:var(--fg-muted,#9ca3af);font-size:12.5px;margin:0}
 @media(max-width:700px){.pt-form-grid,.pt-form-grid.three{grid-template-columns:1fr}.pt-linked{grid-template-columns:60px 1fr}.pt-linked>span{display:none}.pt-combo-2col{grid-template-columns:1fr}.pt-combo-out{grid-template-columns:1fr}}
+/* Xem ảnh lớn — trên drawer (z 900). Ảnh co vừa màn hình, giữ tỉ lệ. */
+.pt-images button,.pt-linked-btn{cursor:zoom-in}
+.pt-linked-btn{padding:0;border:0;background:none;display:block;border-radius:7px}
+.pt-linked-btn:focus-visible,.pt-images button:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+.pt-viewer{position:fixed;inset:0;z-index:1000;background:rgba(10,14,22,.88);display:flex;flex-direction:column;animation:ptFade .15s ease-out}
+.pt-viewer-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;color:#f1f5f9;flex-wrap:wrap}
+.pt-viewer-count{font:600 14px Inter,ui-sans-serif,system-ui,sans-serif}
+.pt-viewer-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pt-viewer-actions button{font:600 13px Inter,ui-sans-serif,system-ui,sans-serif;color:#0f172a;background:#f8fafc;border:0;border-radius:7px;padding:8px 14px;cursor:pointer}
+.pt-viewer-actions button:hover{background:#e2e8f0}
+.pt-viewer-actions button:disabled{opacity:.6;cursor:wait}
+.pt-viewer-actions button:focus-visible,.pt-viewer-nav:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+.pt-viewer-tag{font:600 12px Inter,ui-sans-serif,system-ui,sans-serif;color:#bbf7d0;border:1px solid rgba(187,247,208,.5);border-radius:99px;padding:7px 12px}
+.pt-viewer-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:12px;padding:0 16px 20px}
+.pt-viewer-stage img{max-width:min(100%,1200px);max-height:100%;object-fit:contain;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.5);background:#fff;cursor:default}
+.pt-viewer-nav{flex:none;width:44px;height:44px;border-radius:50%;border:0;background:rgba(248,250,252,.14);color:#f8fafc;font-size:28px;line-height:1;cursor:pointer}
+.pt-viewer-nav:hover{background:rgba(248,250,252,.26)}
+@keyframes ptFade{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion: reduce){.pt-viewer{animation:none}}
+
 `;
