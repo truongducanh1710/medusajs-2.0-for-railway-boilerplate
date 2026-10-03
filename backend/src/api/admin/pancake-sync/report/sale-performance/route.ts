@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { listAllPancakeOrders } from "../../../../../lib/list-all-orders"
 import { getMyrToVndRate } from "../../../../../lib/db"
 
 // Mapping đúng theo Pancake (verify bằng status_name thật từ API):
@@ -105,10 +106,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
     if (seller) filters.sale_name = seller
 
-    const orders = await syncService.listPancakeOrders(filters, {
-      take: 10000,
-      order: { pancake_created_at: "DESC" },
-    })
+    // Tải hết đơn trong kỳ — take: 10000 cứng làm xem cả tháng VN (>12.000 đơn từ
+    // 08/2026) mất các ngày đầu tháng. Xem lib/list-all-orders.ts.
+    const orders = await listAllPancakeOrders(syncService, filters, { direction: "DESC", label: "sale-performance" })
 
     // Group theo sale
     const byS: Record<string, any[]> = {}

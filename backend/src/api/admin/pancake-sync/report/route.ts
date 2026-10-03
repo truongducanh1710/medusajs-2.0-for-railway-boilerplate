@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { listAllPancakeOrders } from "../../../../lib/list-all-orders"
 import { getMyrToVndRate } from "../../../../lib/db"
 
 /**
@@ -64,7 +65,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       new Date(d.getTime() + TZ_OFFSET_HOURS * 3600_000).toISOString().slice(0, 10)
 
     // Fetch all orders in range (without raw column for performance)
-    const allOrdersRaw = await syncService.listPancakeOrders(
+    // Tải HẾT đơn trong kỳ (phân trang) — trước đây take: 10000 cứng làm VN mỗi tháng
+    // từ 08/2026 (>12.000 đơn) bị thiếu ngẫu nhiên. Xem lib/list-all-orders.ts.
+    const allOrdersRaw = await listAllPancakeOrders(
+      syncService,
       {
         pancake_created_at: {
           $gte: fromDate,
@@ -73,7 +77,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         market: mkt,
       },
       {
-        take: 10000, // reasonable upper bound for reporting
+        label: "report",
         select: [
           "id",
           "source",
@@ -86,20 +90,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           "currency",
           "shop_name",
         ],
-        order: { pancake_created_at: "ASC" },
       }
     )
     const allOrdersAll = allOrdersRaw.filter(keepOrder)
 
     // Kỳ liền trước: chỉ cần source + status + cod_amount + tags để tính totals + bySource (Δ).
-    const prevOrdersRaw = await syncService.listPancakeOrders(
+    const prevOrdersRaw = await listAllPancakeOrders(
+      syncService,
       {
         pancake_created_at: { $gte: prevFromDate, $lt: prevToDate },
         market: mkt,
       },
       {
-        take: 10000,
-        select: ["id", "source", "status", "cod_amount", "tags"],
+        label: "report/prev",
+        select: ["id", "source", "status", "cod_amount", "tags", "pancake_created_at"],
       }
     )
     const prevOrdersKept = prevOrdersRaw.filter(keepOrder)
