@@ -148,7 +148,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // SKU sàn thật sự xuất hiện trong đơn gần đây, kèm mức độ ảnh hưởng để nhân sự
-    // biết khớp cái nào trước. Chỉ lấy đơn đã cho đi (status 1,2,3,8) như báo cáo.
+    // biết khớp cái nào trước. Chỉ lấy đơn đã cho đi (status 1,2,3,8,9) như báo cáo.
     const skus = await sql(`
       SELECT
         upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sku_name,
@@ -162,7 +162,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE po.deleted_at IS NULL
         AND po.source IN ('shopee','tiktok')
         AND COALESCE(NULLIF(po.market, ''), 'VN') = $2
-        AND po.status IN (1,2,3,8)
+        AND po.status IN (1,2,3,8,9)
         AND po.pancake_created_at >= now() - ($1 || ' days')::interval
         AND po.raw->'items' IS NOT NULL
       -- Nhóm theo CẢ tên và mã. Gộp theo mỗi tên thì các biến thể bán theo SỐ LƯỢNG

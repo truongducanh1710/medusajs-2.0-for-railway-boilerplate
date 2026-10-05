@@ -36,7 +36,7 @@ const FULLFILL_PER_ORDER = 6000
  *  • DT trước phí sàn    = thực nhận + fee_marketplace
  *  • giá vốn             = SKU khai tay → tên phụ kiện → tên SP → mã → prefix, × số lượng
  *  • fullfill            = 6.000đ/đơn, chỉ tính đơn đã tra được giá vốn
- *  • mode "thuc" chỉ status=3; mode "tt" gồm status 1,2,3,8 (đã xác nhận cho đi)
+ *  • mode "thuc" chỉ status=3; mode "tt" gồm status 1,2,3,8,9 (đã xác nhận cho đi + chờ xử lý)
  *
  * ADS: sàn chỉ nhập chi phí theo (ngày × sàn), không có spend theo đơn. Ở đây CHIA
  * TRUNG BÌNH cho các đơn trong phạm vi mode (ads_cost_day / số đơn) — đúng theo yêu cầu
@@ -53,7 +53,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const market = String(marketRaw || "VN").toUpperCase() === "MY" ? "MY" : "VN"
     const mode = modeRaw === "thuc" ? "thuc" : "tt"
     // "thực" = chỉ đơn đã giao xong; "tạm tính" = thêm đơn đã xác nhận cho đi.
-    const statusList = mode === "thuc" ? [3] : [1, 2, 3, 8]
+    const statusList = mode === "thuc" ? [3] : [1, 2, 3, 8, 9]
 
     const avgCost = await computeAvgCost(getPool())
 

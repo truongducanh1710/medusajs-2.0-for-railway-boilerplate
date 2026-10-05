@@ -41,7 +41,8 @@ const FULLFILL_PER_ORDER = 6000
  *
  * by_day trả 2 mức song song:
  *  • THỰC   — chỉ đơn status=3 (giao thành công). Tiền chắc chắn về.
- *  • TẠM TÍNH — thêm đơn đã xác nhận cho đi: status 2 (đang giao) + 8 (đang đóng hàng).
+ *  • TẠM TÍNH — thêm đơn đã xác nhận cho đi: status 1 (đã chốt), 2 (đang giao),
+ *    8 (đang đóng hàng), 9 (chờ xử lý).
  *    Đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận, KHÔNG nhân tỷ lệ dự phóng
  *    như báo cáo FB (marketer-lng dùng revenue_treo × tỷ_lệ_nhận).
  *    Cần 2 mức vì đơn sàn mất vài ngày mới giao xong: ngày gần đây ads đã tiêu hết
@@ -53,7 +54,9 @@ const FULLFILL_PER_ORDER = 6000
  *    4 Đang hoàn về · 6 ĐÃ HỦY (glossary ghi nhầm "Đã gửi VC") · 8 Đang đóng hàng
  * Code 6 = huỷ đúng trên MỌI nguồn (đã đối chiếu cả facebook/manual), không riêng sàn.
  * Gộp nhầm 6 vào tạm tính từng làm 08/08 Shopee VN ra 21 đơn thay vì 15.
- * Status 9 (glossary ghi "Chờ VTP lấy") KHÔNG tồn tại trên đơn sàn.
+ * Status 9 (glossary ghi "Chờ VTP lấy"): từ 03/10/2026 Pancake gán đơn Shopee VN mới vào
+ * 9 (status_name "pending" = "Chờ xử lý" trên POS) — khách đã đặt + trả trên sàn, chỉ
+ * chờ shop đóng gói. Thiếu 9 trong tạm tính làm 04/10 Shopee hiện 1 đơn thay vì 11.
  *
  * LNG đơn sàn TMĐT (TikTok Shop / Shopee) — các báo cáo LNG khác lọc
  * `source IN ('manual','facebook','medusa','unknown','webcake')` nên toàn bộ đơn sàn
@@ -329,20 +332,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
         COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
         SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty,
-        -- Tạm tính (status 1,2,3,8 = đã xác nhận / đã gửi / đã nhận / đang chuyển):
+        -- Tạm tính (status 1,2,3,8,9 = đã xác nhận / đã gửi / đã nhận / đang chuyển / chờ xử lý):
         -- gồm cả đơn đã xác nhận cho đi nhưng chưa giao xong, đúng như mô tả trên UI.
         -- Thiếu status 1 thì đơn sàn mới xác nhận chưa kịp gửi hàng bị rơi ra ngoài:
         -- doanh thu = 0 trong khi ads vẫn trừ đủ -> ngày gần nhất luôn hiện lỗ giả
         -- (23/08 Shopee: 7 đơn 2,38tr hiện 0đ, LNG -780.887đ). Bảng
         -- "SP bán chạy" phải đọc bộ số này — chỉ đếm đơn đã giao xong thì SP mới
         -- chạy quảng cáo hôm nay gần như không xuất hiện.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8))::int AS orders_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue_tt   * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN qty ELSE 0 END)::numeric AS qty_tt
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9))::int AS orders_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) THEN order_revenue_tt   * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND unit_cost > 0)::int AS orders_costed_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) THEN qty ELSE 0 END)::numeric AS qty_tt
       FROM oi3
       GROUP BY platform, sp_key
     `, [from, to])
@@ -418,27 +421,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SUM(CASE WHEN status = 3 AND unit_cost = 0 THEN order_revenue * rev_share ELSE 0 END)::bigint AS revenue_no_cost,
         COUNT(DISTINCT order_id) FILTER (WHERE status = 3 AND unit_cost > 0)::int AS orders_costed,
         SUM(CASE WHEN status = 3 THEN qty ELSE 0 END)::numeric AS delivered_qty,
-        -- TẠM TÍNH: đơn đã xác nhận cho đi — 2 (đang giao), 3 (giao xong),
-        -- 8 (đang đóng hàng). KHÔNG dự phóng theo tỷ lệ như báo cáo FB: đơn sàn hoàn
-        -- rất ít nên coi đơn đang đi là sẽ nhận.
-        -- Loại 0/1 (chưa cho đi) và 4/5/6/7/-1/-2 (hoàn/huỷ/xoá) — xem ghi chú status
+        -- TẠM TÍNH: đơn đã xác nhận cho đi — 1 (đã chốt), 2 (đang giao), 3 (giao xong),
+        -- 8 (đang đóng hàng), 9 (chờ xử lý). KHÔNG dự phóng theo tỷ lệ như báo cáo FB:
+        -- đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận.
+        -- Loại 0 (mới) và 4/5/6/7/-1/-2 (hoàn/huỷ/xoá) — xem ghi chú status
         -- ở đầu file: code 6 = ĐÃ HỦY, không phải "đã gửi VC" như GLOSSARY ghi.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8))::int AS orders_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost > 0)::int AS orders_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9))::int AS orders_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND unit_cost > 0)::int AS orders_costed_tt,
         -- ── CHẤT LƯỢNG DỮ LIỆU (cho cảnh báo ngoài bảng) ────────────────────────
         -- Đếm theo ĐƠN chứ không theo dòng hàng: nhân sự đi xử lý từng đơn.
         -- Tính trên phạm vi TẠM TÍNH vì đó là mode mặc định đang xem.
-        SUM(CASE WHEN status IN (1,2,3,8) AND unit_cost = 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND unit_cost = 0)::int AS orders_missing_cost,
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost = 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND unit_cost = 0)::int AS orders_missing_cost,
         -- Đơn doanh thu 0đ = đơn gửi affiliate (hàng tặng KOL/reviewer), KHÔNG phải lỗi.
         -- Vẫn phải theo dõi vì chúng có giá vốn thật và vẫn được chia ads: gộp chung với
         -- đơn bán sẽ kéo LNG xuống và làm %GV/%LNG trông xấu hơn thực tế.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8) AND order_revenue = 0)::int AS orders_zero_revenue,
-        SUM(CASE WHEN status IN (1,2,3,8) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND order_revenue = 0)::int AS orders_zero_revenue,
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
