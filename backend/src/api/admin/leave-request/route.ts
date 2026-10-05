@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
+import { leaveWorkDays } from "../../../admin/lib/leave-days"
 
 const LEAVE_TYPES = new Set(["khong_luong", "phep_nam", "om", "khac", "online"])
 
@@ -28,8 +29,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "scope khong hop le" })
     }
 
-    const requests = await svc.listLeaveRequests(filter, { order: { created_at: "DESC" } })
-    res.json({ requests })
+    const [requests, [config]] = await Promise.all([
+      svc.listLeaveRequests(filter, { order: { created_at: "DESC" } }),
+      svc.listChamCongConfigs({ id: "default" }),
+    ])
+    // Số ngày tính ở server vì cần cấu hình T7 nửa ngày (sáng T7 nửa ngày = 1 công).
+    res.json({ requests: requests.map((r: any) => ({ ...r, days: leaveWorkDays(r.start_at, r.end_at, config || {}) })) })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }

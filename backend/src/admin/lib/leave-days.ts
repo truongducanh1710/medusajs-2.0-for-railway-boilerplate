@@ -6,7 +6,8 @@
 //
 // Giờ chia theo BUỔI: sáng 08:30-12:00 = 0.5 ngày, chiều 13:30-17:30 = 0.5 ngày (khớp preset
 // "Buổi sáng"/"Buổi chiều" ở form tạo đơn). Nghỉ một phần buổi thì tính theo tỷ lệ phút.
-// Bỏ ngày không làm việc (CN) và buổi chiều của T7 nửa ngày.
+// Bỏ ngày không làm việc (CN). T7 nửa ngày (HR chọn trong cài đặt) chỉ làm buổi sáng và
+// buổi sáng đó tính TRỌN 1 công, nên nghỉ sáng T7 nửa ngày = 1 ngày.
 const SESSIONS: [number, number][] = [
   [8 * 60 + 30, 12 * 60],
   [13 * 60 + 30, 17 * 60 + 30],
@@ -33,12 +34,25 @@ export function leaveWorkDays(
     if (!workDays.includes(dow)) continue
     const dayKey = vnDate.toISOString().slice(0, 10)
     SESSIONS.forEach(([s, e], i) => {
-      if (i === 1 && halfSat.has(dayKey)) return
+      const half = halfSat.has(dayKey)
+      if (i === 1 && half) return
       const sAbs = dayStartUtc + s * 60_000
       const eAbs = dayStartUtc + e * 60_000
       const overlap = Math.max(0, Math.min(end, eAbs) - Math.max(start, sAbs))
-      total += 0.5 * overlap / (eAbs - sAbs)
+      total += (half ? 1 : 0.5) * overlap / (eAbs - sAbs)
     })
   }
   return Math.round(total * 100) / 100
+}
+
+/** Quý (theo giờ VN) chứa thời điểm `at`: tháng đầu quý, khoảng [start, end) dạng UTC ms. */
+export function vnQuarterOf(at: Date = new Date()) {
+  const vn = new Date(at.getTime() + VN_OFFSET)
+  const y = vn.getUTCFullYear()
+  const m = vn.getUTCMonth() // 0-11
+  const q = Math.floor(m / 3)
+  const firstMonth = q * 3
+  const start = Date.UTC(y, firstMonth, 1) - VN_OFFSET
+  const end = Date.UTC(y, firstMonth + 3, 1) - VN_OFFSET
+  return { year: y, quarter: q + 1, firstMonth, currentMonth: m, start, end }
 }

@@ -210,7 +210,7 @@ function ChamCongSection() {
   const [config, setConfig] = useState<ChamCongConfig>({ shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [], ot_min_threshold_min: 15, phep_nam_per_month: 1, phep_nam_max_per_year: 12 })
   const [monthLoading, setMonthLoading] = useState(false)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
-  const [leaveBalance, setLeaveBalance] = useState<{ remaining_days: number; accrued_days: number; used_days: number } | null>(null)
+  const [leaveBalance, setLeaveBalance] = useState<{ remaining_days: number; accrued_days: number; used_days: number; pending_days?: number; quarter?: number; has_profile?: boolean; chinh_thuc?: string | null } | null>(null)
   const [otMinutesThisMonth, setOtMinutesThisMonth] = useState(0)
 
   const load = useCallback(async () => {
@@ -458,9 +458,18 @@ function ChamCongSection() {
         </div>
         <div className="rounded-lg bg-violet-50 dark:bg-violet-500/10 p-3 text-center">
           <div className="text-lg font-bold text-violet-700 dark:text-violet-400">
-            {leaveBalance ? leaveBalance.remaining_days.toFixed(1) : "—"}
+            {leaveBalance && leaveBalance.has_profile !== false ? leaveBalance.remaining_days.toFixed(1) : "—"}
           </div>
-          <div className="text-xs text-violet-700 dark:text-violet-400">Phép còn lại</div>
+          <div className="text-xs text-violet-700 dark:text-violet-400"
+            title={leaveBalance ? `Quý ${leaveBalance.quarter}: được ${leaveBalance.accrued_days} · đã dùng ${leaveBalance.used_days}${leaveBalance.pending_days ? ` · chờ duyệt ${leaveBalance.pending_days}` : ""}. Mỗi tháng 1 phép, sang quý mới reset.` : ""}>
+            Phép còn lại{leaveBalance?.quarter ? ` Q${leaveBalance.quarter}` : ""}
+          </div>
+          {leaveBalance?.has_profile === false && (
+            <div className="mt-0.5 text-[10px] text-violet-600/80 dark:text-violet-400/80">Chưa khớp hồ sơ nhân sự</div>
+          )}
+          {leaveBalance?.has_profile && !leaveBalance.chinh_thuc && (
+            <div className="mt-0.5 text-[10px] text-violet-600/80 dark:text-violet-400/80">Chưa có ngày chính thức</div>
+          )}
         </div>
         <div className="rounded-lg bg-teal-50 dark:bg-teal-500/10 p-3 text-center">
           <div className="text-lg font-bold text-teal-700 dark:text-teal-400">
@@ -709,7 +718,7 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
               {tab !== "mine" && <div className="mb-1 text-xs text-ui-fg-muted">Người gửi: {r.requester_email}</div>}
               <div className="text-sm text-ui-fg-subtle">Bắt đầu: {fmtDateTime(r.start_at)}</div>
               <div className="text-sm text-ui-fg-subtle">Kết thúc: {fmtDateTime(r.end_at)}</div>
-              <div className="text-sm text-ui-fg-subtle">Thời gian: {diffDays(r.start_at, r.end_at)} ngày</div>
+              <div className="text-sm text-ui-fg-subtle">Thời gian: {(r as any).days ?? diffDays(r.start_at, r.end_at)} ngày</div>
               {r.reason && <div className="mt-1 text-sm text-ui-fg-muted italic">Lý do: {r.reason}</div>}
 
               {tab === "pending" && r.status === "pending" && (
@@ -1371,7 +1380,7 @@ function QuanLySection() {
             </div>
 
             <div className="mb-4 border-t border-ui-border-base pt-4">
-              <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Tích lũy phép năm</span>
+              <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Phép năm (theo quý)</span>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-sm">
                   <span className="mb-1 block text-ui-fg-muted">Số ngày cộng mỗi tháng làm đủ</span>
@@ -1382,7 +1391,7 @@ function QuanLySection() {
                   <input type="number" min={0} value={cfgPhepMaxYear} onChange={(e) => setCfgPhepMaxYear(Number(e.target.value))} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
                 </label>
               </div>
-              <p className="mt-1 text-xs text-ui-fg-muted">Chỉ áp dụng cho nhân viên đã qua ngày chính thức (xem tab Nhân sự). Cộng dồn tự động mỗi ngày (idempotent theo tháng).</p>
+              <p className="mt-1 text-xs text-ui-fg-muted">Mỗi tháng (từ ngày chính thức, xem tab Nhân sự) được số ngày trên, cộng dồn trong quý; sang quý mới reset, phép quý trước không dùng sẽ mất. "Trần mỗi năm" không còn tác dụng.</p>
             </div>
 
             <button onClick={saveConfig} disabled={savingConfig} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
