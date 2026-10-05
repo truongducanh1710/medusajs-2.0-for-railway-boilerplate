@@ -41,13 +41,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const nameByEmail: Record<string, string> = {}
     for (const u of staff) nameByEmail[u.email] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
 
-    const [configRows, dayLogs, monthLogs, approvedLeaves, last7Logs] = await Promise.all([
+    const [configRows, dayLogs, monthLogs, allLeaves, last7Logs] = await Promise.all([
       svc.listChamCongConfigs({ id: "default" }),
       svc.listChamCongLogs({ day_key: date, deleted_at: null }, { order: { created_at: "ASC" } }),
       svc.listChamCongLogs({ day_key: { $gte: `${month}-01`, $lte: date }, deleted_at: null }, { order: { created_at: "ASC" } }),
-      svc.listLeaveRequests({ status: "approved", deleted_at: null }, {}),
+      svc.listLeaveRequests({ status: ["approved", "pending"], deleted_at: null }, {}),
       svc.listChamCongLogs({}, { order: { created_at: "ASC" }, take: 5000 }),
     ])
+
+    // Đơn chờ duyệt vẫn hiện ở banner "xin nghỉ hôm nay" nhưng KHÔNG tính vào công/nghỉ.
+    const pendingLeaves = allLeaves.filter((l: any) => l.status === "pending")
+    const approvedLeaves = allLeaves.filter((l: any) => l.status === "approved")
 
     const config = configRows[0] || { shift_start: "08:30", shift_end: "17:30", work_days: [1, 2, 3, 4, 5, 6], late_grace_min: 5, half_day_saturdays: [] }
 
@@ -57,8 +61,27 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       (byUserDay[log.user_email] ||= []).push(log)
     }
     const dateObj = new Date(`${date}T00:00:00Z`)
-    const leavesOnDate = approvedLeaves.filter((l: any) => new Date(l.start_at) <= dateObj && new Date(l.end_at) >= dateObj)
+    // Ngày VN [00:00, 24:00) — trước đây so start_at <= 00:00Z nên đơn nghỉ trong ngày
+    // (vd 08:30-17:30 VN) không bao giờ khớp → người nghỉ vẫn bị đếm "Chưa checkin".
+    const vnDayStart = new Date(`${date}T00:00:00+07:00`).getTime()
+    const vnDayEnd = vnDayStart + 86400_000
+    const overlapsDate = (l: any) => new Date(l.start_at).getTime() < vnDayEnd && new Date(l.end_at).getTime() > vnDayStart
+    const leavesOnDate = approvedLeaves.filter(overlapsDate)
     const leaveEmails = new Set(leavesOnDate.map((l: any) => l.requester_email))
+    const staffEmails = new Set(staff.map((u: any) => u.email))
+    const leavesToday = [...leavesOnDate, ...pendingLeaves.filter(overlapsDate)]
+      .filter((l: any) => staffEmails.has(l.requester_email))
+      .sort((a: any, b: any) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      .map((l: any) => ({
+        id: l.id,
+        email: l.requester_email,
+        name: nameByEmail[l.requester_email] || l.requester_email,
+        leave_type: l.leave_type,
+        status: l.status,
+        start_at: l.start_at,
+        end_at: l.end_at,
+        reason: l.reason ?? null,
+      }))
 
     const dayRows = staff.map((u: any) => {
       const logs = byUserDay[u.email] || []
@@ -148,6 +171,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       config,
       date,
       stats: { on_time: statOnTime, late: statLate, missing: statMissing },
+      leaves_today: leavesToday,
       last7days,
       day_rows: dayRows,
       top_early: topEarly,

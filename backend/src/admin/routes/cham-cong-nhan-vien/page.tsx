@@ -955,10 +955,31 @@ type TeamDayRow = {
 }
 type TeamLast7 = { date: string; on_time: number; late: number; missing: number }
 type TeamMonthRow = { email: string; name: string; worked_days: number; late_days: number; leave_days: number }
+type TeamLeaveToday = {
+  id: string
+  email: string
+  name: string
+  leave_type: string
+  status: "approved" | "pending"
+  start_at: string
+  end_at: string
+  reason: string | null
+}
+
+// Nghỉ cả ngày nếu đơn phủ trọn ca làm; ngược lại hiện khung giờ (đơn nhiều ngày hiện dd/mm).
+function leaveRangeLabel(l: TeamLeaveToday, date: string, cfg: { shift_start: string; shift_end: string }): string {
+  const vnKey = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10)
+  const s = vnKey(l.start_at), e = vnKey(l.end_at)
+  if (s !== e) return `${fmtDdMm(s)} → ${fmtDdMm(e)}`
+  if (s === date && fmtTime(l.start_at) <= cfg.shift_start && fmtTime(l.end_at) >= cfg.shift_end) return "Cả ngày"
+  return `${fmtTime(l.start_at)} – ${fmtTime(l.end_at)}`
+}
+
 type TeamResponse = {
   config: ChamCongConfig
   date: string
   stats: { on_time: number; late: number; missing: number }
+  leaves_today?: TeamLeaveToday[]
   last7days: TeamLast7[]
   day_rows: TeamDayRow[]
   top_early: TeamDayRow[]
@@ -1062,6 +1083,28 @@ function QuanLySection() {
         <h2 className="text-sm font-semibold text-ui-fg-subtle">Thống kê chấm công</h2>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1 text-sm text-ui-fg-base" />
       </div>
+
+      {(data.leaves_today?.length ?? 0) > 0 && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-500/30 dark:bg-blue-500/10">
+          <div className="mb-2 text-sm font-semibold text-blue-800 dark:text-blue-300">
+            📋 {data.leaves_today!.length} người xin nghỉ {date === toDayKey(new Date()) ? "hôm nay" : `ngày ${fmtDdMm(date)}`}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {data.leaves_today!.map((l) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-ui-fg-base">
+                <span className="font-medium">{l.name}</span>
+                <span className="text-xs text-ui-fg-subtle">· {LEAVE_TYPE_LABEL[l.leave_type] || l.leave_type} · {leaveRangeLabel(l, date, data.config)}</span>
+                {l.status === "pending" ? (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">Chờ duyệt</span>
+                ) : (
+                  <span className="rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-medium text-green-800 dark:bg-green-500/20 dark:text-green-300">Đã duyệt</span>
+                )}
+                {l.reason && <span className="w-full truncate text-xs text-ui-fg-muted md:w-auto">"{l.reason}"</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stat cards — status palette cố định: xanh=đúng giờ, đỏ=chưa checkin, vàng=đến muộn */}
       <div className="mb-5 grid grid-cols-3 gap-3">
