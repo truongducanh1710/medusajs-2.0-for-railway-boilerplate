@@ -365,6 +365,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         sp_code: code,
         // Mã gốc chưa alias — cần cho việc khớp ads, không hiển thị.
         sp_code_raw: r.sp_code_raw ? String(r.sp_code_raw).toUpperCase() : null,
+        // Tên SKU sàn (đã upper/trim) — khoá tra bảng "Khớp SP sàn" cho SKU không có mã.
+        // Trước đây adsPartsOf tra it.sp_name_up nhưng dòng hàng không mang trường này,
+        // nên SKU ghép theo tên không bao giờ nhận ads của SP mà bị dồn ads mức shop
+        // (28/09: 8 đơn chổi gầm tủ gánh 79.505đ/đơn thay vì ~1.000đ).
+        sp_name_up: String(r.sp_name_up || ""),
         sp_label: (code && codeToName[code]) || r.sp_label,
         qty: Number(r.qty || 0),
         unit_cost: Number(r.unit_cost || 0),
@@ -377,6 +382,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         // × 1" nhưng giá vốn 17.078đ (3 chổi + 1 giẻ lau tặng kèm) — không hiện thành
         // phần thì con số đó trông như sai.
         parts: partsOf(code, String(r.sp_name_up || "")),
+        // Hàng bán không có mã SP và chưa khai ở tab "Khớp SP sàn": không khớp được ads
+        // theo SP nên đơn bị dồn ads mức shop, và bị tách khỏi dòng SP thật ở tab
+        // "Theo sản phẩm". UI cảnh báo để nhân sự vào ghép mã.
+        chua_ghep_ma: !isGift && !code && !skuParts[String(r.sp_name_up || "")]?.length,
       })
     }
 

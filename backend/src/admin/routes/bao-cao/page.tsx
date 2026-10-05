@@ -4170,6 +4170,7 @@ function DayOrdersModal({
       g.ads += Number(o.ads_cost) || 0
       g.fullfill += Number(o.fullfill) || 0
       if (o.missing_cost) g.missing_cost = true
+      if (chinh.chua_ghep_ma) g.chua_ghep_ma = true
     }
     return [...m.values()].map(g => {
       const rev = Math.round(g.revenue)
@@ -4192,6 +4193,23 @@ function DayOrdersModal({
   // Hiện thành một dòng riêng ngay trên dòng TỔNG để phép cộng nhìn thấy được.
   const adsLe = Math.round(
     (Number(t.ads_cost) || 0) - orders.reduce((a, o) => a + (Number(o.ads_cost) || 0), 0))
+
+  // Hàng bán chưa ghép mã SP — gom theo tên để biết cần ghép những SKU nào.
+  const chuaGhep = (() => {
+    const m = new Map<string, { label: string; don: number; ads: number }>()
+    for (const o of orders) {
+      const its = (o.items ?? []).filter((it: any) => it.chua_ghep_ma)
+      if (its.length === 0) continue
+      for (const label of new Set<string>(its.map((it: any) => String(it.sp_label)))) {
+        const g = m.get(label) ?? { label, don: 0, ads: 0 }
+        g.don += 1
+        g.ads += Number(o.ads_cost) || 0
+        m.set(label, g)
+      }
+    }
+    return [...m.values()].sort((a, b) => b.don - a.don)
+  })()
+  const soDonChuaGhep = orders.filter(o => (o.items ?? []).some((it: any) => it.chua_ghep_ma)).length
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -4306,6 +4324,29 @@ function DayOrdersModal({
               </div>
             )}
 
+            {soDonChuaGhep > 0 && (
+              <div className="px-5 py-2.5 border-b bg-red-50 text-[12px] text-red-800">
+                <div className="font-semibold">
+                  ⚠ {soDonChuaGhep} đơn có sản phẩm chưa ghép mã SP
+                </div>
+                <div className="text-red-700/90 mt-0.5">
+                  Sàn trả tên SKU tự đặt (không có mã) nên hệ thống không nhận ra đây là SP nào: đơn bị
+                  tách thành dòng riêng ở tab "Theo sản phẩm" và gánh ads mức shop thay vì ads của SP → LNG sai.
+                  Sửa: vào <a href="/app/gia-von?tab=skumap" target="_blank" rel="noreferrer"
+                    className="underline font-semibold">Giá vốn → Khớp SP sàn</a>, ghép các tên dưới đây vào đúng mã SP.
+                </div>
+                <ul className="mt-1.5 space-y-0.5">
+                  {chuaGhep.slice(0, 8).map(g => (
+                    <li key={g.label} className="flex gap-2">
+                      <span className="truncate max-w-[640px] text-gray-800" title={g.label}>• {g.label}</span>
+                      <span className="shrink-0 text-red-700">{g.don} đơn · ads {money(g.ads)}</span>
+                    </li>
+                  ))}
+                  {chuaGhep.length > 8 && <li className="text-red-700/80">… và {chuaGhep.length - 8} SKU khác</li>}
+                </ul>
+              </div>
+            )}
+
             <div className="px-5 py-2 border-b flex items-center gap-2">
               {([["don", `Theo đơn (${orders.length})`], ["sp", `Theo sản phẩm (${byProduct.length})`]] as const).map(([k, lb]) => (
                 <button key={k} onClick={() => setTab(k)}
@@ -4348,6 +4389,7 @@ function DayOrdersModal({
                         <td className="px-4 py-2.5 max-w-[240px]">
                           <div className="truncate text-gray-900" title={r.sp_label}>{r.sp_label}</div>
                           {r.sp_code && <div className="text-[10.5px] text-gray-400 font-mono">{r.sp_code}</div>}
+                          {r.chua_ghep_ma && <div className="text-[10.5px] text-red-600 font-semibold">⚠ chưa ghép mã SP</div>}
                           {r.missing_cost && <div className="text-[10.5px] text-amber-600">⚠ chưa khai giá vốn</div>}
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-gray-700">{fmtNum(r.don)}</td>
@@ -4507,6 +4549,9 @@ function DayOrdersModal({
                             {(o.items ?? []).length === 0
                               ? <span className="text-gray-300">—</span>
                               : (o.items ?? []).map((it: any) => it.sp_label).join(" · ")}
+                            {(o.items ?? []).some((it: any) => it.chua_ghep_ma) && (
+                              <div className="text-[10.5px] text-red-600 font-semibold">⚠ chưa ghép mã SP</div>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono text-gray-700">{fmtNum(o.qty)}</td>
                           <td className="px-3 py-2.5 text-right text-gray-600">{money(o.revenue_gross)}</td>
@@ -4565,6 +4610,7 @@ function DayOrdersModal({
                                           {it.sp_label}
                                           {it.sp_code && <span className="ml-1.5 text-[11px] text-gray-400">{it.sp_code}</span>}
                                           {it.missing_cost && <span className="ml-1.5 text-[11px] text-amber-600">⚠ chưa khai giá vốn</span>}
+                                          {it.chua_ghep_ma && <span className="ml-1.5 text-[11px] text-red-600 font-semibold">⚠ chưa ghép mã SP — ghép ở Giá vốn → Khớp SP sàn</span>}
                                         </td>
                                         <td className="text-right py-1 font-mono">{fmtNum(it.qty)}</td>
                                         <td className="text-right py-1">{it.unit_cost > 0 ? money(it.unit_cost) : <span className="text-gray-300">—</span>}</td>
@@ -5104,6 +5150,16 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             detail: <>Các ngày này đang tính lãi <b>như thể không tốn tiền quảng cáo</b> nên LNG
               đẹp giả tạo. Điền ở trang <b>Nhập chi phí</b>.</>,
             days: di.ads_missing.days, total: di.ads_missing.total_days,
+          },
+          di.unmapped?.orders > 0 && {
+            key: "unmapped",
+            icon: "🔗",
+            title: `${fmtNum(di.unmapped.orders)} đơn có sản phẩm chưa ghép mã SP`,
+            detail: <>Sàn trả tên SKU tự đặt, không có mã nên hệ thống không biết là SP nào: đơn bị
+              tách thành dòng riêng và <b>gánh ads mức shop thay vì ads của SP</b> → LNG theo SP sai.
+              Ghép ở <a href="/app/gia-von?tab=skumap" target="_blank" rel="noreferrer"
+                className="underline font-semibold">Giá vốn → Khớp SP sàn</a>; bấm ngày để xem tên SKU cần ghép.</>,
+            days: di.unmapped.days, total: di.unmapped.total_days,
           },
         ].filter(Boolean) as any[]
 

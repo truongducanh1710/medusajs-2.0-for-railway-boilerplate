@@ -441,11 +441,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- Vẫn phải theo dõi vì chúng có giá vốn thật và vẫn được chia ads: gộp chung với
         -- đơn bán sẽ kéo LNG xuống và làm %GV/%LNG trông xấu hơn thực tế.
         COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND order_revenue = 0)::int AS orders_zero_revenue,
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue
+        SUM(CASE WHEN status IN (1,2,3,8,9) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue,
+        -- Hàng BÁN không có mã SP và chưa khai ở "Khớp SP sàn" ($3 = các tên đã khai):
+        -- không khớp được ads theo SP nên đơn gánh ads mức shop, LNG theo SP bị sai.
+        -- Quà tặng nhận theo tên, cùng quy tắc với day-orders.
+        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9)
+          AND COALESCE(sp_code, '') = ''
+          AND sp_name_up <> ''
+          AND sp_name_up !~* '(QUÀ TẶNG|QUA TANG|TẶNG KÈM|TANG KEM)'
+          AND NOT (sp_name_up = ANY($3::text[])))::int AS orders_unmapped
       FROM oi3
       GROUP BY d, platform
       ORDER BY d DESC, platform
-    `, [from, to])
+    `, [from, to, Object.keys(skuParts)])
 
     const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 10000) / 100 : null
 
@@ -936,6 +944,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         revenue_no_cost_tt: Number(r.revenue_no_cost_tt || 0),
         orders_zero_revenue: Number(r.orders_zero_revenue || 0),
         cogs_zero_revenue: Number(r.cogs_zero_revenue || 0),
+        orders_unmapped: Number(r.orders_unmapped || 0),
       }
     })
 
@@ -949,6 +958,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const missingCostDays = issueDays(d => d.orders_missing_cost)
     const zeroRevDays = issueDays(d => d.orders_zero_revenue)
+    const unmappedDays = issueDays(d => d.orders_unmapped)
     const adsMissingDays = byDay.filter(d => d.ads_missing)
       .map(d => ({ date: d.date, platform: d.platform, n: d.orders_tt }))
 
@@ -963,6 +973,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         orders: adsMissingDays.reduce((s, d) => s + d.n, 0),
         days: adsMissingDays.slice(0, 12),
         total_days: adsMissingDays.length,
+      },
+      unmapped: {
+        orders: unmappedDays.reduce((s, d) => s + d.n, 0),
+        days: unmappedDays.slice(0, 12),
+        total_days: unmappedDays.length,
       },
     }
 

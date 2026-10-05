@@ -2517,7 +2517,11 @@ function GiaVonPage() {
   // cần biết giá vốn trung bình mà không cần thấy chi tiết lô nhập, NCC, phí.
   // page.gia-von.view vẫn thấy toàn bộ tab như trước.
   const summaryOnly = !has("page.gia-von.view") && has("page.gia-von.summary")
-  const [tab, setTab] = useState<GiaVonTab>(summaryOnly ? "summary" : "sheet")
+  // ?tab=skumap — link từ cảnh báo "chưa ghép mã SP" ở báo cáo sàn mở thẳng tab này.
+  const [tab, setTab] = useState<GiaVonTab>(() => {
+    const q = new URLSearchParams(window.location.search).get("tab")
+    return q === "skumap" && !summaryOnly ? "skumap" : summaryOnly ? "summary" : "sheet"
+  })
 
   if (loading) {
     return <div style={{ padding: 40, color: "#9ca3af", fontSize: 14 }}>Đang tải quyền truy cập…</div>
