@@ -76,11 +76,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const today = vnDay(new Date())
 
     // Đơn nghỉ giao với ngày VN [00:00, 00:00 hôm sau).
-    const leaveCovers = (email: string, dayKey: string) => {
+    // online = xin làm online: không phải nghỉ, tách riêng để ghi "Làm online" thay vì "Vắng".
+    const leaveCovers = (email: string, dayKey: string, online = false) => {
       const dayStart = new Date(`${dayKey}T00:00:00+07:00`).getTime()
       const dayEnd = dayStart + 86400_000
       return approvedLeaves.some((l: any) =>
         l.requester_email === email &&
+        (l.leave_type === "online") === online &&
         new Date(l.start_at).getTime() < dayEnd &&
         new Date(l.end_at).getTime() > dayStart
       )
@@ -142,6 +144,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const firstIn = logs.find((l: any) => l.action === "in")
         const lastOut = [...logs].reverse().find((l: any) => l.action === "out")
         const onLeave = leaveCovers(u.email, dayKey)
+        const online = leaveCovers(u.email, dayKey, true)
         const shiftEnd = (config.half_day_saturdays || []).includes(dayKey) ? HALF_DAY_SHIFT_END : config.shift_end
 
         const late = firstIn
@@ -156,6 +159,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const notes: string[] = []
         if (!isWorkDay) status = "Làm ngày nghỉ"
         else if (onLeave && logs.length === 0) status = "Nghỉ phép"
+        else if (online && logs.length === 0) status = "Làm online"
         else if (logs.length === 0) status = "Vắng"
         else if (!firstIn) status = "Thiếu giờ vào"
         else if (!lastOut) status = dayKey === today ? "Chưa chấm ra" : "Thiếu giờ ra"
@@ -164,6 +168,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         else if (early > 0) status = "Về sớm"
         else status = "Đúng giờ"
         if (onLeave && logs.length > 0) notes.push("Có đơn nghỉ nhưng vẫn chấm công")
+        if (online) notes.push("Có đơn làm online")
         if (offboarded && dayKey === offboarded) notes.push("Ngày nghỉ việc")
         if (lastOut && firstIn && new Date(lastOut.created_at) < new Date(firstIn.created_at)) {
           notes.push("Giờ ra trước giờ vào — cần kiểm tra")

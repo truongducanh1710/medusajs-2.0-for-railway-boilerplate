@@ -67,7 +67,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const vnDayEnd = vnDayStart + 86400_000
     const overlapsDate = (l: any) => new Date(l.start_at).getTime() < vnDayEnd && new Date(l.end_at).getTime() > vnDayStart
     const leavesOnDate = approvedLeaves.filter(overlapsDate)
-    const leaveEmails = new Set(leavesOnDate.map((l: any) => l.requester_email))
+    // "online" = xin làm online: không phải nghỉ, chỉ miễn chấm vị trí (không tính "Chưa checkin").
+    const leaveEmails = new Set(leavesOnDate.filter((l: any) => l.leave_type !== "online").map((l: any) => l.requester_email))
+    const onlineEmails = new Set(leavesOnDate.filter((l: any) => l.leave_type === "online").map((l: any) => l.requester_email))
     const staffEmails = new Set(staff.map((u: any) => u.email))
     const leavesToday = [...leavesOnDate, ...pendingLeaves.filter(overlapsDate)]
       .filter((l: any) => staffEmails.has(l.requester_email))
@@ -97,12 +99,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         lng: firstIn?.lng ?? null,
         late_minutes: late,
         on_leave: leaveEmails.has(u.email),
+        online: onlineEmails.has(u.email),
       }
     })
 
     const statOnTime = dayRows.filter((r: any) => r.first_in && r.late_minutes === 0).length
     const statLate = dayRows.filter((r: any) => r.late_minutes > 0).length
-    const statMissing = dayRows.filter((r: any) => !r.first_in && !r.on_leave).length
+    const statMissing = dayRows.filter((r: any) => !r.first_in && !r.on_leave && !r.online).length
 
     // ── Stacked chart 7 ngày gần nhất tính tới `date` ──────────────────────
     const days: string[] = []
@@ -158,7 +161,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
       const leaveDays = approvedLeaves
         .filter((l: any) => {
-          if (l.requester_email !== u.email) return false
+          if (l.requester_email !== u.email || l.leave_type === "online") return false
           const startMonth = new Date(l.start_at).toISOString().slice(0, 7)
           const endMonth = new Date(l.end_at).toISOString().slice(0, 7)
           return startMonth <= month && endMonth >= month

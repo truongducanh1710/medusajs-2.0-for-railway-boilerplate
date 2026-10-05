@@ -3,7 +3,7 @@ import { model } from "@medusajs/framework/utils"
 const LeaveRequest = model.define("leave_request", {
   id: model.id().primaryKey(),
   requester_email: model.text(),
-  leave_type: model.text(), // khong_luong | phep_nam | om | khac
+  leave_type: model.text(), // khong_luong | phep_nam | om | khac | online (xin làm online — vẫn tính công, không phải nghỉ)
   start_at: model.dateTime(),
   end_at: model.dateTime(),
   reason: model.text().nullable(),

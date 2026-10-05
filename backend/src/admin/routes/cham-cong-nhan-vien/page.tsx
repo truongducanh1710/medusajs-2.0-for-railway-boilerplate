@@ -109,7 +109,7 @@ type ChamCongConfig = {
   phep_nam_max_per_year: number
 }
 
-type LeaveMini = { start_at: string; end_at: string }
+type LeaveMini = { start_at: string; end_at: string; leave_type?: string }
 
 function toDayKey(dt: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0")
@@ -123,7 +123,7 @@ function hhmmToMinutes(hhmm: string): number {
 
 // Phân loại 1 ngày trong lịch tháng cho nhân viên xem, theo giờ VN.
 // Trả về status màu + chi tiết để hiện popup khi click.
-type DayStatus = "worked" | "late" | "leave" | "missing" | "off" | "future" | "empty"
+type DayStatus = "worked" | "late" | "leave" | "online" | "missing" | "off" | "future" | "empty"
 function classifyDay(
   dayKey: string,
   logsByDay: Record<string, ChamCongLog[]>,
@@ -135,7 +135,10 @@ function classifyDay(
   const dow = new Date(dayKey + "T12:00:00").getDay() // giờ trưa tránh lệch DST/UTC offset
   const isWorkDay = config.work_days.includes(dow)
   const isHalfDay = (config.half_day_saturdays || []).includes(dayKey)
-  const onLeave = leaves.some((l) => new Date(l.start_at) <= new Date(`${dayKey}T23:59:59`) && new Date(l.end_at) >= dt)
+  const covers = (l: LeaveMini) => new Date(l.start_at) <= new Date(`${dayKey}T23:59:59`) && new Date(l.end_at) >= dt
+  // Đơn "làm online" không phải nghỉ: ngày đó vẫn tính công dù không chấm vị trí.
+  const onLeave = leaves.some((l) => l.leave_type !== "online" && covers(l))
+  const online = leaves.some((l) => l.leave_type === "online" && covers(l))
 
   const logs = logsByDay[dayKey] || []
   const firstIn = logs.find((l) => l.action === "in")?.created_at || null
@@ -151,7 +154,7 @@ function classifyDay(
   if (onLeave) return { status: "leave", firstIn, lastOut, lateMin, isHalfDay }
   if (!isWorkDay) return { status: "off", firstIn, lastOut, lateMin, isHalfDay }
   if (dayKey > today) return { status: "future", firstIn, lastOut, lateMin, isHalfDay }
-  if (!firstIn) return { status: dayKey === today ? "future" : "missing", firstIn, lastOut, lateMin, isHalfDay }
+  if (!firstIn) return { status: online ? "online" : dayKey === today ? "future" : "missing", firstIn, lastOut, lateMin, isHalfDay }
   return { status: lateMin > 0 ? "late" : "worked", firstIn, lastOut, lateMin, isHalfDay }
 }
 
@@ -159,6 +162,7 @@ const DAY_STATUS_STYLE: Record<DayStatus, string> = {
   worked: "bg-green-500 text-white",
   late: "bg-amber-500 text-white",
   leave: "bg-blue-500 text-white",
+  online: "bg-teal-500 text-white",
   missing: "bg-red-500 text-white",
   off: "bg-ui-bg-component text-ui-fg-muted",
   future: "bg-ui-bg-subtle text-ui-fg-muted",
@@ -335,7 +339,7 @@ function ChamCongSection() {
     if (info.status === "off") continue
     if (info.status === "leave") { leaveDaysTotal++; continue }
     workDaysTotal++
-    if (info.status === "worked" || info.status === "late") workedDays++
+    if (info.status === "worked" || info.status === "late" || info.status === "online") workedDays++
     if (info.status === "late") lateDays++
   }
 
@@ -495,6 +499,7 @@ function ChamCongSection() {
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-green-500" />Đủ công</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-amber-500" />Đi muộn</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-blue-500" />Nghỉ phép</span>
+          <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-teal-500" />Làm online</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-red-500" />Chưa chấm công</span>
           <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-full bg-gray-300 dark:bg-gray-600 ring-2 ring-violet-400" />T7 nửa ngày</span>
         </div>
@@ -508,6 +513,7 @@ function ChamCongSection() {
               <button onClick={() => setSelectedDay(null)} className="text-ui-fg-muted hover:text-ui-fg-base">✕</button>
             </div>
             <div className="space-y-1 text-sm">
+              {selectedInfo.status === "online" && <div className="text-teal-600 dark:text-teal-400">💻 Làm online (có đơn duyệt) — vẫn tính công</div>}
               {selectedInfo.isHalfDay && <div className="text-violet-600 dark:text-violet-400">🕐 Thứ 7 làm nửa ngày (buổi sáng)</div>}
               <div>Vào: {selectedInfo.firstIn ? fmtTime(selectedInfo.firstIn) : "—"}{selectedInfo.lateMin > 0 && <span className="ml-1 text-amber-600 dark:text-amber-400">(muộn {selectedInfo.lateMin} phút)</span>}</div>
               <div>Ra: {selectedInfo.lastOut ? fmtTime(selectedInfo.lastOut) : "—"}</div>
@@ -548,6 +554,7 @@ const LEAVE_TYPE_LABEL: Record<string, string> = {
   phep_nam: "Nghỉ phép năm",
   om: "Nghỉ ốm",
   khac: "Khác",
+  online: "Xin làm online",
 }
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -951,7 +958,7 @@ type TeamDayRow = {
   email: string; name: string
   first_in: string | null; last_out: string | null
   lat: number | null; lng: number | null
-  late_minutes: number; on_leave: boolean
+  late_minutes: number; on_leave: boolean; online?: boolean
 }
 type TeamLast7 = { date: string; on_time: number; late: number; missing: number }
 type TeamMonthRow = { email: string; name: string; worked_days: number; late_days: number; leave_days: number }
@@ -1087,7 +1094,7 @@ function QuanLySection() {
       {(data.leaves_today?.length ?? 0) > 0 && (
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-500/30 dark:bg-blue-500/10">
           <div className="mb-2 text-sm font-semibold text-blue-800 dark:text-blue-300">
-            📋 {data.leaves_today!.length} người xin nghỉ {date === toDayKey(new Date()) ? "hôm nay" : `ngày ${fmtDdMm(date)}`}
+            📋 {data.leaves_today!.length} người xin nghỉ / làm online {date === toDayKey(new Date()) ? "hôm nay" : `ngày ${fmtDdMm(date)}`}
           </div>
           <div className="flex flex-col gap-1.5">
             {data.leaves_today!.map((l) => (
@@ -1247,7 +1254,7 @@ function QuanLySection() {
                   ) : "—"}
                 </td>
                 <td className="px-3 py-2 text-xs">
-                  {r.on_leave ? "🏖 Nghỉ có đơn" : !r.first_in ? "❌ Chưa chấm công" : ""}
+                  {r.on_leave ? "🏖 Nghỉ có đơn" : r.online && !r.first_in ? "💻 Làm online" : !r.first_in ? "❌ Chưa chấm công" : ""}
                 </td>
               </tr>
             ))}

@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
 
-const LEAVE_TYPES = new Set(["khong_luong", "phep_nam", "om", "khac"])
+const LEAVE_TYPES = new Set(["khong_luong", "phep_nam", "om", "khac", "online"])
 
 export async function userHasApprovePerm(req: MedusaRequest, email: string): Promise<boolean> {
   return userHasPerm(req, email, "page.leave-request.approve")
