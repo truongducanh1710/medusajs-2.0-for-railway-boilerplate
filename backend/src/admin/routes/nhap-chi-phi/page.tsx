@@ -237,6 +237,10 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
 
   // grid[date][product_code] = chuỗi tiền đang gõ. Mã "" = dòng "Chung cả shop".
   const [grid, setGrid] = useState<Record<string, Record<string, string>>>({})
+  // Số đã lưu lúc nạp lưới — để "Lưu tất cả" chỉ gửi ô THỰC SỰ bị sửa. Bảng giờ dùng
+  // chung (ai có quyền đều sửa được mọi ô, lưu sau cùng thắng); nếu gửi lại cả lưới thì
+  // người mở trang từ sớm bấm lưu sẽ ghi đè số mới hơn của người khác bằng số cũ.
+  const baselineRef = useRef<Record<string, Record<string, string>>>({})
   const [dates, setDates] = useState<string[]>([todayVN()])
   // SP hiện trong lưới — mặc định lấy SP shop đang bán, nhân sự bỏ bớt/thêm được.
   const [picked, setPicked] = useState<string[]>([])
@@ -281,7 +285,7 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
   // Đổi shop: nạp lại lưới từ số ĐÃ LƯU của shop đó, để nhân sự thấy ngay đã điền gì
   // và sửa trực tiếp — không phải nhớ hôm qua khai tới đâu.
   useEffect(() => {
-    if (!shop) { setGrid({}); setPicked([]); return }
+    if (!shop) { setGrid({}); baselineRef.current = {}; setPicked([]); return }
     const mine = rows.filter(r =>
       r.platform === platform && r.market === market && (r.shop ?? "") === shop)
     const auto = products.filter(x => x.platform === platform && x.market === market && x.shop === shop)
@@ -302,6 +306,7 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
       const prev = Number(day[code] ?? 0)
       day[code] = String(prev + Number(r.cost || 0))
     }
+    baselineRef.current = JSON.parse(JSON.stringify(g))
     setGrid(g)
     // Lưới phải phủ LIÊN TỤC từ hôm nay ngược về ngày đã điền gần nhất — trước đây chỉ
     // lấy ngày đã có dữ liệu, nên shop nào nhập tới 05/09 thì lưới dừng ở 05/09 và
@@ -389,12 +394,15 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
       for (const date of dates) {
         for (const code of allCodes) {
           const raw = grid[date]?.[code]
-          // Ô chưa từng chạm thì không gửi — tránh xoá nhầm số người khác đã điền.
+          // Ô chưa từng chạm thì không gửi.
           if (raw === undefined) continue
+          // Ô không đổi so với lúc nạp thì cũng không gửi — chỉ lưu đúng phần mình sửa.
+          const truoc = baselineRef.current[date]?.[code]
+          if (truoc !== undefined && onlyDigits(String(truoc)) === onlyDigits(String(raw))) continue
           entries.push({ date, product_code: code, cost: onlyDigits(String(raw)) })
         }
       }
-      if (!entries.length) { setErr("Chưa điền ô nào"); return }
+      if (!entries.length) { setErr("Chưa sửa ô nào so với số đã lưu"); return }
       const d = await apiJson("/admin/pancake-sync/report/mkt-cost-marketplace", "POST", {
         platform, market, shop, entries,
       })
@@ -955,13 +963,12 @@ function TongHopTab() {
   }
   const ncDates = Object.keys(ncGrid).sort().reverse()
   const grand = rows.reduce((s, r) => s + Number(r.cost || 0), 0)
-  const isAdminView = !!data?.is_admin
 
   return (
     <div className="space-y-4">
-      {data && !isAdminView && (
+      {data && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-[12px] text-gray-600">
-          👤 Bạn đang xem <b>chi phí do chính bạn điền</b>. Quản lý xem được của tất cả mọi người.
+          Bảng chi phí sàn dùng chung: ai có quyền nhập chi phí đều xem và sửa được mọi ô, lần lưu sau cùng sẽ được giữ.
         </div>
       )}
       <div className="bg-white border rounded-xl p-4 shadow-sm">
@@ -1132,13 +1139,13 @@ function TongHopTab() {
                 <th className="px-4 py-2 text-left">Sàn</th>
                 <th className="px-4 py-2 text-left">Shop</th>
                 <th className="px-4 py-2 text-right">Chi phí</th>
-                {isAdminView && <th className="px-4 py-2 text-left">Người điền</th>}
+                <th className="px-4 py-2 text-left">Người lưu cuối</th>
                 <th className="px-4 py-2 text-left">Ghi chú</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-900">
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={isAdminView ? 7 : 6} className="px-4 py-6 text-center text-sm text-gray-400">Chưa có dữ liệu trong kỳ</td></tr>
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">Chưa có dữ liệu trong kỳ</td></tr>
               )}
               {rows.map((r, i) => (
                 <tr key={i} className="hover:bg-gray-50">
@@ -1147,7 +1154,7 @@ function TongHopTab() {
                   <td className="px-4 py-2">{platLabel(r.platform)}</td>
                   <td className="px-4 py-2">{r.shop || <span className="text-gray-400">(chưa rõ shop)</span>}</td>
                   <td className="px-4 py-2 text-right font-semibold">{fmtMoney(r.cost)}</td>
-                  {isAdminView && <td className="px-4 py-2 text-[11px] text-gray-500">{r.created_by || "—"}</td>}
+                  <td className="px-4 py-2 text-[11px] text-gray-500">{r.created_by || "—"}</td>
                   <td className="px-4 py-2 text-[11px] text-gray-500">{r.note || "—"}</td>
                 </tr>
               ))}

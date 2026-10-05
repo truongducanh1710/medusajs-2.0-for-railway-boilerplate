@@ -17,7 +17,7 @@ import { resolveUserPerms } from "../../../../middlewares"
  * nếu không, tổng chi phí sẽ cộng lẫn 2 đơn vị tiền.
  */
 
-type AuthInfo = { email: string; isAdmin: boolean }
+type AuthInfo = { email: string; isAdmin: boolean; canEdit: boolean }
 
 /** Admin = super admin hoặc có users.manage — giống mkt-cost-gg-manual để nhất quán. */
 async function getAuth(req: MedusaRequest): Promise<AuthInfo | null> {
@@ -27,7 +27,15 @@ async function getAuth(req: MedusaRequest): Promise<AuthInfo | null> {
   const user = await userModule.retrieveUser(auth.actor_id, { select: ["id", "email", "metadata"] })
   const isSuper = !!(user.email && user.email === process.env.SUPER_ADMIN_EMAIL)
   const perms = resolveUserPerms(user.metadata)
-  return { email: user.email || "", isAdmin: isSuper || perms.includes("users.manage") }
+  return {
+    email: user.email || "",
+    isAdmin: isSuper || perms.includes("users.manage"),
+    // Quyền GHI chi phí sàn. Bảng là dữ liệu chung: ai có quyền nhập đều sửa được mọi ô,
+    // lần lưu sau cùng thắng. Trước đây mỗi người chỉ thấy/sửa ô của mình → hai người
+    // cùng phụ trách 1 shop chặn nhau (05/10/2026: Thu nhập lại ngày 03/10 nhiều lần,
+    // bị bỏ qua vì ô thuộc Quân Hà và Thu không nhìn thấy ô đó).
+    canEdit: isSuper || perms.includes("page.nhap-chi-phi.manage"),
+  }
 }
 
 const PLATFORMS = ["tiktok", "shopee"] as const
@@ -108,11 +116,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (platform && PLATFORMS.includes(platform as any)) {
       params.push(platform); filters.push(`platform = $${params.length}`)
     }
-    // Nhân sự chỉ thấy chi phí do CHÍNH MÌNH điền; admin/manager thấy toàn bộ.
-    // Lọc ở SQL chứ không ở client — ẩn trên giao diện không phải là kiểm soát truy cập.
-    if (!me.isAdmin) {
-      params.push(me.email); filters.push(`created_by = $${params.length}`)
-    }
+    // Mọi người có quyền đều thấy CHUNG một bảng (không lọc theo người điền).
     const where = filters.length ? `AND ${filters.join(" AND ")}` : ""
 
     const rows = await svc.sql(`
@@ -222,11 +226,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         LEFT JOIN mkt_ads_cost_marketplace c
           ON c.date = d.date AND c.platform = d.platform
          AND c.market = d.market AND c.shop = d.shop AND c.deleted_at IS NULL
-         ${me.isAdmin ? "" : "AND c.created_by = $3"}
        WHERE c.id IS NULL
        ORDER BY d.date DESC, d.market, d.platform
        LIMIT 200
-    `, me.isAdmin ? [from, to] : [from, to, me.email])
+    `, [from, to])
 
     // ── ĐÃ ĐIỀN NHƯNG THIẾU MÃ SP ──────────────────────────────────────────────
     // Tiền điền mà bỏ trống product_code thì không quy được về sản phẩm nào: báo cáo
@@ -239,23 +242,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
              SUM(cost)::bigint AS cost_khong_ma,
              (SELECT COALESCE(SUM(c2.cost), 0)::bigint FROM mkt_ads_cost_marketplace c2
                WHERE c2.deleted_at IS NULL AND c2.date = c.date AND c2.platform = c.platform
-                 AND c2.market = c.market AND c2.shop = c.shop
-                 ${me.isAdmin ? "" : "AND c2.created_by = $3"}) AS cost_ca_ngay
+                 AND c2.market = c.market AND c2.shop = c.shop) AS cost_ca_ngay
         FROM mkt_ads_cost_marketplace c
        WHERE deleted_at IS NULL
          AND date >= $1::date AND date <= $2::date
          AND COALESCE(NULLIF(TRIM(product_code), ''), '') = ''
-         ${me.isAdmin ? "" : "AND created_by = $3"}
        GROUP BY date, platform, market, shop
        ORDER BY SUM(cost) DESC
        LIMIT 200
-    `, me.isAdmin ? [from, to] : [from, to, me.email])
+    `, [from, to])
 
     return res.json({
       rows, totals, by_day: byDay, shops, products, catalog, missing,
       no_code: noCode,
       no_code_total: noCode.reduce((a: number, r: any) => a + Number(r.cost_khong_ma || 0), 0),
-      is_admin: me.isAdmin, my_email: me.email,
+      is_admin: me.isAdmin, can_edit: me.canEdit, my_email: me.email,
       platforms: PLATFORMS, markets: MARKETS, from, to,
     })
   } catch (err: any) {
@@ -273,6 +274,8 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   try {
     const me = await getAuth(req)
     if (!me) return res.status(401).json({ error: "Unauthenticated" })
+
+    if (!me.canEdit) return res.status(403).json({ error: "Cần quyền Nhập chi phí quảng cáo để sửa." })
 
     const b = req.body as any
     const date = String(b?.date ?? "")
@@ -300,20 +303,16 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     await ensureTable(svc)
 
     if (b?.cost === null || b?.cost === "" || b?.cost === undefined) {
-      // Người thường chỉ xoá được dòng CHÍNH MÌNH điền — chặn ở SQL, không dựa vào UI.
-      const owner = me.isAdmin ? "" : "AND created_by = $6"
       const del = await svc.sql(
         `UPDATE mkt_ads_cost_marketplace SET deleted_at = now(), updated_at = now()
           WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
             AND product_code = $5
-            AND deleted_at IS NULL ${owner}
+            AND deleted_at IS NULL
           RETURNING id`,
-        me.isAdmin
-          ? [date, platform, market, shop, productCode]
-          : [date, platform, market, shop, productCode, me.email]
+        [date, platform, market, shop, productCode]
       )
       if (!del.length) {
-        return res.status(403).json({ error: "Không tìm thấy dòng của bạn để xoá (dòng này do người khác điền)." })
+        return res.status(404).json({ error: "Không tìm thấy dòng để xoá." })
       }
       return res.json({ ok: true, deleted: true, date, platform, market, shop, product_code: productCode })
     }
@@ -321,22 +320,8 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     const cost = Math.round(Number(b.cost))
     if (!Number.isFinite(cost) || cost < 0) return res.status(400).json({ error: "Chi phí không hợp lệ" })
 
-    // Grain (date, platform, market, shop) là duy nhất toàn hệ thống, nên nếu người khác
-    // đã điền kênh-ngày này thì ON CONFLICT sẽ ghi đè số của họ. Chặn trước: người thường
-    // chỉ được ghi vào ô trống hoặc ô của chính mình; admin ghi đè được để sửa hộ.
-    if (!me.isAdmin) {
-      const owner = await svc.sql(
-        `SELECT created_by FROM mkt_ads_cost_marketplace
-          WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
-            AND product_code = $5 AND deleted_at IS NULL`,
-        [date, platform, market, shop, productCode]
-      )
-      if (owner.length && owner[0].created_by && owner[0].created_by !== me.email) {
-        return res.status(403).json({
-          error: `Kênh-ngày này do ${owner[0].created_by} điền — bạn không sửa được. Nhờ admin nếu cần đổi.`,
-        })
-      }
-    }
+    // Lưu đè (last write wins): ai có quyền nhập đều sửa được ô của người khác.
+    // created_by ghi lại người lưu SAU CÙNG.
 
     await svc.sql(`
       INSERT INTO mkt_ads_cost_marketplace (date, platform, market, shop, product_code, cost, note, created_by)
@@ -373,6 +358,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     const me = await getAuth(req)
     if (!me) return res.status(401).json({ error: "Unauthenticated" })
+    if (!me.canEdit) return res.status(403).json({ error: "Cần quyền Nhập chi phí quảng cáo để sửa." })
 
     const b = req.body as any
     const platform = String(b?.platform ?? "").toLowerCase()
@@ -402,21 +388,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       if (!isDate(date)) { skipped.push({ date, product_code: "", reason: "Ngày không hợp lệ" }); continue }
       const productCode = String(e?.product_code ?? "").trim().toUpperCase().slice(0, 64)
 
-      // Người thường không được đè số của người khác — kiểm từng ô, ô nào vướng thì bỏ
-      // qua ô đó chứ không huỷ cả mẻ (nhân sự điền 30 dòng, hỏng 1 dòng vẫn lưu 29).
-      if (!me.isAdmin) {
-        const owner = await svc.sql(
-          `SELECT created_by FROM mkt_ads_cost_marketplace
-            WHERE date = $1::date AND platform = $2 AND market = $3 AND shop = $4
-              AND product_code = $5 AND deleted_at IS NULL`,
-          [date, platform, market, shop, productCode]
-        )
-        if (owner.length && owner[0].created_by && owner[0].created_by !== me.email) {
-          skipped.push({ date, product_code: productCode, reason: `do ${owner[0].created_by} điền` })
-          continue
-        }
-      }
-
+      // Không còn chặn theo người điền: lưu đè, created_by = người lưu sau cùng.
       const raw = e?.cost
       const isEmpty = raw === null || raw === undefined || String(raw).trim() === ""
       if (isEmpty) {
