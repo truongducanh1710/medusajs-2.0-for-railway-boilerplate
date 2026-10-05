@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
+import { leaveWorkDays } from "../../lib/leave-days"
 
 // ─── Chấm công ───────────────────────────────────────────────────────────────
 
@@ -569,9 +570,8 @@ function fmtDateTime(iso: string): string {
 }
 
 function diffDays(startIso: string, endIso: string): string {
-  const ms = new Date(endIso).getTime() - new Date(startIso).getTime()
-  const days = ms / (8 * 3600 * 1000)
-  return days.toFixed(2)
+  // Theo buổi làm việc (sáng/chiều = 0.5), không phải số giờ / 8 — xem lib/leave-days.
+  return String(leaveWorkDays(startIso, endIso))
 }
 
 function toDateInputValue(d: Date): string {

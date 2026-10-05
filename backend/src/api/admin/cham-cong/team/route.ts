@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { vnDayKey } from "../../mkt-chat/_presence"
 import { ROLE_PRESETS } from "../../../../admin/lib/permissions"
+import { leaveWorkDays } from "../../../../admin/lib/leave-days"
 
 function resolvePerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
@@ -166,7 +167,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           const endMonth = new Date(l.end_at).toISOString().slice(0, 7)
           return startMonth <= month && endMonth >= month
         })
-        .reduce((s: number, l: any) => s + (new Date(l.end_at).getTime() - new Date(l.start_at).getTime()) / (8 * 3600_000), 0)
+        .reduce((s: number, l: any) => s + leaveWorkDays(l.start_at, l.end_at, config), 0)
       return { email: u.email, name: nameByEmail[u.email], worked_days: workedDays, late_days: lateDays, leave_days: Number(leaveDays.toFixed(2)) }
     })
 
