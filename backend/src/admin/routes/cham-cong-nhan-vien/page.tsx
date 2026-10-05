@@ -824,6 +824,8 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
               <span className="mb-1 block text-ui-fg-muted">Lý do</span>
               <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
             </label>
+            {/* Lỗi hiện ngay trong form — banner lỗi của trang nằm sau lớp phủ nên không thấy. */}
+            {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowForm(false)} className="rounded border border-ui-border-base px-3 py-1.5 text-sm hover:bg-ui-bg-base-hover">Hủy</button>
               <button onClick={submitRequest} disabled={submitting} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">

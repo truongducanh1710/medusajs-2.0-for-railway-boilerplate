@@ -25,3 +25,13 @@ export async function userHasPerm(req: MedusaRequest, email: string, perm: strin
   const fromRole: string[] = role && ROLE_PRESETS[role] ? ROLE_PRESETS[role] : []
   return fromRole.includes(perm) || explicit.includes(perm)
 }
+
+// Tài khoản KHÔNG chấm công dù có quyền checkin qua role: tài khoản hệ thống (AI agent, admin
+// chung, test) và người được miễn (sếp/quản lý không chấm công). Bỏ khỏi bảng Quản lý,
+// thống kê và file export để không bị đếm "Chưa chấm công"/"Vắng".
+const MIEN_CHAM_CONG = new Set(["hoanpd@phanviet.vn", "hieult@phanviet.vn"])
+export function khongChamCong(u: { email?: string | null; metadata?: any }): boolean {
+  const e = String(u.email || "").toLowerCase()
+  return MIEN_CHAM_CONG.has(e) || u.metadata?.role === "ai-agent" || /(^|-)agent@/.test(e) ||
+    /^test\d*@/.test(e) || /^ztest/.test(e) || e === "admin@yourmail.com"
+}

@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
 import { leaveWorkDays } from "../../../admin/lib/leave-days"
+import { computeLeaveQuota } from "../leave-balance/route"
 
 const LEAVE_TYPES = new Set(["khong_luong", "phep_nam", "om", "khac", "online"])
 
@@ -57,6 +58,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const svc = req.scope.resolve("mktTaskModule") as any
+
+    // Phép năm không được ứng trước: số ngày xin + đơn đang chờ duyệt không vượt số còn lại
+    // (tính tới tháng của ngày bắt đầu nghỉ).
+    if (leave_type === "phep_nam") {
+      const quota = await computeLeaveQuota(svc, email, start)
+      const days = leaveWorkDays(start, end, quota.config || {})
+      const available = quota.remaining_days - quota.pending_days
+      if (days > available + 1e-9) {
+        return res.status(400).json({
+          error: `Không đủ phép năm: xin ${days} ngày, quý ${quota.quarter} còn ${Math.max(0, available)} ngày`
+            + (quota.pending_days > 0 ? ` (đã trừ ${quota.pending_days} ngày đang chờ duyệt)` : "")
+            + ". Mỗi tháng có 1 phép, không ứng trước tháng sau — chọn loại nghỉ khác.",
+        })
+      }
+    }
+
     const request = await svc.createLeaveRequests({
       requester_email: email,
       leave_type,

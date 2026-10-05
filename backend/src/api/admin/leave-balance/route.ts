@@ -15,12 +15,67 @@ export function findEmployeeProfile(profiles: any[], email: string): any | null 
     ?? null
 }
 
-// GET /admin/leave-balance — phép năm của QUÝ hiện tại; ?email= để manager/HR xem người khác
-// (cần page.nhan-su.manage).
+// Phép năm theo QUÝ: mỗi tháng (sau ngày chính thức) có phep_nam_per_month ngày, cộng dồn
+// trong quý, sang quý mới RESET — phép quý trước không dùng là mất. KHÔNG cho ứng trước: tại
+// tháng M của quý chỉ có phép của các tháng tới M. Tính trực tiếp từ hồ sơ nhân sự + đơn
+// phep_nam, không đọc bảng leave_balance cộng dồn theo năm cũ.
 //
-// Quy định: mỗi tháng (sau ngày chính thức) có phep_nam_per_month ngày, cộng dồn trong quý
-// (tối đa 3), sang quý mới thì RESET — phép quý trước không dùng là mất. Tính trực tiếp từ hồ
-// sơ nhân sự + đơn phép năm đã duyệt, không đọc bảng leave_balance cộng dồn theo năm cũ.
+// `at` = thời điểm xét (mặc định bây giờ; khi tạo/duyệt đơn là ngày bắt đầu nghỉ).
+// `excludeId` = bỏ một đơn khỏi phần chờ duyệt (đơn đang được duyệt).
+export async function computeLeaveQuota(svc: any, email: string, at: Date = new Date(), excludeId?: string) {
+  const [[config], profiles, leaves] = await Promise.all([
+    svc.listChamCongConfigs({ id: "default" }),
+    svc.listEmployeeProfiles({ deleted_at: null }),
+    svc.listLeaveRequests({ leave_type: "phep_nam", status: ["approved", "pending"], deleted_at: null }),
+  ])
+  const perMonth = Number(config?.phep_nam_per_month ?? 1)
+  const q = vnQuarterOf(at)
+  const profile = findEmployeeProfile(profiles, email)
+  const chinhThuc = profile?.ngay_chinh_thuc ? new Date(profile.ngay_chinh_thuc).getTime() : null
+
+  // Tháng được tính phép: từ đầu quý tới tháng của `at`, và đã chính thức trước khi tháng đó kết thúc.
+  let accrued = 0
+  if (chinhThuc != null) {
+    for (let m = q.firstMonth; m <= q.currentMonth; m++) {
+      const monthEnd = Date.UTC(q.year, m + 1, 1) - 7 * 3600_000
+      if (chinhThuc < monthEnd) accrued += perMonth
+    }
+  }
+
+  // Đơn của người này — cả email đăng nhập lẫn email ghi trong hồ sơ.
+  const myEmails = new Set([email.toLowerCase(),
+    ...[profile?.email_cong_ty, profile?.email_ca_nhan].filter(Boolean).map((x: string) => x.toLowerCase())])
+  const daysInQuarter = (l: any) => {
+    const s = Math.max(new Date(l.start_at).getTime(), q.start)
+    const e = Math.min(new Date(l.end_at).getTime(), q.end)
+    return e > s ? leaveWorkDays(new Date(s), new Date(e), config || {}) : 0
+  }
+  let used = 0, pending = 0
+  for (const l of leaves) {
+    if (l.id === excludeId) continue
+    if (!myEmails.has(String(l.requester_email).toLowerCase())) continue
+    if (l.status === "approved") used += daysInQuarter(l)
+    else pending += daysInQuarter(l)
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  return {
+    year: q.year,
+    quarter: q.quarter,
+    user_email: email,
+    accrued_days: accrued,
+    used_days: r2(used),
+    pending_days: r2(pending),
+    remaining_days: r2(accrued - used),
+    per_month: perMonth,
+    // UI dùng để báo vì sao = 0: không tìm thấy hồ sơ / chưa qua thử việc.
+    has_profile: !!profile,
+    chinh_thuc: profile?.ngay_chinh_thuc ?? null,
+    config,
+  }
+}
+
+// GET /admin/leave-balance — phép của quý hiện tại; ?email= để manager/HR xem người khác
+// (cần page.nhan-su.manage).
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const email = await getCurrentUserEmail(req)
@@ -36,56 +91,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const svc = req.scope.resolve("mktTaskModule") as any
-    const [[config], profiles, leaves] = await Promise.all([
-      svc.listChamCongConfigs({ id: "default" }),
-      svc.listEmployeeProfiles({ deleted_at: null }),
-      svc.listLeaveRequests({ leave_type: "phep_nam", status: ["approved", "pending"], deleted_at: null }),
-    ])
-    const perMonth = Number(config?.phep_nam_per_month ?? 1)
-    const now = new Date()
-    const q = vnQuarterOf(now)
-
-    const profile = findEmployeeProfile(profiles, targetEmail)
-    const chinhThuc = profile?.ngay_chinh_thuc ? new Date(profile.ngay_chinh_thuc).getTime() : null
-
-    // Tháng được tính phép: từ đầu quý tới tháng hiện tại, và đã chính thức trước khi tháng đó kết thúc.
-    let accrued = 0
-    if (chinhThuc != null && chinhThuc <= now.getTime()) {
-      for (let m = q.firstMonth; m <= q.currentMonth; m++) {
-        const monthEnd = Date.UTC(q.year, m + 1, 1) - 7 * 3600_000
-        if (chinhThuc < monthEnd) accrued += perMonth
-      }
-    }
-
-    // Đơn của người này — cả email đăng nhập lẫn email ghi trong hồ sơ.
-    const myEmails = new Set([targetEmail.toLowerCase(),
-      ...[profile?.email_cong_ty, profile?.email_ca_nhan].filter(Boolean).map((x: string) => x.toLowerCase())])
-    const daysInQuarter = (l: any) => {
-      const s = Math.max(new Date(l.start_at).getTime(), q.start)
-      const e = Math.min(new Date(l.end_at).getTime(), q.end)
-      return e > s ? leaveWorkDays(new Date(s), new Date(e), config || {}) : 0
-    }
-    let used = 0, pending = 0
-    for (const l of leaves) {
-      if (!myEmails.has(String(l.requester_email).toLowerCase())) continue
-      if (l.status === "approved") used += daysInQuarter(l)
-      else pending += daysInQuarter(l)
-    }
-    const r2 = (n: number) => Math.round(n * 100) / 100
-
-    res.json({
-      year: q.year,
-      quarter: q.quarter,
-      user_email: targetEmail,
-      accrued_days: accrued,
-      used_days: r2(used),
-      pending_days: r2(pending),
-      remaining_days: r2(accrued - used),
-      per_month: perMonth,
-      // UI dùng để báo vì sao = 0: không tìm thấy hồ sơ / chưa qua thử việc.
-      has_profile: !!profile,
-      chinh_thuc: profile?.ngay_chinh_thuc ?? null,
-    })
+    const { config, ...quota } = await computeLeaveQuota(svc, targetEmail)
+    res.json(quota)
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }

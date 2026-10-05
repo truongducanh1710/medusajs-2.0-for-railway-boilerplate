@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { ROLE_PRESETS } from "../../../../admin/lib/permissions"
+import { khongChamCong } from "../_lib"
 
 function resolvePerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
@@ -97,11 +98,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Tài khoản hệ thống (AI agent, admin chung, test) có quyền chấm công qua role nhưng
     // không phải nhân viên — bỏ khỏi bảng công trừ khi thực sự có chấm, nếu không mỗi
     // tài khoản sinh ra cả tháng dòng "Vắng".
-    const laTaiKhoanHeThong = (u: any) => {
-      const e = String(u.email || "").toLowerCase()
-      return (u.metadata as any)?.role === "ai-agent" || /(^|-)agent@/.test(e) ||
-        /^test\d*@/.test(e) || e === "admin@yourmail.com"
-    }
+    const laTaiKhoanHeThong = khongChamCong
     const staff = allUsers.filter((u: any) => {
       if (emailsWithLogs.has(u.email) || emailsWithLeave.has(u.email)) return true
       return !laTaiKhoanHeThong(u) && resolvePerms(u.metadata).includes("page.cham-cong-nv.checkin")

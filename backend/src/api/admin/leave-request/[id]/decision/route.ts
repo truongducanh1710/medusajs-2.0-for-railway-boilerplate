@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail } from "../../../cham-cong/_lib"
 import { userHasApprovePerm } from "../../route"
 import { leaveWorkDays } from "../../../../../admin/lib/leave-days"
+import { computeLeaveQuota } from "../../../leave-balance/route"
 
 // Trừ used_days vào leave_balance của năm chứa start_at khi đơn "phep_nam" được duyệt.
 // Best-effort — nếu chưa có bản ghi balance (chưa qua thử việc/chưa từng accrual), tạo mới
@@ -38,6 +39,17 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     if (!request) return res.status(404).json({ error: "Khong tim thay don" })
     if (request.status !== "pending") {
       return res.status(400).json({ error: "Don da duoc xu ly truoc do" })
+    }
+
+    // Chặn cả lúc duyệt: đơn tạo trước khi có giới hạn, hoặc đơn khác đã được duyệt chen vào.
+    if (decision === "approved" && request.leave_type === "phep_nam") {
+      const quota = await computeLeaveQuota(svc, request.requester_email, new Date(request.start_at), request.id)
+      const days = leaveWorkDays(request.start_at, request.end_at, quota.config || {})
+      if (days > quota.remaining_days + 1e-9) {
+        return res.status(400).json({
+          error: `Không đủ phép năm để duyệt: đơn ${days} ngày, quý ${quota.quarter} người này còn ${Math.max(0, quota.remaining_days)} ngày. Từ chối hoặc bảo đổi sang loại nghỉ khác.`,
+        })
+      }
     }
 
     const updated = await svc.updateLeaveRequests({
