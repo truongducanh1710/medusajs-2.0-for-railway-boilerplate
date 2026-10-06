@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules } from "@medusajs/framework/utils"
 import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
 import { leaveWorkDays, splitAtWorkDays } from "../../../admin/lib/leave-days"
 import { computeLeaveQuota } from "../leave-balance/route"
@@ -35,7 +36,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       svc.listChamCongConfigs({ id: "default" }),
     ])
     // Số ngày tính ở server vì cần cấu hình T7 nửa ngày (sáng T7 nửa ngày = 1 công).
-    const out = requests.map((r: any) => ({ ...r, days: leaveWorkDays(r.start_at, r.end_at, config || {}) }))
+    // Tên người gửi / người duyệt để hiện thay cho email trần.
+    const users = await req.scope.resolve(Modules.USER).listUsers({}, { select: ["email", "first_name", "last_name"] })
+    const nameOf: Record<string, string> = {}
+    for (const u of users as any[]) nameOf[String(u.email).toLowerCase()] = [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.email
+    const nm = (e: string | null) => (e ? nameOf[e.toLowerCase()] || e : null)
+    const out = requests.map((r: any) => ({
+      ...r,
+      days: leaveWorkDays(r.start_at, r.end_at, config || {}),
+      requester_name: nm(r.requester_email),
+      reviewer_name: nm(r.reviewer_email),
+    }))
     // Tab Chờ duyệt: đơn phép năm kèm số phép người đó còn (không tính chính đơn này), để
     // quản lý thấy vượt phép TRƯỚC khi bấm duyệt.
     if (scope === "pending") {

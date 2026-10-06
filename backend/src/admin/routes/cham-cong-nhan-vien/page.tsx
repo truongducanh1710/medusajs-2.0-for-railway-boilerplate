@@ -740,11 +740,18 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
                 <span className="font-medium">{LEAVE_TYPE_LABEL[r.leave_type] || r.leave_type}</span>
                 <span className={`text-xs font-semibold ${st.cls}`}>{st.text}</span>
               </div>
-              {tab !== "mine" && <div className="mb-1 text-xs text-ui-fg-muted">Người gửi: {r.requester_email}</div>}
+              {tab !== "mine" && <div className="mb-1 text-xs text-ui-fg-muted">Người gửi: {(r as any).requester_name || r.requester_email}</div>}
               <div className="text-sm text-ui-fg-subtle">Bắt đầu: {fmtDateTime(r.start_at)}</div>
               <div className="text-sm text-ui-fg-subtle">Kết thúc: {fmtDateTime(r.end_at)}</div>
               <div className="text-sm text-ui-fg-subtle">Thời gian: {(r as any).days ?? diffDays(r.start_at, r.end_at)} ngày</div>
               {r.reason && <div className="mt-1 text-sm text-ui-fg-muted italic">Lý do: {r.reason}</div>}
+              {r.reviewer_email && (r.status === "approved" || r.status === "rejected") && (
+                <div className={`mt-1 text-xs ${r.status === "approved" ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                  {r.status === "approved" ? "✓ Duyệt bởi" : "✕ Từ chối bởi"} <b>{(r as any).reviewer_name || r.reviewer_email}</b>
+                  {r.reviewed_at && <> lúc {fmtDateTime(r.reviewed_at)}</>}
+                  {(r as any).review_note && <span className="text-ui-fg-muted"> — {(r as any).review_note}</span>}
+                </div>
+              )}
 
               {tab === "pending" && r.status === "pending" && (r as any).quota && (() => {
                 const q = (r as any).quota, over = (r as any).days > q.remaining_days + 1e-9
