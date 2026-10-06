@@ -18,6 +18,7 @@ export function leaveWorkDays(
   startAt: string | Date,
   endAt: string | Date,
   opts: { work_days?: number[]; half_day_saturdays?: string[] } = {},
+  raw = false,
 ): number {
   const workDays = opts.work_days ?? [1, 2, 3, 4, 5, 6]
   const halfSat = new Set(opts.half_day_saturdays ?? [])
@@ -42,7 +43,7 @@ export function leaveWorkDays(
       total += (half ? 1 : 0.5) * overlap / (eAbs - sAbs)
     })
   }
-  return Math.round(total * 100) / 100
+  return raw ? total : Math.round(total * 100) / 100
 }
 
 /** Quý (theo giờ VN) chứa thời điểm `at`: tháng đầu quý, khoảng [start, end) dạng UTC ms. */
@@ -55,4 +56,26 @@ export function vnQuarterOf(at: Date = new Date()) {
   const start = Date.UTC(y, firstMonth, 1) - VN_OFFSET
   const end = Date.UTC(y, firstMonth + 3, 1) - VN_OFFSET
   return { year: y, quarter: q + 1, firstMonth, currentMonth: m, start, end }
+}
+
+/**
+ * Thời điểm sớm nhất t trong [start, end] sao cho leaveWorkDays(start, t) đạt `days` — dùng để
+ * tách đơn vượt phép thành phần phép năm + phần nghỉ không lương. leaveWorkDays tăng dần theo t
+ * nên tìm nhị phân; làm tròn lên phút.
+ */
+export function splitAtWorkDays(
+  startAt: string | Date,
+  endAt: string | Date,
+  days: number,
+  opts: { work_days?: number[]; half_day_saturdays?: string[] } = {},
+): Date {
+  const start = new Date(startAt).getTime()
+  let lo = start, hi = new Date(endAt).getTime()
+  if (days <= 0) return new Date(start)
+  for (let i = 0; i < 60 && hi - lo > 1_000; i++) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (leaveWorkDays(new Date(start), new Date(mid), opts, true) >= days - 1e-6) hi = mid
+    else lo = mid
+  }
+  return new Date(Math.round(hi / 60_000) * 60_000)
 }

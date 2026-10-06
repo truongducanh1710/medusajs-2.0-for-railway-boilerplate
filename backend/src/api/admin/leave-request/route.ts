@@ -1,6 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
-import { leaveWorkDays } from "../../../admin/lib/leave-days"
+import { leaveWorkDays, splitAtWorkDays } from "../../../admin/lib/leave-days"
 import { computeLeaveQuota } from "../leave-balance/route"
 
 const LEAVE_TYPES = new Set(["khong_luong", "phep_nam", "om", "khac", "online"])
@@ -35,7 +35,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       svc.listChamCongConfigs({ id: "default" }),
     ])
     // Số ngày tính ở server vì cần cấu hình T7 nửa ngày (sáng T7 nửa ngày = 1 công).
-    res.json({ requests: requests.map((r: any) => ({ ...r, days: leaveWorkDays(r.start_at, r.end_at, config || {}) })) })
+    const out = requests.map((r: any) => ({ ...r, days: leaveWorkDays(r.start_at, r.end_at, config || {}) }))
+    // Tab Chờ duyệt: đơn phép năm kèm số phép người đó còn (không tính chính đơn này), để
+    // quản lý thấy vượt phép TRƯỚC khi bấm duyệt.
+    if (scope === "pending") {
+      for (const r of out) {
+        if (r.leave_type !== "phep_nam" || r.status !== "pending") continue
+        const q = await computeLeaveQuota(svc, r.requester_email, new Date(r.start_at), r.id)
+        r.quota = { quarter: q.quarter, remaining_days: q.remaining_days, has_profile: q.has_profile }
+      }
+    }
+    res.json({ requests: out })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }
@@ -47,7 +57,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const email = await getCurrentUserEmail(req)
     if (!email) return res.status(401).json({ error: "Unauthenticated" })
 
-    const { leave_type, start_at, end_at, reason } = req.body as any
+    const { leave_type, start_at, end_at, reason, split } = req.body as any
     if (!LEAVE_TYPES.has(leave_type)) {
       return res.status(400).json({ error: "leave_type khong hop le" })
     }
@@ -65,6 +75,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const quota = await computeLeaveQuota(svc, email, start)
       const days = leaveWorkDays(start, end, quota.config || {})
       const available = quota.remaining_days - quota.pending_days
+      // split=true: phần còn phép → phep_nam, phần vượt → khong_luong (2 đơn), thay vì từ chối.
+      if (days > available + 1e-9 && split === true) {
+        const at = splitAtWorkDays(start, end, Math.max(0, available), quota.config || {})
+        const base = { requester_email: email, reason: reason ? String(reason).slice(0, 1000) : null, status: "pending" }
+        const created: any[] = []
+        if (at > start) created.push(await svc.createLeaveRequests({ ...base, leave_type: "phep_nam", start_at: start, end_at: at }))
+        created.push(await svc.createLeaveRequests({ ...base, leave_type: "khong_luong", start_at: at > start ? at : start, end_at: end }))
+        return res.json({ request: created[0], requests: created })
+      }
       if (days > available + 1e-9) {
         return res.status(400).json({
           error: `Không đủ phép năm: xin ${days} ngày, quý ${quota.quarter} còn ${Math.max(0, available)} ngày`
@@ -88,3 +107,4 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     res.status(500).json({ error: e.message })
   }
 }
+

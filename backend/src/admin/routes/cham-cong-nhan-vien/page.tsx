@@ -172,6 +172,13 @@ const DAY_STATUS_STYLE: Record<DayStatus, string> = {
 
 const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
 
+// "01/11" — ngày phép tháng sau được cộng (giờ VN).
+function nextMonthLabel(): string {
+  const vn = new Date(Date.now() + 7 * 3600_000)
+  const d = new Date(Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth() + 1, 1))
+  return `01/${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+}
+
 function ChamCongSection() {
   const [logs, setLogs] = useState<ChamCongLog[]>([])
   const [loading, setLoading] = useState(false)
@@ -467,6 +474,11 @@ function ChamCongSection() {
           {leaveBalance?.has_profile === false && (
             <div className="mt-0.5 text-[10px] text-violet-600/80 dark:text-violet-400/80">Chưa khớp hồ sơ nhân sự</div>
           )}
+          {leaveBalance?.has_profile && leaveBalance.chinh_thuc && leaveBalance.remaining_days <= 0 && (
+            <div className="mt-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400">
+              Hết phép quý này{nextMonthLabel() ? ` — phép mới cộng ${nextMonthLabel()}` : ""}
+            </div>
+          )}
           {leaveBalance?.has_profile && !leaveBalance.chinh_thuc && (
             <div className="mt-0.5 text-[10px] text-violet-600/80 dark:text-violet-400/80">Chưa có ngày chính thức</div>
           )}
@@ -620,6 +632,18 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
   const [activePreset, setActivePreset] = useState<string | null>("full")
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  // Xem trước số ngày + phép còn lại (chỉ cho phép năm) — báo vượt phép ngay trên form.
+  const [preview, setPreview] = useState<{ days: number; available: number; quota: { quarter: number; accrued_days: number; used_days: number; pending_days: number; has_profile: boolean } } | null>(null)
+  useEffect(() => {
+    if (!showForm || leaveType !== "phep_nam") { setPreview(null); return }
+    const s = new Date(`${startDate}T${startTime}:00`), e = new Date(`${endDate}T${endTime}:00`)
+    if (!(e > s)) { setPreview(null); return }
+    let alive = true
+    apiJson(`/admin/leave-request/preview?start_at=${encodeURIComponent(s.toISOString())}&end_at=${encodeURIComponent(e.toISOString())}`)
+      .then((d) => { if (alive) setPreview(d) }).catch(() => { if (alive) setPreview(null) })
+    return () => { alive = false }
+  }, [showForm, leaveType, startDate, startTime, endDate, endTime])
+  const vuotPhep = !!preview && preview.days > preview.available + 1e-9
 
   const applyPreset = (preset: typeof DAY_PRESETS[number]) => {
     setActivePreset(preset.key)
@@ -643,11 +667,12 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
 
   useEffect(() => { load() }, [load])
 
-  const submitRequest = async () => {
+  const submitRequest = async (split = false) => {
     setSubmitting(true)
     setErr("")
     try {
       await apiJson("/admin/leave-request", "POST", {
+        split,
         leave_type: leaveType,
         start_at: new Date(`${startDate}T${startTime}:00`).toISOString(),
         end_at: new Date(`${endDate}T${endTime}:00`).toISOString(),
@@ -721,10 +746,23 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
               <div className="text-sm text-ui-fg-subtle">Thời gian: {(r as any).days ?? diffDays(r.start_at, r.end_at)} ngày</div>
               {r.reason && <div className="mt-1 text-sm text-ui-fg-muted italic">Lý do: {r.reason}</div>}
 
+              {tab === "pending" && r.status === "pending" && (r as any).quota && (() => {
+                const q = (r as any).quota, over = (r as any).days > q.remaining_days + 1e-9
+                return (
+                  <div className={`mt-1 text-xs ${over ? "font-semibold text-red-600 dark:text-red-400" : "text-ui-fg-muted"}`}>
+                    {over ? "⚠ Vượt phép — " : ""}Quý {q.quarter} người này còn {Math.max(0, q.remaining_days)} ngày phép
+                    {over ? ". Không duyệt được, từ chối và bảo tạo lại (có nút tách sang nghỉ không lương)." : ""}
+                  </div>
+                )
+              })()}
               {tab === "pending" && r.status === "pending" && (
                 <div className="mt-2 flex gap-4 border-t border-ui-border-base pt-2 text-sm">
                   <button onClick={() => decide(r.id, "rejected")} className="font-medium text-red-600 dark:text-red-400 hover:underline">Từ chối</button>
-                  <button onClick={() => decide(r.id, "approved")} className="font-medium text-green-600 dark:text-green-400 hover:underline">Đồng ý</button>
+                  {(r as any).quota && (r as any).days > (r as any).quota.remaining_days + 1e-9 ? (
+                    <span className="font-medium text-ui-fg-disabled" title="Vượt số phép năm còn lại">Đồng ý</span>
+                  ) : (
+                    <button onClick={() => decide(r.id, "approved")} className="font-medium text-green-600 dark:text-green-400 hover:underline">Đồng ý</button>
+                  )}
                 </div>
               )}
               {tab === "mine" && r.status === "pending" && (
@@ -755,6 +793,13 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
                   <option key={k} value={k}>{label}</option>
                 ))}
               </select>
+              {leaveType === "phep_nam" && preview && (
+                <span className="mt-1 block text-xs text-violet-700 dark:text-violet-400">
+                  {preview.quota.has_profile
+                    ? <>Quý {preview.quota.quarter} bạn còn <b>{Math.max(0, preview.available)}</b> ngày phép (được {preview.quota.accrued_days} · đã dùng {preview.quota.used_days}{preview.quota.pending_days ? ` · chờ duyệt ${preview.quota.pending_days}` : ""}) — mỗi tháng 1 phép, không ứng trước.</>
+                    : <>Tài khoản chưa khớp hồ sơ nhân sự nên chưa có phép năm — báo HCNS.</>}
+                </span>
+              )}
             </label>
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-ui-fg-muted">Ngày nghỉ</span>
@@ -824,13 +869,27 @@ function XinNghiSection({ canApprove }: { canApprove: boolean }) {
               <span className="mb-1 block text-ui-fg-muted">Lý do</span>
               <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
             </label>
+            {leaveType === "phep_nam" && preview && (
+              <div className={`mb-3 rounded px-3 py-2 text-sm ${vuotPhep ? "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" : "bg-ui-bg-subtle text-ui-fg-subtle"}`}>
+                Đơn này: <b>{preview.days}</b> ngày
+                {vuotPhep && <> — vượt <b>{Math.round((preview.days - Math.max(0, preview.available)) * 100) / 100}</b> ngày so với phép còn lại. Phép tháng sau chưa được dùng trước.</>}
+              </div>
+            )}
             {/* Lỗi hiện ngay trong form — banner lỗi của trang nằm sau lớp phủ nên không thấy. */}
             {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <button onClick={() => setShowForm(false)} className="rounded border border-ui-border-base px-3 py-1.5 text-sm hover:bg-ui-bg-base-hover">Hủy</button>
-              <button onClick={submitRequest} disabled={submitting} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
-                {submitting ? "Đang gửi..." : "Gửi đơn"}
-              </button>
+              {vuotPhep ? (
+                <button onClick={() => submitRequest(true)} disabled={submitting} className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-700 disabled:opacity-50">
+                  {submitting ? "Đang gửi..." : preview!.available > 0
+                    ? `Tách: ${Math.max(0, preview!.available)} phép năm + ${Math.round((preview!.days - preview!.available) * 100) / 100} không lương`
+                    : "Gửi thành nghỉ không lương"}
+                </button>
+              ) : (
+                <button onClick={() => submitRequest()} disabled={submitting} className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50">
+                  {submitting ? "Đang gửi..." : "Gửi đơn"}
+                </button>
+              )}
             </div>
           </div>
         </div>
