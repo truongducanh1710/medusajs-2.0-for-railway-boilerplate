@@ -43,7 +43,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const email = match[1].toLowerCase()
     const userModule = req.scope.resolve(Modules.USER)
-    const [user] = await userModule.listUsers({ email }, { select: ["id", "email", "first_name", "last_name", "metadata"] })
+    // Email đăng nhập có thể viết hoa (vd "Nghiavv@phanviet.vn") mà filter email phân biệt hoa
+    // thường — khớp chính xác trước, không ra thì so không phân biệt hoa thường.
+    const select = { select: ["id", "email", "first_name", "last_name", "metadata"] }
+    let [user] = await userModule.listUsers({ email }, select)
+    if (!user) {
+      const all = await userModule.listUsers({}, select)
+      user = all.find((u: any) => String(u.email).toLowerCase() === email)
+    }
 
     if (!user) {
       await sendTg(chatId, `❌ Không tìm thấy tài khoản với email <b>${email}</b>.\nKiểm tra lại hoặc liên hệ admin.`)
