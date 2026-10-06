@@ -1084,6 +1084,7 @@ const CELL_STYLE: Record<string, string> = {
   partial: "bg-blue-50 text-blue-800 dark:bg-blue-500/10 dark:text-blue-300",
   online: "bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300",
   work_off: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-300",
+  offboarded: "bg-gray-100 dark:bg-gray-800",
 }
 const CELL_TITLE: Record<string, string> = {
   absent: "Vắng — không chấm công, không có đơn",
@@ -1093,6 +1094,7 @@ const CELL_TITLE: Record<string, string> = {
   partial: "Làm + nghỉ một phần ngày",
   online: "Làm online (có đơn duyệt)",
   work_off: "Làm ngày nghỉ",
+  offboarded: "Đã nghỉ việc",
   work: "Đủ công",
 }
 

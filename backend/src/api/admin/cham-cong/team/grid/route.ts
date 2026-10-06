@@ -73,7 +73,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const myLeaves = leaves.filter((l: any) => myEmails.has(String(l.requester_email).toLowerCase()))
 
       let congThucTe = 0, nghiPhep = 0, standard = 0
+      // Ngày nghỉ việc (metadata.offboarded_at) — sau ngày đó để trống, không tính vắng.
+      const offboarded: string | null = (u.metadata as any)?.offboarded_at || null
       const cells = days.map((d) => {
+        if (offboarded && d.key > offboarded) return { v: null, kind: "offboarded" }
         const dayLogs = logsBy[u.email]?.[d.key] || []
         const hasIn = dayLogs.some((l: any) => l.action === "in")
         const hasOut = dayLogs.some((l: any) => l.action === "out")
