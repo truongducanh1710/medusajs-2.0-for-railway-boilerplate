@@ -4,7 +4,7 @@ import { vnDayKey } from "../../../mkt-chat/_presence"
 import { ROLE_PRESETS } from "../../../../../admin/lib/permissions"
 import { leaveWorkDays } from "../../../../../admin/lib/leave-days"
 import { khongChamCong } from "../../_lib"
-import { findEmployeeProfile } from "../../../leave-balance/route"
+import { findEmployeeProfile, isResigned } from "../../../../../lib/employee"
 
 function resolvePerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
@@ -57,7 +57,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return { key, dow, work: workDays.includes(dow), half: halfSat.has(key), past: key <= today }
     })
 
-    const staff = allUsers.filter((u: any) => !khongChamCong(u) && resolvePerms(u.metadata).includes("page.cham-cong-nv.checkin"))
+    // Người đã nghỉ việc vẫn hiện nếu tháng này còn chấm công (nghỉ giữa tháng).
+    const loggedEmails = new Set(logs.map((l: any) => l.user_email))
+    const staff = allUsers.filter((u: any) => !khongChamCong(u)
+      && (!isResigned(profiles, u.email) || loggedEmails.has(u.email))
+      && resolvePerms(u.metadata).includes("page.cham-cong-nv.checkin"))
 
     const logsBy: Record<string, Record<string, any[]>> = {}
     for (const l of logs) ((logsBy[l.user_email] ||= {})[l.day_key] ||= []).push(l)

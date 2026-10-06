@@ -1,19 +1,9 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getCurrentUserEmail, userHasPerm } from "../cham-cong/_lib"
 import { leaveWorkDays, vnQuarterOf } from "../../../admin/lib/leave-days"
+import { findEmployeeProfile } from "../../../lib/employee"
 
-// Rút gọn email về "tên người": thulth@phanviet.vn, thulth.phv@gmail.com, khaitd1.phv@… → thulth / khaitd.
-// Tài khoản đăng nhập đã chuyển sang @phanviet.vn nhưng hồ sơ nhân sự còn ghi email .phv@gmail.com
-// cũ, nên phải khớp theo phần này — khớp email trần thì gần như ai cũng ra 0 phép.
-const emailStem = (e: string) => e.toLowerCase().split("@")[0].replace(/\.phv$/, "").replace(/\d+$/, "")
-
-export function findEmployeeProfile(profiles: any[], email: string): any | null {
-  const e = email.toLowerCase()
-  const emailsOf = (p: any) => [p.email_cong_ty, p.email_ca_nhan].filter(Boolean).map((x: string) => x.toLowerCase())
-  return profiles.find((p) => emailsOf(p).includes(e))
-    ?? profiles.find((p) => p.email_cong_ty && emailStem(p.email_cong_ty) === emailStem(e))
-    ?? null
-}
+export { findEmployeeProfile } from "../../../lib/employee"
 
 // Phép năm theo QUÝ: mỗi tháng (sau ngày chính thức) có phep_nam_per_month ngày, cộng dồn
 // trong quý, sang quý mới RESET — phép quý trước không dùng là mất. KHÔNG cho ứng trước: tại

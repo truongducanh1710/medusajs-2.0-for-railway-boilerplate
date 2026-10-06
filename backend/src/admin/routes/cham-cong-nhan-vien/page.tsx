@@ -1661,6 +1661,12 @@ const EMPLOYEE_FORM_FIELDS: { key: keyof Employee; label: string; type: "text" |
   { key: "ghi_chu", label: "Ghi chú", type: "text" },
 ]
 
+function TrangThaiBadge({ value }: { value: string }) {
+  return value === "active"
+    ? <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-500/20 dark:text-green-300">Đang làm việc</span>
+    : <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-600 dark:text-gray-200">Nghỉ việc</span>
+}
+
 function NhanSuSection({ canManage }: { canManage: boolean }) {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
@@ -1766,6 +1772,7 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
                 <th className="px-3 py-2">Chức vụ</th>
                 <th className="px-3 py-2">SĐT</th>
                 <th className="px-3 py-2">HĐLĐ hết hạn</th>
+                <th className="px-3 py-2">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
@@ -1780,11 +1787,12 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
                     <td className="px-3 py-2">{e.chuc_vu || "—"}</td>
                     <td className="px-3 py-2">{e.sdt || "—"}</td>
                     <td className={`px-3 py-2 ${expiryCls}`}>{fmtDateVn(e.ngay_het_han_hdld)}</td>
+                    <td className="px-3 py-2"><TrangThaiBadge value={e.trang_thai} /></td>
                   </tr>
                 )
               })}
               {employees.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-ui-fg-muted">Không tìm thấy nhân sự</td></tr>
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-ui-fg-muted">Không tìm thấy nhân sự</td></tr>
               )}
             </tbody>
           </table>
@@ -1822,6 +1830,7 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
               <Field label="HĐLĐ" value={detail.hdld} />
               <Field label="Ngày hết hạn HĐLĐ" value={fmtDateVn(detail.ngay_het_han_hdld)} />
               <Field label="Ghi chú" value={detail.ghi_chu} />
+              <Field label="Trạng thái" value={detail.trang_thai === "active" ? "Đang làm việc" : "Nghỉ việc"} />
             </div>
             {canManage && (
               <button onClick={() => setEditing(detail)} className="mt-4 rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700">
@@ -1848,6 +1857,18 @@ function NhanSuSection({ canManage }: { canManage: boolean }) {
                   />
                 </label>
               ))}
+              <label className="block text-sm">
+                <span className="mb-1 block text-ui-fg-muted">Trạng thái</span>
+                <select value={editing.trang_thai === "active" || !editing.trang_thai ? "active" : "resigned"}
+                  onChange={(e) => setEditing((prev) => ({ ...prev, trang_thai: e.target.value }))}
+                  className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base">
+                  <option value="active">Đang làm việc</option>
+                  <option value="resigned">Nghỉ việc</option>
+                </select>
+                {editing.trang_thai && editing.trang_thai !== "active" && (
+                  <span className="mt-1 block text-xs text-red-600 dark:text-red-400">Nghỉ việc: không gửi thông báo, ẩn khỏi bảng chấm công.</span>
+                )}
+              </label>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={!!editing.ho_so_du} onChange={(e) => setEditing((prev) => ({ ...prev, ho_so_du: e.target.checked }))} />
                 Hồ sơ đủ

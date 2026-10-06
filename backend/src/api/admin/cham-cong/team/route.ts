@@ -4,6 +4,7 @@ import { vnDayKey } from "../../mkt-chat/_presence"
 import { ROLE_PRESETS } from "../../../../admin/lib/permissions"
 import { leaveWorkDays } from "../../../../admin/lib/leave-days"
 import { khongChamCong } from "../_lib"
+import { isResigned } from "../../../../lib/employee"
 
 function resolvePerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
@@ -39,7 +40,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const svc = req.scope.resolve("mktTaskModule") as any
     const userModule = req.scope.resolve(Modules.USER)
     const allUsers = await userModule.listUsers({}, { select: ["email", "first_name", "last_name", "metadata"] })
-    const staff = allUsers.filter((u: any) => !khongChamCong(u) && resolvePerms(u.metadata).includes("page.cham-cong-nv.checkin"))
+    const profiles = await svc.listEmployeeProfiles({ deleted_at: null })
+    const staff = allUsers.filter((u: any) => !khongChamCong(u) && !isResigned(profiles, u.email)
+      && resolvePerms(u.metadata).includes("page.cham-cong-nv.checkin"))
     const nameByEmail: Record<string, string> = {}
     for (const u of staff) nameByEmail[u.email] = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email
 

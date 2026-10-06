@@ -1,4 +1,5 @@
 import { getPool } from "./db"
+import { isResigned, loadEmployeeProfiles } from "./employee"
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? ""
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? ""
@@ -77,9 +78,11 @@ export async function notifyTelegramByEmail(
       { email: emailList.length === 1 ? emailList[0] : undefined },
       { select: ["email", "metadata"] }
     )
-    const targets = emailList.length > 1
+    const profiles = await loadEmployeeProfiles()
+    // Nhân sự đã chuyển "Nghỉ việc" ở tab Nhân sự thì không nhận thông báo nào nữa.
+    const targets = (emailList.length > 1
       ? users.filter((u: any) => emailList.includes(u.email))
-      : users
+      : users).filter((u: any) => !isResigned(profiles, u.email))
     await Promise.all(
       targets.map(async (u: any) => {
         const chatId: string | undefined = (u.metadata as any)?.tg_chat_id
@@ -124,9 +127,11 @@ export async function notifyExpoPushByEmail(
       { email: emailList.length === 1 ? emailList[0] : undefined },
       { select: ["email", "metadata"] }
     )
-    const targets = emailList.length > 1
+    const profiles = await loadEmployeeProfiles()
+    // Nhân sự đã chuyển "Nghỉ việc" ở tab Nhân sự thì không nhận thông báo nào nữa.
+    const targets = (emailList.length > 1
       ? users.filter((u: any) => emailList.includes(u.email))
-      : users
+      : users).filter((u: any) => !isResigned(profiles, u.email))
     await Promise.all(
       targets.map(async (u: any) => {
         const token: string | undefined = (u.metadata as any)?.expo_push_token
