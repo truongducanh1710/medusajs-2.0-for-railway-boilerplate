@@ -164,11 +164,11 @@ async function spendToday(campaignId: string): Promise<number> {
 }
 
 /** Tài khoản đang sát ngưỡng thanh toán hoặc lỗi → không tăng thêm. */
-async function accountBlocked(adAccountId: string | null): Promise<string | null> {
+async function accountBlocked(adAccountId: string | null, increase = 0): Promise<string | null> {
   if (!adAccountId) return null
   const id = adAccountId.replace(/^act_/, "")
   const { rows } = await getPool().query(
-    `SELECT muc, ma_van_de, mo_ta FROM fb_account_health
+    `SELECT muc, ma_van_de, mo_ta, con_lai FROM fb_account_health
       WHERE (account_id = $1 OR account_id = 'act_' || $1) AND checked_at > now() - interval '3 hours'
       ORDER BY checked_at DESC LIMIT 1`,
     [id]
@@ -177,6 +177,14 @@ async function accountBlocked(adAccountId: string | null): Promise<string | null
   if (!h) return null
   if (h.muc === "do" || ["sap_tru_tien_gap", "da_vuot_nguong"].includes(h.ma_van_de)) {
     return `Tài khoản đang cảnh báo đỏ (${h.ma_van_de || h.muc})`
+  }
+  // Tài khoản trả trước / hạn mức sắp hết: tăng ngân sách vô ích, FB sẽ ngừng phân phối
+  // (05/10 Ads342 báo vàng "sắp hết hạn mức" — tăng lên 1,2tr xong cả tài khoản đứng từ 13h).
+  if (h.muc === "vang" && /han_muc|het_tien|nap|so_du/.test(String(h.ma_van_de || ""))) {
+    return `Tài khoản sắp hết tiền/hạn mức (${h.mo_ta || h.ma_van_de}) — nạp thêm trước khi tăng`
+  }
+  if (h.con_lai !== null && h.con_lai !== undefined && Number(h.con_lai) < 3 * increase) {
+    return `Hạn mức tài khoản còn ${Math.round(Number(h.con_lai)).toLocaleString("vi-VN")}đ — không đủ để tăng`
   }
   return null
 }
@@ -287,6 +295,21 @@ async function revertedToday(campaignId: string, dryRun: boolean): Promise<boole
   return rows.length > 0
 }
 
+/** Chi tiêu cộng dồn hôm nay ở snapshot giờ (camp_hourly_snapshot, chụp lúc hh:05) cách đây ~2h. */
+async function spendSnapshot(campaignId: string, hour: number, minute: number) {
+  const target = hour - 2
+  if (target < 0) return { spend_2h_ago: null, minutes_since_snapshot: null }
+  const { rows } = await getPool().query(
+    `SELECT hour, spend FROM camp_hourly_snapshot
+      WHERE date = $1::date AND campaign_id = $2 AND hour BETWEEN $3 AND $4
+      ORDER BY hour DESC LIMIT 1`,
+    [nowVN().date, campaignId, Math.max(0, target - 1), target]
+  ).catch(() => ({ rows: [] as any[] }))
+  if (!rows.length) return { spend_2h_ago: null, minutes_since_snapshot: null }
+  const snapMin = Number(rows[0].hour) * 60 + 5
+  return { spend_2h_ago: Number(rows[0].spend), minutes_since_snapshot: hour * 60 + minute - snapMin }
+}
+
 async function note(campaignId: string, reason: string, metrics: any) {
   await getPool().query(
     `UPDATE auto_scale_camp SET last_checked_at = now(), last_reason = $2, last_metrics = $3::jsonb WHERE campaign_id = $1`,
@@ -348,7 +371,8 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       minutes_since_last_action: last ? Math.floor((Date.now() - last.getTime()) / 60_000) : null,
       reverted_today: await revertedToday(camp.campaign_id, rule.dry_run),
       reset_done_today: await resetDoneToday(camp.campaign_id),
-      account_block: await accountBlocked(camp.ad_account_id),
+      account_block: await accountBlocked(camp.ad_account_id, Math.max(0, Math.min(cur * rule.multiplier, rule.max_budget) - cur)),
+      ...(await spendSnapshot(camp.campaign_id, hour, minute)),
     })
 
     if (d.action === "none") { await note(camp.campaign_id, d.reason, metrics); continue }

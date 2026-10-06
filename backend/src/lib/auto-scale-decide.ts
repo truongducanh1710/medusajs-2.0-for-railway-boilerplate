@@ -29,6 +29,10 @@ export type DecideInput = {
   reverted_today: boolean
   reset_done_today: boolean
   account_block: string | null
+  /** Chi tiêu cộng dồn hôm nay tại snapshot ~2 giờ trước (camp_hourly_snapshot). null = chưa có */
+  spend_2h_ago?: number | null
+  /** Số phút giữa snapshot đó và bây giờ */
+  minutes_since_snapshot?: number | null
 }
 
 export type Decision =
@@ -43,11 +47,30 @@ const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`
 const DUONG_CHI_TIEU = [0, 0.02, 0.04, 0.055, 0.07, 0.085, 0.10, 0.14, 0.175, 0.205, 0.235, 0.27, 0.29,
   0.32, 0.34, 0.36, 0.40, 0.45, 0.525, 0.60, 0.68, 0.77, 0.86, 0.93, 1]
 
+function shareAt(hour: number, minute: number): number {
+  const h = Math.max(0, Math.min(23, hour))
+  return DUONG_CHI_TIEU[h] + (DUONG_CHI_TIEU[h + 1] - DUONG_CHI_TIEU[h]) * (minute / 60)
+}
+
 /** Ước chi tiêu cả ngày từ số đã tiêu tới hh:mm. */
 export function projectDaySpend(spentSoFar: number, hour: number, minute: number): number {
-  const h = Math.max(0, Math.min(23, hour))
-  const share = DUONG_CHI_TIEU[h] + (DUONG_CHI_TIEU[h + 1] - DUONG_CHI_TIEU[h]) * (minute / 60)
-  return spentSoFar / Math.max(share, 0.05)
+  return spentSoFar / Math.max(shareAt(hour, minute), 0.05)
+}
+
+/**
+ * Ước chi tiêu cả ngày theo TỐC ĐỘ GẦN ĐÂY: phần còn lại của ngày tiêu với nhịp của mấy giờ vừa
+ * qua (quy đổi theo đường chi tiêu). Bắt được camp đang chậm lại — vd 05/10 Ads342 hết hạn mức
+ * từ 13h, camp gần như ngừng tiêu nhưng ước theo đường chuẩn vẫn ra ~730k nên vẫn bị tăng.
+ */
+export function projectFromRecent(spentNow: number, spentBefore: number, minutesAgo: number, hour: number, minute: number): number {
+  const tNow = hour * 60 + minute
+  const tBefore = Math.max(0, tNow - minutesAgo)
+  const shareNow = shareAt(hour, minute)
+  const shareBefore = shareAt(Math.floor(tBefore / 60), tBefore % 60)
+  const dShare = shareNow - shareBefore
+  if (dShare <= 0.005) return projectDaySpend(spentNow, hour, minute)
+  const rate = Math.max(0, spentNow - spentBefore) / dShare   // tiền / 1 đơn vị "phần ngày"
+  return spentNow + rate * (1 - shareNow)
 }
 
 export function decide(x: DecideInput): Decision {
@@ -95,6 +118,20 @@ export function decide(x: DecideInput): Decision {
   const duKien = projectDaySpend(x.spend_today, x.hour, x.minute)
   if (duKien < rule.spend_ratio * x.budget) {
     lyDo.push(`nhịp tiêu chưa chạm trần (cả ngày dự kiến ${vnd(duKien)} < ${Math.round(rule.spend_ratio * 100)}% của ${vnd(x.budget)})`)
+  } else if (x.spend_2h_ago != null && x.minutes_since_snapshot && x.minutes_since_snapshot >= 45
+    && x.spend_today < 0.9 * x.budget) {   // ≥ 90% ngân sách = chậm lại vì chạm trần → đúng lúc tăng
+    // Cả tốc độ gần đây cũng phải cho thấy camp sắp chạm trần
+    const duKienGanDay = projectFromRecent(x.spend_today, x.spend_2h_ago, x.minutes_since_snapshot, x.hour, x.minute)
+    if (duKienGanDay < rule.spend_ratio * x.budget) {
+      lyDo.push(`đang tiêu chậm lại (theo ${x.minutes_since_snapshot} phút gần nhất cả ngày chỉ ~${vnd(duKienGanDay)} < ${vnd(x.budget)})`)
+    }
+  }
+  // Từ lần tăng thứ 2 trong ngày: phải có đơn MỚI sau lần tăng trước, và phần tiêu thêm đạt CPA.
+  // 05/10: S1/S2 bị tăng lần 2 lúc 12:30 chỉ nhờ 2 đơn ban đêm đã dùng cho lần tăng lúc 9h.
+  if (s && s.to === x.budget) {
+    const dSpend = Math.max(0, x.spend_today - s.spend_at_step)
+    if (s.orders_since < 1) lyDo.push("chưa có đơn mới từ lần tăng trước")
+    else if (dSpend / s.orders_since > rule.target_cpa) lyDo.push(`từ lần tăng trước ${vnd(dSpend / s.orders_since)}/đơn > ${vnd(rule.target_cpa)}`)
   }
   if (x.minutes_since_last_action !== null && x.minutes_since_last_action < rule.cooldown_min) {
     lyDo.push(`chờ ${rule.cooldown_min - x.minutes_since_last_action} phút nữa`)
