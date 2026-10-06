@@ -1010,6 +1010,111 @@ function fmtDdMm(dayKey: string): string {
   return `${dd}/${m}`
 }
 
+type GridCell = { v: number | null; kind: string; paid?: number; unpaid?: number }
+type GridRow = {
+  email: string; ma_nv: string | null; name: string; chuc_vu: string | null; cells: GridCell[]
+  cong_thuc_te: number; nghi_phep: number; cong_tinh_luong: number; nghi_khong_luong: number; cong_chuan: number
+}
+const DOW_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+// Màu ô theo trạng thái — nền T7 xanh nhạt, CN xám giống file Excel kế toán.
+const CELL_STYLE: Record<string, string> = {
+  absent: "bg-red-500 text-white",
+  no_out: "bg-orange-100 text-orange-800 ring-1 ring-inset ring-orange-400 dark:bg-orange-500/20 dark:text-orange-300",
+  paid_leave: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300",
+  unpaid_leave: "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300",
+  partial: "bg-blue-50 text-blue-800 dark:bg-blue-500/10 dark:text-blue-300",
+  online: "bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300",
+  work_off: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-300",
+}
+const CELL_TITLE: Record<string, string> = {
+  absent: "Vắng — không chấm công, không có đơn",
+  no_out: "Có chấm vào nhưng thiếu giờ ra",
+  paid_leave: "Nghỉ phép năm",
+  unpaid_leave: "Nghỉ không lương / ốm / khác",
+  partial: "Làm + nghỉ một phần ngày",
+  online: "Làm online (có đơn duyệt)",
+  work_off: "Làm ngày nghỉ",
+  work: "Đủ công",
+}
+
+/** Bảng công dạng lưới người × ngày — cùng bố cục file Excel kế toán. */
+function BangCongThang({ month }: { month: string }) {
+  const [data, setData] = useState<{ days: { key: string; dow: number; work: boolean; half: boolean }[]; rows: GridRow[] } | null>(null)
+  const [err, setErr] = useState("")
+  useEffect(() => {
+    setData(null); setErr("")
+    apiJson(`/admin/cham-cong/team/grid?month=${month}`).then(setData).catch((e: any) => setErr(e.message || "Lỗi tải bảng công"))
+  }, [month])
+
+  if (err) return <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-400">{err}</div>
+  if (!data) return <div className="py-6 text-center text-sm text-ui-fg-muted">Đang tải...</div>
+
+  const colBg = (d: { dow: number; work: boolean }) =>
+    !d.work ? "bg-gray-200 dark:bg-gray-700" : d.dow === 6 ? "bg-emerald-50 dark:bg-emerald-500/10" : ""
+
+  return (
+    <div>
+      <div className="overflow-x-auto rounded border border-ui-border-base">
+        <table className="border-collapse text-xs">
+          <thead>
+            <tr className="bg-ui-bg-subtle">
+              <th rowSpan={2} className="sticky left-0 z-10 w-[4rem] min-w-[4rem] border border-ui-border-base bg-ui-bg-subtle px-2 py-1 text-left">Mã NV</th>
+              <th rowSpan={2} className="sticky left-[4rem] z-10 min-w-[150px] border border-ui-border-base bg-ui-bg-subtle px-2 py-1 text-left">Họ và tên</th>
+              <th rowSpan={2} className="min-w-[110px] border border-ui-border-base px-2 py-1 text-left">Bộ phận / Chức vụ</th>
+              {data.days.map((d) => (
+                <th key={d.key} className={`border border-ui-border-base px-1 py-0.5 font-medium text-ui-fg-muted ${colBg(d)}`}>{DOW_EN[d.dow]}</th>
+              ))}
+              <th rowSpan={2} className="border border-ui-border-base px-2 py-1">Công thực tế</th>
+              <th rowSpan={2} className="border border-ui-border-base bg-amber-50 px-2 py-1 dark:bg-amber-500/10">Nghỉ phép</th>
+              <th rowSpan={2} className="border border-ui-border-base px-2 py-1">Công tính lương</th>
+              <th rowSpan={2} className="border border-ui-border-base bg-pink-50 px-2 py-1 text-red-700 dark:bg-pink-500/10 dark:text-red-400">Nghỉ không lương</th>
+            </tr>
+            <tr className="bg-ui-bg-subtle">
+              {data.days.map((d) => (
+                <th key={d.key} className={`min-w-[34px] border border-ui-border-base px-1 py-0.5 ${colBg(d)} ${d.half ? "text-violet-600" : ""}`}
+                  title={d.half ? "T7 nửa ngày" : undefined}>{d.key.slice(8)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr key={r.email}>
+                <td className="sticky left-0 z-10 w-[4rem] min-w-[4rem] border border-ui-border-base bg-ui-bg-base px-2 py-1 text-ui-fg-muted">{r.ma_nv || "—"}</td>
+                <td className="sticky left-[4rem] z-10 border border-ui-border-base bg-ui-bg-base px-2 py-1 font-medium" title={r.email}>{r.name}</td>
+                <td className="border border-ui-border-base px-2 py-1 text-ui-fg-subtle">{r.chuc_vu || "—"}</td>
+                {r.cells.map((c, i) => {
+                  const d = data.days[i]
+                  const style = CELL_STYLE[c.kind] || ""
+                  const extra = [c.paid ? `phép ${c.paid}` : "", c.unpaid ? `không lương ${c.unpaid}` : ""].filter(Boolean).join(" · ")
+                  return (
+                    <td key={d.key} className={`border border-ui-border-base px-1 py-1 text-center tabular-nums ${style || colBg(d)}`}
+                      title={`${d.key} — ${CELL_TITLE[c.kind] || ""}${extra ? ` (${extra})` : ""}`}>
+                      {c.v == null ? (c.kind === "off" ? "-" : "") : c.v.toFixed(1)}
+                    </td>
+                  )
+                })}
+                <td className="border border-ui-border-base px-2 py-1 text-right font-semibold tabular-nums">{r.cong_thuc_te.toFixed(2)}</td>
+                <td className="border border-ui-border-base bg-amber-50 px-2 py-1 text-right tabular-nums dark:bg-amber-500/10">{r.nghi_phep.toFixed(1)}</td>
+                <td className="border border-ui-border-base px-2 py-1 text-right font-semibold tabular-nums">{r.cong_tinh_luong.toFixed(3)}</td>
+                <td className="border border-ui-border-base bg-pink-50 px-2 py-1 text-right tabular-nums text-red-700 dark:bg-pink-500/10 dark:text-red-400">{r.nghi_khong_luong.toFixed(3)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-ui-fg-muted">
+        <span className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm bg-red-500" />Vắng không đơn</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm bg-orange-100 ring-1 ring-orange-400" />Thiếu giờ ra</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm bg-blue-100" />Nghỉ phép</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm bg-yellow-100" />Nghỉ không lương/ốm/khác</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm bg-teal-100" />Làm online</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-3 rounded-sm bg-emerald-50 ring-1 ring-ui-border-base" />Thứ 7</span>
+        <span>Công tính lương = công thực tế + nghỉ phép · Nghỉ không lương = ngày công chuẩn đã qua − công tính lương</span>
+      </div>
+    </div>
+  )
+}
+
 function QuanLySection() {
   const [date, setDate] = useState(() => toDayKey(new Date()))
   const [month, setMonth] = useState(() => date.slice(0, 7))
@@ -1029,6 +1134,7 @@ function QuanLySection() {
   const [cfgCheckinCutoff, setCfgCheckinCutoff] = useState("21:00")
   const [cfgPhepPerMonth, setCfgPhepPerMonth] = useState(1)
   const [cfgPhepMaxYear, setCfgPhepMaxYear] = useState(12)
+  const [monthView, setMonthView] = useState<"grid" | "bar">("grid")
   const [exportMonth, setExportMonth] = useState(() => toDayKey(new Date()).slice(0, 7))
 
   const load = useCallback(async () => {
@@ -1275,10 +1381,19 @@ function QuanLySection() {
 
       {/* Tổng hợp tháng */}
       <div className="mb-5 rounded border border-ui-border-base p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-ui-fg-subtle">Tổng hợp tháng</h3>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1 text-sm text-ui-fg-base" />
+          <div className="flex items-center gap-2">
+            <div className="flex rounded border border-ui-border-base text-xs">
+              {([["grid", "Bảng công"], ["bar", "Thanh"]] as const).map(([k, lb]) => (
+                <button key={k} onClick={() => setMonthView(k)}
+                  className={`px-2.5 py-1 ${monthView === k ? "bg-ui-bg-base-pressed font-semibold text-ui-fg-base" : "text-ui-fg-muted"}`}>{lb}</button>
+              ))}
+            </div>
+            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1 text-sm text-ui-fg-base" />
+          </div>
         </div>
+        {monthView === "grid" ? <BangCongThang month={month} /> : (
         <div className="space-y-2">
           {data.month_summary.map((m) => {
             const maxDays = Math.max(1, ...data.month_summary.map((x) => x.worked_days))
@@ -1295,6 +1410,7 @@ function QuanLySection() {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* Cài đặt ca */}
