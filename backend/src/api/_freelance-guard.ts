@@ -1,3 +1,4 @@
+import { authenticate } from "@medusajs/framework/http"
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import {
@@ -118,15 +119,39 @@ async function loadUser(req: MedusaRequest, actorId: string) {
   return user
 }
 
-export async function freelanceGuard(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+// Một số route gốc của Medusa (/admin/users, /admin/users/:id, /admin/users/me,
+// /admin/invites*, /admin/feature-flags) TẮT xác thực chung và tự xác thực ở middleware
+// riêng — chạy SAU guard này. Khi guard chạy, req.auth_context còn trống; nếu cứ thế cho
+// qua thì freelancer gọi được GET /admin/users (danh sách nhân sự) và POST
+// /admin/users/:id (tự sửa metadata.role thành admin). Đã gặp khi verify trên live.
+// Vì vậy guard tự đọc danh tính (session/Bearer) — chạy trên bản sao nông của req để
+// không gắn auth_context lên req thật, tránh lệch luồng xác thực riêng của các route đó.
+const peekAuth = authenticate("user", ["bearer", "session"], { allowUnauthenticated: true })
+
+async function resolveUserActorId(req: MedusaRequest, res: MedusaResponse): Promise<string | null> {
   const auth = (req as any).auth_context
-  // Không có actor user: route public đã opt-out auth, hoặc xác thực đã thất bại và
-  // tầng auth trả lỗi rồi — không phải việc của guard này.
-  if (auth?.actor_type !== "user" || !auth?.actor_id) return next()
+  if (auth?.actor_type === "user" && auth?.actor_id) return auth.actor_id
+  if (auth) return null // actor khác (vd api-key) — không phải freelancer
+  const shadow: any = Object.create(req)
+  await new Promise<void>((resolve) => peekAuth(shadow, res, () => resolve()))
+  const peeked = shadow.auth_context
+  return peeked?.actor_type === "user" && peeked?.actor_id ? peeked.actor_id : null
+}
+
+export async function freelanceGuard(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  // Không xác định được user: route public, hoặc chưa đăng nhập — tầng auth của route
+  // tự xử lý, không phải việc của guard này.
+  let actorId: string | null
+  try {
+    actorId = await resolveUserActorId(req, res)
+  } catch {
+    actorId = null
+  }
+  if (!actorId) return next()
 
   let user: any
   try {
-    user = await loadUser(req, auth.actor_id)
+    user = await loadUser(req, actorId)
   } catch {
     return res.status(403).json({ error: "Forbidden" })
   }
@@ -137,6 +162,12 @@ export async function freelanceGuard(req: MedusaRequest, res: MedusaResponse, ne
   // originalUrl giữ path đầy đủ; req.path đã bị cắt theo mount point "/admin".
   const path = (((req as any).originalUrl || "") as string).split("?")[0].replace(/\/+$/, "")
   const method = req.method.toUpperCase()
+
+  // Chuông thông báo của Medusa poll endpoint này trên mọi trang; thông báo là của chung
+  // (vd export xong) nên trả rỗng thay vì 403 để giao diện không báo lỗi.
+  if (method === "GET" && path === "/admin/notifications") {
+    return res.json({ notifications: [], count: 0, offset: 0, limit: 0 })
+  }
 
   for (const rule of FREELANCE_RULES) {
     if (!rule.methods.includes(method)) continue
