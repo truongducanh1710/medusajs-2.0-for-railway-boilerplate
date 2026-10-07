@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool, getAuthInfo, STATUS_KEY_TO_VI } from "../_lib"
+import { getOwnScope } from "../../../../lib/freelance-scope"
 
 /**
  * GET /admin/marketing-video/report?from=&to=
@@ -17,6 +18,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // vẫn tính theo ngày tạo (tránh báo cáo rỗng khi post_date NULL)
     if (q.from) { params.push(q.from); where += ` AND COALESCE(post_date, created_at::date) >= $${params.length}` }
     if (q.to)   { params.push(q.to);   where += ` AND COALESCE(post_date, created_at::date) <= $${params.length}` }
+    // Freelancer: báo cáo chỉ đếm video do chính họ tạo.
+    const scope = getOwnScope(req)
+    if (scope) { params.push(scope.email); where += ` AND lower(created_by) = $${params.length}` }
 
     const pool = getPool()
 

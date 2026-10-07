@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { getPool } from "../../../../lib/db";
+import { getOwnScope } from "../../../../lib/freelance-scope";
 import {
   apiError,
   getProductTestActor,
@@ -13,15 +14,24 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const actor = await getProductTestActor(req);
     if (!actor) return res.status(401).json({ error: "Unauthenticated" });
     requireActorPermission(actor, PRODUCT_TEST_PERMS.view);
+    // Freelancer: đếm trên đúng tập hồ sơ họ thấy ở danh sách.
+    const scope = getOwnScope(req);
+    const own = scope
+      ? ` AND (lower(marketer_email) = $1 OR lower(assignee_email) = $1)`
+      : "";
+    const params = scope ? [scope.email] : [];
     const [statusResult, marketerResult, assigneeResult] = await Promise.all([
       getPool().query(
-        `SELECT status,count(*)::int AS count FROM product_test_case WHERE deleted_at IS NULL GROUP BY status`,
+        `SELECT status,count(*)::int AS count FROM product_test_case WHERE deleted_at IS NULL${own} GROUP BY status`,
+        params,
       ),
       getPool().query(
-        `SELECT marketer_email,marketer_name,count(*)::int AS count FROM product_test_case WHERE deleted_at IS NULL GROUP BY marketer_email,marketer_name ORDER BY marketer_name`,
+        `SELECT marketer_email,marketer_name,count(*)::int AS count FROM product_test_case WHERE deleted_at IS NULL${own} GROUP BY marketer_email,marketer_name ORDER BY marketer_name`,
+        params,
       ),
       getPool().query(
-        `SELECT assignee_email,assignee_name,count(*)::int AS count FROM product_test_case WHERE deleted_at IS NULL GROUP BY assignee_email,assignee_name ORDER BY assignee_name`,
+        `SELECT assignee_email,assignee_name,count(*)::int AS count FROM product_test_case WHERE deleted_at IS NULL${own} GROUP BY assignee_email,assignee_name ORDER BY assignee_name`,
+        params,
       ),
     ]);
     const byStatus = emptyStatusCounts();

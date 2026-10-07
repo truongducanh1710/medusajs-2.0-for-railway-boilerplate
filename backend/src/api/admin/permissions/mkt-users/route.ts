@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { resolveUserPerms } from "../../../middlewares"
+import { getOwnScope } from "../../../../lib/freelance-scope"
 
 /** GET /admin/permissions/mkt-users
  * Trả về danh sách user có quyền page.marketing-video.view (role marketing),
@@ -18,7 +19,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const superEmail = process.env.SUPER_ADMIN_EMAIL
   const mktPerm = "page.marketing-video.view"
 
+  // Freelancer không được xem danh sách đồng nghiệp — chỉ trả về chính họ.
+  const scope = getOwnScope(req)
   const mktUsers = allUsers
+    .filter(u => !scope || u.id === scope.userId)
     .filter(u => {
       if (u.email === superEmail) return true
       const perms = resolveUserPerms(u.metadata)

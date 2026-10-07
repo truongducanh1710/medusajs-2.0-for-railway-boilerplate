@@ -33,6 +33,7 @@ const PERM_GROUPS: { label: string; note: string; color: string; keys: string[] 
     keys: [
       "page.bao-cao.view",
       "page.bao-cao.sanTMDT",
+      "page.bao-cao-mkt.own",
       "page.bao-cao.camp-control",
       "page.bao-cao.fb-accounts",
       "page.bao-cao.care-rules",
@@ -162,6 +163,7 @@ const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "— Không có role (dùng permissions thủ công) —" },
   { value: "admin", label: "Admin (toàn quyền)" },
   { value: "marketing", label: "Marketing (video, camp, content, tasks)" },
+  { value: "freelance", label: "Freelance (chỉ thấy camp / video / test SP của chính mình)" },
   { value: "manager", label: "Manager (đơn hàng, báo cáo, phân quyền)" },
   { value: "sale", label: "Sale (đơn hàng, chat)" },
   { value: "cskh", label: "CSKH (vận đơn, chat)" },
@@ -191,12 +193,15 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
   const [autoAdded, setAutoAdded] = useState<string[]>([])
 
   // Permissions có hiệu lực thực sự (role + extra manual)
-  const effectivePerms = [
-    ...new Set([
-      ...(role && ROLE_PRESETS[role] ? (ROLE_PRESETS[role] as string[]) : []),
-      ...perms,
-    ])
-  ]
+  // Khớp resolveUserPerms ở backend: role freelance bỏ qua quyền tick tay.
+  const effectivePerms = role === "freelance"
+    ? [...(ROLE_PRESETS.freelance as string[])]
+    : [
+        ...new Set([
+          ...(role && ROLE_PRESETS[role] ? (ROLE_PRESETS[role] as string[]) : []),
+          ...perms,
+        ])
+      ]
 
   const toggle = (p: string) =>
     setPerms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
@@ -278,7 +283,12 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
-          {role && (
+          {role === "freelance" && (
+            <p className="mt-1 text-xs text-amber-600">
+              ⚠ Freelance là gói cố định: chỉ thấy Doanh số MKT (camp mang mã MKT của mình), Test sản phẩm (hồ sơ mình tạo/được giao), Marketing Hub và Agent Video (video của mình). Permissions thủ công bên dưới KHÔNG có tác dụng. Nhớ điền MKT Code.
+            </p>
+          )}
+          {role && role !== "freelance" && (
             <p className="mt-1 text-xs text-blue-600">
               ✓ User sẽ tự động có {(ROLE_PRESETS[role] as string[])?.length ?? 0} quyền từ role này (luôn cập nhật khi role preset thay đổi). Permissions thủ công bên dưới sẽ được cộng thêm.
             </p>

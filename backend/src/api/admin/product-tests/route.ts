@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ulid } from "ulid";
 import { getPool } from "../../../lib/db";
+import { getOwnScope } from "../../../lib/freelance-scope";
 import { aggregateMetrics } from "../../../modules/product-test/kpi";
 import {
   apiError,
@@ -30,6 +31,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       params.push(value);
       return `$${params.length}`;
     };
+    // Freelancer: chỉ hồ sơ mình tạo hoặc được giao phụ trách.
+    const scope = getOwnScope(req);
+    if (scope) {
+      const me = add(scope.email);
+      where.push(`(lower(c.marketer_email) = ${me} OR lower(c.assignee_email) = ${me})`);
+    }
     if (q.status) where.push(`c.status = ${add(q.status)}`);
     if (q.marketer)
       where.push(`c.marketer_email = ${add(q.marketer.toLowerCase())}`);

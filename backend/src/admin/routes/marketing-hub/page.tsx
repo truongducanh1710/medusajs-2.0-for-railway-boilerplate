@@ -141,7 +141,14 @@ const MarketingHubPage = () => {
   const [section, setSection] = useState<string>(parseHash().section)
   const [fbInitialTab, setFbInitialTab] = useState<string>(parseHash().innerTab || "dangbai")
   const [prefill, setPrefill] = useState<FbPrefill>(null)
-  const { isSuper, mktCode, has } = useCurrentPermissions()
+  const { isSuper, mktCode, has, role } = useCurrentPermissions()
+  // Freelance chỉ dùng nguyên liệu video + hiệu quả video của mình; Đăng FB và Quản lý
+  // Page thao tác trên fanpage chung của công ty nên ẩn đi.
+  const isFreelance = role === "freelance"
+  // Hash cũ (#fb, #quanly) có thể trỏ vào tab freelance không có — đưa về tab video.
+  useEffect(() => {
+    if (isFreelance && (section === "fb" || section === "quanly")) changeSection("video")
+  }, [isFreelance, section])
 
   const changeSection = (s: string, innerTab?: string) => {
     const hash = innerTab ? `${s}:${innerTab}` : s
@@ -159,9 +166,9 @@ const MarketingHubPage = () => {
 
   const tabs = [
     { id: "video",    label: "Nguyên liệu Video" },
-    { id: "fb",       label: "Đăng Facebook" },
+    ...(isFreelance ? [] : [{ id: "fb", label: "Đăng Facebook" }]),
     { id: "hieuqua",  label: "Hiệu quả Video" },
-    { id: "quanly",   label: "🗂 Quản lý Page" },
+    ...(isFreelance ? [] : [{ id: "quanly", label: "🗂 Quản lý Page" }]),
     ...(canAudience ? [{ id: "audience", label: "🎯 Tệp đối tượng" }] : []),
     ...(isSuper ? [{ id: "products", label: "📦 Danh mục SP" }] : []),
     ...(canBoost ? [{ id: "lencamp", label: "🚀 Lên Camp" }] : []),
@@ -186,10 +193,10 @@ const MarketingHubPage = () => {
         ))}
       </div>
 
-      {section === "video"   && <VideoSection onDangFB={onDangFB} />}
-      {section === "fb"      && <FbContentSection prefill={prefill} initialTab={fbInitialTab} />}
+      {section === "video"   && <VideoSection onDangFB={isFreelance ? undefined : onDangFB} />}
+      {section === "fb"      && !isFreelance && <FbContentSection prefill={prefill} initialTab={fbInitialTab} />}
       {section === "hieuqua" && <HieuQuaSection />}
-      {section === "quanly"  && <div style={{ padding: 20 }}><QuanLyPageTab /></div>}
+      {section === "quanly"  && !isFreelance && <div style={{ padding: 20 }}><QuanLyPageTab /></div>}
       {section === "audience" && <div style={{ padding: 20 }}><AudienceTab isAdmin={isSuper} mktCode={mktCode} /></div>}
       {section === "products" && isSuper && <ProductsTab />}
       {section === "lencamp" && canBoost && <LenCampTab mktCode={mktCode} isAdmin={isSuper} />}

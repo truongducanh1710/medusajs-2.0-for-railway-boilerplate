@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { setHomeRole } from "./default-route"
 
 type CacheData = {
   perms: string[] | "*"
@@ -25,6 +26,7 @@ export function useCurrentPermissions() {
       .then((d) => {
         const mktCode = d.mkt_code ?? null
         const mktCodes: string[] = Array.isArray(d.mkt_codes) ? d.mkt_codes : (mktCode ? [mktCode] : [])
+        setHomeRole(d.role ?? null)
         cache = {
           perms: d.permissions,
           mkt_code: mktCode,

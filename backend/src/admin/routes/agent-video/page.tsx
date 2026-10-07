@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
+import { useCurrentPermissions } from "../../lib/use-permissions"
 
 /**
  * Trang điều khiển Agent Video — nơi người giao tiếp với agent phân bổ ngân sách.
@@ -71,6 +72,10 @@ const AgentVideoPage = () => {
   const [phase, setPhase] = useState("all")
   const [sort, setSort] = useState("spend")
   const [chiTiet, setChiTiet] = useState<string | null>(null)
+  // Khoá/bật lại video và cấp hạn mức đều đòi page.agent-video.manage ở backend —
+  // người chỉ có quyền xem (MKT, freelance) không thấy các nút này.
+  const { has, isSuper } = useCurrentPermissions()
+  const canManage = isSuper || has("page.agent-video.manage")
 
   async function tai() {
     setLoading(true)
@@ -182,7 +187,7 @@ const AgentVideoPage = () => {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-gray-200 overflow-x-auto">
-        {([["video", "Video"], ["log", "Nhật ký agent"], ["grant", "Hạn mức"]] as const).map(([k, l]) => (
+        {([["video", "Video"], ["log", "Nhật ký agent"], ...(canManage ? [["grant", "Hạn mức"]] : [])] as ["video" | "log" | "grant", string][]).map(([k, l]) => (
           <button key={k} onClick={() => { setTab(k); if (k === "log") taiLog() }}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap ${
               tab === k ? "text-violet-600 border-b-2 border-violet-600 bg-violet-50/50"
@@ -265,7 +270,7 @@ const AgentVideoPage = () => {
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono text-xs">{fmtVND(v.daily_budget)}</td>
                         <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                          {v.phase === "killed" ? (
+                          {!canManage ? null : v.phase === "killed" ? (
                             <button onClick={() => batLai(v.vd_code)}
                               className="text-xs text-violet-600 hover:underline">Bật lại</button>
                           ) : (
@@ -407,7 +412,7 @@ const AgentVideoPage = () => {
         </div>
       )}
 
-      {tab === "grant" && <TabHanMuc grants={data?.grants ?? []} onDone={tai} />}
+      {tab === "grant" && canManage && <TabHanMuc grants={data?.grants ?? []} onDone={tai} />}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { ensureMktChatGlobalMentionAlerts } from "./mkt-chat-global-alerts"
-import { DEFAULT_ADMIN_APP_ROUTE } from "./default-route"
+import { homeRoute } from "./default-route"
 import { recordApiCall } from "../components/debug-boundary"
 
 ensureMktChatGlobalMentionAlerts()
@@ -40,7 +40,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
     handleExpiredSession()
   } else if (res.status === 403) {
     alert("Bạn không có quyền truy cập chức năng này")
-    window.location.href = DEFAULT_ADMIN_APP_ROUTE
+    window.location.href = homeRoute()
   }
   return res
 }
@@ -59,7 +59,7 @@ export async function apiJson(url: string, method = "GET", body?: unknown): Prom
   }
   if (res.status === 403) {
     alert("Bạn không có quyền truy cập chức năng này")
-    window.location.href = DEFAULT_ADMIN_APP_ROUTE
+    window.location.href = homeRoute()
     return null
   }
   const text = await res.text()

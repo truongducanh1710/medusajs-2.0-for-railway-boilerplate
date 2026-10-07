@@ -3,6 +3,8 @@ import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusaj
 import { Modules } from "@medusajs/framework/utils"
 import multer from "multer"
 import { ROLE_PRESETS } from "../admin/lib/permissions"
+import { FREELANCE_ROLE } from "../lib/freelance-scope"
+import { freelanceGuard } from "./_freelance-guard"
 
 const MKT_CHAT_MAX_SIZE = 50 * 1024 * 1024
 const mktChatUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MKT_CHAT_MAX_SIZE } })
@@ -35,9 +37,22 @@ function taiLieuUploadHandler(req: MedusaRequest, res: MedusaResponse, next: Med
 export function resolveUserPerms(metadata: any): string[] {
   const explicit: string[] = Array.isArray(metadata?.permissions) ? metadata.permissions : []
   const role: string = metadata?.role ?? ""
+  // Freelance là gói cố định: bỏ qua quyền tick tay, để không ai vô tình mở thêm trang
+  // số liệu chung cho freelancer (preset + allowlist trong _freelance-guard.ts đi cùng nhau).
+  if (role === FREELANCE_ROLE) return [...(ROLE_PRESETS[FREELANCE_ROLE] ?? [])]
   const fromRole: string[] = role && ROLE_PRESETS[role] ? (ROLE_PRESETS[role] as string[]) : []
   // union: role permissions + any extra explicit permissions
   return [...new Set([...fromRole, ...explicit])]
+}
+
+// Quyền được coi là đạt khi request đã qua freelanceGuard (req.freelanceScope): các quyền
+// này chỉ có nghĩa "được xem số liệu chung", mà dữ liệu trả cho freelancer đã bị lọc về
+// đúng người gọi. KHÔNG thêm quyền thao tác (approve/manage/...) vào đây.
+const SCOPED_GRANTS = ["page.bao-cao.view"]
+
+function effectivePerms(req: MedusaRequest, metadata: any): string[] {
+  const perms = resolveUserPerms(metadata)
+  return (req as any).freelanceScope ? [...perms, ...SCOPED_GRANTS] : perms
 }
 
 function requirePerm(...needed: string[]) {
@@ -52,7 +67,7 @@ function requirePerm(...needed: string[]) {
 
       if (user.email && user.email === process.env.SUPER_ADMIN_EMAIL) return next()
 
-      const perms = resolveUserPerms(user.metadata)
+      const perms = effectivePerms(req, user.metadata)
       if (!needed.every((p) => perms.includes(p))) {
         return res.status(403).json({ error: "Forbidden", required: needed, current: perms })
       }
@@ -77,7 +92,7 @@ function requireAnyPerm(...accepted: string[]) {
 
       if (user.email && user.email === process.env.SUPER_ADMIN_EMAIL) return next()
 
-      const perms = resolveUserPerms(user.metadata)
+      const perms = effectivePerms(req, user.metadata)
       if (!accepted.some((p) => perms.includes(p))) {
         return res.status(403).json({ error: "Forbidden", required: accepted, current: perms })
       }
@@ -133,6 +148,10 @@ const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNext
 
 export default defineMiddlewares({
   routes: [
+    // Freelance: không khai method → middleware toàn cục, chạy sau xác thực và TRƯỚC mọi
+    // route /admin (kể cả route Medusa gốc). Xem _freelance-guard.ts.
+    { matcher: "/admin", middlewares: [freelanceGuard] },
+
     // Body parser cho product-content (giữ nguyên)
     {
       matcher: "/admin/product-content",

@@ -6,7 +6,7 @@ import { ROUTE_PERMS, NATIVE_PERMS } from "../lib/route-permissions"
 const hasAnyPerm = (perm: string | string[], has: (p: string) => boolean) =>
   Array.isArray(perm) ? perm.some(has) : has(perm)
 import { ensureMktChatGlobalMentionAlerts } from "../lib/mkt-chat-global-alerts"
-import { DEFAULT_ADMIN_APP_ROUTE } from "../lib/default-route"
+import { homeRoute } from "../lib/default-route"
 import { installAdminDebugHooks } from "../lib/debug-hooks"
 
 const FORBIDDEN_MESSAGE = "B\u1ea1n kh\u00f4ng c\u00f3 quy\u1ec1n truy c\u1eadp trang n\u00e0y"
@@ -130,7 +130,7 @@ export const RouteGuard = () => {
   useEffect(() => {
     if (loading || !perms) return
     if (window.location.pathname.replace(/\/+$/, "") === "/app") {
-      window.location.href = DEFAULT_ADMIN_APP_ROUTE
+      window.location.href = homeRoute()
       return
     }
 
@@ -140,7 +140,7 @@ export const RouteGuard = () => {
       // Exact segment match so "/bao-cao" does not swallow "/bao-cao-mkt".
       if ((path === prefix || path.startsWith(`${prefix}/`)) && !hasAnyPerm(perm, has)) {
         alert(FORBIDDEN_MESSAGE)
-        window.location.href = DEFAULT_ADMIN_APP_ROUTE
+        window.location.href = homeRoute()
         return
       }
     }
@@ -149,7 +149,7 @@ export const RouteGuard = () => {
       const allowed = key === "settings" ? isSuper : (isAdmin || has(perm))
       if ((path === `/${key}` || path.startsWith(`/${key}/`)) && !allowed) {
         alert(FORBIDDEN_MESSAGE)
-        window.location.href = DEFAULT_ADMIN_APP_ROUTE
+        window.location.href = homeRoute()
         return
       }
     }

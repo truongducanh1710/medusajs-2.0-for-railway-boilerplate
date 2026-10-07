@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { getPool } from "../../../../lib/db";
+import { getOwnScope } from "../../../../lib/freelance-scope";
 import {
   apiError,
   getProductTestActor,
@@ -35,6 +36,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
       return res.status(400).json({ error: "Ngày không hợp lệ" });
 
+    // Freelancer chỉ kéo được số của camp mang mã MKT của mình.
+    const scope = getOwnScope(req);
+    const params: any[] = [date, campaign];
+    let own = "";
+    if (scope) {
+      params.push(scope.mktCodes);
+      own = ` AND upper(mkt_name) = ANY($${params.length}::text[])`;
+    }
+
     const { rows } = await getPool().query(
       `SELECT
          COALESCE(SUM(spend), 0)::bigint      AS spend,
@@ -45,8 +55,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        FROM mkt_ads_cost
        WHERE deleted_at IS NULL
          AND date = $1::date
-         AND campaign_name ILIKE '%' || $2 || '%'`,
-      [date, campaign],
+         AND campaign_name ILIKE '%' || $2 || '%'${own}`,
+      params,
     );
 
     const row = rows[0] ?? {};

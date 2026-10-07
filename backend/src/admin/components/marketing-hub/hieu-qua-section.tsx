@@ -27,7 +27,8 @@ export function HieuQuaSection() {
     load()
     apiFetch("/admin/permissions/me").then(r => r.json()).then(d => {
       const perms = d.permissions
-      setCanSync(d.is_super || (Array.isArray(perms) && perms.includes("page.bao-cao.camp-control")))
+      // Sync kéo insights của MỌI tài khoản ads — không dành cho freelance dù có camp-control.
+      setCanSync(d.is_super || (d.role !== "freelance" && Array.isArray(perms) && perms.includes("page.bao-cao.camp-control")))
     }).catch(() => {})
   }, [])
 

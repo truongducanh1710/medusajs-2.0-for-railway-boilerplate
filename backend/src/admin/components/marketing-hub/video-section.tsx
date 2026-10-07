@@ -234,7 +234,7 @@ type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string;
 
 type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string; script: string }
 
-function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
+function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB?: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   // Fixed-position modal rather than a popover anchored to the row: the table
@@ -1016,7 +1016,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                           style={{ background: row.starred ? "#FEF9C3" : "none", color: row.starred ? "#92400E" : "#D1D5DB", border: `1px solid ${row.starred ? "#FDE047" : "#E5E7EB"}`, borderRadius: 6, padding: "3px 7px", fontSize: 13, fontWeight: 700, cursor: "pointer", lineHeight: 1 }}>
                           ★
                         </button>
-                        {row.link && (
+                        {row.link && onDangFB && (
                           <button onClick={() => onDangFB(row)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Đăng FB</button>
                         )}
                         {/* Nút xem/phân tích AI — MKT chỉ xem nếu đã có kết quả, admin mới trigger phân tích */}
@@ -1286,7 +1286,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             {/* Footer */}
             <div style={{ padding: "12px 20px", borderTop: "1px solid #E5E7EB", display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => { setDetailRow(null); startEdit(detailRow) }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#374151", fontWeight: 600 }}>✏️ Chỉnh sửa</button>
-              <button onClick={() => { onDangFB(detailRow); setDetailRow(null) }} style={{ background: "#1877F2", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#fff", fontWeight: 700 }}>Đăng FB</button>
+              {onDangFB && <button onClick={() => { onDangFB(detailRow); setDetailRow(null) }} style={{ background: "#1877F2", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#fff", fontWeight: 700 }}>Đăng FB</button>}
             </div>
           </div>
         </div>
@@ -1736,7 +1736,8 @@ function HuongDanTab({ mktCode }: { mktCode: string | null }) {
 // ============================================================================
 // Page
 // ============================================================================
-export function VideoSection({ onDangFB }: { onDangFB: (row: VideoRow) => void }) {
+// onDangFB bỏ trống = ẩn nút "Đăng FB" (vd tài khoản freelance không có tab Đăng Facebook).
+export function VideoSection({ onDangFB }: { onDangFB?: (row: VideoRow) => void }) {
   const [tab, setTab] = useState("bang")
   const [rows, setRows] = useState<VideoRow[]>([])
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])

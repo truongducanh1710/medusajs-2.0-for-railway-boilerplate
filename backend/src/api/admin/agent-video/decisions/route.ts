@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
+import { getOwnScope, ownAgentVideoSql } from "../../../../lib/freelance-scope"
 
 /**
  * GET /admin/agent-video/decisions?vd_code=&action=&limit=
@@ -14,6 +15,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const dk: string[] = []
     const val: any[] = []
+    // Freelancer: chỉ nhật ký + thống kê trên video của mình.
+    const scope = getOwnScope(req)
+    const ownVal: any[] = scope ? [scope.email, scope.mktCodes] : []
+    // Phải ghi rõ tên bảng: vd_code trần bên trong subquery sẽ bị hiểu là cột của chính
+    // subquery (mkt_video cũng có vd_code) → điều kiện luôn đúng, lọc mất tác dụng.
+    const own = scope ? `AND ${ownAgentVideoSql("video_decision_log.vd_code", "$1", "$2")}` : ""
+    if (scope) {
+      val.push(scope.email, scope.mktCodes)
+      dk.push(ownAgentVideoSql("l.vd_code", `$${val.length - 1}`, `$${val.length}`))
+    }
     if (vd_code) { val.push(vd_code); dk.push(`l.vd_code = $${val.length}`) }
     if (action && action !== "all") { val.push(action); dk.push(`l.action = $${val.length}`) }
     val.push(Math.min(Number(limit) || 100, 500))
@@ -45,10 +56,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
               / NULLIF(COUNT(*) FILTER (WHERE evaluated_at IS NOT NULL), 0), 0) AS pct_dung
       FROM video_decision_log
       WHERE rule_hit IS NOT NULL AND created_at > now() - interval '60 days'
+        ${own}
       GROUP BY 1
       HAVING COUNT(*) >= 5
       ORDER BY tong DESC
-    `)
+    `, ownVal)
 
     const { rows: hom_nay } = await pool.query(`
       SELECT
@@ -61,7 +73,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE error IS NOT NULL)       AS co_loi
       FROM video_decision_log
       WHERE created_at > now() - interval '24 hours'
-    `)
+        ${own}
+    `, ownVal)
 
     return res.json({
       decisions: rows,

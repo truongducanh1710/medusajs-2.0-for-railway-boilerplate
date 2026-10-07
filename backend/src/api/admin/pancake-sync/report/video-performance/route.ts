@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { fbFetchJson } from "../../../../../lib/fb-fetch"
+import { getOwnScope } from "../../../../../lib/freelance-scope"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
@@ -31,6 +32,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
 
+    const params: any[] = [from, to]
+    // Freelancer: chỉ cộng các AD của chính họ (ad_name mang tiền tố mã MKT của họ) —
+    // lọc theo ad chứ không theo video, vì một video có thể được MKT khác chạy ad.
+    let own = ""
+    const scope = getOwnScope(req)
+    if (scope) {
+      params.push(scope.mktCodes)
+      own = `AND upper(split_part(av.ad_name, '_', 1)) = ANY($3::text[])`
+    }
+
     const rows = await cskhService.sql(`
       SELECT
         av.vd_code,
@@ -46,9 +57,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       LEFT JOIN mkt_video v ON v.vd_code = av.vd_code
       WHERE av.stat_date >= $1::date AND av.stat_date <= $2::date
         AND av.vd_code IS NOT NULL
+        ${own}
       GROUP BY av.vd_code, v.maker, v.product, v.video_type, v.source
       ORDER BY spend DESC
-    `, [from, to])
+    `, params)
 
     const result = rows.map((r: any) => {
       const impressions = Number(r.impressions) || 0

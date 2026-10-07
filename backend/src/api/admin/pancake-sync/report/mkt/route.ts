@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
+import { getOwnScope } from "../../../../../lib/freelance-scope"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -190,7 +191,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         m.care_pct = m.revenue_total > 0 ? Math.round(m.ads_cost / m.revenue_total * 10000) / 100 : null
       }
     }
+    // Freelancer chỉ thấy dòng mang mã MKT của mình — lọc SAU khi áp bàn giao để camp
+    // được bàn giao cho họ cũng hiện ra. Tổng ở summary vì thế chỉ là số của họ.
+    const scope = getOwnScope(req)
     const mergedRows = Object.values(mergedMap)
+      .filter((row: any) => !scope || scope.mktCodes.includes(String(row.mkt_name ?? "").toUpperCase()))
 
     // Build summary per MKT
     const summary: Record<string, any> = {}

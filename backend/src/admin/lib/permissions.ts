@@ -7,6 +7,9 @@ export const PERMISSIONS = {
   // Quyền hẹp: chỉ mở tab "Sàn TMĐT" của trang Báo cáo, không thấy doanh số/LNG/sale.
   // Ai đã có page.bao-cao.view thì đương nhiên xem được, không cần cấp thêm.
   "page.bao-cao.sanTMDT": "Xem báo cáo — CHỈ tab Sàn TMĐT (TikTok/Shopee)",
+  // Chỉ mở menu/trang Doanh số MKT. Bản thân quyền này KHÔNG mở API báo cáo — dữ liệu chỉ
+  // trả về khi user có role "freelance" (lọc theo mkt_code ở _freelance-guard.ts).
+  "page.bao-cao-mkt.own": "Xem Doanh số MKT — CHỈ camp của mình (dùng cho role Freelance)",
   "page.pancake-sync.view": "Xem trang Sync",
   "page.pancake-sync.run": "Trigger sync Pancake",
   "page.ity-cdr.view": "Xem báo cáo cuộc gọi tổng đài (CDR)",
@@ -78,6 +81,10 @@ export const ROLE_PRESETS: Record<string, string[]> = {
   admin: Object.keys(PERMISSIONS),
   manager: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.fb-accounts", "page.bao-cao.target-edit", "page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "users.manage", "page.mkt-tasks.view", "page.mkt-tasks.manage", "page.mkt-chat.view", "page.mkt-chat.manage", "page.ity-cdr.view", "page.ity-cdr.run", "page.cskh-goi-khach.call", "page.cham-cong.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.leave-request.approve", "page.overtime.view", "page.overtime.approve", "page.qa.view", "page.qa.score", "page.product-test.view", "page.product-test.approve", "page.tai-lieu.manage", "page.agent-video.view", "page.agent-video.manage"],
   marketing: ["page.bao-cao.view", "page.bao-cao.camp-control", "page.bao-cao.care-rules", "page.san-pham.view", "page.san-pham.edit", "medusa.products.view", "page.product-test.view", "page.product-test.marketing", "page.marketing-video.view", "page.marketing-video.edit", "page.fb-content.view", "page.fb-content.post", "page.fb-content.boost", "page.fb-content.stats", "page.nhap-chi-phi.manage", "page.chat.view", "page.chat.bot.manage", "page.mkt-tasks.view", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view", "page.agent-video.view"],
+  // Freelance: chỉ thấy dữ liệu của chính mình (camp theo mkt_code, video mình tạo, hồ sơ
+  // test mình tạo/được giao). Quyền tick tay bị bỏ qua với role này (resolveUserPerms) —
+  // muốn mở thêm tính năng phải thêm cả rule trong api/_freelance-guard.ts và lọc ở handler.
+  freelance: ["page.bao-cao-mkt.own", "page.bao-cao.camp-control", "page.product-test.view", "page.product-test.marketing", "page.marketing-video.view", "page.marketing-video.edit", "page.agent-video.view"],
   "mua-hang": ["page.product-test.view", "page.product-test.purchasing", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
   sale: ["page.don-hang.view", "page.don-hang.edit", "medusa.orders.view", "medusa.customers.view", "page.gia-von.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.chat.order.create", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],
   cskh: ["page.cskh.view", "page.cskh.analyze", "page.don-hang.view", "medusa.orders.view", "page.chat.view", "page.chat.reply", "page.chat.manage", "page.mkt-tasks.view", "page.ity-cdr.view", "page.cskh-goi-khach.call", "page.mkt-chat.view", "page.cham-cong-nv.checkin", "page.leave-request.view", "page.overtime.view"],

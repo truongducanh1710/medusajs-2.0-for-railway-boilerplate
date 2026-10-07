@@ -160,7 +160,11 @@ function BaoCaoMktPage() {
   const activeTabRef = useRef<string>("mkt")
   const fetchPlatformDataRef = useRef<() => Promise<void>>(async () => {})
 
-  const { isSuper, mktCode, mktCodes, has } = useCurrentPermissions()
+  const { isSuper, mktCode, mktCodes, has, perms, role } = useCurrentPermissions()
+  // Freelance chỉ thấy số liệu camp của mình (backend lọc theo mkt_code) — ẩn các tab và
+  // nút gọi API số liệu chung, vì apiFetch gặp 403 sẽ alert rồi đá về trang chủ.
+  const isFreelance = role === "freelance"
+  const permsReady = perms !== null
 
   // Lên camp gom về Marketing Hub — chỉ còn link trỏ sang, không mở picker/modal ở đây nữa
   const canCreateCamp = isSuper || has("page.fb-content.boost")
@@ -230,9 +234,30 @@ function BaoCaoMktPage() {
       .catch(() => {})
       .finally(() => setPixelMapLoading(false))
   }, [pixelMapOnlyActive])
-  useEffect(() => { if (activeTab === "pixelmap" && !pixelMapData) fetchPixelMap() }, [activeTab, pixelMapData, fetchPixelMap])
   const canControl = has("page.bao-cao.camp-control") || isSuper
   const canManageFb = has("page.bao-cao.fb-accounts") || isSuper
+
+  const FREELANCE_TABS = ["mkt", "camp", "jobs", "naming"]
+  const visibleTabs = ([
+    ["mkt", "Theo MKT"],
+    ["camp", "Theo Camp"],
+    ["platform", "🌐 Theo nền tảng"],
+    ["spProduct", "Chi phí SP"],
+    ["jobs", "⏰ Lịch hẹn Camp"],
+    ...(has("page.bao-cao.care-rules") ? [["rules", "⚙️ Rule chăm sóc"]] : []),
+    ["naming", "📋 Quy tắc đặt tên"],
+    ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
+    ...(canManageFb ? [["pixelmap", "📊 Pixel theo Camp"]] : []),
+    ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
+    ...(isSuper ? [["handover", "🔄 Bàn giao MKT"]] : []),
+  ] as [string, string][]).filter(([key]) => !isFreelance || FREELANCE_TABS.includes(key))
+  // Tab nhớ trong localStorage có thể là tab user không được xem — chỉ tải dữ liệu tab
+  // sau khi đã biết quyền, và tab đó phải nằm trong danh sách hiển thị.
+  const tabReady = permsReady && visibleTabs.some(([key]) => key === activeTab)
+  useEffect(() => {
+    if (permsReady && !tabReady) setActiveTab("mkt")
+  }, [permsReady, tabReady])
+  useEffect(() => { if (tabReady && activeTab === "pixelmap" && !pixelMapData) fetchPixelMap() }, [tabReady, activeTab, pixelMapData, fetchPixelMap])
   const [editingBudget, setEditingBudget] = useState<string | null>(null)
   const [budgetValue, setBudgetValue] = useState<string>("")
   const [scheduleModalCamp, setScheduleModalCamp] = useState<any>(null)
@@ -760,34 +785,34 @@ function BaoCaoMktPage() {
   }, [mktCode, mktCodesKey, isSuper])
 
   useEffect(() => { fetchData() }, [fetchData])
-  useEffect(() => { if (activeTab === "camp") fetchCampData() }, [activeTab, fetchCampData])
+  useEffect(() => { if (tabReady && activeTab === "camp") fetchCampData() }, [tabReady, activeTab, fetchCampData])
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
   useEffect(() => { fetchPlatformDataRef.current = fetchPlatformData }, [fetchPlatformData])
-  useEffect(() => { if (activeTab === "platform") fetchPlatformData() }, [activeTab, fetchPlatformData])
-  useEffect(() => { if (activeTab === "spProduct") fetchSpData() }, [activeTab, fetchSpData])
-  useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [activeTab, jobsSubTab, fetchSchedules])
-  useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [activeTab, jobsSubTab, fetchActLogs])
-  useEffect(() => { if (activeTab === "jobs" && jobsSubTab === "fb-history") fetchFbHistory() }, [activeTab, jobsSubTab, fetchFbHistory])
+  useEffect(() => { if (tabReady && activeTab === "platform") fetchPlatformData() }, [tabReady, activeTab, fetchPlatformData])
+  useEffect(() => { if (tabReady && activeTab === "spProduct") fetchSpData() }, [tabReady, activeTab, fetchSpData])
+  useEffect(() => { if (tabReady && activeTab === "jobs" && jobsSubTab === "schedules") fetchSchedules() }, [tabReady, activeTab, jobsSubTab, fetchSchedules])
+  useEffect(() => { if (tabReady && activeTab === "jobs" && jobsSubTab === "logs") fetchActLogs() }, [tabReady, activeTab, jobsSubTab, fetchActLogs])
+  useEffect(() => { if (tabReady && activeTab === "jobs" && jobsSubTab === "fb-history") fetchFbHistory() }, [tabReady, activeTab, jobsSubTab, fetchFbHistory])
   useEffect(() => { if (activeTab === "fbaccounts" && canManageFb) fetchFbAccounts() }, [activeTab, canManageFb, fetchFbAccounts])
-  useEffect(() => { if (activeTab === "ai") { fetchAiRecs(); fetchInsights() } }, [activeTab, fetchAiRecs, fetchInsights])
+  useEffect(() => { if (tabReady && activeTab === "ai") { fetchAiRecs(); fetchInsights() } }, [tabReady, activeTab, fetchAiRecs, fetchInsights])
   useEffect(() => {
-    if (activeTab !== "rules") return
+    if (!tabReady || activeTab !== "rules") return
     setRulesLoading(true)
     Promise.all([
       apiFetch("/admin/pancake-sync/report/care-rules").then(r => r.json()).then(r => setRules(r.rules ?? [])).catch(() => {}),
       apiFetch("/admin/pancake-sync/report/product-thresholds").then(r => r.json()).then(r => setThresholds(r.thresholds ?? [])).catch(() => {}),
     ]).finally(() => setRulesLoading(false))
-  }, [activeTab])
+  }, [tabReady, activeTab])
 
   useEffect(() => {
-    if (activeTab !== "handover") return
+    if (!tabReady || activeTab !== "handover") return
     setHandoverLoading(true)
     apiFetch("/admin/pancake-sync/report/mkt-handover").then(r => r.json()).then(r => setHandoverRules(r.rules ?? [])).catch(() => {}).finally(() => setHandoverLoading(false))
-  }, [activeTab])
+  }, [tabReady, activeTab])
 
   // Realtime heartbeat polling — chỉ active khi đang ở tab AI
   useEffect(() => {
-    if (activeTab !== "ai") return
+    if (!tabReady || activeTab !== "ai") return
     let stopped = false
     const fetchHeartbeats = async () => {
       try {
@@ -799,12 +824,14 @@ function BaoCaoMktPage() {
     fetchHeartbeats()
     const interval = setInterval(fetchHeartbeats, 2000)
     return () => { stopped = true; clearInterval(interval) }
-  }, [activeTab])
+  }, [tabReady, activeTab])
+  // Thanh trạng thái cron hiển thị tổng chi phí toàn công ty — freelance không gọi.
   useEffect(() => {
+    if (!permsReady || isFreelance) return
     fetchCronStatus()
     const interval = setInterval(fetchCronStatus, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [fetchCronStatus])
+  }, [fetchCronStatus, permsReady, isFreelance])
 
   useEffect(() => {
     apiFetch("/admin/marketing-video/products").then(r => r.json()).then(d => {
@@ -869,6 +896,7 @@ function BaoCaoMktPage() {
           }}>
             {loading ? "Đang tải..." : "↻ Refresh"}
           </button>
+          {!isFreelance && <>
           <button onClick={syncCost} disabled={syncing} style={{
             background: dark ? "#065f46" : "#d1fae5", color: t.green, border: `1px solid ${t.green}44`, borderRadius: 6,
             padding: "8px 16px", cursor: syncing ? "not-allowed" : "pointer", fontSize: 13, opacity: syncing ? 0.6 : 1
@@ -881,6 +909,7 @@ function BaoCaoMktPage() {
           }}>
             ✎ Điền chi phí Google
           </button>
+          </>}
         </div>
       </div>
 
@@ -936,19 +965,7 @@ function BaoCaoMktPage() {
 
       {/* Tab toggle */}
       <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: `1px solid ${t.cardBorder}`, overflowX: "auto", WebkitOverflowScrolling: "touch" as any, scrollbarWidth: "none" as any, msOverflowStyle: "none" as any }}>
-        {([
-          ["mkt", "Theo MKT"],
-          ["camp", "Theo Camp"],
-          ["platform", "🌐 Theo nền tảng"],
-          ["spProduct", "Chi phí SP"],
-          ["jobs", "⏰ Lịch hẹn Camp"],
-          ...(has("page.bao-cao.care-rules") ? [["rules", "⚙️ Rule chăm sóc"]] : []),
-          ["naming", "📋 Quy tắc đặt tên"],
-          ...(canManageFb ? [["fbaccounts", "🔑 Tài khoản FB"]] : []),
-          ...(canManageFb ? [["pixelmap", "📊 Pixel theo Camp"]] : []),
-          ...(isSuper ? [["ai", "🤖 AI Agent"]] : []),
-          ...(isSuper ? [["handover", "🔄 Bàn giao MKT"]] : []),
-        ] as const).map(([key, label]) => (
+        {visibleTabs.map(([key, label]) => (
           <button key={key} onClick={() => { setActiveTab(key as any); try { localStorage.setItem("bao-cao-mkt-tab", key) } catch {} }} style={{
             background: "none", border: "none", cursor: "pointer",
             padding: "8px 20px", fontSize: 14, fontWeight: activeTab === key ? 700 : 400,

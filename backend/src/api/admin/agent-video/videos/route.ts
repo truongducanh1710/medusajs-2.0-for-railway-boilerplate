@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
+import { getOwnScope, ownAgentVideoSql } from "../../../../lib/freelance-scope"
 
 /**
  * GET /admin/agent-video/videos
@@ -17,11 +18,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const dk: string[] = []
     const val: any[] = []
-    if (phase && phase !== "all") {
+    // Freelancer: chỉ video của mình — áp cho cả bảng, tổng quan và hạn mức bên dưới.
+    const scope = getOwnScope(req)
+    let ownTong = ""
+    const tongVal: any[] = []
+    if (scope) {
+      val.push(scope.email, scope.mktCodes)
+      dk.push(ownAgentVideoSql("r.vd_code", `$${val.length - 1}`, `$${val.length}`))
+      tongVal.push(scope.email, scope.mktCodes)
+      ownTong = `AND ${ownAgentVideoSql("r.vd_code", "$1", "$2")}`
+    }
+    if (phase === "chua_quan_ly") {
+      dk.push(`s.vd_code IS NULL`)
+    } else if (phase && phase !== "all") {
       val.push(phase)
-      dk.push(phase === "chua_quan_ly"
-        ? `s.vd_code IS NULL`
-        : `s.phase = $${val.length}`)
+      dk.push(`s.phase = $${val.length}`)
     }
 
     // Mặc định sắp theo chi tiêu giảm dần — tiền lớn nhất lên đầu.
@@ -64,7 +75,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM v_video_roas r
       LEFT JOIN video_budget_state s ON s.vd_code = r.vd_code
       WHERE r.spend > 0
-    `)
+        ${ownTong}
+    `, tongVal)
 
     // Hạn mức đang hiệu lực — UI cần để vẽ thanh "đã dùng / trần".
     const { rows: grant } = await pool.query(`
@@ -72,8 +84,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
              roas_kill, roas_scale, cancel_rate_kill, granted_by, effective_date, note
       FROM agent_budget_grant
       WHERE active = true AND effective_date <= current_date
+        ${scope ? "AND upper(mkt_name) = ANY($1::text[])" : ""}
       ORDER BY effective_date DESC
-    `)
+    `, scope ? [scope.mktCodes] : [])
 
     return res.json({
       videos: rows,
