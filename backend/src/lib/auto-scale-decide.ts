@@ -57,6 +57,26 @@ export type DecideInput = {
   pause_streak?: number
   /** Đã tự bật lại hôm nay */
   resumed_today?: boolean
+  /** Nhìn tổng theo MKT (null = MKT chưa bật quản lý tổng) */
+  portfolio?: Portfolio | null
+}
+
+/**
+ * Quản lý tổng theo MKT: giữ % chi phí CẢ MKT trong ngày quanh mục tiêu (vd 25–27%).
+ *  - Tổng đang tốt (≤ max_pct): camp lẽ ra bị phanh vẫn được chạy thêm nếu chưa quá tệ
+ *    (≤ lenient_max_pct) và CTR hôm nay ≥ CTR 7 ngày của MKT — xem có ra thêm đơn không.
+ *  - Tới giờ tỉa (trim_hour) hoặc tổng chi đạt trim_spend mà tổng > max_pct: mỗi vòng 15 phút
+ *    tắt 1 camp xấu nhất (% chi phí hôm nay > max_pct), dần dần chỉ còn camp tốt.
+ */
+export type Portfolio = {
+  mkt: string
+  pct: number | null          // % chi phí cả MKT hôm nay
+  max_pct: number
+  lenient_max_pct: number
+  trim_active: boolean
+  trim_pick: boolean           // camp này là camp xấu nhất được chọn tỉa vòng này
+  ctr: number | null           // CTR hôm nay của camp (%)
+  ctr_base: number | null      // CTR 7 ngày của MKT (%)
 }
 
 export type Decision =
@@ -143,10 +163,28 @@ export function decide(x: DecideInput): Decision {
   if (x.status !== "ACTIVE") return { action: "none", reason: `Camp đang ${x.status}` }
 
   // 3. Phanh ngày xấu — chạy mọi giờ (camp tiêu ~40% tiền sau 19h, không ai canh)
+  const final = !rule.pause_resume || (x.pause_streak ?? 0) + 1 >= (rule.pause_max_streak ?? 3)
+  const pf = x.portfolio
   const tat = pauseReason(x)
   if (tat) {
-    const final = !rule.pause_resume || (x.pause_streak ?? 0) + 1 >= (rule.pause_max_streak ?? 3)
-    return { action: "tat", reason: tat, final }
+    const rev = Number(x.revenue_today || 0)
+    const campPct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
+    const ctrOk = pf?.ctr != null && pf.ctr_base != null && pf.ctr >= pf.ctr_base
+    if (pf && !pf.trim_active && pf.pct !== null && pf.pct <= pf.max_pct && campPct <= pf.lenient_max_pct && ctrOk) {
+      return {
+        action: "none",
+        reason: `Giữ chạy thêm: ${tat} — nhưng tổng ${pf.mkt} hôm nay ${pf.pct}% ≤ ${pf.max_pct}% và CTR ${pf.ctr!.toFixed(2)}% ≥ ${pf.ctr_base!.toFixed(2)}% (TB 7 ngày)`,
+      }
+    }
+    return { action: "tat", reason: pf?.trim_active ? `${tat} (đang giờ tỉa, tổng ${pf.mkt} ${pf.pct ?? "—"}%)` : tat, final }
+  }
+  if (pf?.trim_pick) {
+    const rev = Number(x.revenue_today || 0)
+    const campPct = rev > 0 ? `${((x.spend_today / rev) * 100).toFixed(0)}%` : "chưa có doanh số"
+    return {
+      action: "tat", final,
+      reason: `Tỉa: tổng ${pf.mkt} hôm nay ${pf.pct}% > ${pf.max_pct}% — camp xấu nhất (chi ${vnd(x.spend_today)}, ${x.orders_today} đơn, ${campPct})`,
+    }
   }
 
   // 4. Lùi — chạy mọi giờ: lần tăng chiều muộn mà đơn không về thì tối vẫn phải lùi

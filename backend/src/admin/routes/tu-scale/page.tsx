@@ -19,6 +19,13 @@ type Candidate = {
   campaign_id: string; campaign_name: string; mkt_name: string; daily_budget: number; effective_status: string
   spend_7d: number; orders_7d: number; rule_id: number | null
 }
+type MktSetting = {
+  mkt_name: string; enabled: boolean; dry_run: boolean; max_pct: number; lenient_max_pct: number
+  trim_hour: number; trim_spend: number; trim_min_spend: number
+}
+type Mkt = { mkt_name: string; setting: MktSetting | null; today: { spend: number; revenue: number; orders: number; pct: number | null } | null }
+const MKT_MAC_DINH = { enabled: true, dry_run: true, max_pct: 27, lenient_max_pct: 70, trim_hour: 13, trim_spend: 0, trim_min_spend: 200000 }
+
 type Log = {
   id: number; campaign_name: string; action: string; old_budget: number; new_budget: number; reason: string
   dry_run: boolean; success: boolean; error: string | null; created_at: string
@@ -52,12 +59,14 @@ function TuScalePage() {
   const [cands, setCands] = useState<Candidate[]>([])
   const [pickRule, setPickRule] = useState<number | "">("")
   const [msg, setMsg] = useState("")
+  const [mkts, setMkts] = useState<Mkt[]>([])
+  const [editMkt, setEditMkt] = useState<MktSetting | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     const d = await apiJson("/admin/auto-scale")
     if (!d) return
-    setRules(d.rules || []); setCamps(d.camps || []); setLogs(d.logs || [])
+    setRules(d.rules || []); setCamps(d.camps || []); setLogs(d.logs || []); setMkts(d.mkts || [])
     if (!pickRule && d.rules?.length) setPickRule(d.rules.find((r: Rule) => r.active)?.id ?? d.rules[0].id)
   }, [pickRule])
 
@@ -77,6 +86,12 @@ function TuScalePage() {
       return r
     } finally { setBusy(false) }
   }
+
+  const saveMkt = () => editMkt && act(async () => {
+    const r = await apiJson("/admin/auto-scale/mkt", "POST", editMkt)
+    if (!r?.error) setEditMkt(null)
+    return r
+  }, "Đã lưu cài đặt tổng theo MKT")
 
   const saveRule = () => editing && act(async () => {
     const r = await apiJson("/admin/auto-scale/rules", "POST", editing)
@@ -120,6 +135,68 @@ function TuScalePage() {
         <br />Bộ điều kiện ở chế độ <b>CHẠY THỬ</b> chỉ ghi nhật ký "lẽ ra đã tăng", không đổi ngân sách thật.
       </p>
       {msg && <div style={{ padding: "8px 12px", background: msg.startsWith("❌") ? "#fef2f2" : "#f0fdf4", borderRadius: 6, marginBottom: 12, fontSize: 13 }}>{msg}</div>}
+
+      {/* ── Tổng theo MKT ── */}
+      <section style={box}>
+        <h2 style={h2}>0. Tổng theo MKT — giữ % chi phí cả MKT trong ngày</h2>
+        <p style={{ color: "#4b5563", fontSize: 12, margin: "0 0 8px", lineHeight: 1.6 }}>
+          Số hôm nay lấy đúng công thức báo cáo <b>COD theo MKT</b>. Tổng ≤ mục tiêu: camp lẽ ra bị phanh vẫn được <b>chạy thêm</b> nếu chưa quá tệ và CTR hôm nay ≥ CTR 7 ngày của MKT.
+          Từ <b>giờ tỉa</b> (hoặc khi tổng chi đạt mức đặt) mà tổng &gt; mục tiêu: cứ 15 phút <b>tắt 1 camp xấu nhất</b> (% hôm nay &gt; mục tiêu) — dần chỉ còn camp tốt. Camp bị tỉa 0h30 hôm sau tự bật lại như phanh.
+          Chỉ tác động camp đã gắn ở mục 2 và thuộc bộ điều kiện bật phanh.
+        </p>
+        <table style={tbl}>
+          <thead><tr>{["MKT", "Hôm nay chi", "Doanh số", "% chi phí", "Mục tiêu ≤", "Cho chạy thêm tới", "Tỉa từ", "Camp chi tối thiểu", "Chế độ", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {mkts.map((m) => {
+              const st = m.setting
+              const pct = m.today?.pct
+              return (
+                <tr key={m.mkt_name} style={{ opacity: st?.enabled ? 1 : 0.6 }}>
+                  <td style={td}><b>{m.mkt_name}</b></td>
+                  <td style={td}>{vnd(m.today?.spend ?? 0)}</td>
+                  <td style={td}>{vnd(m.today?.revenue ?? 0)}</td>
+                  <td style={{ ...td, fontWeight: 700, color: pct == null ? "#6b7280" : st && pct > Number(st.max_pct) ? "#dc2626" : "#16a34a" }}>{pct == null ? "—" : `${pct}%`}</td>
+                  <td style={td}>{st ? `${Number(st.max_pct)}%` : "—"}</td>
+                  <td style={td}>{st ? `camp ≤ ${Number(st.lenient_max_pct)}%` : "—"}</td>
+                  <td style={td}>{st ? `${st.trim_hour}h${Number(st.trim_spend) > 0 ? ` hoặc tổng chi ≥ ${vnd(st.trim_spend)}` : ""}` : "—"}</td>
+                  <td style={td}>{st ? vnd(st.trim_min_spend) : "—"}</td>
+                  <td style={td}>{!st?.enabled ? <span style={{ color: "#6b7280" }}>Chưa bật</span> : st.dry_run ? <span style={{ color: "#d97706", fontWeight: 600 }}>TỈA CHẠY THỬ</span> : <span style={{ color: "#16a34a", fontWeight: 600 }}>ĐANG CHẠY THẬT</span>}</td>
+                  <td style={td}><button style={btn} onClick={() => setEditMkt(st ? { ...st, max_pct: Number(st.max_pct), lenient_max_pct: Number(st.lenient_max_pct), trim_spend: Number(st.trim_spend), trim_min_spend: Number(st.trim_min_spend) } : { mkt_name: m.mkt_name, ...MKT_MAC_DINH })}>{st ? "Sửa" : "Bật"}</button></td>
+                </tr>
+              )
+            })}
+            {!mkts.length && <tr><td colSpan={10} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Gắn camp ở mục 2 trước — MKT của camp sẽ hiện ở đây</td></tr>}
+          </tbody>
+        </table>
+        {editMkt && (
+          <div style={{ marginTop: 12, padding: 14, border: "1px solid #c7d2fe", background: "#eef2ff", borderRadius: 8 }}>
+            <b>{editMkt.mkt_name}</b>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 8 }}>
+              {([
+                ["max_pct", "Mục tiêu % chi phí tổng ≤", "Vd 27 (giữ 25–27%)"],
+                ["lenient_max_pct", "Cho camp chạy thêm nếu camp ≤ (%)", "Khi tổng đang tốt; quá mức này vẫn phanh"],
+                ["trim_hour", "Bắt đầu tỉa từ giờ", "Giờ VN, vd 13"],
+                ["trim_spend", "Hoặc khi tổng chi MKT hôm nay ≥ (đ)", "0 = chỉ theo giờ"],
+                ["trim_min_spend", "Camp chi ≥ (đ) mới bị tỉa", "Đủ mẫu mới phán"],
+              ] as [keyof MktSetting, string, string][]).map(([k, label, hint]) => (
+                <label key={k} style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, minWidth: 170 }}>
+                  <span style={{ fontWeight: 600 }}>{label}</span>
+                  <input style={inp} type="number" value={editMkt[k] as any} onChange={(e) => setEditMkt({ ...editMkt, [k]: Number(e.target.value) })} />
+                  <span style={{ color: "#6b7280" }}>{hint}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 18, marginTop: 10, fontSize: 13 }}>
+              <label><input type="checkbox" checked={editMkt.enabled} onChange={(e) => setEditMkt({ ...editMkt, enabled: e.target.checked })} /> Bật quản lý tổng</label>
+              <label><input type="checkbox" checked={editMkt.dry_run} onChange={(e) => setEditMkt({ ...editMkt, dry_run: e.target.checked })} /> <b>Tỉa: chạy thử</b> (chỉ ghi "lẽ ra đã tỉa")</label>
+            </div>
+            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+              <button style={btnPri} disabled={busy} onClick={saveMkt}>Lưu</button>
+              <button style={btn} onClick={() => setEditMkt(null)}>Huỷ</button>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* ── Bộ điều kiện ── */}
       <section style={box}>

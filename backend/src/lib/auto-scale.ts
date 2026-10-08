@@ -10,7 +10,8 @@
 
 import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
-import { decide } from "./auto-scale-decide"
+import { decide, type Portfolio } from "./auto-scale-decide"
+import { mktTotalsForDate, type MktTotal } from "./mkt-today"
 
 const GRAPH = "https://graph.facebook.com/v25.0"
 
@@ -107,6 +108,19 @@ export function ensureTables(): Promise<void> {
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_max_streak INT NOT NULL DEFAULT 3;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_min_age_hours INT NOT NULL DEFAULT 0;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_dry_run BOOLEAN NOT NULL DEFAULT true;
+      -- Quản lý tổng theo MKT (thêm 08/10/2026): giữ % chi phí cả MKT trong ngày quanh mục tiêu
+      CREATE TABLE IF NOT EXISTS auto_scale_mkt (
+        mkt_name TEXT PRIMARY KEY,
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        dry_run BOOLEAN NOT NULL DEFAULT true,       -- chỉ áp cho TỈA; giữ-chạy-thêm luôn thật khi bật
+        max_pct NUMERIC(5,1) NOT NULL DEFAULT 27,     -- % chi phí tổng MKT hôm nay tối đa
+        lenient_max_pct NUMERIC(5,1) NOT NULL DEFAULT 70,
+        trim_hour INT NOT NULL DEFAULT 13,            -- từ giờ này bắt đầu tỉa nếu tổng > max_pct
+        trim_spend BIGINT NOT NULL DEFAULT 0,         -- hoặc khi tổng chi MKT hôm nay đạt mức này (0 = chỉ theo giờ)
+        trim_min_spend BIGINT NOT NULL DEFAULT 200000,-- camp phải chi ≥ mức này hôm nay mới bị tỉa
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
     `)
   })().catch((e) => { _ready = null; throw e })
   return _ready
@@ -186,6 +200,94 @@ async function spendToday(campaignId: string): Promise<number> {
     [campaignId, nowVN().date]
   )
   return Number(rows[0]?.s ?? 0)
+}
+
+/** CTR hôm nay của camp (%) — null khi chưa có hiển thị. */
+async function ctrToday(campaignId: string): Promise<number | null> {
+  const { rows } = await getPool().query(
+    `SELECT COALESCE(SUM(impressions),0)::bigint i, COALESCE(SUM(clicks),0)::bigint c FROM mkt_ads_cost
+      WHERE campaign_id = $1 AND deleted_at IS NULL AND date = $2::date`,
+    [campaignId, nowVN().date]
+  )
+  const i = Number(rows[0]?.i ?? 0)
+  return i > 0 ? (Number(rows[0].c) / i) * 100 : null
+}
+
+export type MktSetting = {
+  mkt_name: string; enabled: boolean; dry_run: boolean; max_pct: number; lenient_max_pct: number
+  trim_hour: number; trim_spend: number; trim_min_spend: number
+}
+type PortfolioCtx = { setting: MktSetting; total: MktTotal; ctr_base: number | null; trim_active: boolean; pick: string | null; pick_reason?: string }
+
+/**
+ * Bối cảnh tổng theo MKT cho 1 vòng xét: % chi phí cả MKT hôm nay, CTR 7 ngày của MKT, có đang
+ * giờ tỉa không, và camp xấu nhất được chọn tỉa vòng này (mỗi MKT tối đa 1 camp / 15 phút).
+ */
+async function loadPortfolios(hour: number): Promise<Map<string, PortfolioCtx>> {
+  const pool = getPool()
+  const out = new Map<string, PortfolioCtx>()
+  const { rows: settings } = await pool.query(`SELECT * FROM auto_scale_mkt WHERE enabled`)
+  if (!settings.length) return out
+  const today = nowVN().date
+  const totals = await mktTotalsForDate(today)
+
+  for (const raw of settings) {
+    const setting: MktSetting = {
+      ...raw, max_pct: Number(raw.max_pct), lenient_max_pct: Number(raw.lenient_max_pct),
+      trim_hour: Number(raw.trim_hour), trim_spend: Number(raw.trim_spend), trim_min_spend: Number(raw.trim_min_spend),
+    }
+    const mkt = setting.mkt_name
+    const total = totals[mkt] || { spend: 0, revenue: 0, orders: 0, pct: null }
+    const { rows: base } = await pool.query(
+      `SELECT COALESCE(SUM(impressions),0)::bigint i, COALESCE(SUM(clicks),0)::bigint c FROM mkt_ads_cost
+        WHERE mkt_name = $1 AND deleted_at IS NULL AND date >= $2::date - 7 AND date < $2::date`,
+      [mkt, today]
+    )
+    const ctr_base = Number(base[0]?.i) > 0 ? (Number(base[0].c) / Number(base[0].i)) * 100 : null
+    const trim_active = hour >= setting.trim_hour || (setting.trim_spend > 0 && total.spend >= setting.trim_spend)
+    const ctx: PortfolioCtx = { setting, total, ctr_base, trim_active, pick: null }
+    out.set(mkt, ctx)
+
+    const bad = total.pct === null ? total.spend > 0 : total.pct > setting.max_pct
+    if (!trim_active || !bad) continue
+
+    // Ứng viên tỉa: camp đã gắn, bộ điều kiện bật phanh, đang chạy, chi đủ mẫu, % hôm nay > mục tiêu,
+    // chưa bị hệ thống tắt hôm nay (người bật lại thì tôn trọng tới hết ngày).
+    const { rows: camps } = await pool.query(
+      `SELECT c.campaign_id, c.campaign_name, c.rule_id FROM auto_scale_camp c
+         JOIN auto_scale_rule r ON r.id = c.rule_id
+        WHERE c.enabled AND r.active AND r.pause_enabled AND c.mkt_name = $1
+          AND EXISTS (SELECT 1 FROM mkt_ads_cost m WHERE m.campaign_id = c.campaign_id AND m.date = $2::date AND m.effective_status = 'ACTIVE')
+          AND NOT EXISTS (SELECT 1 FROM auto_scale_log l WHERE l.campaign_id = c.campaign_id AND l.action = 'tat' AND l.success
+                          AND l.created_at >= $3::timestamptz AND (NOT l.dry_run OR $4))`,
+      [mkt, today, startOfTodayVN(), setting.dry_run]
+    )
+    let worst: { id: string; name: string; rule_id: number; pct: number; spend: number; rev: number } | null = null
+    for (const c of camps) {
+      const spend = await spendToday(c.campaign_id)
+      if (spend < setting.trim_min_spend) continue
+      const rev = await revenueSince(c.campaign_id, c.campaign_name, startOfTodayVN())
+      const pct = rev > 0 ? (spend / rev) * 100 : Infinity
+      if (pct <= setting.max_pct) continue
+      if (!worst || pct > worst.pct || (pct === worst.pct && spend > worst.spend)) {
+        worst = { id: c.campaign_id, name: c.campaign_name, rule_id: Number(c.rule_id), pct, spend, rev }
+      }
+    }
+    if (!worst) continue
+    if (setting.dry_run) {
+      // Chạy thử: ghi "lẽ ra đã tỉa" (mỗi camp 1 lần/ngày nhờ điều kiện NOT EXISTS ở trên)
+      await pool.query(
+        `INSERT INTO auto_scale_log (campaign_id, campaign_name, rule_id, action, reason, metrics, dry_run, success)
+         VALUES ($1,$2,$3,'tat',$4,$5::jsonb,true,true)`,
+        [worst.id, worst.name, worst.rule_id,
+         `Tỉa (chạy thử): tổng ${mkt} hôm nay ${total.pct ?? "—"}% > ${setting.max_pct}% — camp xấu nhất (chi ${vnd(worst.spend)}, ${Number.isFinite(worst.pct) ? worst.pct.toFixed(0) + "%" : "chưa có doanh số"})`,
+         JSON.stringify({ mkt_total: total, spend_today: worst.spend, revenue_today: worst.rev })]
+      ).catch(() => {})
+      continue
+    }
+    ctx.pick = worst.id
+  }
+  return out
 }
 
 /** Doanh số hôm nay của camp — cùng cách ghép đơn với ordersSince, cùng cách tính cod_total của báo cáo. */
@@ -463,6 +565,11 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
     onlyCampaignId ? [onlyCampaignId] : []
   )
   let actions = 0
+  // Bối cảnh tổng theo MKT — tính 1 lần/vòng cho mọi camp (kể cả khi chỉ xét 1 camp)
+  const portfolios = await loadPortfolios(hour).catch((e) => {
+    console.error("[AutoScale] portfolio error:", e.message)
+    return new Map<string, PortfolioCtx>()
+  })
 
   for (const camp of camps) {
     const rule: Rule = {
@@ -511,6 +618,16 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       }
       metrics.revenue_today = pauseInputs.revenue_today
       metrics.cost_pct_today = pauseInputs.revenue_today ? Math.round((spend / pauseInputs.revenue_today) * 1000) / 10 : null
+      const ctx = camp.mkt_name ? portfolios.get(camp.mkt_name) : undefined
+      if (ctx) {
+        const ctr = await ctrToday(camp.campaign_id)
+        const portfolio: Portfolio = {
+          mkt: camp.mkt_name, pct: ctx.total.pct, max_pct: ctx.setting.max_pct, lenient_max_pct: ctx.setting.lenient_max_pct,
+          trim_active: ctx.trim_active, trim_pick: ctx.pick === camp.campaign_id, ctr, ctr_base: ctx.ctr_base,
+        }
+        pauseInputs.portfolio = portfolio
+        metrics.mkt = { pct: ctx.total.pct, spend: ctx.total.spend, revenue: ctx.total.revenue, trim_active: ctx.trim_active, ctr, ctr_base: ctx.ctr_base }
+      }
     }
 
     const d = decide({

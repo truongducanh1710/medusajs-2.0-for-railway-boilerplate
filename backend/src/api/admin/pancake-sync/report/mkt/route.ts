@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { getOwnScope } from "../../../../../lib/freelance-scope"
+import { MKT_OF_ORDER_SQL } from "../../../../../lib/mkt-today"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -33,50 +34,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const truncUnit = group_by === "month" ? "month" : "day"
 
-    // Normalize tên marketer Pancake → MKT code (khớp với campaign name FB Ads)
-    // raw->'marketer'->>'name' trả về tên hiển thị có space/dấu (VD: "Nam DV", "Phạm Du")
-    // cần map về code viết tắt để JOIN được với mkt_ads_cost
-    const mktExpr = `
-      CASE UPPER(TRIM(COALESCE(NULLIF(TRIM(raw->'marketer'->>'name'), ''), '')))
-        WHEN 'NAM DV'     THEN 'NAMDV'
-        WHEN 'PHẠM DU'    THEN 'DUPD'
-        WHEN 'NGUYỄN MAI' THEN 'NGUYEN MAI'
-        WHEN 'TRUONGAN'   THEN 'ANHTD'
-        WHEN ''           THEN NULL
-        ELSE UPPER(TRIM(NULLIF(TRIM(raw->'marketer'->>'name'), '')))
-      END
-    `
-
-    // Fallback UTM nếu marketer name null.
-    // Format camp: MÃSP_DD/MM_MKTCODE_... — token số 2 là NGÀY, không phải mã MKT.
-    // Phải quét từng token và chỉ nhận token khớp pattern mã MKT (3-8 chữ in hoa),
-    // giữ đồng bộ với extractMkt() trong lib/mkt-code.ts (KHÔNG copy lại logic khác ở đây).
-    const mktCodePattern = `^[A-Z]{3,8}$`
-    const mktRaw = `
-      COALESCE(
-        ${mktExpr},
-        (
-          SELECT UPPER(t.tok)
-          FROM unnest(string_to_array(COALESCE(raw->>'p_utm_campaign', ''), '_')) WITH ORDINALITY AS t(tok, ord)
-          WHERE t.ord > 1 AND UPPER(TRIM(t.tok)) ~ '${mktCodePattern}'
-          ORDER BY t.ord
-          LIMIT 1
-        ),
-        (
-          SELECT UPPER(t.tok)
-          FROM unnest(string_to_array(COALESCE(raw->>'p_utm_source', ''), '_')) WITH ORDINALITY AS t(tok, ord)
-          WHERE t.ord > 1 AND UPPER(TRIM(t.tok)) ~ '${mktCodePattern}'
-          ORDER BY t.ord
-          LIMIT 1
-        ),
-        'KHÁC'
-      )
-    `
-
-    // Alias camp-name code → tên Pancake (giữ đồng bộ với MKT_ALIASES trong lib/mkt-code.ts)
-    const mktWithFallback = `
-      CASE WHEN ${mktRaw} = 'TRUONGAN' THEN 'ANHTD' ELSE ${mktRaw} END
-    `
+    // Gán đơn cho MKT — dùng chung với tự scale (lib/mkt-today.ts), đừng copy logic ra đây
+    const mktWithFallback = MKT_OF_ORDER_SQL
 
     // Load handover rules — áp dụng khi tính attribution theo ngày
     let handoverRules: { from_code: string; to_code: string; effective_from: string; effective_to: string | null }[] = []
