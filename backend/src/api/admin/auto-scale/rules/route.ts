@@ -31,13 +31,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     b.nightly_reset !== false,
     b.dry_run !== false,
     b.active !== false,
+    b.pause_enabled === true,
+    num(b.pause_day_spend, 50_000, 50_000_000, 300_000),
+    num(b.pause_cost_pct, 5, 500, 45),
+    b.pause_resume !== false,
+    num(b.pause_max_streak, 1, 14, 3),
+    num(b.pause_min_age_hours, 0, 720, 0),
+    b.pause_dry_run !== false,
   ]
   const pool = getPool()
   if (b.id) {
     const { rows } = await pool.query(
       `UPDATE auto_scale_rule SET name=$1, target_cpa=$2, min_orders=$3, spend_ratio=$4, multiplier=$5, max_budget=$6,
-         cooldown_min=$7, revert_factor=$8, hour_from=$9, hour_to=$10, nightly_reset=$11, dry_run=$12, active=$13, updated_at=now()
-       WHERE id=$14 RETURNING *`,
+         cooldown_min=$7, revert_factor=$8, hour_from=$9, hour_to=$10, nightly_reset=$11, dry_run=$12, active=$13,
+         pause_enabled=$14, pause_day_spend=$15, pause_cost_pct=$16, pause_resume=$17, pause_max_streak=$18, pause_min_age_hours=$19, pause_dry_run=$20,
+         updated_at=now()
+       WHERE id=$21 RETURNING *`,
       [...v, b.id]
     )
     if (!rows.length) return res.status(404).json({ error: "Không tìm thấy bộ điều kiện" })
@@ -45,8 +54,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
   const { rows } = await pool.query(
     `INSERT INTO auto_scale_rule (name, target_cpa, min_orders, spend_ratio, multiplier, max_budget, cooldown_min,
-       revert_factor, hour_from, hour_to, nightly_reset, dry_run, active, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+       revert_factor, hour_from, hour_to, nightly_reset, dry_run, active,
+       pause_enabled, pause_day_spend, pause_cost_pct, pause_resume, pause_max_streak, pause_min_age_hours, pause_dry_run, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
     [...v, auth.email]
   )
   return res.json({ rule: rows[0] })

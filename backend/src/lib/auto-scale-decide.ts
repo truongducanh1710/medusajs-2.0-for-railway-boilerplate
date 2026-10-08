@@ -12,6 +12,18 @@ export type DecideRule = {
   hour_from: number
   hour_to: number
   nightly_reset: boolean
+  /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
+  pause_enabled?: boolean
+  /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
+  pause_day_spend?: number
+  /** % chi phí hôm nay (chi / doanh số) > mức này → tắt tới hết ngày. 0 đơn = vô cùng */
+  pause_cost_pct?: number
+  /** Sáng hôm sau tự bật lại camp hệ thống đã tắt */
+  pause_resume?: boolean
+  /** Xấu bao nhiêu ngày LIÊN TIẾP thì để tắt hẳn (không tự bật lại) */
+  pause_max_streak?: number
+  /** Camp mới tạo dưới số giờ này thì không phanh */
+  pause_min_age_hours?: number
 }
 
 export type DecideInput = {
@@ -33,10 +45,24 @@ export type DecideInput = {
   spend_2h_ago?: number | null
   /** Số phút giữa snapshot đó và bây giờ */
   minutes_since_snapshot?: number | null
+  /** Doanh số hôm nay (cod_amount đơn hợp lệ) */
+  revenue_today?: number
+  /** Tuổi camp theo created_time trên FB (giờ). null = không rõ → không phanh */
+  camp_age_hours?: number | null
+  /** Hệ thống đã tắt camp này HÔM NAY (người bật lại thì tôn trọng tới hết ngày) */
+  paused_today?: boolean
+  /** Hôm qua hệ thống tắt camp và sau đó không ai tự tắt/bật tay → được tự bật lại */
+  auto_paused_yesterday?: boolean
+  /** Số ngày liên tiếp (kết thúc hôm qua) hệ thống phải tắt camp này */
+  pause_streak?: number
+  /** Đã tự bật lại hôm nay */
+  resumed_today?: boolean
 }
 
 export type Decision =
   | { action: "tang" | "lui" | "reset"; to: number; reason: string }
+  | { action: "tat"; reason: string; final: boolean }
+  | { action: "bat"; to: number; reason: string }
   | { action: "none"; reason: string }
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`
@@ -73,24 +99,59 @@ export function projectFromRecent(spentNow: number, spentBefore: number, minutes
   return spentNow + rate * (1 - shareNow)
 }
 
+/**
+ * Phanh ngày xấu: hôm nay đã chi ≥ pause_day_spend mà % chi phí HÔM NAY > pause_cost_pct → tắt tới hết ngày.
+ * Hôm qua tốt cũng không cứu được hôm nay — ngày tốt thì tự scale tăng ga, ngày xấu thì phanh.
+ *
+ * Ngưỡng 300k / 45% / bật lại sáng hôm sau / tắt hẳn sau 3 ngày xấu liền chọn bằng mô phỏng
+ * 26/09–07/10 (camp XUANLT + ANHTD): lời ròng tốt nhất. Tắt HẲN ngay ngày xấu đầu tiên thì mất
+ * camp thắng (23/9 S1: ngày 26/09 chi 549k 0 đơn, sau đó chạy 7tr ở 27%).
+ */
+export function pauseReason(x: DecideInput): string | null {
+  const r = x.rule
+  if (!r.pause_enabled || x.paused_today) return null
+  const minAge = r.pause_min_age_hours ?? 0
+  if (minAge > 0 && (x.camp_age_hours === null || x.camp_age_hours === undefined || x.camp_age_hours < minAge)) return null
+  const minSpend = Number(r.pause_day_spend || 0)
+  const maxPct = Number(r.pause_cost_pct || 0)
+  if (!minSpend || !maxPct || x.spend_today < minSpend) return null
+  const rev = Number(x.revenue_today || 0)
+  const pct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
+  if (pct <= maxPct) return null
+  return `Hôm nay chi ${vnd(x.spend_today)}, ${x.orders_today} đơn, doanh số ${vnd(rev)} → ${Number.isFinite(pct) ? `${pct.toFixed(0)}%` : "chưa có doanh số"} > ${maxPct}%`
+}
+
 export function decide(x: DecideInput): Decision {
   const { rule } = x
   if (!x.budget) return { action: "none", reason: "Camp không có ngân sách cấp campaign (ABO) — không hỗ trợ" }
 
   // 1. Reset đêm: từ 00:30 tới trước 6:00, mỗi camp 1 lần/ngày
-  if (rule.nightly_reset && x.hour < 6 && (x.hour > 0 || x.minute >= 30)) {
-    if (x.reset_done_today) return { action: "none", reason: "Đã reset đêm nay" }
+  if (rule.nightly_reset && x.hour < 6 && (x.hour > 0 || x.minute >= 30) && !x.reset_done_today) {
     // Chỉ HẠ về mức nền. MKT chủ động hạ tay thấp hơn nền (camp xấu) thì giữ nguyên, không nâng lên.
     if (x.budget <= x.base) return { action: "reset", to: x.budget, reason: x.budget === x.base ? "Đã ở mức nền" : "Đang thấp hơn mức nền — giữ nguyên" }
     return { action: "reset", to: x.base, reason: "Reset đêm về mức nền" }
   }
 
-  if (x.hour < rule.hour_from || x.hour >= rule.hour_to) {
-    return { action: "none", reason: `Ngoài khung giờ ${rule.hour_from}h–${rule.hour_to}h` }
+  // 2. Ngày mới: bật lại camp hôm qua bị phanh (sau khi đã reset về mức nền)
+  if (x.status === "PAUSED" && rule.pause_enabled && rule.pause_resume && x.auto_paused_yesterday && !x.resumed_today
+      && x.hour < 6 && (x.hour > 0 || x.minute >= 30)) {
+    const max = rule.pause_max_streak ?? 3
+    if ((x.pause_streak ?? 0) >= max) return { action: "none", reason: `Xấu ${x.pause_streak} ngày liền — để tắt hẳn, chờ người quyết` }
+    return { action: "bat", to: x.base, reason: `Ngày mới — bật lại sau khi hôm qua bị phanh (${x.pause_streak} ngày xấu liền)` }
   }
+
   if (x.status !== "ACTIVE") return { action: "none", reason: `Camp đang ${x.status}` }
 
-  // 2. Lùi — chỉ xét lần tăng của hôm nay, đã qua ≥ 60 phút, và ngân sách vẫn đúng mức đã tăng
+  // 3. Phanh ngày xấu — chạy mọi giờ (camp tiêu ~40% tiền sau 19h, không ai canh)
+  const tat = pauseReason(x)
+  if (tat) {
+    const final = !rule.pause_resume || (x.pause_streak ?? 0) + 1 >= (rule.pause_max_streak ?? 3)
+    return { action: "tat", reason: tat, final }
+  }
+
+  // 4. Lùi — chạy mọi giờ: lần tăng chiều muộn mà đơn không về thì tối vẫn phải lùi
+  //    (06/10: tăng lên 2tr lúc 16h30, sau đó tiêu thêm ~760k, 0 đơn — trước đây hết khung 19h là bỏ mặc).
+  //    Chỉ xét lần tăng của hôm nay, đã qua ≥ 60 phút, và ngân sách vẫn đúng mức đã tăng
   //    (MKT tự chỉnh tay thì không can thiệp).
   const s = x.step
   if (s && s.to === x.budget && s.minutes_ago >= 60) {
@@ -107,7 +168,11 @@ export function decide(x: DecideInput): Decision {
     }
   }
 
-  // 3. Tăng
+  if (x.hour < rule.hour_from || x.hour >= rule.hour_to) {
+    return { action: "none", reason: `Ngoài khung giờ ${rule.hour_from}h–${rule.hour_to}h` }
+  }
+
+  // 5. Tăng
   const lyDo: string[] = []
   if (x.reverted_today) lyDo.push("hôm nay đã phải lùi — không tăng lại")
   const cpa = x.orders_today > 0 ? x.spend_today / x.orders_today : null

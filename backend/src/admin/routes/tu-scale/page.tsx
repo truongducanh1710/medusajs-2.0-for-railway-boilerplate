@@ -7,6 +7,8 @@ type Rule = {
   id?: number; name: string; target_cpa: number; min_orders: number; spend_ratio: number; multiplier: number
   max_budget: number; cooldown_min: number; revert_factor: number; hour_from: number; hour_to: number
   nightly_reset: boolean; dry_run: boolean; active: boolean; camp_count?: number
+  pause_enabled: boolean; pause_day_spend: number; pause_cost_pct: number; pause_resume: boolean
+  pause_max_streak: number; pause_min_age_hours: number; pause_dry_run: boolean
 }
 type Camp = {
   campaign_id: string; campaign_name: string; rule_id: number; rule_name: string; dry_run: boolean; mkt_name: string
@@ -27,6 +29,8 @@ const MAC_DINH: Rule = {
   name: "Kiểu XUANLT — nhân đôi khi ra đơn", target_cpa: 200000, min_orders: 2, spend_ratio: 1, multiplier: 2,
   max_budget: 4000000, cooldown_min: 120, revert_factor: 1.5, hour_from: 9, hour_to: 19,
   nightly_reset: true, dry_run: true, active: true,
+  pause_enabled: false, pause_day_spend: 300000, pause_cost_pct: 45, pause_resume: true,
+  pause_max_streak: 3, pause_min_age_hours: 0, pause_dry_run: true,
 }
 
 const vnd = (n: any) => (n === null || n === undefined || n === "" ? "—" : `${Math.round(Number(n)).toLocaleString("vi-VN")}đ`)
@@ -35,6 +39,8 @@ const ACTION: Record<string, { label: string; color: string }> = {
   tang: { label: "🚀 Tăng", color: "#16a34a" },
   lui: { label: "↩️ Lùi", color: "#d97706" },
   reset: { label: "🌙 Reset", color: "#6b7280" },
+  tat: { label: "⛔ Phanh (tắt)", color: "#dc2626" },
+  bat: { label: "▶️ Bật lại", color: "#2563eb" },
 }
 
 function TuScalePage() {
@@ -107,7 +113,9 @@ function TuScalePage() {
       <p style={{ color: "#4b5563", fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
         Chỉ camp <b>được gắn bộ điều kiện</b> mới được hệ thống tự đổi ngân sách. Cứ 15 phút, trong khung giờ của bộ điều kiện:
         camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
-        sau lần tăng mà đơn không về tương xứng → <b>lùi</b> về mức trước. Từ <b>0h30</b> mỗi đêm → <b>reset</b> về mức nền.
+        sau lần tăng mà đơn không về tương xứng → <b>lùi</b> về mức trước (xét cả ngoài khung giờ). Từ <b>0h30</b> mỗi đêm → <b>reset</b> về mức nền.
+        Bộ điều kiện bật <b>phanh ngày xấu</b> thì xét 24/7 theo số liệu <b>riêng hôm nay</b>: đã chi ≥ ngưỡng mà % chi phí hôm nay (chi / doanh số) quá mức → <b>tắt camp tới hết ngày</b>,
+        0h30 hôm sau <b>tự bật lại</b> ở mức nền; xấu N ngày liền thì để tắt hẳn chờ người quyết. Ngày tốt tăng ga, ngày xấu phanh.
         Chỉ hỗ trợ camp CBO. Mọi thay đổi nhắn Telegram cho MKT của camp + super admin.
         <br />Bộ điều kiện ở chế độ <b>CHẠY THỬ</b> chỉ ghi nhật ký "lẽ ra đã tăng", không đổi ngân sách thật.
       </p>
@@ -122,7 +130,7 @@ function TuScalePage() {
         <div style={{ overflowX: "auto" }}>
           <table style={tbl}>
             <thead><tr>
-              {["Tên", "CPA mục tiêu", "Đơn tối thiểu", "Nhịp tiêu ≥", "Nhân", "Trần/ngày", "Chờ giữa 2 lần", "Lùi khi CPA >", "Khung giờ", "Reset 0h30", "Chế độ", "Camp", ""].map((h) => <th key={h} style={th}>{h}</th>)}
+              {["Tên", "CPA mục tiêu", "Đơn tối thiểu", "Nhịp tiêu ≥", "Nhân", "Trần/ngày", "Chờ giữa 2 lần", "Lùi khi CPA >", "Khung giờ", "Reset 0h30", "Phanh ngày xấu", "Chế độ", "Camp", ""].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>
               {rules.map((r) => (
@@ -137,15 +145,20 @@ function TuScalePage() {
                   <td style={td}>{Number(r.revert_factor)}× mục tiêu</td>
                   <td style={td}>{r.hour_from}h–{r.hour_to}h</td>
                   <td style={td}>{r.nightly_reset ? "Có" : "Không"}</td>
+                  <td style={td}>{!r.pause_enabled ? <span style={{ color: "#6b7280" }}>Không</span> : <>
+                    <div>Chi ≥ {vnd(r.pause_day_spend)} và % chi phí hôm nay &gt; {Number(r.pause_cost_pct)}%</div>
+                    <div>{r.pause_resume ? `Sáng mai bật lại; xấu ${r.pause_max_streak} ngày liền thì tắt hẳn` : "Tắt hẳn, không tự bật lại"}</div>
+                    <div style={{ color: r.pause_dry_run ? "#d97706" : "#dc2626", fontWeight: 600 }}>{r.pause_dry_run ? "CHẠY THỬ" : "TẮT THẬT"}</div>
+                  </>}</td>
                   <td style={td}>{!r.active ? <span style={{ color: "#6b7280" }}>Tắt</span> : r.dry_run ? <span style={{ color: "#d97706", fontWeight: 600 }}>CHẠY THỬ</span> : <span style={{ color: "#16a34a", fontWeight: 600 }}>ĐANG CHẠY THẬT</span>}</td>
                   <td style={td}>{r.camp_count}</td>
                   <td style={td}>
-                    <button style={btn} onClick={() => setEditing({ ...r, spend_ratio: Number(r.spend_ratio), multiplier: Number(r.multiplier), revert_factor: Number(r.revert_factor), target_cpa: Number(r.target_cpa), max_budget: Number(r.max_budget) })}>Sửa</button>{" "}
+                    <button style={btn} onClick={() => setEditing({ ...r, spend_ratio: Number(r.spend_ratio), multiplier: Number(r.multiplier), revert_factor: Number(r.revert_factor), target_cpa: Number(r.target_cpa), max_budget: Number(r.max_budget), pause_day_spend: Number(r.pause_day_spend), pause_cost_pct: Number(r.pause_cost_pct) })}>Sửa</button>{" "}
                     {!r.camp_count && <button style={btn} onClick={() => window.confirm(`Xoá "${r.name}"?`) && act(() => apiJson(`/admin/auto-scale/rules?id=${r.id}`, "DELETE"), "Đã xoá")}>Xoá</button>}
                   </td>
                 </tr>
               ))}
-              {!rules.length && <tr><td colSpan={13} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Chưa có bộ điều kiện nào — bấm "+ Tạo bộ điều kiện"</td></tr>}
+              {!rules.length && <tr><td colSpan={14} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Chưa có bộ điều kiện nào — bấm "+ Tạo bộ điều kiện"</td></tr>}
             </tbody>
           </table>
         </div>
@@ -171,6 +184,25 @@ function TuScalePage() {
               <label><input type="checkbox" checked={editing.nightly_reset} onChange={(e) => setEditing({ ...editing, nightly_reset: e.target.checked })} /> Reset về mức nền lúc 0h30</label>
               <label><input type="checkbox" checked={editing.dry_run} onChange={(e) => setEditing({ ...editing, dry_run: e.target.checked })} /> <b>Chạy thử</b> (chỉ ghi, không đổi thật)</label>
               <label><input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} /> Đang bật</label>
+            </div>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed #a5b4fc" }}>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>
+                <input type="checkbox" checked={editing.pause_enabled} onChange={(e) => setEditing({ ...editing, pause_enabled: e.target.checked })} /> ⛔ Phanh ngày xấu (xét 24/7 theo số liệu hôm nay)
+              </label>
+              {editing.pause_enabled && <>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 8 }}>
+                  {F("pause_day_spend", "Xét khi hôm nay đã chi ≥ (đ)", "Đủ mẫu mới phán — mô phỏng: 300k")}
+                  {F("pause_cost_pct", "Phanh khi % chi phí hôm nay >", "Chi / doanh số hôm nay; 0 đơn = vô cùng", 1)}
+                  {F("pause_max_streak", "Tắt hẳn sau số ngày xấu liền", "Không tự bật lại nữa, báo người")}
+                  {F("pause_min_age_hours", "Không phanh camp mới dưới (giờ)", "0 = phanh cả camp mới")}
+                </div>
+                <label style={{ fontSize: 13, display: "block", marginTop: 8 }}>
+                  <input type="checkbox" checked={editing.pause_resume} onChange={(e) => setEditing({ ...editing, pause_resume: e.target.checked })} /> Sáng hôm sau (0h30) tự bật lại ở mức nền
+                </label>
+                <label style={{ fontSize: 13, display: "block", marginTop: 4 }}>
+                  <input type="checkbox" checked={editing.pause_dry_run} onChange={(e) => setEditing({ ...editing, pause_dry_run: e.target.checked })} /> <b>Phanh: chạy thử</b> (chỉ ghi "lẽ ra đã phanh", riêng với phần tăng ngân sách)
+                </label>
+              </>}
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button style={btnPri} disabled={busy} onClick={saveRule}>Lưu</button>

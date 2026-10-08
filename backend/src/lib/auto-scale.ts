@@ -29,6 +29,13 @@ export type Rule = {
   nightly_reset: boolean
   dry_run: boolean
   active: boolean
+  pause_enabled: boolean
+  pause_day_spend: number
+  pause_cost_pct: number
+  pause_resume: boolean
+  pause_max_streak: number
+  pause_min_age_hours: number
+  pause_dry_run: boolean
 }
 
 let _ready: Promise<void> | null = null
@@ -92,6 +99,14 @@ export function ensureTables(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS idx_auto_scale_log_camp ON auto_scale_log (campaign_id, created_at DESC);
+      -- Tự tắt camp lỗ (thêm 08/10/2026). Chế độ chạy thử RIÊNG với phần tăng ngân sách.
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_enabled BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_day_spend BIGINT NOT NULL DEFAULT 300000;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_cost_pct NUMERIC(5,1) NOT NULL DEFAULT 45;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_resume BOOLEAN NOT NULL DEFAULT true;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_max_streak INT NOT NULL DEFAULT 3;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_min_age_hours INT NOT NULL DEFAULT 0;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_dry_run BOOLEAN NOT NULL DEFAULT true;
     `)
   })().catch((e) => { _ready = null; throw e })
   return _ready
@@ -113,7 +128,7 @@ function token(): string {
 
 export async function fbCampaign(campaignId: string): Promise<{ ok: boolean; data: any }> {
   try {
-    const r = await fetch(`${GRAPH}/${campaignId}?fields=name,daily_budget,effective_status,account_id&access_token=${token()}`)
+    const r = await fetch(`${GRAPH}/${campaignId}?fields=name,daily_budget,effective_status,account_id,created_time&access_token=${token()}`)
     const data: any = await r.json()
     return { ok: !data?.error, data }
   } catch (e: any) {
@@ -124,6 +139,16 @@ export async function fbCampaign(campaignId: string): Promise<{ ok: boolean; dat
 async function fbSetBudget(campaignId: string, budget: number): Promise<{ ok: boolean; data: any }> {
   try {
     const r = await fetch(`${GRAPH}/${campaignId}?daily_budget=${Math.round(budget)}&access_token=${token()}`, { method: "POST" })
+    const data: any = await r.json()
+    return { ok: !!data?.success && !data?.error, data }
+  } catch (e: any) {
+    return { ok: false, data: { error: { message: e.message } } }
+  }
+}
+
+async function fbSetStatus(campaignId: string, status: "ACTIVE" | "PAUSED"): Promise<{ ok: boolean; data: any }> {
+  try {
+    const r = await fetch(`${GRAPH}/${campaignId}?status=${status}&access_token=${token()}`, { method: "POST" })
     const data: any = await r.json()
     return { ok: !!data?.success && !data?.error, data }
   } catch (e: any) {
@@ -161,6 +186,58 @@ async function spendToday(campaignId: string): Promise<number> {
     [campaignId, nowVN().date]
   )
   return Number(rows[0]?.s ?? 0)
+}
+
+/** Doanh số hôm nay của camp — cùng cách ghép đơn với ordersSince, cùng cách tính cod_total của báo cáo. */
+async function revenueSince(campaignId: string, campaignName: string, since: string): Promise<number> {
+  const { rows } = await getPool().query(
+    `SELECT COALESCE(SUM(cod_amount),0)::bigint s FROM pancake_order
+      WHERE (raw->>'p_utm_campaign' = $1
+             OR (COALESCE(raw->>'p_utm_campaign','') !~ '^[0-9]{10,}$' AND raw->>'p_utm_source' = $2))
+        AND pancake_created_at >= $3::timestamptz AND ${DON_HOP_LE}`,
+    [campaignId, campaignName, since]
+  )
+  return Number(rows[0]?.s ?? 0)
+}
+
+/**
+ * Lịch sử phanh của camp: hôm nay đã phanh chưa, hôm qua có phanh không, chuỗi ngày phanh liên tiếp
+ * (kết thúc hôm qua), đã tự bật lại hôm nay chưa, và sau lần phanh gần nhất có ai thao tác tay không.
+ */
+async function pauseHistory(campaignId: string) {
+  const pool = getPool()
+  const today = nowVN().date
+  const { rows } = await pool.query(
+    `SELECT DISTINCT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d FROM auto_scale_log
+      WHERE campaign_id = $1 AND action = 'tat' AND NOT dry_run AND success AND created_at > now() - interval '15 days'`,
+    [campaignId]
+  )
+  const days = new Set(rows.map((r: any) => r.d))
+  const dayStr = (back: number) => {
+    const d = new Date(`${today}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - back)
+    return d.toISOString().slice(0, 10)
+  }
+  let streak = 0
+  while (days.has(dayStr(streak + 1))) streak++
+  const { rows: res } = await pool.query(
+    `SELECT 1 FROM auto_scale_log WHERE campaign_id = $1 AND action = 'bat' AND success AND created_at >= $2::timestamptz LIMIT 1`,
+    [campaignId, startOfTodayVN()]
+  )
+  // Người tự bật/tắt sau lần phanh gần nhất → không tự bật lại (người đã quyết)
+  const { rows: manual } = await pool.query(
+    `SELECT 1 FROM camp_action_log
+      WHERE campaign_id = $1 AND action IN ('pause','activate') AND source <> 'auto_scale'
+        AND created_at > (SELECT MAX(created_at) FROM auto_scale_log WHERE campaign_id = $1 AND action = 'tat' AND NOT dry_run AND success)
+      LIMIT 1`,
+    [campaignId]
+  ).catch(() => ({ rows: [] as any[] }))
+  return {
+    paused_today: days.has(today),
+    auto_paused_yesterday: days.has(dayStr(1)) && manual.length === 0,
+    pause_streak: streak,
+    resumed_today: res.length > 0,
+  }
 }
 
 /** Tài khoản đang sát ngưỡng thanh toán hoặc lỗi → không tăng thêm. */
@@ -267,6 +344,63 @@ async function apply(opts: {
   return ok
 }
 
+// ── Phanh (tắt) / bật lại camp (hoặc ghi lại nếu chạy thử) ───────────────────
+async function applyStatus(opts: {
+  camp: any; rule: Rule; action: "tat" | "bat"; budget: number; to?: number; final?: boolean
+  reason: string; metrics: any; userModule?: any
+}): Promise<boolean> {
+  const { camp, rule, action, budget, reason, metrics } = opts
+  const pool = getPool()
+  const dry = rule.pause_dry_run
+  const status = action === "tat" ? "PAUSED" : "ACTIVE"
+  let ok = true
+  let err: string | null = null
+  if (!dry) {
+    // Bật lại: đưa ngân sách về mức nền trước (reset đêm đã làm, đây là chốt chặn)
+    if (action === "bat" && opts.to && opts.to !== budget) await fbSetBudget(camp.campaign_id, opts.to)
+    const r = await fbSetStatus(camp.campaign_id, status)
+    ok = r.ok
+    err = ok ? null : String(r.data?.error?.error_user_msg || r.data?.error?.message || "FB error").slice(0, 300)
+    if (ok) {
+      await pool.query(
+        `UPDATE mkt_ads_cost SET effective_status = $1, updated_at = now() WHERE campaign_id = $2 AND date = $3::date`,
+        [status, camp.campaign_id, nowVN().date]
+      ).catch(() => {})
+      await pool.query(
+        `INSERT INTO camp_action_log (campaign_id, campaign_name, action, old_value, new_value, source, user_email, fb_response, success)
+         VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,'auto_scale',$6,$7::jsonb,true)`,
+        [camp.campaign_id, camp.campaign_name, action === "tat" ? "pause" : "activate",
+         JSON.stringify({ status: action === "tat" ? "ACTIVE" : "PAUSED" }), JSON.stringify({ status }),
+         `auto-scale:${rule.name}`, JSON.stringify(r.data)]
+      ).catch(() => {})
+      await pool.query(
+        `UPDATE auto_scale_camp SET step_at=NULL, step_from=NULL, step_to=NULL, step_spend=NULL, updated_at=now() WHERE campaign_id=$1`,
+        [camp.campaign_id]
+      ).catch(() => {})
+    }
+  }
+  await pool.query(
+    `INSERT INTO auto_scale_log (campaign_id, campaign_name, rule_id, action, old_budget, new_budget, reason, metrics, dry_run, success, error)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)`,
+    [camp.campaign_id, camp.campaign_name, rule.id, action, budget, opts.to ?? budget, reason, JSON.stringify(metrics), dry, ok, err]
+  )
+  if (opts.userModule) {
+    const head = action === "tat"
+      ? `⛔ Tự scale — PHANH NGÀY XẤU (tắt camp)${dry ? " (CHẠY THỬ, chưa tắt thật)" : ""}`
+      : `▶️ Tự scale — BẬT LẠI camp (ngày mới)`
+    const tail = action === "tat"
+      ? (opts.final
+          ? `⚠️ Xấu ${rule.pause_max_streak} ngày liên tiếp — sẽ KHÔNG tự bật lại, cần người quyết.`
+          : `Sáng mai 0h30 hệ thống tự bật lại ở mức nền. Muốn chạy tiếp ngay thì bật tay (hệ thống không tắt lại trong hôm nay).`)
+      : `Ngân sách: ${vnd(opts.to ?? budget)}`
+    const text =
+      `${head}\n${camp.campaign_name}\nLý do: ${reason}${ok ? "" : ` — LỖI: ${err}`}\n${tail}\nBộ điều kiện: ${rule.name}`
+    const emails = await emailsForMkt(opts.userModule, camp.mkt_name)
+    await notifyTelegramByEmail(opts.userModule, emails, text, "auto_scale").catch(() => {})
+  }
+  return ok
+}
+
 async function lastActionAt(campaignId: string, dryRun: boolean): Promise<Date | null> {
   const { rows } = await getPool().query(
     `SELECT created_at FROM auto_scale_log
@@ -337,6 +471,8 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       spend_ratio: Number(camp.rule.spend_ratio), multiplier: Number(camp.rule.multiplier),
       max_budget: Number(camp.rule.max_budget), cooldown_min: Number(camp.rule.cooldown_min),
       revert_factor: Number(camp.rule.revert_factor),
+      pause_day_spend: Number(camp.rule.pause_day_spend || 0), pause_cost_pct: Number(camp.rule.pause_cost_pct || 0),
+      pause_max_streak: Number(camp.rule.pause_max_streak || 3), pause_min_age_hours: Number(camp.rule.pause_min_age_hours || 0),
     }
     const base = Number(camp.base_budget)
 
@@ -365,6 +501,18 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
     if (step) metrics.since_step = { spend: spend - step.spend_at_step, orders: step.orders_since }
     const last = await lastActionAt(camp.campaign_id, rule.dry_run)
 
+    let pauseInputs: any = {}
+    if (rule.pause_enabled) {
+      const created = fb.data.created_time ? new Date(fb.data.created_time).getTime() : NaN
+      pauseInputs = {
+        revenue_today: await revenueSince(camp.campaign_id, camp.campaign_name, startOfTodayVN()),
+        camp_age_hours: Number.isFinite(created) ? (Date.now() - created) / 3_600_000 : null,
+        ...(await pauseHistory(camp.campaign_id)),
+      }
+      metrics.revenue_today = pauseInputs.revenue_today
+      metrics.cost_pct_today = pauseInputs.revenue_today ? Math.round((spend / pauseInputs.revenue_today) * 1000) / 10 : null
+    }
+
     const d = decide({
       hour, minute, rule, base, budget: cur, status: fb.data.effective_status,
       spend_today: spend, orders_today: orders, step,
@@ -373,9 +521,20 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       reset_done_today: await resetDoneToday(camp.campaign_id),
       account_block: await accountBlocked(camp.ad_account_id, Math.max(0, Math.min(cur * rule.multiplier, rule.max_budget) - cur)),
       ...(await spendSnapshot(camp.campaign_id, hour, minute)),
+      ...pauseInputs,
     })
 
     if (d.action === "none") { await note(camp.campaign_id, d.reason, metrics); continue }
+
+    if (d.action === "tat" || d.action === "bat") {
+      if (await applyStatus({
+        camp, rule, action: d.action, budget: cur, to: d.action === "bat" ? d.to : undefined,
+        final: d.action === "tat" ? d.final : undefined, reason: d.reason, metrics, userModule,
+      })) actions++
+      const nhan = d.action === "tat" ? (rule.pause_dry_run ? "Lẽ ra đã phanh" : "Đã phanh (tắt)") : "Đã bật lại"
+      await note(camp.campaign_id, `${nhan}: ${d.reason}`, metrics)
+      continue
+    }
 
     if (d.action === "reset" && d.to === cur) {
       // Đã ở mức nền — chỉ đánh dấu đã reset + xoá state bước tăng
