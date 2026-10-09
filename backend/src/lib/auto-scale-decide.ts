@@ -66,7 +66,7 @@ export type DecideInput = {
  *  - Tổng đang tốt (≤ max_pct): camp lẽ ra bị phanh vẫn được chạy thêm nếu chưa quá tệ
  *    (≤ lenient_max_pct) và CTR hôm nay ≥ CTR 7 ngày của MKT — xem có ra thêm đơn không.
  *  - Tới giờ tỉa (trim_hour) hoặc tổng chi đạt trim_spend mà tổng > max_pct: mỗi vòng 15 phút
- *    tắt 1 camp xấu nhất (% chi phí hôm nay > max_pct), dần dần chỉ còn camp tốt.
+ *    tắt 1 camp xấu nhất (% chi phí hôm nay của camp > trim_camp_pct, vd 40%), dần dần chỉ còn camp tốt.
  */
 export type Portfolio = {
   mkt: string

@@ -21,10 +21,10 @@ type Candidate = {
 }
 type MktSetting = {
   mkt_name: string; enabled: boolean; dry_run: boolean; max_pct: number; lenient_max_pct: number
-  trim_hour: number; trim_spend: number; trim_min_spend: number
+  trim_hour: number; trim_spend: number; trim_min_spend: number; trim_camp_pct: number
 }
 type Mkt = { mkt_name: string; setting: MktSetting | null; today: { spend: number; revenue: number; orders: number; pct: number | null } | null }
-const MKT_MAC_DINH = { enabled: true, dry_run: true, max_pct: 27, lenient_max_pct: 70, trim_hour: 13, trim_spend: 0, trim_min_spend: 200000 }
+const MKT_MAC_DINH = { enabled: true, dry_run: true, max_pct: 27, lenient_max_pct: 70, trim_hour: 16, trim_spend: 0, trim_min_spend: 400000, trim_camp_pct: 40 }
 
 type Log = {
   id: number; campaign_name: string; action: string; old_budget: number; new_budget: number; reason: string
@@ -141,11 +141,11 @@ function TuScalePage() {
         <h2 style={h2}>0. Tổng theo MKT — giữ % chi phí cả MKT trong ngày</h2>
         <p style={{ color: "#4b5563", fontSize: 12, margin: "0 0 8px", lineHeight: 1.6 }}>
           Số hôm nay lấy đúng công thức báo cáo <b>COD theo MKT</b>. Tổng ≤ mục tiêu: camp lẽ ra bị phanh vẫn được <b>chạy thêm</b> nếu chưa quá tệ và CTR hôm nay ≥ CTR 7 ngày của MKT.
-          Từ <b>giờ tỉa</b> (hoặc khi tổng chi đạt mức đặt) mà tổng &gt; mục tiêu: cứ 15 phút <b>tắt 1 camp xấu nhất</b> (% hôm nay &gt; mục tiêu) — dần chỉ còn camp tốt. Camp bị tỉa 0h30 hôm sau tự bật lại như phanh.
+          Từ <b>giờ tỉa</b> (hoặc khi tổng chi đạt mức đặt) mà tổng &gt; mục tiêu: cứ 15 phút <b>tắt 1 camp xấu nhất</b> (% hôm nay của camp &gt; ngưỡng tỉa, vd 40%) — dần chỉ còn camp tốt. Camp bị tỉa 0h30 hôm sau tự bật lại như phanh.
           Chỉ tác động camp đã gắn ở mục 2 và thuộc bộ điều kiện bật phanh.
         </p>
         <table style={tbl}>
-          <thead><tr>{["MKT", "Hôm nay chi", "Doanh số", "% chi phí", "Mục tiêu ≤", "Cho chạy thêm tới", "Tỉa từ", "Camp chi tối thiểu", "Chế độ", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["MKT", "Hôm nay chi", "Doanh số", "% chi phí", "Mục tiêu ≤", "Cho chạy thêm tới", "Tỉa từ", "Tỉa camp khi", "Chế độ", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {mkts.map((m) => {
               const st = m.setting
@@ -159,9 +159,9 @@ function TuScalePage() {
                   <td style={td}>{st ? `${Number(st.max_pct)}%` : "—"}</td>
                   <td style={td}>{st ? `camp ≤ ${Number(st.lenient_max_pct)}%` : "—"}</td>
                   <td style={td}>{st ? `${st.trim_hour}h${Number(st.trim_spend) > 0 ? ` hoặc tổng chi ≥ ${vnd(st.trim_spend)}` : ""}` : "—"}</td>
-                  <td style={td}>{st ? vnd(st.trim_min_spend) : "—"}</td>
+                  <td style={td}>{st ? `chi ≥ ${vnd(st.trim_min_spend)} và > ${Number(st.trim_camp_pct ?? 40)}%` : "—"}</td>
                   <td style={td}>{!st?.enabled ? <span style={{ color: "#6b7280" }}>Chưa bật</span> : st.dry_run ? <span style={{ color: "#d97706", fontWeight: 600 }}>TỈA CHẠY THỬ</span> : <span style={{ color: "#16a34a", fontWeight: 600 }}>ĐANG CHẠY THẬT</span>}</td>
-                  <td style={td}><button style={btn} onClick={() => setEditMkt(st ? { ...st, max_pct: Number(st.max_pct), lenient_max_pct: Number(st.lenient_max_pct), trim_spend: Number(st.trim_spend), trim_min_spend: Number(st.trim_min_spend) } : { mkt_name: m.mkt_name, ...MKT_MAC_DINH })}>{st ? "Sửa" : "Bật"}</button></td>
+                  <td style={td}><button style={btn} onClick={() => setEditMkt(st ? { ...st, max_pct: Number(st.max_pct), lenient_max_pct: Number(st.lenient_max_pct), trim_spend: Number(st.trim_spend), trim_min_spend: Number(st.trim_min_spend), trim_camp_pct: Number(st.trim_camp_pct ?? 40) } : { mkt_name: m.mkt_name, ...MKT_MAC_DINH })}>{st ? "Sửa" : "Bật"}</button></td>
                 </tr>
               )
             })}
@@ -178,6 +178,7 @@ function TuScalePage() {
                 ["trim_hour", "Bắt đầu tỉa từ giờ", "Giờ VN, vd 13"],
                 ["trim_spend", "Hoặc khi tổng chi MKT hôm nay ≥ (đ)", "0 = chỉ theo giờ"],
                 ["trim_min_spend", "Camp chi ≥ (đ) mới bị tỉa", "Đủ mẫu mới phán"],
+                ["trim_camp_pct", "Chỉ tỉa camp có % hôm nay >", "Camp gần mục tiêu thì giữ, vd 40"],
               ] as [keyof MktSetting, string, string][]).map(([k, label, hint]) => (
                 <label key={k} style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, minWidth: 170 }}>
                   <span style={{ fontWeight: 600 }}>{label}</span>

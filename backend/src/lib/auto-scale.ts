@@ -121,6 +121,9 @@ export function ensureTables(): Promise<void> {
         updated_by TEXT,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      -- Camp chỉ bị tỉa khi % chi phí hôm nay của RIÊNG camp > mức này (09/10: tỉa theo max_pct 27%
+      -- cắt cả camp đang 27–29% đúng mục tiêu, 7/9 camp bị tắt ở ~200k chi → mất đơn buổi tối)
+      ALTER TABLE auto_scale_mkt ADD COLUMN IF NOT EXISTS trim_camp_pct NUMERIC(5,1) NOT NULL DEFAULT 40;
     `)
   })().catch((e) => { _ready = null; throw e })
   return _ready
@@ -215,7 +218,7 @@ async function ctrToday(campaignId: string): Promise<number | null> {
 
 export type MktSetting = {
   mkt_name: string; enabled: boolean; dry_run: boolean; max_pct: number; lenient_max_pct: number
-  trim_hour: number; trim_spend: number; trim_min_spend: number
+  trim_hour: number; trim_spend: number; trim_min_spend: number; trim_camp_pct: number
 }
 type PortfolioCtx = { setting: MktSetting; total: MktTotal; ctr_base: number | null; trim_active: boolean; pick: string | null; pick_reason?: string }
 
@@ -235,6 +238,7 @@ async function loadPortfolios(hour: number): Promise<Map<string, PortfolioCtx>> 
     const setting: MktSetting = {
       ...raw, max_pct: Number(raw.max_pct), lenient_max_pct: Number(raw.lenient_max_pct),
       trim_hour: Number(raw.trim_hour), trim_spend: Number(raw.trim_spend), trim_min_spend: Number(raw.trim_min_spend),
+      trim_camp_pct: Number(raw.trim_camp_pct ?? 40),
     }
     const mkt = setting.mkt_name
     const total = totals[mkt] || { spend: 0, revenue: 0, orders: 0, pct: null }
@@ -268,7 +272,7 @@ async function loadPortfolios(hour: number): Promise<Map<string, PortfolioCtx>> 
       if (spend < setting.trim_min_spend) continue
       const rev = await revenueSince(c.campaign_id, c.campaign_name, startOfTodayVN())
       const pct = rev > 0 ? (spend / rev) * 100 : Infinity
-      if (pct <= setting.max_pct) continue
+      if (pct <= setting.trim_camp_pct) continue
       if (!worst || pct > worst.pct || (pct === worst.pct && spend > worst.spend)) {
         worst = { id: c.campaign_id, name: c.campaign_name, rule_id: Number(c.rule_id), pct, spend, rev }
       }
