@@ -92,6 +92,9 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
   const [copied, setCopied] = useState<string | null>(null)
   const [showBankPicker, setShowBankPicker] = useState(false)
 
+  const serverAmount = Number(info?.amount)
+  const effectiveAmount = Number.isFinite(serverAmount) && serverAmount > 0 ? serverAmount : amount
+
   const STORE_URL = typeof window !== "undefined" ? window.location.origin : ""
 
   const BANKS = [
@@ -120,7 +123,7 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
     const params = new URLSearchParams({
       app: appCode,
       ba,
-      am: String(Math.round(amount)),
+      am: String(Math.round(effectiveAmount)),
       tn: `PV${orderCode}`,
       bn: "PHAN VIET",
       url: `${STORE_URL}/vn/checkout`,
@@ -255,10 +258,10 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500">Số tiền</span>
                     <button
-                      onClick={() => copyToClipboard(String(Math.round(amount)), "amount")}
+                      onClick={() => copyToClipboard(String(Math.round(effectiveAmount)), "amount")}
                       className="font-black text-orange-500 flex items-center gap-1"
                     >
-                      {formatVND(amount)}
+                      {formatVND(effectiveAmount)}
                       <span className="text-xs">{copied === "amount" ? "✅" : "📋"}</span>
                     </button>
                   </div>
