@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
+import { ttqTrack } from "@lib/tiktok"
 
 // Fires InitiateCheckout when customer lands on checkout page.
 // AddToCart is fired earlier in bundle-selector on button click.
@@ -28,6 +29,13 @@ export default function CheckoutTracker({
 
   useEffect(() => {
     if (typeof window === "undefined" || fired.current) return
+
+    // TikTok — fire immediately, no dependency on fbq
+    ttqTrack("InitiateCheckout", {
+      contents: contentIds.map((id) => ({ content_id: id, content_type: "product" })),
+      value,
+      currency,
+    })
 
     const fire = () => {
       if (fired.current) return

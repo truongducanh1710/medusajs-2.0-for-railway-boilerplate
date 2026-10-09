@@ -1,6 +1,7 @@
 import { LocaleProvider } from "@lib/locale-context"
 import { localeFromCountryCode } from "@lib/i18n"
 import FacebookPixel from "@components/FacebookPixel"
+import TikTokPixel from "@components/TikTokPixel"
 import { getStoreMetadata } from "@lib/data/store"
 
 export default async function CheckoutLayout({
@@ -18,6 +19,7 @@ export default async function CheckoutLayout({
   return (
     <LocaleProvider locale={locale}>
       <FacebookPixel storePixelId={storePixelId} />
+      <TikTokPixel />
       <div className="w-full bg-white relative small:min-h-screen">
         {/* Header gộp vào SimpleCheckout — không render nav riêng để tiết kiệm chỗ mobile */}
         <div className="relative" data-testid="checkout-container">

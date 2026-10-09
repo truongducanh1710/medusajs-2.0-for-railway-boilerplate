@@ -7,6 +7,7 @@ import { generateEventId } from "@lib/pixel"
 import { useParams, useRouter } from "next/navigation"
 import CheckoutPopup from "@modules/products/components/checkout-popup"
 import CheckoutTracker from "@components/CheckoutTracker"
+import { ttqTrack } from "@lib/tiktok"
 
 type GiftItem = {
   image?: string
@@ -233,6 +234,11 @@ export default function BundleSelector({ product, region }: Props) {
         num_items: selected,
       }, { eventID: atcEventId })
     }
+    ttqTrack("AddToCart", {
+      contents: [{ content_id: variant.id, content_type: "product", content_name: product.title, quantity: selected, price: selectedOpt.price }],
+      value: selectedOpt.price,
+      currency: "VND",
+    }, atcEventId)
 
     if (popupMode) {
       // Popup tự tạo/cập nhật giỏ ngầm trong lúc khách điền form

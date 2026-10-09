@@ -7,6 +7,7 @@ import Footer from "@modules/layout/templates/footer"
 import Nav from "@modules/layout/templates/nav"
 import { getBaseURL } from "@lib/util/env"
 import FacebookPixel from "@components/FacebookPixel"
+import TikTokPixel from "@components/TikTokPixel"
 import UtmCapture from "@components/UtmCapture"
 import TrackingBeacon from "@components/TrackingBeacon"
 import FloatingContact from "@components/FloatingContact"
@@ -33,6 +34,7 @@ export default async function PageLayout({
   return (
     <LocaleProvider locale={locale}>
       <FacebookPixel storePixelId={storePixelId} />
+      <TikTokPixel />
       <Suspense fallback={null}>
         <UtmCapture />
       </Suspense>

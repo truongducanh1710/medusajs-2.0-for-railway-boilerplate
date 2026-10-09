@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { sendCAPIViaRoute } from "@lib/pixel"
 import { getUtmFromCookie } from "@lib/utm"
+import { ttqTrack } from "@lib/tiktok"
 
 export default function PurchaseTracker({
   orderId,
@@ -46,6 +47,16 @@ export default function PurchaseTracker({
     if (window.fbq) {
       window.fbq("track", eventName, customData, { eventID: eventId })
     }
+
+    // TikTok — no server-side follow-up, so every order (COD + Sepay) counts
+    // as PlaceAnOrder + CompletePayment for ads optimization
+    const ttData = {
+      contents: contentIds.map((id) => ({ content_id: id, content_type: "product" })),
+      value,
+      currency,
+    }
+    ttqTrack("PlaceAnOrder", ttData, `placeorder_${orderId}`)
+    ttqTrack("CompletePayment", ttData, `completepayment_${orderId}`)
 
     // CAPI → pixel chung
     sendCAPIViaRoute({
