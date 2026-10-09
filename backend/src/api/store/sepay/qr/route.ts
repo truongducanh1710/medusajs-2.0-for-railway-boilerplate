@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { validateBundleShippingCart } from "../../../../lib/bundle-shipping"
 import { cartIdFromOrderCode, confirmSepayPayment, findOrderIdForCart } from "../../../../lib/sepay-order"
 
 function logSePayRouteError(stage: string, error: unknown, extra?: Record<string, unknown>) {
@@ -33,7 +34,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // Minimum amount 1000đ để tránh lỗi VietQR với số tiền quá nhỏ
-    const finalAmount = Math.max(amount, 1000)
+    const { plan } = await validateBundleShippingCart(req.scope, cartIdFromOrderCode(String(orderCode)))
+    const finalAmount = plan ? plan.goodsTotal + plan.fee : Math.max(amount, 1000)
 
     const bank = process.env.SEPAY_BANK || "BIDV"
     const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER

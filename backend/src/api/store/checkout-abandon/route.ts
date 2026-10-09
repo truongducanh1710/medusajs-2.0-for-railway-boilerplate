@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from "../../../lib/constants"
 import { getPancakeProvinceId, detectProvinceFromText } from "../../../lib/pancake-address"
 import { MKT_PANCAKE_UUID, extractMktCode } from "../../../lib/pancake"
+import { loadBundleShippingContext } from "../../../lib/bundle-shipping"
 
 // Chống bắn trùng: mỗi cartId/phone chỉ tạo 1 đơn nháp trong cửa sổ thời gian.
 // In-memory (per-instance) — đủ chặn các beacon liên tiếp từ cùng 1 client.
@@ -39,7 +40,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   try {
-    const pancakeItems = (items || []).map((item: any) => ({
+    // Reconstruct configured offers from the server cart; legacy drafts retain their payload.
+    const context = cartId ? await loadBundleShippingContext(req.scope, String(cartId), true) : null
+    const shippingFee = context?.plan?.fee ?? 0
+    const sourceItems = context?.plan
+      ? context.cart.items.map((item: any) => ({ ...item, bundle_qty: item.metadata?.bundle_qty, bundle_price: item.metadata?.bundle_price }))
+      : (items || [])
+    const pancakeItems = sourceItems.map((item: any) => ({
       variation_id: null,
       quantity: item.bundle_qty || item.quantity || 1,
       is_bonus_product: false,
@@ -49,11 +56,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       discount_each_product: 0,
       variation_info: {
         name: item.title || "Sản phẩm",
-        retail_price: item.bundle_price || item.unit_price || 0,
+        retail_price: context?.plan
+          ? Number(item.bundle_price) / Number(item.bundle_qty)
+          : (item.bundle_price || item.unit_price || 0),
       },
     }))
 
-    const totalPrice = (items || []).reduce((sum: number, item: any) => {
+    const totalPrice = context?.plan ? context.plan.goodsTotal + shippingFee : (items || []).reduce((sum: number, item: any) => {
       return sum + (item.bundle_price || (item.unit_price * (item.bundle_qty || item.quantity || 1)) || 0)
     }, 0)
 
@@ -61,6 +70,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const noteParts = ["[ĐƠN NHÁP - phanviet.vn]", "[Khách điền form nhưng chưa bấm đặt hàng]"]
     if (note) noteParts.push(note)
+    if (context?.plan) {
+      noteParts.push(shippingFee > 0 ? "Phí vận chuyển: " + shippingFee.toLocaleString("vi-VN") + "đ" : "Miễn phí vận chuyển")
+      for (const item of context.cart.items ?? []) {
+        try {
+          const gifts = JSON.parse(item.metadata?.gifts || "[]")
+          for (const gift of gifts) if (gift.name) noteParts.push("🎁 " + gift.name + (gift.sku ? " [" + gift.sku + "]" : ""))
+        } catch {}
+      }
+    }
     if (ward) noteParts.push(`Phường/Xã: ${ward}`)
 
     const payload: Record<string, any> = {
@@ -86,9 +104,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         discount_each_product: 0,
         variation_info: { name: "Sản phẩm chưa xác định", retail_price: 0 },
       }],
-      is_free_shipping: true,
+      is_free_shipping: shippingFee === 0,
       received_at_shop: false,
-      shipping_fee: 0,
+      shipping_fee: shippingFee,
       total_discount: 0,
       cash: 0,
       prepaid: 0,

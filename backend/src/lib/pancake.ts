@@ -1,6 +1,7 @@
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from './constants'
 import { getPancakeProvinceId, getPancakeCommuneId, detectProvinceFromText } from './pancake-address'
 import { getPool } from './db'
+import { storedBundleShippingFee, hasBundleShippingLines } from './bundle-shipping'
 
 // Cache Pancake variation map: SKU (display_id) → variation UUID
 let variationMapCache: Map<string, string> | null = null
@@ -165,6 +166,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     .filter(Boolean)
     .join(' ')
 
+  const configuredShipping = hasBundleShippingLines(order)
   const items = (order.items || []).map((item: any) => {
     const sku = item.variant?.sku as string | undefined
     const pancakeVariationId = sku ? (variationMap.get(sku) ?? null) : null
@@ -175,7 +177,9 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     const bundleQty: number = (item.metadata?.bundle_qty as number) || item.quantity
     // Ưu tiên bundle_price MKT set trên landing page, fallback unit_price Medusa
     const bundlePrice: number = (item.metadata?.bundle_price as number) || (item.unit_price * bundleQty)
-    const unitPriceForPancake: number = bundleQty > 0 ? Math.round(bundlePrice / bundleQty) : (item.unit_price || 0)
+    const unitPriceForPancake: number = bundleQty > 0
+      ? (configuredShipping ? bundlePrice / bundleQty : Math.round(bundlePrice / bundleQty))
+      : (item.unit_price || 0)
 
     return {
       variation_id: pancakeVariationId,
@@ -207,10 +211,11 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   // Fallback về order.discount_total (Medusa tính, số lẻ) nếu metadata không có
   const rawDiscount = order.discount_total ?? order.summary?.discount_total ?? 0
   const roundedDiscount = Number(order.metadata?.promo_discount_rounded ?? 0)
-  const totalDiscount = roundedDiscount > 0 ? roundedDiscount : rawDiscount
-  const sepayDiscount = isSepay ? ((order.metadata?.sepay_discount as number) ?? 0) : 0
+  const totalDiscount = configuredShipping ? 0 : (roundedDiscount > 0 ? roundedDiscount : rawDiscount)
+  const sepayDiscount = !configuredShipping && isSepay ? ((order.metadata?.sepay_discount as number) ?? 0) : 0
+  const shippingFee = storedBundleShippingFee(order)
   const totalPrice = bundleTotal > 0
-    ? bundleTotal - totalDiscount - sepayDiscount
+    ? bundleTotal - totalDiscount - sepayDiscount + shippingFee
     : (order.summary?.current_order_total ?? order.total ?? 0)
 
   // Nếu thanh toán SePay → đã trả trước, COD = 0
@@ -231,6 +236,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   // Ghi chú: kết hợp ghi chú khách + gifts + UTM (giống format Webcake để sale xem nhanh)
   const noteparts: string[] = ["[phanviet.vn]"]
   if (order.metadata?.note) noteparts.push(order.metadata.note as string)
+  if (configuredShipping) noteparts.push(shippingFee > 0 ? `Phí vận chuyển: ${shippingFee.toLocaleString("vi-VN")}đ` : "Miễn phí vận chuyển")
   if (isSepay) {
     const fmt = (n: number) => n.toLocaleString('vi-VN') + 'đ'
     const parts = [`Giá SP: ${fmt(bundleTotal)}`]
@@ -246,7 +252,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     try {
       const gifts = JSON.parse((item.metadata?.gifts as string) || '[]')
       for (const g of gifts) {
-        if (g.name) giftLines.push(`🎁 ${g.name}`)
+        if (g.name) giftLines.push(`🎁 ${g.name}${configuredShipping && g.sku ? ` [${g.sku}]` : ""}`)
       }
     } catch {}
   }
@@ -285,9 +291,9 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
       commune_id: null,
     },
     items,
-    is_free_shipping: true,
+    is_free_shipping: shippingFee === 0,
     received_at_shop: false,
-    shipping_fee: 0,
+    shipping_fee: shippingFee,
     total_discount: totalDiscount,
     cash,
     prepaid,

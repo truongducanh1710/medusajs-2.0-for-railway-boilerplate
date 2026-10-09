@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { completeCartWorkflow } from "@medusajs/medusa/core-flows"
 import { sendPurchaseEvent } from "./fb-capi"
+import { validateBundleShippingCart } from "./bundle-shipping"
 
 /**
  * SePay QR flow: storefront shows QR with content `PV{cartId without "cart_"}`.
@@ -97,8 +98,9 @@ export async function confirmSepayPayment(
     return { ok: false, reason: "cart_not_found" }
   }
 
-  const expected = expectedSepayAmount(cart)
-  if (tx.amount + AMOUNT_TOLERANCE < expected) {
+  const { plan } = await validateBundleShippingCart(scope, cartId)
+  const expected = plan ? plan.goodsTotal + plan.fee : expectedSepayAmount(cart)
+  if (!Number.isFinite(tx.amount) || tx.amount + (plan ? 0 : AMOUNT_TOLERANCE) < expected) {
     console.warn("[SePay] amount mismatch", { cartId, expected, received: tx.amount })
     return { ok: false, reason: "amount_mismatch", expected, received: tx.amount }
   }

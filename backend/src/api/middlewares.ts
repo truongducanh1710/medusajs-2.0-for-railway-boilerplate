@@ -2,6 +2,7 @@ import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import multer from "multer"
+import { validateBundleShippingCart } from "../lib/bundle-shipping"
 import { ROLE_PRESETS } from "../admin/lib/permissions"
 import { FREELANCE_ROLE } from "../lib/freelance-scope"
 import { freelanceGuard } from "./_freelance-guard"
@@ -148,6 +149,19 @@ const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNext
 
 export default defineMiddlewares({
   routes: [
+    { matcher: "/store/carts/:id/bundle-shipping", method: ["POST"], bodyParser: { sizeLimit: "10kb" } },
+    {
+      matcher: "/store/carts/:id/complete",
+      method: ["POST"],
+      middlewares: [async (req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) => {
+        try {
+          await validateBundleShippingCart(req.scope, req.params.id)
+          return next()
+        } catch (error: any) {
+          return res.status(400).json({ message: error?.message || "Phí vận chuyển chưa hợp lệ." })
+        }
+      }],
+    },
     // Freelance: không khai method → middleware toàn cục, chạy sau xác thực và TRƯỚC mọi
     // route /admin (kể cả route Medusa gốc). Xem _freelance-guard.ts.
     { matcher: "/admin", middlewares: [freelanceGuard] },

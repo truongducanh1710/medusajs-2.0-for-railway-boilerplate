@@ -21,6 +21,7 @@ type BundleOption = {
   badgeColor?: string
   price: number
   originalPrice: number
+  shippingFee?: number
   gifts?: GiftItem[]
   image?: string
 }
@@ -63,7 +64,6 @@ function Countdown({ minutes = 17 }: { minutes?: number }) {
 }
 
 export default function BundleSelector({ product, region }: Props) {
-  const [selected, setSelected] = useState(1)
   const [adding, setAdding] = useState(false)
   const [activeVariantIdx, setActiveVariantIdx] = useState(0)
   const params = useParams()
@@ -140,6 +140,19 @@ export default function BundleSelector({ product, region }: Props) {
     ]
   }
 
+  options = options.map((option) => ({
+    ...option,
+    shippingFee: typeof option.shippingFee === "number" && Number.isFinite(option.shippingFee) && option.shippingFee >= 0
+      ? Math.floor(option.shippingFee)
+      : undefined,
+  }))
+
+  const [selected, setSelected] = useState(() => {
+    const qty = Number(product.metadata?.bundle_default_qty)
+    return Number.isInteger(qty) && options.some((option) => option.qty === qty) ? qty : 1
+  })
+  const [pendingLandingCheckout, setPendingLandingCheckout] = useState<number | null>(null)
+
   const selectedOpt = options.find((o) => o.qty === selected) || options[0]
 
   // Sync lựa chọn hiện tại lên StickyBar qua CustomEvent
@@ -168,7 +181,11 @@ export default function BundleSelector({ product, region }: Props) {
       bundle_qty: selected,
       bundle_price: selectedOpt.price,
       bundle_label: selectedOpt.label,
-      bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts }))),
+      ...(selectedOpt.shippingFee != null ? { bundle_shipping_fee: selectedOpt.shippingFee } : {}),
+      ...(product.metadata?.payment_discount_amount != null
+        ? { payment_discount_amount: product.metadata.payment_discount_amount }
+        : {}),
+      bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts, shippingFee: o.shippingFee }))),
       ...(selectedOpt.gifts?.length ? { gifts: JSON.stringify(selectedOpt.gifts) } : {}),
     },
   }
@@ -224,6 +241,74 @@ export default function BundleSelector({ product, region }: Props) {
       setAdding(false)
     }
   }
+
+  // CMS offer cards share the same selection as the native picker and checkout.
+  useEffect(() => {
+    const root = document.getElementById("pv-tray-landing")
+    if (!root) return
+    root.querySelectorAll<HTMLInputElement>('input[name="pv-tray-offer"]').forEach((radio) => {
+      radio.checked = Number(radio.value) === selected
+    })
+    const orderButton = root.querySelector<HTMLElement>("#pv-tray-order")
+    if (orderButton) {
+      orderButton.dataset.pvBundleQty = String(selected)
+      orderButton.textContent = `Đặt ${selectedOpt.label} — ${formatVND(selectedOpt.price + (selectedOpt.shippingFee ?? 0))}`
+    }
+    const stickyPrice = root.querySelector<HTMLElement>("#pv-tray-sticky-price")
+    if (stickyPrice) stickyPrice.textContent = formatVND(selectedOpt.price + (selectedOpt.shippingFee ?? 0))
+    const stickyLabel = root.querySelector<HTMLElement>("#pv-tray-sticky-label")
+    if (stickyLabel) stickyLabel.textContent = selectedOpt.shippingFee
+      ? `${selectedOpt.label} · đã gồm phí ship`
+      : `${selectedOpt.label} · miễn phí giao hàng`
+    const stickyAction = root.querySelector<HTMLElement>("#pv-tray-sticky-action")
+    if (stickyAction) {
+      stickyAction.dataset.pvBundleQty = String(selected)
+      stickyAction.textContent = `Đặt ${selected === 1 ? "1 bộ" : `combo ${selected}`}`
+    }
+  }, [selected, activeVariantIdx, selectedOpt.price, selectedOpt.label, selectedOpt.shippingFee])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const radio = event.target
+      if (!(radio instanceof HTMLInputElement) || radio.name !== "pv-tray-offer" || !radio.checked || !radio.closest("#pv-tray-landing") || adding || popupOpen) return
+      const qty = Number(radio.value)
+      if (Number.isInteger(qty) && options.some((option) => option.qty === qty)) setSelected(qty)
+    }
+    document.addEventListener("change", handler)
+    return () => document.removeEventListener("change", handler)
+  })
+
+  // Only this landing opts into CMS buttons; other product content keeps its existing behavior.
+  useEffect(() => {
+    const handler = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || adding || popupOpen) return
+      const button = event.target.closest("[data-pv-bundle-qty]")
+      if (!button?.closest("#pv-tray-landing")) return
+      const qty = Number(button.getAttribute("data-pv-bundle-qty"))
+      if (!Number.isInteger(qty) || !options.some((option) => option.qty === qty)) return
+      event.preventDefault()
+      setSelected(qty)
+      if (button.hasAttribute("data-pv-bundle-checkout") && button.getAttribute("data-pv-bundle-checkout") !== "false") {
+        setPendingLandingCheckout(qty)
+      } else {
+        const href = button.getAttribute("href")
+        const target = href?.startsWith("#") ? document.getElementById(href.slice(1)) : null
+        if (target?.closest("#pv-tray-landing")) target.scrollIntoView({ behavior: "smooth" })
+        else document.getElementById("bundle-selector")?.scrollIntoView({ behavior: "smooth" })
+      }
+    }
+    document.addEventListener("click", handler)
+    return () => document.removeEventListener("click", handler)
+  })
+
+  // Wait for selection to commit so popup/cart/pixel all receive the requested offer.
+  useEffect(() => {
+    if (pendingLandingCheckout == null || selected !== pendingLandingCheckout) return
+    setPendingLandingCheckout(null)
+    handleAdd()
+    // handleAdd is recreated with the committed selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLandingCheckout, selected, activeVariantIdx])
 
   // StickyBuyBar kích hoạt đặt hàng qua event — đăng ký lại mỗi render
   // để handleAdd luôn thấy gói đang chọn mới nhất
@@ -351,6 +436,11 @@ export default function BundleSelector({ product, region }: Props) {
 
                 <div className="text-right flex-shrink-0">
                   <p className="font-black text-gray-900">{formatVND(opt.price)}</p>
+                  {opt.shippingFee != null && (
+                    <p className="text-[11px] font-semibold text-gray-600">
+                      {opt.shippingFee > 0 ? `+ ${formatVND(opt.shippingFee)} ship` : "Miễn phí giao hàng"}
+                    </p>
+                  )}
                   <p className="text-xs text-gray-400 line-through">
                     {formatVND(opt.originalPrice)}
                   </p>

@@ -13,6 +13,7 @@ export type PopupBundleOption = {
   badgeColor?: string
   price: number
   originalPrice: number
+  shippingFee?: number
   gifts?: { name: string; value: number; image?: string }[]
   image?: string
 }
@@ -149,6 +150,13 @@ export default function CheckoutPopup({
             <span className="ml-1.5 text-[11px] text-gray-400 line-through">{formatVND(selectedOpt.originalPrice)}</span>
           )}
         </p>
+        {selectedOpt.shippingFee != null && (
+          <p className="text-[11px] font-semibold text-gray-600">
+            {selectedOpt.shippingFee > 0
+              ? `Ship ${formatVND(selectedOpt.shippingFee)} · Tổng ${formatVND(selectedOpt.price + selectedOpt.shippingFee)}`
+              : "Miễn phí giao hàng"}
+          </p>
+        )}
       </div>
       <button
         onClick={() => setPickerOpen(true)}
@@ -247,6 +255,11 @@ export default function CheckoutPopup({
               </span>
               <span className="text-right flex-shrink-0">
                 <span className="block font-black text-sm text-orange-500">{formatVND(opt.price)}</span>
+                {opt.shippingFee != null && (
+                  <span className="block text-[11px] font-semibold text-gray-600">
+                    {opt.shippingFee > 0 ? `+ ${formatVND(opt.shippingFee)} ship` : "Miễn phí giao hàng"}
+                  </span>
+                )}
                 <span className="block text-[11px] text-gray-400 line-through">{formatVND(opt.originalPrice)}</span>
               </span>
             </div>
@@ -289,6 +302,7 @@ export default function CheckoutPopup({
           bundlePicker={bundlePicker}
           bundleVariantIds={bundleVariantIds}
           pendingBundlePrice={selectedOpt?.price}
+          pendingShippingFee={selectedOpt?.shippingFee}
           compareAtBundlePrice={selectedOpt?.originalPrice}
           syncing={syncing}
           ensureReady={ensureReady}

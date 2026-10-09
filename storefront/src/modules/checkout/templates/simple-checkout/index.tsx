@@ -9,6 +9,7 @@ import {
   ensurePaymentSession,
   clearCompletedCart,
   retrieveCart,
+  prepareQuickCheckout,
 } from "@lib/data/cart"
 import { convertToLocale } from "@lib/util/money"
 import { useRouter } from "next/navigation"
@@ -18,7 +19,7 @@ import { getUtmFromCookie, hasUtm, pickUtm, type UtmData } from "@lib/utm"
 
 const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
 const PUB_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
-const SEPAY_DISCOUNT = 20000
+const DEFAULT_SEPAY_DISCOUNT = 20000
 const ORDER_ERROR_MESSAGE =
   "Đặt hàng chưa thành công, vui lòng thử lại hoặc gọi 0967 993 609 để được hỗ trợ."
 
@@ -348,6 +349,8 @@ type SimpleCheckoutProps = {
   bundleVariantIds?: string[]
   // Price of the picked bundle, used for totals until the cart catches up
   pendingBundlePrice?: number
+  // Separate fee for the picked offer while popup cart synchronization is pending.
+  pendingShippingFee?: number
   // Original (strike-through) price of the picked bundle — popup footer shows the saving
   compareAtBundlePrice?: number
   syncing?: boolean
@@ -366,6 +369,7 @@ export default function SimpleCheckout({
   bundlePicker,
   bundleVariantIds,
   pendingBundlePrice,
+  pendingShippingFee,
   compareAtBundlePrice,
   syncing = false,
   ensureReady,
@@ -394,6 +398,8 @@ export default function SimpleCheckout({
   const [qtyLoading, setQtyLoading] = useState<Record<string, boolean>>({})
   const [localItems, setLocalItems] = useState<any[] | null>(null)
   const [liveDiscount, setLiveDiscount] = useState<number | null>(null)
+  const configuredQtyBusy = useRef(false)
+  const configuredQtyError = useRef(false)
 
   // Popup swaps in a fresh cart after each bundle switch — drop local overrides of the old one
   // (Medusa re-applies promo codes itself, new discount_total comes with the cart)
@@ -407,7 +413,32 @@ export default function SimpleCheckout({
   const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
   const pubKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
 
+  const waitForBundlePrices = async (cartId: string, expectedItems: any[]) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const response = await fetch(backendUrl + "/store/carts/" + cartId + "?fields=" + encodeURIComponent("+items,+items.metadata,+items.variant,+items.variant.product,+discount_total"), {
+        headers: { "x-publishable-api-key": pubKey }, cache: "no-store",
+      })
+      const result = await readResponseBody(response)
+      if (!response.ok || result?.cart?.id !== cartId) throw new Error("Không tải được giỏ hàng. Vui lòng thử lại.")
+      const fresh = result.cart as HttpTypes.StoreCart
+      const expected = expectedItems.length ? expectedItems : (fresh.items ?? []).filter((line) => line.metadata?.bundle_shipping_fee != null)
+      const settled = expected.length > 0 && expected.every((expected) => {
+        const current = fresh.items?.find((line) => line.variant_id === expected.variant_id)
+        const metadata = expected.metadata as any
+        return current && current.quantity === Number(metadata.bundle_qty) &&
+          Number((current.metadata as any)?.bundle_qty) === Number(metadata.bundle_qty) &&
+          Math.abs(Number(current.unit_price) * current.quantity - Number(metadata.bundle_price)) < 1 &&
+          Number((current.metadata as any)?.bundle_shipping_fee) === Number(metadata.bundle_shipping_fee) &&
+          String((current.metadata as any)?.gifts ?? "[]") === String(metadata.gifts ?? "[]")
+      })
+      if (settled) return fresh
+      if (attempt < 19) await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    throw new Error("Giá combo đang cập nhật. Vui lòng thử lại sau ít giây.")
+  }
+
   const handleQtyChange = async (lineId: string, newQty: number) => {
+    if (configuredQtyBusy.current || submitting) return
     if (newQty < 1) {
       // Optimistic remove
       setLocalItems(prev => (prev ?? cart.items ?? []).filter((i: any) => i.id !== lineId))
@@ -427,9 +458,22 @@ export default function SimpleCheckout({
     const item = items.find((i: any) => i.id === lineId)
     if (!item) return
     const meta = item.metadata as any
-    const opts: Array<{ qty: number; price: number }> = (() => {
+    const opts: Array<{ qty: number; price: number; label?: string; shippingFee?: number; gifts?: unknown[] }> = (() => {
       try { return meta?.bundle_options ? JSON.parse(meta.bundle_options) : [] } catch { return [] }
     })()
+    const hasConfiguredShipping = meta?.bundle_shipping_fee != null
+    const exactOption = opts.find((option) => option.qty === newQty)
+    // Shipping-configured offers must stay on an actual configured bundle.
+    if (hasConfiguredShipping && !exactOption) return
+    const nextMetadata = hasConfiguredShipping && exactOption
+      ? {
+          ...meta,
+          bundle_label: exactOption.label ?? meta.bundle_label,
+          bundle_shipping_fee: typeof exactOption.shippingFee === "number" && Number.isFinite(exactOption.shippingFee) && exactOption.shippingFee >= 0
+            ? Math.floor(exactOption.shippingFee) : 0,
+          gifts: JSON.stringify(exactOption.gifts ?? []),
+        }
+      : meta
     let newPrice: number
     if (opts.length === 0) {
       newPrice = item.unit_price * newQty
@@ -458,24 +502,48 @@ export default function SimpleCheckout({
       }
     }
     newPrice = roundThousand(newPrice)
-    // Optimistic update
-    setLocalItems(prev => {
-      const base = prev ?? cart.items ?? []
-      return base.map((i: any) => i.id === lineId
-        ? { ...i, metadata: { ...i.metadata, bundle_qty: newQty, bundle_price: newPrice } }
-        : i)
-    })
-    setQtyLoading(s => ({ ...s, [lineId]: true }))
+    const metadata = { ...nextMetadata, bundle_qty: newQty, bundle_price: newPrice }
+    if (hasConfiguredShipping && !item.variant_id) return
+    if (hasConfiguredShipping) {
+      configuredQtyBusy.current = true
+      configuredQtyError.current = false
+      setSubmitError("")
+    }
+    setLocalItems(prev => (prev ?? cart.items ?? []).map((line: any) => line.id === lineId
+      ? { ...line, metadata } : line))
+    setQtyLoading(state => ({ ...state, [lineId]: true }))
     try {
-      await fetch(`${backendUrl}/store/carts/${cart.id}/line-items/${lineId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
-        body: JSON.stringify({ quantity: newQty, metadata: { ...meta, bundle_qty: newQty, bundle_price: newPrice } }),
-      })
-    } catch (e) {
-      console.error("[SimpleCheckout] qty change failed", e)
+      if (hasConfiguredShipping) {
+        // Recreate the line so cart.line_item.created applies the new bundle unit price.
+        const result = await prepareQuickCheckout({
+          variantId: item.variant_id,
+          quantity: newQty,
+          countryCode: countryCode || "vn",
+          metadata,
+          replaceVariantIds: [item.variant_id],
+        })
+        const fresh = await waitForBundlePrices(result.cart.id, [{ ...item, metadata }])
+        setLocalItems(fresh.items ?? [])
+        setLiveDiscount(Number(fresh.discount_total ?? 0))
+      } else {
+        await fetch(backendUrl + "/store/carts/" + cart.id + "/line-items/" + lineId, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
+          body: JSON.stringify({ quantity: newQty, metadata }),
+        })
+      }
+    } catch (error) {
+      console.error("[SimpleCheckout] qty change failed", error)
+      if (hasConfiguredShipping) {
+        configuredQtyError.current = true
+        setSubmitError(error instanceof Error ? error.message : "Không đổi được combo. Vui lòng thử lại.")
+        // A deleted previous line must not be displayed as a successful rollback.
+        const fresh = await retrieveCart().catch(() => null)
+        if (fresh) setLocalItems(fresh.items ?? [])
+      }
     } finally {
-      setQtyLoading(s => ({ ...s, [lineId]: false }))
+      if (hasConfiguredShipping) configuredQtyBusy.current = false
+      setQtyLoading(state => ({ ...state, [lineId]: false }))
     }
   }
 
@@ -634,9 +702,28 @@ export default function SimpleCheckout({
   const rawPromoDiscount = liveDiscount ?? (cart as any).discount_total ?? 0
   const promoDiscount = Math.min(subtotal, roundDiscountUp(rawPromoDiscount))
   const promoDiscountRoundingAdjustment = Math.max(0, promoDiscount - rawPromoDiscount)
-  // Không tính tax/shipping — khách chỉ trả tiền hàng sau giảm giá
-  const cartTotal = Math.max(0, subtotal - promoDiscount)
-  const sepayTotal = Math.max(1000, cartTotal - SEPAY_DISCOUNT)
+  const lineShippingFee = (item: any) => {
+    const fee = Number(item.metadata?.bundle_shipping_fee ?? 0)
+    return Number.isFinite(fee) && fee >= 0 ? Math.floor(fee) : 0
+  }
+  const hasBundleShipping = pendingShippingFee != null || sortedItems.some((item: any) => item.metadata?.bundle_shipping_fee != null)
+  // Shipping is separate from goods and promotion discounts. One parcel uses the highest offer fee.
+  const shippingFee = cartPending
+    ? Math.max(0, pendingShippingFee ?? 0, ...displayItems.map(lineShippingFee))
+    : Math.max(0, ...sortedItems.map(lineShippingFee))
+  const cartTotal = Math.max(0, subtotal - promoDiscount) + shippingFee
+  // A product may cap or disable the order-level QR incentive; zero is a valid override.
+  // For mixed carts use the smallest configured incentive instead of adding discounts.
+  const configuredPaymentDiscounts = sortedItems.flatMap((item: any) => {
+    const raw = item.metadata?.payment_discount_amount
+    if (raw == null || (typeof raw !== "number" && typeof raw !== "string") || (typeof raw === "string" && !raw.trim())) return []
+    const amount = Number(raw)
+    return Number.isFinite(amount) && amount >= 0 ? [Math.floor(amount)] : []
+  })
+  const paymentDiscount = configuredPaymentDiscounts.length
+    ? Math.min(...configuredPaymentDiscounts, Math.max(0, cartTotal - 1000))
+    : (embedded && !cartProp ? 0 : DEFAULT_SEPAY_DISCOUNT)
+  const sepayTotal = Math.max(1000, cartTotal - paymentDiscount)
   const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal
 
@@ -670,6 +757,10 @@ export default function SimpleCheckout({
   }
 
   const handleSubmit = async () => {
+    if (configuredQtyBusy.current || configuredQtyError.current) {
+      setSubmitError("Vui lòng chờ giỏ hàng cập nhật hoặc chọn lại combo trước khi đặt hàng.")
+      return
+    }
     if (!validate()) return
     setSubmitting(true)
     setSubmitError("")
@@ -725,7 +816,7 @@ export default function SimpleCheckout({
                 promo_discount_rounding_adjustment: promoDiscountRoundingAdjustment,
               }
             : {}),
-          ...(payment === "sepay" ? { sepay_discount: SEPAY_DISCOUNT } : {}),
+          ...(hasBundleShipping ? { sepay_discount: payment === "sepay" ? paymentDiscount : 0 } : payment === "sepay" ? { sepay_discount: paymentDiscount } : {}),
           ...orderUtm,
           client_user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
         }
@@ -736,25 +827,41 @@ export default function SimpleCheckout({
         shippingMethods: updatedCart.shipping_methods?.length ?? 0,
       })
 
-      // Set shipping method — ưu tiên option miễn phí (amount=0), bỏ qua nếu không có
-      if (availableShippingOptions && availableShippingOptions.length > 0) {
-        const freeOption = availableShippingOptions.find((o: any) => (o.amount ?? 0) === 0)
-        if (freeOption) {
-          await setShippingMethod({
-            cartId: updatedCart.id,
-            shippingMethodId: freeOption.id,
-          })
-          console.info("[SimpleCheckout] free shipping method set", {
-            cartId: updatedCart.id,
-            shippingMethodId: freeOption.id,
-          })
-        } else {
-          // Không có free shipping option — bỏ qua, không tính phí ship
-          console.info("[SimpleCheckout] no free shipping option found, skipping", {
-            cartId: updatedCart.id,
-            options: availableShippingOptions.map((o: any) => ({ id: o.id, amount: o.amount, name: o.name })),
-          })
+      if (hasBundleShipping) {
+        const expectedItems = (localItems ?? cart.items ?? []).filter((line: any) => line.metadata?.bundle_shipping_fee != null)
+        await waitForBundlePrices(updatedCart.id, embedded ? [] : expectedItems)
+        // Server selects its configured native shipping option and validates the offer fee.
+        const response = await fetch(`${backendUrl}/store/carts/${updatedCart.id}/bundle-shipping`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-publishable-api-key": pubKey },
+          body: JSON.stringify({}),
+        })
+        const result = await readResponseBody(response)
+        if (!response.ok || result?.cart?.id !== updatedCart.id) {
+          throw new Error(result?.message || result?.error || "Chưa xác nhận được phí giao hàng. Vui lòng thử lại.")
         }
+      } else {
+        // Set shipping method — ưu tiên option miễn phí (amount=0), bỏ qua nếu không có
+        if (availableShippingOptions && availableShippingOptions.length > 0) {
+          const freeOption = availableShippingOptions.find((o: any) => (o.amount ?? 0) === 0)
+          if (freeOption) {
+            await setShippingMethod({
+              cartId: updatedCart.id,
+              shippingMethodId: freeOption.id,
+            })
+            console.info("[SimpleCheckout] free shipping method set", {
+              cartId: updatedCart.id,
+              shippingMethodId: freeOption.id,
+            })
+          } else {
+            // Không có free shipping option — bỏ qua, không tính phí ship
+            console.info("[SimpleCheckout] no free shipping option found, skipping", {
+              cartId: updatedCart.id,
+              options: availableShippingOptions.map((o: any) => ({ id: o.id, amount: o.amount, name: o.name })),
+            })
+          }
+        }
+
       }
 
       const preferredProviderId = payment === "sepay" ? "pp_sepay_sepay" : "pp_system_default"
@@ -875,13 +982,15 @@ export default function SimpleCheckout({
           {/* Header 1 dòng: tiêu đề + countdown + đóng */}
           <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-2">
             <span className="font-black text-base text-gray-900">🛒 Đặt hàng</span>
+            {!hasBundleShipping && (
             <span className={`ml-auto text-[11px] font-black text-white rounded-full px-2 py-1 ${countdown.expired ? "bg-red-600" : "bg-orange-500"}`}>
               {countdown.expired ? "⏰ Sắp hết ưu đãi" : <>⏰ Giữ giá <span className="tabular-nums">{countdown.m}:{countdown.s}</span></>}
             </span>
+            )}
             <button
               onClick={onClose}
               aria-label="Đóng"
-              className="w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none"
+              className={`w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none ${hasBundleShipping ? "ml-auto" : ""}`}
             >✕</button>
           </div>
 
@@ -970,7 +1079,7 @@ export default function SimpleCheckout({
               <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
                 <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
                 <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR</span>
-                <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(SEPAY_DISCOUNT)}</span>
+                {paymentDiscount > 0 && <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(paymentDiscount)}</span>}
               </label>
             </div>
           </div>
@@ -985,8 +1094,9 @@ export default function SimpleCheckout({
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-gray-500">
                 Tổng cộng
+                {hasBundleShipping && <span className="block text-[11px]">{shippingFee > 0 ? `Đã gồm ${formatVND(shippingFee)} phí ship` : "Miễn phí giao hàng"}</span>}
                 {promoDiscount > 0 && <span className="text-green-600"> · đã giảm {formatVND(promoDiscount)}</span>}
-                {payment === "sepay" && <span className="text-green-600"> · QR -{formatVND(SEPAY_DISCOUNT)}</span>}
+                {payment === "sepay" && paymentDiscount > 0 && <span className="text-green-600"> · QR -{formatVND(paymentDiscount)}</span>}
               </span>
               <span className="text-right">
                 <span className="font-black text-xl text-orange-500">{formatVND(finalTotal)}</span>
@@ -1003,7 +1113,7 @@ export default function SimpleCheckout({
               {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY"}
             </button>
             <p className="text-center text-[11px] text-gray-500">
-              ✅ Kiểm tra hàng trước · 🔄 Đổi trả 7 ngày · 🛡️ Bảo hành
+              {hasBundleShipping ? "Thanh toán khi nhận hàng · Hỗ trợ theo chính sách đổi trả" : "✅ Kiểm tra hàng trước · 🔄 Đổi trả 7 ngày · 🛡️ Bảo hành"}
             </p>
           </div>
         </div>
@@ -1031,12 +1141,14 @@ export default function SimpleCheckout({
         </div>
 
         {/* Countdown banner — sticky để giữ urgency khi cuộn, header phía trên cuộn mất */}
+        {!hasBundleShipping && (
         <div className={`sticky top-0 z-40 px-4 py-2.5 text-center text-sm font-black tracking-wide ${countdown.expired ? "bg-red-600" : "bg-orange-500"} text-white`}>
           {countdown.expired
             ? "⏰ Ưu đãi có thể kết thúc bất cứ lúc nào — hoàn tất đặt hàng ngay nhé!"
             : <>🎁 Giá ưu đãi + quà tặng đang được giữ riêng cho bạn <span className="tabular-nums bg-white/20 rounded px-1">{countdown.m}:{countdown.s}</span></>
           }
         </div>
+        )}
 
         <div className="max-w-5xl mx-auto px-4 py-6">
           <div className="flex flex-col lg:flex-row gap-6 items-start">
@@ -1157,16 +1269,22 @@ return parsed
                   <span>Tạm tính</span>
                   <span>{formatVND(subtotal)}</span>
                 </div>
+                {hasBundleShipping && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>Phí giao hàng</span>
+                    <span>{shippingFee > 0 ? formatVND(shippingFee) : "Miễn phí"}</span>
+                  </div>
+                )}
                 {promoDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
                     <span>Mã giảm giá</span>
                     <span>-{formatVND(promoDiscount)}</span>
                   </div>
                 )}
-                {payment === "sepay" && (
+                {payment === "sepay" && paymentDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600 font-semibold">
                     <span>Giảm thanh toán QR</span>
-                    <span>-{formatVND(SEPAY_DISCOUNT)}</span>
+                    <span>-{formatVND(paymentDiscount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-black text-xl pt-2 border-t border-gray-200">
@@ -1210,7 +1328,7 @@ return parsed
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-bold text-sm text-gray-900">Chuyển khoản QR</p>
-                      <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">GIẢM {formatVND(SEPAY_DISCOUNT)}</span>
+                      {paymentDiscount > 0 && <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">GIẢM {formatVND(paymentDiscount)}</span>}
                     </div>
                     <p className="text-xs text-gray-500">Quét mã QR — mọi ngân hàng đều được</p>
                   </div>
@@ -1267,12 +1385,16 @@ return parsed
 
             {/* Trust badges */}
             <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
+              {(hasBundleShipping ? [
+                { icon: "💳", text: "Giá hàng và phí giao rõ ràng" },
+                { icon: "🔄", text: "Hỗ trợ theo chính sách đổi trả" },
+                { icon: "🎁", text: "Quà tặng ghi rõ trong đơn" },
+              ] : [
                 { icon: "✅", text: "Kiểm tra hàng trước khi thanh toán" },
                 { icon: "🔄", text: "Đổi trả miễn phí trong 7 ngày" },
                 { icon: "🛡️", text: "Bảo hành chính hãng 12 tháng" },
                 { icon: "🚚", text: "Giao hàng toàn quốc 1-3 ngày" },
-              ].map(b => (
+              ]).map(b => (
                 <div key={b.text} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2.5 py-2">
                   <span>{b.icon}</span>
                   <span className="text-gray-600 font-medium leading-tight">{b.text}</span>
@@ -1288,7 +1410,7 @@ return parsed
             )}
             <button
               onClick={handleSubmit}
-              disabled={submitting || sortedItems.length === 0}
+              disabled={submitting || Object.values(qtyLoading).some(Boolean) || sortedItems.length === 0}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xl py-5 rounded-xl transition-all active:scale-95 disabled:opacity-70 shadow-lg shadow-orange-200"
             >
               {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY →"}
