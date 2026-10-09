@@ -343,6 +343,9 @@ async function pauseHistory(campaignId: string) {
 }
 
 /** Tài khoản đang sát ngưỡng thanh toán hoặc lỗi → không tăng thêm. */
+/** Tài khoản trả trước có tự nạp khi số dư dưới 1tr (xác nhận 09/10/2026) — ADS342 của ANHTD. */
+const AUTO_TOPUP_ACCOUNTS = new Set(["741222868885235"])
+
 async function accountBlocked(adAccountId: string | null, increase = 0): Promise<string | null> {
   if (!adAccountId) return null
   const id = adAccountId.replace(/^act_/, "")
@@ -357,6 +360,9 @@ async function accountBlocked(adAccountId: string | null, increase = 0): Promise
   if (h.muc === "do" || ["sap_tru_tien_gap", "da_vuot_nguong"].includes(h.ma_van_de)) {
     return `Tài khoản đang cảnh báo đỏ (${h.ma_van_de || h.muc})`
   }
+  // Tài khoản tự nạp khi số dư dưới 1tr: cảnh báo vàng "sắp hết hạn mức" là bình thường, không chặn tăng.
+  // Cảnh báo đỏ ở trên vẫn chặn.
+  if (AUTO_TOPUP_ACCOUNTS.has(id)) return null
   // Tài khoản trả trước / hạn mức sắp hết: tăng ngân sách vô ích, FB sẽ ngừng phân phối
   // (05/10 Ads342 báo vàng "sắp hết hạn mức" — tăng lên 1,2tr xong cả tài khoản đứng từ 13h).
   if (h.muc === "vang" && /han_muc|het_tien|nap|so_du/.test(String(h.ma_van_de || ""))) {
