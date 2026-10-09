@@ -6,10 +6,16 @@ import { useState, useEffect } from "react"
 
 type ImageGalleryProps = {
   images: HttpTypes.StoreProductImage[]
+  productId?: string
+  bundleGallerySync?: boolean
+  initialBundleImage?: string
 }
 
-const ImageGallery = ({ images }: ImageGalleryProps) => {
-  const [active, setActive] = useState(0)
+const ImageGallery = ({ images, productId, bundleGallerySync = false, initialBundleImage }: ImageGalleryProps) => {
+  const [active, setActive] = useState(() => {
+    const index = bundleGallerySync ? images.findIndex(image => image.url === initialBundleImage) : 0
+    return index >= 0 ? index : 0
+  })
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -21,6 +27,27 @@ const ImageGallery = ({ images }: ImageGalleryProps) => {
     window.addEventListener("variant-image-change", handler)
     return () => window.removeEventListener("variant-image-change", handler)
   }, [images])
+
+
+  useEffect(() => {
+    if (!bundleGallerySync || !productId) return
+    const selectImage = (url: unknown) => {
+      if (typeof url !== "string" || !url) return
+      const index = images.findIndex(image => image.url === url)
+      if (index >= 0) setActive(index)
+    }
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ productId?: string; image?: string }>).detail
+      if (detail?.productId === productId) selectImage(detail.image)
+    }
+    window.addEventListener("pvb-bundle-select", handler)
+    // A selector may publish before this listener mounts; consume its latest scoped pick.
+    const shared = window as Window & {
+      __pvBundleGallerySelections?: Record<string, { qty: number; image?: string }>
+    }
+    selectImage(shared.__pvBundleGallerySelections?.[productId]?.image || initialBundleImage)
+    return () => window.removeEventListener("pvb-bundle-select", handler)
+  }, [images, productId, bundleGallerySync, initialBundleImage])
 
   if (!images.length) return null
 

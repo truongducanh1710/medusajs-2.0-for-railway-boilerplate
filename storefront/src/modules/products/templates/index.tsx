@@ -343,6 +343,21 @@ function FinalCTA({ product }: { product: HttpTypes.StoreProduct; region: HttpTy
 const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
   if (!product || !product.id) return notFound()
 
+  const bundleGallerySync = product.metadata?.bundle_gallery_sync === true
+  let initialBundleImage: string | undefined
+  if (bundleGallerySync) {
+    try {
+      const offers = JSON.parse(meta(product, "bundle_options") || "[]")
+      const defaultQty = Number(product.metadata?.bundle_default_qty)
+      if (Array.isArray(offers) && Number.isInteger(defaultQty) && defaultQty > 0) {
+        const offer = offers.find((item: { qty?: number; image?: string }) => Number(item?.qty) === defaultQty)
+        if (typeof offer?.image === "string" && product.images?.some(image => image.url === offer.image)) {
+          initialBundleImage = offer.image
+        }
+      }
+    } catch {}
+  }
+
   const videoUrl = meta(product, "video_url")
   const productPixelId = meta(product, "fb_pixel_id")
   const productCapiToken = meta(product, "fb_capi_token")
@@ -414,7 +429,12 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
           {/* Left: Gallery */}
           <div className="lg:sticky lg:top-24 lg:self-start">
-            <ImageGallery images={product?.images || []} />
+            <ImageGallery
+              images={product?.images || []}
+              productId={product.id}
+              bundleGallerySync={bundleGallerySync}
+              initialBundleImage={initialBundleImage}
+            />
           </div>
 
           {/* Right: Info + Actions */}

@@ -37,6 +37,22 @@ function formatVND(amount: number) {
   return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ"
 }
 
+
+function GiftThumbnail({ image, name }: { image?: string; name: string }) {
+  let source: string | undefined
+  if (typeof image === "string" && image.trim()) {
+    try {
+      const url = new URL(image.trim(), "https://www.phanviet.vn")
+      if (url.protocol === "https:" || url.protocol === "http:") source = image.trim()
+    } catch {}
+  }
+  return source ? (
+    <img src={source} alt={name} className="w-8 h-8 object-contain rounded-md border border-gray-200 bg-white flex-shrink-0" loading="lazy" />
+  ) : (
+    <span className="w-8 h-8 flex items-center justify-center flex-shrink-0 text-lg" aria-hidden="true">🎁</span>
+  )
+}
+
 /**
  * Checkout popup on the product page: customer switches bundle and fills the form without
  * leaving the ad landing page. The cart is created/updated in the background while they type;
@@ -170,9 +186,12 @@ export default function CheckoutPopup({
   const selectedGifts = selectedOpt?.gifts?.length ? (
     <div className="bg-orange-50 border border-orange-100 rounded-lg px-2.5 py-1.5 space-y-0.5">
       {selectedOpt.gifts.map((g, i) => (
-        <p key={i} className="text-[11px] text-gray-700 font-semibold line-clamp-1">
-          🎁 <span className="text-orange-600 font-black">TẶNG</span> {g.name}
-        </p>
+        <div key={i} className="flex items-center gap-2 py-0.5">
+          <GiftThumbnail image={g.image} name={g.name} />
+          <p className="text-[11px] text-gray-700 font-semibold leading-tight line-clamp-2">
+            <span className="text-orange-600 font-black">TẶNG</span> {g.name}
+          </p>
+        </div>
       ))}
     </div>
   ) : null
@@ -266,9 +285,12 @@ export default function CheckoutPopup({
             {isSelected && opt.gifts && opt.gifts.length > 0 && (
               <div className="border-t border-dashed border-blue-200 bg-blue-50 px-3 py-2 space-y-1">
                 {opt.gifts.map((g, i) => (
-                  <p key={i} className="text-[11px] text-gray-700 font-semibold line-clamp-1">
-                    🎁 <span className="text-blue-600 font-black">TẶNG</span> {g.name}
-                  </p>
+                  <div key={i} className="flex items-center gap-2">
+                    <GiftThumbnail image={g.image} name={g.name} />
+                    <p className="text-[11px] text-gray-700 font-semibold leading-tight line-clamp-2">
+                      <span className="text-blue-600 font-black">TẶNG</span> {g.name}
+                    </p>
+                  </div>
                 ))}
               </div>
             )}

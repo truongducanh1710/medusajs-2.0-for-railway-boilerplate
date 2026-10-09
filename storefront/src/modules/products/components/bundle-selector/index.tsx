@@ -158,15 +158,25 @@ export default function BundleSelector({ product, region }: Props) {
   // Sync lựa chọn hiện tại lên StickyBar qua CustomEvent
   useEffect(() => {
     if (!selectedOpt) return
+    const galleryEnabled = product.metadata?.bundle_gallery_sync === true
+    if (galleryEnabled) {
+      const shared = window as Window & {
+        __pvBundleGallerySelections?: Record<string, { qty: number; image?: string }>
+      }
+      shared.__pvBundleGallerySelections ??= {}
+      shared.__pvBundleGallerySelections[product.id] = { qty: selectedOpt.qty, image: selectedOpt.image }
+    }
     window.dispatchEvent(new CustomEvent("pvb-bundle-select", {
       detail: {
+        productId: product.id,
+        image: galleryEnabled ? selectedOpt.image : undefined,
         price: selectedOpt.price,
         label: selectedOpt.label,
         qty: selectedOpt.qty,
         variantLabel: isMultiVariant ? activeVarConfig?.label : undefined,
       }
     }))
-  }, [selected, activeVariantIdx, selectedOpt?.price])
+  }, [selected, activeVariantIdx, selectedOpt?.price, selectedOpt?.image, selectedOpt?.label, product.id, product.metadata?.bundle_gallery_sync])
 
   // Cart line for the current pick: quantity = số thật khách chọn, bundle_price = tổng giá bundle,
   // bundle_options lưu lại để cart-drawer / checkout tính lại giá khi +/-
