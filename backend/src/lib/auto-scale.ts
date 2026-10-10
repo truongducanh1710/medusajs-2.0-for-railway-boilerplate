@@ -205,15 +205,52 @@ async function spendToday(campaignId: string): Promise<number> {
   return Number(rows[0]?.s ?? 0)
 }
 
-/** CTR hôm nay của camp (%) — null khi chưa có hiển thị. */
-async function ctrToday(campaignId: string): Promise<number | null> {
+/** Số liệu hôm nay + 7 ngày trước của CHÍNH camp — để so CTR/CPC với mức thường ngày của nó. */
+async function campCtrStats(campaignId: string) {
   const { rows } = await getPool().query(
-    `SELECT COALESCE(SUM(impressions),0)::bigint i, COALESCE(SUM(clicks),0)::bigint c FROM mkt_ads_cost
-      WHERE campaign_id = $1 AND deleted_at IS NULL AND date = $2::date`,
+    `SELECT
+       COALESCE(SUM(impressions) FILTER (WHERE date = $2::date),0)::bigint ti,
+       COALESCE(SUM(clicks)      FILTER (WHERE date = $2::date),0)::bigint tc,
+       COALESCE(SUM(spend)       FILTER (WHERE date = $2::date),0)::bigint ts,
+       COALESCE(SUM(impressions) FILTER (WHERE date < $2::date),0)::bigint bi,
+       COALESCE(SUM(clicks)      FILTER (WHERE date < $2::date),0)::bigint bc,
+       COALESCE(SUM(spend)       FILTER (WHERE date < $2::date),0)::bigint bs
+     FROM mkt_ads_cost WHERE campaign_id = $1 AND deleted_at IS NULL AND date >= $2::date - 7 AND date <= $2::date`,
     [campaignId, nowVN().date]
   )
-  const i = Number(rows[0]?.i ?? 0)
-  return i > 0 ? (Number(rows[0].c) / i) * 100 : null
+  const r = rows[0] || {}
+  const ti = Number(r.ti), tc = Number(r.tc), ts = Number(r.ts), bi = Number(r.bi), bc = Number(r.bc), bs = Number(r.bs)
+  const baseOk = bi >= 3000 && bc > 0
+  return {
+    impressions: ti,
+    ctr: ti > 0 ? (tc / ti) * 100 : null,
+    ctr_base: baseOk ? (bc / bi) * 100 : null,
+    cpc_ratio: baseOk && tc > 0 ? (ts / tc) / (bs / bc) : null,
+  }
+}
+
+/**
+ * CHẠY THỬ (chỉ ghi log, không tắt): CTR hôm nay ≤ 0,7× CTR 7 ngày của chính camp khi đã ≥ 1.000 hiển thị.
+ * Phân tích theo giờ 01/09–09/10: phần còn lại trong ngày của các camp này ~63–71% chi phí (mẫu nhỏ, 13 lần/39 ngày)
+ * → ghi "lẽ ra phanh" 2 tuần để đủ mẫu rồi mới quyết có bật thật không. Mỗi camp tối đa 1 lần/ngày.
+ */
+async function logCtrDropWarning(camp: any, rule: Rule, st: Awaited<ReturnType<typeof campCtrStats>>, metrics: any) {
+  if (st.impressions < 1000 || st.ctr == null || st.ctr_base == null) return
+  const ratio = st.ctr / st.ctr_base
+  if (ratio > 0.7) return
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT 1 FROM auto_scale_log WHERE campaign_id = $1 AND action = 'ctr_drop' AND created_at >= $2::timestamptz LIMIT 1`,
+    [camp.campaign_id, startOfTodayVN()]
+  )
+  if (rows.length) return
+  await pool.query(
+    `INSERT INTO auto_scale_log (campaign_id, campaign_name, rule_id, action, reason, metrics, dry_run, success)
+     VALUES ($1,$2,$3,'ctr_drop',$4,$5::jsonb,true,true)`,
+    [camp.campaign_id, camp.campaign_name, rule.id,
+     `Lẽ ra phanh sớm (chạy thử): CTR hôm nay ${st.ctr.toFixed(2)}% = ${ratio.toFixed(2)}× CTR 7 ngày của camp (${st.ctr_base.toFixed(2)}%), ${st.impressions} hiển thị`,
+     JSON.stringify({ ...metrics, ctr: st.ctr, ctr_base: st.ctr_base, ratio, impressions: st.impressions })]
+  ).catch(() => {})
 }
 
 export type MktSetting = {
@@ -628,15 +665,18 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       }
       metrics.revenue_today = pauseInputs.revenue_today
       metrics.cost_pct_today = pauseInputs.revenue_today ? Math.round((spend / pauseInputs.revenue_today) * 1000) / 10 : null
+      const st = await campCtrStats(camp.campaign_id)
+      if (fb.data.effective_status === "ACTIVE") await logCtrDropWarning(camp, rule, st, metrics)
       const ctx = camp.mkt_name ? portfolios.get(camp.mkt_name) : undefined
       if (ctx) {
-        const ctr = await ctrToday(camp.campaign_id)
+        // So với CHÍNH camp; camp mới chưa đủ 7 ngày dữ liệu thì dùng CTR 7 ngày của MKT
+        const ctrBase = st.ctr_base ?? ctx.ctr_base
         const portfolio: Portfolio = {
           mkt: camp.mkt_name, pct: ctx.total.pct, max_pct: ctx.setting.max_pct, lenient_max_pct: ctx.setting.lenient_max_pct,
-          trim_active: ctx.trim_active, trim_pick: ctx.pick === camp.campaign_id, ctr, ctr_base: ctx.ctr_base,
+          trim_active: ctx.trim_active, trim_pick: ctx.pick === camp.campaign_id, ctr: st.ctr, ctr_base: ctrBase, cpc_ratio: st.cpc_ratio,
         }
         pauseInputs.portfolio = portfolio
-        metrics.mkt = { pct: ctx.total.pct, spend: ctx.total.spend, revenue: ctx.total.revenue, trim_active: ctx.trim_active, ctr, ctr_base: ctx.ctr_base }
+        metrics.mkt = { pct: ctx.total.pct, spend: ctx.total.spend, revenue: ctx.total.revenue, trim_active: ctx.trim_active, ctr: st.ctr, ctr_base: ctrBase, cpc_ratio: st.cpc_ratio }
       }
     }
 

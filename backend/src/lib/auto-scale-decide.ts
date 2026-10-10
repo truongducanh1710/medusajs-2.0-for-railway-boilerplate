@@ -76,7 +76,8 @@ export type Portfolio = {
   trim_active: boolean
   trim_pick: boolean           // camp này là camp xấu nhất được chọn tỉa vòng này
   ctr: number | null           // CTR hôm nay của camp (%)
-  ctr_base: number | null      // CTR 7 ngày của MKT (%)
+  ctr_base: number | null      // CTR 7 ngày của CHÍNH camp (%); camp chưa đủ dữ liệu thì dùng CTR 7 ngày của MKT
+  cpc_ratio?: number | null    // CPC hôm nay ÷ CPC 7 ngày của chính camp
 }
 
 export type Decision =
@@ -169,11 +170,14 @@ export function decide(x: DecideInput): Decision {
   if (tat) {
     const rev = Number(x.revenue_today || 0)
     const campPct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
+    // Phân tích 01/09–09/10: so với CHÍNH camp mới có tín hiệu (so với MKT thì không); CPC > 1,1× thường ngày
+    // là ngày xấu nhiều hơn. CTR cao bất thường không tốt hơn nên chỉ đòi CTR không tụt.
     const ctrOk = pf?.ctr != null && pf.ctr_base != null && pf.ctr >= pf.ctr_base
+      && (pf.cpc_ratio == null || pf.cpc_ratio <= 1.1)
     if (pf && !pf.trim_active && pf.pct !== null && pf.pct <= pf.max_pct && campPct <= pf.lenient_max_pct && ctrOk) {
       return {
         action: "none",
-        reason: `Giữ chạy thêm: ${tat} — nhưng tổng ${pf.mkt} hôm nay ${pf.pct}% ≤ ${pf.max_pct}% và CTR ${pf.ctr!.toFixed(2)}% ≥ ${pf.ctr_base!.toFixed(2)}% (TB 7 ngày)`,
+        reason: `Giữ chạy thêm: ${tat} — nhưng tổng ${pf.mkt} hôm nay ${pf.pct}% ≤ ${pf.max_pct}%, CTR ${pf.ctr!.toFixed(2)}% ≥ ${pf.ctr_base!.toFixed(2)}% (7 ngày của camp)${pf.cpc_ratio != null ? `, CPC ${pf.cpc_ratio.toFixed(2)}× thường ngày` : ""}`,
       }
     }
     return { action: "tat", reason: pf?.trim_active ? `${tat} (đang giờ tỉa, tổng ${pf.mkt} ${pf.pct ?? "—"}%)` : tat, final }

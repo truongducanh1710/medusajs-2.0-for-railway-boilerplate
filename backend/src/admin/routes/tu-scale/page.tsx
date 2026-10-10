@@ -48,6 +48,7 @@ const ACTION: Record<string, { label: string; color: string }> = {
   reset: { label: "🌙 Reset", color: "#6b7280" },
   tat: { label: "⛔ Phanh (tắt)", color: "#dc2626" },
   bat: { label: "▶️ Bật lại", color: "#2563eb" },
+  ctr_drop: { label: "⚠️ CTR tụt (chạy thử)", color: "#d97706" },
 }
 
 function TuScalePage() {
