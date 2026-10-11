@@ -241,6 +241,10 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
   // chung (ai có quyền đều sửa được mọi ô, lưu sau cùng thắng); nếu gửi lại cả lưới thì
   // người mở trang từ sớm bấm lưu sẽ ghi đè số mới hơn của người khác bằng số cũ.
   const baselineRef = useRef<Record<string, Record<string, string>>>({})
+  // aliasRef[date][code] = các mã GỐC đã lưu trong DB bị quy về `code` khi nạp lưới
+  // (vd PHVVN026_CV → PHVVN027). Sửa ô đó thì phải xoá các dòng gốc, nếu không DB còn
+  // cả số cũ lẫn số mới → báo cáo cộng 2 lần.
+  const aliasRef = useRef<Record<string, Record<string, string[]>>>({})
   const [dates, setDates] = useState<string[]>([todayVN()])
   // SP hiện trong lưới — mặc định lấy SP shop đang bán, nhân sự bỏ bớt/thêm được.
   const [picked, setPicked] = useState<string[]>([])
@@ -279,13 +283,18 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     return [...auto, ...manual]
   }, [products, catalog, extra, platform, market, shop])
 
+  const normName = (s: any) => String(s ?? "").trim().toUpperCase()
+  // Chỉ so mã KHỚP HẲN: startsWith sẽ ăn nhầm (PHVVN027 khớp cả PHVVN027_MTT móc treo).
+  const catalogNameOf = (code: string) =>
+    normName(catalog.find((x: any) => x.product_code === code)?.product_name)
+
   // Thứ tự dòng trong 1 ngày: các SP đã chọn, rồi tới dòng "Chung cả shop".
   const allCodes = useMemo(() => [...picked, ""], [picked])
 
   // Đổi shop: nạp lại lưới từ số ĐÃ LƯU của shop đó, để nhân sự thấy ngay đã điền gì
   // và sửa trực tiếp — không phải nhớ hôm qua khai tới đâu.
   useEffect(() => {
-    if (!shop) { setGrid({}); baselineRef.current = {}; setPicked([]); return }
+    if (!shop) { setGrid({}); baselineRef.current = {}; aliasRef.current = {}; setPicked([]); return }
     const mine = rows.filter(r =>
       r.platform === platform && r.market === market && (r.shop ?? "") === shop)
     const auto = products.filter(x => x.platform === platform && x.market === market && x.shop === shop)
@@ -296,16 +305,25 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     const normCode = (c: string) => {
       if (!c || autoCodes.has(c)) return c
       const m = c.match(/^(PHVVN\d{2,3})/)
-      return m && autoCodes.has(m[1]) ? m[1] : c
+      if (m && autoCodes.has(m[1])) return m[1]
+      // Danh mục và POS lệch số: chảo vàng danh mục là PHVVN026_CV nhưng POS bán bằng
+      // PHVVN027_CV → prefix không khớp, lưới hiện 2 dòng cùng tên. Quy theo TÊN SP.
+      const name = catalogNameOf(c)
+      const hit = name ? auto.find(x => normName(x.product_name) === name) : undefined
+      return hit ? hit.product_code : c
     }
     const g: Record<string, Record<string, string>> = {}
+    const alias: Record<string, Record<string, string[]>> = {}
     for (const r of mine) {
-      const code = normCode(r.product_code ?? "")
+      const orig = r.product_code ?? ""
+      const code = normCode(orig)
       const day = (g[r.date] ??= {})
       // 2 mã cũ cùng gộp về 1 prefix thì cộng lại, không để mã sau đè mã trước.
       const prev = Number(day[code] ?? 0)
       day[code] = String(prev + Number(r.cost || 0))
+      if (orig !== code) ((alias[r.date] ??= {})[code] ??= []).push(orig)
     }
+    aliasRef.current = alias
     baselineRef.current = JSON.parse(JSON.stringify(g))
     setGrid(g)
     // Lưới phải phủ LIÊN TỤC từ hôm nay ngược về ngày đã điền gần nhất — trước đây chỉ
@@ -335,7 +353,7 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
     }
     for (const p of auto.slice(0, 8)) used.add(p.product_code)
     setPicked([...used])
-  }, [shop, platform, market, rows, products])
+  }, [shop, platform, market, rows, products, catalog])
 
   const nameOf = (code: string) => {
     if (code === "") return "Chung cả shop (chia đều)"
@@ -400,6 +418,11 @@ function MarketplaceBulkEntry({ onDone }: { onDone: () => void }) {
           const truoc = baselineRef.current[date]?.[code]
           if (truoc !== undefined && onlyDigits(String(truoc)) === onlyDigits(String(raw))) continue
           entries.push({ date, product_code: code, cost: onlyDigits(String(raw)) })
+          // Ô này gánh số của mã gốc khác (đã cộng gộp lúc nạp) → xoá dòng gốc, số mới
+          // nằm trọn ở mã chuẩn.
+          for (const orig of aliasRef.current[date]?.[code] ?? []) {
+            entries.push({ date, product_code: orig, cost: "" })
+          }
         }
       }
       if (!entries.length) { setErr("Chưa sửa ô nào so với số đã lưu"); return }
@@ -508,7 +531,10 @@ Gồm ${p.variant_codes.length} mã biến thể: ${p.variant_codes.join(", ")}`
                   className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11.5px] text-gray-700 outline-none focus:border-violet-400">
                   <option value="">+ Thêm sản phẩm từ danh mục…</option>
                   {catalog
-                    .filter((c: any) => !productOptions.some(p => p.product_code === c.product_code))
+                    // Ẩn cả SP trùng TÊN với SP đang bán: chọn mã danh mục (PHVVN026_CV) sẽ
+                    // đẻ dòng thứ 2 cho cùng SP mà POS bán bằng mã khác (PHVVN027_CV).
+                    .filter((c: any) => !productOptions.some(p =>
+                      p.product_code === c.product_code || normName(p.product_name) === normName(c.product_name)))
                     .map((c: any) => (
                       <option key={c.product_code} value={c.product_code}>
                         {c.product_name} · {c.product_code}
