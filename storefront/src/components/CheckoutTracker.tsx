@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
-import { ttqTrack } from "@lib/tiktok"
+import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
 
 // Fires InitiateCheckout when customer lands on checkout page.
 // AddToCart is fired earlier in bundle-selector on button click.
@@ -15,6 +15,7 @@ export default function CheckoutTracker({
   productPixelId,
   productCapiToken,
   skipProductPixelInit = false,
+  tiktokPixelId,
 }: {
   contentIds: string[]
   value: number
@@ -24,6 +25,7 @@ export default function CheckoutTracker({
   productCapiToken?: string
   // Checkout popup on the product page: ProductPixelTracker already inited the product pixel
   skipProductPixelInit?: boolean
+  tiktokPixelId?: string
 }) {
   const fired = useRef(false)
 
@@ -31,6 +33,7 @@ export default function CheckoutTracker({
     if (typeof window === "undefined" || fired.current) return
 
     // TikTok — fire immediately, no dependency on fbq
+    loadProductTikTokPixel(tiktokPixelId)
     ttqTrack("InitiateCheckout", {
       contents: contentIds.map((id) => ({ content_id: id, content_type: "product" })),
       value,

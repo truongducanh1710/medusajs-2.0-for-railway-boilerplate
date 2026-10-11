@@ -39,6 +39,7 @@ export default async function Checkout({
         numItems={numItems}
         productPixelId={firstProductMeta.fb_pixel_id}
         productCapiToken={firstProductMeta.fb_capi_token}
+        tiktokPixelId={firstProductMeta.tiktok_pixel_id}
       />
       <SimpleCheckout cart={cart} shippingOptions={shippingOptions} />
     </>

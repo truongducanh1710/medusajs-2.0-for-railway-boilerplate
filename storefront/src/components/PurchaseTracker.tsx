@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { sendCAPIViaRoute } from "@lib/pixel"
 import { getUtmFromCookie } from "@lib/utm"
-import { ttqTrack } from "@lib/tiktok"
+import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
 
 export default function PurchaseTracker({
   orderId,
@@ -13,6 +13,7 @@ export default function PurchaseTracker({
   productPixelId,
   productCapiToken,
   paymentMethod = "cod",
+  tiktokPixelId,
 }: {
   orderId: string
   value: number
@@ -21,6 +22,7 @@ export default function PurchaseTracker({
   productPixelId?: string
   productCapiToken?: string
   paymentMethod?: string
+  tiktokPixelId?: string
 }) {
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -55,6 +57,7 @@ export default function PurchaseTracker({
       value,
       currency,
     }
+    loadProductTikTokPixel(tiktokPixelId)
     ttqTrack("PlaceAnOrder", ttData, `placeorder_${orderId}`)
     ttqTrack("CompletePayment", ttData, `completepayment_${orderId}`)
 

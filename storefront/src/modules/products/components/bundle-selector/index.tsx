@@ -7,7 +7,7 @@ import { generateEventId } from "@lib/pixel"
 import { useParams, useRouter } from "next/navigation"
 import CheckoutPopup from "@modules/products/components/checkout-popup"
 import CheckoutTracker from "@components/CheckoutTracker"
-import { ttqTrack } from "@lib/tiktok"
+import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
 
 type GiftItem = {
   image?: string
@@ -234,6 +234,7 @@ export default function BundleSelector({ product, region }: Props) {
         num_items: selected,
       }, { eventID: atcEventId })
     }
+    loadProductTikTokPixel(productMeta.tiktok_pixel_id)
     ttqTrack("AddToCart", {
       contents: [{ content_id: variant.id, content_type: "product", content_name: product.title, quantity: selected, price: selectedOpt.price }],
       value: selectedOpt.price,
@@ -365,6 +366,7 @@ export default function BundleSelector({ product, region }: Props) {
           numItems={selected}
           productPixelId={productMeta.fb_pixel_id}
           productCapiToken={productMeta.fb_capi_token}
+          tiktokPixelId={productMeta.tiktok_pixel_id}
           skipProductPixelInit
         />
       )}

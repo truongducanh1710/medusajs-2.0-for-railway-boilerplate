@@ -361,6 +361,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
   const videoUrl = meta(product, "video_url")
   const productPixelId = meta(product, "fb_pixel_id")
   const productCapiToken = meta(product, "fb_capi_token")
+  const productTiktokPixelId = meta(product, "tiktok_pixel_id")
   // globalPixelId is set in store metadata (admin) or env var fallback
   // NOTE: storePixelId is passed to FacebookPixel in layout — we only need it here
   // to avoid double-init of per-product pixel. Use env var as approximation at build time;
@@ -393,6 +394,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
   return (
     <div className="bg-white">
       <ProductPixelTracker
+        tiktokPixelId={productTiktokPixelId || undefined}
         pixelIds={allPixelIds}
         productId={product.id}
         productTitle={product.title || ""}

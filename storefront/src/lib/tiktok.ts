@@ -11,12 +11,19 @@ declare global {
 export const TIKTOK_PIXEL_ID =
   process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID || "DB4AM9JC77U04C8M8F40"
 
-let loaded = false
+const loadedIds = new Set<string>()
+let stubReady = false
 
-// Official TikTok base snippet, minus the auto page() call (TikTokPixel handles that)
+// Official TikTok base snippet, minus the auto page() call (TikTokPixel handles that).
+// Gọi nhiều lần với id khác nhau → tải thêm pixel; ttq.track/page sau đó gửi cho MỌI pixel đã tải.
 export function loadTikTokPixel(pixelId: string = TIKTOK_PIXEL_ID) {
-  if (typeof window === "undefined" || !pixelId || loaded) return
-  loaded = true
+  if (typeof window === "undefined" || !pixelId || loadedIds.has(pixelId)) return
+  loadedIds.add(pixelId)
+  if (stubReady) {
+    ;(window as any).ttq.load(pixelId)
+    return
+  }
+  stubReady = true
 
   const w = window as any
   const t = "ttq"
@@ -54,6 +61,23 @@ export function loadTikTokPixel(pixelId: string = TIKTOK_PIXEL_ID) {
   }
 
   ttq.load(pixelId)
+}
+
+/**
+ * Pixel TikTok riêng của sản phẩm (metadata `tiktok_pixel_id`), chạy THÊM bên cạnh pixel chung —
+ * giống `fb_pixel_id` của Facebook. Gọi trước mọi ttqTrack của sản phẩm đó.
+ */
+export function loadProductTikTokPixel(pixelId?: string) {
+  if (typeof window === "undefined" || !pixelId || pixelId === TIKTOK_PIXEL_ID) return
+  const isNew = !loadedIds.has(pixelId)
+  loadTikTokPixel() // pixel chung trước, để stub sẵn sàng
+  loadTikTokPixel(pixelId)
+  // page() của pixel chung có thể đã bắn trước khi pixel riêng được tải → bắn bù cho riêng nó
+  if (isNew) {
+    try {
+      window.ttq?.instance(pixelId).page()
+    } catch {}
+  }
 }
 
 export function ttqPage() {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { generateEventId, sendCAPIViaRoute } from "@lib/pixel"
-import { ttqTrack } from "@lib/tiktok"
+import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
 
 const SCROLL_MILESTONES = [25, 50, 75, 100]
 const TIME_MILESTONES = [10, 30, 60, 90, 120, 180, 300] // seconds
@@ -20,6 +20,7 @@ export default function ProductPixelTracker({
   currency,
   productPixelId,
   productCapiToken,
+  tiktokPixelId,
 }: {
   pixelIds: string[]
   productId: string
@@ -28,6 +29,7 @@ export default function ProductPixelTracker({
   currency: string
   productPixelId?: string
   productCapiToken?: string
+  tiktokPixelId?: string
 }) {
   const scrollFired = useRef(new Set<number>())
   const timeFired = useRef(new Set<number>())
@@ -38,6 +40,7 @@ export default function ProductPixelTracker({
     if (typeof window === "undefined") return
 
     // TikTok — independent of fbq readiness (ttq stub queues until loaded)
+    loadProductTikTokPixel(tiktokPixelId)
     ttqTrack("ViewContent", {
       contents: [{ content_id: productId, content_type: "product", content_name: productTitle, price }],
       value: price,
