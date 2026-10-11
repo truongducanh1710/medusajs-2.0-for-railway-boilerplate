@@ -196,6 +196,36 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     }
   })
 
+  // Quà tặng có SKU khớp sản phẩm Pancake → thêm thành dòng hàng tặng (0đ) để kho nhặt + trừ tồn.
+  // Trước đây quà chỉ nằm trong ghi chú (đơn #94028, combo 2 khay lọc dầu: 3 món quà không có
+  // trên đơn POS). Quà chưa có SKU vẫn chỉ ghi chú. Giá 0 nên không đổi tổng tiền đơn.
+  for (const item of order.items || []) {
+    let gifts: any[] = []
+    try {
+      gifts = JSON.parse((item.metadata?.gifts as string) || '[]')
+    } catch {}
+    for (const g of gifts) {
+      const giftVariationId = g?.sku ? variationMap.get(String(g.sku)) : undefined
+      if (!giftVariationId) {
+        if (g?.name) console.warn(`[Pancake] Gift "${g.name}" sku=${g?.sku ?? 'none'} → không khớp sản phẩm Pancake, chỉ ghi chú`)
+        continue
+      }
+      items.push({
+        variation_id: giftVariationId,
+        quantity: Math.max(1, Number(g.quantity) || 1),
+        is_bonus_product: true,
+        is_discount_percent: false,
+        is_wholesale: false,
+        one_time_product: false,
+        discount_each_product: 0,
+        variation_info: {
+          name: `🎁 ${g.name}`,
+          retail_price: 0,
+        },
+      })
+    }
+  }
+
   // Xác định phương thức thanh toán từ metadata
   const paymentMethod = order.metadata?.payment_method as string | undefined
   const isSepay = paymentMethod === 'sepay'
@@ -344,6 +374,15 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
   let lan = await guiDon(payload)
   let hetHang = false
+
+  // Dòng quà tặng là phần mới — Pancake từ chối vì lý do khác hết hàng thì gửi lại KHÔNG kèm
+  // quà (như trước) để đơn không bao giờ mất chỉ vì phần quà; quà vẫn còn trong ghi chú.
+  const coQua = payload.items.some((it: any) => it.is_bonus_product)
+  if (!lan.ok && coQua && !(lan.status === 422 && /không đủ|hết hàng|tồn kho|số lượng/i.test(lan.text))) {
+    console.warn(`[Pancake] Đơn có dòng quà bị từ chối (${lan.status}) — gửi lại không kèm quà. Lỗi: ${lan.text.slice(0, 200)}`)
+    payload.items = payload.items.filter((it: any) => !it.is_bonus_product)
+    lan = await guiDon(payload)
+  }
 
   // Pancake chặn đơn khi sản phẩm có mã tồn kho mà hết hàng:
   //   422 "PHVVN026_CV - PHVVN027_CV có số lượng hàng sắp về không đủ!"
