@@ -215,6 +215,35 @@ function extractFbCampaignId(raw: any): string | null {
   return null
 }
 
+// ---- TikTok Ads chạy về web ----
+// Đơn khách đặt trên phanviet.vn nhưng đến từ quảng cáo TikTok. Gom về một "shop" ảo dưới
+// sàn TikTok để nhập chi phí + xem doanh số riêng, không lẫn với gian hàng TikTok Shop.
+// Đơn 93978 (11/10/2026): đơn web, MKT sửa tay trên POS nguồn = Tiktok + tài khoản =
+// "Gia Dụng Phan Việt" (trùng tên shop TikTok) → bị cộng nhầm vào doanh số TikTok Shop.
+export const TIKTOK_ADS_WEB_SHOP = "TikTok Ads (web)"
+
+function isWebOrder(raw: any): boolean {
+  const tags: string[] = Array.isArray(raw.tags)
+    ? raw.tags.map((t: any) => String(t?.name ?? t).toLowerCase())
+    : []
+  if (tags.includes("phanviet-web")) return true
+  if (String(raw.p_utm_source ?? "").toLowerCase() === "phanviet.vn") return true
+  return String(raw.note ?? "").toLowerCase().includes("[phanviet.vn]")
+}
+
+/** Đơn web mang dấu TikTok tự động: utm_source=tiktok… hoặc ttclid (push ghi p_utm_medium=tiktok). */
+function hasTiktokWebSignal(raw: any): boolean {
+  if (String(raw.p_utm_source ?? "").toLowerCase().includes("tiktok")) return true
+  return String(raw.p_utm_medium ?? "").toLowerCase() === "tiktok"
+}
+
+/** Trả về true nếu đơn thuộc kênh TikTok Ads (web) — xét trên nguồn đã detect. */
+export function isTiktokAdsWeb(raw: any, detected: string): boolean {
+  if (!isWebOrder(raw)) return false
+  if (detected === "tiktok") return true          // POS ghi nguồn Tiktok (sửa tay)
+  return detected === "medusa" && hasTiktokWebSignal(raw)
+}
+
 export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string, any> {
   const items = Array.isArray(raw.items) ? raw.items.map((item: any) => ({
     name: item.variation_info?.name ?? item.name ?? "—",
@@ -223,10 +252,12 @@ export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string,
   })) : []
 
   const shop = getPancakeShop(market)
+  const detected = detectSource(raw)
+  const tiktokAdsWeb = isTiktokAdsWeb(raw, detected)
 
   return {
     id: String(raw.system_id || raw.id || ""),
-    source: detectSource(raw),
+    source: tiktokAdsWeb ? "tiktok" : detected,
     market,
     currency: shop.currency,
     // Tên gian hàng. Đơn TikTok có raw.page.name; đơn Shopee KHÔNG có page (null)
@@ -234,7 +265,7 @@ export function mapPancakeOrder(raw: any, market: string = "VN"): Record<string,
     // các shop Vietmate rơi vào "(không tên)" và không nhập chi phí ads riêng được.
     // Ưu tiên page.name vì trên TikTok MY hai trường khác nhau (page "Gardening-Tool.my"
     // vs account "PhanViet Garden Tool") và page.name mới là tên gian hàng hiển thị.
-    shop_name: raw.page?.name || raw.account_name || "",
+    shop_name: tiktokAdsWeb ? TIKTOK_ADS_WEB_SHOP : (raw.page?.name || raw.account_name || ""),
     status: raw.status ?? 0,
     status_name: statusLabel(raw.status ?? 0),
     customer_name: raw.bill_full_name ?? raw.customer?.name ?? "",

@@ -3,6 +3,7 @@ import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../lib/db"
 import { loadSkuMapCosts, loadSkuMapParts } from "../_sku-map"
+import { TIKTOK_ADS_WEB_SHOP } from "../../../../../modules/pancake-sync/service"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -159,7 +160,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Đơn từ 15 ngày trở lên giữ nguyên phí thật từ POS. Bộ số THỰC không đụng tới.
     const PHI_UOC_TINH_PCT = 0.30
     const NGAY_CHOT_PHI = 15
-    const chuaChotPhi = `(CURRENT_DATE - (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) < ${NGAY_CHOT_PHI}`
+    // Đơn TikTok Ads (web) là đơn website COD, không có phí sàn → không ước tính 30%.
+    const chuaChotPhi = `((CURRENT_DATE - (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) < ${NGAY_CHOT_PHI}
+      AND COALESCE(shop_name, '') <> '${TIKTOK_ADS_WEB_SHOP}')`
     // Tiền khách trả = doanh thu ghi nhận + phí đã ghi (xem giải thích ở trên).
     const tienKhachTra = `(COALESCE((raw->>'total_price_after_sub_discount')::numeric, 0)
       + COALESCE((raw->>'fee_marketplace')::numeric, 0))`

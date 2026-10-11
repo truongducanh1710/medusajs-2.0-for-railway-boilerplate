@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { resolveUserPerms } from "../../../../middlewares"
+import { TIKTOK_ADS_WEB_SHOP } from "../../../../../modules/pancake-sync/service"
 
 /**
  * Chi phí quảng cáo sàn TMĐT (TikTok Shop / Shopee) — điền tay theo ngày.
@@ -156,6 +157,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
        HAVING COUNT(*) >= 5
        ORDER BY market, source, COUNT(*) DESC
     `)
+
+    // Shop ảo TikTok Ads (web) luôn có trong dropdown TikTok VN — mới chạy thử chưa đủ
+    // 5 đơn vẫn phải nhập được chi phí ngay.
+    if (!shops.some((s: any) => s.platform === "tiktok" && s.market === "VN" && s.shop === TIKTOK_ADS_WEB_SHOP)) {
+      shops.push({ platform: "tiktok", market: "VN", shop: TIKTOK_ADS_WEB_SHOP, orders: 0 })
+    }
 
     // SP thực sự bán trên từng (sàn × thị trường × shop) trong 90 ngày — cho dropdown khi
     // điền chi phí theo SP. Lấy từ ĐƠN THẬT chứ không liệt kê cả danh mục: nhân sự chỉ cần
