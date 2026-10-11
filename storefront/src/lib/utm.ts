@@ -55,6 +55,29 @@ function readUtmLocal(): UtmData {
   }
 }
 
+// Bản UTM giữ trong bộ nhớ của trang (sống tới khi tải lại trang). Đơn #85 (10/10/2026):
+// trình duyệt trong app Facebook iOS xoá SẠCH cookie + localStorage chỉ 74 giây sau khi vào
+// trang (mã khách pvw_vid cũng bị tạo mới) — cả cookie, bản localStorage lẫn metadata giỏ
+// (đọc từ cookie phía server) đều trống. Popup đặt hàng nằm ngay trên trang đáp nên bộ nhớ
+// trang và URL hiện tại vẫn còn UTM.
+let pageUtm: UtmData = {}
+
+/** UTM + mã click trên URL của trang đang mở. */
+function readUtmFromUrl(): UtmData {
+  if (typeof window === "undefined") return {}
+  try {
+    const sp = new URLSearchParams(window.location.search)
+    const out: Record<string, string> = {}
+    for (const k of [...UTM_PARAMS, "fbclid", "ttclid", "gclid"]) {
+      const v = sp.get(k)
+      if (v) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 export type UtmData = {
   utm_source?: string
   utm_medium?: string
@@ -165,6 +188,7 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
   // Chỉ ghi đè bản dự phòng khi có UTM: lượt xem trang không có UTM không được xoá
   // mất UTM của lượt bấm quảng cáo trước đó.
   if (hasUtm(merged) || hasSignal(merged)) writeUtmLocal(merged)
+  if (hasUtm(merged)) pageUtm = pickUtm(merged)
 }
 
 export function getUtmFromCookie(): UtmData {
@@ -173,6 +197,9 @@ export function getUtmFromCookie(): UtmData {
   // Cookie mất UTM → lấy UTM từ bản dự phòng, giữ fbp/fbc mới nhất từ cookie FB
   const local = pickUtm(readUtmLocal())
   if (hasUtm(local)) return { ...fromCookie, ...local }
+  // Cookie + localStorage đều mất (trình duyệt trong app xoá bộ nhớ) → bộ nhớ trang, rồi URL hiện tại
+  const inPage = hasUtm(pageUtm) ? pageUtm : readUtmFromUrl()
+  if (hasUtm(inPage)) return { ...local, ...fromCookie, ...inPage }
   // Không có UTM ở đâu cả → vẫn giữ dấu vết nguồn (mã click / ref) nếu cookie đã mất
   return { ...local, ...fromCookie }
 }
