@@ -233,6 +233,11 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
   let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)
 
+  // Không có UTM → đoán nguồn từ mã click (ttclid/gclid/fbclid) hoặc host trang giới thiệu
+  // do storefront lưu. Ghi vào ghi chú Nội bộ + p_utm_medium; p_utm_source GIỮ "phanviet.vn"
+  // vì pancake-sync dựa vào giá trị đó để nhận ra đơn website.
+  const inferredSource = utmSource ? null : inferWebSource(order.metadata || {})
+
   // Ghi chú: kết hợp ghi chú khách + gifts + UTM (giống format Webcake để sale xem nhanh)
   const noteparts: string[] = ["[phanviet.vn]"]
   if (order.metadata?.note) noteparts.push(order.metadata.note as string)
@@ -264,6 +269,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   if (utmCampaign && utmCampaign !== utmSource) noteparts.push(`utm_campaign: ${utmCampaign}`)
   if (utmMedium) noteparts.push(`utm_medium: ${utmMedium}`)
   if (utmContent) noteparts.push(`utm_content: ${utmContent}`)
+  if (inferredSource) noteparts.push(`nguồn (không UTM): ${inferredSource.label}`)
 
   const note = noteparts.join('\n').trim()
 
@@ -311,6 +317,7 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   // UTM marketing data — Pancake nhận UTM ở root payload, không phải lồng trong "marketing"
   payload.p_utm_source = utmSource || "phanviet.vn"
   if (utmMedium) payload.p_utm_medium = utmMedium
+  else if (inferredSource) payload.p_utm_medium = inferredSource.medium
   if (utmCampaign) payload.p_utm_campaign = utmCampaign
   if (utmContent) payload.p_utm_content = utmContent
   if (utmTerm) payload.p_utm_term = utmTerm
@@ -377,3 +384,26 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   if (hetHang) result._het_hang = true
   return result
 }
+
+/**
+ * Đoán nguồn đơn website khi không có UTM, từ dấu vết storefront lưu vào metadata đơn:
+ * mã click (ttclid TikTok, gclid Google, fbclid Facebook) ưu tiên hơn host trang giới thiệu.
+ */
+export function inferWebSource(md: Record<string, any>): { medium: string; label: string } {
+  if (md.ttclid) return { medium: "tiktok", label: "TikTok (có ttclid)" }
+  if (md.gclid) return { medium: "google-ads", label: "Google Ads (có gclid)" }
+  if (md.fbclid) return { medium: "facebook", label: "Facebook (có fbclid, không UTM)" }
+  const ref = String(md.ref || "").toLowerCase()
+  if (!ref) return { medium: "direct", label: "vào thẳng / không rõ (không có trang giới thiệu)" }
+  const map: [RegExp, string, string][] = [
+    [/google\./, "google", "Google"],
+    [/tiktok\.com|byteoversea|musical/, "tiktok", "TikTok"],
+    [/facebook\.com|fb\.com|fb\.me|messenger\.com|instagram\.com/, "facebook", "Facebook/Instagram"],
+    [/zalo\.me|zaloapp\.com|zalo\./, "zalo", "Zalo"],
+    [/youtube\.com|youtu\.be/, "youtube", "YouTube"],
+    [/coccoc\.com|bing\.com|yahoo\./, "search", "công cụ tìm kiếm khác"],
+  ]
+  for (const [re, medium, name] of map) if (re.test(ref)) return { medium, label: `${name} (từ ${ref})` }
+  return { medium: "referral", label: `trang khác (${ref})` }
+}
+

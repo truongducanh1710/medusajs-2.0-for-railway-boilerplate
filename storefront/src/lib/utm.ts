@@ -13,11 +13,20 @@ export function hasUtm(d: Record<string, any> | null | undefined): boolean {
   return !!(d && (d.utm_campaign || d.utm_id || d.utm_source))
 }
 
-/** Chỉ lấy các trường UTM + fbclid, bỏ mọi thứ khác (vd metadata giỏ hàng). */
+// Dấu vết nguồn khi KHÔNG có UTM: mã click TikTok/Google + host trang giới thiệu. Đơn 93966
+// (11/10/2026) không UTM, không fbclid → không biết từ TikTok, Google hay link chia sẻ.
+export const SOURCE_SIGNALS = ["fbclid", "ttclid", "gclid", "ref"] as const
+
+/** Có dấu vết nguồn (mã click hoặc trang giới thiệu) dù không có UTM. */
+function hasSignal(d: Record<string, any> | null | undefined): boolean {
+  return !!(d && (d.ttclid || d.gclid || d.fbclid || d.ref))
+}
+
+/** Chỉ lấy các trường UTM + mã click + ref, bỏ mọi thứ khác (vd metadata giỏ hàng). */
 export function pickUtm(d: Record<string, any> | null | undefined): UtmData {
   const out: Record<string, string> = {}
   if (!d) return out
-  for (const k of [...UTM_PARAMS, "fbclid"]) {
+  for (const k of [...UTM_PARAMS, ...SOURCE_SIGNALS]) {
     if (d[k]) out[k] = String(d[k])
   }
   return out
@@ -54,6 +63,9 @@ export type UtmData = {
   utm_term?: string
   utm_id?: string
   fbclid?: string
+  ttclid?: string  // TikTok click id
+  gclid?: string   // Google Ads click id
+  ref?: string     // host trang giới thiệu bên ngoài (vd www.google.com, zalo.me) — chỉ lưu host
   fbp?: string   // FB browser cookie _fbp
   fbc?: string   // FB click cookie _fbc (derived from fbclid)
 }
@@ -102,6 +114,25 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
     hasData = true
   }
 
+  // Mã click TikTok / Google = một lượt bấm quảng cáo mới, giống fbclid
+  for (const k of ["ttclid", "gclid"] as const) {
+    const v = searchParams.get(k)
+    if (v) {
+      data[k] = v
+      hasData = true
+    }
+  }
+
+  // Trang giới thiệu bên ngoài (chỉ host, không lưu đường dẫn đầy đủ) — để đoán nguồn khi không có UTM
+  let externalRef: string | undefined
+  if (typeof document !== "undefined" && document.referrer) {
+    try {
+      const host = new URL(document.referrer).hostname
+      if (host && !/(^|\.)phanviet\.vn$/.test(host)) externalRef = host
+    } catch {}
+  }
+  if (externalRef) data.ref = externalRef
+
   // Capture _fbp và _fbc cookie của FB pixel (nếu có)
   if (typeof document !== "undefined") {
     const fbpMatch = document.cookie.split("; ").find(r => r.startsWith("_fbp="))
@@ -114,13 +145,13 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
     }
   }
 
-  if (!hasData && !data.fbp && !data.fbc) return
+  if (!hasData && !data.fbp && !data.fbc && !data.ref) return
 
   // URL có UTM mới → bộ UTM mới thay hẳn bộ cũ (lượt click quảng cáo mới nhất).
   // URL không có UTM → giữ nguyên UTM cũ, chỉ cập nhật fbp/fbc.
   const merged: UtmData = hasData
     ? { ...data, fbp: data.fbp ?? cu.fbp, fbc: data.fbc ?? cu.fbc }
-    : { ...cu, ...(data.fbp ? { fbp: data.fbp } : {}), ...(data.fbc ? { fbc: data.fbc } : {}) }
+    : { ...cu, ...(data.fbp ? { fbp: data.fbp } : {}), ...(data.fbc ? { fbc: data.fbc } : {}), ...(data.ref ? { ref: data.ref } : {}) }
 
   const domain = cookieDomain()
   // Khách cũ còn cookie gắn riêng host (trước khi có domain) — đã gộp vào `cu`
@@ -133,7 +164,7 @@ export function saveUtmToCookie(searchParams: URLSearchParams) {
 
   // Chỉ ghi đè bản dự phòng khi có UTM: lượt xem trang không có UTM không được xoá
   // mất UTM của lượt bấm quảng cáo trước đó.
-  if (hasUtm(merged)) writeUtmLocal(merged)
+  if (hasUtm(merged) || hasSignal(merged)) writeUtmLocal(merged)
 }
 
 export function getUtmFromCookie(): UtmData {
@@ -141,7 +172,9 @@ export function getUtmFromCookie(): UtmData {
   if (hasUtm(fromCookie)) return fromCookie
   // Cookie mất UTM → lấy UTM từ bản dự phòng, giữ fbp/fbc mới nhất từ cookie FB
   const local = pickUtm(readUtmLocal())
-  return hasUtm(local) ? { ...fromCookie, ...local } : fromCookie
+  if (hasUtm(local)) return { ...fromCookie, ...local }
+  // Không có UTM ở đâu cả → vẫn giữ dấu vết nguồn (mã click / ref) nếu cookie đã mất
+  return { ...local, ...fromCookie }
 }
 
 function readUtmFromCookieOnly(): UtmData {
