@@ -37,6 +37,10 @@ export type Rule = {
   pause_max_streak: number
   pause_min_age_hours: number
   pause_dry_run: boolean
+  fast_multiplier: number
+  fast_cpa_ratio: number
+  fast_cooldown_min: number
+  scale_mkt_max_pct: number
 }
 
 let _ready: Promise<void> | null = null
@@ -108,6 +112,11 @@ export function ensureTables(): Promise<void> {
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_max_streak INT NOT NULL DEFAULT 3;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_min_age_hours INT NOT NULL DEFAULT 0;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS pause_dry_run BOOLEAN NOT NULL DEFAULT true;
+      -- Đẩy nhanh kiểu Xuân (thêm 12/10/2026): 0 = tắt
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS fast_multiplier NUMERIC(4,2) NOT NULL DEFAULT 0;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS fast_cpa_ratio NUMERIC(4,2) NOT NULL DEFAULT 0.5;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS fast_cooldown_min INT NOT NULL DEFAULT 60;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS scale_mkt_max_pct NUMERIC(5,1) NOT NULL DEFAULT 0;
       -- Quản lý tổng theo MKT (thêm 08/10/2026): giữ % chi phí cả MKT trong ngày quanh mục tiêu
       CREATE TABLE IF NOT EXISTS auto_scale_mkt (
         mkt_name TEXT PRIMARY KEY,
@@ -627,6 +636,8 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       revert_factor: Number(camp.rule.revert_factor),
       pause_day_spend: Number(camp.rule.pause_day_spend || 0), pause_cost_pct: Number(camp.rule.pause_cost_pct || 0),
       pause_max_streak: Number(camp.rule.pause_max_streak || 3), pause_min_age_hours: Number(camp.rule.pause_min_age_hours || 0),
+      fast_multiplier: Number(camp.rule.fast_multiplier || 0), fast_cpa_ratio: Number(camp.rule.fast_cpa_ratio ?? 0.5),
+      fast_cooldown_min: Number(camp.rule.fast_cooldown_min || 60), scale_mkt_max_pct: Number(camp.rule.scale_mkt_max_pct || 0),
     }
     const base = Number(camp.base_budget)
 

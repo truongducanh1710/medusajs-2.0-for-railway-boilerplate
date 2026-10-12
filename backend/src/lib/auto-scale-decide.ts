@@ -12,6 +12,16 @@ export type DecideRule = {
   hour_from: number
   hour_to: number
   nightly_reset: boolean
+  /**
+   * Đẩy nhanh kiểu Xuân (ngày 80tr 12/07, 49tr 23/08): đơn về RẺ từ sáng → nhân ×3 mỗi ~60 phút
+   * lên 7–10tr, không chờ camp tiêu gần hết ngân sách. 0/1 = tắt.
+   */
+  fast_multiplier?: number
+  /** Đẩy nhanh khi CPA hôm nay ≤ tỉ lệ này × CPA mục tiêu (vd 0.5 → 100k với mục tiêu 200k) */
+  fast_cpa_ratio?: number
+  fast_cooldown_min?: number
+  /** Không tăng nữa khi % chi phí cả MKT hôm nay > mức này (0 = bỏ qua) */
+  scale_mkt_max_pct?: number
   /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
   pause_enabled?: boolean
   /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
@@ -220,10 +230,20 @@ export function decide(x: DecideInput): Decision {
   const cpa = x.orders_today > 0 ? x.spend_today / x.orders_today : null
   if (x.orders_today < rule.min_orders) lyDo.push(`mới ${x.orders_today}/${rule.min_orders} đơn`)
   if (cpa === null || cpa > rule.target_cpa) lyDo.push(`CPA ${cpa === null ? "—" : vnd(cpa)} > ${vnd(rule.target_cpa)}`)
+  const fastMul = Number(rule.fast_multiplier || 0)
+  const fast = fastMul > 1 && cpa !== null && x.orders_today >= rule.min_orders
+    && cpa <= rule.target_cpa * Number(rule.fast_cpa_ratio ?? 0.5)
+  const mktMax = Number(rule.scale_mkt_max_pct || 0)
+  if (mktMax > 0 && x.portfolio?.pct != null && x.portfolio.pct > mktMax) {
+    lyDo.push(`tổng ${x.portfolio.mkt} hôm nay ${x.portfolio.pct}% > ${mktMax}% — không đẩy thêm`)
+  }
   // Nhịp tiêu: ước cả ngày theo đường chi tiêu chuẩn. spend_ratio = 1 nghĩa là "cứ đà này
   // sẽ tiêu hết ngân sách" → camp sắp chạm trần, tăng mới có tác dụng.
+  // Đẩy nhanh bỏ qua điều kiện này: Xuân đẩy TRƯỚC để camp có sẵn tiền tiêu chiều/tối.
   const duKien = projectDaySpend(x.spend_today, x.hour, x.minute)
-  if (duKien < rule.spend_ratio * x.budget) {
+  if (fast) {
+    // không xét nhịp tiêu
+  } else if (duKien < rule.spend_ratio * x.budget) {
     lyDo.push(`nhịp tiêu chưa chạm trần (cả ngày dự kiến ${vnd(duKien)} < ${Math.round(rule.spend_ratio * 100)}% của ${vnd(x.budget)})`)
   } else if (x.spend_2h_ago != null && x.minutes_since_snapshot && x.minutes_since_snapshot >= 45
     && x.spend_today < 0.9 * x.budget) {   // ≥ 90% ngân sách = chậm lại vì chạm trần → đúng lúc tăng
@@ -240,16 +260,19 @@ export function decide(x: DecideInput): Decision {
     if (s.orders_since < 1) lyDo.push("chưa có đơn mới từ lần tăng trước")
     else if (dSpend / s.orders_since > rule.target_cpa) lyDo.push(`từ lần tăng trước ${vnd(dSpend / s.orders_since)}/đơn > ${vnd(rule.target_cpa)}`)
   }
-  if (x.minutes_since_last_action !== null && x.minutes_since_last_action < rule.cooldown_min) {
-    lyDo.push(`chờ ${rule.cooldown_min - x.minutes_since_last_action} phút nữa`)
+  const cooldown = fast ? Number(rule.fast_cooldown_min || 60) : rule.cooldown_min
+  if (x.minutes_since_last_action !== null && x.minutes_since_last_action < cooldown) {
+    lyDo.push(`chờ ${cooldown - x.minutes_since_last_action} phút nữa`)
   }
-  const to = Math.min(Math.round((x.budget * rule.multiplier) / 1000) * 1000, rule.max_budget)
+  const to = Math.min(Math.round((x.budget * (fast ? fastMul : rule.multiplier)) / 1000) * 1000, rule.max_budget)
   if (to <= x.budget) lyDo.push(`đã chạm trần ${vnd(rule.max_budget)}`)
   if (!lyDo.length && x.account_block) lyDo.push(x.account_block)
   if (lyDo.length) return { action: "none", reason: `Chưa tăng: ${lyDo.join("; ")}` }
 
   return {
     action: "tang", to,
-    reason: `Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${vnd(x.spend_today)} — cứ đà này cả ngày ~${vnd(duKien)} (ngân sách ${vnd(x.budget)})`,
+    reason: fast
+      ? `ĐẨY NHANH ×${fastMul}: hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn (≤ ${vnd(rule.target_cpa * Number(rule.fast_cpa_ratio ?? 0.5))}), đã tiêu ${vnd(x.spend_today)}`
+      : `Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${vnd(x.spend_today)} — cứ đà này cả ngày ~${vnd(duKien)} (ngân sách ${vnd(x.budget)})`,
   }
 }
