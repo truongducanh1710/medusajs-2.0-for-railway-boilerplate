@@ -58,6 +58,9 @@ export const MKT_PANCAKE_UUID: Record<string, string> = {
   HAUND:   "405f359c-626d-40e5-a9bc-86f88b35e682",
 }
 
+// user.id sale "Linh" trong /shops/{id}/users — phụ trách đơn TikTok ads về web
+export const SALE_TIKTOK_WEB_UUID = "6ba1866a-9b24-4560-a251-ca5af0da1b74"
+
 // Extract MKT code từ utm_campaign: "{PRODUCT}_{DD/M}_{MKTCODE}_..." → "MKTCODE"
 // Format: PHVVN026CV_12/6_ANHTD_CHAO VANG → parts[2] = "ANHTD"
 // Date token DD/M hoặc D/M phải có mặt ở parts[1]
@@ -374,6 +377,8 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   } else if (mktCode) {
     console.warn(`[Pancake] MKT code "${mktCode}" not found in UUID map — marketer not assigned`)
   }
+  // Đơn TikTok web (mkt HAUND) giao sale Linh (tulinhphanviet@gmail.com) — user chốt 13/10/2026.
+  if (mktCode === "HAUND") payload.assigning_seller_id = SALE_TIKTOK_WEB_UUID
 
   const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}`
   const guiDon = async (body: Record<string, any>) => {
