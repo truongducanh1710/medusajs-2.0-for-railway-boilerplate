@@ -264,9 +264,10 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const utmTerm = order.metadata?.utm_term as string | undefined
 
   let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)
-  // Đơn web không mang UTM camp của MKT nào (13/10/2026: đơn web gần như toàn từ TikTok ads của Hậu,
-  // 7/9 đơn 11–12/10 có ttclid) → gán HAUND. Đơn có UTM camp FB (Xuân/Anh TD) vẫn giữ đúng người.
-  if (!mktCode) mktCode = "HAUND"
+  // Đơn web từ TikTok ads (có ttclid) là của Hậu (13/10/2026, user chốt). Chỉ khi không có UTM camp
+  // của MKT nào — đơn có UTM camp FB (Xuân/Anh TD) vẫn giữ đúng người. Đơn không dấu vết thì để trống.
+  const tuTikTok = Boolean(order.metadata?.ttclid)
+  if (!mktCode && tuTikTok) mktCode = "HAUND"
 
   // Không có UTM → đoán nguồn từ mã click (ttclid/gclid/fbclid) hoặc host trang giới thiệu
   // do storefront lưu. Ghi vào ghi chú Nội bộ + p_utm_medium; p_utm_source GIỮ "phanviet.vn"
@@ -349,6 +350,13 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   // Tag để nhận diện đơn từ website khi sync ngược lại
   payload.tags = [{ name: "phanviet-web" }]
 
+  // Nguồn đơn: chỉ đơn có ttclid mới là TikTok — đúng giá trị sale vẫn chọn tay trên POS
+  // ("TikTok › Gia Dụng Phan Việt": order_sources -9, account 921031955). Đơn web khác để trống như cũ.
+  if (tuTikTok) {
+    payload.order_sources = "-9"
+    payload.account = "921031955"
+  }
+
   // UTM marketing data — Pancake nhận UTM ở root payload, không phải lồng trong "marketing"
   payload.p_utm_source = utmSource || "phanviet.vn"
   if (utmMedium) payload.p_utm_medium = utmMedium
@@ -379,6 +387,14 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
   let lan = await guiDon(payload)
   let hetHang = false
+
+  // Gắn nguồn TikTok là phần mới — Pancake từ chối thì gửi lại không kèm nguồn, không để mất đơn.
+  if (!lan.ok && payload.order_sources && !(lan.status === 422 && /không đủ|hết hàng|tồn kho|số lượng/i.test(lan.text))) {
+    console.warn(`[Pancake] Đơn gắn nguồn TikTok bị từ chối (${lan.status}) — gửi lại không kèm nguồn. Lỗi: ${lan.text.slice(0, 200)}`)
+    delete payload.order_sources
+    delete payload.account
+    lan = await guiDon(payload)
+  }
 
   // Dòng quà tặng là phần mới — Pancake từ chối vì lý do khác hết hàng thì gửi lại KHÔNG kèm
   // quà (như trước) để đơn không bao giờ mất chỉ vì phần quà; quà vẫn còn trong ghi chú.
