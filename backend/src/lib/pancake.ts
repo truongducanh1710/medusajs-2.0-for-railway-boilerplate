@@ -266,7 +266,8 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)
   // Đơn web từ TikTok ads (có ttclid) là của Hậu (13/10/2026, user chốt). Chỉ khi không có UTM camp
   // của MKT nào — đơn có UTM camp FB (Xuân/Anh TD) vẫn giữ đúng người. Đơn không dấu vết thì để trống.
-  const tuTikTok = Boolean(order.metadata?.ttclid)
+  // ttclid, hoặc UTM nguồn tiktok (vd #96: utm_source=tiktok, camp "thùng gạo 6 ngăn")
+  const tuTikTok = Boolean(order.metadata?.ttclid) || /tiktok/i.test(String(utmSource || ""))
   if (!mktCode && tuTikTok) mktCode = "HAUND"
 
   // Không có UTM → đoán nguồn từ mã click (ttclid/gclid/fbclid) hoặc host trang giới thiệu
