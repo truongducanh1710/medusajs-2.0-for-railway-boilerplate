@@ -54,6 +54,8 @@ export const MKT_PANCAKE_UUID: Record<string, string> = {
   ANHTD:   "2b727738-e7b0-4be4-8c94-e9ab2efc66ef",
   XUANLT:  "9a01ac6e-7a93-4f19-8740-92b7be47902e",
   DUPD:    "ef25c657-e2f4-4e5c-854e-5b29268da253", // BICHNTN alias — update nếu có UUID riêng
+  // user.id của tài khoản "Haund" (haundphv@gmail.com) trong /shops/{id}/users — chạy TikTok ads về web
+  HAUND:   "405f359c-626d-40e5-a9bc-86f88b35e682",
 }
 
 // Extract MKT code từ utm_campaign: "{PRODUCT}_{DD/M}_{MKTCODE}_..." → "MKTCODE"
@@ -262,6 +264,9 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   const utmTerm = order.metadata?.utm_term as string | undefined
 
   let mktCode: string | undefined = extractMktCode(utmCampaign) || extractMktCode(utmSource)
+  // Đơn web không mang UTM camp của MKT nào (13/10/2026: đơn web gần như toàn từ TikTok ads của Hậu,
+  // 7/9 đơn 11–12/10 có ttclid) → gán HAUND. Đơn có UTM camp FB (Xuân/Anh TD) vẫn giữ đúng người.
+  if (!mktCode) mktCode = "HAUND"
 
   // Không có UTM → đoán nguồn từ mã click (ttclid/gclid/fbclid) hoặc host trang giới thiệu
   // do storefront lưu. Ghi vào ghi chú Nội bộ + p_utm_medium; p_utm_source GIỮ "phanviet.vn"
