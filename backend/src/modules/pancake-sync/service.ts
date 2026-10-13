@@ -222,6 +222,19 @@ function extractFbCampaignId(raw: any): string | null {
 // "Gia Dụng Phan Việt" (trùng tên shop TikTok) → bị cộng nhầm vào doanh số TikTok Shop.
 export const TIKTOK_ADS_WEB_SHOP = "TikTok Ads (web)"
 
+// Báo cáo LNG sàn tách shop ảo này thành kênh riêng "tiktok_web" (đơn web COD, không
+// phí sàn) để không cộng lẫn đơn + chi phí với TikTok Shop.
+export const TIKTOK_WEB_PLATFORM = "tiktok_web"
+export const MP_PLATFORMS = ["tiktok", "tiktok_web", "shopee"] as const
+/** SQL: khoá kênh của đơn pancake_order (alias po). */
+export const mpPlatformSql = (a = "po") =>
+  `(CASE WHEN ${a}.source = 'tiktok' AND COALESCE(${a}.shop_name, '') = '${TIKTOK_ADS_WEB_SHOP}' THEN '${TIKTOK_WEB_PLATFORM}' ELSE ${a}.source END)`
+/** SQL: khoá kênh của dòng chi phí mkt_ads_cost_marketplace. */
+export const mpAdsPlatformSql =
+  `(CASE WHEN platform = 'tiktok' AND COALESCE(shop, '') = '${TIKTOK_ADS_WEB_SHOP}' THEN '${TIKTOK_WEB_PLATFORM}' ELSE platform END)`
+export const mpPlatformLabel = (p: string) =>
+  p === "tiktok" ? "TikTok Shop" : p === TIKTOK_WEB_PLATFORM ? "TikTok Web" : "Shopee"
+
 function isWebOrder(raw: any): boolean {
   const tags: string[] = Array.isArray(raw.tags)
     ? raw.tags.map((t: any) => String(t?.name ?? t).toLowerCase())

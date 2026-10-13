@@ -3,7 +3,7 @@ import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../lib/db"
 import { loadSkuMapCosts, loadSkuMapParts } from "../_sku-map"
-import { TIKTOK_ADS_WEB_SHOP } from "../../../../../modules/pancake-sync/service"
+import { TIKTOK_ADS_WEB_SHOP, MP_PLATFORMS, mpPlatformSql, mpAdsPlatformSql, mpPlatformLabel } from "../../../../../modules/pancake-sync/service"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -179,8 +179,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         0
       ) END ${MONEY})::bigint`
 
-    const platformFilter = platform && ["shopee", "tiktok"].includes(platform)
-      ? `AND po.source = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
+    const platformFilter = platform && (MP_PLATFORMS as readonly string[]).includes(platform)
+      ? `AND ${mpPlatformSql()} = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
     const marketFilter = `AND COALESCE(NULLIF(po.market, ''), 'VN') = '${market}'`
 
     // Giá vốn của PHỤ KIỆN bán lẻ, đọc trực tiếp từ cost_sheet.
@@ -246,7 +246,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi AS (
         SELECT
           po.id AS order_id,
-          po.source AS platform,
+          ${mpPlatformSql()} AS platform,
           po.status,
           ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
           -- Mã GỐC chưa qua alias. Alias gộp PHVVN027_CV vào PHVVN026_CV cho đúng giá
@@ -361,7 +361,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       oi AS (
         SELECT
           po.id AS order_id,
-          po.source AS platform,
+          ${mpPlatformSql()} AS platform,
           po.status,
           (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d,
           ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
@@ -520,7 +520,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const pctN = (p: number) => nGiao > 0 ? Math.round(p / nGiao * 1000) / 10 : 0
       return {
         platform: g.platform,
-        platform_label: g.platform === "tiktok" ? "TikTok Shop" : "Shopee",
+        platform_label: mpPlatformLabel(g.platform),
         sp_label: g.sp_label, sp_code: g.sp_code,
         sp_codes_raw: [...g.sp_codes_raw],
         missing_cost: !g.has_cost,
@@ -588,11 +588,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const adsShopLevel: Record<string, number> = {}
     try {
       const adsRows = await sql(`
-        SELECT date::text AS date, platform, SUM(cost)::bigint AS cost
+        SELECT date::text AS date, ${mpAdsPlatformSql} AS platform, SUM(cost)::bigint AS cost
           FROM mkt_ads_cost_marketplace
          WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
            AND market = $3
-         GROUP BY date, platform
+         GROUP BY 1, 2
       `, [from, to, market])
       for (const r of adsRows) {
         const c = Number(r.cost) || 0
@@ -600,11 +600,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         adsByDay[`${r.date}||${r.platform}`] = c
       }
       const adsProd = await sql(`
-        SELECT platform, COALESCE(product_code,'') AS product_code, SUM(cost)::bigint AS cost
+        SELECT ${mpAdsPlatformSql} AS platform, COALESCE(product_code,'') AS product_code, SUM(cost)::bigint AS cost
           FROM mkt_ads_cost_marketplace
          WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
            AND market = $3
-         GROUP BY platform, product_code
+         GROUP BY 1, 2
       `, [from, to, market])
       for (const r of adsProd) {
         const c = Number(r.cost) || 0
@@ -709,7 +709,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ordersCostedReal[`${plat}||${k}`] = (ordersCostedReal[`${plat}||${k}`] ?? 0) + (Number(r[k]) || 0)
       }
     }
-    for (const plat of ["tiktok", "shopee"]) {
+    for (const plat of MP_PLATFORMS) {
       const pr = (result as any[]).filter(r => r.platform === plat)
       if (pr.length === 0) continue
       for (const [kOrders, kFf] of [["orders_costed", "fullfill"], ["orders_costed_tt", "fullfill_tt"]]) {
@@ -817,7 +817,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Shopee card 154 / thật 121. Chênh càng lớn khi càng nhiều đơn mua nhiều món.
     const shipRows = await sql(`
       SELECT
-        po.source AS platform,
+        ${mpPlatformSql()} AS platform,
         COALESCE(NULLIF(trim(COALESCE(po.raw->'partner'->>'partner_name', '')), ''), 'Chưa có') AS partner_name,
         COUNT(*)::int AS orders
       FROM pancake_order po
@@ -844,9 +844,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         .sort((a, b) => b.orders - a.orders)
     }
 
-    const byPlatform = ["tiktok", "shopee"].map(p => ({
+    const byPlatform = MP_PLATFORMS.map(p => ({
       platform: p,
-      platform_label: p === "tiktok" ? "TikTok Shop" : "Shopee",
+      platform_label: mpPlatformLabel(p),
       ...withAds(mkTotals(result.filter(r => r.platform === p)), adsByPlatform[p] ?? 0),
       by_shipping_partner: shipOf(p),
     })).filter(p => p.total_orders > 0)
@@ -894,7 +894,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return {
         date: r.date,
         platform: r.platform,
-        platform_label: r.platform === "tiktok" ? "TikTok Shop" : "Shopee",
+        platform_label: mpPlatformLabel(r.platform),
         total_orders: Number(r.total_orders || 0),
         da_nhan: Number(r.da_nhan || 0), da_hoan: Number(r.da_hoan || 0),
         dang_hoan: Number(r.dang_hoan || 0), da_huy: Number(r.da_huy || 0),

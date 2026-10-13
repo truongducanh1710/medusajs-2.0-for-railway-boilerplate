@@ -3,7 +3,7 @@ import { Pool } from "pg"
 import { computeAvgCost, DISPLAY_ID_ALIASES, toVNDate } from "../../../../gia-von/avg-cost/route"
 import { getMyrToVndRate } from "../../../../../../lib/db"
 import { loadSkuMapCosts, loadSkuMapParts } from "../../_sku-map"
-import { TIKTOK_ADS_WEB_SHOP } from "../../../../../../modules/pancake-sync/service"
+import { TIKTOK_ADS_WEB_SHOP, MP_PLATFORMS, mpPlatformSql, mpAdsPlatformSql, mpPlatformLabel } from "../../../../../../modules/pancake-sync/service"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -115,8 +115,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ) END ${MONEY})::bigint`
     const listPriceExpr = `(COALESCE((raw->>'total_price')::numeric, 0) ${MONEY})::bigint`
 
-    const platform = ["shopee", "tiktok"].includes(String(platformRaw)) ? String(platformRaw) : null
-    const platformFilter = platform ? `AND po.source = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
+    const platform = (MP_PLATFORMS as readonly string[]).includes(String(platformRaw)) ? String(platformRaw) : null
+    const platformFilter = platform ? `AND ${mpPlatformSql()} = '${platform}'` : `AND po.source IN ('shopee','tiktok')`
 
     // Giá vốn phụ kiện bán lẻ đọc thẳng từ cost_sheet — giống ../route.ts, vì trên sàn
     // giẻ lau bán lẻ 39.000đ không được gánh giá vốn 226.540đ của cả bộ lau nhà.
@@ -182,7 +182,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           -- của POS dùng raw.id (số 58xxxxxx, đơn có ổ khoá trong danh sách) và mã đơn
           -- của sàn. Trả cả 3 để nhân sự copy đúng cái tra được.
           po.raw->>'id' AS pos_id,
-          po.source AS platform,
+          ${mpPlatformSql()} AS platform,
           po.status,
           po.status_name,
           po.customer_name,
@@ -258,7 +258,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         SELECT COALESCE(product_code, '') AS product_code, SUM(cost)::bigint AS cost
           FROM mkt_ads_cost_marketplace
          WHERE deleted_at IS NULL AND date = $1::date AND market = $2
-           ${platform ? `AND platform = '${platform}'` : `AND platform IN ('shopee','tiktok')`}
+           ${platform ? `AND ${mpAdsPlatformSql} = '${platform}'` : `AND platform IN ('shopee','tiktok')`}
          GROUP BY 1
       `, [date, market])
       for (const r of adsRows) {
@@ -318,7 +318,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           order_id: id,
           pos_id: r.pos_id ? String(r.pos_id) : null,
           platform: r.platform,
-          platform_label: r.platform === "tiktok" ? "TikTok Shop" : "Shopee",
+          platform_label: mpPlatformLabel(r.platform),
           status: Number(r.status),
           status_name: r.status_name || "",
           customer_name: r.customer_name || "",

@@ -913,7 +913,7 @@ function PlatformBreakdownBlock({ data }: { data: any }) {
 // Dropdown lọc sàn (Tất cả/TikTok/Shopee) để xem riêng SP đang bán trên từng sàn.
 function ProductByShopBlock({ products, shops }: { products: any[]; shops: any[] }) {
   const fmt = useFmtMoney()
-  const [platformFilter, setPlatformFilter] = useState<"all" | "tiktok" | "shopee">("all")
+  const [platformFilter, setPlatformFilter] = useState<"all" | "tiktok" | "tiktok_web" | "shopee">("all")
   // Map shop_name -> màu (khớp thứ tự với ShopBreakdownBlock)
   const colorOf = (shopName: string) => {
     const idx = shops.findIndex((s: any) => s.shop_name === shopName)
@@ -4063,11 +4063,14 @@ const SANTMDT_DAY_COLS: ColumnDef<DayColId>[] = [
  * mode truyền theo đúng mode bảng đang xem (Thực / Tạm tính) để tổng ở đây khớp dòng
  * ngày — đổi mode ở bảng rồi mở lại sẽ ra bộ đơn khác.
  */
+// Kênh trong báo cáo LNG sàn — "tiktok_web" là đơn web từ TikTok Ads (shop ảo).
+const mpLabel = (p: string) => p === "tiktok" ? "TikTok Shop" : p === "tiktok_web" ? "TikTok Web" : "Shopee"
+
 function DayOrdersModal({
   date, platform, market, mode, dayRow, onClose,
 }: {
   date: string
-  platform: "tiktok" | "shopee"
+  platform: "tiktok" | "tiktok_web" | "shopee"
   market: Market
   mode: "tt" | "thuc"
   dayRow: any
@@ -4219,7 +4222,7 @@ function DayOrdersModal({
           <div>
             <h3 className="font-bold text-gray-800">
               Chi tiết đơn — {date.split("-").reverse().join("/")} ·{" "}
-              {platform === "tiktok" ? "TikTok Shop" : "Shopee"} ·{" "}
+              {mpLabel(platform)} ·{" "}
               {mode === "tt" ? "Tạm tính" : "Thực"}
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
@@ -4883,14 +4886,14 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
   // đơn còn đang giao nên bộ "thực" so doanh thu của số ít đơn đã xong với ads đã tiêu
   // của cả kỳ, ra lỗ giả rất lớn.
   const [prodMode, setProdMode] = useState<"tt" | "thuc">("tt")
-  const [prodPlatform, setProdPlatform] = useState<"all" | "tiktok" | "shopee">("all")
+  const [prodPlatform, setProdPlatform] = useState<"all" | "tiktok" | "tiktok_web" | "shopee">("all")
   // Hook PHAI khai truoc cac return som ben duoi (loading/err/!data) — de sau se lam
   // so luong hook thay doi giua cac lan render va React nem loi, trang trang hoan toan.
   const [pxBien, setPxBien] = useState("10")
   const [pxPhi, setPxPhi] = useState("30")
   const [pxFullfill, setPxFullfill] = useState("6000")
   const [pxEdit, setPxEdit] = useState<Record<string, { ads?: string; hoan?: string }>>({})
-  const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "shopee">("all")
+  const [dayPlatform, setDayPlatform] = useState<"all" | "tiktok" | "tiktok_web" | "shopee">("all")
   // Đơn sàn mất vài ngày mới giao xong nên ngày gần đây nhìn số "thực" luôn tưởng lỗ
   // nặng (ads tiêu hết rồi, doanh thu chưa kịp về). Mặc định xem tạm tính.
   const [dayMode, setDayMode] = useState<"tt" | "thuc">("tt")
@@ -5185,10 +5188,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                             (r: any) => r.date === d.date && r.platform === d.platform)
                           if (row) setDayDetail(row)
                         }}
-                        title={`${d.platform === "tiktok" ? "TikTok Shop" : "Shopee"} — ${fmtNum(d.n)} đơn. Bấm để xem chi tiết.`}
+                        title={`${mpLabel(d.platform)} — ${fmtNum(d.n)} đơn. Bấm để xem chi tiết.`}
                         className="rounded-md border border-red-300 bg-white px-2 py-0.5 text-[11.5px] font-medium text-red-700 hover:bg-red-100">
                         {d.date.slice(8, 10)}/{d.date.slice(5, 7)}
-                        <span className="ml-1 text-red-400">{d.platform === "tiktok" ? "TT" : "SP"}</span>
+                        <span className="ml-1 text-red-400">{d.platform === "tiktok" ? "TT" : d.platform === "tiktok_web" ? "TW" : "SP"}</span>
                         <span className="ml-1 font-semibold">{fmtNum(d.n)}</span>
                       </button>
                     ))}
@@ -5226,10 +5229,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                       (r: any) => r.date === d.date && r.platform === d.platform)
                     if (row) setDayDetail(row)
                   }}
-                  title={`${d.platform === "tiktok" ? "TikTok Shop" : "Shopee"} — ${fmtNum(d.n)} đơn affiliate. Bấm để xem chi tiết.`}
+                  title={`${mpLabel(d.platform)} — ${fmtNum(d.n)} đơn affiliate. Bấm để xem chi tiết.`}
                   className="rounded-md border border-sky-300 bg-white px-2 py-0.5 text-[11.5px] font-medium text-sky-700 hover:bg-sky-100">
                   {d.date.slice(8, 10)}/{d.date.slice(5, 7)}
-                  <span className="ml-1 text-sky-400">{d.platform === "tiktok" ? "TT" : "SP"}</span>
+                  <span className="ml-1 text-sky-400">{d.platform === "tiktok" ? "TT" : d.platform === "tiktok_web" ? "TW" : "SP"}</span>
                   <span className="ml-1 font-semibold">{fmtNum(d.n)}</span>
                 </button>
               ))}
@@ -5260,7 +5263,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {(data.by_platform ?? []).map((p: any) => (
           <div key={p.platform} className="bg-white border rounded-xl p-5 shadow-sm"
-            style={{ borderTop: `3px solid ${p.platform === "tiktok" ? "#111827" : "#ee4d2d"}` }}>
+            style={{ borderTop: `3px solid ${p.platform === "tiktok" ? "#111827" : p.platform === "tiktok_web" ? "#7c3aed" : "#ee4d2d"}` }}>
             <div className="text-xs text-gray-500 uppercase tracking-wide">{p.platform_label}</div>
             <div className="text-2xl font-bold mt-1 text-gray-900">{money(p.revenue_delivered)}</div>
             {/* Số tới từng đồng cho kế toán đối chiếu — con số lớn phía trên đã làm tròn. */}
@@ -5335,7 +5338,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               ))}
             </div>
             <div className="flex gap-1">
-              {([["all", "Cả 2 sàn"], ["tiktok", "TikTok"], ["shopee", "Shopee"]] as const).map(([k, label]) => (
+              {([["all", "Tất cả"], ["tiktok", "TikTok Shop"], ["tiktok_web", "TikTok Web"], ["shopee", "Shopee"]] as const).map(([k, label]) => (
                 <button key={k} type="button" onClick={() => setDayPlatform(k)}
                   className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                     dayPlatform === k ? "bg-violet-600 text-white border-violet-600"
@@ -5437,7 +5440,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     </td>
                     <td className="px-4 py-2.5 overflow-hidden">
                       <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${
-                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : r.platform === "tiktok_web" ? "bg-violet-600 text-white" : "bg-orange-100 text-orange-700"
                       }`}>{r.platform_label}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-gray-900">{fmtNum(r[M.orders])}</td>
@@ -5592,7 +5595,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
               </span>
             )}
             <div className="flex gap-1">
-              {([["all", "Cả 2 sàn"], ["tiktok", "TikTok"], ["shopee", "Shopee"]] as const).map(([k, lb]) => (
+              {([["all", "Tất cả"], ["tiktok", "TikTok Shop"], ["tiktok_web", "TikTok Web"], ["shopee", "Shopee"]] as const).map(([k, lb]) => (
                 <button key={k} onClick={() => setProdPlatform(k)}
                   className={`px-2.5 py-1 text-[11px] rounded-md font-medium ${
                     prodPlatform === k ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
@@ -5657,8 +5660,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   {prodPlatform === "all" && (
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                      }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : r.platform === "tiktok_web" ? "bg-violet-600 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{mpLabel(r.platform)}</span>
                     </td>
                   )}
                   <td className="px-4 py-2.5 max-w-[260px]">
@@ -5705,8 +5708,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   {prodPlatform === "all" && (
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                        a.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                      }`}>{a.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                        a.platform === "tiktok" ? "bg-gray-900 text-white" : a.platform === "tiktok_web" ? "bg-violet-600 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{mpLabel(a.platform)}</span>
                     </td>
                   )}
                   <td className="px-4 py-2.5 max-w-[260px]">
@@ -5830,8 +5833,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   {prodPlatform === "all" && (
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                      }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : r.platform === "tiktok_web" ? "bg-violet-600 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{mpLabel(r.platform)}</span>
                     </td>
                   )}
                   <td className="px-4 py-2.5 max-w-[260px]">
@@ -5947,8 +5950,8 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                   {prodPlatform === "all" && (
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                        r.platform === "tiktok" ? "bg-gray-900 text-white" : "bg-orange-100 text-orange-700"
-                      }`}>{r.platform === "tiktok" ? "TikTok" : "Shopee"}</span>
+                        r.platform === "tiktok" ? "bg-gray-900 text-white" : r.platform === "tiktok_web" ? "bg-violet-600 text-white" : "bg-orange-100 text-orange-700"
+                      }`}>{mpLabel(r.platform)}</span>
                     </td>
                   )}
                   <td className="px-4 py-2.5 max-w-[240px]">
