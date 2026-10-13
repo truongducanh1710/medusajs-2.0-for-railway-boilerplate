@@ -101,6 +101,10 @@ const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`
 /** Lý do tắt vì hết đà sau lần tăng — ngày đó vẫn có thể tốt nên không tính vào chuỗi ngày xấu. */
 export const HET_DA_PREFIX = "Hết đà sau lần tăng"
 
+/** Từ mức ngân sách này trở lên, mỗi lần tăng chỉ cộng tối đa BIG_STEP_ADD. */
+const BIG_STEP_FROM = 3_000_000
+const BIG_STEP_ADD = 3_000_000
+
 // Phần chi tiêu cả ngày thường đã tiêu xong TRƯỚC mỗi mốc giờ (index = giờ VN), lấy từ
 // hourly insights các camp XUANLT chạy đủ 24h (22, 27, 29/09). Camp tiêu gần nửa số tiền
 // vào tối/đêm — nên so "đã tiêu ≥ 70% ngân sách" là quá muộn (thường tới tối mới chạm).
@@ -271,7 +275,11 @@ export function decide(x: DecideInput): Decision {
   if (x.minutes_since_last_action !== null && x.minutes_since_last_action < cooldown) {
     lyDo.push(`chờ ${cooldown - x.minutes_since_last_action} phút nữa`)
   }
-  const to = Math.min(Math.round((x.budget * (fast ? fastMul : rule.multiplier)) / 1000) * 1000, rule.max_budget)
+  // Bậc thang: dưới 3tr nhân như cũ nhưng dừng ở 3tr (300k → 900k → 2,7tr → 3tr); từ 3tr trở lên
+  // chỉ cộng 3tr/bước (3tr → 6tr → 9tr). 13/10 nhảy 3tr → 9tr một phát, camp hết đà ngay sau đó.
+  const nhan = Math.round((x.budget * (fast ? fastMul : rule.multiplier)) / 1000) * 1000
+  const bac = x.budget < BIG_STEP_FROM ? Math.min(nhan, BIG_STEP_FROM) : Math.min(nhan, x.budget + BIG_STEP_ADD)
+  const to = Math.min(bac, rule.max_budget)
   if (to <= x.budget) lyDo.push(`đã chạm trần ${vnd(rule.max_budget)}`)
   if (!lyDo.length && x.account_block) lyDo.push(x.account_block)
   if (lyDo.length) return { action: "none", reason: `Chưa tăng: ${lyDo.join("; ")}` }
@@ -279,7 +287,7 @@ export function decide(x: DecideInput): Decision {
   return {
     action: "tang", to,
     reason: fast
-      ? `ĐẨY NHANH ×${fastMul}: hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn (≤ ${vnd(rule.target_cpa * Number(rule.fast_cpa_ratio ?? 0.5))}), đã tiêu ${vnd(x.spend_today)}`
+      ? `ĐẨY NHANH → ${vnd(to)}: hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn (≤ ${vnd(rule.target_cpa * Number(rule.fast_cpa_ratio ?? 0.5))}), đã tiêu ${vnd(x.spend_today)}`
       : `Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${vnd(x.spend_today)} — cứ đà này cả ngày ~${vnd(duKien)} (ngân sách ${vnd(x.budget)})`,
   }
 }
