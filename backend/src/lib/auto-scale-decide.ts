@@ -98,6 +98,9 @@ export type Decision =
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`
 
+/** Lý do tắt vì hết đà sau lần tăng — ngày đó vẫn có thể tốt nên không tính vào chuỗi ngày xấu. */
+export const HET_DA_PREFIX = "Hết đà sau lần tăng"
+
 // Phần chi tiêu cả ngày thường đã tiêu xong TRƯỚC mỗi mốc giờ (index = giờ VN), lấy từ
 // hourly insights các camp XUANLT chạy đủ 24h (22, 27, 29/09). Camp tiêu gần nửa số tiền
 // vào tối/đêm — nên so "đã tiêu ≥ 70% ngân sách" là quá muộn (thường tới tối mới chạm).
@@ -201,12 +204,14 @@ export function decide(x: DecideInput): Decision {
     }
   }
 
-  // 4. Lùi — chạy mọi giờ: lần tăng chiều muộn mà đơn không về thì tối vẫn phải lùi
+  // 4. Hết đà sau lần tăng → TẮT tới hết ngày (thay cho "lùi" từ 14/10/2026) — chạy mọi giờ
   //    (06/10: tăng lên 2tr lúc 16h30, sau đó tiêu thêm ~760k, 0 đơn — trước đây hết khung 19h là bỏ mặc).
+  //    5 lần lùi thật 08–13/10: sau khi lùi camp tiêu thêm 1,94tr, 4 đơn, 61% → lùi chỉ kéo dài phần xấu.
   //    Chỉ xét lần tăng của hôm nay, đã qua ≥ 60 phút, và ngân sách vẫn đúng mức đã tăng
-  //    (MKT tự chỉnh tay thì không can thiệp).
+  //    (MKT tự chỉnh tay thì không can thiệp). Người bật lại sau khi đã tắt hôm nay thì tôn trọng.
+  //    Sáng hôm sau tự bật lại ở mức nền; KHÔNG tính vào chuỗi ngày xấu (xem HET_DA_PREFIX).
   const s = x.step
-  if (s && s.to === x.budget && s.minutes_ago >= 60) {
+  if (s && s.to === x.budget && s.minutes_ago >= 60 && !x.paused_today) {
     const dSpend = x.spend_today - s.spend_at_step
     const nguong = rule.target_cpa * rule.revert_factor
     // 0 đơn: tiêu thêm quá ngưỡng là lùi. Đã có đơn: phải tiêu thêm ≥ 2× CPA mục tiêu mới đủ
@@ -214,9 +219,11 @@ export function decide(x: DecideInput): Decision {
     const xau = s.orders_since === 0
       ? dSpend >= nguong
       : dSpend >= 2 * rule.target_cpa && dSpend / s.orders_since > nguong
-    const to = Math.max(x.base, s.from)
-    if (xau && to < x.budget) {
-      return { action: "lui", to, reason: `Từ lần tăng: chi ${vnd(dSpend)}, ${s.orders_since} đơn (vượt ${vnd(nguong)}/đơn)` }
+    if (xau) {
+      return {
+        action: "tat", final: false,
+        reason: `${HET_DA_PREFIX} ${vnd(s.from)} → ${vnd(s.to)}: chi thêm ${vnd(dSpend)}, ${s.orders_since} đơn (vượt ${vnd(nguong)}/đơn) — tắt tới hết ngày, sáng mai bật lại mức nền`,
+      }
     }
   }
 

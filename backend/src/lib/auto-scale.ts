@@ -10,7 +10,7 @@
 
 import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
-import { decide, type Portfolio } from "./auto-scale-decide"
+import { decide, HET_DA_PREFIX, type Portfolio } from "./auto-scale-decide"
 import { mktTotalsForDate, type MktTotal } from "./mkt-today"
 
 const GRAPH = "https://graph.facebook.com/v25.0"
@@ -360,18 +360,23 @@ async function pauseHistory(campaignId: string) {
   const pool = getPool()
   const today = nowVN().date
   const { rows } = await pool.query(
-    `SELECT DISTINCT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d FROM auto_scale_log
-      WHERE campaign_id = $1 AND action = 'tat' AND NOT dry_run AND success AND created_at > now() - interval '15 days'`,
-    [campaignId]
+    `SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d,
+            bool_or(COALESCE(reason, '') NOT LIKE $2) xau
+       FROM auto_scale_log
+      WHERE campaign_id = $1 AND action = 'tat' AND NOT dry_run AND success AND created_at > now() - interval '15 days'
+      GROUP BY 1`,
+    [campaignId, `${HET_DA_PREFIX}%`]
   )
   const days = new Set(rows.map((r: any) => r.d))
+  // Chuỗi ngày xấu chỉ đếm ngày bị phanh/tỉa — tắt vì hết đà sau lần tăng thì ngày đó vẫn có thể tốt
+  const badDays = new Set(rows.filter((r: any) => r.xau).map((r: any) => r.d))
   const dayStr = (back: number) => {
     const d = new Date(`${today}T00:00:00Z`)
     d.setUTCDate(d.getUTCDate() - back)
     return d.toISOString().slice(0, 10)
   }
   let streak = 0
-  while (days.has(dayStr(streak + 1))) streak++
+  while (badDays.has(dayStr(streak + 1))) streak++
   const { rows: res } = await pool.query(
     `SELECT 1 FROM auto_scale_log WHERE campaign_id = $1 AND action = 'bat' AND success AND created_at >= $2::timestamptz LIMIT 1`,
     [campaignId, startOfTodayVN()]
@@ -544,7 +549,7 @@ async function applyStatus(opts: {
   )
   if (opts.userModule) {
     const head = action === "tat"
-      ? `⛔ Tự scale — PHANH NGÀY XẤU (tắt camp)${dry ? " (CHẠY THỬ, chưa tắt thật)" : ""}`
+      ? `⛔ Tự scale — ${reason.startsWith(HET_DA_PREFIX) ? "HẾT ĐÀ SAU LẦN TĂNG" : "PHANH NGÀY XẤU"} (tắt camp)${dry ? " (CHẠY THỬ, chưa tắt thật)" : ""}`
       : `▶️ Tự scale — BẬT LẠI camp (ngày mới)`
     const tail = action === "tat"
       ? (opts.final
