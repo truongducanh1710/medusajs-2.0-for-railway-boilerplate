@@ -211,7 +211,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         WHERE po.deleted_at IS NULL
           ${platformFilter}
           AND COALESCE(NULLIF(po.market, ''), 'VN') = '${market}'
-          AND po.status = ANY($2::int[])
+          AND (po.status = ANY($2::int[])
+            -- Đơn web TikTok chờ sale xác nhận (Mới) vẫn là doanh số ads — tính trong tạm tính.
+            OR (array_length($2::int[], 1) > 1 AND po.status = 0 AND ${mpPlatformSql()} = 'tiktok_web'))
           AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND po.raw->'items' IS NOT NULL

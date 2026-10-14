@@ -122,6 +122,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Đơn sàn không có tag "Đơn nháp/trùng" như đơn ads; chỉ loại đơn đã xoá (status 7).
     const excludeCond = `status = 7`
+    // TikTok Web (đơn website COD) nằm ở status 0 "Mới" tới khi sale gọi xác nhận — khác đơn
+    // sàn. Tạm tính của kênh này tính cả status 0, nếu không doanh số ads hiện 0đ (14/10/2026).
 
     // Đơn MY lưu tiền bằng SEN (1 RM = 100 sen): total_price 5800 = RM 58,00. Quy hết
     // về VND ngay trong SQL để mọi phép tính phía sau (giá vốn, ads, LNG) cùng một đơn
@@ -342,13 +344,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- (23/08 Shopee: 7 đơn 2,38tr hiện 0đ, LNG -780.887đ). Bảng
         -- "SP bán chạy" phải đọc bộ số này — chỉ đếm đơn đã giao xong thì SP mới
         -- chạy quảng cáo hôm nay gần như không xuất hiện.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9))::int AS orders_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) THEN order_revenue_tt   * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND unit_cost > 0)::int AS orders_costed_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) THEN qty ELSE 0 END)::numeric AS qty_tt
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)))::int AS orders_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) THEN order_revenue_tt   * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost > 0)::int AS orders_costed_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) THEN qty ELSE 0 END)::numeric AS qty_tt
       FROM oi3
       GROUP BY platform, sp_key
     `, [from, to])
@@ -429,26 +431,26 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         -- đơn sàn hoàn rất ít nên coi đơn đang đi là sẽ nhận.
         -- Loại 0 (mới) và 4/5/6/7/-1/-2 (hoàn/huỷ/xoá) — xem ghi chú status
         -- ở đầu file: code 6 = ĐÃ HỦY, không phải "đã gửi VC" như GLOSSARY ghi.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9))::int AS orders_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND unit_cost > 0)::int AS orders_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)))::int AS orders_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) THEN fee_marketplace_tt * rev_share ELSE 0 END)::bigint AS fee_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost > 0 THEN item_cost ELSE 0 END)::bigint AS cogs_tt,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost > 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_costed_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost > 0)::int AS orders_costed_tt,
         -- ── CHẤT LƯỢNG DỮ LIỆU (cho cảnh báo ngoài bảng) ────────────────────────
         -- Đếm theo ĐƠN chứ không theo dòng hàng: nhân sự đi xử lý từng đơn.
         -- Tính trên phạm vi TẠM TÍNH vì đó là mode mặc định đang xem.
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND unit_cost = 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND unit_cost = 0)::int AS orders_missing_cost,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost = 0 THEN order_revenue_tt * rev_share ELSE 0 END)::bigint AS revenue_no_cost_tt,
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND unit_cost = 0)::int AS orders_missing_cost,
         -- Đơn doanh thu 0đ = đơn gửi affiliate (hàng tặng KOL/reviewer), KHÔNG phải lỗi.
         -- Vẫn phải theo dõi vì chúng có giá vốn thật và vẫn được chia ads: gộp chung với
         -- đơn bán sẽ kéo LNG xuống và làm %GV/%LNG trông xấu hơn thực tế.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9) AND order_revenue = 0)::int AS orders_zero_revenue,
-        SUM(CASE WHEN status IN (1,2,3,8,9) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue,
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND order_revenue = 0)::int AS orders_zero_revenue,
+        SUM(CASE WHEN (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0)) AND order_revenue = 0 THEN item_cost ELSE 0 END)::bigint AS cogs_zero_revenue,
         -- Hàng BÁN không có mã SP và chưa khai ở "Khớp SP sàn" ($3 = các tên đã khai):
         -- không khớp được ads theo SP nên đơn gánh ads mức shop, LNG theo SP bị sai.
         -- Quà tặng nhận theo tên, cùng quy tắc với day-orders.
-        COUNT(DISTINCT order_id) FILTER (WHERE status IN (1,2,3,8,9)
+        COUNT(DISTINCT order_id) FILTER (WHERE (status IN (1,2,3,8,9) OR (platform = 'tiktok_web' AND status = 0))
           AND COALESCE(sp_code, '') = ''
           AND sp_name_up <> ''
           AND sp_name_up !~* '(QUÀ TẶNG|QUA TANG|TẶNG KÈM|TANG KEM)'
