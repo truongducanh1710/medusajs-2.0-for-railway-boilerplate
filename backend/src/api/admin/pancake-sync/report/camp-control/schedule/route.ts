@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { getAuthInfo, checkCampOwner } from "../_lib"
+import { getAuthInfo, checkCampOwner, callFbApi } from "../_lib"
+import { extractMkt } from "../../../../../../lib/mkt-code"
 
 /**
  * POST /admin/pancake-sync/report/camp-control/schedule
@@ -22,7 +23,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const auth = await getAuthInfo(req)
     if (!auth) return res.status(401).json({ error: "Unauthenticated" })
 
-    const check = await checkCampOwner(req, campaign_id, auth)
+    let check = await checkCampOwner(req, campaign_id, auth)
+    // Camp mới tạo chưa có chi tiêu thì chưa đồng bộ vào mkt_ads_cost (vd tạo tối nay, hẹn bật sáng mai) —
+    // đọc thẳng từ FB, lấy MKT từ tên camp để kiểm quyền. Bộ chạy lịch không cần dòng mkt_ads_cost.
+    if (!check.camp) {
+      const fb = await callFbApi("GET", `/${campaign_id}?fields=name,effective_status,daily_budget`)
+      if (!fb.ok || !fb.data?.name) {
+        return res.status(404).json({ error: `Không tìm thấy camp trên FB: ${fb.data?.error?.message ?? campaign_id}` })
+      }
+      const mkt = extractMkt(fb.data.name)
+      const allowed = auth.isSuper || (!!mkt && auth.mktCodes.includes(mkt))
+      check = allowed
+        ? { ok: true, camp: { campaign_name: fb.data.name, mkt_name: mkt, daily_budget: Number(fb.data.daily_budget) || null, effective_status: fb.data.effective_status } }
+        : { ok: false, reason: `Camp thuộc MKT ${mkt || "không rõ"}, bạn được phép: ${auth.mktCodes.join(", ")}` }
+    }
     if (!check.ok || !check.camp) return res.status(403).json({ error: check.reason })
 
     const sqlSvc = req.scope.resolve("cskhAnalysisModule") as any

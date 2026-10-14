@@ -5361,7 +5361,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             ["Ngày", "Ngày tạo đơn (giờ VN). Bấm 1 dòng để xem từng đơn."],
             ["Đơn", "Tổng số đơn tạo trong ngày, gồm cả đơn huỷ/xoá/hoàn — cùng phạm vi với Doanh số."],
             ["Doanh số", "Tổng giá trị MỌI đơn tạo trong ngày (gồm cả huỷ/xoá/hoàn), lấy max(COD, tổng đơn). Dùng để đánh giá ads, giống Doanh số bên Facebook."],
-            ["Huỷ/Hoàn", "Số đơn huỷ + hoàn (đang hoàn và đã hoàn). % = trên số đơn đã ngã ngũ (nhận/huỷ/hoàn)."],
+            ["Huỷ/Hoàn", "Số đơn huỷ/xoá + hoàn (đang hoàn và đã hoàn). % = trên tổng số đơn của ngày."],
             [tt ? "DT thực (tạm tính)" : "DT thực", tt
               ? "Doanh thu SAU huỷ/hoàn: đơn Mới, đã xác nhận, đang đóng/giao và đã nhận. Đơn Mới chưa gọi xác nhận nên số này còn có thể giảm."
               : "Doanh thu SAU huỷ/hoàn, chỉ đơn đã giao thành công (đã nhận)."],
@@ -5373,7 +5373,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             ["%VC", "Phí VC ÷ DT thực."],
             ["Fullfill", "Phí đóng gói 6.000đ × số đơn có giá vốn."],
             ["Ads", "Chi phí TikTok Ads (web) nhập ở trang Nhập chi phí cho ngày đó."],
-            ["%Ads", "Ads ÷ Doanh số — cùng chuẩn % chi phí bên báo cáo MKT Facebook."],
+            ["%Ads", "Ads ÷ DT thực (sau huỷ/hoàn) — cùng mẫu số với %LNG nên đọc được lãi/lỗ thật. Rê vào từng ô để xem thêm Ads ÷ Doanh số."],
             ["LNG sau ads", "DT thực − Giá vốn − Phí VC − Fullfill − Ads."],
             ["%LNG", "LNG sau ads ÷ DT thực."],
           ]
@@ -5381,14 +5381,16 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             a.orders += Number(r.orders_all || 0); a.ds += Number(r.doanh_so || 0)
             a.huy += Number(r.da_huy || 0); a.hoan += Number(r.da_hoan || 0) + Number(r.dang_hoan || 0)
             a.nhan += Number(r.da_nhan || 0)
+            a.huyAll += Math.max(0, Number(r.orders_all || 0) - Number(r.orders_tt || 0) - Number(r.da_hoan || 0) - Number(r.dang_hoan || 0))
             a.rev += Number(r[F.rev] || 0); a.cogs += Number(r[F.cogs] || 0); a.ship += Number(r[F.ship] || 0)
             a.ff += Number(r[F.ff] || 0); a.ads += Number(r.ads_cost || 0); a.lng += Number(r[F.lng] || 0)
             return a
-          }, { orders: 0, ds: 0, huy: 0, hoan: 0, nhan: 0, rev: 0, cogs: 0, ship: 0, ff: 0, ads: 0, lng: 0 })
-          const huyCell = (huy: number, hoan: number, nhan: number) => {
+          }, { orders: 0, ds: 0, huy: 0, huyAll: 0, hoan: 0, nhan: 0, rev: 0, cogs: 0, ship: 0, ff: 0, ads: 0, lng: 0 })
+          // Đơn web: huỷ/hoàn tính trên TỔNG đơn (gồm cả đơn xoá) — "ngã ngũ" chỉ hợp với đơn sàn.
+          const huyCell = (huy: number, hoan: number, total: number) => {
             const tong = huy + hoan
             if (tong === 0) return <span className="text-gray-300">—</span>
-            const pc = p(tong, nhan + tong)
+            const pc = p(tong, total)
             return (
               <span title={`Huỷ ${huy} · Hoàn ${hoan}`} className={pc != null && pc >= 30 ? "text-red-600 font-semibold" : ""}>
                 {fmtNum(tong)}{pc != null && <span className="ml-1 text-[11px] font-normal text-gray-400">{pc}%</span>}
@@ -5420,7 +5422,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{dayLabel(r.date)}</td>
                         <td className={`${td} font-mono`}>{fmtNum(r.orders_all || 0)}</td>
                         <td className={`${td} font-semibold`}>{money(r.doanh_so)}</td>
-                        <td className={td}>{huyCell(Number(r.da_huy || 0), Number(r.da_hoan || 0) + Number(r.dang_hoan || 0), Number(r.da_nhan || 0))}</td>
+                        <td className={td}>{huyCell(Math.max(0, Number(r.orders_all || 0) - Number(r.orders_tt || 0) - Number(r.da_hoan || 0) - Number(r.dang_hoan || 0)), Number(r.da_hoan || 0) + Number(r.dang_hoan || 0), Number(r.orders_all || 0))}</td>
                         <td className={`${td} font-semibold text-green-700`}>{money(rev)}</td>
                         <td className={td}>{money(r[F.cogs])}</td>
                         <td className={td}>{pctCell(p(Number(r[F.cogs] || 0), rev))}</td>
@@ -5428,7 +5430,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         <td className={td}>{pctCell(p(Number(r[F.ship] || 0), rev))}</td>
                         <td className={td}>{money(r[F.ff])}</td>
                         <td className={td}>{r.ads_missing ? <span className="text-amber-600">⚠ chưa điền</span> : money(r.ads_cost)}</td>
-                        <td className={td}>{r.ads_missing ? <span className="text-gray-300">—</span> : pctCell(p(Number(r.ads_cost || 0), Number(r.doanh_so || 0)))}</td>
+                        <td className={td}>{r.ads_missing ? <span className="text-gray-300">—</span> : <span title={`Ads ÷ Doanh số = ${p(Number(r.ads_cost || 0), Number(r.doanh_so || 0)) ?? "—"}%`}>{pctCell(p(Number(r.ads_cost || 0), rev))}</span>}</td>
                         <td className={`${td} font-semibold ${lng >= 0 ? "text-violet-700" : "text-red-500"}`}>{money(lng)}</td>
                         <td className={td}>{pctCell(p(lng, rev), lng >= 0)}</td>
                       </tr>
@@ -5441,7 +5443,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                       <td className="px-4 py-2.5">Tổng {byDay.length} ngày</td>
                       <td className={`${td} font-mono`}>{fmtNum(T.orders)}</td>
                       <td className={td}>{moneyFull(T.ds)}</td>
-                      <td className={td}>{huyCell(T.huy, T.hoan, T.nhan)}</td>
+                      <td className={td}>{huyCell(T.huyAll, T.hoan, T.orders)}</td>
                       <td className={`${td} text-green-700`}>{moneyFull(T.rev)}</td>
                       <td className={td}>{moneyFull(T.cogs)}</td>
                       <td className={td}>{pctCell(p(T.cogs, T.rev))}</td>
@@ -5449,7 +5451,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                       <td className={td}>{pctCell(p(T.ship, T.rev))}</td>
                       <td className={td}>{moneyFull(T.ff)}</td>
                       <td className={td}>{moneyFull(T.ads)}</td>
-                      <td className={td}>{pctCell(p(T.ads, T.ds))}</td>
+                      <td className={td}><span title={`Ads ÷ Doanh số = ${p(T.ads, T.ds) ?? "—"}%`}>{pctCell(p(T.ads, T.rev))}</span></td>
                       <td className={`${td} ${T.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>{moneyFull(T.lng)}</td>
                       <td className={td}>{pctCell(p(T.lng, T.rev), T.lng >= 0)}</td>
                     </tr>

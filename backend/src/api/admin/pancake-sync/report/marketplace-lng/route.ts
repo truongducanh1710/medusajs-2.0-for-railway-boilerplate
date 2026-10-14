@@ -996,7 +996,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         d.ship = ship
         d.ship_tt = shipTT
         d.ship_pct_ref = Math.round(pctShip * 1000) / 10
-        // %Ads trên DOANH SỐ (chuẩn báo cáo MKT); mọi % khác trên DT thực.
+        // ads_ds_pct chỉ để tham khảo; UI chia %Ads cho DT thực (huỷ cao thì chia doanh số ra số đẹp giả).
         d.ads_ds_pct = pct(d.ads_cost, ds)
         d.lng_sau_ads = d.lng - d.ads_cost - ship
         d.lng_sau_ads_pct = pct(d.lng_sau_ads, d.revenue_delivered)
