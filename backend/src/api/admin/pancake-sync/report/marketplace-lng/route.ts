@@ -979,9 +979,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         FROM pancake_order
         WHERE deleted_at IS NULL AND status = 3
           AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
-          AND pancake_created_at >= (($2::date - interval '60 days')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-      `, [from, to])
+          AND pancake_created_at >= (($1::date - interval '60 days')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND pancake_created_at < (($1::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      `, [to])
       const pctShip = Number(shipRef?.rev) > 0 ? Number(shipRef.ship) / Number(shipRef.rev) : 0
       const webBy: Record<string, any> = {}
       for (const w of webRows) webBy[w.date] = w
