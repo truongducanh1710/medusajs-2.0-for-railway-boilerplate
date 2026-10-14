@@ -5363,7 +5363,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             ["Doanh số", "Tổng giá trị MỌI đơn tạo trong ngày (gồm cả huỷ/xoá/hoàn), lấy max(COD, tổng đơn). Dùng để đánh giá ads, giống Doanh số bên Facebook."],
             ["Huỷ/Hoàn", "Số đơn huỷ/xoá + hoàn (đang hoàn và đã hoàn). % = trên tổng số đơn của ngày."],
             [tt ? "DT thực (tạm tính)" : "DT thực", tt
-              ? "Doanh thu SAU huỷ/hoàn: đơn Mới, đã xác nhận, đang đóng/giao và đã nhận. Đơn Mới chưa gọi xác nhận nên số này còn có thể giảm."
+              ? "Doanh thu SAU huỷ/hoàn. Ngày dưới 15 ngày: = Doanh số × 80% (ước huỷ/hoàn 20%), giá vốn theo tỷ lệ giá vốn của kênh. Từ ngày 15: đơn thật đã xác nhận/đang giao/đã nhận."
               : "Doanh thu SAU huỷ/hoàn, chỉ đơn đã giao thành công (đã nhận)."],
             ["Giá vốn", "Giá vốn của các đơn tính trong DT thực = đơn giá vốn trung bình (sheet Giá vốn) × số lượng."],
             ["%GV", "Giá vốn ÷ DT thực."],
@@ -5381,7 +5381,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             a.orders += Number(r.orders_all || 0); a.ds += Number(r.doanh_so || 0)
             a.huy += Number(r.da_huy || 0); a.hoan += Number(r.da_hoan || 0) + Number(r.dang_hoan || 0)
             a.nhan += Number(r.da_nhan || 0)
-            a.huyAll += Math.max(0, Number(r.orders_all || 0) - Number(r.orders_tt || 0) - Number(r.da_hoan || 0) - Number(r.dang_hoan || 0))
+            const est = tt && r.huy_uoc_tinh
+            a.huyAll += est ? Number(r.orders_huy_uoc || 0)
+              : Math.max(0, Number(r.orders_all || 0) - Number(r.orders_tt || 0) - Number(r.da_hoan || 0) - Number(r.dang_hoan || 0))
+            if (est) a.hoan -= Number(r.da_hoan || 0) + Number(r.dang_hoan || 0)
             a.rev += Number(r[F.rev] || 0); a.cogs += Number(r[F.cogs] || 0); a.ship += Number(r[F.ship] || 0)
             a.ff += Number(r[F.ff] || 0); a.ads += Number(r.ads_cost || 0); a.lng += Number(r[F.lng] || 0)
             return a
@@ -5422,7 +5425,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                         <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{dayLabel(r.date)}</td>
                         <td className={`${td} font-mono`}>{fmtNum(r.orders_all || 0)}</td>
                         <td className={`${td} font-semibold`}>{money(r.doanh_so)}</td>
-                        <td className={td}>{huyCell(Math.max(0, Number(r.orders_all || 0) - Number(r.orders_tt || 0) - Number(r.da_hoan || 0) - Number(r.dang_hoan || 0)), Number(r.da_hoan || 0) + Number(r.dang_hoan || 0), Number(r.orders_all || 0))}</td>
+                        <td className={td}>{tt && r.huy_uoc_tinh
+                          ? <span className="text-amber-700" title="Ngày dưới 15 ngày: chưa đủ số huỷ/hoàn thật nên ƯỚC TÍNH 20% doanh số. DT thực = Doanh số × 80%. Từ ngày thứ 15 dùng số thật.">
+                              ~{fmtNum(r.orders_huy_uoc || 0)}<span className="ml-1 text-[11px] font-normal">20% ước</span></span>
+                          : huyCell(Math.max(0, Number(r.orders_all || 0) - Number(r.orders_tt || 0) - Number(r.da_hoan || 0) - Number(r.dang_hoan || 0)), Number(r.da_hoan || 0) + Number(r.dang_hoan || 0), Number(r.orders_all || 0))}</td>
                         <td className={`${td} font-semibold text-green-700`}>{money(rev)}</td>
                         <td className={td}>{money(r[F.cogs])}</td>
                         <td className={td}>{pctCell(p(Number(r[F.cogs] || 0), rev))}</td>

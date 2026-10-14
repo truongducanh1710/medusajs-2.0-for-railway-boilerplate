@@ -985,10 +985,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const pctShip = Number(shipRef?.rev) > 0 ? Number(shipRef.ship) / Number(shipRef.rev) : 0
       const webBy: Record<string, any> = {}
       for (const w of webRows) webBy[w.date] = w
+      // Huỷ/hoàn ƯỚC TÍNH cho ngày dưới 15 ngày tuổi (giống phí sàn ước 30% của TikTok Shop):
+      // đơn web COD vài hôm mới gọi/giao xong nên số huỷ thật chưa đủ. Tạm tính coi 20% doanh
+      // số sẽ huỷ/hoàn → DT thực = Doanh số × 80%. Từ ngày 15 trở đi dùng số huỷ/hoàn thật.
+      const HUY_UOC_TINH_PCT = 0.20
+      const todayVN = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
+      const ageDays = (iso: string) => Math.round((Date.parse(todayVN) - Date.parse(iso)) / 86400_000)
+      // Tỷ lệ giá vốn/DT của chính TikTok Web trong kỳ — dùng cho phần doanh thu ước tính.
+      let sumC = 0, sumR = 0
+      for (const d of byDay as any[]) if (d.platform === "tiktok_web") { sumC += Number(d.cogs_tt || 0); sumR += Number(d.revenue_costed_tt || 0) }
+      const pctVon = sumR > 0 ? sumC / sumR : 0
       for (const d of byDay as any[]) {
         if (d.platform !== "tiktok_web") continue
         const w = webBy[d.date] ?? {}
         const ds = Number(w.doanh_so || 0)
+        d.huy_uoc_tinh = ageDays(d.date) < NGAY_CHOT_PHI
+        if (d.huy_uoc_tinh) {
+          const n = Number(w.orders_all || 0)
+          d.revenue_tt = Math.round(ds * (1 - HUY_UOC_TINH_PCT))
+          d.cogs_tt = Math.round(d.revenue_tt * pctVon)
+          d.orders_huy_uoc = Math.round(n * HUY_UOC_TINH_PCT)
+          d.fullfill_tt = FULLFILL_PER_ORDER * (n - d.orders_huy_uoc)
+          d.lng_tt = d.revenue_tt - d.cogs_tt - d.fullfill_tt
+        }
         const ship = Number(w.ship || 0)
         const shipTT = Math.round(d.revenue_tt * pctShip)
         d.orders_all = Number(w.orders_all || 0)
