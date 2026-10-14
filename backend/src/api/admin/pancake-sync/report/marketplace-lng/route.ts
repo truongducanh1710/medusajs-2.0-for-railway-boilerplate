@@ -953,6 +953,60 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
     })
 
+    // ── TIKTOK WEB: CỘT KIỂU FACEBOOK ──────────────────────────────────────────
+    // Đơn web COD nên báo cáo theo cách bên Facebook (user chốt 14/10/2026):
+    //  - Doanh số  = tổng giá trị MỌI đơn tạo trong ngày, gồm cả huỷ/xoá (đo hiệu quả ads).
+    //  - DT thực   = sau huỷ/hoàn (đã có: revenue_tt / revenue_delivered).
+    //  - Phí VC    = partner_fee. Đơn chưa gửi chưa có cước nên Tạm tính ước = DT × %VC
+    //    trung bình của đơn web/Facebook đã giao 60 ngày gần nhất (giống lng-by-day).
+    if (byDay.some((d: any) => d.platform === "tiktok_web")) {
+      const webRows = await sql(`
+        SELECT (po.pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text AS date,
+          COUNT(*)::int AS orders_all,
+          SUM(GREATEST(po.cod_amount, po.total::bigint))::bigint AS doanh_so,
+          SUM(CASE WHEN po.status = 3 THEN COALESCE((po.raw->>'partner_fee')::numeric, 0) ELSE 0 END)::bigint AS ship
+        FROM pancake_order po
+        WHERE po.deleted_at IS NULL
+          AND ${mpPlatformSql()} = 'tiktok_web'
+          ${marketFilter}
+          AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND po.pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        GROUP BY 1
+      `, [from, to])
+      const [shipRef] = await sql(`
+        SELECT SUM(COALESCE((raw->>'partner_fee')::numeric, 0))::numeric AS ship,
+               SUM(GREATEST(cod_amount, total::bigint))::numeric AS rev
+        FROM pancake_order
+        WHERE deleted_at IS NULL AND status = 3
+          AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
+          AND pancake_created_at >= (($2::date - interval '60 days')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      `, [from, to])
+      const pctShip = Number(shipRef?.rev) > 0 ? Number(shipRef.ship) / Number(shipRef.rev) : 0
+      const webBy: Record<string, any> = {}
+      for (const w of webRows) webBy[w.date] = w
+      for (const d of byDay as any[]) {
+        if (d.platform !== "tiktok_web") continue
+        const w = webBy[d.date] ?? {}
+        const ds = Number(w.doanh_so || 0)
+        const ship = Number(w.ship || 0)
+        const shipTT = Math.round(d.revenue_tt * pctShip)
+        d.orders_all = Number(w.orders_all || 0)
+        d.doanh_so = ds
+        d.ship = ship
+        d.ship_tt = shipTT
+        d.ship_pct_ref = Math.round(pctShip * 1000) / 10
+        // %Ads trên DOANH SỐ (chuẩn báo cáo MKT); mọi % khác trên DT thực.
+        d.ads_ds_pct = pct(d.ads_cost, ds)
+        d.lng_sau_ads = d.lng - d.ads_cost - ship
+        d.lng_sau_ads_pct = pct(d.lng_sau_ads, d.revenue_delivered)
+        d.lng_tt_sau_ads = d.lng_tt - d.ads_cost - shipTT
+        d.lng_tt_sau_ads_pct = pct(d.lng_tt_sau_ads, d.revenue_tt)
+        d.cogs_pct = pct(d.cogs, d.revenue_delivered)
+        d.cogs_tt_pct = pct(d.cogs_tt, d.revenue_tt)
+      }
+    }
+
     // ── CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU ────────────────────────────────────────────
     // Gom các vấn đề khiến số LNG chưa đáng tin, kèm ngày cụ thể để nhân sự bấm vào
     // xử lý. Chỉ nêu vấn đề CÓ THẬT trong kỳ đang xem — không cảnh báo suông.

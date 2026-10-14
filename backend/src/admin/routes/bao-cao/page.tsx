@@ -5349,6 +5349,117 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             </div>
           </div>
         </div>
+        {dayPlatform === "tiktok_web" && (() => {
+          // TikTok Web = đơn website COD → cột kiểu báo cáo Facebook, không có phí sàn.
+          const tt = dayMode === "tt"
+          const F = tt
+            ? { rev: "revenue_tt", cogs: "cogs_tt", ship: "ship_tt", ff: "fullfill_tt", lng: "lng_tt_sau_ads" }
+            : { rev: "revenue_delivered", cogs: "cogs", ship: "ship", ff: "fullfill", lng: "lng_sau_ads" }
+          const p = (a: number, b: number) => b > 0 ? Math.round(a / b * 10000) / 100 : null
+          const shipRef = byDay[0]?.ship_pct_ref
+          const cols: [string, string][] = [
+            ["Ngày", "Ngày tạo đơn (giờ VN). Bấm 1 dòng để xem từng đơn."],
+            ["Đơn", "Tổng số đơn tạo trong ngày, gồm cả đơn huỷ/xoá/hoàn — cùng phạm vi với Doanh số."],
+            ["Doanh số", "Tổng giá trị MỌI đơn tạo trong ngày (gồm cả huỷ/xoá/hoàn), lấy max(COD, tổng đơn). Dùng để đánh giá ads, giống Doanh số bên Facebook."],
+            ["Huỷ/Hoàn", "Số đơn huỷ + hoàn (đang hoàn và đã hoàn). % = trên số đơn đã ngã ngũ (nhận/huỷ/hoàn)."],
+            [tt ? "DT thực (tạm tính)" : "DT thực", tt
+              ? "Doanh thu SAU huỷ/hoàn: đơn Mới, đã xác nhận, đang đóng/giao và đã nhận. Đơn Mới chưa gọi xác nhận nên số này còn có thể giảm."
+              : "Doanh thu SAU huỷ/hoàn, chỉ đơn đã giao thành công (đã nhận)."],
+            ["Giá vốn", "Giá vốn của các đơn tính trong DT thực = đơn giá vốn trung bình (sheet Giá vốn) × số lượng."],
+            ["%GV", "Giá vốn ÷ DT thực."],
+            ["Phí VC", tt
+              ? `Cước vận chuyển. Đơn chưa gửi chưa có cước nên ước = DT thực × ${shipRef ?? "?"}% (tỷ lệ cước trung bình của đơn web/Facebook đã giao 60 ngày gần nhất) — cùng cách bên Facebook.`
+              : "Cước vận chuyển thực (partner_fee) của các đơn đã giao."],
+            ["%VC", "Phí VC ÷ DT thực."],
+            ["Fullfill", "Phí đóng gói 6.000đ × số đơn có giá vốn."],
+            ["Ads", "Chi phí TikTok Ads (web) nhập ở trang Nhập chi phí cho ngày đó."],
+            ["%Ads", "Ads ÷ Doanh số — cùng chuẩn % chi phí bên báo cáo MKT Facebook."],
+            ["LNG sau ads", "DT thực − Giá vốn − Phí VC − Fullfill − Ads."],
+            ["%LNG", "LNG sau ads ÷ DT thực."],
+          ]
+          const T = byDay.reduce((a: any, r: any) => {
+            a.orders += Number(r.orders_all || 0); a.ds += Number(r.doanh_so || 0)
+            a.huy += Number(r.da_huy || 0); a.hoan += Number(r.da_hoan || 0) + Number(r.dang_hoan || 0)
+            a.nhan += Number(r.da_nhan || 0)
+            a.rev += Number(r[F.rev] || 0); a.cogs += Number(r[F.cogs] || 0); a.ship += Number(r[F.ship] || 0)
+            a.ff += Number(r[F.ff] || 0); a.ads += Number(r.ads_cost || 0); a.lng += Number(r[F.lng] || 0)
+            return a
+          }, { orders: 0, ds: 0, huy: 0, hoan: 0, nhan: 0, rev: 0, cogs: 0, ship: 0, ff: 0, ads: 0, lng: 0 })
+          const huyCell = (huy: number, hoan: number, nhan: number) => {
+            const tong = huy + hoan
+            if (tong === 0) return <span className="text-gray-300">—</span>
+            const pc = p(tong, nhan + tong)
+            return (
+              <span title={`Huỷ ${huy} · Hoàn ${hoan}`} className={pc != null && pc >= 30 ? "text-red-600 font-semibold" : ""}>
+                {fmtNum(tong)}{pc != null && <span className="ml-1 text-[11px] font-normal text-gray-400">{pc}%</span>}
+              </span>
+            )
+          }
+          const td = "px-3 py-2.5 text-right whitespace-nowrap"
+          return (
+            <div className="overflow-x-auto">
+              <table className="text-sm w-full">
+                <thead className="bg-gray-50 border-b text-xs text-gray-500">
+                  <tr>
+                    {cols.map(([l, t], i) => (
+                      <th key={l} title={t} className={`${i === 0 ? "text-left px-4" : "text-right px-3"} py-2.5 cursor-help whitespace-nowrap`}>
+                        <span className="border-b border-dotted border-gray-400">{l}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-gray-900">
+                  {byDay.length === 0 && (
+                    <tr><td colSpan={cols.length} className="px-4 py-6 text-center text-gray-400">Không có dữ liệu</td></tr>
+                  )}
+                  {byDay.map((r: any) => {
+                    const rev = Number(r[F.rev] || 0), lng = Number(r[F.lng] || 0)
+                    return (
+                      <tr key={r.date} onClick={() => setDayDetail(r)} title="Bấm để xem chi tiết từng đơn"
+                        className={`cursor-pointer hover:bg-violet-50/60 ${r.ads_missing ? "bg-amber-50/50" : ""}`}>
+                        <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{dayLabel(r.date)}</td>
+                        <td className={`${td} font-mono`}>{fmtNum(r.orders_all || 0)}</td>
+                        <td className={`${td} font-semibold`}>{money(r.doanh_so)}</td>
+                        <td className={td}>{huyCell(Number(r.da_huy || 0), Number(r.da_hoan || 0) + Number(r.dang_hoan || 0), Number(r.da_nhan || 0))}</td>
+                        <td className={`${td} font-semibold text-green-700`}>{money(rev)}</td>
+                        <td className={td}>{money(r[F.cogs])}</td>
+                        <td className={td}>{pctCell(p(Number(r[F.cogs] || 0), rev))}</td>
+                        <td className={td}>{money(r[F.ship])}</td>
+                        <td className={td}>{pctCell(p(Number(r[F.ship] || 0), rev))}</td>
+                        <td className={td}>{money(r[F.ff])}</td>
+                        <td className={td}>{r.ads_missing ? <span className="text-amber-600">⚠ chưa điền</span> : money(r.ads_cost)}</td>
+                        <td className={td}>{r.ads_missing ? <span className="text-gray-300">—</span> : pctCell(p(Number(r.ads_cost || 0), Number(r.doanh_so || 0)))}</td>
+                        <td className={`${td} font-semibold ${lng >= 0 ? "text-violet-700" : "text-red-500"}`}>{money(lng)}</td>
+                        <td className={td}>{pctCell(p(lng, rev), lng >= 0)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                {byDay.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                      <td className="px-4 py-2.5">Tổng {byDay.length} ngày</td>
+                      <td className={`${td} font-mono`}>{fmtNum(T.orders)}</td>
+                      <td className={td}>{moneyFull(T.ds)}</td>
+                      <td className={td}>{huyCell(T.huy, T.hoan, T.nhan)}</td>
+                      <td className={`${td} text-green-700`}>{moneyFull(T.rev)}</td>
+                      <td className={td}>{moneyFull(T.cogs)}</td>
+                      <td className={td}>{pctCell(p(T.cogs, T.rev))}</td>
+                      <td className={td}>{moneyFull(T.ship)}</td>
+                      <td className={td}>{pctCell(p(T.ship, T.rev))}</td>
+                      <td className={td}>{moneyFull(T.ff)}</td>
+                      <td className={td}>{moneyFull(T.ads)}</td>
+                      <td className={td}>{pctCell(p(T.ads, T.ds))}</td>
+                      <td className={`${td} ${T.lng >= 0 ? "text-violet-700" : "text-red-500"}`}>{moneyFull(T.lng)}</td>
+                      <td className={td}>{pctCell(p(T.lng, T.rev), T.lng >= 0)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )
+        })()}
+        {dayPlatform !== "tiktok_web" && (
         <div className="overflow-x-auto">
           <table className="text-sm" style={{ tableLayout: "fixed", width: `${totalWidth}px`, minWidth: "100%" }}>
             <colgroup>
@@ -5380,6 +5491,10 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
                     )
                   }
                   const titles: Partial<Record<DayColId, string>> = {
+                    date: "Ngày tạo đơn (giờ VN). Bấm 1 dòng để xem từng đơn.",
+                    orders: "Tạm tính: đơn đã xác nhận cho đi (chốt/đóng/gửi/nhận). Thực: chỉ đơn đã nhận.",
+                    cogs: "Đơn giá vốn trung bình (sheet Giá vốn) × số lượng của các đơn tính doanh thu.",
+                    fullfill: "Phí đóng gói 6.000đ × số đơn có giá vốn.",
                     huyHoan: "Số đơn huỷ + hoàn (và % trên số đơn đã ngã ngũ). Không tính vào doanh thu.",
                     gross: "Tiền khách trả (đã trừ khuyến mãi, CHƯA trừ phí sàn)",
                     rev: "Tiền thực nhận — đã trừ cả khuyến mãi và phí sàn",
@@ -5560,6 +5675,7 @@ function MarketplaceLngTab({ range, market }: { range: DateRange; market: Market
             )}
           </table>
         </div>
+        )}
       </div>
 
       {dayDetail && (
