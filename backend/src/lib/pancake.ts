@@ -8,6 +8,12 @@ let variationMapCache: Map<string, string> | null = null
 let variationMapCachedAt = 0
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
+// SKU quà trên landing → mã Pancake sale thực tế chọn khi thêm quà (đơn #94387, #94544).
+const GIFT_SKU_ALIAS: Record<string, string> = {
+  PHVVN037_HDTP: 'PHVVN037_HDTP01',
+  PHVVN043_CCX: 'PHVVN043_CCX01',
+}
+
 async function getPancakeVariationMap(): Promise<Map<string, string>> {
   const now = Date.now()
   if (variationMapCache && now - variationMapCachedAt < CACHE_TTL_MS) {
@@ -201,24 +207,31 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     }
   })
 
-  // Quà tặng có SKU khớp sản phẩm Pancake → thêm thành dòng hàng tặng (0đ) để kho nhặt + trừ tồn.
+  // Quà tặng có SKU khớp sản phẩm Pancake → thêm thành dòng hàng 0đ để kho nhặt + trừ tồn.
   // Trước đây quà chỉ nằm trong ghi chú (đơn #94028, combo 2 khay lọc dầu: 3 món quà không có
   // trên đơn POS). Quà chưa có SKU vẫn chỉ ghi chú. Giá 0 nên không đổi tổng tiền đơn.
+  // KHÔNG dùng is_bonus_product: Pancake trả 200 nhưng âm thầm bỏ dòng hàng tặng (11–15/10
+  // không đơn nào có quà, vd #94763) → gửi như dòng hàng thường 0đ, đúng cách sale thêm tay.
+  const giftItems = new Set<any>()
   for (const item of order.items || []) {
     let gifts: any[] = []
     try {
       gifts = JSON.parse((item.metadata?.gifts as string) || '[]')
     } catch {}
     for (const g of gifts) {
-      const giftVariationId = g?.sku ? variationMap.get(String(g.sku)) : undefined
+      const giftSku = g?.sku ? (GIFT_SKU_ALIAS[String(g.sku)] ?? String(g.sku)) : undefined
+      const giftVariationId = giftSku
+        ? (variationMap.get(giftSku) ?? variationMap.get(String(g.sku)))
+        : undefined
       if (!giftVariationId) {
         if (g?.name) console.warn(`[Pancake] Gift "${g.name}" sku=${g?.sku ?? 'none'} → không khớp sản phẩm Pancake, chỉ ghi chú`)
         continue
       }
-      items.push({
+      console.info(`[Pancake] Gift "${g.name}" sku=${g.sku} → ${giftSku} variation_id=${giftVariationId}`)
+      const giftItem = {
         variation_id: giftVariationId,
         quantity: Math.max(1, Number(g.quantity) || 1),
-        is_bonus_product: true,
+        is_bonus_product: false,
         is_discount_percent: false,
         is_wholesale: false,
         one_time_product: false,
@@ -227,7 +240,9 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
           name: `🎁 ${g.name}`,
           retail_price: 0,
         },
-      })
+      }
+      giftItems.add(giftItem)
+      items.push(giftItem)
     }
   }
 
@@ -404,11 +419,21 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
   // Dòng quà tặng là phần mới — Pancake từ chối vì lý do khác hết hàng thì gửi lại KHÔNG kèm
   // quà (như trước) để đơn không bao giờ mất chỉ vì phần quà; quà vẫn còn trong ghi chú.
-  const coQua = payload.items.some((it: any) => it.is_bonus_product)
+  const coQua = payload.items.some((it: any) => giftItems.has(it))
   if (!lan.ok && coQua && !(lan.status === 422 && /không đủ|hết hàng|tồn kho|số lượng/i.test(lan.text))) {
     console.warn(`[Pancake] Đơn có dòng quà bị từ chối (${lan.status}) — gửi lại không kèm quà. Lỗi: ${lan.text.slice(0, 200)}`)
-    payload.items = payload.items.filter((it: any) => !it.is_bonus_product)
+    payload.items = payload.items.filter((it: any) => !giftItems.has(it))
     lan = await guiDon(payload)
+  }
+
+  // Có thể chỉ quà hết hàng → thử gửi quà dạng thủ công (giữ tên + mã) trước, để SP chính vẫn trừ tồn.
+  if (!lan.ok && coQua && lan.status === 422 && /không đủ|hết hàng|tồn kho|số lượng/i.test(lan.text)) {
+    console.warn(`[Pancake] Hết hàng khi có quà — thử lại với quà dạng thủ công. Lỗi: ${lan.text.slice(0, 200)}`)
+    const quaThuCong = payload.items.map((it: any) => giftItems.has(it)
+      ? { ...it, variation_id: null, one_time_product: true }
+      : it)
+    const lanQua = await guiDon({ ...payload, items: quaThuCong })
+    if (lanQua.ok || !(lanQua.status === 422 && /không đủ|hết hàng|tồn kho|số lượng/i.test(lanQua.text))) lan = lanQua
   }
 
   // Pancake chặn đơn khi sản phẩm có mã tồn kho mà hết hàng:
