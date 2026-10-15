@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool, getAuthInfo, ensureTables, nextVdCode, pushNotification, STATUS_KEY_TO_VI, STATUS_VI_TO_KEY } from "./_lib"
 import { getDriveFileCreatedTime } from "../../../lib/fb-drive"
+import { getOwnScope } from "../../../lib/freelance-scope"
 
 const VIDEO_TYPE_CODE: Record<string, string> = {
   "Video AI": "VIDEOAI",
@@ -75,7 +76,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // cần lọc theo created_at, không phải post_date.
     if (q.created_from) { params.push(q.created_from); where += ` AND created_at >= $${params.length}::date` }
     if (q.created_to)   { params.push(q.created_to);   where += ` AND created_at < ($${params.length}::date + interval '1 day')` }
-    if (q.mine === "true" && auth.email) { params.push(auth.email); where += ` AND created_by = $${params.length}` }
+    // Freelancer: video mình tạo + video được chia sẻ (chỉ xem). Thay cho mine=true mà guard ép.
+    const scope = getOwnScope(req)
+    if (scope) {
+      params.push(scope.email)
+      where += ` AND (lower(created_by) = $${params.length} OR shared_with ? $${params.length})`
+    } else if (q.mine === "true" && auth.email) { params.push(auth.email); where += ` AND created_by = $${params.length}` }
     if (q.q) {
       params.push(`%${q.q}%`)
       where += ` AND (product ILIKE $${params.length} OR note ILIKE $${params.length})`
@@ -112,7 +118,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         return pool.query(`UPDATE mkt_video SET ad_name = $1, product_code = $2 WHERE id = $3`, [r.ad_name, resolvedCode || r.product_code, r.id])
       }))
     }
-    return res.json({ rows: rows.map(r => toUiRow(r, auth.isSuper)), total: rows.length })
+    const uiRows = rows.map(r => {
+      const ui = toUiRow(r, auth.isSuper)
+      const sharedWith: string[] = Array.isArray(r.shared_with) ? r.shared_with : []
+      // Freelancer không được biết video còn chia sẻ cho ai khác.
+      if (scope) return { ...ui, sharedToMe: String(r.created_by || "").toLowerCase() !== scope.email }
+      return { ...ui, sharedWith }
+    })
+    return res.json({ rows: uiRows, total: rows.length })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }

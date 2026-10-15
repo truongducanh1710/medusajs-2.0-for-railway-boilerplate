@@ -88,6 +88,8 @@ export async function ensureTables(pool: Pool): Promise<void> {
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS drive_uploaded_at TIMESTAMPTZ`)
   // Lịch sử yêu cầu làm lại video: [{ revision_no, requested_by, requested_by_name, reason, at, task_id }]
   await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS revisions JSONB DEFAULT '[]'`)
+  // Email freelancer được chia sẻ xem video (chỉ xem) — xem Migration20261015000000
+  await pool.query(`ALTER TABLE mkt_video ADD COLUMN IF NOT EXISTS shared_with JSONB NOT NULL DEFAULT '[]'`)
   // Reset stale jobs (Railway restart giữa chừng)
   await pool.query(`
     UPDATE mkt_video SET ai_status = 'error'

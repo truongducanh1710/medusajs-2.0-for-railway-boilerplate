@@ -79,6 +79,10 @@ type VideoRow = {
   aiStatus?: string | null
   starred?: boolean
   revisions?: VideoRevision[]
+  // Freelancer: video người khác chia sẻ cho mình — chỉ xem + lấy link.
+  sharedToMe?: boolean
+  // Người dùng nội bộ: danh sách email freelancer đang được chia sẻ video này.
+  sharedWith?: string[]
 }
 
 type VideoRevision = {
@@ -234,7 +238,8 @@ type QuickAdd = { sp: string; nguoiLam: string; loaiVideo: string; link: string;
 
 type EditDraft = { nguoiLam: string; sp: string; loaiVideo: string; link: string; ghiChu: string; postDate: string; adName: string; script: string }
 
-function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows: VideoRow[]; reload: () => void; onDangFB?: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[] }) {
+function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers, canShare }: { rows: VideoRow[]; reload: () => void; onDangFB?: (r: VideoRow) => void; isSuper: boolean; mktCode: string | null; mktUsers: MktUser[]; canShare: boolean }) {
+  const [shareRow, setShareRow] = useState<VideoRow | null>(null)
   const [editRowId, setEditRowId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   // Fixed-position modal rather than a popover anchored to the row: the table
@@ -448,7 +453,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
 
   const toggleSelectAll = () => {
     // Chỉ chọn trong trang hiện tại, không phải toàn bộ 500+ video
-    const ids = paged.filter(r => r.link).map(r => r.id)
+    const ids = paged.filter(r => r.link && !r.sharedToMe).map(r => r.id)
     if (ids.every(id => selectedIds.has(id))) {
       setSelectedIds(new Set())
     } else {
@@ -457,7 +462,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
   }
 
   const batchAnalyze = async () => {
-    const targets = filtered.filter(r => r.link && selectedIds.has(r.id))
+    const targets = filtered.filter(r => r.link && !r.sharedToMe && selectedIds.has(r.id))
     if (!targets.length) return
     if (!confirm(`Phân tích ${targets.length} video bằng AI? Job sẽ chạy nền, xem tiến độ qua chuông thông báo.`)) return
     setBatchProgress({ current: 0, total: targets.length, done: [], failed: [] })
@@ -769,7 +774,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         type="checkbox"
                         title="Chọn tất cả"
                         style={{ cursor: "pointer", accentColor: "#7C3AED" }}
-                        checked={paged.filter(r => r.link).length > 0 && paged.filter(r => r.link).every(r => selectedIds.has(r.id))}
+                        checked={paged.filter(r => r.link && !r.sharedToMe).length > 0 && paged.filter(r => r.link && !r.sharedToMe).every(r => selectedIds.has(r.id))}
                         onChange={toggleSelectAll}
                       />
                     ) : c.label}
@@ -857,13 +862,16 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                 const rowBg = newRowId === row.id ? "#EFF6FF" : isEditing ? "#FAFBFF" : undefined
                 return (
                 <tr key={row.id} className={isEditing ? "" : "hover-bg"} onClick={!isEditing ? () => setDetailRow(row) : undefined} style={{ borderBottom: idx < paged.length - 1 ? "1px solid #E5E7EB" : "none", transition: "background 0.4s", background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg, outline: isEditing ? "2px solid #93C5FD" : selectedIds.has(row.id) ? "2px solid #DDD6FE" : "none", outlineOffset: -1, cursor: isEditing ? "default" : "pointer" }}>
-                  <td onClick={e => { e.stopPropagation(); if (row.link) toggleSelect(row.id) }} className="sticky-left" style={{ position: "sticky", left: 0, zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", textAlign: "center" }}>
-                    {row.link && (
+                  <td onClick={e => { e.stopPropagation(); if (row.link && !row.sharedToMe) toggleSelect(row.id) }} className="sticky-left" style={{ position: "sticky", left: 0, zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", textAlign: "center" }}>
+                    {row.link && !row.sharedToMe && (
                       <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} onClick={e => e.stopPropagation()} style={{ cursor: "pointer", accentColor: "#7C3AED" }} />
                     )}
                   </td>
                   <td className="sticky-left" style={{ position: "sticky", left: colWidths["sel"], zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", padding: "9px 12px", color: "#9CA3AF", fontSize: 12 }}>{idx + 1}</td>
-                  <td className="sticky-left" style={{ position: "sticky", left: colWidths["sel"] + colWidths["stt"], zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", borderRight: "1px solid #E5E7EB", padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>{row.vdCode}</td>
+                  <td className="sticky-left" style={{ position: "sticky", left: colWidths["sel"] + colWidths["stt"], zIndex: 4, background: selectedIds.has(row.id) ? "#F5F3FF" : rowBg || "#FFFFFF", borderRight: "1px solid #E5E7EB", padding: "9px 12px", color: "#1654B8", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>
+                    {row.vdCode}
+                    {row.sharedToMe && <div title="Video được chia sẻ cho bạn — chỉ xem và lấy link" style={{ fontFamily: "inherit", fontSize: 9, fontWeight: 700, color: "#7C3AED", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 10, padding: "0 5px", marginTop: 2, display: "inline-block", whiteSpace: "nowrap" }}>🔗 Được chia sẻ</div>}
+                  </td>
                   {/* Ngày */}
                   {/* Ngày tạo — cố định, không cho sửa */}
                   <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
@@ -952,7 +960,9 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   </td>
                   {/* Bài FB */}
                   <td style={{ padding: "9px 12px" }}>
-                    {(row.fbPostLinks && row.fbPostLinks.length > 0) ? (
+                    {row.sharedToMe ? (
+                      <span style={{ fontSize: 11, color: "#9CA3AF" }}>{row.fbPostLinks?.length ? `${row.fbPostLinks.length} bài` : "—"}</span>
+                    ) : (row.fbPostLinks && row.fbPostLinks.length > 0) ? (
                       <button onClick={() => { setFbLinkModal({ row }); setFbLinkDraft({ page_name: "", post_url: "" }) }} title="Xem / thêm link bài đăng" style={{ display: "flex", alignItems: "center", gap: 4, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: "#1D4ED8", fontWeight: 600 }}>
                         ✓ {row.fbPostLinks.length} bài
                       </button>
@@ -964,7 +974,7 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                   </td>
                   {/* Trạng thái */}
                   <td style={{ padding: "9px 12px" }} onClick={e => e.stopPropagation()}>
-                    {(() => {
+                    {row.sharedToMe ? <StatusPill status={row.trangThai} /> : (() => {
                       const v = STATUS_VARS[row.trangThai] || STATUS_VARS["Cần làm"]
                       return (
                         <select
@@ -1008,6 +1018,16 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         <button onClick={() => saveEdit(row.id)} style={{ background: "#1877F2", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓ Lưu</button>
                         <button onClick={cancelEdit} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>✕</button>
                       </div>
+                    ) : row.sharedToMe ? (
+                      // Video được chia sẻ: chỉ xem — mọi nút ghi sẽ bị backend chặn 403.
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        {row.link && (
+                          <button onClick={() => { navigator.clipboard.writeText(row.link); setToast("Đã copy link video") }} title="Copy link video" style={{ background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>📋 Copy link</button>
+                        )}
+                        {row.aiReview && (
+                          <button onClick={() => analyzeVideo(row)} title="Xem phân tích AI" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#374151", fontWeight: 700 }}>{row.aiScore != null ? `★${row.aiScore}` : "AI"}</button>
+                        )}
+                      </div>
                     ) : (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <button
@@ -1047,6 +1067,11 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
                         </button>
                         {row.revisions && row.revisions.length > 0 && (
                           <button onClick={e => { e.stopPropagation(); setHistoryModal({ row }) }} title="Xem lịch sử sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>📋</button>
+                        )}
+                        {canShare && (
+                          <button onClick={e => { e.stopPropagation(); setShareRow(row) }} title={row.sharedWith?.length ? `Đang chia sẻ cho ${row.sharedWith.join(", ")}` : "Chia sẻ cho freelance (chỉ xem)"} style={{ background: row.sharedWith?.length ? "#F5F3FF" : "none", border: `1px solid ${row.sharedWith?.length ? "#DDD6FE" : "#E5E7EB"}`, borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: row.sharedWith?.length ? "#6D28D9" : "#6B7280", fontWeight: 700 }}>
+                            🔗{row.sharedWith?.length ? <span style={{ marginLeft: 2 }}>{row.sharedWith.length}</span> : null}
+                          </button>
                         )}
                         <button onClick={e => { e.stopPropagation(); startEdit(row) }} title="Chỉnh sửa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>✏️</button>
                         <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: row.id, vdCode: row.vdCode }) }} title="Xóa" style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer", color: "#EF4444" }}>🗑</button>
@@ -1285,14 +1310,83 @@ function BangTab({ rows, reload, onDangFB, isSuper, mktCode, mktUsers }: { rows:
             </div>
             {/* Footer */}
             <div style={{ padding: "12px 20px", borderTop: "1px solid #E5E7EB", display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => { setDetailRow(null); startEdit(detailRow) }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#374151", fontWeight: 600 }}>✏️ Chỉnh sửa</button>
+              {detailRow.sharedToMe && <span style={{ marginRight: "auto", alignSelf: "center", fontSize: 12, color: "#7C3AED", fontWeight: 600 }}>🔗 Video được chia sẻ — chỉ xem và lấy link</span>}
+              {!detailRow.sharedToMe && <button onClick={() => { setDetailRow(null); startEdit(detailRow) }} style={{ background: "#F3F4F6", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#374151", fontWeight: 600 }}>✏️ Chỉnh sửa</button>}
               {onDangFB && <button onClick={() => { onDangFB(detailRow); setDetailRow(null) }} style={{ background: "#1877F2", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "#fff", fontWeight: 700 }}>Đăng FB</button>}
             </div>
           </div>
         </div>
       )}
+      {shareRow && <ShareModal row={shareRow} onClose={() => setShareRow(null)} onSaved={(n) => { setShareRow(null); setToast(n ? `Đã chia sẻ cho ${n} freelancer` : "Đã bỏ chia sẻ"); reload() }} />}
       {/* AI Review Modal */}
       {aiModal && <AiReviewModal row={aiModal.row} result={aiModal.result} aiModel={aiModel} isSuper={isSuper} onClose={() => setAiModal(null)} onReanalyze={isSuper ? (model) => { const r = aiModal.row; setAiModal(null); analyzeVideo(r, model || aiModel) } : undefined} />}
+    </div>
+  )
+}
+
+// ============================================================================
+// Modal: chia sẻ video cho freelancer (chỉ xem + lấy link)
+// ============================================================================
+function ShareModal({ row, onClose, onSaved }: { row: VideoRow; onClose: () => void; onSaved: (count: number) => void }) {
+  const [candidates, setCandidates] = useState<{ email: string; name: string; mkt_code: string | null }[] | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    apiJson(`/admin/marketing-video/${row.id}/share`)
+      .then(d => { setCandidates(d.candidates || []); setPicked(new Set(d.sharedWith || [])) })
+      .catch((e: any) => { setCandidates([]); setError(e.message) })
+  }, [row.id])
+
+  const toggle = (email: string) => setPicked(prev => {
+    const next = new Set(prev)
+    if (next.has(email)) next.delete(email); else next.add(email)
+    return next
+  })
+
+  const save = async () => {
+    setSaving(true); setError(null)
+    try {
+      await apiJson(`/admin/marketing-video/${row.id}/share`, "POST", { emails: [...picked] })
+      onSaved(picked.size)
+    } catch (e: any) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div onClick={() => !saving && onClose()} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 400, maxWidth: "92vw", boxShadow: "0 12px 40px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 4 }}>🔗 Chia sẻ cho freelance — {row.vdCode}</div>
+        <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 14 }}>
+          {row.sp || "—"} · Người chọn chỉ <b>xem và lấy link</b>, không sửa/xoá được, không tính vào báo cáo hiệu quả của họ.
+        </div>
+        {candidates === null ? (
+          <div style={{ fontSize: 12, color: "#9CA3AF" }}>Đang tải…</div>
+        ) : candidates.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#9CA3AF" }}>Chưa có tài khoản nào mang role Freelance.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+            {candidates.map(c => (
+              <label key={c.email} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", border: `1px solid ${picked.has(c.email) ? "#DDD6FE" : "#E5E7EB"}`, background: picked.has(c.email) ? "#F5F3FF" : "#fff", borderRadius: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={picked.has(c.email)} onChange={() => toggle(c.email)} style={{ accentColor: "#7C3AED" }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{c.name}{c.mkt_code ? ` · ${c.mkt_code}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "#9CA3AF" }}>{c.email}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "6px 10px", marginTop: 12 }}>
+          Nếu file Drive đang để chế độ hạn chế, cần share cả file Drive cho người này thì họ mới mở được link.
+        </div>
+        {error && <div style={{ fontSize: 12, color: "#DC2626", marginTop: 10 }}>⚠ {error}</div>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+          <button onClick={onClose} disabled={saving} style={{ background: "#F3F4F6", color: "#6B7280", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Hủy</button>
+          <button onClick={save} disabled={saving || candidates === null} style={{ background: "#7C3AED", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.7 : 1 }}>{saving ? "Đang lưu…" : "Lưu"}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1327,8 +1421,9 @@ function KanbanTab({ rows, reload }: { rows: VideoRow[]; reload: () => void }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 40 }}>
               {colRows.map(row => (
-                <div key={row.id} draggable onDragStart={() => setDragId(row.id)} className="hover-lift"
-                  style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderLeft: `3px solid ${col.c}`, borderRadius: 10, padding: "10px 12px", cursor: "grab", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", transition: "transform 0.15s, box-shadow 0.15s", opacity: dragId === row.id ? 0.5 : 1 }}>
+                <div key={row.id} draggable={!row.sharedToMe} onDragStart={() => { if (!row.sharedToMe) setDragId(row.id) }} className="hover-lift"
+                  title={row.sharedToMe ? "Video được chia sẻ — chỉ xem" : undefined}
+                  style={{ background: row.sharedToMe ? "#FAF8FF" : "#FFFFFF", border: "1px solid #E5E7EB", borderLeft: `3px solid ${col.c}`, borderRadius: 10, padding: "10px 12px", cursor: row.sharedToMe ? "default" : "grab", boxShadow: "0 1px 3px rgba(0,0,0,0.07),0 1px 2px rgba(0,0,0,0.04)", transition: "transform 0.15s, box-shadow 0.15s", opacity: dragId === row.id ? 0.5 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 8 }}>
                     <span style={{ color: "#111827", fontWeight: 600, fontSize: 12, lineHeight: 1.4 }}>{row.sp.replace(/SP\d+ - /, "")}</span>
                     <VideoTypeChip type={row.loaiVideo} />
@@ -1741,7 +1836,9 @@ export function VideoSection({ onDangFB }: { onDangFB?: (row: VideoRow) => void 
   const [tab, setTab] = useState("bang")
   const [rows, setRows] = useState<VideoRow[]>([])
   const [mktUsers, setMktUsers] = useState<MktUser[]>([])
-  const { isSuper, mktCode } = useCurrentPermissions()
+  const { isSuper, mktCode, has } = useCurrentPermissions()
+  // Khớp backend /marketing-video/:id/share: super admin hoặc quản lý (users.manage).
+  const canShare = isSuper || (has("users.manage") && has("page.marketing-video.edit"))
 
   const reload = () => { apiJson(`/admin/marketing-video`).then(d => setRows(d.rows || [])).catch(() => {}) }
   useEffect(() => {
@@ -1769,7 +1866,7 @@ export function VideoSection({ onDangFB }: { onDangFB?: (row: VideoRow) => void 
         ))}
       </div>
       <div style={{ padding: 20 }}>
-        {tab === "bang"      && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
+        {tab === "bang"      && <BangTab rows={rows} reload={reload} onDangFB={onDangFB} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} canShare={canShare} />}
         {tab === "kanban"    && <KanbanTab rows={rows} reload={reload} />}
         {tab === "theonguoi" && <TheoNguoiTab rows={rows} isSuper={isSuper} mktCode={mktCode} mktUsers={mktUsers} />}
         {tab === "baocao"    && <BaoCaoTab />}

@@ -3,6 +3,7 @@ import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from "@medusaj
 import { Modules } from "@medusajs/framework/utils"
 import {
   buildOwnScope,
+  canViewMktVideo,
   FREELANCE_ROLE,
   ownsCampaign,
   ownsMktVideo,
@@ -88,11 +89,22 @@ const FREELANCE_RULES: Rule[] = [
   { methods: ["DELETE"], path: /^\/admin\/pancake-sync\/report\/camp-control\/schedule\/[^/]+$/ },
 
   // ── Marketing Hub: nguyên liệu video của mình + hiệu quả video của mình ─────────
+  // Danh sách: handler lọc về video mình tạo + video được chia sẻ (shared_with).
   { methods: ["GET"], path: /^\/admin\/marketing-video$/, check: (req) => { ;(req.query as any).mine = "true" } },
   { methods: ["POST"], path: /^\/admin\/marketing-video$/ }, // created_by = người gọi
   { methods: ["GET"], path: /^\/admin\/marketing-video\/(products|report|check-link)$/ }, // report: handler lọc
   {
-    methods: ["GET", "PATCH", "DELETE", "POST"],
+    // Xem 1 video (poll trạng thái AI): video mình tạo hoặc được chia sẻ.
+    methods: ["GET"],
+    path: /^\/admin\/marketing-video\/([^/]+)$/,
+    check: async (_req, scope, m) => {
+      if (MKT_VIDEO_RESERVED.has(m[1])) return "Không hỗ trợ"
+      if (!(await canViewMktVideo(scope, m[1]))) return "Video không thuộc về bạn"
+    },
+  },
+  {
+    // Sửa / xoá / phân tích / yêu cầu sửa: CHỈ video mình tạo — video được chia sẻ là chỉ xem.
+    methods: ["PATCH", "DELETE", "POST"],
     path: /^\/admin\/marketing-video\/([^/]+)(\/(analyze|request-revision))?$/,
     check: async (_req, scope, m) => {
       if (MKT_VIDEO_RESERVED.has(m[1])) return "Không hỗ trợ"

@@ -90,3 +90,12 @@ export async function ownsMktVideo(scope: OwnScope, videoId: string): Promise<bo
   )
   return rows.length > 0
 }
+
+/** Video mình tạo hoặc được chia sẻ (mkt_video.shared_with) — chỉ dùng cho quyền XEM. */
+export async function canViewMktVideo(scope: OwnScope, videoId: string): Promise<boolean> {
+  const { rows } = await getPool().query(
+    `SELECT 1 FROM mkt_video WHERE id = $1 AND (lower(created_by) = $2 OR shared_with ? $2)`,
+    [videoId, scope.email]
+  )
+  return rows.length > 0
+}
