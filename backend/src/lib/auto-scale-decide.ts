@@ -24,6 +24,8 @@ export type DecideRule = {
   scale_mkt_max_pct?: number
   /** Không tăng camp tạo quá số ngày này — bộ video đã mòn (0 = bỏ qua). Camp vẫn chạy mức nền + phanh như thường */
   scale_max_age_days?: number
+  /** "Để thông": camp hôm nay đang tốt và ngân sách dưới mức này thì bỏ chặn tổng MKT + nhịp tiêu, chờ ≤ 60' (0 = tắt) */
+  free_scale_below?: number
   /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
   pause_enabled?: boolean
   /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
@@ -252,15 +254,21 @@ export function decide(x: DecideInput): Decision {
   if (maxAge > 0 && x.camp_age_hours != null && x.camp_age_hours > maxAge * 24) {
     lyDo.push(`camp đã ${Math.floor(x.camp_age_hours / 24)} ngày > ${maxAge} ngày — chỉ chạy mức nền, không tăng`)
   }
+  // "Để thông": camp HÔM NAY đang tốt (đủ đơn, CPA ≤ mục tiêu) và ngân sách dưới mức này thì không
+  // chặn vì tổng MKT / nhịp tiêu, chờ ngắn hơn. Replay 01–15/10: 43 lần camp Xuân đang tốt dưới 2tr
+  // mà không được tăng — phần còn lại của ngày vẫn ra 22% nhưng chỉ tiêu thêm ~400k vì chạm trần.
+  const thongDuoi = Number(rule.free_scale_below || 0)
+  const thong = thongDuoi > 0 && x.budget < thongDuoi && cpa !== null
+    && x.orders_today >= rule.min_orders && cpa <= rule.target_cpa
   const mktMax = Number(rule.scale_mkt_max_pct || 0)
-  if (mktMax > 0 && x.portfolio?.pct != null && x.portfolio.pct > mktMax) {
+  if (!thong && mktMax > 0 && x.portfolio?.pct != null && x.portfolio.pct > mktMax) {
     lyDo.push(`tổng ${x.portfolio.mkt} hôm nay ${x.portfolio.pct}% > ${mktMax}% — không đẩy thêm`)
   }
   // Nhịp tiêu: ước cả ngày theo đường chi tiêu chuẩn. spend_ratio = 1 nghĩa là "cứ đà này
   // sẽ tiêu hết ngân sách" → camp sắp chạm trần, tăng mới có tác dụng.
   // Đẩy nhanh bỏ qua điều kiện này: Xuân đẩy TRƯỚC để camp có sẵn tiền tiêu chiều/tối.
   const duKien = projectDaySpend(x.spend_today, x.hour, x.minute)
-  if (fast) {
+  if (fast || thong) {
     // không xét nhịp tiêu
   } else if (duKien < rule.spend_ratio * x.budget) {
     lyDo.push(`nhịp tiêu chưa chạm trần (cả ngày dự kiến ${vnd(duKien)} < ${Math.round(rule.spend_ratio * 100)}% của ${vnd(x.budget)})`)
@@ -279,7 +287,7 @@ export function decide(x: DecideInput): Decision {
     if (s.orders_since < 1) lyDo.push("chưa có đơn mới từ lần tăng trước")
     else if (dSpend / s.orders_since > rule.target_cpa) lyDo.push(`từ lần tăng trước ${vnd(dSpend / s.orders_since)}/đơn > ${vnd(rule.target_cpa)}`)
   }
-  const cooldown = fast ? Number(rule.fast_cooldown_min || 60) : rule.cooldown_min
+  const cooldown = fast ? Number(rule.fast_cooldown_min || 60) : thong ? Math.min(rule.cooldown_min, 60) : rule.cooldown_min
   if (x.minutes_since_last_action !== null && x.minutes_since_last_action < cooldown) {
     lyDo.push(`chờ ${cooldown - x.minutes_since_last_action} phút nữa`)
   }
@@ -296,6 +304,6 @@ export function decide(x: DecideInput): Decision {
     action: "tang", to,
     reason: fast
       ? `ĐẨY NHANH → ${vnd(to)}: hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn (≤ ${vnd(rule.target_cpa * Number(rule.fast_cpa_ratio ?? 0.5))}), đã tiêu ${vnd(x.spend_today)}`
-      : `Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${vnd(x.spend_today)} — cứ đà này cả ngày ~${vnd(duKien)} (ngân sách ${vnd(x.budget)})`,
+      : `${thong ? `ĐỂ THÔNG (< ${vnd(thongDuoi)}): ` : ""}Hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, đã tiêu ${vnd(x.spend_today)} — cứ đà này cả ngày ~${vnd(duKien)} (ngân sách ${vnd(x.budget)})`,
   }
 }
