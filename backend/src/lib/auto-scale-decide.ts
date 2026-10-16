@@ -22,6 +22,8 @@ export type DecideRule = {
   fast_cooldown_min?: number
   /** Không tăng nữa khi % chi phí cả MKT hôm nay > mức này (0 = bỏ qua) */
   scale_mkt_max_pct?: number
+  /** Không tăng camp tạo quá số ngày này — bộ video đã mòn (0 = bỏ qua). Camp vẫn chạy mức nền + phanh như thường */
+  scale_max_age_days?: number
   /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
   pause_enabled?: boolean
   /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
@@ -244,6 +246,12 @@ export function decide(x: DecideInput): Decision {
   const fastMul = Number(rule.fast_multiplier || 0)
   const fast = fastMul > 1 && cpa !== null && x.orders_today >= rule.min_orders
     && cpa <= rule.target_cpa * Number(rule.fast_cpa_ratio ?? 0.5)
+  // 16/10/2026: 8 lần tăng camp > 14 ngày (15/9, 19/9, 11/9) 06–15/10 tiêu thêm 4,8tr, 9 đơn (~59%).
+  // Mô phỏng theo giờ 20/09–15/10: phần chi sau điểm tăng ở camp > 14 ngày 25–30% vs ≤ 14 ngày 17–28%.
+  const maxAge = Number(rule.scale_max_age_days || 0)
+  if (maxAge > 0 && x.camp_age_hours != null && x.camp_age_hours > maxAge * 24) {
+    lyDo.push(`camp đã ${Math.floor(x.camp_age_hours / 24)} ngày > ${maxAge} ngày — chỉ chạy mức nền, không tăng`)
+  }
   const mktMax = Number(rule.scale_mkt_max_pct || 0)
   if (mktMax > 0 && x.portfolio?.pct != null && x.portfolio.pct > mktMax) {
     lyDo.push(`tổng ${x.portfolio.mkt} hôm nay ${x.portfolio.pct}% > ${mktMax}% — không đẩy thêm`)

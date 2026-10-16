@@ -9,6 +9,7 @@ type Rule = {
   nightly_reset: boolean; dry_run: boolean; active: boolean; camp_count?: number
   pause_enabled: boolean; pause_day_spend: number; pause_cost_pct: number; pause_resume: boolean
   pause_max_streak: number; pause_min_age_hours: number; pause_dry_run: boolean
+  scale_max_age_days?: number
 }
 type Camp = {
   campaign_id: string; campaign_name: string; rule_id: number; rule_name: string; dry_run: boolean; mkt_name: string
@@ -37,7 +38,7 @@ const MAC_DINH: Rule = {
   max_budget: 4000000, cooldown_min: 120, revert_factor: 1.5, hour_from: 9, hour_to: 19,
   nightly_reset: true, dry_run: true, active: true,
   pause_enabled: false, pause_day_spend: 300000, pause_cost_pct: 45, pause_resume: true,
-  pause_max_streak: 3, pause_min_age_hours: 0, pause_dry_run: true,
+  pause_max_streak: 3, pause_min_age_hours: 0, pause_dry_run: true, scale_max_age_days: 0,
 }
 
 const vnd = (n: any) => (n === null || n === undefined || n === "" ? "—" : `${Math.round(Number(n)).toLocaleString("vi-VN")}đ`)
@@ -258,6 +259,7 @@ function TuScalePage() {
               {F("revert_factor", "Lùi khi CPA từ lần tăng >", "× CPA mục tiêu (1.5 = 150%)", 0.1)}
               {F("hour_from", "Từ giờ", "Giờ VN")}
               {F("hour_to", "Đến giờ", "Không tăng từ giờ này")}
+              {F("scale_max_age_days", "Không tăng camp cũ hơn (ngày)", "Bộ video đã mòn — chỉ chạy mức nền. 0 = bỏ qua")}
             </div>
             <div style={{ display: "flex", gap: 18, marginTop: 10, fontSize: 13 }}>
               <label><input type="checkbox" checked={editing.nightly_reset} onChange={(e) => setEditing({ ...editing, nightly_reset: e.target.checked })} /> Reset về mức nền lúc 0h30</label>

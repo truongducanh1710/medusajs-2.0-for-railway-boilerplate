@@ -41,6 +41,7 @@ export type Rule = {
   fast_cpa_ratio: number
   fast_cooldown_min: number
   scale_mkt_max_pct: number
+  scale_max_age_days: number
 }
 
 let _ready: Promise<void> | null = null
@@ -117,6 +118,8 @@ export function ensureTables(): Promise<void> {
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS fast_cpa_ratio NUMERIC(4,2) NOT NULL DEFAULT 0.5;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS fast_cooldown_min INT NOT NULL DEFAULT 60;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS scale_mkt_max_pct NUMERIC(5,1) NOT NULL DEFAULT 0;
+      -- Không tăng camp cũ (thêm 16/10/2026): 0 = tắt
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS scale_max_age_days INT NOT NULL DEFAULT 0;
       -- Quản lý tổng theo MKT (thêm 08/10/2026): giữ % chi phí cả MKT trong ngày quanh mục tiêu
       CREATE TABLE IF NOT EXISTS auto_scale_mkt (
         mkt_name TEXT PRIMARY KEY,
@@ -643,6 +646,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       pause_max_streak: Number(camp.rule.pause_max_streak || 3), pause_min_age_hours: Number(camp.rule.pause_min_age_hours || 0),
       fast_multiplier: Number(camp.rule.fast_multiplier || 0), fast_cpa_ratio: Number(camp.rule.fast_cpa_ratio ?? 0.5),
       fast_cooldown_min: Number(camp.rule.fast_cooldown_min || 60), scale_mkt_max_pct: Number(camp.rule.scale_mkt_max_pct || 0),
+      scale_max_age_days: Number(camp.rule.scale_max_age_days || 0),
     }
     const base = Number(camp.base_budget)
 

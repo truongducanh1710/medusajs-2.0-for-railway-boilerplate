@@ -42,6 +42,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     num(b.fast_cpa_ratio, 0.1, 1, 0.5),
     num(b.fast_cooldown_min, 15, 720, 60),
     num(b.scale_mkt_max_pct, 0, 200, 0),
+    num(b.scale_max_age_days, 0, 365, 0),
   ]
   const pool = getPool()
   if (b.id) {
@@ -49,9 +50,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       `UPDATE auto_scale_rule SET name=$1, target_cpa=$2, min_orders=$3, spend_ratio=$4, multiplier=$5, max_budget=$6,
          cooldown_min=$7, revert_factor=$8, hour_from=$9, hour_to=$10, nightly_reset=$11, dry_run=$12, active=$13,
          pause_enabled=$14, pause_day_spend=$15, pause_cost_pct=$16, pause_resume=$17, pause_max_streak=$18, pause_min_age_hours=$19, pause_dry_run=$20,
-         fast_multiplier=$21, fast_cpa_ratio=$22, fast_cooldown_min=$23, scale_mkt_max_pct=$24,
+         fast_multiplier=$21, fast_cpa_ratio=$22, fast_cooldown_min=$23, scale_mkt_max_pct=$24, scale_max_age_days=$25,
          updated_at=now()
-       WHERE id=$25 RETURNING *`,
+       WHERE id=$26 RETURNING *`,
       [...v, b.id]
     )
     if (!rows.length) return res.status(404).json({ error: "Không tìm thấy bộ điều kiện" })
@@ -61,8 +62,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     `INSERT INTO auto_scale_rule (name, target_cpa, min_orders, spend_ratio, multiplier, max_budget, cooldown_min,
        revert_factor, hour_from, hour_to, nightly_reset, dry_run, active,
        pause_enabled, pause_day_spend, pause_cost_pct, pause_resume, pause_max_streak, pause_min_age_hours, pause_dry_run,
-       fast_multiplier, fast_cpa_ratio, fast_cooldown_min, scale_mkt_max_pct, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
+       fast_multiplier, fast_cpa_ratio, fast_cooldown_min, scale_mkt_max_pct, scale_max_age_days, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
     [...v, auth.email]
   )
   return res.json({ rule: rows[0] })
