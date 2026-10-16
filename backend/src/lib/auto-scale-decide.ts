@@ -26,6 +26,12 @@ export type DecideRule = {
   scale_max_age_days?: number
   /** "Để thông": camp hôm nay đang tốt và ngân sách dưới mức này thì bỏ chặn tổng MKT + nhịp tiêu, chờ ≤ 60' (0 = tắt) */
   free_scale_below?: number
+  /** Chế độ MỐC CỐ ĐỊNH (16/10/2026): chỉ tăng ở các giờ ladder_hours, mỗi mốc lên 1 nấc ladder_levels */
+  ladder_mode?: boolean
+  /** vd "9,12,17" */
+  ladder_hours?: string
+  /** vd "300000,1000000,3000000,6000000" */
+  ladder_levels?: string
   /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
   pause_enabled?: boolean
   /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
@@ -163,6 +169,82 @@ export function pauseReason(x: DecideInput): string | null {
   return `Hôm nay chi ${vnd(x.spend_today)}, ${x.orders_today} đơn, doanh số ${vnd(rev)} → ${Number.isFinite(pct) ? `${pct.toFixed(0)}%` : "chưa có doanh số"} > ${maxPct}%`
 }
 
+export const RESUME_FROM_HOUR = 5
+
+/**
+ * Chế độ MỐC CỐ ĐỊNH (quy trình chảo vàng chốt 16/10/2026, phân tích 2.709 camp-ngày 04–10/2026).
+ * Đơn về tốt nhất 6–7h, 14h, 18h, 20–22h; tăng liên tục mỗi 15' (27 lần 08–16/10) chỉ ra 32%, bước ×3 ra 53%.
+ *  - Tăng CHỈ ở mốc ladder_hours (cửa sổ 30' đầu giờ), mỗi mốc lên 1 nấc ladder_levels → tối đa 3 lần/ngày.
+ *    Nấc đầu (nền → nấc 2): hôm nay ≥ 2 đơn, CPA ≤ min(150k, mục tiêu).
+ *    Nấc sau: % chi phí hôm nay ≤ 25% và ≥ 2 đơn MỚI từ lần tăng trước; lên nấc cuối cần ≥ 5 đơn hôm nay.
+ *  - Tắt (ngoài phanh ngày xấu chung): từ 13h camp 0 đơn mà đã chi ≥ 150k (để chạy thì phần sau 52%);
+ *    ở mốc 12h/17h/21h camp đã tăng mà chi thêm ≥ 1/3 phần vừa tăng, 0 đơn mới → tắt tới hết ngày.
+ */
+const LADDER_FIRST_CPA = 150_000
+const LADDER_MAX_PCT = 25
+const LADDER_TOP_ORDERS = 5
+const LADDER_CHECK_HOURS = [12, 17, 21]
+const LADDER_NOON_CUT_HOUR = 13
+const LADDER_NOON_CUT_SPEND = 150_000
+
+const parseNums = (s: string | undefined, def: number[]) => {
+  const v = String(s || "").split(",").map((t) => Number(t.trim())).filter((n) => Number.isFinite(n) && n > 0)
+  return v.length ? v : def
+}
+
+function decideLadder(x: DecideInput): Decision {
+  const { rule } = x
+  const hours = parseNums(rule.ladder_hours, [9, 12, 17])
+  const levels = parseNums(rule.ladder_levels, [300_000, 1_000_000, 3_000_000, 6_000_000]).sort((a, b) => a - b)
+  const inWindow = (hs: number[]) => hs.includes(x.hour) && x.minute < 30
+  const rev = Number(x.revenue_today || 0)
+  const pct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
+  const cpa = x.orders_today > 0 ? x.spend_today / x.orders_today : null
+  const s = x.step
+
+  if (!x.paused_today) {
+    if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= LADDER_NOON_CUT_SPEND) {
+      return { action: "tat", final: false, reason: `Mốc ${LADDER_NOON_CUT_HOUR}h: chi ${vnd(x.spend_today)}, 0 đơn — tắt tới hết ngày, 5h sáng mai bật lại mức nền` }
+    }
+    if (s && s.to === x.budget && inWindow(LADDER_CHECK_HOURS) && s.orders_since === 0) {
+      const dSpend = x.spend_today - s.spend_at_step
+      if (dSpend >= (s.to - s.from) / 3) {
+        return {
+          action: "tat", final: false,
+          reason: `${HET_DA_PREFIX} ${vnd(s.from)} → ${vnd(s.to)}: chi thêm ${vnd(dSpend)}, 0 đơn mới (mốc ${x.hour}h) — tắt tới hết ngày, 5h sáng mai bật lại mức nền`,
+        }
+      }
+    }
+  }
+
+  if (!inWindow(hours)) return { action: "none", reason: `Chờ mốc tăng ${hours.map((h) => `${h}h`).join("/")}` }
+  if (x.minutes_since_last_action !== null && x.minutes_since_last_action < 45) {
+    return { action: "none", reason: "Mốc này đã xử lý" }
+  }
+  let idx = 0
+  for (let i = 0; i < levels.length; i++) if (x.budget >= levels[i] * 0.999) idx = i
+  const to = Math.min(levels[idx + 1] ?? 0, rule.max_budget)
+  if (!to || to <= x.budget) return { action: "none", reason: `Đã ở nấc cao nhất ${vnd(x.budget)}` }
+
+  const lyDo: string[] = []
+  if (idx === 0) {
+    const firstCpa = Math.min(LADDER_FIRST_CPA, rule.target_cpa)
+    if (x.orders_today < 2) lyDo.push(`mới ${x.orders_today}/2 đơn`)
+    else if (cpa! > firstCpa) lyDo.push(`${vnd(cpa!)}/đơn > ${vnd(firstCpa)}`)
+  } else {
+    const moi = s && s.to === x.budget ? s.orders_since : x.orders_today
+    if (pct > LADDER_MAX_PCT) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
+    if (moi < 2) lyDo.push(`mới ${moi}/2 đơn từ lần tăng trước`)
+    if (idx + 1 === levels.length - 1 && x.orders_today < LADDER_TOP_ORDERS) lyDo.push(`lên nấc cuối cần ≥ ${LADDER_TOP_ORDERS} đơn (đang ${x.orders_today})`)
+  }
+  if (!lyDo.length && x.account_block) lyDo.push(x.account_block)
+  if (lyDo.length) return { action: "none", reason: `Mốc ${x.hour}h chưa tăng: ${lyDo.join("; ")}` }
+  return {
+    action: "tang", to,
+    reason: `MỐC ${x.hour}h: ${vnd(x.budget)} → ${vnd(to)} — hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}`,
+  }
+}
+
 export function decide(x: DecideInput): Decision {
   const { rule } = x
   if (!x.budget) return { action: "none", reason: "Camp không có ngân sách cấp campaign (ABO) — không hỗ trợ" }
@@ -174,9 +256,11 @@ export function decide(x: DecideInput): Decision {
     return { action: "reset", to: x.base, reason: "Reset đêm về mức nền" }
   }
 
-  // 2. Ngày mới: bật lại camp hôm qua bị phanh (sau khi đã reset về mức nền)
+  // 2. Ngày mới: bật lại camp hôm qua bị phanh (sau khi đã reset về mức nền).
+  //    16/10/2026: bật từ 5h (giờ chuẩn lên camp của Xuân) thay vì 0h30 — bật đêm thì camp tiêu
+  //    cả đêm trước khung vàng 6–8h. Cửa sổ tới 8h để job trễ vẫn kịp bật.
   if (x.status === "PAUSED" && rule.pause_enabled && rule.pause_resume && x.auto_paused_yesterday && !x.resumed_today
-      && x.hour < 6 && (x.hour > 0 || x.minute >= 30)) {
+      && x.hour >= RESUME_FROM_HOUR && x.hour < RESUME_FROM_HOUR + 3) {
     const max = rule.pause_max_streak ?? 3
     if ((x.pause_streak ?? 0) >= max) return { action: "none", reason: `Xấu ${x.pause_streak} ngày liền — để tắt hẳn, chờ người quyết` }
     return { action: "bat", to: x.base, reason: `Ngày mới — bật lại sau khi hôm qua bị phanh (${x.pause_streak} ngày xấu liền)` }
@@ -219,7 +303,7 @@ export function decide(x: DecideInput): Decision {
   //    (MKT tự chỉnh tay thì không can thiệp). Người bật lại sau khi đã tắt hôm nay thì tôn trọng.
   //    Sáng hôm sau tự bật lại ở mức nền; KHÔNG tính vào chuỗi ngày xấu (xem HET_DA_PREFIX).
   const s = x.step
-  if (s && s.to === x.budget && s.minutes_ago >= 60 && !x.paused_today) {
+  if (!rule.ladder_mode && s && s.to === x.budget && s.minutes_ago >= 60 && !x.paused_today) {
     const dSpend = x.spend_today - s.spend_at_step
     const nguong = rule.target_cpa * rule.revert_factor
     // 0 đơn: tiêu thêm quá ngưỡng là lùi. Đã có đơn: phải tiêu thêm ≥ 2× CPA mục tiêu mới đủ
@@ -234,6 +318,8 @@ export function decide(x: DecideInput): Decision {
       }
     }
   }
+
+  if (rule.ladder_mode) return decideLadder(x)
 
   if (x.hour < rule.hour_from || x.hour >= rule.hour_to) {
     return { action: "none", reason: `Ngoài khung giờ ${rule.hour_from}h–${rule.hour_to}h` }

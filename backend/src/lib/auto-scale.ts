@@ -43,6 +43,9 @@ export type Rule = {
   scale_mkt_max_pct: number
   scale_max_age_days: number
   free_scale_below: number
+  ladder_mode: boolean
+  ladder_hours: string
+  ladder_levels: string
 }
 
 let _ready: Promise<void> | null = null
@@ -123,6 +126,10 @@ export function ensureTables(): Promise<void> {
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS scale_max_age_days INT NOT NULL DEFAULT 0;
       -- "Để thông" camp hôm nay đang tốt dưới mức ngân sách này (thêm 16/10/2026): 0 = tắt
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS free_scale_below BIGINT NOT NULL DEFAULT 0;
+      -- Chế độ mốc cố định (thêm 16/10/2026): chỉ tăng ở ladder_hours, mỗi mốc 1 nấc ladder_levels
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_mode BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_hours TEXT NOT NULL DEFAULT '9,12,17';
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_levels TEXT NOT NULL DEFAULT '300000,1000000,3000000,6000000';
       -- Quản lý tổng theo MKT (thêm 08/10/2026): giữ % chi phí cả MKT trong ngày quanh mục tiêu
       CREATE TABLE IF NOT EXISTS auto_scale_mkt (
         mkt_name TEXT PRIMARY KEY,
@@ -560,7 +567,7 @@ async function applyStatus(opts: {
     const tail = action === "tat"
       ? (opts.final
           ? `⚠️ Xấu ${rule.pause_max_streak} ngày liên tiếp — sẽ KHÔNG tự bật lại, cần người quyết.`
-          : `Sáng mai 0h30 hệ thống tự bật lại ở mức nền. Muốn chạy tiếp ngay thì bật tay (hệ thống không tắt lại trong hôm nay).`)
+          : `Sáng mai 5h hệ thống tự bật lại ở mức nền. Muốn chạy tiếp ngay thì bật tay (hệ thống không tắt lại trong hôm nay).`)
       : `Ngân sách: ${vnd(opts.to ?? budget)}`
     const text =
       `${head}\n${camp.campaign_name}\nLý do: ${reason}${ok ? "" : ` — LỖI: ${err}`}\n${tail}\nBộ điều kiện: ${rule.name}`
@@ -651,6 +658,9 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       fast_cooldown_min: Number(camp.rule.fast_cooldown_min || 60), scale_mkt_max_pct: Number(camp.rule.scale_mkt_max_pct || 0),
       scale_max_age_days: Number(camp.rule.scale_max_age_days || 0),
       free_scale_below: Number(camp.rule.free_scale_below || 0),
+      ladder_mode: camp.rule.ladder_mode === true,
+      ladder_hours: String(camp.rule.ladder_hours || "9,12,17"),
+      ladder_levels: String(camp.rule.ladder_levels || "300000,1000000,3000000,6000000"),
     }
     const base = Number(camp.base_budget)
 

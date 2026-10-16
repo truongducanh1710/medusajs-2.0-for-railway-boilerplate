@@ -11,6 +11,7 @@ type Rule = {
   pause_max_streak: number; pause_min_age_hours: number; pause_dry_run: boolean
   scale_max_age_days?: number
   free_scale_below?: number
+  ladder_mode?: boolean; ladder_hours?: string; ladder_levels?: string
 }
 type Camp = {
   campaign_id: string; campaign_name: string; rule_id: number; rule_name: string; dry_run: boolean; mkt_name: string
@@ -39,7 +40,7 @@ const MAC_DINH: Rule = {
   max_budget: 4000000, cooldown_min: 120, revert_factor: 1.5, hour_from: 9, hour_to: 19,
   nightly_reset: true, dry_run: true, active: true,
   pause_enabled: false, pause_day_spend: 300000, pause_cost_pct: 45, pause_resume: true,
-  pause_max_streak: 3, pause_min_age_hours: 0, pause_dry_run: true, scale_max_age_days: 0, free_scale_below: 0,
+  pause_max_streak: 3, pause_min_age_hours: 0, pause_dry_run: true, scale_max_age_days: 0, free_scale_below: 0, ladder_mode: false, ladder_hours: "9,12,17", ladder_levels: "300000,1000000,3000000,6000000",
 }
 
 const vnd = (n: any) => (n === null || n === undefined || n === "" ? "—" : `${Math.round(Number(n)).toLocaleString("vi-VN")}đ`)
@@ -133,7 +134,7 @@ function TuScalePage() {
         camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
         sau lần tăng mà đơn không về tương xứng → <b>lùi</b> về mức trước (xét cả ngoài khung giờ). Từ <b>0h30</b> mỗi đêm → <b>reset</b> về mức nền.
         Bộ điều kiện bật <b>phanh ngày xấu</b> thì xét 24/7 theo số liệu <b>riêng hôm nay</b>: đã chi ≥ ngưỡng mà % chi phí hôm nay (chi / doanh số) quá mức → <b>tắt camp tới hết ngày</b>,
-        0h30 hôm sau <b>tự bật lại</b> ở mức nền; xấu N ngày liền thì để tắt hẳn chờ người quyết. Ngày tốt tăng ga, ngày xấu phanh.
+        5h sáng hôm sau <b>tự bật lại</b> ở mức nền; xấu N ngày liền thì để tắt hẳn chờ người quyết. Ngày tốt tăng ga, ngày xấu phanh.
         Chỉ hỗ trợ camp CBO. Mọi thay đổi nhắn Telegram cho MKT của camp + super admin.
         <br />Bộ điều kiện ở chế độ <b>CHẠY THỬ</b> chỉ ghi nhật ký "lẽ ra đã tăng", không đổi ngân sách thật.
       </p>
@@ -144,7 +145,7 @@ function TuScalePage() {
         <h2 style={h2}>0. Tổng theo MKT — giữ % chi phí cả MKT trong ngày</h2>
         <p style={{ color: "#4b5563", fontSize: 12, margin: "0 0 8px", lineHeight: 1.6 }}>
           Số hôm nay lấy đúng công thức báo cáo <b>COD theo MKT</b>. Tổng ≤ mục tiêu: camp lẽ ra bị phanh vẫn được <b>chạy thêm</b> nếu chưa quá tệ và CTR hôm nay ≥ CTR 7 ngày của MKT.
-          Từ <b>giờ tỉa</b> (hoặc khi tổng chi đạt mức đặt) mà tổng &gt; mục tiêu: cứ 15 phút <b>tắt 1 camp xấu nhất</b> (% hôm nay của camp &gt; ngưỡng tỉa, vd 40%) — dần chỉ còn camp tốt. Camp bị tỉa 0h30 hôm sau tự bật lại như phanh.
+          Từ <b>giờ tỉa</b> (hoặc khi tổng chi đạt mức đặt) mà tổng &gt; mục tiêu: cứ 15 phút <b>tắt 1 camp xấu nhất</b> (% hôm nay của camp &gt; ngưỡng tỉa, vd 40%) — dần chỉ còn camp tốt. Camp bị tỉa 5h sáng hôm sau tự bật lại như phanh.
           Chỉ tác động camp đã gắn ở mục 2 và thuộc bộ điều kiện bật phanh.
         </p>
         <table style={tbl}>
@@ -263,6 +264,13 @@ function TuScalePage() {
               {F("scale_max_age_days", "Không tăng camp cũ hơn (ngày)", "Bộ video đã mòn — chỉ chạy mức nền. 0 = bỏ qua")}
               {F("free_scale_below", "Để thông camp đang tốt dưới (đ)", "Hôm nay đủ đơn + CPA đạt: bỏ chặn tổng MKT/nhịp tiêu, chờ ≤60'. 0 = tắt")}
             </div>
+            <div style={{ marginTop: 10, fontSize: 13 }}>
+              <label><input type="checkbox" checked={!!editing.ladder_mode} onChange={(e) => setEditing({ ...editing, ladder_mode: e.target.checked })} /> <b>Mốc cố định</b>: chỉ tăng ở các giờ</label>{" "}
+              <input style={{ ...inp, width: 90 }} value={editing.ladder_hours ?? "9,12,17"} onChange={(e) => setEditing({ ...editing, ladder_hours: e.target.value })} />{" "}
+              nấc{" "}
+              <input style={{ ...inp, width: 260 }} value={editing.ladder_levels ?? "300000,1000000,3000000,6000000"} onChange={(e) => setEditing({ ...editing, ladder_levels: e.target.value })} />
+              <span style={{ color: "#6b7280", fontSize: 12 }}> — bật thì bỏ qua đơn tối thiểu/nhân/chờ/để thông ở trên; tắt camp 0 đơn ≥150k từ 13h</span>
+            </div>
             <div style={{ display: "flex", gap: 18, marginTop: 10, fontSize: 13 }}>
               <label><input type="checkbox" checked={editing.nightly_reset} onChange={(e) => setEditing({ ...editing, nightly_reset: e.target.checked })} /> Reset về mức nền lúc 0h30</label>
               <label><input type="checkbox" checked={editing.dry_run} onChange={(e) => setEditing({ ...editing, dry_run: e.target.checked })} /> <b>Chạy thử</b> (chỉ ghi, không đổi thật)</label>
@@ -280,7 +288,7 @@ function TuScalePage() {
                   {F("pause_min_age_hours", "Không phanh camp mới dưới (giờ)", "0 = phanh cả camp mới")}
                 </div>
                 <label style={{ fontSize: 13, display: "block", marginTop: 8 }}>
-                  <input type="checkbox" checked={editing.pause_resume} onChange={(e) => setEditing({ ...editing, pause_resume: e.target.checked })} /> Sáng hôm sau (0h30) tự bật lại ở mức nền
+                  <input type="checkbox" checked={editing.pause_resume} onChange={(e) => setEditing({ ...editing, pause_resume: e.target.checked })} /> Sáng hôm sau (5h) tự bật lại ở mức nền
                 </label>
                 <label style={{ fontSize: 13, display: "block", marginTop: 4 }}>
                   <input type="checkbox" checked={editing.pause_dry_run} onChange={(e) => setEditing({ ...editing, pause_dry_run: e.target.checked })} /> <b>Phanh: chạy thử</b> (chỉ ghi "lẽ ra đã phanh", riêng với phần tăng ngân sách)
