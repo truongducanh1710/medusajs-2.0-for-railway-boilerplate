@@ -1,7 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../lib/db"
 import { ensureTables, nowVN } from "../../../lib/auto-scale"
-import { mktTotalsForDate } from "../../../lib/mkt-today"
+import { mktTotalsForDate, effectiveMktCode } from "../../../lib/mkt-today"
 import { getAuthInfo } from "../pancake-sync/report/camp-control/_lib"
 
 /** GET /admin/auto-scale — bộ điều kiện, camp đã gắn, nhật ký gần nhất. MKT chỉ thấy camp của mình. */
@@ -33,8 +33,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { rows: settings } = await pool.query(`SELECT * FROM auto_scale_mkt ORDER BY mkt_name`)
   const totals = await mktTotalsForDate(nowVN().date).catch(() => ({} as Record<string, any>))
   const mktNames = new Set<string>([...settings.map((s: any) => s.mkt_name), ...camps.map((c: any) => c.mkt_name).filter(Boolean)])
-  const mkts = [...mktNames]
+  const today = nowVN().date
+  const mkts = await Promise.all([...mktNames]
     .filter((m) => auth.isSuper || auth.mktCodes.includes(m))
-    .map((m) => ({ mkt_name: m, setting: settings.find((s: any) => s.mkt_name === m) || null, today: totals[m] || null }))
+    .map(async (m) => {
+      // Bàn giao MKT: số của MKT gốc nằm ở mã nhận bàn giao (vd XUANLT → ANHTD từ 10/10/2026)
+      const eff = await effectiveMktCode(m, today)
+      return { mkt_name: m, setting: settings.find((s: any) => s.mkt_name === m) || null, today: totals[eff] || null, handover_to: eff !== m ? eff : null }
+    }))
   return res.json({ rules, camps, logs, mkts, is_super: auth.isSuper, mkt_codes: auth.mktCodes })
 }

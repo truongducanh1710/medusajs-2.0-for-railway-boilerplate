@@ -65,6 +65,15 @@ function handoverMap(rules: Handover[], date: string, code: string): string {
   return code
 }
 
+/** Mã MKT thực nhận số liệu của `code` trong ngày `date` theo quy tắc bàn giao (mkt_handover). */
+export async function effectiveMktCode(code: string, date: string): Promise<string> {
+  const rules: Handover[] = await getPool()
+    .query(`SELECT from_code, to_code, effective_from::text, effective_to::text FROM mkt_handover WHERE deleted_at IS NULL`)
+    .then((r) => r.rows)
+    .catch(() => [])
+  return handoverMap(rules, date, code)
+}
+
 export type MktTotal = { spend: number; revenue: number; orders: number; pct: number | null }
 
 /** Doanh số + chi phí ads (FB + GG) theo MKT cho 1 ngày (YYYY-MM-DD, giờ VN). */

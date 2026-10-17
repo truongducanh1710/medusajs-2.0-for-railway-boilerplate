@@ -11,7 +11,7 @@
 import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
 import { decide, HET_DA_PREFIX, type Portfolio } from "./auto-scale-decide"
-import { mktTotalsForDate, type MktTotal } from "./mkt-today"
+import { mktTotalsForDate, effectiveMktCode, type MktTotal } from "./mkt-today"
 
 const GRAPH = "https://graph.facebook.com/v25.0"
 
@@ -302,7 +302,8 @@ async function loadPortfolios(hour: number): Promise<Map<string, PortfolioCtx>> 
       trim_camp_pct: Number(raw.trim_camp_pct ?? 40),
     }
     const mkt = setting.mkt_name
-    const total = totals[mkt] || { spend: 0, revenue: 0, orders: 0, pct: null }
+    // Bàn giao MKT (vd XUANLT → ANHTD từ 10/10/2026): tổng của MKT gốc nằm ở mã nhận bàn giao
+    const total = totals[await effectiveMktCode(mkt, today)] || { spend: 0, revenue: 0, orders: 0, pct: null }
     const { rows: base } = await pool.query(
       `SELECT COALESCE(SUM(impressions),0)::bigint i, COALESCE(SUM(clicks),0)::bigint c FROM mkt_ads_cost
         WHERE mkt_name = $1 AND deleted_at IS NULL AND date >= $2::date - 7 AND date < $2::date`,
