@@ -46,6 +46,7 @@ export type Rule = {
   ladder_mode: boolean
   ladder_hours: string
   ladder_levels: string
+  ladder_spend_cap: number
 }
 
 let _ready: Promise<void> | null = null
@@ -130,6 +131,7 @@ export function ensureTables(): Promise<void> {
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_mode BOOLEAN NOT NULL DEFAULT false;
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_hours TEXT NOT NULL DEFAULT '9,12,17';
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_levels TEXT NOT NULL DEFAULT '300000,1000000,3000000,6000000';
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_spend_cap BIGINT NOT NULL DEFAULT 0;
       -- Quản lý tổng theo MKT (thêm 08/10/2026): giữ % chi phí cả MKT trong ngày quanh mục tiêu
       CREATE TABLE IF NOT EXISTS auto_scale_mkt (
         mkt_name TEXT PRIMARY KEY,
@@ -661,6 +663,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       ladder_mode: camp.rule.ladder_mode === true,
       ladder_hours: String(camp.rule.ladder_hours || "9,12,17"),
       ladder_levels: String(camp.rule.ladder_levels || "300000,1000000,3000000,6000000"),
+      ladder_spend_cap: Number(camp.rule.ladder_spend_cap || 0),
     }
     const base = Number(camp.base_budget)
 
@@ -706,7 +709,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
         // So với CHÍNH camp; camp mới chưa đủ 7 ngày dữ liệu thì dùng CTR 7 ngày của MKT
         const ctrBase = st.ctr_base ?? ctx.ctr_base
         const portfolio: Portfolio = {
-          mkt: camp.mkt_name, pct: ctx.total.pct, max_pct: ctx.setting.max_pct, lenient_max_pct: ctx.setting.lenient_max_pct,
+          mkt: camp.mkt_name, pct: ctx.total.pct, spend: ctx.total.spend, max_pct: ctx.setting.max_pct, lenient_max_pct: ctx.setting.lenient_max_pct,
           trim_active: ctx.trim_active, trim_pick: ctx.pick === camp.campaign_id, ctr: st.ctr, ctr_base: ctrBase, cpc_ratio: st.cpc_ratio,
         }
         pauseInputs.portfolio = portfolio

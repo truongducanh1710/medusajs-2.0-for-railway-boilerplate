@@ -32,6 +32,8 @@ export type DecideRule = {
   ladder_hours?: string
   /** vd "300000,1000000,3000000,6000000" */
   ladder_levels?: string
+  /** Trần tổng chi CẢ MKT hôm nay: tăng mà vượt mức này thì không tăng (0 = bỏ qua) */
+  ladder_spend_cap?: number
   /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
   pause_enabled?: boolean
   /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
@@ -91,6 +93,7 @@ export type DecideInput = {
 export type Portfolio = {
   mkt: string
   pct: number | null          // % chi phí cả MKT hôm nay
+  spend?: number | null       // tổng chi cả MKT hôm nay (đ)
   max_pct: number
   lenient_max_pct: number
   trim_active: boolean
@@ -236,6 +239,12 @@ function decideLadder(x: DecideInput): Decision {
     if (pct > LADDER_MAX_PCT) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
     if (moi < 2) lyDo.push(`mới ${moi}/2 đơn từ lần tăng trước`)
     if (idx + 1 === levels.length - 1 && x.orders_today < LADDER_TOP_ORDERS) lyDo.push(`lên nấc cuối cần ≥ ${LADDER_TOP_ORDERS} đơn (đang ${x.orders_today})`)
+  }
+  // 17/10/2026: trần tổng chi theo MKT do người duyệt đặt (XUANLT + ANHTD ≤ 12tr/ngày).
+  const cap = Number(rule.ladder_spend_cap || 0)
+  const mktSpend = x.portfolio?.spend
+  if (cap > 0 && mktSpend != null && mktSpend + (to - x.budget) > cap) {
+    lyDo.push(`tổng chi ${x.portfolio!.mkt} hôm nay ${vnd(mktSpend)} + phần tăng ${vnd(to - x.budget)} > trần ${vnd(cap)}`)
   }
   if (!lyDo.length && x.account_block) lyDo.push(x.account_block)
   if (lyDo.length) return { action: "none", reason: `Mốc ${x.hour}h chưa tăng: ${lyDo.join("; ")}` }

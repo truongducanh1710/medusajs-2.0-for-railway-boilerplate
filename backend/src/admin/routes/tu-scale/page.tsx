@@ -11,7 +11,7 @@ type Rule = {
   pause_max_streak: number; pause_min_age_hours: number; pause_dry_run: boolean
   scale_max_age_days?: number
   free_scale_below?: number
-  ladder_mode?: boolean; ladder_hours?: string; ladder_levels?: string
+  ladder_mode?: boolean; ladder_hours?: string; ladder_levels?: string; ladder_spend_cap?: number
 }
 type Camp = {
   campaign_id: string; campaign_name: string; rule_id: number; rule_name: string; dry_run: boolean; mkt_name: string
@@ -269,6 +269,8 @@ function TuScalePage() {
               <input style={{ ...inp, width: 90 }} value={editing.ladder_hours ?? "9,12,17"} onChange={(e) => setEditing({ ...editing, ladder_hours: e.target.value })} />{" "}
               nấc{" "}
               <input style={{ ...inp, width: 260 }} value={editing.ladder_levels ?? "300000,1000000,3000000,6000000"} onChange={(e) => setEditing({ ...editing, ladder_levels: e.target.value })} />
+              {" "}trần tổng chi MKT/ngày{" "}
+              <input type="number" style={{ ...inp, width: 120 }} value={editing.ladder_spend_cap ?? 0} onChange={(e) => setEditing({ ...editing, ladder_spend_cap: Number(e.target.value) })} />
               <span style={{ color: "#6b7280", fontSize: 12 }}> — bật thì bỏ qua đơn tối thiểu/nhân/chờ/để thông ở trên; tắt camp 0 đơn ≥150k từ 13h</span>
             </div>
             <div style={{ display: "flex", gap: 18, marginTop: 10, fontSize: 13 }}>

@@ -47,6 +47,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     b.ladder_mode === true,
     String(b.ladder_hours || "9,12,17").replace(/[^0-9,]/g, "") || "9,12,17",
     String(b.ladder_levels || "300000,1000000,3000000,6000000").replace(/[^0-9,]/g, "") || "300000,1000000,3000000,6000000",
+    num(b.ladder_spend_cap, 0, 100_000_000, 0),
   ]
   const pool = getPool()
   if (b.id) {
@@ -54,9 +55,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       `UPDATE auto_scale_rule SET name=$1, target_cpa=$2, min_orders=$3, spend_ratio=$4, multiplier=$5, max_budget=$6,
          cooldown_min=$7, revert_factor=$8, hour_from=$9, hour_to=$10, nightly_reset=$11, dry_run=$12, active=$13,
          pause_enabled=$14, pause_day_spend=$15, pause_cost_pct=$16, pause_resume=$17, pause_max_streak=$18, pause_min_age_hours=$19, pause_dry_run=$20,
-         fast_multiplier=$21, fast_cpa_ratio=$22, fast_cooldown_min=$23, scale_mkt_max_pct=$24, scale_max_age_days=$25, free_scale_below=$26, ladder_mode=$27, ladder_hours=$28, ladder_levels=$29,
+         fast_multiplier=$21, fast_cpa_ratio=$22, fast_cooldown_min=$23, scale_mkt_max_pct=$24, scale_max_age_days=$25, free_scale_below=$26, ladder_mode=$27, ladder_hours=$28, ladder_levels=$29, ladder_spend_cap=$30,
          updated_at=now()
-       WHERE id=$30 RETURNING *`,
+       WHERE id=$31 RETURNING *`,
       [...v, b.id]
     )
     if (!rows.length) return res.status(404).json({ error: "Không tìm thấy bộ điều kiện" })
@@ -66,8 +67,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     `INSERT INTO auto_scale_rule (name, target_cpa, min_orders, spend_ratio, multiplier, max_budget, cooldown_min,
        revert_factor, hour_from, hour_to, nightly_reset, dry_run, active,
        pause_enabled, pause_day_spend, pause_cost_pct, pause_resume, pause_max_streak, pause_min_age_hours, pause_dry_run,
-       fast_multiplier, fast_cpa_ratio, fast_cooldown_min, scale_mkt_max_pct, scale_max_age_days, free_scale_below, ladder_mode, ladder_hours, ladder_levels, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) RETURNING *`,
+       fast_multiplier, fast_cpa_ratio, fast_cooldown_min, scale_mkt_max_pct, scale_max_age_days, free_scale_below, ladder_mode, ladder_hours, ladder_levels, ladder_spend_cap, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31) RETURNING *`,
     [...v, auth.email]
   )
   return res.json({ rule: rows[0] })
