@@ -235,7 +235,11 @@ function decideLadder(x: DecideInput): Decision {
     if (x.orders_today < 2) lyDo.push(`mới ${x.orders_today}/2 đơn`)
     else if (cpa! > firstCpa) lyDo.push(`${vnd(cpa!)}/đơn > ${vnd(firstCpa)}`)
   } else {
-    const moi = s && s.to === x.budget ? s.orders_since : x.orders_today
+    // Ngân sách đang ở nấc trên mà KHÔNG do hệ thống tăng hôm nay (người nâng tay) → không tự tăng tiếp.
+    // 17/10: 3 camp bị nâng tay lên 1tr, hệ thống coi 2 đơn cả ngày là "2 đơn mới" và nhảy 3tr
+    // (REVIVE VD9101112 sau đó tiêu thêm 631k, 0 đơn). Phanh / hết đà vẫn áp như thường.
+    if (!s || s.to !== x.budget) return { action: "none", reason: `Ngân sách ${vnd(x.budget)} đặt tay (không phải nấc hệ thống tăng hôm nay) — không tự tăng tiếp` }
+    const moi = s.orders_since
     if (pct > LADDER_MAX_PCT) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
     if (moi < 2) lyDo.push(`mới ${moi}/2 đơn từ lần tăng trước`)
     if (idx + 1 === levels.length - 1 && x.orders_today < LADDER_TOP_ORDERS) lyDo.push(`lên nấc cuối cần ≥ ${LADDER_TOP_ORDERS} đơn (đang ${x.orders_today})`)
