@@ -1,14 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { vnDayKey } from "../../mkt-chat/_presence"
 import { getCurrentUserEmail } from "../_lib"
-import { recomputeOvertimeForDay } from "../overtime/route"
 
 /**
  * Khung giờ được phép chấm công hiện tại cho 1 người (giờ VN).
  *  - Từ checkin_cutoff (mặc định 21:00) tới hết ngày: khoá hẳn, không ngoại lệ.
  *  - Trước checkin_open (mặc định 08:00): chỉ mở nếu hôm nay có lịch tăng ca —
- *    overtime_request của người này cho hôm nay, trạng thái chưa bị từ chối. Đơn OT
- *    tạo tay chỉ quản lý tạo được (route overtime POST), nên đây đúng là "lịch đã xếp".
+ *    overtime_request của người này cho hôm nay đã được quản lý duyệt.
  * Kiểm tra ở server, không tin vào việc giao diện ẩn nút.
  */
 async function checkinWindow(svc: any, email: string, today: string) {
@@ -24,9 +22,9 @@ async function checkinWindow(svc: any, email: string, today: string) {
   }
   if (nowMin < mm(open)) {
     const ot = await svc.listOvertimeRequests({ user_email: email, day_key: today, deleted_at: null })
-    const coLich = ot.some((r: any) => r.status !== "rejected")
+    const coLich = ot.some((r: any) => r.status === "approved")
     if (!coLich) {
-      return { allowed: false, open, cutoff, reason: `Chưa tới ${open}. Chỉ được chấm công sớm hơn khi có lịch tăng ca hôm nay — liên hệ quản lý để xếp lịch.` }
+      return { allowed: false, open, cutoff, reason: `Chưa tới ${open}. Chỉ được chấm công sớm hơn khi đăng ký làm thêm giờ hôm nay đã được quản lý duyệt.` }
     }
     return { allowed: true, open, cutoff, reason: null, early_by_ot: true }
   }
@@ -99,10 +97,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       address: address ? String(address).slice(0, 255) : null,
       day_key: today,
     })
-
-    if (action === "out") {
-      await recomputeOvertimeForDay(svc, email, today).catch(() => {})
-    }
 
     res.json({ log })
   } catch (e: any) {

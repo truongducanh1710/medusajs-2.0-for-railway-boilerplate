@@ -11,13 +11,13 @@ const ChamCongConfig = model.define("cham_cong_config", {
   // không theo quy luật tuần chẵn/lẻ cố định. Không nằm trong work_days vì đó là rule
   // theo THỨ áp dụng mọi tuần, còn đây là NGÀY cụ thể ghi đè cho 1 lần.
   half_day_saturdays: model.json().default([] as any),
-  // OT: số phút vượt shift_end tối thiểu mới tính là làm thêm (chống ghi nhận OT vài phút không đáng kể).
+  // Legacy automatic OT setting, retained for compatibility; no longer used.
   ot_min_threshold_min: model.number().default(15),
   // Accrual phép năm: số ngày cộng mỗi tháng làm đủ + trần tối đa mỗi năm dương lịch.
   phep_nam_per_month: model.number().default(1),
   phep_nam_max_per_year: model.number().default(12),
   // Khung giờ được phép chấm công (giờ VN, HH:mm). Ngoài khung thì server từ chối:
-  //  - Trước checkin_open: chỉ người có lịch tăng ca hôm nay (overtime_request chưa bị từ chối) mới chấm được.
+  //  - Trước checkin_open: chỉ người có lịch tăng ca hôm nay (overtime_request đã được duyệt) mới chấm được.
   //  - Từ checkin_cutoff trở đi: khoá hẳn — mốc "reset" ngày, sáng hôm sau mở lại.
   // Chặn kiểu chấm công nửa đêm / sáng sớm không có lý do làm lệch công và OT.
   checkin_open: model.text().default("08:00"),

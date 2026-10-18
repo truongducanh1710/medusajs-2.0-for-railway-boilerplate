@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
@@ -103,7 +103,7 @@ type ChamCongConfig = {
   work_days: number[]
   late_grace_min: number
   half_day_saturdays: string[]
-  ot_min_threshold_min: number
+  ot_min_threshold_min?: number
   checkin_open?: string
   checkin_cutoff?: string
   phep_nam_per_month: number
@@ -392,7 +392,7 @@ function ChamCongSection() {
       )}
       {khungGio?.early_by_ot && (
         <div className="mb-3 rounded bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:bg-blue-500/10 dark:text-blue-300">
-          Bạn có lịch tăng ca hôm nay nên được chấm công trước {khungGio.open}.
+          Lịch làm thêm giờ hôm nay của bạn đã được duyệt nên được chấm công trước {khungGio.open}.
         </div>
       )}
 
@@ -426,7 +426,7 @@ function ChamCongSection() {
         {submitting ? "Đang xử lý..." : nextAction === "in" ? "Chấm công vào" : "Chấm công ra"}
       </button>
       <p className="mb-6 text-center text-xs text-ui-fg-muted">
-        Giờ chấm công: {khungGio?.open ?? "08:00"} – {khungGio?.cutoff ?? "21:00"} (trước {khungGio?.open ?? "08:00"} cần có lịch tăng ca)
+        Giờ chấm công: {khungGio?.open ?? "08:00"} – {khungGio?.cutoff ?? "21:00"} (trước {khungGio?.open ?? "08:00"} cần có đăng ký làm thêm giờ đã được duyệt)
       </p>
 
       <h2 className="mb-2 text-sm font-semibold text-ui-fg-subtle">Lịch sử hôm nay</h2>
@@ -913,7 +913,7 @@ type OvertimeRow = {
   day_key: string
   duration_min: number
   approved_duration_min: number | null
-  source: "auto" | "manual"
+  source: "auto" | "manual" | "employee"
   note: string | null
   status: "pending" | "approved" | "rejected"
   reviewer_email: string | null
@@ -933,6 +933,13 @@ function OvertimeSection({ canApprove }: { canApprove: boolean }) {
   const [err, setErr] = useState("")
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editMinutes, setEditMinutes] = useState(0)
+  const [requestDay, setRequestDay] = useState(() => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10))
+  const [requestHours, setRequestHours] = useState("1")
+  const [requestMinutes, setRequestMinutes] = useState("0")
+  const [requestNote, setRequestNote] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
+  const [success, setSuccess] = useState("")
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -948,6 +955,46 @@ function OvertimeSection({ canApprove }: { canApprove: boolean }) {
   }, [tab])
 
   useEffect(() => { load() }, [load])
+
+  const submitRequest = async () => {
+    if (submittingRef.current) return
+    setErr("")
+    setSuccess("")
+    const date = new Date(requestDay + "T00:00:00Z")
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestDay) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== requestDay) {
+      setErr("Vui lòng chọn ngày làm thêm giờ hợp lệ.")
+      return
+    }
+    const hours = Number(requestHours)
+    const minutes = Number(requestMinutes)
+    const duration = hours * 60 + minutes
+    if (!/^\d+$/.test(requestHours) || !/^\d+$/.test(requestMinutes) || !Number.isInteger(hours) || !Number.isInteger(minutes) || hours > 24 || minutes > 59 || duration < 1 || duration > 1440) {
+      setErr("Thời gian làm thêm phải từ 1 phút đến 24 giờ; giờ và phút phải là số nguyên.")
+      return
+    }
+    const note = requestNote.trim()
+    if (!note || note.length > 500) {
+      setErr("Vui lòng nhập lý do làm thêm giờ (tối đa 500 ký tự).")
+      return
+    }
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      await apiJson("/admin/cham-cong/overtime", "POST", {
+        day_key: requestDay,
+        duration_min: duration,
+        note,
+      })
+      setRequestNote("")
+      setSuccess("Đã gửi đăng ký làm thêm giờ. Vui lòng chờ quản lý duyệt.")
+      await load()
+    } catch (e: any) {
+      setErr(e.message || "Gửi đăng ký làm thêm giờ thất bại. Vui lòng thử lại.")
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
 
   const decide = async (id: string, decision: "approved" | "rejected", approvedMinutes?: number) => {
     try {
@@ -965,22 +1012,59 @@ function OvertimeSection({ canApprove }: { canApprove: boolean }) {
   return (
     <div>
       <div className="mb-4 flex gap-4 border-b border-ui-border-base text-sm">
-        <button onClick={() => setTab("mine")} className={`pb-2 ${tab === "mine" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
+        <button disabled={submitting} onClick={() => setTab("mine")} className={`pb-2 ${tab === "mine" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
           OT của tôi
         </button>
         {canApprove && (
           <>
-            <button onClick={() => setTab("pending")} className={`pb-2 ${tab === "pending" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
+            <button disabled={submitting} onClick={() => setTab("pending")} className={`pb-2 ${tab === "pending" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
               Chờ duyệt
             </button>
-            <button onClick={() => setTab("approved")} className={`pb-2 ${tab === "approved" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
+            <button disabled={submitting} onClick={() => setTab("approved")} className={`pb-2 ${tab === "approved" ? "border-b-2 border-green-600 font-semibold text-green-700 dark:text-green-400" : "text-ui-fg-muted"}`}>
               Đã xử lý
             </button>
           </>
         )}
       </div>
 
-      {err && <div className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
+      {tab === "mine" && (
+        <form onSubmit={(e) => { e.preventDefault(); void submitRequest() }} className="mb-4 rounded border border-ui-border-base p-3 sm:p-4">
+          <h2 className="mb-1 font-semibold">Đăng ký làm thêm giờ</h2>
+          <p className="mb-3 text-sm text-ui-fg-muted">Chủ động đăng ký thời gian và lý do làm thêm để quản lý duyệt.</p>
+          <fieldset disabled={submitting} className="space-y-3 disabled:opacity-60">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="mb-1 block text-ui-fg-muted">Ngày làm thêm giờ</span>
+                <input type="date" required value={requestDay} onChange={(e) => setRequestDay(e.target.value)} className="w-full min-w-0 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+              </label>
+              <div>
+                <span className="mb-1 block text-sm text-ui-fg-muted">Thời gian đăng ký</span>
+                <div className="flex items-center gap-2">
+                  <label className="flex min-w-0 flex-1 items-center gap-1 text-sm">
+                    <input type="number" required min={0} max={24} step={1} value={requestHours} onChange={(e) => setRequestHours(e.target.value)} aria-label="Số giờ làm thêm" className="w-full min-w-0 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+                    giờ
+                  </label>
+                  <label className="flex min-w-0 flex-1 items-center gap-1 text-sm">
+                    <input type="number" required min={0} max={59} step={1} value={requestMinutes} onChange={(e) => setRequestMinutes(e.target.value)} aria-label="Số phút làm thêm" className="w-full min-w-0 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+                    phút
+                  </label>
+                </div>
+                <p className="mt-1 text-xs text-ui-fg-muted">Tổng thời gian từ 1 phút đến 24 giờ.</p>
+              </div>
+            </div>
+            <label className="block text-sm">
+              <span className="mb-1 block text-ui-fg-muted">Lý do làm thêm giờ</span>
+              <textarea required maxLength={500} rows={3} value={requestNote} onChange={(e) => setRequestNote(e.target.value)} placeholder="Nhập công việc cần làm thêm..." className="w-full rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
+              <span className="mt-1 block text-right text-xs text-ui-fg-muted">{requestNote.length}/500 ký tự</span>
+            </label>
+            <button type="submit" disabled={submitting} className="w-full rounded bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-wait disabled:opacity-50 sm:w-auto">
+              {submitting ? "Đang gửi đăng ký..." : "Gửi đăng ký"}
+            </button>
+          </fieldset>
+        </form>
+      )}
+      {success && <div role="status" className="mb-3 rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-500/10 dark:text-green-400">{success}</div>}
+      {err && <div role="alert" className="mb-3 rounded bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">{err}</div>}
       {loading && <div className="py-6 text-center text-sm text-ui-fg-muted">Đang tải...</div>}
       {!loading && rows.length === 0 && <div className="py-6 text-center text-sm text-ui-fg-muted">Không có bản ghi OT nào</div>}
 
@@ -995,7 +1079,7 @@ function OvertimeSection({ canApprove }: { canApprove: boolean }) {
               </div>
               {tab !== "mine" && <div className="mb-1 text-xs text-ui-fg-muted">{r.user_email}</div>}
               <div className="text-sm text-ui-fg-subtle">
-                Đề xuất: {fmtHhMm(r.duration_min)} {r.source === "auto" ? "(tự động từ checkout)" : "(HR khai báo)"}
+                Đề xuất: {fmtHhMm(r.duration_min)} ({r.source === "employee" ? "Tự đăng ký" : r.source === "manual" ? "HR khai báo" : "Tự động (lịch sử)"})
               </div>
               {r.approved_duration_min != null && (
                 <div className="text-sm text-green-700 dark:text-green-400">Đã duyệt: {fmtHhMm(r.approved_duration_min)}</div>
@@ -1197,7 +1281,6 @@ function QuanLySection() {
   const [cfgGrace, setCfgGrace] = useState(5)
   const [cfgHalfDaySaturdays, setCfgHalfDaySaturdays] = useState<string[]>([])
   const [newHalfDay, setNewHalfDay] = useState("")
-  const [cfgOtThreshold, setCfgOtThreshold] = useState(15)
   const [cfgCheckinOpen, setCfgCheckinOpen] = useState("08:00")
   const [cfgCheckinCutoff, setCfgCheckinCutoff] = useState("21:00")
   const [cfgPhepPerMonth, setCfgPhepPerMonth] = useState(1)
@@ -1216,7 +1299,6 @@ function QuanLySection() {
       setCfgWorkDays(d.config.work_days)
       setCfgGrace(d.config.late_grace_min)
       setCfgHalfDaySaturdays(d.config.half_day_saturdays || [])
-      setCfgOtThreshold(d.config.ot_min_threshold_min ?? 15)
       setCfgCheckinOpen(d.config.checkin_open ?? "08:00")
       setCfgCheckinCutoff(d.config.checkin_cutoff ?? "21:00")
       setCfgPhepPerMonth(d.config.phep_nam_per_month ?? 1)
@@ -1236,7 +1318,7 @@ function QuanLySection() {
       await apiJson("/admin/cham-cong/checkin/config", "PATCH", {
         shift_start: cfgShiftStart, shift_end: cfgShiftEnd, work_days: cfgWorkDays, late_grace_min: cfgGrace,
         half_day_saturdays: cfgHalfDaySaturdays,
-        ot_min_threshold_min: cfgOtThreshold, phep_nam_per_month: cfgPhepPerMonth, phep_nam_max_per_year: cfgPhepMaxYear,
+        phep_nam_per_month: cfgPhepPerMonth, phep_nam_max_per_year: cfgPhepMaxYear,
         checkin_open: cfgCheckinOpen, checkin_cutoff: cfgCheckinCutoff,
       })
       await load()
@@ -1547,7 +1629,7 @@ function QuanLySection() {
               <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Khung giờ được chấm công</span>
               <div className="flex flex-wrap gap-4">
                 <label className="block text-sm">
-                  <span className="mb-1 block text-ui-fg-muted">Mở từ (trước giờ này cần có lịch tăng ca)</span>
+                  <span className="mb-1 block text-ui-fg-muted">Mở từ (trước giờ này cần có đăng ký làm thêm giờ đã được duyệt)</span>
                   <input type="time" value={cfgCheckinOpen} onChange={(e) => setCfgCheckinOpen(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
                 </label>
                 <label className="block text-sm">
@@ -1555,14 +1637,6 @@ function QuanLySection() {
                   <input type="time" value={cfgCheckinCutoff} onChange={(e) => setCfgCheckinCutoff(e.target.value)} className="rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
                 </label>
               </div>
-            </div>
-
-            <div className="mb-4 border-t border-ui-border-base pt-4">
-              <span className="mb-2 block text-sm font-semibold text-ui-fg-subtle">Làm thêm giờ (OT)</span>
-              <label className="block text-sm">
-                <span className="mb-1 block text-ui-fg-muted">Phút vượt giờ ra ca tối thiểu mới tính OT</span>
-                <input type="number" min={0} max={120} value={cfgOtThreshold} onChange={(e) => setCfgOtThreshold(Number(e.target.value))} className="w-24 rounded border border-ui-border-base bg-ui-bg-field px-2 py-1.5 text-ui-fg-base" />
-              </label>
             </div>
 
             <div className="mb-4 border-t border-ui-border-base pt-4">

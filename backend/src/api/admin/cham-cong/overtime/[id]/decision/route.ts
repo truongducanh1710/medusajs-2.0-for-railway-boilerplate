@@ -18,6 +18,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
       return res.status(400).json({ error: "decision phai la 'approved' hoac 'rejected'" })
     }
 
+    if (decision === "approved" && approved_duration_min !== undefined
+      && (!Number.isInteger(approved_duration_min) || approved_duration_min <= 0 || approved_duration_min > 1440)) {
+      return res.status(400).json({ error: "Thời lượng duyệt phải từ 1 đến 1.440 phút" })
+    }
+
     const svc = req.scope.resolve("mktTaskModule") as any
     const [request] = await svc.listOvertimeRequests({ id, deleted_at: null })
     if (!request) return res.status(404).json({ error: "Khong tim thay ban ghi OT" })
@@ -33,8 +38,8 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
     }
     if (decision === "approved") {
       update.approved_duration_min =
-        typeof approved_duration_min === "number" && approved_duration_min > 0
-          ? Math.round(approved_duration_min)
+        approved_duration_min !== undefined
+          ? approved_duration_min
           : request.duration_min
     }
     if (note) update.note = String(note).slice(0, 500)
