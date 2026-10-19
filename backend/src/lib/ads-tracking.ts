@@ -100,6 +100,10 @@ export async function videoTracking(opts: { days: number; mkts: string[] }) {
     pool.query(`SELECT vd_code, maker, video_type, product_code, created_at::date::text c, left(note,120) note FROM mkt_video`),
     pool.query(`SELECT post_id, status FROM ads_seeding_log`).catch(() => ({ rows: [] as any[] })),
   ])
+  // Camp đang gắn Tự scale (bật) mà hôm nay bị phanh vẫn tính là đang chạy — 5h sáng tự bật lại
+  const { rows: ts } = await pool.query(`SELECT campaign_id FROM auto_scale_camp WHERE enabled AND campaign_id = ANY($1)`, [ids])
+  const tsOn = new Set(ts.map((r: any) => r.campaign_id))
+  for (const c of camps) if (tsOn.has(c.campaign_id) && c.last_date >= new Date(Date.parse(today) - 2 * 864e5).toISOString().slice(0, 10)) c.active_today = true
   const hubBy = new Map(hub.map((h: any) => [h.vd_code, h]))
   const seededPosts = new Set(seeded.filter((s: any) => s.status === "done" || s.status === "skipped").map((s: any) => String(s.post_id).split("_")[1]))
   const launchBy = new Map(launches.map((l: any) => [l.campaign_id, l]))
