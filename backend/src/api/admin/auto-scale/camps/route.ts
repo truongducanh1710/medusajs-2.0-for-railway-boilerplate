@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
 import { ensureTables, fbCampaign } from "../../../../lib/auto-scale"
+import { canEditAdsRules, EDIT_DENIED, logRuleChange } from "../../../../lib/ads-rules"
 import { getAuthInfo, checkCampOwner } from "../../pancake-sync/report/camp-control/_lib"
 
 /**
@@ -11,6 +12,7 @@ import { getAuthInfo, checkCampOwner } from "../../pancake-sync/report/camp-cont
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
   if (!auth) return res.status(401).json({ error: "Unauthorized" })
+  if (!canEditAdsRules(auth.email)) return res.status(403).json({ error: EDIT_DENIED })
   await ensureTables()
   const b = (req.body || {}) as any
   const campaignId = String(b.campaign_id || "").trim()
@@ -33,6 +35,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const { rows: acc } = await pool.query(
     `SELECT ad_account_id FROM mkt_ads_cost WHERE campaign_id = $1 ORDER BY date DESC LIMIT 1`, [campaignId]
   )
+  const { rows: before } = await pool.query(`SELECT campaign_id, rule_id, base_budget, enabled FROM auto_scale_camp WHERE campaign_id = $1`, [campaignId])
   const { rows } = await pool.query(
     `INSERT INTO auto_scale_camp (campaign_id, rule_id, campaign_name, ad_account_id, mkt_name, base_budget, enabled, added_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -42,6 +45,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     [campaignId, ruleId, fb.data.name, acc[0]?.ad_account_id ?? (fb.data.account_id ? `act_${fb.data.account_id}` : null),
      owner.camp?.mkt_name ?? null, base, b.enabled !== false, auth.email]
   )
+  await logRuleChange("auto_scale_camp", campaignId, before[0] ?? null,
+    { campaign_id: campaignId, campaign_name: rows[0].campaign_name, rule_id: rows[0].rule_id, base_budget: rows[0].base_budget, enabled: rows[0].enabled },
+    auth.email, b.reason)
   return res.json({ camp: rows[0], current_budget: cur })
 }
 
@@ -49,10 +55,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
   if (!auth) return res.status(401).json({ error: "Unauthorized" })
+  if (!canEditAdsRules(auth.email)) return res.status(403).json({ error: EDIT_DENIED })
   await ensureTables()
   const campaignId = String((req.query as any).campaign_id || "")
   const owner = await checkCampOwner(req, campaignId, auth)
   if (!owner.ok) return res.status(403).json({ error: owner.reason })
+  const { rows: before } = await getPool().query(`SELECT campaign_id, campaign_name, rule_id, base_budget, enabled FROM auto_scale_camp WHERE campaign_id = $1`, [campaignId])
   await getPool().query(`DELETE FROM auto_scale_camp WHERE campaign_id = $1`, [campaignId])
+  await logRuleChange("auto_scale_camp", campaignId, before[0] ?? null, null, auth.email, (req.query as any).reason)
   return res.json({ ok: true })
 }

@@ -66,11 +66,14 @@ function TuScalePage() {
   const [mkts, setMkts] = useState<Mkt[]>([])
   const [editMkt, setEditMkt] = useState<MktSetting | null>(null)
   const [busy, setBusy] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
+  const [tab, setTab] = useState<"dieu-khien" | "luat">(() => (new URLSearchParams(window.location.search).get("tab") === "luat" ? "luat" : "dieu-khien"))
+  const [luat, setLuat] = useState<{ rules: AdsRule[]; history: RuleHistory[] } | null>(null)
 
   const load = useCallback(async () => {
     const d = await apiJson("/admin/auto-scale")
     if (!d) return
-    setRules(d.rules || []); setCamps(d.camps || []); setLogs(d.logs || []); setMkts(d.mkts || [])
+    setRules(d.rules || []); setCamps(d.camps || []); setLogs(d.logs || []); setMkts(d.mkts || []); setCanEdit(!!d.can_edit)
     if (!pickRule && d.rules?.length) setPickRule(d.rules.find((r: Rule) => r.active)?.id ?? d.rules[0].id)
   }, [pickRule])
 
@@ -80,6 +83,12 @@ function TuScalePage() {
   }, [q])
 
   useEffect(() => { load(); search() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const u = new URL(window.location.href)
+    u.searchParams.set("tab", tab)
+    window.history.replaceState(null, "", u.toString())
+    if (tab === "luat" && !luat) apiJson("/admin/auto-scale/luat").then((d) => d && setLuat({ rules: d.rules || [], history: d.history || [] }))
+  }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = async (fn: () => Promise<any>, ok: string) => {
     setBusy(true); setMsg("")
@@ -105,7 +114,7 @@ function TuScalePage() {
 
   const attach = (c: Candidate) => {
     if (!pickRule) { setMsg("❌ Chọn bộ điều kiện trước"); return }
-    const nen = window.prompt(`Mức nền (reset về lúc 0h30) cho camp:\n${c.campaign_name}`, String(c.daily_budget))
+    const nen = window.prompt(`Mức nền (reset về ngay sau 0h) cho camp:\n${c.campaign_name}`, String(c.daily_budget))
     if (nen === null) return
     act(() => apiJson("/admin/auto-scale/camps", "POST", { campaign_id: c.campaign_id, rule_id: pickRule, base_budget: Number(nen) || undefined }),
       "Đã gắn camp").then(search)
@@ -129,10 +138,21 @@ function TuScalePage() {
   return (
     <div style={{ padding: 20, maxWidth: 1400 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tự scale camp theo giờ</h1>
+      <div style={{ display: "flex", gap: 6, margin: "12px 0" }}>
+        {([["dieu-khien", "Điều khiển"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ ...btn, ...(tab === k ? { background: "#111827", color: "#fff", borderColor: "#111827" } : {}) }}>{label}</button>
+        ))}
+      </div>
+      {!canEdit && (
+        <div style={{ padding: "8px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, marginBottom: 12, fontSize: 13 }}>
+          Chỉ xem — luật, bộ điều kiện và camp gắn Tự scale do AI (admin@yourmail.com) quản lý. Mọi lần sửa có lịch sử ở tab "Luật hiện tại".
+        </div>
+      )}
+      {tab === "luat" ? <LuatTab data={luat} /> : <>
       <p style={{ color: "#4b5563", fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
         Chỉ camp <b>được gắn bộ điều kiện</b> mới được hệ thống tự đổi ngân sách. Cứ 15 phút, trong khung giờ của bộ điều kiện:
         camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
-        sau lần tăng mà đơn không về tương xứng → <b>lùi</b> về mức trước (xét cả ngoài khung giờ). Từ <b>0h30</b> mỗi đêm → <b>reset</b> về mức nền.
+        sau lần tăng mà đơn không về tương xứng → <b>tắt tới hết ngày</b>. Ngay sau <b>0h</b> mỗi đêm → <b>reset</b> về mức nền. Bộ điều kiện <b>mốc cố định</b> chỉ tăng trong các khung 1 tiếng (vd 9h–10h, 12h–13h, 16h–17h), mỗi khung 1 nấc — chi tiết ở tab "Luật hiện tại".
         Bộ điều kiện bật <b>phanh ngày xấu</b> thì xét 24/7 theo số liệu <b>riêng hôm nay</b>: đã chi ≥ ngưỡng mà % chi phí hôm nay (chi / doanh số) quá mức → <b>tắt camp tới hết ngày</b>,
         5h sáng hôm sau <b>tự bật lại</b> ở mức nền; xấu N ngày liền thì để tắt hẳn chờ người quyết. Ngày tốt tăng ga, ngày xấu phanh.
         Chỉ hỗ trợ camp CBO. Mọi thay đổi nhắn Telegram cho MKT của camp + super admin.
@@ -165,7 +185,7 @@ function TuScalePage() {
                   <td style={td}>{st ? `${st.trim_hour}h${Number(st.trim_spend) > 0 ? ` hoặc tổng chi ≥ ${vnd(st.trim_spend)}` : ""}` : "—"}</td>
                   <td style={td}>{st ? `chi ≥ ${vnd(st.trim_min_spend)} và > ${Number(st.trim_camp_pct ?? 40)}%` : "—"}</td>
                   <td style={td}>{!st?.enabled ? <span style={{ color: "#6b7280" }}>Chưa bật</span> : st.dry_run ? <span style={{ color: "#d97706", fontWeight: 600 }}>TỈA CHẠY THỬ</span> : <span style={{ color: "#16a34a", fontWeight: 600 }}>ĐANG CHẠY THẬT</span>}</td>
-                  <td style={td}><button style={btn} onClick={() => setEditMkt(st ? { ...st, max_pct: Number(st.max_pct), lenient_max_pct: Number(st.lenient_max_pct), trim_spend: Number(st.trim_spend), trim_min_spend: Number(st.trim_min_spend), trim_camp_pct: Number(st.trim_camp_pct ?? 40) } : { mkt_name: m.mkt_name, ...MKT_MAC_DINH })}>{st ? "Sửa" : "Bật"}</button></td>
+                  <td style={td}>{canEdit && <button style={btn} onClick={() => setEditMkt(st ? { ...st, max_pct: Number(st.max_pct), lenient_max_pct: Number(st.lenient_max_pct), trim_spend: Number(st.trim_spend), trim_min_spend: Number(st.trim_min_spend), trim_camp_pct: Number(st.trim_camp_pct ?? 40) } : { mkt_name: m.mkt_name, ...MKT_MAC_DINH })}>{st ? "Sửa" : "Bật"}</button>}</td>
                 </tr>
               )
             })}
@@ -207,12 +227,12 @@ function TuScalePage() {
       <section style={box}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={h2}>1. Bộ điều kiện</h2>
-          <button style={btnPri} onClick={() => setEditing({ ...MAC_DINH })}>+ Tạo bộ điều kiện</button>
+          {canEdit && <button style={btnPri} onClick={() => setEditing({ ...MAC_DINH })}>+ Tạo bộ điều kiện</button>}
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={tbl}>
             <thead><tr>
-              {["Tên", "CPA mục tiêu", "Đơn tối thiểu", "Nhịp tiêu ≥", "Nhân", "Trần/ngày", "Chờ giữa 2 lần", "Lùi khi CPA >", "Khung giờ", "Reset 0h30", "Phanh ngày xấu", "Chế độ", "Camp", ""].map((h) => <th key={h} style={th}>{h}</th>)}
+              {["Tên", "CPA mục tiêu", "Đơn tối thiểu", "Nhịp tiêu ≥", "Nhân", "Trần/ngày", "Chờ giữa 2 lần", "Lùi khi CPA >", "Khung giờ", "Reset đêm", "Phanh ngày xấu", "Chế độ", "Camp", ""].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>
               {rules.map((r) => (
@@ -234,10 +254,10 @@ function TuScalePage() {
                   </>}</td>
                   <td style={td}>{!r.active ? <span style={{ color: "#6b7280" }}>Tắt</span> : r.dry_run ? <span style={{ color: "#d97706", fontWeight: 600 }}>CHẠY THỬ</span> : <span style={{ color: "#16a34a", fontWeight: 600 }}>ĐANG CHẠY THẬT</span>}</td>
                   <td style={td}>{r.camp_count}</td>
-                  <td style={td}>
+                  <td style={td}>{canEdit && <>
                     <button style={btn} onClick={() => setEditing({ ...r, spend_ratio: Number(r.spend_ratio), multiplier: Number(r.multiplier), revert_factor: Number(r.revert_factor), target_cpa: Number(r.target_cpa), max_budget: Number(r.max_budget), pause_day_spend: Number(r.pause_day_spend), pause_cost_pct: Number(r.pause_cost_pct) })}>Sửa</button>{" "}
                     {!r.camp_count && <button style={btn} onClick={() => window.confirm(`Xoá "${r.name}"?`) && act(() => apiJson(`/admin/auto-scale/rules?id=${r.id}`, "DELETE"), "Đã xoá")}>Xoá</button>}
-                  </td>
+                  </>}</td>
                 </tr>
               ))}
               {!rules.length && <tr><td colSpan={14} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Chưa có bộ điều kiện nào — bấm "+ Tạo bộ điều kiện"</td></tr>}
@@ -274,7 +294,7 @@ function TuScalePage() {
               <span style={{ color: "#6b7280", fontSize: 12 }}> — bật thì bỏ qua đơn tối thiểu/nhân/chờ/để thông ở trên; tắt camp 0 đơn ≥150k từ 13h</span>
             </div>
             <div style={{ display: "flex", gap: 18, marginTop: 10, fontSize: 13 }}>
-              <label><input type="checkbox" checked={editing.nightly_reset} onChange={(e) => setEditing({ ...editing, nightly_reset: e.target.checked })} /> Reset về mức nền lúc 0h30</label>
+              <label><input type="checkbox" checked={editing.nightly_reset} onChange={(e) => setEditing({ ...editing, nightly_reset: e.target.checked })} /> Reset về mức nền ngay sau 0h</label>
               <label><input type="checkbox" checked={editing.dry_run} onChange={(e) => setEditing({ ...editing, dry_run: e.target.checked })} /> <b>Chạy thử</b> (chỉ ghi, không đổi thật)</label>
               <label><input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} /> Đang bật</label>
             </div>
@@ -319,13 +339,13 @@ function TuScalePage() {
                     <td style={{ ...td, maxWidth: 360 }}><div style={{ fontWeight: 600 }}>{c.campaign_name}</div><div style={{ color: "#9ca3af", fontSize: 11 }}>{c.campaign_id}</div></td>
                     <td style={td}>{c.mkt_name}</td>
                     <td style={td}>
-                      <select style={inp} value={c.rule_id} onChange={(e) => setCamp(c, { rule_id: Number(e.target.value) })}>
+                      <select style={inp} disabled={!canEdit} value={c.rule_id} onChange={(e) => setCamp(c, { rule_id: Number(e.target.value) })}>
                         {rules.map((r) => <option key={r.id} value={r.id}>{r.name}{r.dry_run ? " (thử)" : ""}</option>)}
                       </select>
                     </td>
                     <td style={td}>
                       {vnd(c.base_budget)}{" "}
-                      <button style={btnSm} onClick={() => { const v = window.prompt("Mức nền mới (đ)", String(c.base_budget)); if (v) setCamp(c, { base_budget: Number(v) }) }}>sửa</button>
+                      {canEdit && <button style={btnSm} onClick={() => { const v = window.prompt("Mức nền mới (đ)", String(c.base_budget)); if (v) setCamp(c, { base_budget: Number(v) }) }}>sửa</button>}
                     </td>
                     <td style={td}>
                       {m.budget !== undefined ? <>
@@ -339,8 +359,8 @@ function TuScalePage() {
                     </td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
                       <button style={btnSm} disabled={busy} onClick={() => act(() => apiJson("/admin/auto-scale/run", "POST", { campaign_id: c.campaign_id }), "Đã xét xong")}>Xét ngay</button>{" "}
-                      <button style={btnSm} onClick={() => setCamp(c, { enabled: !c.enabled })}>{c.enabled ? "Tạm dừng" : "Bật lại"}</button>{" "}
-                      <button style={btnSm} onClick={() => window.confirm("Gỡ camp khỏi tự scale? Ngân sách hiện tại giữ nguyên.") && act(() => apiJson(`/admin/auto-scale/camps?campaign_id=${c.campaign_id}`, "DELETE"), "Đã gỡ").then(search)}>Gỡ</button>
+                      {canEdit && <><button style={btnSm} onClick={() => setCamp(c, { enabled: !c.enabled })}>{c.enabled ? "Tạm dừng" : "Bật lại"}</button>{" "}
+                      <button style={btnSm} onClick={() => window.confirm("Gỡ camp khỏi tự scale? Ngân sách hiện tại giữ nguyên.") && act(() => apiJson(`/admin/auto-scale/camps?campaign_id=${c.campaign_id}`, "DELETE"), "Đã gỡ").then(search)}>Gỡ</button></>}
                     </td>
                   </tr>
                 )
@@ -352,7 +372,7 @@ function TuScalePage() {
       </section>
 
       {/* ── Gắn camp ── */}
-      <section style={box}>
+      {canEdit && <section style={box}>
         <h2 style={h2}>3. Gắn camp vào bộ điều kiện</h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           <input style={{ ...inp, minWidth: 320 }} placeholder="Tìm theo tên camp (vd XUANLT, ADS344, VD131)…" value={q}
@@ -383,7 +403,7 @@ function TuScalePage() {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
 
       {/* ── Nhật ký ── */}
       <section style={box}>
@@ -407,7 +427,77 @@ function TuScalePage() {
           </table>
         </div>
       </section>
+      </>}
     </div>
+  )
+}
+
+type AdsRule = { key: string; nhom: string; tieu_de: string; noi_dung: string; nguon: string | null; bang_chung: string | null; sort: number; updated_by: string | null; updated_at: string }
+type RuleHistory = { id: number; kind: string; ref: string | null; old_value: any; new_value: any; reason: string | null; changed_by: string | null; created_at: string }
+const KIND: Record<string, string> = { ads_rule: "Luật", auto_scale_rule: "Bộ điều kiện", auto_scale_camp: "Camp gắn Tự scale", auto_scale_mkt: "Tổng theo MKT" }
+
+/** Đổi gì: liệt kê các trường khác nhau giữa cũ và mới (bỏ trường thời gian). */
+function diffText(o: any, n: any) {
+  if (!o && n) return "Thêm mới"
+  if (o && !n) return "Xoá"
+  if (!o || !n) return ""
+  return Object.keys({ ...o, ...n })
+    .filter((k) => !/updated_at|created_at|last_/.test(k) && JSON.stringify(o[k]) !== JSON.stringify(n[k]))
+    .map((k) => `${k}: ${String(o[k] ?? "—").slice(0, 60)} → ${String(n[k] ?? "—").slice(0, 60)}`)
+    .join("; ")
+}
+
+function LuatTab({ data }: { data: { rules: AdsRule[]; history: RuleHistory[] } | null }) {
+  if (!data) return <div style={{ color: "#6b7280" }}>Đang tải…</div>
+  const groups = new Map<string, AdsRule[]>()
+  for (const r of data.rules) groups.set(r.nhom, [...(groups.get(r.nhom) || []), r])
+  return (
+    <>
+      <p style={{ color: "#4b5563", fontSize: 13, lineHeight: 1.6, marginTop: 0 }}>
+        Luật đang áp dụng cho ads chảo vàng / Tự scale / lên camp — AI đọc cùng nội dung này qua <code>GET /admin/auto-scale/luat</code> (bản sao: <code>LUAT_ADS.md</code>).
+        Dòng <b>Nguồn</b> cho biết con số nằm ở đâu (bộ điều kiện trong DB hay viết trong code).
+      </p>
+      {[...groups.entries()].map(([nhom, list]) => (
+        <section key={nhom} style={box}>
+          <h2 style={h2}>{nhom}</h2>
+          {list.map((r) => (
+            <div key={r.key} style={{ padding: "8px 0", borderBottom: "1px solid #f3f4f6" }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{r.tieu_de}</div>
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 13, color: "#111827", marginTop: 2 }}>{r.noi_dung}</div>
+              {(r.nguon || r.bang_chung) && (
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                  {r.nguon && <div>Nguồn: {r.nguon}</div>}
+                  {r.bang_chung && <div>Căn cứ: {r.bang_chung}</div>}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{r.key} · sửa {time(r.updated_at)} bởi {r.updated_by || "—"}</div>
+            </div>
+          ))}
+        </section>
+      ))}
+      {!data.rules.length && <div style={box}>Chưa có luật nào.</div>}
+      <section style={box}>
+        <h2 style={h2}>Lịch sử sửa luật / bộ điều kiện / camp</h2>
+        <div style={{ overflowX: "auto", maxHeight: 480 }}>
+          <table style={tbl}>
+            <thead><tr>{["Lúc", "Loại", "Đối tượng", "Đổi gì", "Vì sao", "Ai"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {data.history.map((h) => (
+                <tr key={h.id}>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>{time(h.created_at)}</td>
+                  <td style={td}>{KIND[h.kind] ?? h.kind}</td>
+                  <td style={{ ...td, maxWidth: 260 }}>{h.new_value?.campaign_name || h.new_value?.name || h.new_value?.tieu_de || h.old_value?.campaign_name || h.old_value?.name || h.ref}</td>
+                  <td style={{ ...td, maxWidth: 420, fontSize: 12 }}>{diffText(h.old_value, h.new_value)}</td>
+                  <td style={{ ...td, maxWidth: 300 }}>{h.reason || "—"}</td>
+                  <td style={td}>{h.changed_by}</td>
+                </tr>
+              ))}
+              {!data.history.length && <tr><td colSpan={6} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Chưa có lần sửa nào</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
   )
 }
 

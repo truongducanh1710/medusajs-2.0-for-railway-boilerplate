@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
 import { ensureTables } from "../../../../lib/auto-scale"
+import { canEditAdsRules, EDIT_DENIED, logRuleChange } from "../../../../lib/ads-rules"
 import { getAuthInfo } from "../../pancake-sync/report/camp-control/_lib"
 
 const num = (v: any, min: number, max: number, def: number) => {
@@ -12,6 +13,7 @@ const num = (v: any, min: number, max: number, def: number) => {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
   if (!auth) return res.status(401).json({ error: "Unauthorized" })
+  if (!canEditAdsRules(auth.email)) return res.status(403).json({ error: EDIT_DENIED })
   await ensureTables()
   const b = (req.body || {}) as any
   const name = String(b.name || "").trim()
@@ -51,6 +53,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   ]
   const pool = getPool()
   if (b.id) {
+    const { rows: before } = await pool.query(`SELECT * FROM auto_scale_rule WHERE id = $1`, [b.id])
     const { rows } = await pool.query(
       `UPDATE auto_scale_rule SET name=$1, target_cpa=$2, min_orders=$3, spend_ratio=$4, multiplier=$5, max_budget=$6,
          cooldown_min=$7, revert_factor=$8, hour_from=$9, hour_to=$10, nightly_reset=$11, dry_run=$12, active=$13,
@@ -61,6 +64,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       [...v, b.id]
     )
     if (!rows.length) return res.status(404).json({ error: "Không tìm thấy bộ điều kiện" })
+    await logRuleChange("auto_scale_rule", b.id, before[0] ?? null, rows[0], auth.email, b.reason)
     return res.json({ rule: rows[0] })
   }
   const { rows } = await pool.query(
@@ -71,6 +75,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31) RETURNING *`,
     [...v, auth.email]
   )
+  await logRuleChange("auto_scale_rule", rows[0].id, null, rows[0], auth.email, b.reason)
   return res.json({ rule: rows[0] })
 }
 
@@ -78,11 +83,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
   if (!auth) return res.status(401).json({ error: "Unauthorized" })
+  if (!canEditAdsRules(auth.email)) return res.status(403).json({ error: EDIT_DENIED })
   await ensureTables()
   const id = Number((req.query as any).id)
   const pool = getPool()
   const { rows } = await pool.query(`SELECT COUNT(*)::int n FROM auto_scale_camp WHERE rule_id = $1`, [id])
   if (rows[0].n > 0) return res.status(400).json({ error: `Còn ${rows[0].n} camp đang gắn — gỡ camp hoặc tắt bộ điều kiện trước` })
+  const { rows: before } = await pool.query(`SELECT * FROM auto_scale_rule WHERE id = $1`, [id])
   await pool.query(`DELETE FROM auto_scale_rule WHERE id = $1`, [id])
+  await logRuleChange("auto_scale_rule", id, before[0] ?? null, null, auth.email, (req.query as any).reason)
   return res.json({ ok: true })
 }

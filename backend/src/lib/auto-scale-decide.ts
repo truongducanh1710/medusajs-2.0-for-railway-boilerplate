@@ -177,16 +177,17 @@ export const RESUME_FROM_HOUR = 5
 /**
  * Chế độ MỐC CỐ ĐỊNH (quy trình chảo vàng chốt 16/10/2026, phân tích 2.709 camp-ngày 04–10/2026).
  * Đơn về tốt nhất 6–7h, 14h, 18h, 20–22h; tăng liên tục mỗi 15' (27 lần 08–16/10) chỉ ra 32%, bước ×3 ra 53%.
- *  - Tăng CHỈ ở mốc ladder_hours (cửa sổ 30' đầu giờ), mỗi mốc lên 1 nấc ladder_levels → tối đa 3 lần/ngày.
+ *  - Tăng CHỈ trong KHUNG ladder_hours — mỗi giờ trong danh sách là 1 khung trọn 1 tiếng (19/10/2026 user: 9h–10h,
+ *    12h–13h, 16h–17h thay vì 30' đầu giờ của 9h/12h/17h), mỗi khung lên tối đa 1 nấc → tối đa 3 lần/ngày.
  *    Nấc đầu (nền → nấc 2): hôm nay ≥ 2 đơn, CPA ≤ min(150k, mục tiêu).
  *    Nấc sau: % chi phí hôm nay ≤ 25% và ≥ 2 đơn MỚI từ lần tăng trước; lên nấc cuối cần ≥ 5 đơn hôm nay.
  *  - Tắt (ngoài phanh ngày xấu chung): từ 13h camp 0 đơn mà đã chi ≥ 150k (để chạy thì phần sau 52%);
- *    ở mốc 12h/17h/21h camp đã tăng mà chi thêm ≥ 1/3 phần vừa tăng, 0 đơn mới → tắt tới hết ngày.
+ *    ở mốc 12h/16h/21h (30' đầu giờ) camp đã tăng ≥ 60' mà chi thêm ≥ 1/3 phần vừa tăng, 0 đơn mới → tắt tới hết ngày.
  */
 const LADDER_FIRST_CPA = 150_000
 const LADDER_MAX_PCT = 25
 const LADDER_TOP_ORDERS = 5
-const LADDER_CHECK_HOURS = [12, 17, 21]
+const LADDER_CHECK_HOURS = [12, 16, 21]
 const LADDER_NOON_CUT_HOUR = 13
 const LADDER_NOON_CUT_SPEND = 150_000
 
@@ -197,9 +198,10 @@ const parseNums = (s: string | undefined, def: number[]) => {
 
 function decideLadder(x: DecideInput): Decision {
   const { rule } = x
-  const hours = parseNums(rule.ladder_hours, [9, 12, 17])
+  const hours = parseNums(rule.ladder_hours, [9, 12, 16])
   const levels = parseNums(rule.ladder_levels, [300_000, 1_000_000, 3_000_000, 6_000_000]).sort((a, b) => a - b)
-  const inWindow = (hs: number[]) => hs.includes(x.hour) && x.minute < 30
+  const inCheck = (hs: number[]) => hs.includes(x.hour) && x.minute < 30
+  const inRaiseWindow = hours.includes(x.hour)
   const rev = Number(x.revenue_today || 0)
   const pct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
   const cpa = x.orders_today > 0 ? x.spend_today / x.orders_today : null
@@ -209,7 +211,7 @@ function decideLadder(x: DecideInput): Decision {
     if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= LADDER_NOON_CUT_SPEND) {
       return { action: "tat", final: false, reason: `Mốc ${LADDER_NOON_CUT_HOUR}h: chi ${vnd(x.spend_today)}, 0 đơn — tắt tới hết ngày, 5h sáng mai bật lại mức nền` }
     }
-    if (s && s.to === x.budget && inWindow(LADDER_CHECK_HOURS) && s.orders_since === 0) {
+    if (s && s.to === x.budget && inCheck(LADDER_CHECK_HOURS) && s.minutes_ago >= 60 && s.orders_since === 0) {
       const dSpend = x.spend_today - s.spend_at_step
       if (dSpend >= (s.to - s.from) / 3) {
         return {
@@ -220,10 +222,9 @@ function decideLadder(x: DecideInput): Decision {
     }
   }
 
-  if (!inWindow(hours)) return { action: "none", reason: `Chờ mốc tăng ${hours.map((h) => `${h}h`).join("/")}` }
-  if (x.minutes_since_last_action !== null && x.minutes_since_last_action < 45) {
-    return { action: "none", reason: "Mốc này đã xử lý" }
-  }
+  if (!inRaiseWindow) return { action: "none", reason: `Chờ khung tăng ${hours.map((h) => `${h}h–${h + 1}h`).join(" / ")}` }
+  // 1 nấc/khung: đã tăng trong chính giờ này thì thôi (step_at nằm trong khung hiện tại)
+  if (s && s.minutes_ago <= x.minute) return { action: "none", reason: `Khung ${x.hour}h–${x.hour + 1}h đã tăng 1 nấc` }
   let idx = 0
   for (let i = 0; i < levels.length; i++) if (x.budget >= levels[i] * 0.999) idx = i
   const to = Math.min(levels[idx + 1] ?? 0, rule.max_budget)
@@ -262,8 +263,9 @@ export function decide(x: DecideInput): Decision {
   const { rule } = x
   if (!x.budget) return { action: "none", reason: "Camp không có ngân sách cấp campaign (ABO) — không hỗ trợ" }
 
-  // 1. Reset đêm: từ 00:30 tới trước 6:00, mỗi camp 1 lần/ngày
-  if (rule.nightly_reset && x.hour < 6 && (x.hour > 0 || x.minute >= 30) && !x.reset_done_today) {
+  // 1. Reset đêm: ngay sau 0h (lượt chạy 0h00–0h15) tới trước 6:00, mỗi camp 1 lần/ngày.
+  //    19/10/2026 user: trước đây từ 0h30 → 30' đầu ngày camp vẫn giữ ngân sách to của hôm trước.
+  if (rule.nightly_reset && x.hour < 6 && !x.reset_done_today) {
     // Chỉ HẠ về mức nền. MKT chủ động hạ tay thấp hơn nền (camp xấu) thì giữ nguyên, không nâng lên.
     if (x.budget <= x.base) return { action: "reset", to: x.budget, reason: x.budget === x.base ? "Đã ở mức nền" : "Đang thấp hơn mức nền — giữ nguyên" }
     return { action: "reset", to: x.base, reason: "Reset đêm về mức nền" }

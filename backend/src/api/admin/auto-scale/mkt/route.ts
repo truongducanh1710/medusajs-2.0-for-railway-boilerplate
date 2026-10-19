@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
 import { ensureTables } from "../../../../lib/auto-scale"
+import { canEditAdsRules, EDIT_DENIED, logRuleChange } from "../../../../lib/ads-rules"
 import { getAuthInfo } from "../../pancake-sync/report/camp-control/_lib"
 
 const num = (v: any, min: number, max: number, def: number) => {
@@ -12,11 +13,13 @@ const num = (v: any, min: number, max: number, def: number) => {
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
   if (!auth) return res.status(401).json({ error: "Unauthorized" })
+  if (!canEditAdsRules(auth.email)) return res.status(403).json({ error: EDIT_DENIED })
   await ensureTables()
   const b = (req.body || {}) as any
   const mkt = String(b.mkt_name || "").trim().toUpperCase()
   if (!mkt) return res.status(400).json({ error: "Thiếu mkt_name" })
   if (!auth.isSuper && !auth.mktCodes.includes(mkt)) return res.status(403).json({ error: `Không có quyền với MKT ${mkt}` })
+  const { rows: before } = await getPool().query(`SELECT * FROM auto_scale_mkt WHERE mkt_name = $1`, [mkt])
   const { rows } = await getPool().query(
     `INSERT INTO auto_scale_mkt (mkt_name, enabled, dry_run, max_pct, lenient_max_pct, trim_hour, trim_spend, trim_min_spend, updated_by, trim_camp_pct, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
@@ -28,5 +31,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
      num(b.trim_hour, 0, 24, 16), num(b.trim_spend, 0, 500_000_000, 0), num(b.trim_min_spend, 0, 50_000_000, 400_000), auth.email,
      num(b.trim_camp_pct, 5, 500, 40)]
   )
+  await logRuleChange("auto_scale_mkt", mkt, before[0] ?? null, rows[0], auth.email, b.reason)
   return res.json({ setting: rows[0] })
 }

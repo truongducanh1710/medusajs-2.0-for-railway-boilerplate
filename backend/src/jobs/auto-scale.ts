@@ -4,7 +4,7 @@ import { runAutoScale } from "../lib/auto-scale"
 
 /**
  * Tự scale camp theo giờ (kiểu XUANLT) — chỉ camp được gắn bộ điều kiện ở /app/tu-scale.
- * 15 phút/lần: trong khung giờ của rule thì xét tăng/lùi; từ 00:30 thì reset về mức nền.
+ * 15 phút/lần: trong khung giờ của rule thì xét tăng/tắt; ngay sau 0h (lượt 0h00–0h15) reset về mức nền.
  */
 export default async function autoScaleJob(container: MedusaContainer) {
   try {

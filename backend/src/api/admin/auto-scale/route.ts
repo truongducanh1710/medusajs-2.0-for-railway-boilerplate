@@ -2,6 +2,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../lib/db"
 import { ensureTables, nowVN } from "../../../lib/auto-scale"
 import { mktTotalsForDate, effectiveMktCode } from "../../../lib/mkt-today"
+import { canEditAdsRules } from "../../../lib/ads-rules"
 import { getAuthInfo } from "../pancake-sync/report/camp-control/_lib"
 
 /** GET /admin/auto-scale — bộ điều kiện, camp đã gắn, nhật ký gần nhất. MKT chỉ thấy camp của mình. */
@@ -41,5 +42,5 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       const eff = await effectiveMktCode(m, today)
       return { mkt_name: m, setting: settings.find((s: any) => s.mkt_name === m) || null, today: totals[eff] || null, handover_to: eff !== m ? eff : null }
     }))
-  return res.json({ rules, camps, logs, mkts, is_super: auth.isSuper, mkt_codes: auth.mktCodes })
+  return res.json({ rules, camps, logs, mkts, is_super: auth.isSuper, mkt_codes: auth.mktCodes, can_edit: canEditAdsRules(auth.email) })
 }
