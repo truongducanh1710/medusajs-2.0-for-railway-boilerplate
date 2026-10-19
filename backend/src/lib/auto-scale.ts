@@ -220,13 +220,21 @@ async function ordersSince(campaignId: string, campaignName: string, since: stri
   return rows[0]?.n ?? 0
 }
 
-async function spendToday(campaignId: string): Promise<number> {
+async function spendToday(campaignId: string, shift = 0): Promise<number> {
   const { rows } = await getPool().query(
     `SELECT COALESCE(SUM(spend),0)::bigint s FROM mkt_ads_cost
       WHERE campaign_id = $1 AND deleted_at IS NULL AND date = $2::date`,
     [campaignId, nowVN().date]
   )
-  return Number(rows[0]?.s ?? 0)
+  const s = Number(rows[0]?.s ?? 0)
+  if (shift <= 0) return s
+  // Tài khoản múi giờ sớm hơn VN (ADS329 +8): ngày FB bắt đầu 23h giờ VN → trừ phần đã tiêu trước 0h VN
+  // (ảnh chụp lúc 0h VN hôm nay) để "hôm nay" khớp với đơn tính theo ngày VN.
+  const { rows: snap } = await getPool().query(
+    `SELECT spend FROM camp_hourly_snapshot WHERE campaign_id = $1 AND date = $2::date AND hour = 0 LIMIT 1`,
+    [campaignId, nowVN().date]
+  ).catch(() => ({ rows: [] as any[] }))
+  return Math.max(0, s - Number(snap[0]?.spend ?? 0))
 }
 
 /** Số liệu hôm nay + 7 ngày trước của CHÍNH camp — để so CTR/CPC với mức thường ngày của nó. */
@@ -591,10 +599,36 @@ async function lastActionAt(campaignId: string, dryRun: boolean): Promise<Date |
   return rows[0]?.created_at ? new Date(rows[0].created_at) : null
 }
 
-async function resetDoneToday(campaignId: string): Promise<boolean> {
+/**
+ * Lệch giờ của tài khoản so với VN (giờ). ADS329 đặt múi +8 → ngày FB của tài khoản bắt đầu 23h giờ VN:
+ * nếu đợi 0h VN mới về nền thì 23h–0h camp tiêu bằng ngân sách to của hôm trước, và phần đó tính vào ngày mới
+ * (20/10: REVIVE VD20222324 tiêu 152k lúc 23h–0h ở ngân sách 3tr). Lấy từ FB, nhớ trong tiến trình.
+ */
+const tzShiftCache = new Map<string, number>()
+async function accountTzShift(accountId: string | null): Promise<number> {
+  if (!accountId) return 0
+  const id = accountId.startsWith("act_") ? accountId : `act_${accountId}`
+  if (tzShiftCache.has(id)) return tzShiftCache.get(id)!
+  try {
+    const r = await fetch(`${GRAPH}/${id}?fields=timezone_offset_hours_utc&access_token=${token()}`)
+    const d: any = await r.json()
+    const off = Number(d?.timezone_offset_hours_utc)
+    if (Number.isFinite(off)) { tzShiftCache.set(id, Math.round(off) - 7); return Math.round(off) - 7 }
+  } catch { /* mặc định giờ VN */ }
+  return 0
+}
+
+/** Đầu ngày của TÀI KHOẢN (theo múi giờ tài khoản), dạng timestamptz. */
+function startOfAccountDay(shift: number): string {
+  const off = 7 + shift
+  const d = new Date(Date.now() + off * 3600_000).toISOString().slice(0, 10)
+  return `${d}T00:00:00${off >= 0 ? "+" : "-"}${String(Math.abs(off)).padStart(2, "0")}:00`
+}
+
+async function resetDoneToday(campaignId: string, shift = 0): Promise<boolean> {
   const { rows } = await getPool().query(
     `SELECT 1 FROM auto_scale_log WHERE campaign_id = $1 AND action = 'reset' AND created_at >= $2::timestamptz LIMIT 1`,
-    [campaignId, startOfTodayVN()]
+    [campaignId, startOfAccountDay(shift)]
   )
   return rows.length > 0
 }
@@ -677,7 +711,8 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       camp.campaign_name = fb.data.name
     }
 
-    const spend = await spendToday(camp.campaign_id)
+    const tzShift = await accountTzShift(camp.ad_account_id)
+    const spend = await spendToday(camp.campaign_id, tzShift)
     const orders = await ordersSince(camp.campaign_id, camp.campaign_name, startOfTodayVN())
     const cpa = orders > 0 ? Math.round(spend / orders) : null
     const metrics: any = { budget: cur, base, spend_today: spend, orders_today: orders, cpa_today: cpa, hour: `${hour}:${String(minute).padStart(2, "0")}` }
@@ -723,7 +758,8 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       spend_today: spend, orders_today: orders, step,
       minutes_since_last_action: last ? Math.floor((Date.now() - last.getTime()) / 60_000) : null,
       reverted_today: await revertedToday(camp.campaign_id, rule.dry_run),
-      reset_done_today: await resetDoneToday(camp.campaign_id),
+      reset_done_today: await resetDoneToday(camp.campaign_id, tzShift),
+      account_hour: (hour + tzShift + 24) % 24,
       account_block: await accountBlocked(camp.ad_account_id, Math.max(0, Math.min(cur * rule.multiplier, rule.max_budget) - cur)),
       ...(await spendSnapshot(camp.campaign_id, hour, minute)),
       ...pauseInputs,

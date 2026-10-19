@@ -62,6 +62,8 @@ export type DecideInput = {
   minutes_since_last_action: number | null   // tăng/lùi gần nhất hôm nay
   reverted_today: boolean
   reset_done_today: boolean
+  /** Giờ hiện tại theo múi giờ TÀI KHOẢN (ADS329 +8 = giờ VN + 1) — dùng cho reset đêm */
+  account_hour?: number
   account_block: string | null
   /** Chi tiêu cộng dồn hôm nay tại snapshot ~2 giờ trước (camp_hourly_snapshot). null = chưa có */
   spend_2h_ago?: number | null
@@ -265,7 +267,9 @@ export function decide(x: DecideInput): Decision {
 
   // 1. Reset đêm: ngay sau 0h (lượt chạy 0h00–0h15) tới trước 6:00, mỗi camp 1 lần/ngày.
   //    19/10/2026 user: trước đây từ 0h30 → 30' đầu ngày camp vẫn giữ ngân sách to của hôm trước.
-  if (rule.nightly_reset && x.hour < 6 && !x.reset_done_today) {
+  //    Tính theo giờ của TÀI KHOẢN: ADS329 (+8) về nền lúc 23h giờ VN = 0h ngày mới của FB.
+  const resetHour = x.account_hour ?? x.hour
+  if (rule.nightly_reset && resetHour < 6 && !x.reset_done_today) {
     // Chỉ HẠ về mức nền. MKT chủ động hạ tay thấp hơn nền (camp xấu) thì giữ nguyên, không nâng lên.
     if (x.budget <= x.base) return { action: "reset", to: x.budget, reason: x.budget === x.base ? "Đã ở mức nền" : "Đang thấp hơn mức nền — giữ nguyên" }
     return { action: "reset", to: x.base, reason: "Reset đêm về mức nền" }
