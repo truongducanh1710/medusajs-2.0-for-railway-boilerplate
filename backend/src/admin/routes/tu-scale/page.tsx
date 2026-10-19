@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Fragment } from "react"
 import { apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 
@@ -67,7 +67,10 @@ function TuScalePage() {
   const [editMkt, setEditMkt] = useState<MktSetting | null>(null)
   const [busy, setBusy] = useState(false)
   const [canEdit, setCanEdit] = useState(false)
-  const [tab, setTab] = useState<"dieu-khien" | "luat">(() => (new URLSearchParams(window.location.search).get("tab") === "luat" ? "luat" : "dieu-khien"))
+  const [tab, setTab] = useState<"dieu-khien" | "video" | "luat">(() => {
+    const t = new URLSearchParams(window.location.search).get("tab")
+    return t === "luat" || t === "video" ? t : "dieu-khien"
+  })
   const [luat, setLuat] = useState<{ rules: AdsRule[]; history: RuleHistory[] } | null>(null)
 
   const load = useCallback(async () => {
@@ -139,7 +142,7 @@ function TuScalePage() {
     <div style={{ padding: 20, maxWidth: 1400 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tự scale camp theo giờ</h1>
       <div style={{ display: "flex", gap: 6, margin: "12px 0" }}>
-        {([["dieu-khien", "Điều khiển"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
+        {([["dieu-khien", "Điều khiển"], ["video", "Theo dõi video"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...btn, ...(tab === k ? { background: "#111827", color: "#fff", borderColor: "#111827" } : {}) }}>{label}</button>
         ))}
       </div>
@@ -148,7 +151,7 @@ function TuScalePage() {
           Chỉ xem — luật, bộ điều kiện và camp gắn Tự scale do AI (admin@yourmail.com) quản lý. Mọi lần sửa có lịch sử ở tab "Luật hiện tại".
         </div>
       )}
-      {tab === "luat" ? <LuatTab data={luat} /> : <>
+      {tab === "luat" ? <LuatTab data={luat} /> : tab === "video" ? <VideoTab /> : <>
       <p style={{ color: "#4b5563", fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
         Chỉ camp <b>được gắn bộ điều kiện</b> mới được hệ thống tự đổi ngân sách. Cứ 15 phút, trong khung giờ của bộ điều kiện:
         camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
@@ -510,6 +513,125 @@ const inp: React.CSSProperties = { border: "1px solid #d1d5db", borderRadius: 6,
 const btn: React.CSSProperties = { cursor: "pointer", padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 6, background: "#f9fafb", fontSize: 13 }
 const btnSm: React.CSSProperties = { ...btn, padding: "2px 8px", fontSize: 12 }
 const btnPri: React.CSSProperties = { ...btn, background: "#2563eb", color: "#fff", border: "1px solid #2563eb" }
+
+const STAGE: Record<string, { label: string; color: string }> = {
+  test: { label: "Đang test", color: "#2563eb" },
+  thang: { label: "Thắng → nhân", color: "#16a34a" },
+  scale: { label: "Đang scale", color: "#15803d" },
+  "theo-doi": { label: "Theo dõi", color: "#d97706" },
+  mon: { label: "Mòn", color: "#b45309" },
+  truot: { label: "Trượt", color: "#dc2626" },
+  dung: { label: "Đã dừng", color: "#6b7280" },
+}
+const k = (n: number) => `${Math.round(Number(n || 0) / 1000).toLocaleString("vi-VN")}k`
+const pctCell = (p: number | null, sp: number) => {
+  const color = p === null ? (sp > 0 ? "#dc2626" : "#6b7280") : p <= 25 ? "#16a34a" : p <= 35 ? "#d97706" : "#dc2626"
+  return <span style={{ color, fontWeight: 600 }}>{p === null ? (sp > 0 ? "0 đơn" : "—") : `${p}%`}</span>
+}
+
+function VideoTab() {
+  const [days, setDays] = useState(30)
+  const [mkt, setMkt] = useState("XUANLT,ANHTD")
+  const [stage, setStage] = useState("")
+  const [data, setData] = useState<any>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  useEffect(() => {
+    setData(null)
+    apiJson(`/admin/auto-scale/videos?days=${days}&mkt=${encodeURIComponent(mkt)}`).then((d) => setData(d || { sets: [] }))
+  }, [days, mkt])
+  const sets = (data?.sets || []).filter((s: any) => !stage || s.stage === stage)
+  return (
+    <>
+      <p style={{ color: "#4b5563", fontSize: 13, lineHeight: 1.6, marginTop: 0 }}>
+        Mỗi dòng là 1 <b>bộ video</b> (các mã VD cùng chạy trong 1 camp): từ Hub (người làm, ngày lên) → camp trên tài khoản × page → chi / đơn / doanh số / % chi phí → <b>giai đoạn</b> theo luật vòng đời
+        (test 3 ngày → thắng/trượt → nhân → scale → mòn). Bấm vào dòng để xem từng camp và từng video. Số đơn theo video chỉ tính đơn có mã VD trong link (utm_content).
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+        <select style={inp} value={mkt} onChange={(e) => setMkt(e.target.value)}>
+          {["XUANLT,ANHTD", "XUANLT", "ANHTD"].map((m) => <option key={m} value={m}>{m.replace(",", " + ")}</option>)}
+        </select>
+        <select style={inp} value={days} onChange={(e) => setDays(Number(e.target.value))}>
+          {[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>Camp có chi trong {d} ngày</option>)}
+        </select>
+        <select style={inp} value={stage} onChange={(e) => setStage(e.target.value)}>
+          <option value="">Mọi giai đoạn</option>
+          {Object.entries(STAGE).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
+        </select>
+        {data && <span style={{ color: "#6b7280" }}>{sets.length} bộ</span>}
+      </div>
+      {!data ? <div style={{ color: "#6b7280" }}>Đang tải…</div> : (
+        <section style={box}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tbl}>
+              <thead><tr>{["Bộ video", "Giai đoạn", "Camp chạy", "Tài khoản × page đang chạy", "3 ngày", "7 ngày", "Từ đầu", "Bắt đầu"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {sets.map((s: any) => (
+                  <Fragment key={s.key}>
+                    <tr style={{ cursor: "pointer", background: open === s.key ? "#f9fafb" : undefined }} onClick={() => setOpen(open === s.key ? null : s.key)}>
+                      <td style={{ ...td, maxWidth: 260 }}>
+                        <b>{s.key.replace(/\+/g, " ")}</b>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{[...new Set(s.videos.map((v: any) => v.maker).filter(Boolean))].join(", ") || "—"}{s.videos[0]?.hub_date ? ` · Hub ${s.videos[0].hub_date}` : ""}</div>
+                      </td>
+                      <td style={{ ...td, maxWidth: 220 }}>
+                        <span style={{ color: STAGE[s.stage]?.color, fontWeight: 700 }}>{STAGE[s.stage]?.label ?? s.stage}</span>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{s.stage_reason}</div>
+                      </td>
+                      <td style={td}>{s.camps_active} / {s.camps_total}</td>
+                      <td style={{ ...td, fontSize: 12 }}>{s.acc_page_active.join(", ") || "—"}</td>
+                      {[s.d3, s.d7, s.all].map((w: any, i: number) => (
+                        <td key={i} style={{ ...td, whiteSpace: "nowrap" }}>{k(w.spend)} · {w.orders}đ · {pctCell(w.pct, w.spend)}</td>
+                      ))}
+                      <td style={td}>{s.first_date}</td>
+                    </tr>
+                    {open === s.key && (
+                      <tr><td colSpan={8} style={{ ...td, background: "#f9fafb" }}>
+                        <div style={{ fontWeight: 600, margin: "4px 0" }}>Camp</div>
+                        <table style={tbl}>
+                          <thead><tr>{["Camp", "Tài khoản", "Page", "Kiểu lên", "Seeding", "Chạy từ", "Chi", "Đơn", "DS", "%", "3 ngày gần nhất"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {s.camps.map((c: any) => (
+                              <tr key={c.campaign_id} style={{ opacity: c.active ? 1 : 0.55 }}>
+                                <td style={{ ...td, maxWidth: 320, fontSize: 12 }}>{c.name}<div style={{ color: "#9ca3af" }}>{c.campaign_id}{c.reason ? ` · ${c.reason}` : ""}</div></td>
+                                <td style={td}>{c.account}</td>
+                                <td style={td}>{c.page}</td>
+                                <td style={td}>{c.mode || "—"}</td>
+                                <td style={td}>{c.seeding}</td>
+                                <td style={td}>{c.first_date}</td>
+                                <td style={td}>{k(c.spend)}</td>
+                                <td style={td}>{c.orders}</td>
+                                <td style={td}>{k(c.ds)}</td>
+                                <td style={td}>{pctCell(c.pct, c.spend)}</td>
+                                <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap" }}>{c.last3.map((d: any) => `${d.date.slice(5)}: ${k(d.spend)}/${d.orders}đ`).join(" · ") || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div style={{ fontWeight: 600, margin: "10px 0 4px" }}>Video</div>
+                        <table style={tbl}>
+                          <thead><tr>{["Mã", "Người làm", "Ngày lên Hub", "Loại", "Chi", "Đơn (có mã VD)", "%", "Ghi chú Hub"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {s.videos.map((v: any) => (
+                              <tr key={v.vd}>
+                                <td style={td}><b>{v.vd}</b></td><td style={td}>{v.maker || "—"}</td><td style={td}>{v.hub_date || "—"}</td><td style={td}>{v.type || "—"}</td>
+                                <td style={td}>{k(v.spend)}</td><td style={td}>{v.orders}</td><td style={td}>{pctCell(v.pct, v.spend)}</td>
+                                <td style={{ ...td, fontSize: 12, maxWidth: 320 }}>{v.note || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td></tr>
+                    )}
+                  </Fragment>
+                ))}
+                {!sets.length && <tr><td colSpan={8} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Không có bộ video nào</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
+  )
+}
 
 export const config = defineRouteConfig({
   label: "Tự scale camp", rank: 4,
