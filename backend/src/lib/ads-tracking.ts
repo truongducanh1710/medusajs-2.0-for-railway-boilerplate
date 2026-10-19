@@ -79,7 +79,9 @@ export async function videoTracking(opts: { days: number; mkts: string[] }) {
   // camp có chi tiêu trong cửa sổ, kèm toàn bộ lịch sử (để biết ngày đầu)
   const { rows: camps } = await pool.query(
     `SELECT campaign_id, max(campaign_name) campaign_name, max(mkt_name) mkt_name, max(ad_account_id) account_id, min(date)::text first_date,
-            max(date)::text last_date, bool_or(date = $3::date AND effective_status = 'ACTIVE') active_today
+            max(date)::text last_date,
+            -- đang chạy = trạng thái ở ngày có dữ liệu gần nhất (qua 0h ngày mới chưa có dòng) và không quá 1 ngày
+            ((array_agg(effective_status ORDER BY date DESC))[1] = 'ACTIVE' AND max(date) >= $3::date - 1) active_today
        FROM mkt_ads_cost WHERE deleted_at IS NULL AND spend > 0 AND mkt_name = ANY($1)
       GROUP BY campaign_id HAVING max(date) >= $2::date`,
     [opts.mkts, from, today]
