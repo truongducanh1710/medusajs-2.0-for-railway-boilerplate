@@ -215,7 +215,10 @@ const UserPermissionsWidget = ({ data }: { data: any }) => {
     setMsg(null)
     let finalPerms = [...perms]
     const added: string[] = []
-    if (mktCode.trim()) {
+    // Only auto-grant when the MKT code is newly assigned — otherwise admins
+    // could never untick these perms (e.g. offboarded staff keeping their code).
+    const savedCode = ((data?.metadata?.mkt_name as string) || (data?.metadata?.mkt_code as string) || "").trim().toUpperCase()
+    if (mktCode.trim() && mktCode.trim().toUpperCase() !== savedCode) {
       for (const p of DEFAULT_MKT_PERMS) {
         if (!finalPerms.includes(p)) { finalPerms.push(p); added.push(p) }
       }
