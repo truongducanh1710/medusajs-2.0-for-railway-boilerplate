@@ -80,18 +80,24 @@ export async function ensurePixelAudiences() {
   await ensureExclusionTable()
   const out: any[] = []
   for (const t of EXCLUSION_TARGETS) {
-    // Đọc theo trang nhỏ: tài khoản nhiều tệp (ADS329 ~60) hỏi 1 lần bị FB từ chối "reduce the amount of data"
+    // Danh sách gọn (không kèm rule — tài khoản nhiều tệp như ADS329 hỏi kèm rule bị FB từ chối
+    // "reduce the amount of data"), rồi chỉ đọc rule của tệp WEBSITE giữ 180 ngày.
     const all: any[] = []
-    let path: string | null = `/${t.account}/customaudiences?fields=id,name,subtype,retention_days,rule&limit=25`
+    let path: string | null = `/${t.account}/customaudiences?fields=id,name,subtype,retention_days&limit=50`
     let err: string | null = null
     while (path) {
       const page = await callFbApi("GET", path)
       if (!page.ok) { err = page.data?.error?.message; break }
       all.push(...(page.data.data || []))
       const after = page.data.paging?.cursors?.after
-      path = page.data.paging?.next && after ? `/${t.account}/customaudiences?fields=id,name,subtype,retention_days,rule&limit=25&after=${after}` : null
+      path = page.data.paging?.next && after ? `/${t.account}/customaudiences?fields=id,name,subtype,retention_days&limit=50&after=${after}` : null
     }
     if (err) { out.push({ account: t.label, error: err }); continue }
+    for (const a of all) {
+      if (a.subtype !== "WEBSITE" || Number(a.retention_days) !== 180) continue
+      const d = await callFbApi("GET", `/${a.id}?fields=rule`)
+      if (d.ok) a.rule = d.data.rule
+    }
     for (const px of t.pixels) {
       const found = all.find((a: any) => isCr180(a, px))
       if (found) {
