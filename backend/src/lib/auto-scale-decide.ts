@@ -192,6 +192,9 @@ const LADDER_TOP_ORDERS = 5
 const LADDER_CHECK_HOURS = [12, 16, 21]
 const LADDER_NOON_CUT_HOUR = 13
 const LADDER_NOON_CUT_SPEND = 150_000
+const LADDER_LATE_STOP_HOUR = 16
+const LADDER_LATE_STOP_SPEND = 10_000_000
+const LADDER_LATE_STOP_PCT = 35
 
 const parseNums = (s: string | undefined, def: number[]) => {
   const v = String(s || "").split(",").map((t) => Number(t.trim())).filter((n) => Number.isFinite(n) && n > 0)
@@ -246,6 +249,11 @@ function decideLadder(x: DecideInput): Decision {
     if (pct > LADDER_MAX_PCT) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
     if (moi < 2) lyDo.push(`mới ${moi}/2 đơn từ lần tăng trước`)
     if (idx + 1 === levels.length - 1 && x.orders_today < LADDER_TOP_ORDERS) lyDo.push(`lên nấc cuối cần ≥ ${LADDER_TOP_ORDERS} đơn (đang ${x.orders_today})`)
+  }
+  // 20/10/2026 (user duyệt): từ 16h, tổng MKT đã chi ≥ 10tr mà % chi phí hôm nay > 35% → không tăng thêm.
+  if (x.hour >= LADDER_LATE_STOP_HOUR && x.portfolio?.spend != null && x.portfolio.spend >= LADDER_LATE_STOP_SPEND
+      && x.portfolio.pct != null && x.portfolio.pct > LADDER_LATE_STOP_PCT) {
+    lyDo.push(`từ ${LADDER_LATE_STOP_HOUR}h tổng ${x.portfolio.mkt} đã chi ${vnd(x.portfolio.spend)}, ${x.portfolio.pct}% > ${LADDER_LATE_STOP_PCT}%`)
   }
   // 17/10/2026: trần tổng chi theo MKT do người duyệt đặt (XUANLT + ANHTD ≤ 12tr/ngày).
   const cap = Number(rule.ladder_spend_cap || 0)
