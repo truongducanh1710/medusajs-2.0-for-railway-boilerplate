@@ -70,18 +70,30 @@ async function upsertRow(account: string, kind: string, pixel: string, audienceI
 /** Tệp WEBSITE đã có trên tài khoản: cùng pixel + CompleteRegistration + giữ 180 ngày. */
 function isCr180(a: any, pixel: string) {
   const rule = typeof a.rule === "string" ? a.rule : JSON.stringify(a.rule || "")
-  return a.subtype === "WEBSITE" && Number(a.retention_days) === 180 && rule.includes(pixel) && /CompleteRegistration/i.test(rule)
-    && !/exclusions/.test(rule)
+  // chỉ đúng 1 pixel (tệp gộp nhiều pixel loại trừ rộng hơn sản phẩm)
+  const pixels = new Set((rule.match(/"id"\s*:\s*"?(\d{12,})/g) || []).map((m) => m.replace(/\D/g, "")))
+  return a.subtype === "WEBSITE" && Number(a.retention_days) === 180 && pixels.size === 1 && pixels.has(pixel)
+    && /CompleteRegistration/i.test(rule) && !/exclusions/.test(rule)
 }
 
 export async function ensurePixelAudiences() {
   await ensureExclusionTable()
   const out: any[] = []
   for (const t of EXCLUSION_TARGETS) {
-    const list = await callFbApi("GET", `/${t.account}/customaudiences?fields=id,name,subtype,retention_days,rule&limit=200`)
-    if (!list.ok) { out.push({ account: t.label, error: list.data?.error?.message }); continue }
+    // Đọc theo trang nhỏ: tài khoản nhiều tệp (ADS329 ~60) hỏi 1 lần bị FB từ chối "reduce the amount of data"
+    const all: any[] = []
+    let path: string | null = `/${t.account}/customaudiences?fields=id,name,subtype,retention_days,rule&limit=25`
+    let err: string | null = null
+    while (path) {
+      const page = await callFbApi("GET", path)
+      if (!page.ok) { err = page.data?.error?.message; break }
+      all.push(...(page.data.data || []))
+      const after = page.data.paging?.cursors?.after
+      path = page.data.paging?.next && after ? `/${t.account}/customaudiences?fields=id,name,subtype,retention_days,rule&limit=25&after=${after}` : null
+    }
+    if (err) { out.push({ account: t.label, error: err }); continue }
     for (const px of t.pixels) {
-      const found = (list.data.data || []).find((a: any) => isCr180(a, px))
+      const found = all.find((a: any) => isCr180(a, px))
       if (found) {
         await upsertRow(t.account, "pixel_cr180", px, found.id, found.name, false)
         out.push({ account: t.label, pixel: px, audience_id: found.id, name: found.name, reused: true })
