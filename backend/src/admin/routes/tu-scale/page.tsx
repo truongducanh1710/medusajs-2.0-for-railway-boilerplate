@@ -67,9 +67,9 @@ function TuScalePage() {
   const [editMkt, setEditMkt] = useState<MktSetting | null>(null)
   const [busy, setBusy] = useState(false)
   const [canEdit, setCanEdit] = useState(false)
-  const [tab, setTab] = useState<"dieu-khien" | "video" | "luat">(() => {
+  const [tab, setTab] = useState<"dieu-khien" | "video" | "seeding" | "luat">(() => {
     const t = new URLSearchParams(window.location.search).get("tab")
-    return t === "luat" || t === "video" ? t : "dieu-khien"
+    return t === "luat" || t === "video" || t === "seeding" ? t : "dieu-khien"
   })
   const [luat, setLuat] = useState<{ rules: AdsRule[]; history: RuleHistory[] } | null>(null)
 
@@ -142,7 +142,7 @@ function TuScalePage() {
     <div style={{ padding: 20, maxWidth: 1400 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tự scale camp theo giờ</h1>
       <div style={{ display: "flex", gap: 6, margin: "12px 0" }}>
-        {([["dieu-khien", "Điều khiển"], ["video", "Theo dõi video"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
+        {([["dieu-khien", "Điều khiển"], ["video", "Theo dõi video"], ["seeding", "Mẫu seeding"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...btn, ...(tab === k ? { background: "#111827", color: "#fff", borderColor: "#111827" } : {}) }}>{label}</button>
         ))}
       </div>
@@ -151,7 +151,7 @@ function TuScalePage() {
           Chỉ xem — luật, bộ điều kiện và camp gắn Tự scale do AI (admin@yourmail.com) quản lý. Mọi lần sửa có lịch sử ở tab "Luật hiện tại".
         </div>
       )}
-      {tab === "luat" ? <LuatTab data={luat} /> : tab === "video" ? <VideoTab /> : <>
+      {tab === "luat" ? <LuatTab data={luat} /> : tab === "video" ? <VideoTab /> : tab === "seeding" ? <SeedingTab /> : <>
       <p style={{ color: "#4b5563", fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
         Chỉ camp <b>được gắn bộ điều kiện</b> mới được hệ thống tự đổi ngân sách. Cứ 15 phút, trong khung giờ của bộ điều kiện:
         camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
@@ -566,6 +566,78 @@ function LaunchChecks() {
         </table>
       </div>
     </section>
+  )
+}
+
+/** Bộ mẫu seeding theo SP (+ landing): chỉ bộ ĐÃ DUYỆT mới được dùng để seed camp của SP đó. */
+function SeedingTab() {
+  const [d, setD] = useState<any>(null)
+  const [msg, setMsg] = useState("")
+  const load = () => apiJson("/admin/auto-scale/seeding").then((x) => setD(x || { sets: [], logs: [] }))
+  useEffect(() => { load() }, [])
+  const approve = async (key: string) => {
+    if (!window.confirm(`Duyệt bộ mẫu "${key}"? Từ giờ mọi post camp của sản phẩm này sẽ được seed đúng các bình luận dưới đây.`)) return
+    const r = await apiJson("/admin/auto-scale/seeding", "POST", { action: "approve", set_key: key })
+    setMsg(r?.error ? `❌ ${r.error}` : "✅ Đã duyệt"); load()
+  }
+  if (!d) return <div style={{ color: "#6b7280" }}>Đang tải…</div>
+  return (
+    <>
+      <p style={{ color: "#4b5563", fontSize: 13, lineHeight: 1.6, marginTop: 0 }}>
+        Mỗi <b>bộ mẫu</b> áp cho 1 sản phẩm (mã SP đầu tên camp), có thể giới hạn theo landing. Hệ thống <b>chỉ seed bằng bộ ĐÃ DUYỆT</b> khớp đúng sản phẩm + landing của ad —
+        không có bộ khớp thì không seed, để không bao giờ seed nhầm thông tin sang sản phẩm khác. AI soạn/sửa bộ thì bộ quay về <b>Nháp</b>, chờ duyệt lại.
+      </p>
+      {msg && <div style={{ padding: "8px 12px", background: msg.startsWith("❌") ? "#fef2f2" : "#f0fdf4", borderRadius: 6, marginBottom: 12, fontSize: 13 }}>{msg}</div>}
+      {d.sets.map((st: any) => (
+        <section key={st.set_key} style={box}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ ...h2, margin: 0 }}>{st.ten}</h2>
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                SP <b>{st.product_code}</b> · landing: {st.landing_match ? <>link chứa "<b>{st.landing_match}</b>"</> : "mọi landing của SP"} · {st.items.length} bình luận
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {st.status === "approved"
+                ? <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 13 }}>ĐÃ DUYỆT · {st.approved_by} · {time(st.approved_at)}</span>
+                : <span style={{ color: "#d97706", fontWeight: 700, fontSize: 13 }}>NHÁP — chưa dùng</span>}
+              {st.status !== "approved" && d.can_approve && <button style={btnPri} onClick={() => approve(st.set_key)}>Duyệt</button>}
+            </div>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            {st.items.map((it: any) => (
+              <div key={it.id} style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: "1px solid #f3f4f6" }}>
+                <div style={{ fontWeight: 700, color: "#6b7280", minWidth: 22 }}>{it.sort}</div>
+                <div style={{ whiteSpace: "pre-wrap", fontSize: 13, flex: 1 }}>{it.message}</div>
+                {it.image_url && <img src={it.image_url} alt="" style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 6, border: "1px solid #e5e7eb" }} />}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{"{link}"} = link landing của chính ad đó · sửa {time(st.updated_at)} bởi {st.updated_by || "—"}</div>
+        </section>
+      ))}
+      {!d.sets.length && <div style={box}>Chưa có bộ mẫu nào.</div>}
+      <section style={box}>
+        <h2 style={h2}>Lần seed gần nhất</h2>
+        <div style={{ overflowX: "auto", maxHeight: 360 }}>
+          <table style={tbl}>
+            <thead><tr>{["Lúc", "Post", "SP", "Kết quả", "Ghi chú", "Ai"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {d.logs.slice(0, 40).map((l: any) => (
+                <tr key={l.id}>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>{time(l.created_at)}</td>
+                  <td style={{ ...td, fontSize: 12 }}><a href={`https://www.facebook.com/${l.post_id}`} target="_blank" rel="noreferrer">{l.post_id}</a></td>
+                  <td style={td}>{l.product_code}</td>
+                  <td style={{ ...td, fontWeight: 600, color: l.status === "done" ? "#16a34a" : l.status === "skipped" ? "#6b7280" : "#dc2626" }}>{l.status}</td>
+                  <td style={{ ...td, fontSize: 12, maxWidth: 360 }}>{l.error || "—"}</td>
+                  <td style={{ ...td, fontSize: 12 }}>{l.created_by}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
   )
 }
 

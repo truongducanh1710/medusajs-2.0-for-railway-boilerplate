@@ -13,7 +13,7 @@
 import { getPool } from "./db"
 import { FB_API_BASE } from "../api/admin/pancake-sync/report/camp-control/_lib"
 import { ensureExclusionTable } from "./ads-exclusion"
-import { ensureSeedingTables, getTemplate, seedPost } from "./ads-seeding"
+import { ensureSeedingTables, findApprovedSet, seedPost } from "./ads-seeding"
 import { ensureTrackingTables, registerLaunch } from "./ads-tracking"
 import { notifyTelegramByEmail } from "./notify"
 
@@ -137,17 +137,19 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
   steps.cai_dat = bad.length ? step("error", [...new Set(bad)].join(", ")) : step("ok", `Tuổi ≥25, Advantage+, pixel ${pixel || "?"}`)
 
   // 3. Seeding mọi post
-  const tpl = sku ? await getTemplate(sku) : []
   const posts = new Map<string, string>() // post → link
   for (const a of detail.ads?.data || []) {
     const p = a.creative?.effective_object_story_id
     if (p && !posts.has(p)) posts.set(p, a.creative?.object_story_spec?.video_data?.call_to_action?.value?.link || "")
   }
-  if (!tpl.length) steps.seeding = step("skip", `Chưa có mẫu seeding cho ${sku || "SP này"}`)
-  else if (!posts.size) steps.seeding = step("pending", "Chưa thấy post của ad")
+  if (!posts.size) steps.seeding = step("pending", "Chưa thấy post của ad")
   else {
-    let full = 0, err = ""
+    let full = 0, err = "", noTpl = 0
     for (const [post, link] of posts) {
+      // Mẫu ĐÃ DUYỆT khớp đúng SP + landing của ad này — không có thì không seed (tránh seed nhầm SP/ưu đãi)
+      const found = sku ? await findApprovedSet(sku, link) : null
+      const tpl = found?.items || []
+      if (!tpl.length) { noTpl++; continue }
       const pg = post.split("_")[0], tok = ctx.pageTok.get(pg)
       let mine = 0
       try { mine = ((await fbGet(`/${post}/comments?fields=from{id}&filter=toplevel&limit=100`, tok || token())).data || []).filter((x: any) => x.from?.id === pg).length } catch (e: any) { err = e.message }
@@ -160,7 +162,8 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
       if (r.status === "done" || r.status === "skipped") full++
       else err = r.error || r.status
     }
-    steps.seeding = full === posts.size ? step("ok", `${full}/${posts.size} post đủ bình luận`)
+    steps.seeding = noTpl === posts.size ? step("skip", `Chưa có mẫu seeding đã duyệt cho ${sku || "SP này"} — không seed`)
+      : full + noTpl === posts.size ? step("ok", `${full}/${posts.size} post đủ bình luận${noTpl ? ` (${noTpl} post chưa có mẫu duyệt)` : ""}`)
       : step(err ? "error" : "pending", `${full}/${posts.size} post đủ bình luận${err ? ` — ${err}` : ctx.seedWindow ? " — đang seed dần" : " — chờ 7h"}`)
   }
 
