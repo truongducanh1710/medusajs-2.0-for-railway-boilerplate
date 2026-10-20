@@ -192,6 +192,8 @@ const LADDER_TOP_ORDERS = 5
 const LADDER_CHECK_HOURS = [12, 16, 21]
 const LADDER_NOON_CUT_HOUR = 13
 const LADDER_NOON_CUT_SPEND = 150_000
+const LADDER_JUMP_ORDERS = 5
+const LADDER_JUMP_CPA = 60_000
 const LADDER_LATE_STOP_HOUR = 16
 const LADDER_LATE_STOP_SPEND = 10_000_000
 const LADDER_LATE_STOP_PCT = 35
@@ -232,7 +234,10 @@ function decideLadder(x: DecideInput): Decision {
   if (s && s.minutes_ago <= x.minute) return { action: "none", reason: `Khung ${x.hour}h–${x.hour + 1}h đã tăng 1 nấc` }
   let idx = 0
   for (let i = 0; i < levels.length; i++) if (x.budget >= levels[i] * 0.999) idx = i
-  const to = Math.min(levels[idx + 1] ?? 0, rule.max_budget)
+  // Nhảy nấc (user duyệt 20/10/2026): nấc đầu mà camp đã ≥ 5 đơn và ≤ 60k/đơn → lên thẳng nấc 3 (300k → 3tr).
+  // 205 lần tăng của Xuân 21/6–7/10: có ≥5 đơn thì lần nào cũng nhảy 2–5tr, phần sau tăng 20% (2–4 đơn lên 1tr: 26%).
+  const jump = idx === 0 && x.orders_today >= LADDER_JUMP_ORDERS && cpa !== null && cpa <= LADDER_JUMP_CPA && levels.length > 2
+  const to = Math.min((jump ? levels[2] : levels[idx + 1]) ?? 0, rule.max_budget)
   if (!to || to <= x.budget) return { action: "none", reason: `Đã ở nấc cao nhất ${vnd(x.budget)}` }
 
   const lyDo: string[] = []
@@ -265,7 +270,7 @@ function decideLadder(x: DecideInput): Decision {
   if (lyDo.length) return { action: "none", reason: `Mốc ${x.hour}h chưa tăng: ${lyDo.join("; ")}` }
   return {
     action: "tang", to,
-    reason: `MỐC ${x.hour}h: ${vnd(x.budget)} → ${vnd(to)} — hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}`,
+    reason: `${jump ? "NHẢY NẤC" : "MỐC"} ${x.hour}h: ${vnd(x.budget)} → ${vnd(to)} — hôm nay ${x.orders_today} đơn, ${vnd(cpa!)}/đơn, ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}`,
   }
 }
 
