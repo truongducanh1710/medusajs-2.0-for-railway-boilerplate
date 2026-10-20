@@ -122,7 +122,11 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
     if (!needPx || !ids.has(String(needPx.audience_id))) missing.push(needPx ? "đăng ký 180 ngày" : `tài khoản chưa có tệp đăng ký 180 ngày cho pixel ${pixel}`)
     if (!needBlk || !ids.has(String(needBlk.audience_id))) missing.push(needBlk ? "chặn POS mới" : "tài khoản chưa có tệp chặn POS mới")
   }
-  steps.loai_tru = missing.length ? step("error", `Thiếu: ${[...new Set(missing)].join(", ")}`) : step("ok", "Đủ 2 tệp loại trừ")
+  // Luật tệp loại trừ áp từ 20/10/2026 — camp lên trước đó chỉ ghi nhận, không báo lỗi (sửa nhắm chọn = học lại)
+  const beforeRule = Date.parse(String(c.created_time).replace(/([+-]\d{2})(\d{2})$/, "$1:$2")) < Date.parse("2026-10-20T00:00:00+07:00")
+  steps.loai_tru = !missing.length ? step("ok", "Đủ 2 tệp loại trừ")
+    : beforeRule ? step("skip", `Lên trước luật loại trừ (20/10) — thiếu: ${[...new Set(missing)].join(", ")}`)
+    : step("error", `Thiếu: ${[...new Set(missing)].join(", ")}`)
 
   // 2. Cài đặt nhắm chọn
   const bad: string[] = []
