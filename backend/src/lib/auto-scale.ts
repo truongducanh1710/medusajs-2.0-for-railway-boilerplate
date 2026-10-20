@@ -720,11 +720,40 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
     // Lần tăng gần nhất — chỉ tính nếu xảy ra HÔM NAY (tắt reset đêm thì state hôm qua còn sót)
     const stepAt = camp.step_at ? new Date(camp.step_at) : null
     const stepToday = stepAt && stepAt.getTime() >= new Date(startOfTodayVN()).getTime()
-    const step = stepToday && stepAt ? {
+    let step = stepToday && stepAt ? {
       from: Number(camp.step_from), to: Number(camp.step_to), spend_at_step: Number(camp.step_spend || 0),
       minutes_ago: Math.floor((Date.now() - stepAt.getTime()) / 60_000),
       orders_since: await ordersSince(camp.campaign_id, camp.campaign_name, stepAt.toISOString()),
     } : null
+    // Lần tăng TAY hôm nay (camp-control, source manual) — 20/10/2026 user:
+    //  - tăng tay đúng 1 nấc của thang (vd 1tr→3tr) → coi như bước hệ thống: leo tiếp được + áp hết đà như thường
+    //  - mọi lần tăng (tay hay hệ thống) đều reset học → lần tăng sau phải cách ≥ 3 tiếng (decide: RAISE_GAP_MIN)
+    const { rows: man } = await pool.query(
+      `SELECT created_at, (old_value->>'daily_budget')::float old_b, (new_value->>'daily_budget')::float new_b FROM camp_action_log
+        WHERE campaign_id=$1 AND action='set_budget' AND source='manual' AND success AND created_at >= $2::timestamptz
+          AND (new_value->>'daily_budget')::float > COALESCE((old_value->>'daily_budget')::float, 0)
+        ORDER BY created_at DESC LIMIT 1`,
+      [camp.campaign_id, startOfTodayVN()]
+    ).catch(() => ({ rows: [] as any[] }))
+    const manualAt = man[0] ? new Date(man[0].created_at) : null
+    const ladderLevels = String(rule.ladder_levels || "").split(",").map(Number).filter((n) => n > 0)
+    if (rule.ladder_mode && manualAt && Number(man[0].new_b) === cur && ladderLevels.some((l) => Math.abs(l - cur) < 1000)
+        && (!step || !stepAt || manualAt.getTime() > stepAt.getTime())) {
+      const { rows: sn } = await pool.query(
+        `SELECT spend FROM camp_hourly_snapshot WHERE campaign_id=$1 AND date=$2::date AND hour <= $3 ORDER BY hour DESC LIMIT 1`,
+        [camp.campaign_id, nowVN().date, new Date(manualAt.getTime() + 7 * 3600_000).getUTCHours()]
+      ).catch(() => ({ rows: [] as any[] }))
+      step = {
+        from: Number(man[0].old_b || base), to: cur, spend_at_step: Number(sn[0]?.spend ?? 0),
+        minutes_ago: Math.floor((Date.now() - manualAt.getTime()) / 60_000),
+        orders_since: await ordersSince(camp.campaign_id, camp.campaign_name, manualAt.toISOString()),
+      }
+      metrics.manual_step = true
+    }
+    const lastRaiseMin = Math.min(
+      step ? step.minutes_ago : Infinity,
+      manualAt ? Math.floor((Date.now() - manualAt.getTime()) / 60_000) : Infinity,
+    )
     if (step) metrics.since_step = { spend: spend - step.spend_at_step, orders: step.orders_since }
     const last = await lastActionAt(camp.campaign_id, rule.dry_run)
 
@@ -759,6 +788,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       minutes_since_last_action: last ? Math.floor((Date.now() - last.getTime()) / 60_000) : null,
       reverted_today: await revertedToday(camp.campaign_id, rule.dry_run),
       reset_done_today: await resetDoneToday(camp.campaign_id, tzShift),
+      last_raise_minutes_ago: Number.isFinite(lastRaiseMin) ? lastRaiseMin : null,
       account_hour: (hour + tzShift + 24) % 24,
       account_block: await accountBlocked(camp.ad_account_id, Math.max(0, Math.min(cur * rule.multiplier, rule.max_budget) - cur)),
       ...(await spendSnapshot(camp.campaign_id, hour, minute)),

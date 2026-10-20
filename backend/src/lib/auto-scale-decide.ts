@@ -64,6 +64,8 @@ export type DecideInput = {
   reset_done_today: boolean
   /** Giờ hiện tại theo múi giờ TÀI KHOẢN (ADS329 +8 = giờ VN + 1) — dùng cho reset đêm */
   account_hour?: number
+  /** Phút kể từ lần tăng gần nhất hôm nay — của hệ thống HOẶC người tăng tay (mỗi lần tăng = reset học) */
+  last_raise_minutes_ago?: number | null
   account_block: string | null
   /** Chi tiêu cộng dồn hôm nay tại snapshot ~2 giờ trước (camp_hourly_snapshot). null = chưa có */
   spend_2h_ago?: number | null
@@ -192,6 +194,8 @@ const LADDER_TOP_ORDERS = 5
 const LADDER_CHECK_HOURS = [12, 16, 21]
 const LADDER_NOON_CUT_HOUR = 13
 const LADDER_NOON_CUT_SPEND = 150_000
+// 20/10/2026 user: mỗi lần tăng (tay hay hệ thống) là 1 lần reset học → lần sau cách ≥ 3 tiếng.
+const RAISE_GAP_MIN = 180
 const LADDER_JUMP_ORDERS = 5
 const LADDER_JUMP_CPA = 60_000
 const LADDER_LATE_STOP_HOUR = 16
@@ -232,6 +236,9 @@ function decideLadder(x: DecideInput): Decision {
   if (!inRaiseWindow) return { action: "none", reason: `Chờ khung tăng ${hours.map((h) => `${h}h–${h + 1}h`).join(" / ")}` }
   // 1 nấc/khung: đã tăng trong chính giờ này thì thôi (step_at nằm trong khung hiện tại)
   if (s && s.minutes_ago <= x.minute) return { action: "none", reason: `Khung ${x.hour}h–${x.hour + 1}h đã tăng 1 nấc` }
+  if (x.last_raise_minutes_ago != null && x.last_raise_minutes_ago < RAISE_GAP_MIN) {
+    return { action: "none", reason: `Vừa tăng ${x.last_raise_minutes_ago} phút trước — chờ đủ ${RAISE_GAP_MIN / 60} tiếng giữa 2 lần tăng` }
+  }
   let idx = 0
   for (let i = 0; i < levels.length; i++) if (x.budget >= levels[i] * 0.999) idx = i
   // Nhảy nấc (user duyệt 20/10/2026): nấc đầu mà camp đã ≥ 5 đơn và ≤ 60k/đơn → lên thẳng nấc 3 (300k → 3tr).
