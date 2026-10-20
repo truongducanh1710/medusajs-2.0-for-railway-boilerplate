@@ -529,6 +529,46 @@ const pctCell = (p: number | null, sp: number) => {
   return <span style={{ color, fontWeight: 600 }}>{p === null ? (sp > 0 ? "0 đơn" : "—") : `${p}%`}</span>
 }
 
+const STEP_LABEL: Record<string, string> = { loai_tru: "Loại trừ", cai_dat: "Cài đặt", seeding: "Seeding", tu_scale: "Tự scale", theo_doi: "Ghi theo dõi", doc_camp: "Đọc camp" }
+const STEP_ICON: Record<string, string> = { ok: "✅", pending: "⏳", error: "❌", skip: "➖" }
+
+/** Quy trình bắt buộc của camp mới (máy chủ tự kiểm 15 phút/lần — /admin/auto-scale/checks). */
+function LaunchChecks() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  useEffect(() => { apiJson("/admin/auto-scale/checks?days=3").then((d) => setRows(d?.checks || [])) }, [])
+  if (!rows) return null
+  const bad = rows.filter((r) => r.status !== "ok").length
+  return (
+    <section style={box}>
+      <h2 style={h2}>Quy trình bắt buộc — camp mới 3 ngày ({rows.length} camp, {bad} chưa xong / lỗi)</h2>
+      <p style={{ color: "#4b5563", fontSize: 12, margin: "0 0 8px" }}>
+        Máy chủ tự kiểm 15 phút/lần mọi camp mới của XUANLT/ANHTD (kể cả camp lên ngoài công cụ): tự seeding (7h–22h), tự gắn Tự scale khi camp có chi tiêu, tự ghi theo dõi.
+        Thiếu tệp loại trừ / sai cài đặt thì không tự sửa (sửa camp đang chạy làm học lại) — báo Telegram để quyết.
+      </p>
+      <div style={{ overflowX: "auto" }}>
+        <table style={tbl}>
+          <thead><tr>{["Camp", "Tạo lúc", "Trạng thái", ...Object.keys(STEP_LABEL).filter((k) => k !== "doc_camp").map((k) => STEP_LABEL[k]), "Kiểm lúc"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.campaign_id}>
+                <td style={{ ...td, maxWidth: 300, fontSize: 12 }}>{r.campaign_name}</td>
+                <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>{time(r.created_time)}</td>
+                <td style={{ ...td, fontWeight: 700, color: r.status === "ok" ? "#16a34a" : r.status === "error" ? "#dc2626" : "#d97706" }}>{r.status === "ok" ? "Đủ" : r.status === "error" ? "Lỗi" : "Đang chờ"}</td>
+                {Object.keys(STEP_LABEL).filter((k) => k !== "doc_camp").map((k) => {
+                  const st = r.steps?.[k] || (k === "loai_tru" && r.steps?.doc_camp)
+                  return <td key={k} style={{ ...td, fontSize: 12, maxWidth: 200 }} title={st?.detail}>{st ? `${STEP_ICON[st.status] || ""} ${st.detail}` : "—"}</td>
+                })}
+                <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>{time(r.checked_at)}</td>
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={9} style={{ ...td, color: "#6b7280", textAlign: "center" }}>Chưa có camp mới nào trong 3 ngày</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 function VideoTab() {
   const [days, setDays] = useState(30)
   const [mkt, setMkt] = useState("XUANLT,ANHTD")
@@ -546,6 +586,7 @@ function VideoTab() {
         Mỗi dòng là 1 <b>bộ video</b> (các mã VD cùng chạy trong 1 camp): từ Hub (người làm, ngày lên) → camp trên tài khoản × page → chi / đơn / doanh số / % chi phí → <b>giai đoạn</b> theo luật vòng đời
         (test 3 ngày → thắng/trượt → nhân → scale → mòn). Bấm vào dòng để xem từng camp và từng video. Số đơn theo video chỉ tính đơn có mã VD trong link (utm_content).
       </p>
+      <LaunchChecks />
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
         <select style={inp} value={mkt} onChange={(e) => setMkt(e.target.value)}>
           {["XUANLT,ANHTD", "XUANLT", "ANHTD"].map((m) => <option key={m} value={m}>{m.replace(",", " + ")}</option>)}
