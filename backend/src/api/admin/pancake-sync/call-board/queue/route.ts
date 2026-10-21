@@ -9,7 +9,7 @@ import {
 const MIN = 60_000
 
 /**
- * GET /admin/pancake-sync/call-board/queue?seller=<pancakeSellerId|all|none|me>
+ * GET /admin/pancake-sync/call-board/queue?seller=<pancakeSellerId|all|me>
  *
  * Hàng đợi việc của sale: mọi đơn chưa xử lý xong trong 14 ngày (không lọc theo ngày tạo),
  * sắp theo hạn của "việc tiếp theo". Số lần gọi = max(số note, số lượt gọi tổng đài ITY)
@@ -87,7 +87,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         marketer_name: r.marketer_name,
         tags,
       }
-      if (seller === "none" ? r.seller_id : seller !== "all" && r.seller_id !== seller) continue
+      if (seller !== "all" && r.seller_id !== seller) continue
       if (r.status !== 0) {
         waiting.push({ ...base, hours_open: Math.floor((now - createdAt) / 3_600_000) })
         continue

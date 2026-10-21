@@ -595,7 +595,7 @@ const XacNhanDonPage = () => {
   const [data, setData] = useState<any>(null)
   const [comp, setComp] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<"queue" | "none" | "waiting" | "cancel" | "manager">("queue")
+  const [tab, setTab] = useState<"queue" | "waiting" | "cancel" | "manager">("queue")
   const [bucket, setBucket] = useState<string>("")
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<any>(null)
@@ -615,21 +615,21 @@ const XacNhanDonPage = () => {
   const load = async () => {
     setLoading(true)
     try {
-      const sel = tab === "none" ? "none" : seller
+      const sel = seller
       const r = await apiFetch(`/admin/pancake-sync/call-board/queue?seller=${sel}`)
       const d = await r.json().catch(() => null)
       if (!r.ok || !d) return
       setData(d)
       const sellerId = sel === "me" ? d.me?.id : sel
       const params = new URLSearchParams({ date: compDate })
-      if (sellerId && sellerId !== "all" && sellerId !== "none") params.set("seller", sellerId)
+      if (sellerId && sellerId !== "all") params.set("seller", sellerId)
       const cr = await apiFetch(`/admin/pancake-sync/call-board/compliance?${params}`)
       if (cr.ok) setComp(await cr.json())
     } finally {
       setLoading(false)
     }
   }
-  useEffect(() => { load() }, [seller, tab === "none", compDate])
+  useEffect(() => { load() }, [seller, compDate])
   useEffect(() => {
     const t = setInterval(load, 3 * 60_000)
     return () => clearInterval(t)
@@ -656,7 +656,7 @@ const XacNhanDonPage = () => {
     if (!data) return []
     let list: any[] = tab === "waiting" ? datedWaiting : dated
     if (tab === "cancel") list = list.filter((o) => o.bucket === "cancel")
-    if (tab === "queue" || tab === "none") list = list.filter((o) => o.bucket !== "cancel")
+    if (tab === "queue") list = list.filter((o) => o.bucket !== "cancel")
     if (bucket === "callback") list = list.filter((o) => o.next?.code === "callback")
     else if (bucket === "unnoted") list = list.filter((o) => o.unnoted > 0 || o.awaiting)
     else if (bucket) list = list.filter((o) => o.bucket === bucket)
@@ -768,7 +768,7 @@ const XacNhanDonPage = () => {
 
       <div className="flex gap-1 border-b text-sm">
         {[
-          ["queue", "Hàng đợi"], ["none", "Chưa gán sale"], ["waiting", "Chờ kho / chờ hàng"], ["cancel", `Đề xuất hủy (${s.cancel ?? 0})`], ["manager", "Quản lý"],
+          ["queue", "Hàng đợi"], ["waiting", "Chờ kho / chờ hàng"], ["cancel", `Đề xuất hủy (${s.cancel ?? 0})`], ["manager", "Quản lý"],
         ].map(([k, l]) => (
           <button key={k} onClick={() => { setTab(k as any); setBucket("") }} className={`px-3 py-2 -mb-px border-b-2 ${tab === k ? "border-violet-600 text-violet-700 font-medium" : "border-transparent text-gray-500"}`}>{l}</button>
         ))}

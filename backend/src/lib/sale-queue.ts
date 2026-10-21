@@ -175,8 +175,12 @@ export function computeNextAction(o: {
   }
 }
 
-/** Orders that belong to the call queue: VN shop, not marketplace (Shopee / TikTok Shop). */
+/**
+ * Orders that belong to the call queue = orders assigned to a sale in SALE_ROSTER.
+ * Marketplace orders (Shopee VN/MY, TikTok Shop) are never assigned a sale on POS (verified
+ * 14 days to 21/10/2026: 0 of ~2.500), so the assignment is the reliable channel split.
+ * Unassigned orders are left out on purpose (shop decision 21/10).
+ */
 export const QUEUE_ORDER_SQL = `
-  po.deleted_at IS NULL AND po.market = 'VN'
-  AND po.source <> 'shopee'
-  AND NOT (po.source = 'tiktok' AND COALESCE(po.shop_name, '') <> 'TikTok Ads (web)')`
+  po.deleted_at IS NULL
+  AND po.raw->'assigning_seller'->>'id' IN (${SALE_ROSTER.map((s) => `'${s.pancakeId}'`).join(", ")})`
