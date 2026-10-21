@@ -3,7 +3,8 @@
  *  1) "Đã đăng ký 180 ngày" theo pixel của sản phẩm — mỗi (tài khoản, pixel) 1 tệp WEBSITE; có sẵn tệp tương đương
  *     (cùng pixel, CompleteRegistration, 180 ngày) thì dùng lại, chưa có thì tạo.
  *  2) "Chặn POS" bản mới: khách bị chặn trên Pancake + khách hoàn hàng 180 ngày (SĐT mã hoá SHA-256),
- *     thay TOÀN BỘ danh sách mùng 1 hằng tháng. KHÔNG đụng tệp cũ "khach_bi_chan_pos_19/6/26_800" (camp cũ còn dùng).
+ *     thay TOÀN BỘ danh sách MỖI NGÀY (21/10: khách bị chặn 20/10 vẫn lọt camp vì tệp làm theo tháng).
+ *     Tệp cũ "khach_bi_chan_pos_19/6/26_800" chỉ được BỔ SUNG (thêm người), không thay/xoá.
  * Danh sách id tệp theo tài khoản nằm ở bảng ads_exclusion_audience — công cụ lên camp đọc bảng này.
  */
 import crypto from "node:crypto"
@@ -18,7 +19,13 @@ export const EXCLUSION_TARGETS: { account: string; label: string; pixels: string
   { account: "act_1133464788237858", label: "ADS327", pixels: ["1921074788473811", "648566867843285"] },
   { account: "act_1108526648426194", label: "ADS349", pixels: ["943650651603498"] }, // 20/10: camp BROAD chảo vàng Anh TD
 ]
-const BLOCK_NAME = "PHV_CHAN_POS_AUTO (chặn POS + hoàn hàng 180d, cập nhật mùng 1)"
+const BLOCK_NAME = "PHV_CHAN_POS_AUTO (chặn POS + hoàn hàng 180d, cập nhật hằng ngày)"
+/**
+ * Tệp chặn CŨ "khach_bi_chan_pos_19/6/26_800" (camp cũ + camp các MKT khác đang gắn): user 21/10/2026 cho BỔ SUNG song song
+ * (chỉ thêm người, không xoá/thay) — thêm người vào tệp không làm camp học lại.
+ * 6985565582828 = bản ở ADS344; 120252094873620558 = bản gốc ADS329 (chia sẻ cho ADS342/327).
+ */
+const OLD_BLOCK_AUDIENCES = ["6985565582828", "120252094873620558"]
 const D180 = 180 * 86400
 
 let ready: Promise<void> | null = null
@@ -172,7 +179,10 @@ export async function syncBlockList() {
     await upsertRow(t.account, "chan_pos", "", audienceId, BLOCK_NAME, true, { user_count: r.ok ? hashes.length : null, last_error: r.error ?? null, synced: r.ok })
     out.push({ account: t.label, audience_id: audienceId, phones: hashes.length, ...r })
   }
-  return { phones: hashes.length, accounts: out }
+  // Bổ sung song song vào tệp chặn cũ (chỉ thêm, không thay)
+  const old: any[] = []
+  for (const id of OLD_BLOCK_AUDIENCES) old.push({ audience_id: id, ...(await uploadUsers(id, hashes, false)) })
+  return { phones: hashes.length, accounts: out, old_lists: old }
 }
 
 async function uploadUsers(audienceId: string, hashes: string[], replace: boolean): Promise<{ ok: boolean; error?: string }> {
