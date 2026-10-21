@@ -17,6 +17,14 @@ function fmtDue(iso: string) {
   const txt = abs < 3600_000 ? `${Math.round(abs / 60_000)}p` : abs < 86400_000 ? `${Math.round(abs / 3600_000)}h` : `${Math.round(abs / 86400_000)} ngày`
   return diff < 0 ? `Quá ${txt}` : `Còn ${txt}`
 }
+/** YYYY-MM-DD in Vietnam time. */
+function vnToday() {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
+}
+function fmtDay(d: string) {
+  const [, m, dd] = String(d).slice(0, 10).split("-")
+  return `${dd}/${m}`
+}
 function toLocalInput(ms: number) {
   const d = new Date(ms)
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -235,12 +243,80 @@ function TaskCard({ t, tagInfo, pending, setPending, onClose, onSaved }: {
   )
 }
 
+const DAY_STATUS: Record<string, { label: string; cls: string }> = {
+  done: { label: "✅ Đã gọi", cls: "text-green-700" },
+  resolved: { label: "Tự hết việc", cls: "text-gray-500" },
+  pending: { label: "⏳ Chưa gọi", cls: "text-red-600 font-medium" },
+}
+
+/** Whole-day list: what had to be called that day and whether it was. Past days are read-only history. */
+function DayView({ day, setDay, data, tasks, onOpen }: { day: string; setDay: (d: string) => void; data: any; tasks: any[]; onOpen: (t: any) => void }) {
+  const [onlyPending, setOnlyPending] = useState(false)
+  const rows: any[] = (data?.rows ?? []).filter((r: any) => !onlyPending || r.status === "pending")
+  const s = data?.summary
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label>Ngày <input type="date" value={day} max={vnToday()} onChange={(e) => e.target.value && setDay(e.target.value)} className="border rounded px-2 py-1 text-xs ml-1" /></label>
+        {s && <span>{s.total} đơn · ✅ {s.done} đã gọi · {s.resolved} tự hết việc · <b className={s.pending ? "text-red-600" : "text-green-700"}>{s.pending} chưa gọi</b></span>}
+        <label className="text-xs flex items-center gap-1"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> Chỉ đơn chưa gọi</label>
+      </div>
+      {!data ? <div className="text-center py-10 text-gray-400">Đang tải...</div>
+        : !rows.length ? <div className="text-center py-10 text-gray-400">{data.summary.total ? "Không còn đơn chưa gọi 🎉" : "Ngày này chưa có danh sách"}</div>
+        : (
+          <div className="border rounded-xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-3 py-2">Tình trạng</th>
+                  <th className="text-left px-3 py-2">Khách / đơn</th>
+                  <th className="text-left px-3 py-2">Việc</th>
+                  <th className="text-left px-3 py-2">Vào danh sách</th>
+                  <th className="text-left px-3 py-2">Kết quả</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r: any) => {
+                  const live = tasks.find((t) => t.id === String(r.order_id))
+                  return (
+                    <tr key={r.order_id} onClick={() => live ? onOpen(live) : window.location.assign(`/app/pancake-orders/${r.order_id}`)} className="border-t cursor-pointer hover:bg-violet-50">
+                      <td className={`px-3 py-2 text-xs whitespace-nowrap ${DAY_STATUS[r.status]?.cls}`}>
+                        {DAY_STATUS[r.status]?.label}
+                        {r.reopened > 0 && <div className="text-[11px] text-red-600">mở lại {r.reopened} lần</div>}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="font-medium">{r.customer_name} · {fmtVND(Number(r.cod))}</div>
+                        <div className="text-xs text-gray-400">#{r.order_id}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {TASKS[r.task_code]?.label ?? r.task_label}
+                        {r.carried_from && <div className="text-orange-600">tồn từ {fmtDay(r.carried_from)}</div>}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtTime(r.added_at)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600 max-w-sm">
+                        {r.done_at && <span className="text-gray-400 mr-1">{fmtTime(r.done_at)}</span>}
+                        <span className="line-clamp-2">{r.done_note || "—"}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+    </div>
+  )
+}
+
 export default function CskhQueue() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>("")
   const [showLater, setShowLater] = useState(false)
+  const [view, setView] = useState<"queue" | "day">("queue")
+  const [day, setDay] = useState(vnToday())
+  const [dayData, setDayData] = useState<any>(null)
   const [selected, setSelected] = useState<any>(null)
   const [tagInfo, setTagInfo] = useState<any>(null)
   const [pending, setPending] = useState(readPending)
@@ -266,6 +342,11 @@ export default function CskhQueue() {
     return () => clearInterval(t)
   }, [])
 
+  useEffect(() => {
+    if (view !== "day") return
+    apiFetch(`/admin/cskh/daily?date=${day}`).then((r) => r.json()).then(setDayData).catch(() => setDayData(null))
+  }, [view, day, data])
+
   const rows = useMemo(() => {
     let list: any[] = data?.tasks ?? []
     if (!showLater) list = list.filter((t) => t.bucket !== "later")
@@ -274,6 +355,10 @@ export default function CskhQueue() {
   }, [data, filter, showLater])
 
   const s = data?.summary ?? {}
+  const td = data?.today
+  const closed = td ? td.done + td.resolved : 0
+  const pct = td?.total ? Math.round((closed / td.total) * 100) : 0
+  const blocks = data?.blocks
   return (
     <div className="space-y-4">
       {pending && (
@@ -288,6 +373,34 @@ export default function CskhQueue() {
         </div>
       )}
 
+      {/* Today's call list progress */}
+      {td && (
+        <div className="p-3 rounded-xl border bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <div>
+              <b>Hôm nay {fmtDay(vnToday())}</b> · {td.total} đơn cần gọi · <span className="text-green-700">✅ {td.done} đã gọi</span>
+              {td.resolved > 0 && <> · <span className="text-gray-500">{td.resolved} tự hết việc</span></>}
+              {" · "}<span className={td.pending ? "text-red-600 font-medium" : "text-green-700"}>⏳ {td.pending} chưa gọi</span>
+              {td.carried > 0 && <span className="text-xs text-gray-500"> (gồm {td.carried} đơn tồn ngày trước)</span>}
+            </div>
+            <div className="flex gap-1">
+              <button onClick={() => setView("queue")} className={`px-3 py-1 rounded text-xs border ${view === "queue" ? "bg-violet-600 text-white border-violet-600" : ""}`}>Cần gọi</button>
+              <button onClick={() => { setView("day"); setDay(vnToday()) }} className={`px-3 py-1 rounded text-xs border ${view === "day" ? "bg-violet-600 text-white border-violet-600" : ""}`}>Cả ngày</button>
+            </div>
+          </div>
+          <div className="mt-2 h-2 rounded bg-gray-100 overflow-hidden"><div className="h-2 bg-green-500" style={{ width: `${pct}%` }} /></div>
+          <div className="mt-2 text-xs text-gray-500 flex flex-wrap gap-x-3">
+            {blocks?.active
+              ? <span className="text-green-700 font-medium">🟢 Đang trong khung CSKH {blocks.active.label}</span>
+              : <span>Khung CSKH tiếp theo: {blocks?.next ? blocks.next.label : "hết khung hôm nay"}</span>}
+            <span>· Lịch: {(blocks?.all ?? []).map((b: any) => b.label.split(" · ")[0]).join(", ")}</span>
+          </div>
+        </div>
+      )}
+
+      {view === "day" ? (
+        <DayView day={day} setDay={setDay} data={dayData} tasks={data?.tasks ?? []} onOpen={setSelected} />
+      ) : <>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
         <button onClick={() => setFilter("")} className={`rounded-xl p-3 text-left bg-gray-50 ${!filter ? "ring-2 ring-violet-500" : ""}`}>
           <div className="text-2xl font-bold">{s.due ?? 0}</div><div className="text-xs text-gray-500">Việc đến hạn</div>
@@ -328,6 +441,8 @@ export default function CskhQueue() {
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${TASKS[t.task.code]?.cls ?? ""}`}>{TASKS[t.task.code]?.label ?? t.task.code}</span>
                     {t.task.handled && <div className="text-[11px] text-gray-400 mt-0.5">đã xử lý, xem lại</div>}
+                    {t.today?.carried_from && <div className="text-[11px] text-orange-600 mt-0.5">tồn từ {fmtDay(t.today.carried_from)}</div>}
+                    {t.today?.reopened > 0 && <div className="text-[11px] text-red-600 mt-0.5">mở lại — VTP báo lỗi tiếp</div>}
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{t.customer_name} · {fmtVND(t.cod)}</div>
@@ -344,6 +459,8 @@ export default function CskhQueue() {
           </table>
         </div>
       )}
+
+      </>}
 
       {selected && (
         <TaskCard t={selected} tagInfo={tagInfo} pending={pending} setPending={setPending}

@@ -97,14 +97,16 @@ const VN_OFFSET = 7 * 3600_000
 const MIN = 60_000
 const HOUR = 3600_000
 
-/** Sales call 08:00–21:00 VN; a due time outside that moves to the next 08:00. */
-export function clampWorkHours(ms: number): number {
+/**
+ * Move a due time outside working hours to the next shift start (VN time, minutes of day).
+ * Default = sales 08:00–21:00; CSKH works 08:30–17:00.
+ */
+export function clampWorkHours(ms: number, startMin = 8 * 60, endMin = 21 * 60): number {
   const vn = new Date(ms + VN_OFFSET)
-  const h = vn.getUTCHours()
-  if (h >= 8 && h < 21) return ms
+  const m = vn.getUTCHours() * 60 + vn.getUTCMinutes()
+  if (m >= startMin && m < endMin) return ms
   const day = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate())
-  const next8 = day + 8 * HOUR + (h >= 21 ? 24 * HOUR : 0)
-  return next8 - VN_OFFSET
+  return day + startMin * MIN + (m >= endMin ? 24 * HOUR : 0) - VN_OFFSET
 }
 
 export type CallAttempt = { start: number; end: number; talkSec: number }

@@ -37,6 +37,15 @@ function repBadEarly(rep: any) {
   return !!rep?.available && rep.return_rate !== null && (rep.return_rate >= 30 || rep.flagged)
 }
 
+// Mirrors CSKH_BLOCKS in lib/cskh-queue.ts (server lib uses pg, so it can't be imported here).
+const CSKH_PERSON = "HADTT"
+const CSKH_BLOCKS_UI: [number, number, string][] = [[510, 570, "8:30–9:30"], [660, 690, "11:00–11:30"], [900, 960, "15:00–16:00"]]
+function cskhBlockNow(): string | null {
+  const vn = new Date(Date.now() + 7 * 3600_000)
+  const m = vn.getUTCHours() * 60 + vn.getUTCMinutes()
+  return CSKH_BLOCKS_UI.find(([s, e]) => m >= s && m < e)?.[2] ?? null
+}
+
 const PENDING_KEY = "xac-nhan-don.pending-call"
 function readPending(): { orderId: string; at: number; name: string } | null {
   try {
@@ -708,6 +717,14 @@ const XacNhanDonPage = () => {
           <button onClick={syncPos} disabled={syncing} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">{syncing ? "Đang đồng bộ..." : "🔄 Đồng bộ POS"}</button>
         </div>
       </div>
+
+      {/* Hà sells and is the CSKH: during fixed CSKH blocks the sale queue points her to /app/cskh */}
+      {data?.me?.name === CSKH_PERSON && cskhBlockNow() && (
+        <div className="p-3 rounded-lg bg-green-50 text-green-800 text-sm flex justify-between items-center gap-2 flex-wrap">
+          <span>🟢 Đang trong khung CSKH <b>{cskhBlockNow()}</b> — ưu tiên gọi cứu đơn giao thất bại trước, đơn sale để sau khung này.</span>
+          <a href="/app/cskh?main=queue" className="px-3 py-1 bg-green-600 text-white rounded text-xs">Sang CSKH →</a>
+        </div>
+      )}
 
       {/* Must-log banners */}
       {pending && (
