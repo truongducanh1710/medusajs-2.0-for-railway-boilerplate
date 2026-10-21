@@ -762,7 +762,9 @@ const XacNhanDonPage = () => {
           <input type="date" value={dateFrom} max={dateTo || today} onChange={(e) => setDateFrom(e.target.value)} className="border rounded px-2 py-1 text-xs" />
           <span className="text-gray-400">→</span>
           <input type="date" value={dateTo} min={dateFrom} max={today} onChange={(e) => setDateTo(e.target.value)} className="border rounded px-2 py-1 text-xs" />
-          <span className="text-xs text-gray-400">Hàng đợi chỉ giữ đơn 14 ngày gần nhất</span>
+          <span className="text-xs text-gray-400" title="Đơn đến hạn xếp xen kẽ: 1 khách mới, 1 đơn gọi lại. Trong mỗi nhóm ưu tiên đơn to, khách có lịch sử mua tốt, khách chờ lâu; đơn tồn càng cũ càng xuống.">
+            Hàng đợi chỉ giữ đơn 14 ngày gần nhất · Thứ tự: xen kẽ khách mới / gọi lại ⓘ
+          </span>
         </div>
       )}
 
@@ -815,6 +817,13 @@ const XacNhanDonPage = () => {
                   </td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-xs ${BUCKET_STYLE[o.bucket]}`}>{o.next.label}</span>
+                    {o.priority?.reasons?.length > 0 && (
+                      <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
+                        {o.priority.reasons.map((r: string) => (
+                          <span key={r} className={`px-1.5 py-0.5 rounded text-[11px] ${/hoàn/.test(r) ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{r}</span>
+                        ))}
+                      </span>
+                    )}
                     {o.notes?.length > 0 && <div className="text-xs text-gray-400 mt-0.5 truncate max-w-[220px]">“{o.notes[o.notes.length - 1].message}”</div>}
                   </td>
                   <td className="px-3 py-2 text-center">

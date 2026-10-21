@@ -4,6 +4,7 @@ import { getPool } from "../../../../../lib/db"
 import {
   SALE_ROSTER, QUEUE_ORDER_SQL, parseLandingPackage, phoneKey, groupAttempts,
   attemptHasNote, parseCallbackAt, computeNextAction,
+  computePriority, interleave, warmReputations, cachedReputation,
 } from "../../../../../lib/sale-queue"
 
 const MIN = 60_000
@@ -36,6 +37,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
               (po.raw->>'cod')::numeric AS cod,
               po.raw->>'note' AS pos_note,
               po.raw->>'duplicated_phone' AS dup_phone,
+              COALESCE((po.raw->'customer'->>'succeed_order_count')::int, 0) AS shop_succeeded,
               COALESCE(po.raw->'shipping_address'->>'commune_id', po.raw->'shipping_address'->>'new_commune_id') AS commune_id,
               po.raw->'shipping_address'->>'full_address' AS full_address
          FROM pancake_order po
@@ -65,6 +67,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         callsByKey.set(c.k, list)
       }
     }
+
+    // Network reputation drives priority; the first load fills the cache within a time budget
+    // and phones still missing are scored neutral until the next refresh.
+    await warmReputations(rows
+      .filter((r: any) => r.status === 0 && (seller === "all" || r.seller_id === seller))
+      .map((r: any) => r.customer_phone))
 
     const queue: any[] = []
     const waiting: any[] = []
@@ -124,8 +132,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         : "later"
 
       const pkg = parseLandingPackage(r.pos_note)
+      const priority = computePriority({
+        value: r.cod != null ? Number(r.cod) : Number(r.total) || 0,
+        rep: cachedReputation(r.customer_phone),
+        shopSucceeded: Number(r.shop_succeeded) || 0,
+        firstCall: next.code === "first",
+        createdAt,
+        dueAt: next.dueAt,
+        isCallback: next.code === "callback",
+        now,
+      })
       queue.push({
         ...base,
+        priority: { score: priority.score, reasons: priority.reasons, rep_tier: priority.repTier },
+        lane: next.code === "first" ? "new" : "followup",
         notes: notes.slice(-6),
         note_count: notes.length,
         call_attempts: attempts.length,
@@ -149,13 +169,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       })
     }
 
-    // Overdue: newest orders first — a week-old KNM backlog must not bury today's fresh orders,
-    // which convert far better. Everything else: earliest due first.
-    const order = { overdue: 0, now: 1, later: 2, cancel: 3 } as Record<string, number>
-    queue.sort((a, b) => order[a.bucket] - order[b.bucket]
-      || (a.bucket === "overdue"
-        ? Date.parse(b.created_at) - Date.parse(a.created_at)
-        : Date.parse(a.next.dueAt) - Date.parse(b.next.dueAt)))
+    // Due orders (now + overdue) split into two lanes — first call vs call-back — each sorted by
+    // priority score (order value, network reputation, shop history, waiting time), then
+    // interleaved 1:1 so new customers never sit behind the KNM backlog. Not-yet-due orders
+    // follow by due time; cancel proposals last.
+    const byScore = (a: any, b: any) => b.priority.score - a.priority.score
+    const due = queue.filter((o) => o.bucket === "now" || o.bucket === "overdue")
+    const sorted = [
+      ...interleave(due.filter((o) => o.lane === "new").sort(byScore), due.filter((o) => o.lane !== "new").sort(byScore)),
+      ...queue.filter((o) => o.bucket === "later").sort((a, b) => Date.parse(a.next.dueAt) - Date.parse(b.next.dueAt)),
+      ...queue.filter((o) => o.bucket === "cancel"),
+    ]
+    queue.splice(0, queue.length, ...sorted)
 
     res.json({
       seller,

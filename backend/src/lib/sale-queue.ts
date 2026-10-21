@@ -175,6 +175,127 @@ export function computeNextAction(o: {
   }
 }
 
+// ---- Phone reputation across the whole Pancake network ----
+
+export type Reputation = { available: boolean; success?: number; fail?: number; warning?: number; return_rate?: number | null; flagged?: boolean }
+const repCache = new Map<string, { at: number; data: Reputation }>()
+const REP_TTL = 6 * 3600_000
+
+/**
+ * orders/bad_report_info is not in Pancake's API docs — found in the POS web bundle (21/10/2026).
+ * Failures return { available: false } so callers just skip the signal.
+ */
+export async function getReputation(phone: string): Promise<Reputation> {
+  const p = String(phone ?? "").replace(/\D/g, "")
+  if (p.length < 9) return { available: false }
+  const hit = repCache.get(p)
+  if (hit && Date.now() - hit.at < REP_TTL) return hit.data
+  try {
+    const r = await pos("GET", `/orders/bad_report_info?phone_number=${p}`)
+    let success = 0, fail = 0, warning = 0
+    for (const v of Object.values<any>(r?.data?.reports_by_phone ?? {})) {
+      success += v.order_success || 0
+      fail += v.order_fail || 0
+      warning += v.warning || 0
+    }
+    const total = success + fail
+    const data: Reputation = {
+      available: true, success, fail, warning,
+      return_rate: total ? Math.round((fail / total) * 100) : null,
+      flagged: (r?.data?.warning_phone_number ?? []).length > 0,
+    }
+    repCache.set(p, { at: Date.now(), data })
+    return data
+  } catch {
+    return { available: false }
+  }
+}
+
+export function cachedReputation(phone: string): Reputation | null {
+  const hit = repCache.get(String(phone ?? "").replace(/\D/g, ""))
+  return hit && Date.now() - hit.at < REP_TTL ? hit.data : null
+}
+
+/** Fill the cache for many phones within a time budget; whatever is left is fetched next refresh. */
+export async function warmReputations(phones: string[], budgetMs = 8000, concurrency = 8): Promise<void> {
+  const todo = [...new Set(phones)].filter((p) => !cachedReputation(p))
+  const deadline = Date.now() + budgetMs
+  let i = 0
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (i < todo.length && Date.now() < deadline) await getReputation(todo[i++])
+  }))
+}
+
+// ---- Priority (who to call first) ----
+
+export type Priority = { score: number; reasons: string[]; repTier: "good" | "bad" | "neutral" | "unknown" }
+
+/**
+ * Score within a lane (first call vs call-back). Shop rules (21/10/2026): bigger orders first,
+ * customers with a good buying history first, nobody waits too long. Weights are deliberately
+ * simple so a sale can read the reasons; tune here.
+ */
+export function computePriority(o: {
+  value: number
+  rep: Reputation | null
+  shopSucceeded: number
+  firstCall: boolean
+  createdAt: number
+  dueAt: number
+  isCallback: boolean
+  now: number
+}): Priority {
+  const reasons: string[] = []
+  let score = 0
+
+  const valuePts = Math.min(30, Math.round(o.value / 50_000))
+  score += valuePts
+  if (o.value >= 1_000_000) reasons.push("đơn to")
+
+  let repTier: Priority["repTier"] = "unknown"
+  const rep = o.rep
+  if (rep?.available) {
+    const total = (rep.success ?? 0) + (rep.fail ?? 0)
+    const rate = rep.return_rate ?? 0
+    if (rep.flagged || (total >= 3 && rate >= 30)) {
+      repTier = "bad"; score -= 20; reasons.push(`hoàn ${rate}%`)
+    } else if ((rep.success ?? 0) >= 10 && rate < 5) {
+      repTier = "good"; score += 20; reasons.push(`khách tốt ${rep.success}/${rep.fail}`)
+    } else if ((rep.success ?? 0) >= 3 && rate < 10) {
+      repTier = "good"; score += 12; reasons.push(`khách tốt ${rep.success}/${rep.fail}`)
+    } else {
+      repTier = "neutral"
+    }
+  }
+  if (o.shopSucceeded > 0) { score += 10; reasons.push("khách cũ của shop") }
+
+  if (o.isCallback && o.dueAt <= o.now) {
+    score += 40; reasons.push("đến giờ hẹn")
+  } else if (o.firstCall) {
+    // New customers: every 4 minutes of waiting is worth a point, capped at 2 hours.
+    const waitMin = Math.max(0, (o.now - o.createdAt) / 60_000)
+    score += Math.min(30, Math.round(waitMin / 4))
+    if (waitMin >= 30) reasons.push(`chờ ${waitMin >= 120 ? Math.round(waitMin / 60) + "h" : Math.round(waitMin) + "p"}`)
+  } else {
+    const overdueH = Math.max(0, (o.now - o.dueAt) / 3_600_000)
+    score += Math.min(20, Math.round(overdueH * 2))
+    // Stale backlog loses value: −3 per day since the order came in.
+    const ageDays = (o.now - o.createdAt) / 86_400_000
+    score -= Math.round(ageDays * 3)
+  }
+  return { score, reasons, repTier }
+}
+
+/** Alternate first-call and call-back lanes 1:1 so fresh orders never sit behind the backlog. */
+export function interleave<T>(a: T[], b: T[]): T[] {
+  const out: T[] = []
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) out.push(a[i])
+    if (i < b.length) out.push(b[i])
+  }
+  return out
+}
+
 /**
  * Orders that belong to the call queue = orders assigned to a sale in SALE_ROSTER.
  * Marketplace orders (Shopee VN/MY, TikTok Shop) are never assigned a sale on POS (verified
