@@ -4,6 +4,7 @@ import { apiFetch } from "../../lib/api-client"
 import { useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { withRouteGuard } from "../../components/route-guard"
+import CskhQueue from "../../components/cskh-queue"
 
 // ============ Helpers ============
 
@@ -420,9 +421,9 @@ function CskhPage() {
   const { has, loading: permLoading } = useCurrentPermissions()
   const canManage = has("page.cskh.manage")
 
-  const [mainTab, setMainTab] = useState<"orders" | "team">(() => {
+  const [mainTab, setMainTab] = useState<"queue" | "orders" | "team">(() => {
     const p = new URLSearchParams(window.location.search)
-    return (p.get("main") as "orders" | "team") || "orders"
+    return (p.get("main") as "queue" | "orders" | "team") || "queue"
   })
 
   const [orders, setOrders] = useState<any[]>([])
@@ -582,8 +583,14 @@ function CskhPage() {
         {/* Main tab switcher */}
         <div className="flex border border-ui-border-base rounded overflow-hidden">
           <button
+            onClick={() => { setMainTab("queue"); window.history.replaceState(null, "", "?main=queue") }}
+            className={`px-4 py-1.5 text-sm font-medium transition-colors ${mainTab === "queue" ? "bg-ui-bg-base-pressed text-ui-fg-base" : "bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-subtle"}`}
+          >
+            ✅ Việc cần làm
+          </button>
+          <button
             onClick={() => { setMainTab("orders"); window.history.replaceState(null, "", "?main=orders") }}
-            className={`px-4 py-1.5 text-sm font-medium transition-colors ${mainTab === "orders" ? "bg-ui-bg-base-pressed text-ui-fg-base" : "bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-subtle"}`}
+            className={`px-4 py-1.5 text-sm font-medium transition-colors border-l border-ui-border-base ${mainTab === "orders" ? "bg-ui-bg-base-pressed text-ui-fg-base" : "bg-ui-bg-base text-ui-fg-subtle hover:bg-ui-bg-subtle"}`}
           >
             📋 Lịch gọi hôm nay
           </button>
@@ -637,6 +644,7 @@ function CskhPage() {
         )}
       </div>
 
+      {mainTab === "queue" && <CskhQueue />}
       {mainTab === "team" && canManage && <TeamStatsTab />}
 
       {mainTab === "orders" && <>

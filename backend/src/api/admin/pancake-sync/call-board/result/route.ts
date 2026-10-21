@@ -11,10 +11,17 @@ const OUTCOME_LABEL: Record<string, string> = {
   hen: "Hẹn gọi lại",
   huy: "Hủy",
   note: "Ghi note",
+  // CSKH (after the order is confirmed)
+  kh_hen_nhan: "Khách hẹn nhận lại",
+  kh_dong_y: "Khách đồng ý nhận",
+  kh_tu_choi: "Khách từ chối nhận",
+  bao_vtp: "Đã báo bưu tá / VTP",
+  bao_kho: "Đã báo kho",
 }
-// Outcomes that only add a note — allowed on orders that already left status 0, so a sale
-// can back-fill the note for a call made on an order confirmed directly in POS.
-const NOTE_ONLY = new Set(["knm", "may_ban", "thue_bao", "zalo", "note"])
+// Outcomes that only add a note (+ optional tags / call-back) — allowed on orders that already
+// left status 0: back-filling a sale's note, and every CSKH call on shipping orders.
+const NOTE_ONLY = new Set(["knm", "may_ban", "thue_bao", "zalo", "note", "hen", "kh_hen_nhan", "kh_dong_y", "kh_tu_choi", "bao_vtp", "bao_kho"])
+const NEEDS_CALLBACK = new Set(["hen", "kh_hen_nhan"])
 
 const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ"
 
@@ -41,8 +48,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const cancelReason = String(b.cancel_reason ?? "").trim()
   if (outcome === "huy" && !cancelReason) return res.status(400).json({ error: "Hủy đơn phải có lý do" })
   if (outcome === "note" && !extra) return res.status(400).json({ error: "Nhập nội dung note" })
-  const callbackAt = outcome === "hen" ? new Date(b.callback_at) : null
-  if (outcome === "hen" && (!callbackAt || isNaN(callbackAt.getTime()) || callbackAt.getTime() < Date.now() - 60_000)) {
+  const callbackAt = NEEDS_CALLBACK.has(outcome) ? new Date(b.callback_at) : null
+  if (NEEDS_CALLBACK.has(outcome) && (!callbackAt || isNaN(callbackAt.getTime()) || callbackAt.getTime() < Date.now() - 60_000)) {
     return res.status(400).json({ error: "Giờ hẹn gọi lại không hợp lệ" })
   }
 
@@ -64,7 +71,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
   if (!o) return res.status(404).json({ error: "Không thấy đơn trên POS" })
   const isNew = o.status === 0
-  if (!isNew && (!NOTE_ONLY.has(outcome) || edits)) {
+  // After confirmation only notes, tags and call-backs — never items/money/address/status.
+  const onlyTags = !edits || Object.keys(edits).every((k) => k === "add_tags")
+  if (!isNew && (!NOTE_ONLY.has(outcome) || !onlyTags)) {
     return res.status(409).json({ error: "Đơn đã rời trạng thái Mới trên POS — chỉ ghi được note, không sửa/chốt/hủy được nữa" })
   }
   if (edits && b.base_updated_at && o.updated_at !== b.base_updated_at) {
@@ -162,11 +171,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   // ---- One note for this call ----
   const parts = [author]
-  if (outcome === "hen" && callbackAt) {
+  if (outcome !== "hen") parts.push(OUTCOME_LABEL[outcome])
+  if (callbackAt) {
+    // "Hẹn gọi HH:mm D/M" is what both queues parse to schedule the next call.
     const vn = new Date(callbackAt.getTime() + 7 * 3600_000)
     parts.push(`Hẹn gọi ${String(vn.getUTCHours()).padStart(2, "0")}:${String(vn.getUTCMinutes()).padStart(2, "0")} ${vn.getUTCDate()}/${vn.getUTCMonth() + 1}`)
-  } else {
-    parts.push(OUTCOME_LABEL[outcome])
   }
   if (outcome === "huy") parts.push(`Lý do: ${cancelReason}`)
   parts.push(...changes)
@@ -182,7 +191,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     warnings.push(`Đã ghi đơn nhưng CHƯA ghi được note: ${err.message}. Ghi tay trên POS: "${message}"`)
   }
 
-  if (outcome === "hen" && callbackAt) {
+  if (callbackAt) {
     try {
       await pos("POST", `/order_call_laters`, {
         order_call_later: {

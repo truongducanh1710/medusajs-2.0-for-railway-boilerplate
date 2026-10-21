@@ -313,6 +313,7 @@ export default defineMiddlewares({
     // chạy sync chứ không chỉ quyền xem đơn (wildcard ở trên chỉ cần .view).
     { matcher: "/admin/pancake-status/update", method: ["POST"], middlewares: [requirePerm("page.pancake-sync.run")] },
     { matcher: "/admin/cskh/orders*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
+    { matcher: "/admin/cskh/queue*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
     { matcher: "/admin/cskh/analyze*", method: ["GET"], middlewares: [requirePerm("page.cskh.view")] },
     { matcher: "/admin/cskh/analyze*", method: ["POST"], middlewares: [requirePerm("page.cskh.analyze")] },
     { matcher: "/admin/cskh/team-stats*", method: ["GET"], middlewares: [requirePerm("page.cskh.manage")] },
