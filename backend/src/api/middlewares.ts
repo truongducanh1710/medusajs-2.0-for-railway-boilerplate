@@ -259,7 +259,8 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/extensions*", method: ["POST"], middlewares: [requirePerm("page.ity-cdr.run")] },
     { matcher: "/admin/ity-cdr-sync/report*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
-    { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requirePerm("page.cskh-goi-khach.call")] },
+    // don-hang.edit: sale bấm gọi từ hàng đợi /app/xac-nhan-don (route vẫn chỉ đổ chuông máy của chính người bấm).
+    { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requireAnyPerm("page.cskh-goi-khach.call", "page.don-hang.edit")] },
     // Catch-all: mọi báo cáo đòi page.bao-cao.view.
     //
     // 2 route NHẬP chi phí là ngoại lệ — người chỉ điền số không nên có page.bao-cao.view
@@ -280,6 +281,9 @@ export default defineMiddlewares({
     { matcher: "/admin/ads-expense/report", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/ads-expense/report/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/call-board*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
+    // Sale ghi kết quả cuộc gọi / sửa đơn sang POS. Sale hiện có quyền lệch nhau (Linh: don-hang.edit,
+    // HADTT: cskh-goi-khach.call) — quyền nào trong 2 cũng là người được gọi + xác nhận đơn.
+    { matcher: "/admin/pancake-sync/call-board/result", method: ["POST"], middlewares: [requireAnyPerm("page.don-hang.edit", "page.cskh-goi-khach.call")] },
     { matcher: "/admin/pancake-sync/orders*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     { matcher: "/admin/pancake-sync/orders/*", method: ["POST", "PUT", "PATCH"], middlewares: [requirePerm("page.don-hang.edit")] },
     { matcher: "/admin/pages*", method: ["GET"], middlewares: [requirePerm("page.pages.view")] },

@@ -711,6 +711,35 @@ class PancakeSyncService extends MedusaService({ PancakeOrder, PancakeSyncJob })
   }
 
   /**
+   * Re-pull 1 đơn từ POS và ghi đè snapshot (status, items, notes, tags, raw).
+   * Cần vì sync thường KHÔNG cập nhật notes của đơn đã rời status 0 — sale note rồi chốt
+   * trong vòng 2 phút thì note cuối không bao giờ về DB (kiểm 21/10/2026: 7/9 đơn HADTT
+   * bị coi là "gọi không note" nhưng trên POS có note). Dùng sau khi web ghi sang POS và
+   * trước khi gắn cờ "gọi chưa note".
+   */
+  async refreshOrderFromPos(orderId: string, market: string = "VN"): Promise<any | null> {
+    const raw = await this.fetchOrderById(orderId, market)
+    if (!raw) return null
+    const mapped = mapPancakeOrder(raw, market)
+    if (!mapped.id) return null
+    const { notes, lastNoteAt, callCount } = extractNotesForOrder(raw)
+    const tags = extractTags(raw)
+    const existing = await this.listPancakeOrders({ id: mapped.id }, { take: 1 })
+    const prev = existing[0]
+    const fields = { ...mapped, notes, last_note_at: lastNoteAt, call_count: callCount, tags, data_quality: "complete", raw_version: "v1" }
+    if (prev) {
+      const prevHistory: any[] = Array.isArray(prev.status_history) ? prev.status_history : []
+      const status_history = prev.status !== mapped.status
+        ? [...prevHistory, { status: mapped.status, status_name: mapped.status_name, changed_at: new Date().toISOString(), source: "refresh" }]
+        : prevHistory
+      await this.updatePancakeOrders({ id: mapped.id, ...fields, status_history } as any)
+    } else {
+      await this.createPancakeOrders([fields] as any)
+    }
+    return raw
+  }
+
+  /**
    * Sync toàn bộ đơn status=0 (đơn mới chưa xác nhận) từ Pancake.
    *
    * Pancake list endpoint trả về đầy đủ customer.notes + tags trong response — không cần
