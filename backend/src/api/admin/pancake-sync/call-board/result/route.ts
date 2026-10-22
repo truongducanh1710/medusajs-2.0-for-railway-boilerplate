@@ -161,6 +161,19 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (Object.keys(put).length) {
       const r = await pos("PUT", `/orders/${orderId}`, put)
       cod = r?.data?.cod ?? null
+      // POS answers 200 but keeps the old address when it cannot place the commune (verified
+      // 21/10 with an old commune that has no new mapping) — never report it as saved.
+      if (put.shipping_address) {
+        const got = r?.data?.shipping_address ?? {}
+        const gotCommune = got.new_commune_id ?? got.commune_id
+        if (gotCommune !== put.shipping_address.commune_id) {
+          const others = Object.keys(put).filter((k) => k !== "shipping_address")
+          return res.status(502).json({
+            error: "POS không nhận địa chỉ mới (phường/xã không hợp lệ). Chọn lại phường/xã theo địa chỉ mới rồi lưu lại."
+              + (others.length ? " Các thay đổi khác (sản phẩm, tiền, thẻ) đã được lưu; chưa ghi note và chưa đổi trạng thái." : ""),
+          })
+        }
+      }
     }
     if (outcome === "chot" || outcome === "huy") {
       await pos("PUT", `/orders/${orderId}`, { status: outcome === "chot" ? 1 : 6 })

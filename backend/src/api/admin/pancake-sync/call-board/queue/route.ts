@@ -70,9 +70,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Network reputation drives priority; the first load fills the cache within a time budget
     // and phones still missing are scored neutral until the next refresh.
-    await warmReputations(rows
+    // ~7s for 140 phones cold: wait at most 3s, let the rest fill in the background (cache 6h).
+    const repPhones = rows
       .filter((r: any) => r.status === 0 && (seller === "all" || r.seller_id === seller))
-      .map((r: any) => r.customer_phone))
+      .map((r: any) => r.customer_phone)
+    await warmReputations(repPhones, 3000)
+    void warmReputations(repPhones, 30_000).catch(() => {})
 
     const queue: any[] = []
     const waiting: any[] = []
@@ -145,6 +148,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       queue.push({
         ...base,
         priority: { score: priority.score, reasons: priority.reasons, rep_tier: priority.repTier },
+        // Network-wide success / return counts for this phone (Pancake), shown as a column.
+        rep: (() => {
+          const rp = cachedReputation(r.customer_phone)
+          return rp?.available ? { success: rp.success ?? 0, fail: rp.fail ?? 0, return_rate: rp.return_rate ?? null, flagged: !!rp.flagged } : null
+        })(),
+        address_text: r.full_address || null,
         lane: next.code === "first" ? "new" : "followup",
         notes: notes.slice(-6),
         note_count: notes.length,

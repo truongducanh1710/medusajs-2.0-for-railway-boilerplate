@@ -193,7 +193,14 @@ export async function getReputation(phone: string): Promise<Reputation> {
   const hit = repCache.get(p)
   if (hit && Date.now() - hit.at < REP_TTL) return hit.data
   try {
-    const r = await pos("GET", `/orders/bad_report_info?phone_number=${p}`)
+    // POS drops some of a burst of parallel calls (21/10: 29 of 40 at 8-wide) — retry with backoff.
+    let r: any
+    for (let attempt = 0; ; attempt++) {
+      try { r = await pos("GET", `/orders/bad_report_info?phone_number=${p}`); break } catch (e) {
+        if (attempt >= 2) throw e
+        await new Promise((ok) => setTimeout(ok, 300 * (attempt + 1) ** 2))
+      }
+    }
     let success = 0, fail = 0, warning = 0
     for (const v of Object.values<any>(r?.data?.reports_by_phone ?? {})) {
       success += v.order_success || 0
@@ -219,7 +226,7 @@ export function cachedReputation(phone: string): Reputation | null {
 }
 
 /** Fill the cache for many phones within a time budget; whatever is left is fetched next refresh. */
-export async function warmReputations(phones: string[], budgetMs = 8000, concurrency = 8): Promise<void> {
+export async function warmReputations(phones: string[], budgetMs = 8000, concurrency = 4): Promise<void> {
   const todo = [...new Set(phones)].filter((p) => !cachedReputation(p))
   const deadline = Date.now() + budgetMs
   let i = 0

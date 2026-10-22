@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
 import SalePeriodSummary from "../../components/sale-period-summary"
 import { withRouteGuard } from "../../components/route-guard"
+import AddressPicker, { type AddressValue, type Suggestion, suggestFrom } from "../../components/address-picker"
+import { RepChip, repTier } from "../../components/reputation-bar"
 
 // Hàng đợi việc của sale: mọi đơn chưa xử lý xong (không lọc theo ngày), sắp theo hạn của
 // việc tiếp theo. Mỗi cuộc gọi phải ghi đúng 1 kết quả → 1 note trên POS.
@@ -93,11 +95,9 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
   const [discount, setDiscount] = useState(0)
   const [ship, setShip] = useState(0)
   const [freeShip, setFreeShip] = useState(false)
-  const [provinces, setProvinces] = useState<any[]>([])
-  const [communes, setCommunes] = useState<any[]>([])
-  const [provinceId, setProvinceId] = useState<string>("")
-  const [communeId, setCommuneId] = useState<string>("")
-  const [communeQ, setCommuneQ] = useState("")
+  const [addr, setAddr] = useState<AddressValue>({ provinceId: "", communeId: "" })
+  const provinceId = addr.provinceId
+  const communeId = addr.communeId
   const [street, setStreet] = useState("")
   const [notePrint, setNotePrint] = useState("")
   const [productQ, setProductQ] = useState("")
@@ -113,6 +113,8 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [calling, setCalling] = useState(false)
+  const [addrSugg, setAddrSugg] = useState<Suggestion | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   const load = async () => {
     setLoadErr(null)
@@ -124,8 +126,7 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
     setDiscount(d.discount || 0)
     setShip(d.shipping_fee || 0)
     setFreeShip(!!d.is_free_shipping)
-    setProvinceId(d.address.province_id || "")
-    setCommuneId(d.address.commune_id || "")
+    setAddr({ provinceId: d.address.province_id || "", communeId: d.address.commune_id || "" })
     setStreet(d.address.address || "")
     setNotePrint(d.note_print || "")
     setAddTags([])
@@ -136,14 +137,14 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
       apiFetch(`/admin/pancake-sync/call-board/reputation?phone=${encodeURIComponent(row.customer_phone)}`)
         .then((r) => r.json()).then(setRep).catch(() => setRep({ available: false }))
     }
-    apiFetch(`/admin/pancake-sync/call-board/geo`).then((r) => r.json()).then((d) => setProvinces(d.provinces ?? [])).catch(() => {})
   }, [row.id])
 
+  // Address suggestion for the "Địa chỉ giao" check box (only when POS has no ward yet).
   useEffect(() => {
-    if (!provinceId) return setCommunes([])
-    apiFetch(`/admin/pancake-sync/call-board/geo?province_id=${provinceId}`)
-      .then((r) => r.json()).then((d) => setCommunes(d.communes ?? [])).catch(() => setCommunes([]))
-  }, [provinceId])
+    setAddrSugg(null)
+    if (!o || o.address.commune_id || o.status !== 0) return
+    suggestFrom(o.address.full_address || o.address.address || "").then(setAddrSugg).catch(() => {})
+  }, [o?.id])
 
   useEffect(() => {
     const q = productQ.trim()
@@ -154,22 +155,6 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
     }, 250)
     return () => clearTimeout(t)
   }, [productQ, inStockOnly])
-
-  // Suggest province/commune from the free-text address the customer typed.
-  const suggestion = useMemo(() => {
-    if (!o || o.address.commune_id || !provinces.length) return null
-    const text = fold(o.address.full_address || o.address.address)
-    const prov = provinces.find((p) => text.includes(fold(p.name)))
-    return prov ? { province: prov } : null
-  }, [o, provinces])
-  const communeGuess = useMemo(() => {
-    if (!o || !communes.length || communeId) return null
-    const text = fold(o.address.full_address || o.address.address)
-    return communes.find((c) => {
-      const bare = fold(c.name).replace(/^(phuong|xa|thi tran|dac khu) /, "")
-      return bare.length > 2 && text.includes(bare)
-    }) ?? null
-  }, [o, communes, communeId])
 
   if (loadErr) {
     return (
@@ -186,8 +171,8 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
   const cod = Math.max(0, subtotal - discount + (freeShip ? 0 : ship) - (o.prepaid || 0))
   const pkg = o.pkg
   const pkgMatch = pkg?.price ? cod === pkg.price : null
-  const province = provinces.find((p) => p.id === provinceId)
-  const commune = communes.find((c) => c.id === communeId)
+  const province = addr.provinceName ? { name: addr.provinceName } : null
+  const commune = addr.communeName ? { name: addr.communeName } : null
 
   const itemsChanged = JSON.stringify(items.map((i) => [i.variation_id, i.name, +i.quantity, +i.price]))
     !== JSON.stringify(o.items.map((i: any) => [i.variation_id, i.name, +i.quantity, +i.price]))
@@ -299,90 +284,117 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
     }
   }
 
-  const repRate = rep?.available ? rep.return_rate : null
-  const repBad = repBadEarly(rep)
+
+  // ---- Layout (top → bottom = how often the sale needs it during a call) ----
+  const tagNames: string[] = o.tags.map((t: any) => t.name)
+  const draft = tagNames.some(isDraftTag)
+  const [repLabel, repTone] = (() => { const t = repTier(rep); return [t.label, t.tone] as const })()
+  const repTotal = (rep?.success ?? 0) + (rep?.fail ?? 0)
+  const posHasWard = !!o.address.commune_id
+  const addrOk = !!communeId
+  const history = [
+    ...o.notes.map((n: any) => ({ at: n.at, text: `📝 ${n.by ? n.by + ": " : ""}${n.message}`, warn: false })),
+    ...(row.calls ?? []).map((c: any) => ({ at: Date.parse(c.at), text: `📞 ${c.talk_sec > 0 ? `Nghe máy ${c.talk_sec}s` : "Không nghe máy"}${c.noted ? "" : " — chưa có note"}`, warn: !c.noted })),
+  ].sort((a, b) => b.at - a.at)
+  const callBlocked = !!pending && pending.orderId !== String(row.id)
 
   return (
-    <Overlay onClose={onClose} wide onKey={(e) => {
+    <SideSheet onClose={onClose} onKey={(e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save() }
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (e.key === "Escape") return onClose()
       const idx = Number(e.key) - 1
       if (idx >= 0 && idx < OUTCOMES.length) setOutcome(OUTCOMES[idx].key)
     }}>
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <div className="text-lg font-semibold">{o.customer.name} · {o.customer.phone}</div>
-          <div className="text-xs text-gray-500">
-            #{o.id} · {o.status_name} · Sale {o.seller?.name || "chưa gán"} · MKT {o.marketer || "—"} · {row.shop_name}
+      {/* 1. Sticky header: draft badge first, who, phone, call */}
+      <div className="sticky top-0 z-10 bg-white border-b pt-4 pb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {draft && <span className="px-2.5 py-1 rounded-md bg-amber-500 text-white text-sm font-bold tracking-wider ring-4 ring-amber-100">ĐƠN NHÁP</span>}
+            <span className="text-xl font-semibold">{o.customer.name}</span>
+            <span className="font-mono text-gray-500">{o.customer.phone}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {tagNames.filter((t) => !isDraftTag(t)).map((t) => (
+              <span key={t} className={`px-2 py-0.5 rounded-full text-xs font-medium ${TAG_TONE(t)}`}>{tagLabel(t)}</span>
+            ))}
+            {o.duplicated_phone && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Trùng SĐT với đơn khác</span>}
+            <span className="text-xs text-gray-500">#{o.id} · {row.next?.label ?? o.status_name} · gọi {row.call_attempts ?? 0} lần / {o.notes.length} note</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={call}
-            disabled={calling || (!!pending && pending.orderId !== String(row.id))}
-            title={pending && pending.orderId !== String(row.id) ? `Ghi kết quả cuộc gọi ${pending.name} trước` : ""}
-            className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 disabled:opacity-40"
-          >
-            {calling ? "Đang gọi..." : "📞 Gọi qua tổng đài"}
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={call} disabled={calling || callBlocked}
+            title={callBlocked ? `Ghi kết quả cuộc gọi ${pending!.name} trước` : ""}
+            className="px-4 py-2.5 bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-40">
+            {calling ? "Đang gọi..." : "📞 Gọi"}
           </button>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-2">×</button>
+          <button onClick={onClose} aria-label="Đóng" className="px-3 py-2 border rounded-lg text-gray-500 hover:bg-gray-50">✕</button>
         </div>
       </div>
 
       {!editable && (
-        <div className="mt-3 p-2 rounded bg-yellow-50 text-yellow-800 text-sm">Đơn đã ở trạng thái "{o.status_name}" trên POS — chỉ xem, không sửa được.</div>
+        <div className="mt-3 p-2 rounded bg-yellow-50 text-yellow-800 text-sm">Đơn đã ở trạng thái "{o.status_name}" trên POS — chỉ ghi note, không sửa được.</div>
       )}
 
-      {/* Landing package */}
-      {pkg && (
-        <div className={`mt-3 p-3 rounded-lg border-2 ${pkgMatch === false ? "border-red-300 bg-red-50" : "border-violet-200 bg-violet-50"}`}>
-          <div className="text-xs text-gray-500">Khách chọn trên landing</div>
-          <div className="font-medium">{pkg.text}</div>
-          {pkg.price && (
-            <div className="flex items-center justify-between gap-2 mt-1 flex-wrap text-sm">
-              {pkgMatch ? (
-                <span className="text-green-700">✓ Khớp gói: thu {fmtVND(cod)}</span>
-              ) : (
-                <span className="text-red-700">⚠ Đơn đang thu {fmtVND(cod)}, gói {fmtVND(pkg.price)} — lệch {fmtVND(Math.abs(cod - pkg.price))}</span>
-              )}
-              {!pkgMatch && editable && (
-                <button onClick={applyPackage} className="px-3 py-1 border border-violet-400 text-violet-700 rounded text-xs bg-white">Áp đúng gói</button>
-              )}
-            </div>
-          )}
+      {/* 2. Check before confirming: package vs COD · reputation · address */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+        <div className={`rounded-xl border-2 p-3 flex flex-col gap-1 ${pkg?.price && !pkgMatch ? "border-red-400 bg-red-50" : "border-green-300 bg-green-50"}`}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Gói khách chọn</div>
+          <div className="font-semibold leading-snug">{pkg ? pkg.text : "Không có thông tin gói"}</div>
+          {pkg?.price ? (pkgMatch
+            ? <div className="text-sm text-green-700">✓ Khớp: thu {fmtVND(cod)}</div>
+            : <>
+                <div className="text-sm text-red-700">Đơn thu <b>{fmtVND(cod)}</b> · gói <b>{fmtVND(pkg.price)}</b></div>
+                {editable && <button onClick={applyPackage} className="self-start mt-1 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-semibold">Áp đúng gói {fmtVND(pkg.price)}</button>}
+              </>)
+            : <div className="text-sm text-gray-600">COD {fmtVND(cod)}</div>}
         </div>
-      )}
 
-      {/* Customer risk */}
-      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-        {rep?.available && (rep.success + rep.fail > 0) ? (
-          <span className={`px-2 py-1 rounded ${repBad ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-            Toàn mạng: {rep.success} thành công · {rep.fail} hoàn · tỷ lệ hoàn {repRate}%{rep.flagged ? " · bị cảnh báo" : ""}
-          </span>
-        ) : rep?.available ? (
-          <span className="px-2 py-1 rounded bg-gray-100 text-gray-600">Toàn mạng: chưa có lịch sử</span>
-        ) : null}
-        <span className="px-2 py-1 rounded bg-gray-100 text-gray-600">
-          Shop mình: {o.customer.order_count} đơn · {o.customer.succeed_order_count} thành công · {o.customer.returned_order_count} hoàn
-        </span>
-        {o.duplicated_phone && <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-800">Trùng SĐT với đơn khác</span>}
+        <div className={`rounded-xl border-2 p-3 flex flex-col gap-1 ${repTone === "bad" ? "border-red-400 bg-red-50" : repTone === "good" ? "border-green-300 bg-green-50" : "border-gray-200 bg-gray-50"}`}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Uy tín khách (toàn mạng)</div>
+          <div className="font-semibold">{repTone === "bad" ? "⚠ " : ""}{repLabel}</div>
+          {rep?.available && repTotal > 0 ? <>
+            <div className={`font-mono text-2xl font-semibold ${(rep.return_rate ?? 0) >= 30 ? "text-red-600" : "text-green-700"}`}>hoàn {rep.return_rate}%</div>
+            <div className="h-1.5 rounded-full overflow-hidden bg-red-500"><div className="h-full bg-green-500" style={{ width: `${((rep.success ?? 0) / repTotal) * 100}%` }} /></div>
+            <div className="text-sm">{rep.success} thành công · {rep.fail} hoàn{rep.flagged ? " · POS cảnh báo" : ""}</div>
+          </> : rep?.available ? <div className="text-sm text-gray-600">Chưa có đơn nào trên Pancake</div> : null}
+          <div className="text-xs text-gray-500">Shop mình: {o.customer.order_count} đơn · {o.customer.succeed_order_count} thành công · {o.customer.returned_order_count} hoàn</div>
+          {repTone === "bad" && <div className="text-sm text-red-700">Yêu cầu chuyển khoản / cọc trước khi chốt</div>}
+        </div>
+
+        <div className={`rounded-xl border-2 p-3 flex flex-col gap-1 ${addrOk ? "border-green-300 bg-green-50" : "border-red-400 bg-red-50"}`}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Địa chỉ giao</div>
+          {addrOk && (addr.communeName || !posHasWard || addrChanged) ? <>
+            <div className="font-semibold leading-snug">{[street, addr.communeName, addr.provinceName].filter(Boolean).join(", ")}</div>
+            <div className="text-sm text-green-700">✓ Đủ phường/xã</div>
+          </> : addrOk ? <>
+            <div className="text-sm leading-snug">{o.address.full_address || o.address.address}</div>
+            <div className="text-sm text-green-700">✓ Đã có phường/xã trên POS — sửa ở mục Giao hàng nếu khách đổi</div>
+          </> : <>
+            <div className="text-sm leading-snug">{o.address.full_address || o.address.address || "Khách chưa ghi địa chỉ"}</div>
+            {addrSugg ? <>
+              <div className="text-sm">Gợi ý: <b>{addrSugg.communeName}, {addrSugg.provinceName}</b>
+                {addrSugg.from.includes("(cũ)") && <span className="block text-xs text-gray-500">đọc theo địa chỉ cũ: {addrSugg.from}</span>}</div>
+              {editable && <button onClick={() => setAddr({ provinceId: addrSugg.provinceId, communeId: addrSugg.communeId, provinceName: addrSugg.provinceName, communeName: addrSugg.communeName })}
+                className="self-start mt-1 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-semibold">Dùng gợi ý</button>}
+            </> : <div className="text-sm text-red-700">⚠ Chưa có phường/xã — {(o.address.full_address || o.address.address) ? "chọn ở mục Giao hàng" : "hỏi khách địa chỉ"}</div>}
+          </>}
+        </div>
       </div>
-      {repBad && <div className="mt-1 text-xs text-red-600">Khách tỷ lệ hoàn cao — xác nhận kỹ, cân nhắc chuyển khoản trước.</div>}
 
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Products + money */}
-        <section className="border rounded-lg p-3">
-          <div className="font-medium mb-2">Sản phẩm</div>
+      {/* 3. Work area: products & money | delivery */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+        <section className="border rounded-xl p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Sản phẩm & tiền</div>
           {editable && (
             <div className="relative mb-2">
               <div className="flex gap-2 items-center">
-                <input value={productQ} onChange={(e) => setProductQ(e.target.value)} placeholder="Tìm: tên hoặc mã PHVVN..." className="flex-1 border rounded px-2 py-1.5 text-sm" />
+                <input value={productQ} onChange={(e) => setProductQ(e.target.value)} placeholder="Thêm sản phẩm: tên hoặc mã PHVVN..." className="flex-1 min-w-0 border rounded-lg px-2 py-1.5 text-sm" />
                 <label className="text-xs flex items-center gap-1 whitespace-nowrap"><input type="checkbox" checked={inStockOnly} onChange={(e) => setInStockOnly(e.target.checked)} /> Còn hàng</label>
               </div>
               {productRes.length > 0 && (
-                <div className="absolute z-10 left-0 right-0 mt-1 bg-white border rounded shadow max-h-64 overflow-y-auto">
+                <div className="absolute z-20 left-0 right-0 mt-1 bg-white border rounded shadow max-h-64 overflow-y-auto">
                   {productRes.map((p) => (
                     <button key={p.variation_id} onClick={() => {
                       setItems((prev) => {
@@ -400,118 +412,87 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
               )}
             </div>
           )}
-          <table className="w-full text-sm">
-            <thead><tr className="text-xs text-gray-500"><th className="text-left font-normal">Tên</th><th className="w-14 font-normal">SL</th><th className="w-24 font-normal">Đơn giá</th><th className="w-24 text-right font-normal">Thành tiền</th><th className="w-6"></th></tr></thead>
+          <table className="w-full text-sm table-fixed">
+            <colgroup><col /><col className="w-14" /><col className="w-28" /><col className="w-24" /><col className="w-7" /></colgroup>
             <tbody>
               {items.map((it, idx) => (
-                <tr key={idx} className="border-t">
-                  <td className="py-1 pr-1"><div className="truncate max-w-[220px]" title={it.name}>{Number(it.price) === 0 ? "🎁 " : ""}{it.name}</div>{it.display_id && <div className="text-xs text-gray-400">{it.display_id}</div>}</td>
-                  <td><input type="number" min={1} disabled={!editable} value={it.quantity} onChange={(e) => setItems(items.map((x, j) => j === idx ? { ...x, quantity: Math.max(1, Math.round(+e.target.value || 1)) } : x))} className="w-14 border rounded px-1 py-0.5" /></td>
-                  <td><input type="number" min={0} step={1000} disabled={!editable} value={it.price} onChange={(e) => setItems(items.map((x, j) => j === idx ? { ...x, price: Math.max(0, Math.round(+e.target.value || 0)) } : x))} className="w-24 border rounded px-1 py-0.5" /></td>
-                  <td className="text-right">{fmtVND(it.quantity * it.price)}</td>
-                  <td>{editable && <button onClick={() => setItems(items.filter((_, j) => j !== idx))} className="text-gray-400 hover:text-red-600">×</button>}</td>
+                <tr key={idx} className="border-t align-middle">
+                  <td className="py-1.5 pr-2 break-words text-[13px] leading-tight">{Number(it.price) === 0 ? "🎁 " : ""}{it.name}{it.display_id && <div className="text-xs text-gray-400">{it.display_id}</div>}</td>
+                  <td><input type="number" min={1} disabled={!editable} value={it.quantity} aria-label="Số lượng" onChange={(e) => setItems(items.map((x, j) => j === idx ? { ...x, quantity: Math.max(1, Math.round(+e.target.value || 1)) } : x))} className="w-full border rounded px-1 py-1" /></td>
+                  <td className="pl-1"><input type="number" min={0} step={1000} disabled={!editable} value={it.price} aria-label="Đơn giá" onChange={(e) => setItems(items.map((x, j) => j === idx ? { ...x, price: Math.max(0, Math.round(+e.target.value || 0)) } : x))} className="w-full border rounded px-1 py-1" /></td>
+                  <td className="text-right font-mono text-[13px]">{fmtVND(it.quantity * it.price)}</td>
+                  <td className="text-right">{editable && <button onClick={() => setItems(items.filter((_, j) => j !== idx))} aria-label="Xóa" className="text-gray-400 hover:text-red-600">×</button>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {editable && items.length > 0 && (
-            <button onClick={() => {
-              const name = window.prompt("Tên quà tặng (thêm dòng 0đ — nên chọn quà từ ô tìm sản phẩm rồi sửa giá về 0 để kho trừ tồn)")
-              if (name?.trim()) setItems([...items, { variation_id: null, name: name.trim(), quantity: 1, price: 0 }])
-            }} className="mt-2 text-xs text-violet-700 hover:underline">+ Thêm quà 0đ (gõ tên)</button>
-          )}
-
-          <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
-            <label>Giảm giá<input type="number" min={0} step={1000} disabled={!editable} value={discount} onChange={(e) => setDiscount(Math.max(0, Math.round(+e.target.value || 0)))} className="w-full border rounded px-2 py-1" /></label>
-            <label>Phí ship<input type="number" min={0} step={1000} disabled={!editable || freeShip} value={ship} onChange={(e) => setShip(Math.max(0, Math.round(+e.target.value || 0)))} className="w-full border rounded px-2 py-1" /></label>
+          <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-gray-500 items-end">
+            <label className="flex flex-col gap-1">Giảm giá<input type="number" min={0} step={1000} disabled={!editable} value={discount} onChange={(e) => setDiscount(Math.max(0, Math.round(+e.target.value || 0)))} className="border rounded px-2 py-1.5 text-sm text-gray-900" /></label>
+            <label className="flex flex-col gap-1">Phí ship<input type="number" min={0} step={1000} disabled={!editable || freeShip} value={ship} onChange={(e) => setShip(Math.max(0, Math.round(+e.target.value || 0)))} className="border rounded px-2 py-1.5 text-sm text-gray-900" /></label>
+            <label className="flex items-center gap-2 text-sm text-gray-800"><input type="checkbox" disabled={!editable} checked={freeShip} onChange={(e) => setFreeShip(e.target.checked)} /> Miễn ship</label>
+            {o.prepaid > 0 && <div className="text-sm text-gray-700 text-right">Đã CK −{fmtVND(o.prepaid)}</div>}
+            <div className="col-span-2 flex justify-between items-baseline bg-gray-50 rounded-lg px-3 py-2">
+              <span className="text-sm font-semibold text-gray-800">Thu hộ COD</span>
+              <span className="font-mono text-xl font-bold text-gray-900">{fmtVND(cod)}</span>
+            </div>
           </div>
-          <label className="text-sm flex items-center gap-2 mt-2"><input type="checkbox" disabled={!editable} checked={freeShip} onChange={(e) => setFreeShip(e.target.checked)} /> Miễn phí ship</label>
-          <div className="mt-3 bg-gray-50 rounded p-2 text-sm space-y-0.5">
-            <div className="flex justify-between"><span className="text-gray-500">Tiền hàng</span><span>{fmtVND(subtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Giảm giá</span><span>−{fmtVND(discount)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Phí ship</span><span>{freeShip ? "miễn phí" : fmtVND(ship)}</span></div>
-            {o.prepaid > 0 && <div className="flex justify-between"><span className="text-gray-500">Đã chuyển khoản</span><span>−{fmtVND(o.prepaid)}</span></div>}
-            <div className="flex justify-between font-semibold text-base border-t pt-1"><span>Thu hộ COD</span><span>{fmtVND(cod)}</span></div>
-          </div>
-          {bigDiscount && <div className="text-xs text-orange-600 mt-1">Giảm trên 15% tiền hàng — cần ghi lý do.</div>}
+          {bigDiscount && <div className="text-xs text-orange-600 mt-1">Giảm trên 15% tiền hàng — ghi lý do ở ô ghi thêm.</div>}
         </section>
 
-        {/* Address */}
-        <section className="border rounded-lg p-3">
-          <div className="font-medium mb-2">Nhận hàng</div>
-          <div className="text-xs text-gray-500">Khách ghi</div>
-          <div className="text-sm mb-2">{o.address.full_address || o.address.address || "—"}</div>
-          {missingCommune && <div className="text-xs text-red-600 mb-2">⚠ Chưa chọn phường/xã — kho không giao được</div>}
-          {editable && suggestion && !provinceId && (
-            <div className="mb-2 p-2 rounded bg-violet-50 text-violet-800 text-sm flex justify-between items-center gap-2">
-              <span>Gợi ý tỉnh: {suggestion.province.name}</span>
-              <button onClick={() => setProvinceId(suggestion.province.id)} className="px-2 py-0.5 border border-violet-400 rounded text-xs bg-white">Dùng</button>
-            </div>
-          )}
-          {editable && communeGuess && (
-            <div className="mb-2 p-2 rounded bg-violet-50 text-violet-800 text-sm flex justify-between items-center gap-2">
-              <span>Gợi ý: {communeGuess.name}</span>
-              <button onClick={() => setCommuneId(communeGuess.id)} className="px-2 py-0.5 border border-violet-400 rounded text-xs bg-white">Dùng</button>
-            </div>
-          )}
-          <label className="text-sm block">Tỉnh / thành (34 tỉnh mới)
-            <select disabled={!editable} value={provinceId} onChange={(e) => { setProvinceId(e.target.value); setCommuneId("") }} className="w-full border rounded px-2 py-1.5">
-              <option value="">— Chọn tỉnh —</option>
-              {provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <label className="text-sm block mt-2">Phường / xã
-            <input disabled={!editable || !provinceId} value={communeQ} onChange={(e) => setCommuneQ(e.target.value)} placeholder={commune ? commune.name : "Gõ không dấu để tìm: bai chay"} className="w-full border rounded px-2 py-1.5" />
-          </label>
-          {communeQ && (
-            <div className="border rounded mt-1 max-h-40 overflow-y-auto">
-              {communes.filter((c) => fold(c.name).includes(fold(communeQ))).slice(0, 30).map((c) => (
-                <button key={c.id} onClick={() => { setCommuneId(c.id); setCommuneQ("") }} className="block w-full text-left px-2 py-1 text-sm hover:bg-violet-50">{c.name}</button>
-              ))}
-            </div>
-          )}
-          {commune && <div className="text-xs text-green-700 mt-1">✓ {commune.name}, {province?.name}</div>}
+        <section className="border rounded-xl p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Giao hàng</div>
+          <AddressPicker pickerOnly rawText={o.address.full_address || o.address.address || ""} value={addr} onChange={setAddr} disabled={!editable} />
           <label className="text-sm block mt-2">Số nhà, thôn, tổ
-            <input disabled={!editable} value={street} onChange={(e) => setStreet(e.target.value)} className="w-full border rounded px-2 py-1.5" />
+            <input disabled={!editable} value={street} onChange={(e) => setStreet(e.target.value)} className="w-full border rounded-lg px-2 py-1.5" />
           </label>
-          <label className="text-sm block mt-3">Ghi chú in cho shipper
-            <input disabled={!editable} value={notePrint} onChange={(e) => setNotePrint(e.target.value)} placeholder="Khách hẹn nhận sau 17h, cho xem hàng..." className="w-full border rounded px-2 py-1.5" />
-          </label>
-          {editable && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {PRINT_CHIPS.map((c) => (
-                <button key={c} onClick={() => setNotePrint(notePrint.includes(c) ? notePrint : [notePrint, c].filter(Boolean).join(", "))} className="px-2 py-0.5 border rounded-full text-xs text-gray-600 hover:bg-gray-50">+ {c}</button>
-              ))}
-            </div>
-          )}
         </section>
       </div>
 
-      {/* History */}
-      <section className="mt-4">
-        <div className="text-xs font-semibold text-gray-400 uppercase">Lịch sử gọi & note</div>
-        <div className="mt-1 space-y-1 text-sm max-h-40 overflow-y-auto">
-          {[
-            ...o.notes.map((n: any) => ({ at: n.at, text: `${n.by ? n.by + ": " : ""}${n.message}`, kind: "note" })),
-            ...(row.calls ?? []).map((c: any) => ({ at: Date.parse(c.at), text: `Cuộc gọi ${c.talk_sec > 0 ? `nghe máy ${c.talk_sec}s` : "không nghe"}${c.noted ? "" : " — chưa có note"}`, kind: c.noted ? "call" : "unnoted" })),
-          ].sort((a, b) => a.at - b.at).map((h, i) => (
-            <div key={i} className={h.kind === "unnoted" ? "text-orange-600" : h.kind === "call" ? "text-gray-500" : ""}>
-              <span className="text-xs text-gray-400 mr-2">{fmtTime(h.at)}</span>{h.kind !== "note" ? "📞 " : "📝 "}{h.text}
-            </div>
-          ))}
-          {!o.notes.length && !(row.calls ?? []).length && <div className="text-gray-400 italic">Chưa gọi lần nào</div>}
+      {/* 4. Folded: history, print note, more tags */}
+      <details className="mt-3 border rounded-xl p-3" open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
+        <summary className="cursor-pointer text-sm font-semibold text-gray-600">
+          Lịch sử gọi & note ({history.length}) · Ghi chú in cho shipper · Thêm thẻ khác
+          {history[0] && <span className="block text-xs font-normal text-gray-500 mt-0.5 truncate">Gần nhất: {fmtTime(history[0].at)} {history[0].text}</span>}
+        </summary>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <div className="space-y-1 text-sm max-h-48 overflow-y-auto">
+            {history.map((h, i) => (
+              <div key={i} className={h.warn ? "text-orange-600" : ""}><span className="text-xs text-gray-400 mr-2 font-mono">{fmtTime(h.at)}</span>{h.text}</div>
+            ))}
+            {!history.length && <div className="text-gray-400 italic">Chưa gọi lần nào</div>}
+          </div>
+          <div>
+            <label className="text-sm block">Ghi chú in cho shipper
+              <input disabled={!editable} value={notePrint} onChange={(e) => setNotePrint(e.target.value)} placeholder="Khách hẹn nhận sau 17h, cho xem hàng..." className="w-full border rounded-lg px-2 py-1.5" />
+            </label>
+            {editable && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {PRINT_CHIPS.map((c) => (
+                  <button key={c} onClick={() => setNotePrint(notePrint.includes(c) ? notePrint : [notePrint, c].filter(Boolean).join(", "))} className="px-2 py-0.5 border border-dashed border-violet-400 text-violet-700 rounded-full text-xs">+ {c}</button>
+                ))}
+              </div>
+            )}
+            {editable && (
+              <div className="flex flex-wrap gap-1 mt-3 items-center">
+                <span className="text-xs text-gray-500">Thêm thẻ:</span>
+                <input value={tagQ} onChange={(e) => setTagQ(e.target.value)} placeholder="Tìm thẻ..." className="border rounded px-2 py-0.5 text-xs w-32" />
+                {tagResults.map((t: any) => (
+                  <button key={t.id} onClick={() => { setAddTags([...addTags, t.id]); setTagQ("") }} className="px-2 py-0.5 rounded-full text-xs border text-gray-600 hover:bg-gray-50">+ {t.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </section>
+      </details>
 
-      {/* Call result */}
-      <section className="mt-4 border-t pt-3">
-        <div className="text-sm font-medium mb-2">Kết quả cuộc gọi <span className="text-xs text-gray-400 font-normal">(phím 1–8, Ctrl+Enter để lưu)</span></div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+      {/* 5. Sticky footer: outcome, extra note, save — always reachable */}
+      <div className="sticky bottom-0 z-10 bg-white border-t mt-3 pt-3 pb-4 shadow-[0_-8px_16px_-12px_rgba(0,0,0,0.25)]">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {OUTCOMES.map((x, i) => (
             <button key={x.key} onClick={() => setOutcome(x.key)}
               disabled={!editable && (x.key === "chot" || x.key === "huy" || x.key === "hen")}
-              className={`px-2 py-2 rounded-lg border text-sm disabled:opacity-30 ${x.cls} ${outcome === x.key ? "ring-2 ring-violet-500 bg-violet-50 font-semibold" : "bg-white hover:bg-gray-50"}`}>
-              <span className="text-xs text-gray-400 mr-1">{i + 1}</span>{x.label}
+              className={`px-2 py-2 rounded-lg border text-sm text-left disabled:opacity-30 ${x.cls} ${outcome === x.key ? "ring-2 ring-violet-500 bg-violet-50 font-semibold" : "bg-white hover:bg-gray-50"}`}>
+              <span className="text-xs text-gray-400 mr-1 font-mono">{i + 1}</span>{x.label}
             </button>
           ))}
         </div>
@@ -525,42 +506,28 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
             </select>
           </label>
         )}
-        {/* Tags: existing POS tags stay as they are; the sale only adds */}
-        <div className="mt-3">
-          <div className="text-xs text-gray-500 mb-1">Thẻ đơn</div>
-          <div className="flex flex-wrap gap-1 items-center">
-            {o.tags.map((t: any) => (
-              <span key={t.id} className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600" title="Thẻ đang có trên POS — giữ nguyên">{t.name}</span>
-            ))}
+        {(addTags.length > 0 || (editable && shownSuggestions.length > 0)) && (
+          <div className="flex flex-wrap gap-1 mt-2 items-center">
             {addTags.map((id) => (
               <span key={id} className="px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-700">
-                + {tagName(id)} <button onClick={() => setAddTags(addTags.filter((x) => x !== id))} className="ml-1" aria-label="Bỏ thẻ">×</button>
+                + {tagLabel(tagName(id))} <button onClick={() => setAddTags(addTags.filter((x) => x !== id))} className="ml-1" aria-label="Bỏ thẻ">×</button>
               </span>
             ))}
-            {!o.tags.length && !addTags.length && <span className="text-xs text-gray-400">Chưa có thẻ</span>}
+            {editable && shownSuggestions.map((s) => (
+              <button key={s.id} onClick={() => setAddTags([...addTags, s.id])} className="px-2 py-0.5 rounded-full text-xs border border-dashed border-violet-400 text-violet-700 hover:bg-violet-50">
+                + {tagLabel(tagName(s.id))} <span className="text-gray-400">({s.why})</span>
+              </button>
+            ))}
           </div>
-          {editable && shownSuggestions.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1 items-center">
-              <span className="text-xs text-gray-500">Gợi ý:</span>
-              {shownSuggestions.map((s) => (
-                <button key={s.id} onClick={() => setAddTags([...addTags, s.id])} className="px-2 py-0.5 rounded-full text-xs border border-dashed border-violet-400 text-violet-700 hover:bg-violet-50">
-                  + {tagName(s.id)} <span className="text-gray-400">({s.why})</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {editable && (
-            <div className="flex flex-wrap gap-1 mt-1 items-center">
-              <input value={tagQ} onChange={(e) => setTagQ(e.target.value)} placeholder="Tìm thẻ khác..." className="border rounded px-2 py-0.5 text-xs w-36" />
-              {tagResults.map((t: any) => (
-                <button key={t.id} onClick={() => { setAddTags([...addTags, t.id]); setTagQ("") }} className="px-2 py-0.5 rounded-full text-xs border text-gray-600 hover:bg-gray-50">+ {t.name}</button>
-              ))}
-            </div>
-          )}
+        )}
+        <div className="flex gap-2 mt-2">
+          <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Ghi thêm: đổi địa chỉ, giao sau 17h, lý do giảm giá..." className="flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm" />
+          <button onClick={save} disabled={saving} className="px-5 py-2 bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap">
+            {saving ? "Đang ghi POS..." : "Lưu & đẩy POS"}
+          </button>
         </div>
-        <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Ghi thêm: khách đổi địa chỉ, giao sau 17h, lý do giảm giá..." className="w-full border rounded px-2 py-1.5 text-sm mt-2" />
         {hasEdits && editable && (
-          <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2">
+          <div className="mt-1.5 text-xs text-gray-600">
             Sẽ ghi lên POS: {[
               edits.items && "sản phẩm",
               edits.discount !== undefined && `giảm giá ${fmtVND(discount)}`,
@@ -572,15 +539,31 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
             ].filter(Boolean).join(" · ")}{orderChanged ? ` · COD ${fmtVND(cod)}` : ""}
           </div>
         )}
-        {err && <div className="mt-2 text-sm text-red-600">{err}</div>}
-        <div className="flex justify-end gap-2 mt-3">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm">Đóng</button>
-          <button onClick={save} disabled={saving} className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 disabled:opacity-50">
-            {saving ? "Đang ghi POS..." : "Lưu và đẩy sang POS"}
-          </button>
-        </div>
-      </section>
-    </Overlay>
+        {err && <div className="mt-1.5 text-sm text-red-600">{err}</div>}
+        <div className="text-[11px] text-gray-400 mt-1">Phím 1–8 chọn kết quả · Ctrl+Enter lưu · Esc đóng</div>
+      </div>
+    </SideSheet>
+  )
+}
+
+const isDraftTag = (t: string) => /^đơn nháp/i.test(String(t).trim())
+const tagLabel = (t: string) => String(t).trim()
+  .replace(/^TrangThai_GoiLan(\d)_ThatBai$/, "Gọi lần $1 thất bại")
+  .replace(/^TrangThai_GoiLan4_SoNgoai_ThatBai$/, "Gọi số ngoài thất bại")
+const TAG_TONE = (t: string) => /không đặt|bom|rủi ro|trùng/i.test(t) ? "bg-red-100 text-red-700"
+  : /^TrangThai_GoiLan/.test(t.trim()) ? "bg-gray-100 text-gray-600" : "bg-violet-100 text-violet-700"
+
+/** Right-hand sheet: the queue stays visible on the left on wide screens. */
+function SideSheet({ children, onClose, onKey }: { children: any; onClose: () => void; onKey?: (e: React.KeyboardEvent) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => { ref.current?.focus() }, [])
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      <div ref={ref} tabIndex={-1} onKeyDown={onKey} onClick={(e) => e.stopPropagation()}
+        className="bg-white w-full max-w-4xl h-full overflow-y-auto px-5 outline-none shadow-2xl">
+        {children}
+      </div>
+    </div>
   )
 }
 
@@ -615,6 +598,8 @@ const XacNhanDonPage = () => {
   // Order-date filter (VN date of creation). Empty = every open order in the 14-day window.
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+  // ~42% of open orders carry "Đơn nháp" (22/10) — let the sale show or hide them at once.
+  const [draftFilter, setDraftFilter] = useState<"" | "only" | "hide">("")
   const [compDate, setCompDate] = useState(vnDate(Date.now()))
 
   useEffect(() => {
@@ -669,10 +654,12 @@ const XacNhanDonPage = () => {
     if (bucket === "callback") list = list.filter((o) => o.next?.code === "callback")
     else if (bucket === "unnoted") list = list.filter((o) => o.unnoted > 0 || o.awaiting)
     else if (bucket) list = list.filter((o) => o.bucket === bucket)
+    if (draftFilter === "only") list = list.filter((o) => o.tags?.some(isDraftTag))
+    else if (draftFilter === "hide") list = list.filter((o) => !o.tags?.some(isDraftTag))
     const q = fold(search.trim())
     if (q) list = list.filter((o) => fold(`${o.customer_name} ${o.customer_phone} ${o.id} ${o.product_summary}`).includes(q))
     return list
-  }, [dated, datedWaiting, tab, bucket, search])
+  }, [dated, datedWaiting, tab, bucket, search, draftFilter])
 
   // Cards follow the date filter, so "Quá hạn" for "Hôm nay" counts only today's orders.
   const s = {
@@ -779,6 +766,11 @@ const XacNhanDonPage = () => {
           <input type="date" value={dateFrom} max={dateTo || today} onChange={(e) => setDateFrom(e.target.value)} className="border rounded px-2 py-1 text-xs" />
           <span className="text-gray-400">→</span>
           <input type="date" value={dateTo} min={dateFrom} max={today} onChange={(e) => setDateTo(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+          <span className="text-gray-500 ml-2">Đơn nháp:</span>
+          {([["", "Tất cả"], ["only", `Chỉ đơn nháp (${dated.filter((o: any) => o.tags?.some(isDraftTag)).length})`], ["hide", "Ẩn đơn nháp"]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setDraftFilter(k)}
+              className={`px-3 py-1 rounded-full border text-xs ${draftFilter === k ? "bg-amber-500 text-white border-amber-500" : "hover:bg-gray-50"}`}>{l}</button>
+          ))}
           <span className="text-xs text-gray-400" title="Đơn đến hạn xếp xen kẽ: 1 khách mới, 1 đơn gọi lại. Trong mỗi nhóm ưu tiên đơn to, khách có lịch sử mua tốt, khách chờ lâu; đơn tồn càng cũ càng xuống.">
             Hàng đợi chỉ giữ đơn 14 ngày gần nhất · Thứ tự: xen kẽ khách mới / gọi lại ⓘ
           </span>
@@ -821,6 +813,7 @@ const XacNhanDonPage = () => {
                 <th className="text-left px-3 py-2">Việc tiếp theo</th>
                 <th className="text-center px-3 py-2" title="Số lượt gọi tổng đài / số note">Gọi / note</th>
                 <th className="text-left px-3 py-2">Hạn</th>
+                <th className="text-left px-3 py-2" title="Toàn mạng Pancake: đơn thành công / hoàn">Uy tín khách</th>
                 <th className="text-left px-3 py-2">Cảnh báo</th>
                 {seller === "all" && <th className="text-left px-3 py-2">Sale</th>}
               </tr>
@@ -829,7 +822,10 @@ const XacNhanDonPage = () => {
               {rows.map((o) => (
                 <tr key={o.id} onClick={() => setSelected(o)} className={`border-t cursor-pointer hover:bg-violet-50 ${pending?.orderId === String(o.id) ? "bg-red-50" : ""}`}>
                   <td className="px-3 py-2">
-                    <div className="font-medium">{o.customer_name} · <span className="text-gray-700">{fmtVND(o.cod ?? o.total)}</span></div>
+                    <div className="font-medium">
+                      {o.tags?.some(isDraftTag) && <span className="mr-1.5 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-bold tracking-wide align-middle">NHÁP</span>}
+                      {o.customer_name} · <span className="text-gray-700">{fmtVND(o.cod ?? o.total)}</span>
+                    </div>
                     <div className="text-xs text-gray-400 truncate max-w-xs">#{o.id} · {o.product_summary} · {fmtTime(o.created_at)}</div>
                   </td>
                   <td className="px-3 py-2">
@@ -848,6 +844,7 @@ const XacNhanDonPage = () => {
                     {(o.unnoted > 0 || o.awaiting) && <span className="ml-1 text-orange-600" title={o.awaiting ? "Vừa gọi, chưa ghi kết quả" : `${o.unnoted} lượt gọi chưa note`}>⚠</span>}
                   </td>
                   <td className={`px-3 py-2 text-xs ${o.bucket === "overdue" ? "text-red-600 font-medium" : "text-gray-500"}`}>{o.bucket === "cancel" ? "—" : fmtDue(o.next.dueAt)}</td>
+                  <td className="px-3 py-2"><RepChip rep={o.rep ? { available: true, ...o.rep } : null} /></td>
                   <td className="px-3 py-2 text-xs space-x-1 whitespace-nowrap">
                     {o.flags.pkg_mismatch && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700">Lệch gói</span>}
                     {o.flags.no_commune && <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">Chưa xã</span>}
