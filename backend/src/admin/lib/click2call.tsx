@@ -42,7 +42,7 @@ export function CallExtensionPicker() {
 
   if (!info?.is_admin) return null
   return (
-    <label className="text-xs text-gray-600 flex items-center gap-1">
+    <label className="text-xs text-gray-600 flex flex-col gap-0.5">
       Gọi bằng máy nhánh
       <select value={ext} onChange={(e) => {
         setExt(e.target.value)

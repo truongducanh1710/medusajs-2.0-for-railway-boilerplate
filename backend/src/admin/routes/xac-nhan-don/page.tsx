@@ -321,6 +321,7 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <CallExtensionPicker />
           <button onClick={call} disabled={calling || callBlocked}
             title={callBlocked ? `Ghi kết quả cuộc gọi ${pending!.name} trước` : ""}
             className="px-4 py-2.5 bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-40">
@@ -801,7 +802,6 @@ const XacNhanDonPage = () => {
           </select>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm tên, SĐT, mã đơn" className="border rounded-lg px-3 py-2 text-sm w-48" />
           <button onClick={syncPos} disabled={syncing} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">{syncing ? "Đang đồng bộ..." : "🔄 Đồng bộ POS"}</button>
-          <CallExtensionPicker />
           <XacNhanGuide />
         </div>
       </div>
