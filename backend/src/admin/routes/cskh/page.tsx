@@ -570,7 +570,20 @@ function CskhPage() {
     { id: "call_time",  label: "Gọi lúc",          default: 110, min: 80  },
   ] as const satisfies ResizableColDef[]
 
-  const { colWidths, onResizeMouseDown, totalWidth } = useResizableColumns("cskh.col-widths.v1", columns)
+  const { colWidths, onResizeMouseDown } = useResizableColumns("cskh.col-widths.v1", columns)
+
+  // Hidden columns, remembered per browser. Mã đơn + Khách always stay.
+  const FIXED_COLS: string[] = ["id", "customer"]
+  const [hiddenCols, setHiddenColsState] = useState<string[]>(() => {
+    try { const v = JSON.parse(localStorage.getItem("cskh.orders.hidden-cols.v1") || "[]"); return Array.isArray(v) ? v : [] } catch { return [] }
+  })
+  const setHiddenCols = (v: string[]) => {
+    setHiddenColsState(v)
+    try { localStorage.setItem("cskh.orders.hidden-cols.v1", JSON.stringify(v)) } catch {}
+  }
+  const show = (id: string) => FIXED_COLS.includes(id) || !hiddenCols.includes(id)
+  const shownColumns = columns.filter((c) => show(c.id))
+  const totalWidth = shownColumns.reduce((s, c) => s + colWidths[c.id], 0)
 
   if (permLoading) return <div className="p-6 text-ui-fg-muted">Đang kiểm tra quyền...</div>
   if (!has("page.cskh.view")) return <div className="p-6 text-red-500">Bạn không có quyền xem trang này.</div>
@@ -640,6 +653,20 @@ function CskhPage() {
                 )
               })}
             </div>
+
+            <details className="relative">
+              <summary className="list-none cursor-pointer px-3 py-1 rounded-full border border-ui-border-base text-xs text-ui-fg-subtle hover:bg-ui-bg-subtle">⚙ Cột hiển thị</summary>
+              <div className="absolute z-20 mt-1 w-56 bg-white border rounded-lg shadow-lg p-2 space-y-1 text-gray-700">
+                {columns.filter((c) => !FIXED_COLS.includes(c.id)).map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm px-1 py-0.5 rounded hover:bg-gray-50">
+                    <input type="checkbox" checked={!hiddenCols.includes(c.id)}
+                      onChange={(e) => setHiddenCols(e.target.checked ? hiddenCols.filter((k) => k !== c.id) : [...hiddenCols, c.id])} />
+                    {c.label}
+                  </label>
+                ))}
+                <button onClick={() => setHiddenCols([])} className="text-xs text-violet-700 hover:underline px-1">Hiện tất cả</button>
+              </div>
+            </details>
           </>
         )}
       </div>
@@ -670,11 +697,11 @@ function CskhPage() {
           <div className="overflow-x-auto rounded border border-ui-border-base">
             <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: `${totalWidth}px` }}>
               <colgroup>
-                {columns.map(c => <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />)}
+                {shownColumns.map(c => <col key={c.id} style={{ width: `${colWidths[c.id]}px` }} />)}
               </colgroup>
               <thead className="bg-ui-bg-subtle sticky top-0 z-10">
                 <tr>
-                  {columns.map((col, i) => (
+                  {shownColumns.map((col) => (
                     <th
                       key={col.id}
                       className="relative text-left px-3 py-2 text-ui-fg-subtle font-medium border-b border-ui-border-base select-none overflow-hidden whitespace-nowrap"
@@ -693,7 +720,7 @@ function CskhPage() {
               <tbody>
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={columns.length} className="text-center py-12 text-ui-fg-muted">
+                    <td colSpan={shownColumns.length} className="text-center py-12 text-ui-fg-muted">
                       {activeTab === "su_co" ? "Không có đơn giao không thành 🎉" : "Không có đơn nào"}
                     </td>
                   </tr>
@@ -705,7 +732,7 @@ function CskhPage() {
                     onClick={() => { window.location.href = `/app/pancake-orders/${order.id}` }}
                   >
                     {/* Mã đơn — click để copy */}
-                    <td
+                    {show("id") && <td
                       className="px-3 py-2 font-mono text-xs text-ui-fg-base overflow-hidden"
                       title="Bấm để copy mã đơn"
                       style={{ cursor: "copy" }}
@@ -724,10 +751,10 @@ function CskhPage() {
                         #{order.id}
                         {order.urgency === "critical" && <span className="ml-1 text-red-600 animate-pulse">🚨</span>}
                       </span>
-                    </td>
+                    </td>}
 
                     {/* Khách — SĐT click để copy */}
-                    <td className="px-3 py-2 overflow-hidden">
+                    {show("customer") && <td className="px-3 py-2 overflow-hidden">
                       <div className="font-medium text-ui-fg-base text-xs leading-tight truncate" title={order.customer_name}>{order.customer_name}</div>
                       <div
                         className="text-xs text-ui-fg-muted font-mono mt-0.5 truncate"
@@ -746,35 +773,35 @@ function CskhPage() {
                       >
                         {order.customer_phone ?? "—"}
                       </div>
-                    </td>
+                    </td>}
 
                     {/* Tỉnh */}
-                    <td className="px-3 py-2 text-xs text-ui-fg-subtle overflow-hidden">
+                    {show("province") && <td className="px-3 py-2 text-xs text-ui-fg-subtle overflow-hidden">
                       <span className="block truncate" title={order.province ?? ""}>{order.province ?? "—"}</span>
-                    </td>
+                    </td>}
 
                     {/* CSKH */}
-                    <td className="px-3 py-2 text-xs text-ui-fg-base overflow-hidden">
+                    {show("care") && <td className="px-3 py-2 text-xs text-ui-fg-base overflow-hidden">
                       <span className="block truncate">{order.care_name ?? "—"}</span>
-                    </td>
+                    </td>}
 
                     {/* Trạng thái */}
-                    <td className="px-3 py-2 overflow-hidden">
+                    {show("status") && <td className="px-3 py-2 overflow-hidden">
                       <div className="flex flex-col gap-1">
                         <StatusBadge status={order.status} statusName={order.status_name} />
                         <MissingHoanTagBadge missing={order.missing_hoan_tag} />
                       </div>
-                    </td>
+                    </td>}
 
                     {/* Lần giao */}
-                    <td className="px-3 py-2 text-center overflow-hidden">
+                    {show("delivery") && <td className="px-3 py-2 text-center overflow-hidden">
                       <span className={`text-sm font-bold ${Number(order.count_of_delivery) >= 3 ? "text-red-600" : "text-ui-fg-base"}`}>
                         {order.count_of_delivery ?? "—"}
                       </span>
-                    </td>
+                    </td>}
 
                     {/* Bưu tá — SĐT click để copy */}
-                    <td className="px-3 py-2 overflow-hidden">
+                    {show("shipper") && <td className="px-3 py-2 overflow-hidden">
                       {order.delivery_name ? (
                         <>
                           <div className="text-xs font-medium text-ui-fg-base leading-tight truncate" title={order.delivery_name}>{order.delivery_name}</div>
@@ -797,25 +824,25 @@ function CskhPage() {
                           </div>
                         </>
                       ) : <span className="text-xs text-ui-fg-muted">—</span>}
-                    </td>
+                    </td>}
 
                     {/* Cập nhật ship */}
-                    <td className="px-3 py-2 overflow-hidden">
+                    {show("last_ship") && <td className="px-3 py-2 overflow-hidden">
                       {order.last_delivery_status ? (
                         <>
                           <div className="text-xs text-ui-fg-base leading-tight line-clamp-2">{order.last_delivery_status}</div>
                           <div className="text-xs text-ui-fg-muted mt-0.5">{formatDateTime(order.last_delivery_at)}</div>
                         </>
                       ) : <span className="text-xs text-ui-fg-muted">—</span>}
-                    </td>
+                    </td>}
 
                     {/* COD */}
-                    <td className="px-3 py-2 text-right text-xs font-medium text-ui-fg-base overflow-hidden">
+                    {show("cod") && <td className="px-3 py-2 text-right text-xs font-medium text-ui-fg-base overflow-hidden">
                       <span className="block truncate">{formatVND(order.cod_amount)}</span>
-                    </td>
+                    </td>}
 
                     {/* AI: Đang ở bước */}
-                    <td className="px-3 py-2 overflow-hidden">
+                    {show("step") && <td className="px-3 py-2 overflow-hidden">
                       {order.current_step ? (
                         <div className="text-xs text-ui-fg-base leading-snug line-clamp-3">{order.current_step}</div>
                       ) : order.row_type === "plain" ? (
@@ -823,17 +850,17 @@ function CskhPage() {
                       ) : (
                         <span className="text-xs text-ui-fg-muted italic">Chưa phân tích</span>
                       )}
-                    </td>
+                    </td>}
 
                     {/* AI: Việc tiếp theo */}
-                    <td className="px-3 py-2">
+                    {show("action") && <td className="px-3 py-2">
                       {order.next_action ? (
                         <div className="text-xs text-orange-700 font-medium leading-snug line-clamp-2">{order.next_action}</div>
                       ) : <span className="text-xs text-ui-fg-muted">—</span>}
-                    </td>
+                    </td>}
 
                     {/* Gọi lúc */}
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    {show("call_time") && <td className="px-3 py-2 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
                         <CallTimeBadge callTime={order.call_time} />
                         {order.urgency && <UrgencyBadge urgency={order.urgency} />}
@@ -844,7 +871,7 @@ function CskhPage() {
                           lastNoteAt={order.last_note_at}
                         />
                       </div>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
