@@ -5,6 +5,7 @@ import SalePeriodSummary from "../../components/sale-period-summary"
 import { withRouteGuard } from "../../components/route-guard"
 import AddressPicker, { type AddressValue, type Suggestion, suggestFrom } from "../../components/address-picker"
 import { RepChip, repTier } from "../../components/reputation-bar"
+import XacNhanGuide from "../../components/xac-nhan-guide"
 
 // Hàng đợi việc của sale: mọi đơn chưa xử lý xong (không lọc theo ngày), sắp theo hạn của
 // việc tiếp theo. Mỗi cuộc gọi phải ghi đúng 1 kết quả → 1 note trên POS.
@@ -804,6 +805,7 @@ const XacNhanDonPage = () => {
           </select>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm tên, SĐT, mã đơn" className="border rounded-lg px-3 py-2 text-sm w-48" />
           <button onClick={syncPos} disabled={syncing} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">{syncing ? "Đang đồng bộ..." : "🔄 Đồng bộ POS"}</button>
+          <XacNhanGuide />
         </div>
       </div>
 
