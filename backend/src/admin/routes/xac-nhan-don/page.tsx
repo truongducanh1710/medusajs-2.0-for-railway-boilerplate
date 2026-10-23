@@ -1,6 +1,7 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "../../lib/api-client"
+import { click2call, CallExtensionPicker } from "../../lib/click2call"
 import SalePeriodSummary from "../../components/sale-period-summary"
 import { withRouteGuard } from "../../components/route-guard"
 import AddressPicker, { type AddressValue, type Suggestion, suggestFrom } from "../../components/address-picker"
@@ -234,12 +235,7 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
     setCalling(true)
     setErr(null)
     try {
-      const r = await apiFetch("/admin/ity-cdr-sync/click2call", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: o.customer.phone, userfield: `order:${row.id}` }),
-      })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d?.error || "Không gọi được")
+      await click2call(o.customer.phone, `order:${row.id}`)
       const p = { orderId: String(row.id), at: Date.now(), name: row.customer_name }
       localStorage.setItem(PENDING_KEY, JSON.stringify(p))
       setPending(p)
@@ -805,6 +801,7 @@ const XacNhanDonPage = () => {
           </select>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm tên, SĐT, mã đơn" className="border rounded-lg px-3 py-2 text-sm w-48" />
           <button onClick={syncPos} disabled={syncing} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">{syncing ? "Đang đồng bộ..." : "🔄 Đồng bộ POS"}</button>
+          <CallExtensionPicker />
           <XacNhanGuide />
         </div>
       </div>

@@ -260,7 +260,8 @@ export default defineMiddlewares({
     { matcher: "/admin/ity-cdr-sync/report*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view")] },
     { matcher: "/admin/ity-cdr-sync/compare*", method: ["GET"], middlewares: [requirePerm("page.ity-cdr.view", "page.mkt-tasks.view")] },
     // don-hang.edit: sale bấm gọi từ hàng đợi /app/xac-nhan-don (route vẫn chỉ đổ chuông máy của chính người bấm).
-    { matcher: "/admin/ity-cdr-sync/click2call", method: ["POST"], middlewares: [requireAnyPerm("page.cskh-goi-khach.call", "page.don-hang.edit")] },
+    // Admin may pass another extension to test (checked inside the route).
+    { matcher: "/admin/ity-cdr-sync/click2call", method: ["GET", "POST"], middlewares: [requireAnyPerm("page.cskh-goi-khach.call", "page.don-hang.edit")] },
     // Catch-all: mọi báo cáo đòi page.bao-cao.view.
     //
     // 2 route NHẬP chi phí là ngoại lệ — người chỉ điền số không nên có page.bao-cao.view

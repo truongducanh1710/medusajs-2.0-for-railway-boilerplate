@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "../lib/api-client"
+import { click2call } from "../lib/click2call"
 
 // Hàng đợi việc CSKH: đơn đã chốt cần xử lý (giao không thành, sắp hoàn, trễ giao, VTP
 // chưa lấy, kho chậm, hoàn thiếu lý do). Mỗi cuộc gọi = 1 kết quả = 1 note trên POS.
@@ -93,12 +94,7 @@ function TaskCard({ t, tagInfo, pending, setPending, onClose, onSaved }: {
     if (pending && pending.orderId !== String(t.id)) return setErr(`Ghi kết quả cuộc gọi ${pending.name} trước`)
     setCalling(true); setErr(null)
     try {
-      const r = await apiFetch("/admin/ity-cdr-sync/click2call", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, userfield: `order:${t.id}` }),
-      })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d?.error || "Không gọi được")
+      await click2call(phone, `order:${t.id}`)
       // Only calls to the customer must be logged on the order; calling the shipper is not.
       if (who === "khach") {
         const p = { orderId: String(t.id), at: Date.now(), name: t.customer_name }

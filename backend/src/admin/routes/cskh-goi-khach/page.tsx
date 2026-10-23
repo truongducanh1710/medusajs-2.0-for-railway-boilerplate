@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { createPortal } from "react-dom"
 import { apiFetch } from "../../lib/api-client"
+import { click2call } from "../../lib/click2call"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { ResizeHandle, useResizableColumns, type ColumnDef as ResizableColDef } from "../../lib/resizable-columns"
 import { withRouteGuard } from "../../components/route-guard"
@@ -496,12 +497,7 @@ function DetailDrawer({ task, users, canRate, currentEmail, onClose, onPatch, on
     if (calling || !task.customer_phone) return
     setCalling(true)
     try {
-      const r = await apiFetch("/admin/ity-cdr-sync/click2call", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: task.customer_phone, userfield: task.id }),
-      })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d?.error || "Lỗi gọi")
+      await click2call(task.customer_phone, task.id)
       onToast("Đã đổ chuông máy nhánh, vui lòng nhấc máy", "success")
     } catch (e: any) {
       onToast(e?.message || "Lỗi gọi", "error")

@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ITY_PBX_DOMAIN, ITY_CLICK2CALL_SECRET, ITY_CUSTOMER_ID } from "../../../../lib/constants"
+import { getAuthInfo } from "../../fb-content/_lib"
 
 function normalizeVnPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "")
@@ -9,13 +10,30 @@ function normalizeVnPhone(raw: string): string {
 }
 
 /**
+ * GET /admin/ity-cdr-sync/click2call
+ * Máy nhánh của người đang đăng nhập; admin nhận thêm danh sách mọi máy nhánh để
+ * chọn gọi thử bằng máy người khác.
+ */
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const actorId = (req as any).auth_context?.actor_id
+  const auth = await getAuthInfo(req)
+  const syncService = req.scope.resolve("ityCdrSyncModule") as any
+  const maps = await syncService.listItyExtensionMaps({}, { take: 200 })
+  const own = maps.find((m: any) => m.user_id === actorId)?.extension ?? null
+  return res.json({
+    extension: own,
+    is_admin: !!auth?.isAdmin,
+    extensions: auth?.isAdmin ? maps.map((m: any) => ({ extension: m.extension, name: m.display_name || m.extension })) : [],
+  })
+}
+
+/**
  * POST /admin/ity-cdr-sync/click2call
- * Bấm gọi từ web: tra extension của user đang đăng nhập qua ItyExtensionMap,
- * gọi API https://{ITY_PBX_DOMAIN}/wsapi/click2call.php (?secret&domain&extension&phone)
- * để đổ chuông máy nhánh trước rồi tổng đài tự nối sang khách khi sale nhấc máy.
- * Chỉ đổ chuông máy của chính người đang bấm — không nhận extension/assignee từ
- * client để tránh gọi nhầm/gọi hộ máy người khác.
- * Body: { phone: string, userfield?: string }
+ * Trả về link click2call của ITY để TRÌNH DUYỆT của sale tự gọi: ITY chặn kết nối
+ * từ IP Railway (connect timeout) nhưng máy sale ở VN vào được. Đổi lại, secret
+ * nằm trong link nên ai mở DevTools cũng thấy — chấp nhận vì là nhân sự nội bộ.
+ * Máy nhánh lấy theo user đang đăng nhập; chỉ admin được chỉ định máy nhánh khác
+ * (để test). Body: { phone: string, userfield?: string, extension?: string }
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
@@ -23,7 +41,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.status(500).json({ error: "Chưa cấu hình ITY_PBX_DOMAIN / ITY_CLICK2CALL_SECRET / ITY_CUSTOMER_ID trên server" })
     }
 
-    const { phone, userfield } = req.body as { phone?: string; userfield?: string }
+    const { phone, userfield, extension: requested } = req.body as { phone?: string; userfield?: string; extension?: string }
     if (!phone) {
       return res.status(400).json({ error: "Thiếu số điện thoại khách" })
     }
@@ -34,8 +52,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     }
 
     const syncService = req.scope.resolve("ityCdrSyncModule") as any
-    const maps = await syncService.listItyExtensionMaps({ user_id: actorId }, { take: 1 })
-    const extension = maps?.[0]?.extension
+    let extension: string | undefined
+    if (requested) {
+      const auth = await getAuthInfo(req)
+      if (!auth?.isAdmin) return res.status(403).json({ error: "Chỉ admin được gọi bằng máy nhánh khác" })
+      extension = String(requested)
+    } else {
+      const maps = await syncService.listItyExtensionMaps({ user_id: actorId }, { take: 1 })
+      extension = maps?.[0]?.extension
+    }
     if (!extension) {
       return res.status(400).json({ error: "Bạn chưa được gán máy nhánh (extension) tổng đài. Liên hệ admin gán ở trang Cuộc gọi (CDR)." })
     }
@@ -48,15 +73,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     url.searchParams.set("phone", phoneDigits)
     if (userfield) url.searchParams.set("userfield", userfield)
 
-    const response = await fetch(url.toString())
-    const text = await response.text()
-
-    if (!response.ok) {
-      console.error("[click2call] ITY API error:", response.status, text)
-      return res.status(502).json({ error: "Tổng đài từ chối yêu cầu gọi", detail: text })
-    }
-
-    return res.json({ ok: true, extension, phone: phoneDigits, detail: text })
+    // The PBX never sees our server any more, so this line is the only record of who dialled.
+    console.log(`[click2call] user=${actorId} ext=${extension} phone=${phoneDigits} userfield=${userfield ?? ""}`)
+    return res.json({ ok: true, extension, phone: phoneDigits, url: url.toString() })
   } catch (err: any) {
     console.error("[click2call] Error:", err.message)
     return res.status(500).json({ error: err.message })
