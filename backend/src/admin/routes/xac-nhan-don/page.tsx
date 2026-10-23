@@ -115,6 +115,8 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [calling, setCalling] = useState(false)
+  // Shown right under the call button: the PBX reply is unreadable (no-cors), so say what was sent.
+  const [callMsg, setCallMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [addrSugg, setAddrSugg] = useState<Suggestion | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -231,16 +233,18 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
 
   const call = async () => {
     if (pending && pending.orderId !== String(row.id)) return
-    if (!editable) return setErr("Đơn đã rời trạng thái Mới — gọi từ POS nếu cần")
+    if (!editable) return setCallMsg({ ok: false, text: "Đơn đã rời trạng thái Mới — gọi từ POS nếu cần" })
     setCalling(true)
-    setErr(null)
+    setCallMsg(null)
     try {
-      await click2call(o.customer.phone, `order:${row.id}`)
+      const d = await click2call(o.customer.phone, `order:${row.id}`)
+      const at = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      setCallMsg({ ok: true, text: `${at} · Đã gửi lệnh gọi ${d.phone} — máy nhánh ${d.extension} sẽ đổ chuông, nhấc máy để nối khách. Không reo trong 15 giây: máy nhánh chưa đăng nhập điện thoại/softphone.` })
       const p = { orderId: String(row.id), at: Date.now(), name: row.customer_name }
       localStorage.setItem(PENDING_KEY, JSON.stringify(p))
       setPending(p)
     } catch (e: any) {
-      setErr(e.message)
+      setCallMsg({ ok: false, text: e.message })
     } finally {
       setCalling(false)
     }
@@ -330,6 +334,12 @@ function OrderCard({ row, tagInfo, onClose, onSaved, pending, setPending }: {
           <button onClick={onClose} aria-label="Đóng" className="px-3 py-2 border rounded-lg text-gray-500 hover:bg-gray-50">✕</button>
         </div>
       </div>
+
+      {callMsg && (
+        <div className={`mt-3 p-2 rounded text-sm ${callMsg.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
+          {callMsg.ok ? "📞 " : "⚠️ "}{callMsg.text}
+        </div>
+      )}
 
       {!editable && (
         <div className="mt-3 p-2 rounded bg-yellow-50 text-yellow-800 text-sm">Đơn đã ở trạng thái "{o.status_name}" trên POS — chỉ ghi note, không sửa được.</div>
