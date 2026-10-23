@@ -65,6 +65,81 @@ const OUTCOMES = [
 ]
 const HOAN_TAG_NAMES = ["Hoan_DoKhach", "Hoan_DoKhongLienLacDuoc", "Hoan_DoDVVC", "Hoan_DoKho", "Hoan_DoSanPham", "Hoan_GiaoHangLau", "Hoan_KhachTuChoi"]
 
+// ---- Queue table columns (CSKH picks which to show and can sort by any) ----
+
+const fold = (s: string) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+
+type QueueCol = {
+  key: string
+  label: string
+  defaultOn: boolean
+  fixed?: boolean
+  sort: (t: any) => string | number
+  cell: (t: any) => any
+  className?: string
+}
+
+const QUEUE_COLUMNS: QueueCol[] = [
+  {
+    key: "task", label: "Việc", defaultOn: true, fixed: true, sort: (t) => TASKS[t.task.code]?.label ?? t.task.code,
+    cell: (t) => (<>
+      <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${TASKS[t.task.code]?.cls ?? ""}`}>{TASKS[t.task.code]?.label ?? t.task.code}</span>
+      {t.task.handled && <div className="text-[11px] text-gray-400 mt-0.5">đã xử lý, xem lại</div>}
+      {t.today?.carried_from && <div className="text-[11px] text-orange-600 mt-0.5">tồn từ {fmtDay(t.today.carried_from)}</div>}
+      {t.today?.reopened > 0 && <div className="text-[11px] text-red-600 mt-0.5">mở lại — VTP báo lỗi tiếp</div>}
+    </>),
+  },
+  {
+    key: "customer", label: "Khách / đơn", defaultOn: true, fixed: true, sort: (t) => fold(t.customer_name),
+    cell: (t) => (<>
+      <div className="font-medium">{t.customer_name} · {fmtVND(t.cod)}</div>
+      <div className="text-xs text-gray-400">#{t.id} · {t.province || "—"} · {t.carrier.delivery_name ? `BT ${t.carrier.delivery_name}` : ""}</div>
+    </>),
+  },
+  { key: "order_id", label: "Mã đơn", defaultOn: false, sort: (t) => Number(t.id) || 0, cell: (t) => <span className="font-mono">#{t.id}</span> },
+  { key: "tracking", label: "Mã vận đơn", defaultOn: false, sort: (t) => t.carrier.tracking_code || "", cell: (t) => <span className="font-mono text-xs">{t.carrier.tracking_code || "—"}</span> },
+  { key: "phone", label: "SĐT khách", defaultOn: false, sort: (t) => t.customer_phone || "", cell: (t) => <span className="font-mono text-xs">{t.customer_phone || "—"}</span> },
+  { key: "status", label: "Trạng thái POS", defaultOn: false, sort: (t) => fold(t.status_name || ""), cell: (t) => <span className="text-xs whitespace-nowrap">{t.status_name || "—"}</span> },
+  {
+    key: "carrier", label: "Cập nhật vận chuyển mới nhất", defaultOn: true, className: "max-w-xs", sort: (t) => Date.parse(t.carrier.updates[0]?.at) || 0,
+    cell: (t) => (<div className="text-xs text-gray-600">
+      <div className="truncate">{t.carrier.updates[0]?.text || "—"}</div>
+      <div className="text-gray-400">{fmtTime(t.carrier.updates[0]?.at)}</div>
+    </div>),
+  },
+  { key: "deliveries", label: "Lần giao", defaultOn: false, className: "text-center", sort: (t) => Number(t.carrier.count_of_delivery) || 0, cell: (t) => <span className={Number(t.carrier.count_of_delivery) >= 3 ? "text-red-600 font-bold" : ""}>{t.carrier.count_of_delivery ?? "—"}</span> },
+  {
+    key: "shipper", label: "Bưu tá", defaultOn: false, sort: (t) => fold(t.carrier.delivery_name || ""),
+    cell: (t) => t.carrier.delivery_name
+      ? <div className="text-xs"><div>{t.carrier.delivery_name}</div><div className="font-mono text-gray-400">{t.carrier.delivery_tel || ""}</div></div>
+      : <span className="text-xs text-gray-400">—</span>,
+  },
+  { key: "product", label: "Sản phẩm", defaultOn: false, sort: (t) => fold(t.product_summary), cell: (t) => <div className="text-xs max-w-[240px] truncate" title={t.product_summary}>{t.product_summary || "—"}</div> },
+  { key: "cod", label: "Tiền thu (COD)", defaultOn: false, sort: (t) => Number(t.cod) || 0, cell: (t) => <span className="whitespace-nowrap">{fmtVND(t.cod)}</span> },
+  { key: "created", label: "Ngày tạo", defaultOn: false, sort: (t) => Date.parse(t.created_at) || 0, cell: (t) => <span className="text-xs whitespace-nowrap">{fmtTime(t.created_at)}</span> },
+  { key: "province", label: "Tỉnh", defaultOn: false, sort: (t) => fold(t.province || ""), cell: (t) => <span className="text-xs">{t.province || "—"}</span> },
+  { key: "seller", label: "Sale", defaultOn: false, sort: (t) => fold(t.seller_name || ""), cell: (t) => <span className="text-xs">{t.seller_name || "—"}</span> },
+  {
+    key: "last_note", label: "Note gần nhất", defaultOn: false, sort: (t) => t.notes?.[t.notes.length - 1]?.at || 0,
+    cell: (t) => { const n = t.notes?.[t.notes.length - 1]; return <div className="text-xs text-gray-500 max-w-[220px] truncate" title={n?.message}>{n ? `“${n.message}”` : "—"}</div> },
+  },
+  {
+    key: "due", label: "Hạn", defaultOn: true, sort: (t) => Date.parse(t.task.due_at) || 0,
+    cell: (t) => <span className={`text-xs whitespace-nowrap ${t.bucket === "overdue" ? "text-red-600 font-medium" : "text-gray-500"}`}>{fmtDue(t.task.due_at)}</span>,
+  },
+]
+const PREF_KEY = "cskh-queue.table-prefs.v1"
+type TablePrefs = { cols: string[]; sort: { key: string; dir: 1 | -1 } | null }
+function readPrefs(): TablePrefs {
+  const fallback: TablePrefs = { cols: QUEUE_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key), sort: null }
+  try {
+    const v = JSON.parse(localStorage.getItem(PREF_KEY) || "null")
+    return v && Array.isArray(v.cols) ? { ...fallback, ...v } : fallback
+  } catch {
+    return fallback
+  }
+}
+
 function TaskCard({ t, tagInfo, pending, setPending, onClose, onSaved }: {
   t: any; tagInfo: any; pending: ReturnType<typeof readPending>; setPending: (p: any) => void
   onClose: () => void; onSaved: (msg: string, warn: string[]) => void
@@ -317,6 +392,18 @@ export default function CskhQueue() {
   const [tagInfo, setTagInfo] = useState<any>(null)
   const [pending, setPending] = useState(readPending)
   const [toast, setToast] = useState<{ msg: string; warn: string[] } | null>(null)
+  // Visible columns + sort, remembered per browser.
+  const [prefs, setPrefsState] = useState<TablePrefs>(readPrefs)
+  const setPrefs = (p: TablePrefs) => {
+    setPrefsState(p)
+    try { localStorage.setItem(PREF_KEY, JSON.stringify(p)) } catch {}
+  }
+  const toggleSort = (key: string) => {
+    const cur = prefs.sort
+    // asc → desc → off (back to the queue's priority order)
+    const next = !cur || cur.key !== key ? { key, dir: 1 as const } : cur.dir === 1 ? { key, dir: -1 as const } : null
+    setPrefs({ ...prefs, sort: next })
+  }
 
   const load = async () => {
     setLoading(true)
@@ -347,8 +434,14 @@ export default function CskhQueue() {
     let list: any[] = data?.tasks ?? []
     if (!showLater) list = list.filter((t) => t.bucket !== "later")
     if (filter) list = list.filter((t) => t.task.code === filter)
+    const col = prefs.sort && QUEUE_COLUMNS.find((c) => c.key === prefs.sort!.key)
+    if (col) {
+      const dir = prefs.sort!.dir
+      list = [...list].sort((a, b) => { const x = col.sort(a), y = col.sort(b); return (x < y ? -1 : x > y ? 1 : 0) * dir })
+    }
     return list
-  }, [data, filter, showLater])
+  }, [data, filter, showLater, prefs])
+  const shownCols = QUEUE_COLUMNS.filter((c) => c.fixed || prefs.cols.includes(c.key))
 
   const s = data?.summary ?? {}
   const td = data?.today
@@ -413,6 +506,24 @@ export default function CskhQueue() {
         <span>Đang theo dõi: chờ kho {s.cho_kho ?? 0} · chờ VTP {s.cho_vtp ?? 0} · đang giao {s.dang_giao ?? 0} · đang hoàn {s.dang_hoan ?? 0}</span>
         <label className="flex items-center gap-1"><input type="checkbox" checked={showLater} onChange={(e) => setShowLater(e.target.checked)} /> Hiện cả việc đã xử lý, chờ VTP ({s.waiting_carrier ?? 0})</label>
         <button onClick={load} className="px-3 py-1 border rounded hover:bg-gray-50">🔄 Làm mới</button>
+        {prefs.sort && (
+          <button onClick={() => setPrefs({ ...prefs, sort: null })} className="px-2 py-1 rounded-full border text-xs text-violet-700 border-violet-300">
+            Đang xếp theo cột "{QUEUE_COLUMNS.find((c) => c.key === prefs.sort!.key)?.label}" {prefs.sort.dir === 1 ? "▲" : "▼"} · bỏ
+          </button>
+        )}
+        <details className="relative">
+          <summary className="list-none cursor-pointer px-3 py-1 rounded-full border text-xs hover:bg-gray-50">⚙ Cột hiển thị</summary>
+          <div className="absolute z-20 mt-1 w-60 bg-white border rounded-lg shadow-lg p-2 space-y-1 text-gray-700">
+            {QUEUE_COLUMNS.filter((c) => !c.fixed).map((c) => (
+              <label key={c.key} className="flex items-center gap-2 text-sm px-1 py-0.5 rounded hover:bg-gray-50">
+                <input type="checkbox" checked={prefs.cols.includes(c.key)}
+                  onChange={(e) => setPrefs({ ...prefs, cols: e.target.checked ? [...prefs.cols, c.key] : prefs.cols.filter((k) => k !== c.key) })} />
+                {c.label}
+              </label>
+            ))}
+            <button onClick={() => setPrefs({ ...prefs, cols: QUEUE_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key) })} className="text-xs text-violet-700 hover:underline px-1">Về mặc định</button>
+          </div>
+        </details>
       </div>
 
       {err && <div className="text-sm text-red-600">{err}</div>}
@@ -425,30 +536,18 @@ export default function CskhQueue() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left px-3 py-2">Việc</th>
-                <th className="text-left px-3 py-2">Khách / đơn</th>
-                <th className="text-left px-3 py-2">Cập nhật vận chuyển mới nhất</th>
-                <th className="text-left px-3 py-2">Hạn</th>
+                {shownCols.map((c) => (
+                  <th key={c.key} onClick={() => toggleSort(c.key)} title="Bấm để sắp xếp"
+                    className={`text-left px-3 py-2 cursor-pointer select-none whitespace-nowrap hover:text-violet-700 ${c.className ?? ""}`}>
+                    {c.label}{prefs.sort?.key === c.key ? (prefs.sort.dir === 1 ? " ▲" : " ▼") : ""}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((t) => (
                 <tr key={t.id} onClick={() => setSelected(t)} className={`border-t cursor-pointer hover:bg-violet-50 ${pending?.orderId === String(t.id) ? "bg-red-50" : ""}`}>
-                  <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${TASKS[t.task.code]?.cls ?? ""}`}>{TASKS[t.task.code]?.label ?? t.task.code}</span>
-                    {t.task.handled && <div className="text-[11px] text-gray-400 mt-0.5">đã xử lý, xem lại</div>}
-                    {t.today?.carried_from && <div className="text-[11px] text-orange-600 mt-0.5">tồn từ {fmtDay(t.today.carried_from)}</div>}
-                    {t.today?.reopened > 0 && <div className="text-[11px] text-red-600 mt-0.5">mở lại — VTP báo lỗi tiếp</div>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{t.customer_name} · {fmtVND(t.cod)}</div>
-                    <div className="text-xs text-gray-400">#{t.id} · {t.province || "—"} · {t.carrier.delivery_name ? `BT ${t.carrier.delivery_name}` : ""}</div>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-gray-600 max-w-xs">
-                    <div className="truncate">{t.carrier.updates[0]?.text || "—"}</div>
-                    <div className="text-gray-400">{fmtTime(t.carrier.updates[0]?.at)}</div>
-                  </td>
-                  <td className={`px-3 py-2 text-xs whitespace-nowrap ${t.bucket === "overdue" ? "text-red-600 font-medium" : "text-gray-500"}`}>{fmtDue(t.task.due_at)}</td>
+                  {shownCols.map((c) => <td key={c.key} className={`px-3 py-2 ${c.className ?? ""}`}>{c.cell(t)}</td>)}
                 </tr>
               ))}
             </tbody>
