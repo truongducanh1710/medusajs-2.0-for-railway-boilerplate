@@ -580,6 +580,86 @@ function Overlay({ children, onClose, wide, onKey }: { children: any; onClose: (
   )
 }
 
+// ---- Queue table columns (sale picks which to show and can sort by any) ----
+
+type QueueCol = {
+  key: string
+  label: string
+  title?: string
+  defaultOn: boolean
+  fixed?: boolean
+  sort: (o: any) => string | number
+  cell: (o: any) => any
+  className?: string
+}
+
+const QUEUE_COLUMNS: QueueCol[] = [
+  {
+    key: "customer", label: "Khách / đơn", defaultOn: true, fixed: true, sort: (o) => fold(o.customer_name),
+    cell: (o) => (<>
+      <div className="font-medium">
+        {o.tags?.some(isDraftTag) && <span className="mr-1.5 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-bold tracking-wide align-middle">NHÁP</span>}
+        {o.customer_name} · <span className="text-gray-700">{fmtVND(o.cod ?? o.total)}</span>
+      </div>
+      <div className="text-xs text-gray-400 truncate max-w-xs">#{o.id} · {o.product_summary} · {fmtTime(o.created_at)}</div>
+    </>),
+  },
+  { key: "order_id", label: "Mã đơn", defaultOn: false, sort: (o) => Number(o.id) || 0, cell: (o) => <span className="font-mono">#{o.id}</span> },
+  { key: "tracking", label: "Mã vận đơn", defaultOn: false, sort: (o) => o.tracking_code || "", cell: (o) => <span className="font-mono text-xs">{o.tracking_code || "—"}</span> },
+  { key: "created", label: "Ngày tạo", defaultOn: false, sort: (o) => Date.parse(o.created_at) || 0, cell: (o) => <span className="text-xs whitespace-nowrap">{fmtTime(o.created_at)}</span> },
+  { key: "product", label: "Sản phẩm", defaultOn: false, sort: (o) => fold(o.product_summary), cell: (o) => <div className="text-xs max-w-[240px] truncate" title={o.product_summary}>{o.product_summary}</div> },
+  { key: "cod", label: "Tiền thu (COD)", defaultOn: false, sort: (o) => Number(o.cod ?? o.total) || 0, cell: (o) => <span className="whitespace-nowrap">{fmtVND(o.cod ?? o.total)}</span> },
+  {
+    key: "next", label: "Việc tiếp theo", defaultOn: true, sort: (o) => Date.parse(o.next?.dueAt) || 0,
+    cell: (o) => (<>
+      <span className={`px-2 py-0.5 rounded-full text-xs ${BUCKET_STYLE[o.bucket]}`}>{o.next.label}</span>
+      {o.priority?.reasons?.length > 0 && (
+        <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
+          {o.priority.reasons.map((r: string) => (
+            <span key={r} className={`px-1.5 py-0.5 rounded text-[11px] ${/hoàn/.test(r) ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{r}</span>
+          ))}
+        </span>
+      )}
+      {o.notes?.length > 0 && <div className="text-xs text-gray-400 mt-0.5 truncate max-w-[220px]">“{o.notes[o.notes.length - 1].message}”</div>}
+    </>),
+  },
+  {
+    key: "calls", label: "Gọi / note", title: "Số lượt gọi tổng đài / số note", defaultOn: true, className: "text-center", sort: (o) => o.attempts ?? 0,
+    cell: (o) => (<>
+      {o.call_attempts} / {o.note_count}
+      {(o.unnoted > 0 || o.awaiting) && <span className="ml-1 text-orange-600" title={o.awaiting ? "Vừa gọi, chưa ghi kết quả" : `${o.unnoted} lượt gọi chưa note`}>⚠</span>}
+    </>),
+  },
+  {
+    key: "due", label: "Hạn", defaultOn: true, sort: (o) => (o.bucket === "cancel" ? Infinity : Date.parse(o.next?.dueAt) || 0),
+    cell: (o) => <span className={`text-xs ${o.bucket === "overdue" ? "text-red-600 font-medium" : "text-gray-500"}`}>{o.bucket === "cancel" ? "—" : fmtDue(o.next.dueAt)}</span>,
+  },
+  { key: "rep", label: "Uy tín khách", title: "Toàn mạng Pancake: đơn thành công / hoàn", defaultOn: true, sort: (o) => (o.rep ? o.rep.return_rate ?? 0 : -1), cell: (o) => <RepChip rep={o.rep ? { available: true, ...o.rep } : null} /> },
+  {
+    key: "flags", label: "Cảnh báo", defaultOn: true, sort: (o) => (o.flags.pkg_mismatch ? 4 : 0) + (o.flags.no_commune ? 2 : 0) + (o.flags.dup_phone ? 1 : 0),
+    cell: (o) => (<span className="text-xs space-x-1 whitespace-nowrap">
+      {o.flags.pkg_mismatch && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700">Lệch gói</span>}
+      {o.flags.no_commune && <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">Chưa xã</span>}
+      {o.flags.dup_phone && <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">Trùng SĐT</span>}
+    </span>),
+  },
+  { key: "province", label: "Tỉnh", defaultOn: false, sort: (o) => fold(o.province || ""), cell: (o) => <span className="text-xs">{o.province || "—"}</span> },
+  { key: "marketer", label: "MKT", defaultOn: false, sort: (o) => o.marketer_name || "", cell: (o) => <span className="text-xs">{o.marketer_name || "—"}</span> },
+  { key: "source", label: "Nguồn / page", defaultOn: false, sort: (o) => fold(o.shop_name || ""), cell: (o) => <div className="text-xs max-w-[180px] truncate" title={o.shop_name}>{o.shop_name || "—"}</div> },
+  { key: "seller", label: "Sale", defaultOn: true, sort: (o) => o.seller_name || "", cell: (o) => <span className="text-xs">{o.seller_name || "—"}</span> },
+]
+const PREF_KEY = "xac-nhan-don.table-prefs.v1"
+type TablePrefs = { mode: "smart" | "pos"; cols: string[]; sort: { key: string; dir: 1 | -1 } | null }
+function readPrefs(): TablePrefs {
+  const fallback: TablePrefs = { mode: "smart", cols: QUEUE_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key), sort: null }
+  try {
+    const v = JSON.parse(localStorage.getItem(PREF_KEY) || "null")
+    return v && Array.isArray(v.cols) ? { ...fallback, ...v } : fallback
+  } catch {
+    return fallback
+  }
+}
+
 // ---- Main page ----
 
 const XacNhanDonPage = () => {
@@ -600,6 +680,18 @@ const XacNhanDonPage = () => {
   const [dateTo, setDateTo] = useState("")
   // ~42% of open orders carry "Đơn nháp" (22/10) — let the sale show or hide them at once.
   const [draftFilter, setDraftFilter] = useState<"" | "only" | "hide">("")
+  // Sort mode + visible columns, remembered per browser so each sale keeps their own view.
+  const [prefs, setPrefsState] = useState<TablePrefs>(readPrefs)
+  const setPrefs = (p: TablePrefs) => {
+    setPrefsState(p)
+    try { localStorage.setItem(PREF_KEY, JSON.stringify(p)) } catch {}
+  }
+  const toggleSort = (key: string) => {
+    const cur = prefs.sort
+    // asc → desc → off (back to the chosen mode)
+    const next = !cur || cur.key !== key ? { key, dir: 1 as const } : cur.dir === 1 ? { key, dir: -1 as const } : null
+    setPrefs({ ...prefs, sort: next })
+  }
   const [compDate, setCompDate] = useState(vnDate(Date.now()))
 
   useEffect(() => {
@@ -657,9 +749,19 @@ const XacNhanDonPage = () => {
     if (draftFilter === "only") list = list.filter((o) => o.tags?.some(isDraftTag))
     else if (draftFilter === "hide") list = list.filter((o) => !o.tags?.some(isDraftTag))
     const q = fold(search.trim())
-    if (q) list = list.filter((o) => fold(`${o.customer_name} ${o.customer_phone} ${o.id} ${o.product_summary}`).includes(q))
+    if (q) list = list.filter((o) => fold(`${o.customer_name} ${o.customer_phone} ${o.id} ${o.product_summary} ${o.tracking_code ?? ""}`).includes(q))
+    // Column sort wins; otherwise "Kiểu POS" = newest order on top, "Hỗ trợ mới" = server order
+    // (due orders interleaved new/call-back, by priority).
+    const col = prefs.sort && QUEUE_COLUMNS.find((c) => c.key === prefs.sort!.key)
+    if (col && tab !== "waiting") {
+      const dir = prefs.sort!.dir
+      list = [...list].sort((a, b) => { const x = col.sort(a), y = col.sort(b); return (x < y ? -1 : x > y ? 1 : 0) * dir })
+    } else if (prefs.mode === "pos") {
+      list = [...list].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    }
     return list
-  }, [dated, datedWaiting, tab, bucket, search, draftFilter])
+  }, [dated, datedWaiting, tab, bucket, search, draftFilter, prefs])
+  const shownCols = QUEUE_COLUMNS.filter((c) => c.fixed || prefs.cols.includes(c.key))
 
   // Cards follow the date filter, so "Quá hạn" for "Hôm nay" counts only today's orders.
   const s = {
@@ -766,7 +868,34 @@ const XacNhanDonPage = () => {
           <input type="date" value={dateFrom} max={dateTo || today} onChange={(e) => setDateFrom(e.target.value)} className="border rounded px-2 py-1 text-xs" />
           <span className="text-gray-400">→</span>
           <input type="date" value={dateTo} min={dateFrom} max={today} onChange={(e) => setDateTo(e.target.value)} className="border rounded px-2 py-1 text-xs" />
-          <span className="text-gray-500 ml-2">Đơn nháp:</span>
+          <span className="w-full" />
+          <span className="text-gray-500">Sắp xếp:</span>
+          <div className="inline-flex border rounded-lg overflow-hidden text-xs">
+            {([["smart", "Hỗ trợ mới (ưu tiên)"], ["pos", "Kiểu POS (mới nhất trên cùng)"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setPrefs({ ...prefs, mode: k, sort: null })}
+                className={`px-3 py-1 ${k === "pos" ? "border-l" : ""} ${prefs.mode === k && !prefs.sort ? "bg-violet-600 text-white" : "hover:bg-gray-50"}`}>{l}</button>
+            ))}
+          </div>
+          {prefs.sort && (
+            <button onClick={() => setPrefs({ ...prefs, sort: null })} className="px-2 py-1 rounded-full border text-xs text-violet-700 border-violet-300">
+              Đang xếp theo cột "{QUEUE_COLUMNS.find((c) => c.key === prefs.sort!.key)?.label}" {prefs.sort.dir === 1 ? "▲" : "▼"} · bỏ
+            </button>
+          )}
+          <details className="relative">
+            <summary className="list-none cursor-pointer px-3 py-1 rounded-full border text-xs hover:bg-gray-50">⚙ Cột hiển thị</summary>
+            <div className="absolute z-20 mt-1 w-56 bg-white border rounded-lg shadow-lg p-2 space-y-1">
+              {QUEUE_COLUMNS.filter((c) => !c.fixed).map((c) => (
+                <label key={c.key} className="flex items-center gap-2 text-sm px-1 py-0.5 rounded hover:bg-gray-50">
+                  <input type="checkbox" checked={prefs.cols.includes(c.key)}
+                    onChange={(e) => setPrefs({ ...prefs, cols: e.target.checked ? [...prefs.cols, c.key] : prefs.cols.filter((k) => k !== c.key) })} />
+                  {c.label}
+                </label>
+              ))}
+              <button onClick={() => setPrefs({ ...prefs, cols: QUEUE_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key) })} className="text-xs text-violet-700 hover:underline px-1">Về mặc định</button>
+            </div>
+          </details>
+          <span className="w-full" />
+          <span className="text-gray-500">Đơn nháp:</span>
           {([["", "Tất cả"], ["only", `Chỉ đơn nháp (${dated.filter((o: any) => o.tags?.some(isDraftTag)).length})`], ["hide", "Ẩn đơn nháp"]] as const).map(([k, l]) => (
             <button key={k} onClick={() => setDraftFilter(k)}
               className={`px-3 py-1 rounded-full border text-xs ${draftFilter === k ? "bg-amber-500 text-white border-amber-500" : "hover:bg-gray-50"}`}>{l}</button>
@@ -809,48 +938,22 @@ const XacNhanDonPage = () => {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left px-3 py-2">Khách / đơn</th>
-                <th className="text-left px-3 py-2">Việc tiếp theo</th>
-                <th className="text-center px-3 py-2" title="Số lượt gọi tổng đài / số note">Gọi / note</th>
-                <th className="text-left px-3 py-2">Hạn</th>
-                <th className="text-left px-3 py-2" title="Toàn mạng Pancake: đơn thành công / hoàn">Uy tín khách</th>
-                <th className="text-left px-3 py-2">Cảnh báo</th>
-                {seller === "all" && <th className="text-left px-3 py-2">Sale</th>}
+                {shownCols.map((c) => {
+                  const active = prefs.sort?.key === c.key
+                  return (
+                    <th key={c.key} title={c.title} className={`px-3 py-2 ${c.className ?? "text-left"}`}>
+                      <button onClick={() => toggleSort(c.key)} className={`inline-flex items-center gap-1 hover:text-violet-700 ${active ? "text-violet-700 font-semibold" : ""}`}>
+                        {c.label}<span className="text-[10px]">{active ? (prefs.sort!.dir === 1 ? "▲" : "▼") : "↕"}</span>
+                      </button>
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
               {rows.map((o) => (
                 <tr key={o.id} onClick={() => setSelected(o)} className={`border-t cursor-pointer hover:bg-violet-50 ${pending?.orderId === String(o.id) ? "bg-red-50" : ""}`}>
-                  <td className="px-3 py-2">
-                    <div className="font-medium">
-                      {o.tags?.some(isDraftTag) && <span className="mr-1.5 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-bold tracking-wide align-middle">NHÁP</span>}
-                      {o.customer_name} · <span className="text-gray-700">{fmtVND(o.cod ?? o.total)}</span>
-                    </div>
-                    <div className="text-xs text-gray-400 truncate max-w-xs">#{o.id} · {o.product_summary} · {fmtTime(o.created_at)}</div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${BUCKET_STYLE[o.bucket]}`}>{o.next.label}</span>
-                    {o.priority?.reasons?.length > 0 && (
-                      <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
-                        {o.priority.reasons.map((r: string) => (
-                          <span key={r} className={`px-1.5 py-0.5 rounded text-[11px] ${/hoàn/.test(r) ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{r}</span>
-                        ))}
-                      </span>
-                    )}
-                    {o.notes?.length > 0 && <div className="text-xs text-gray-400 mt-0.5 truncate max-w-[220px]">“{o.notes[o.notes.length - 1].message}”</div>}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {o.call_attempts} / {o.note_count}
-                    {(o.unnoted > 0 || o.awaiting) && <span className="ml-1 text-orange-600" title={o.awaiting ? "Vừa gọi, chưa ghi kết quả" : `${o.unnoted} lượt gọi chưa note`}>⚠</span>}
-                  </td>
-                  <td className={`px-3 py-2 text-xs ${o.bucket === "overdue" ? "text-red-600 font-medium" : "text-gray-500"}`}>{o.bucket === "cancel" ? "—" : fmtDue(o.next.dueAt)}</td>
-                  <td className="px-3 py-2"><RepChip rep={o.rep ? { available: true, ...o.rep } : null} /></td>
-                  <td className="px-3 py-2 text-xs space-x-1 whitespace-nowrap">
-                    {o.flags.pkg_mismatch && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700">Lệch gói</span>}
-                    {o.flags.no_commune && <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">Chưa xã</span>}
-                    {o.flags.dup_phone && <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">Trùng SĐT</span>}
-                  </td>
-                  {seller === "all" && <td className="px-3 py-2 text-xs">{o.seller_name || "—"}</td>}
+                  {shownCols.map((c) => <td key={c.key} className={`px-3 py-2 align-top ${c.className ?? ""}`}>{c.cell(o)}</td>)}
                 </tr>
               ))}
             </tbody>

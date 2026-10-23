@@ -31,7 +31,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const pool = getPool()
     const { rows } = await pool.query(
       `SELECT po.id, po.status, po.customer_name, po.customer_phone, po.total, po.items, po.notes, po.tags,
-              po.pancake_created_at, po.shop_name, po.source, po.marketer_name,
+              po.pancake_created_at, po.shop_name, po.source, po.marketer_name, po.tracking_code,
+              COALESCE(po.raw->'shipping_address'->>'province_name', NULLIF(po.province, '')) AS province_name,
               po.raw->'assigning_seller'->>'id' AS seller_id,
               TRIM(po.raw->'assigning_seller'->>'name') AS seller_name,
               (po.raw->>'cod')::numeric AS cod,
@@ -95,6 +96,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         seller_id: r.seller_id ?? null,
         seller_name: r.seller_name || null,
         shop_name: r.shop_name,
+        tracking_code: r.tracking_code || null,
+        province: r.province_name || null,
         marketer_name: r.marketer_name,
         tags,
       }
