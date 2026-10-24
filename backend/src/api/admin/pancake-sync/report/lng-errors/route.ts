@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, lookupCost, resolveDisplayId, toVNDate } from "../../../gia-von/avg-cost/route"
+import { ORDER_REVENUE_SQL } from "../../../../../lib/mkt-today"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -85,7 +86,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         province,
         status,
         status_name,
-        GREATEST(cod_amount, total::bigint) AS amount,
+        ${ORDER_REVENUE_SQL} AS amount,
         to_char(pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'DD/MM/YYYY HH24:MI') AS created,
         raw->'marketer'->>'name' AS raw_marketer,
         raw->>'p_utm_campaign' AS utm_campaign

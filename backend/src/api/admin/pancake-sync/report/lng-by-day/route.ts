@@ -90,12 +90,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     for (const a of adsRows) adsByDay[a.date] = Number(a.spend)
 
     // Doanh số theo ngày (khớp định nghĩa "Doanh số" ở tab Báo cáo MKT: tổng đơn
-    // KHÔNG trừ hủy, GREATEST(cod_amount, total) — khác revenue_delivered/tam_tinh
+    // KHÔNG trừ hủy, tiền sau giảm giá — khác revenue_delivered/tam_tinh
     // ở trên vốn chỉ tính đơn đã nhận/tỷ lệ nhận dự phóng).
     const mktRevenueRows = await sql(`
       SELECT
         to_char(date_trunc('day', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
-        SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue_mkt
+        SUM(CASE WHEN status NOT IN (-2, 7) THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_mkt
       FROM pancake_order
       WHERE deleted_at IS NULL
         AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')

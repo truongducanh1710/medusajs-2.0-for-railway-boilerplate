@@ -47,6 +47,13 @@ export const MKT_OF_ORDER_SQL = `
   CASE WHEN ${MKT_RAW} = 'TRUONGAN' THEN 'ANHTD' ELSE ${MKT_RAW} END
 `
 
+/**
+ * Doanh số 1 đơn = tiền khách trả thật (sau giảm giá, gồm phí ship thu khách + trả trước).
+ * KHÔNG dùng cột `total` — đó là giá niêm yết trước giảm (vd 599k giảm còn 299k), từng làm
+ * báo cáo MKT thổi ~12% doanh số (24/10/2026).
+ */
+export const ORDER_REVENUE_SQL = `COALESCE(NULLIF(NULLIF(raw->>'total_price_after_sub_discount', '')::numeric, 0), cod_amount::numeric)::bigint`
+
 /** Điều kiện đơn tính vào doanh số MKT (cùng báo cáo /report/mkt). */
 export const MKT_ORDER_FILTER_SQL = `
   deleted_at IS NULL
@@ -87,7 +94,7 @@ export async function mktTotalsForDate(date: string): Promise<Record<string, Mkt
   const { rows: rev } = await pool.query(
     `SELECT ${MKT_OF_ORDER_SQL} AS mkt,
             COUNT(*) FILTER (WHERE status NOT IN (-2, 7))::int AS orders,
-            SUM(CASE WHEN status NOT IN (-2, 7) THEN GREATEST(cod_amount, total::bigint) ELSE 0 END)::bigint AS revenue
+            SUM(CASE WHEN status NOT IN (-2, 7) THEN ${ORDER_REVENUE_SQL} ELSE 0 END)::bigint AS revenue
        FROM pancake_order
       WHERE ${MKT_ORDER_FILTER_SQL}
         AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
