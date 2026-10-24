@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
 import { computeAvgCost, lookupCost, resolveDisplayId, toVNDate } from "../../../gia-von/avg-cost/route"
+import { MKT_ORDER_FILTER_SQL } from "../../../../../lib/mkt-today"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -91,16 +92,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     // Doanh số theo ngày (khớp định nghĩa "Doanh số" ở tab Báo cáo MKT: tổng đơn
     // KHÔNG trừ hủy, tiền sau giảm giá — khác revenue_delivered/tam_tinh
-    // ở trên vốn chỉ tính đơn đã nhận/tỷ lệ nhận dự phóng).
+    // ở trên vốn chỉ tính đơn đã nhận/tỷ lệ nhận dự phóng). Lọc đơn dùng chung
+    // MKT_ORDER_FILTER_SQL: đơn nháp đã xác nhận VẪN tính (sale hay quên gỡ tag).
     const mktRevenueRows = await sql(`
       SELECT
         to_char(date_trunc('day', pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'), 'YYYY-MM-DD') AS date,
         SUM(CASE WHEN status NOT IN (-2, 7) THEN ${revenueExpr} ELSE 0 END)::bigint AS revenue_mkt
       FROM pancake_order
-      WHERE deleted_at IS NULL
-        AND source IN ('manual', 'facebook', 'medusa', 'unknown', 'webcake')
-        AND NOT (tags @> '[{"name": "Đơn nháp"}]'::jsonb)
-        AND NOT (tags @> '[{"name": "Đơn trùng"}]'::jsonb)
+      WHERE ${MKT_ORDER_FILTER_SQL}
         AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
         AND pancake_created_at < (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       GROUP BY date
