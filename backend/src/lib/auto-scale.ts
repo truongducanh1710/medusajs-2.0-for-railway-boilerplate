@@ -258,6 +258,7 @@ async function campCtrStats(campaignId: string) {
     ctr: ti > 0 ? (tc / ti) * 100 : null,
     ctr_base: baseOk ? (bc / bi) * 100 : null,
     cpc_ratio: baseOk && tc > 0 ? (ts / tc) / (bs / bc) : null,
+    spend_7d: bs,
   }
 }
 
@@ -768,6 +769,14 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       metrics.revenue_today = pauseInputs.revenue_today
       metrics.cost_pct_today = pauseInputs.revenue_today ? Math.round((spend / pauseInputs.revenue_today) * 1000) / 10 : null
       const st = await campCtrStats(camp.campaign_id)
+      // 7 ngày trước hôm nay của chính camp — xét "camp thắng" (decide: isVeteran)
+      const since7 = new Date(new Date(startOfTodayVN()).getTime() - 7 * 86_400_000).toISOString()
+      pauseInputs.week = {
+        spend: st.spend_7d,
+        orders: (await ordersSince(camp.campaign_id, camp.campaign_name, since7)) - orders,
+        revenue: (await revenueSince(camp.campaign_id, camp.campaign_name, since7)) - pauseInputs.revenue_today,
+      }
+      metrics.week = pauseInputs.week
       if (fb.data.effective_status === "ACTIVE") await logCtrDropWarning(camp, rule, st, metrics)
       const ctx = camp.mkt_name ? portfolios.get(camp.mkt_name) : undefined
       if (ctx) {

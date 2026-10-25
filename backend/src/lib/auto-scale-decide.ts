@@ -83,6 +83,8 @@ export type DecideInput = {
   pause_streak?: number
   /** Đã tự bật lại hôm nay */
   resumed_today?: boolean
+  /** 7 ngày trước hôm nay của chính camp (chi, đơn hợp lệ, doanh số) — xét camp thắng */
+  week?: { spend: number; orders: number; revenue: number } | null
   /** Nhìn tổng theo MKT (null = MKT chưa bật quản lý tổng) */
   portfolio?: Portfolio | null
 }
@@ -163,13 +165,19 @@ export function projectFromRecent(spentNow: number, spentBefore: number, minutes
  * camp thắng (23/9 S1: ngày 26/09 chi 549k 0 đơn, sau đó chạy 7tr ở 27%).
  */
 /**
- * Camp đã sống ≥ 7 ngày (qua được quy tắc 3 ngày + phanh 3 ngày xấu liền = bộ đã thắng) thì ngưỡng
- * phanh sáng + mốc 13h nâng lên 300k (25/10/2026 user): S1 VD131–134 ADS344 (tuần 10%) bị tắt 10:02
- * lúc 201k 0 đơn, đơn về sau đó → XUANLT cả ngày chỉ chi 2tr. Camp mới vẫn giữ 200k / 150k.
+ * Camp THẮNG (tạo ≥ 7 ngày, 7 ngày trước hôm nay ≥ 5 đơn và ≤ 28%) thì ngưỡng phanh sáng + mốc 13h
+ * nâng lên 300k (25/10/2026 user): S1 VD131–134 ADS344 (tuần 18%) bị tắt 10:02 lúc 201k 0 đơn, đơn về
+ * sau đó → XUANLT cả ngày chỉ chi 2tr. Camp khác (kể cả camp cũ mà tuần > 28%) vẫn giữ 200k / 150k.
  */
 export const VETERAN_AGE_HOURS = 7 * 24
 export const VETERAN_MIN_SPEND = 300_000
-const isVeteran = (x: DecideInput) => x.camp_age_hours != null && x.camp_age_hours >= VETERAN_AGE_HOURS
+export const VETERAN_MIN_ORDERS = 5
+export const VETERAN_MAX_PCT = 28
+export const isVeteran = (x: DecideInput) => {
+  const w = x.week
+  return x.camp_age_hours != null && x.camp_age_hours >= VETERAN_AGE_HOURS && !!w
+    && w.orders >= VETERAN_MIN_ORDERS && w.revenue > 0 && (w.spend / w.revenue) * 100 <= VETERAN_MAX_PCT
+}
 
 export function pauseReason(x: DecideInput): string | null {
   const r = x.rule
