@@ -162,12 +162,21 @@ export function projectFromRecent(spentNow: number, spentBefore: number, minutes
  * 26/09–07/10 (camp XUANLT + ANHTD): lời ròng tốt nhất. Tắt HẲN ngay ngày xấu đầu tiên thì mất
  * camp thắng (23/9 S1: ngày 26/09 chi 549k 0 đơn, sau đó chạy 7tr ở 27%).
  */
+/**
+ * Camp đã sống ≥ 7 ngày (qua được quy tắc 3 ngày + phanh 3 ngày xấu liền = bộ đã thắng) thì ngưỡng
+ * phanh sáng + mốc 13h nâng lên 300k (25/10/2026 user): S1 VD131–134 ADS344 (tuần 10%) bị tắt 10:02
+ * lúc 201k 0 đơn, đơn về sau đó → XUANLT cả ngày chỉ chi 2tr. Camp mới vẫn giữ 200k / 150k.
+ */
+export const VETERAN_AGE_HOURS = 7 * 24
+export const VETERAN_MIN_SPEND = 300_000
+const isVeteran = (x: DecideInput) => x.camp_age_hours != null && x.camp_age_hours >= VETERAN_AGE_HOURS
+
 export function pauseReason(x: DecideInput): string | null {
   const r = x.rule
   if (!r.pause_enabled || x.paused_today) return null
   const minAge = r.pause_min_age_hours ?? 0
   if (minAge > 0 && (x.camp_age_hours === null || x.camp_age_hours === undefined || x.camp_age_hours < minAge)) return null
-  const minSpend = Number(r.pause_day_spend || 0)
+  const minSpend = isVeteran(x) ? Math.max(Number(r.pause_day_spend || 0), VETERAN_MIN_SPEND) : Number(r.pause_day_spend || 0)
   const maxPct = Number(r.pause_cost_pct || 0)
   if (!minSpend || !maxPct || x.spend_today < minSpend) return null
   const rev = Number(x.revenue_today || 0)
@@ -219,7 +228,7 @@ function decideLadder(x: DecideInput): Decision {
   const s = x.step
 
   if (!x.paused_today) {
-    if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= LADDER_NOON_CUT_SPEND) {
+    if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= (isVeteran(x) ? VETERAN_MIN_SPEND : LADDER_NOON_CUT_SPEND)) {
       return { action: "tat", final: false, reason: `Mốc ${LADDER_NOON_CUT_HOUR}h: chi ${vnd(x.spend_today)}, 0 đơn — tắt tới hết ngày, 5h sáng mai bật lại mức nền` }
     }
     if (s && s.to === x.budget && inCheck(LADDER_CHECK_HOURS) && s.minutes_ago >= 60 && s.orders_since === 0) {
