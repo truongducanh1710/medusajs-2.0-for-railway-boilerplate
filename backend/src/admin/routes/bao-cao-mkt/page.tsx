@@ -144,6 +144,8 @@ function BaoCaoMktPage() {
 
   // Tab Chi phí SP
   const [spRows, setSpRows] = useState<any[]>([])
+  const [spProducts, setSpProducts] = useState<any[]>([])
+  const [spView, setSpView] = useState<"product" | "mkt">("product")
   const [spLoading, setSpLoading] = useState(false)
   const [spMktFilter, setSpMktFilter] = useState("")
   const [spSortCol, setSpSortCol] = useState<string>("spend")
@@ -431,6 +433,7 @@ function BaoCaoMktPage() {
       const res = await apiFetch(`/admin/pancake-sync/report/mkt-product?from=${f}&to=${t2}${mktParam}`)
       const data = await res.json()
       setSpRows(data.rows ?? [])
+      setSpProducts(data.products ?? [])
     } catch (e) {
       console.error(e)
     } finally {
@@ -1899,7 +1902,7 @@ function BaoCaoMktPage() {
         const thS: React.CSSProperties = { padding: "10px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: t.theadText, borderBottom: `2px solid ${t.cardBorder}`, whiteSpace: "nowrap", background: t.card, cursor: "pointer", userSelect: "none" }
         const tdS: React.CSSProperties = { padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, textAlign: "right" }
 
-        const sorted = [...spRows].sort((a, b) => {
+        const sorted = [...(spView === "product" ? spProducts : spRows)].sort((a, b) => {
           const va = Number(a[spSortCol] ?? 0)
           const vb = Number(b[spSortCol] ?? 0)
           return spSortDir === "desc" ? vb - va : va - vb
@@ -1925,6 +1928,14 @@ function BaoCaoMktPage() {
           <div>
             {/* Controls */}
             <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", border: `1px solid ${t.inputBorder}`, borderRadius: 6, overflow: "hidden" }}>
+                {([["product", "Theo SP"], ["mkt", "MKT × SP"]] as const).map(([v, label]) => (
+                  <button key={v} onClick={() => setSpView(v)}
+                    style={{ background: spView === v ? "#1d4ed8" : "transparent", color: spView === v ? "#fff" : t.text, border: "none", padding: "6px 12px", cursor: "pointer", fontSize: 13, fontWeight: spView === v ? 700 : 400 }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
               {qBtnSp("Hôm nay", todayStr, todayStr)}
               {qBtnSp("3 ngày", (() => { const d = new Date(Date.now() + 7 * 3600000); d.setDate(d.getDate() - 2); return d.toISOString().slice(0,10) })(), todayStr)}
               {qBtnSp("7 ngày", (() => { const d = new Date(Date.now() + 7 * 3600000); d.setDate(d.getDate() - 6); return d.toISOString().slice(0,10) })(), todayStr)}
@@ -1958,8 +1969,9 @@ function BaoCaoMktPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 700 }}>
                   <thead>
                     <tr>
-                      <th style={{ ...thS, textAlign: "left", position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 200 }}>MKT_Sản phẩm</th>
+                      <th style={{ ...thS, textAlign: "left", position: "sticky", left: 0, zIndex: 2, background: dark ? t.card : "#fff", minWidth: 200 }}>{spView === "product" ? "Sản phẩm" : "MKT_Sản phẩm"}</th>
                       {mkTh("spend", "Chi phí")}
+                      {mkTh("camps", "Camp")}
                       {mkTh("don", "Đơn")}
                       {mkTh("chi_phi_don", "CP/đơn")}
                       {mkTh("doanh_so", "Doanh số")}
@@ -1979,6 +1991,7 @@ function BaoCaoMktPage() {
                             Tổng
                           </td>
                           <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>{totalSpend.toLocaleString("vi-VN")}đ</td>
+                          <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}` }}></td>
                           <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, color: t.blue, fontWeight: 700 }}>{totalDon}</td>
                           <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>{totalDon > 0 ? Math.round(totalChiPhiDon).toLocaleString("vi-VN") + "đ" : "—"}</td>
                           <td style={{ ...tdS, borderBottom: `2px solid ${t.cardBorder}`, fontWeight: 700 }}>{totalDoanhSo.toLocaleString("vi-VN")}đ</td>
@@ -2002,10 +2015,22 @@ function BaoCaoMktPage() {
                           onMouseEnter={e => (e.currentTarget.style.background = t.rowHover)}
                           onMouseLeave={e => (e.currentTarget.style.background = "")}>
                           <td style={{ padding: "10px 12px", fontSize: 13, borderBottom: `1px solid ${t.rowBorder}`, position: "sticky", left: 0, zIndex: 1, background: dark ? t.card : "#fff" }}>
-                            <span style={{ fontWeight: 700, color: mktColor(mkt), marginRight: 4 }}>{mkt}</span>
-                            <span style={{ color: t.text }}>{row.item_name}</span>
+                            {spView === "product" ? (
+                              <>
+                                <span style={{ color: t.text, fontWeight: 600 }}>{row.item_name}</span>
+                                {(row.mkts ?? []).map((m: string) => (
+                                  <span key={m} style={{ fontSize: 11, fontWeight: 700, color: mktColor(m), marginLeft: 6 }}>{m}</span>
+                                ))}
+                              </>
+                            ) : (
+                              <>
+                                <span style={{ fontWeight: 700, color: mktColor(mkt), marginRight: 4 }}>{mkt}</span>
+                                <span style={{ color: t.text }}>{row.item_name}</span>
+                              </>
+                            )}
                           </td>
                           <td style={tdS}>{Number(row.spend).toLocaleString("vi-VN")}đ</td>
+                          <td style={{ ...tdS, color: t.textMuted }}>{Number(row.camps) || "—"}</td>
                           <td style={{ ...tdS, color: t.blue }}>{row.don}</td>
                           <td style={tdS}>{row.don > 0 ? Number(row.chi_phi_don).toLocaleString("vi-VN") + "đ" : "—"}</td>
                           <td style={tdS}>{Number(row.doanh_so).toLocaleString("vi-VN")}đ</td>
