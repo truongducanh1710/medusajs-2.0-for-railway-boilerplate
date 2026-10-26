@@ -15,6 +15,39 @@ import { MKT_OF_ORDER_SQL, ORDER_REVENUE_SQL, MKT_ORDER_FILTER_SQL } from "../..
  *   tab Theo MKT (lib/mkt-today.ts) để tổng 2 tab khớp nhau.
  * - Áp bàn giao MKT (mkt_handover) theo ngày cho cả chi phí lẫn đơn.
  */
+
+// SP chính của camp không theo convention tên (camp → dòng hàng hay gặp nhất trong đơn).
+// Tra lịch sử 365 ngày phải bung raw ~8KB của ~100k đơn (~8s) — kết quả gần như không đổi nên
+// cache trong RAM: hết hạn thì trả bản cũ và làm mới nền; camp chưa từng gặp tra nhanh 30 ngày.
+const HIST_TTL_MS = 6 * 3600_000
+const campHistCache = new Map<string, { item: string | null; at: number }>()
+let histRefreshing = false
+
+async function queryCampHist(svc: any, camps: string[], days: number, campOfPo: string, mainItemOfPo: string) {
+  if (!camps.length) return
+  const rows = await svc.sql(`
+    SELECT DISTINCT ON (campaign_name) campaign_name, main_item
+    FROM (
+      SELECT ${campOfPo} AS campaign_name, ${mainItemOfPo} AS main_item, COUNT(*) AS cnt
+      FROM pancake_order po
+      WHERE po.deleted_at IS NULL
+        AND po.status NOT IN (-2, 7)
+        AND po.pancake_created_at >= (now() - ($2::int * interval '1 day'))
+        AND ${campOfPo} = ANY($1::text[])
+      GROUP BY 1, 2
+    ) t
+    WHERE main_item IS NOT NULL
+    ORDER BY campaign_name, cnt DESC
+  `, [camps, days])
+  const now = Date.now()
+  const found = new Map<string, string>(rows.map((r: any) => [r.campaign_name, r.main_item]))
+  for (const c of camps) {
+    const prev = campHistCache.get(c)
+    // Tra 30 ngày không thấy thì giữ kết quả cũ (nếu có) thay vì ghi đè null
+    campHistCache.set(c, { item: found.get(c) ?? (days < 365 ? prev?.item ?? null : null), at: days < 365 ? 0 : now })
+  }
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
@@ -38,6 +71,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       SELECT h.to_code FROM handover h
       WHERE h.from_code = ${mktExpr} AND ${dateExpr} >= h.ef AND (h.et IS NULL OR ${dateExpr} <= h.et)
       ORDER BY h.ef DESC LIMIT 1), ${mktExpr})`
+
+    // Camp trong khoảng ngày không mang mã SP → cần fallback SP chính từ lịch sử đơn
+    const codeless: string[] = (await cskhService.sql(`
+      WITH prod AS (SELECT DISTINCT upper(replace(code, '_', '')) AS code_key FROM mkt_product WHERE active = true),
+      camps AS (
+        SELECT DISTINCT campaign_name FROM mkt_ads_cost
+        WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date AND campaign_name IS NOT NULL
+        UNION
+        SELECT DISTINCT ${campOf("po")} FROM pancake_order po
+        WHERE ${MKT_ORDER_FILTER_SQL}
+          AND po.pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND po.pancake_created_at <  (($2::date + interval '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      )
+      SELECT campaign_name FROM camps cc
+      WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+        AND NOT EXISTS (SELECT 1 FROM prod p WHERE p.code_key = upper(split_part(cc.campaign_name, '_', 1)))
+    `, [fromDate, toDate])).map((r: any) => r.campaign_name)
+
+    const now = Date.now()
+    const unseen = codeless.filter(c => !campHistCache.has(c))
+    const stale = codeless.filter(c => { const e = campHistCache.get(c); return e && now - e.at > HIST_TTL_MS })
+    if (unseen.length) await queryCampHist(cskhService, unseen, 30, campOf("po"), mainItemOf("po"))
+    const toRefresh = [...new Set([...stale, ...unseen])]
+    if (toRefresh.length && !histRefreshing) {
+      histRefreshing = true
+      queryCampHist(cskhService, toRefresh, 365, campOf("po"), mainItemOf("po"))
+        .catch((e: any) => console.error("[report/mkt-product] camp_hist refresh", e.message))
+        .finally(() => { histRefreshing = false })
+    }
+    const campHist: Record<string, string> = {}
+    for (const c of codeless) { const it = campHistCache.get(c)?.item; if (it) campHist[c] = it }
 
     const rows = await cskhService.sql(`
       WITH handover AS (
@@ -72,24 +136,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         UNION
         SELECT DISTINCT campaign_name FROM order_raw WHERE campaign_name IS NOT NULL AND campaign_name <> ''
       ),
-      -- Fallback cho camp không có mã SP: SP chính hay gặp nhất trong đơn của camp (không giới hạn
-      -- theo khoảng ngày báo cáo — camp có thể có đơn ở ngày khác)
+      -- Fallback cho camp không có mã SP: SP chính hay gặp nhất trong đơn của camp (tra sẵn ở
+      -- trên qua cache, không giới hạn theo khoảng ngày báo cáo)
       camp_hist AS (
-        SELECT DISTINCT ON (campaign_name) campaign_name, main_item
-        FROM (
-          SELECT ${campOf("po")} AS campaign_name, ${mainItemOf("po")} AS main_item, COUNT(*) AS cnt
-          FROM pancake_order po
-          WHERE po.deleted_at IS NULL
-            AND po.status NOT IN (-2, 7)
-            AND po.pancake_created_at >= (now() - interval '365 days')
-            AND ${campOf("po")} IN (
-              SELECT campaign_name FROM camps cc
-              WHERE NOT EXISTS (SELECT 1 FROM prod p WHERE p.code_key = upper(split_part(cc.campaign_name, '_', 1)))
-            )
-          GROUP BY 1, 2
-        ) t
-        WHERE main_item IS NOT NULL
-        ORDER BY campaign_name, cnt DESC
+        SELECT key AS campaign_name, value AS main_item FROM jsonb_each_text($4::jsonb)
       ),
       camp_sp AS (
         SELECT cc.campaign_name, p.name AS sp_from_code, ch.main_item AS sp_from_orders
@@ -140,7 +190,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       WHERE ($3 = '' OR mkt_name = $3)
         AND (spend > 0 OR don > 0)
       ORDER BY mkt_name, spend DESC
-    `, [fromDate, toDate, mkt])
+    `, [fromDate, toDate, mkt, JSON.stringify(campHist)])
 
     // Freelancer chỉ thấy dòng mang mã MKT của mình (giống report/mkt)
     const scope = getOwnScope(req)

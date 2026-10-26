@@ -152,6 +152,8 @@ function BaoCaoMktPage() {
   const [spSortDir, setSpSortDir] = useState<"asc" | "desc">("desc")
   const [spFrom, setSpFrom] = useState(from)
   const [spTo, setSpTo] = useState(to)
+  const spCache = useRef(new Map<string, { rows: any[]; products: any[]; at: number }>())
+  const spReqKey = useRef("")
 
   // Tab Nền tảng — COD + chi phí theo Facebook / Google
   const [platRows, setPlatRows] = useState<any[]>([])
@@ -427,17 +429,29 @@ function BaoCaoMktPage() {
   const fetchSpData = useCallback(async (overrides?: { from?: string; to?: string }) => {
     const f = overrides?.from ?? spFrom
     const t2 = overrides?.to ?? spTo
+    const mktParam = spMktFilter ? `&mkt=${encodeURIComponent(spMktFilter)}` : ""
+    const key = `${f}|${t2}|${spMktFilter}`
+    // Show cached result instantly when switching back to a range; refetch in background
+    const cached = spCache.current.get(key)
+    if (cached) {
+      setSpRows(cached.rows)
+      setSpProducts(cached.products)
+      if (Date.now() - cached.at < 60_000) return
+    }
+    spReqKey.current = key
     setSpLoading(true)
     try {
-      const mktParam = spMktFilter ? `&mkt=${encodeURIComponent(spMktFilter)}` : ""
       const res = await apiFetch(`/admin/pancake-sync/report/mkt-product?from=${f}&to=${t2}${mktParam}`)
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? res.statusText)
+      spCache.current.set(key, { rows: data.rows ?? [], products: data.products ?? [], at: Date.now() })
+      if (spReqKey.current !== key) return // a newer range was picked meanwhile
       setSpRows(data.rows ?? [])
       setSpProducts(data.products ?? [])
     } catch (e) {
       console.error(e)
     } finally {
-      setSpLoading(false)
+      if (spReqKey.current === key) setSpLoading(false)
     }
   }, [spFrom, spTo, spMktFilter])
 
@@ -1960,12 +1974,12 @@ function BaoCaoMktPage() {
               </span>
             </div>
 
-            {spLoading ? (
+            {spLoading && sorted.length === 0 ? (
               <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Đang tải...</div>
             ) : sorted.length === 0 ? (
               <div style={{ textAlign: "center", padding: 60, color: t.textMuted }}>Không có dữ liệu</div>
             ) : (
-              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any }}>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any, opacity: spLoading ? 0.55 : 1, transition: "opacity .15s" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 700 }}>
                   <thead>
                     <tr>
