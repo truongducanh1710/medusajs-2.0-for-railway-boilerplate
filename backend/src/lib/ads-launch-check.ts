@@ -23,6 +23,7 @@ const SEED_PER_RUN = 6
 
 /** Bộ điều kiện Tự scale theo MKT + mã SP / loại camp (khớp products.json của công cụ lên camp). */
 function ruleFor(name: string): number | null {
+  if (/COSTCAP/.test(name)) return null // 28/10: giá thầu giới hạn chi phí tự kìm chi tiêu; đổi ngân sách theo thang làm học lại
   if (/XAKHO/.test(name)) return 5
   if (/_XUANLT_/.test(name)) return 1
   if (/^PHVVN042KGV/.test(name)) return 2
@@ -177,7 +178,7 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
   if (ts[0]) steps.tu_scale = step(ts[0].enabled ? "ok" : "skip", ts[0].enabled ? "Đã gắn" : "Gắn nhưng đang tạm dừng")
   else if (removed.length) steps.tu_scale = step("skip", "Đã bị gỡ khỏi Tự scale (đã quyết) — không tự gắn lại")
   else if (c.status !== "ACTIVE") steps.tu_scale = step("skip", `Camp đang ${c.status}`)
-  else if (!rule) steps.tu_scale = step("skip", "Loại camp không dùng Tự scale (vd Messenger)")
+  else if (!rule) steps.tu_scale = step("skip", "Loại camp không dùng Tự scale (Messenger / giới hạn chi phí)")
   else {
     const { rows: cost } = await pool.query(`SELECT ad_account_id, daily_budget FROM mkt_ads_cost WHERE campaign_id=$1 ORDER BY date DESC LIMIT 1`, [c.id])
     if (!cost.length) steps.tu_scale = step("pending", "Chờ camp có chi tiêu để gắn")
