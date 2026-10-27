@@ -28,6 +28,7 @@ function ruleFor(name: string): number | null {
   if (/^PHVVN042KGV/.test(name)) return 2
   if (/^PHVVN038KLD/.test(name)) return /_MESS/.test(name) ? null : 4 // Messenger không đo được đơn qua utm
   if (/^PHVVN026CV/.test(name)) return 3
+  if (/^PHVVN020TDH/.test(name)) return 3 // 27/10: hộp nhựa ANHTD Tự scale giống chảo vàng
   return null
 }
 
