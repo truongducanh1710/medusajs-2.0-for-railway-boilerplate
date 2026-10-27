@@ -152,6 +152,9 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
       const found = sku ? await findApprovedSet(sku, link) : null
       const tpl = found?.items || []
       if (!tpl.length) { noTpl++; continue }
+      // Đã seed xong trước đó (theo log) → coi như đủ; không đếm lại qua API (chỉ thấy 100 bình luận đầu → đếm sai, seed lặp 26/10)
+      const { rows: seeded } = await pool.query(`SELECT 1 FROM ads_seeding_log WHERE post_id=$1 AND status IN ('done','partial') LIMIT 1`, [post])
+      if (seeded.length) { full++; continue }
       const pg = post.split("_")[0], tok = ctx.pageTok.get(pg)
       let mine = 0
       try { mine = ((await fbGet(`/${post}/comments?fields=from{id}&filter=toplevel&limit=100`, tok || token())).data || []).filter((x: any) => x.from?.id === pg).length } catch (e: any) { err = e.message }

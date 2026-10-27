@@ -140,6 +140,10 @@ export async function seedPost(opts: { post_id: string; product_code: string; li
   const token = await pageToken(pageId)
   if (!token) return log("error", [], `Không có token page ${pageId}`)
   if (!opts.force) {
+    // 28/10/2026: post đã seed xong trước đó (theo log) → không seed lại. Đếm bình luận qua API chỉ thấy 100 bình luận đầu:
+    // post ăn tiền nhiều bình luận khách làm bình luận của page lọt ngoài trang đầu → đếm ra 0 → seed lặp (26/10: ~420 bình luận/post)
+    const { rows: prev } = await pool.query(`SELECT 1 FROM ads_seeding_log WHERE post_id=$1 AND status IN ('done','partial') LIMIT 1`, [opts.post_id])
+    if (prev.length) return log("skipped", [], "Post đã seed trước đó (theo log) — không seed lại")
     const cur = await fb("GET", `/${opts.post_id}/comments?fields=from{id}&filter=toplevel&limit=100`, token)
     if (!cur.ok) return log("error", [], `Không đọc được bình luận: ${cur.data?.error?.message}`)
     const mine = (cur.data.data || []).filter((c: any) => c.from?.id === pageId).length
