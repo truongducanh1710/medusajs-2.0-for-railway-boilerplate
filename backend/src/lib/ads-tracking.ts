@@ -32,7 +32,7 @@ export function ensureTrackingTables() {
   return ready
 }
 
-const ORDER_FILTER = `deleted_at IS NULL AND status NOT IN (-2,7)
+const ORDER_FILTER = `deleted_at IS NULL AND status <> 7
   AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
   AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb AND status IN (0,11,6,7,-1))`
 
