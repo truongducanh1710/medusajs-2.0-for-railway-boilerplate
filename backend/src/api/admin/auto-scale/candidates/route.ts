@@ -27,8 +27,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
          WHERE (p.raw->>'p_utm_campaign' = c.campaign_id OR p.raw->>'p_utm_source' = c.campaign_name)
            AND p.pancake_created_at >= now() - interval '7 days' AND p.deleted_at IS NULL
            AND NOT (p.tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-           AND NOT (p.tags @> '[{"name":"Đơn nháp"}]'::jsonb)
-           AND p.status <> 7) AS orders_7d,
+           AND NOT (p.tags @> '[{"name":"Đơn nháp"}]'::jsonb AND p.status IN (0, 11, 6, 7, -1))
+           AND p.status NOT IN (6, 7, -1)) AS orders_7d,
        (SELECT rule_id FROM auto_scale_camp a WHERE a.campaign_id = c.campaign_id) AS rule_id
      FROM c
      ORDER BY (c.effective_status = 'ACTIVE') DESC, spend_7d DESC

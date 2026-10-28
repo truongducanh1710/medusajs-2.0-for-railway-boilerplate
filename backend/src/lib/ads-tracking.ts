@@ -32,10 +32,9 @@ export function ensureTrackingTables() {
   return ready
 }
 
-// Same as DON_HOP_LE in auto-scale.ts — new, not duplicate, not draft; independent of sale processing.
-const ORDER_FILTER = `deleted_at IS NULL AND status <> 7
+const ORDER_FILTER = `deleted_at IS NULL AND status NOT IN (-2,7)
   AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-  AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb)`
+  AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb AND status IN (0,11,6,7,-1))`
 
 const PAGE_CODES: [RegExp, string][] = [[/_MĐGD_/, "Mê Đồ Gia Dụng"], [/_SMH_/, "SmartHome"], [/_TICS_/, "Tiện Ích Cuộc Sống"], [/_VIETMATE_/, "Vietmate"]]
 const accLabel = (name: string) => (name.match(/_(ADS\d{3})_/) || [])[1] || "?"
