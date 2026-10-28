@@ -198,13 +198,13 @@ async function fbSetStatus(campaignId: string, status: "ACTIVE" | "PAUSED"): Pro
 }
 
 // ── Số liệu hôm nay ──────────────────────────────────────────────────────────
-// Đơn hợp lệ: bỏ đơn trùng, bỏ đơn nháp chưa ai xác nhận, bỏ đơn huỷ/xoá.
-// Đơn Webcake mới về ở status 0 (Chờ xử lý) — vẫn tính, vì đó là đơn thật chưa gọi.
+// Valid order (rule from 28/10/2026): new order, not "Đơn trùng", not "Đơn nháp", not deleted.
+// Deliberately independent of sale processing — cancelled/confirmed status does not change validity.
 const DON_HOP_LE = `
   deleted_at IS NULL
   AND NOT (tags @> '[{"name":"Đơn trùng"}]'::jsonb)
-  AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb AND status IN (0, 11, 6, 7, -1))
-  AND status NOT IN (6, 7, -1)
+  AND NOT (tags @> '[{"name":"Đơn nháp"}]'::jsonb)
+  AND status <> 7
 `
 
 async function ordersSince(campaignId: string, campaignName: string, since: string): Promise<number> {
