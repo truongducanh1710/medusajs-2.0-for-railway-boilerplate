@@ -211,6 +211,11 @@ const LADDER_TOP_ORDERS = 5
 const LADDER_CHECK_HOURS = [12, 16, 21]
 const LADDER_NOON_CUT_HOUR = 13
 const LADDER_NOON_CUT_SPEND = 150_000
+// 30/10/2026 (user duyệt): khung tăng 12h siết — tiền tăng lúc 12h chảy vào 13–18h (giờ xấu 36–48%);
+// 134 lần tăng tháng 10: phần chi sau mốc 9h 27%, 12h 32%, 16h 30%. Chỉ tăng ở 12h khi ≥ 3 đơn và ≤ 22%.
+const LADDER_STRICT_HOUR = 12
+const LADDER_STRICT_ORDERS = 3
+const LADDER_STRICT_PCT = 22
 // 20/10/2026 user: mỗi lần tăng (tay hay hệ thống) là 1 lần reset học → lần sau cách ≥ 3 tiếng.
 const RAISE_GAP_MIN = 180
 const LADDER_JUMP_ORDERS = 5
@@ -278,6 +283,10 @@ function decideLadder(x: DecideInput): Decision {
     if (pct > LADDER_MAX_PCT) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
     if (moi < 2) lyDo.push(`mới ${moi}/2 đơn từ lần tăng trước`)
     if (idx + 1 === levels.length - 1 && x.orders_today < LADDER_TOP_ORDERS) lyDo.push(`lên nấc cuối cần ≥ ${LADDER_TOP_ORDERS} đơn (đang ${x.orders_today})`)
+  }
+  if (x.hour === LADDER_STRICT_HOUR) {
+    if (x.orders_today < LADDER_STRICT_ORDERS) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≥ ${LADDER_STRICT_ORDERS} đơn (đang ${x.orders_today}) — chờ 16h`)
+    else if (!(pct <= LADDER_STRICT_PCT)) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≤ ${LADDER_STRICT_PCT}% (đang ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}) — chờ 16h`)
   }
   // 20/10/2026 (user duyệt): từ 16h, tổng MKT đã chi ≥ 10tr mà % chi phí hôm nay > 35% → không tăng thêm.
   if (x.hour >= LADDER_LATE_STOP_HOUR && x.portfolio?.spend != null && x.portfolio.spend >= LADDER_LATE_STOP_SPEND
