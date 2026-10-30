@@ -6,6 +6,7 @@ import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/s
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
 import { sendPurchaseEvent } from "../../../../lib/fb-capi"
 import { fixMarketerFromUtm } from "../../../../lib/pancake"
+import { fixDuplicateLanding } from "../../../../lib/landing-dedup"
 import { pixelOfCampaign, systemToken, fbcFromLink, isMarketplaceOrder } from "../../../../lib/campaign-pixel"
 
 /**
@@ -173,10 +174,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
           // Marketer theo tên camp (utm_source), không theo landing. PUT này kích hoạt
           // webhook mới → lần đó marketer đã khớp nên không lặp.
+          // Then the duplicate-landing fix (sequential: both PUT the same order).
           if (market === "VN") {
             fixMarketerFromUtm(rawOrder, { shopId: chosenShop.shopId, apiKey: chosenShop.apiKey })
               .then((code) => { if (code) console.log(`[Pancake Webhook] Marketer #${pancakeOrderId} → ${code} (theo utm)`) })
               .catch((e: any) => console.warn(`[Pancake Webhook] Fix marketer #${pancakeOrderId} lỗi:`, e.message))
+              .then(() => fixDuplicateLanding(rawOrder))
+              .then((msg) => { if (msg) console.log(`[Pancake Webhook] Đơn trùng #${pancakeOrderId}: ${msg}`) })
+              .catch((e: any) => console.warn(`[Pancake Webhook] Fix đơn trùng #${pancakeOrderId} lỗi:`, e.message))
           }
         } else {
           // Fallback: upsert minimal from webhook body
