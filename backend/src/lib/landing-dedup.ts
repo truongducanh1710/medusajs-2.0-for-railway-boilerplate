@@ -52,17 +52,22 @@ export function planLandingDedup(o: any): DedupPlan {
   if (!n || !price) return { skip: "không đọc được gói" }
 
   const items: any[] = o?.items ?? []
-  const paid = items.filter((i) => Number(i.variation_info?.retail_price ?? 0) > 0)
-  if (paid.length !== 1) return { skip: "đơn có nhiều SP tính tiền" }
-  const mainQty = Number(paid[0].quantity)
+  const retailOf = (i: any) => Number(i.variation_info?.retail_price ?? 0)
+  // Main product = the priciest line; the rest are package extras (khay, kẹp, or a priced
+  // add-on like the máy bào in "MUA 2 CHẢO ... + 1 MÁY BÀO" — #97996).
+  const main = items.reduce<any>((a, i) => (!a || retailOf(i) > retailOf(a) ? i : a), null)
+  if (!main || retailOf(main) <= 0) return { skip: "không có SP tính tiền" }
+  if (items.filter((i) => retailOf(i) === retailOf(main)).length > 1) return { skip: "nhiều SP chính" }
+  const mainQty = Number(main.quantity)
   if (mainQty <= n) return { skip: "số lượng đã đúng gói" }
 
-  // Gifts scale with the main product (3 kệ + 3 khay → 1 kệ + 1 khay).
-  const scaled = items.map((i) => ({ i, q: (Number(i.quantity) * n) / mainQty }))
-  if (scaled.some((s) => !Number.isInteger(s.q) || s.q < 1)) return { skip: "quà không chia đều" }
+  // Extras scale with the main product and are dropped when they round to 0
+  // (3 kệ + 3 khay → 1 kệ + 1 khay; 3 chảo + 1 máy bào → 1 chảo).
+  const scaled = items
+    .map((i) => ({ i, q: i === main ? n : Math.round((Number(i.quantity) * n) / mainQty) }))
+    .filter((s) => s.q >= 1)
 
-  const retail = Number(paid[0].variation_info.retail_price)
-  const discount = n * retail - price
+  const discount = scaled.reduce((s, x) => s + x.q * retailOf(x.i), 0) - price
   if (discount < 0) return { skip: "giá gói cao hơn giá niêm yết" }
 
   const put = {
@@ -79,8 +84,10 @@ export function planLandingDedup(o: any): DedupPlan {
     discount, // NOT total_discount: Pancake ignores that field on update
   }
   const ids = blocks.map((b) => b.orderId).sort((a, b) => a - b).join(" + ")
-  const name = String(paid[0].variation_info?.name ?? "")
+  const name = String(main.variation_info?.name ?? "")
+  const dropped = items.filter((i) => !scaled.some((s) => s.i === i)).map((i) => String(i.variation_info?.name ?? ""))
   const message = `Hệ thống tự sửa đơn landing bị gộp trùng (Order ID ${ids}): ${name} ${mainQty} → ${n}, `
+    + (dropped.length ? `bỏ ${dropped.join(", ")}, ` : "")
     + `COD ${fmtK(Number(o.cod ?? 0))} → ${fmtK(price + Number(o.shipping_fee ?? 0))} · giữ gói lần gửi sau: ${latest.pkgText}`
   return { put, message, expectedCod: price + Number(o.shipping_fee ?? 0) }
 }
