@@ -170,7 +170,16 @@ export function projectFromRecent(spentNow: number, spentBefore: number, minutes
  * sau đó → XUANLT cả ngày chỉ chi 2tr. Camp khác (kể cả camp cũ mà tuần > 28%) vẫn giữ 200k / 150k.
  */
 export const VETERAN_AGE_HOURS = 7 * 24
-export const VETERAN_MIN_SPEND = 300_000
+// 2/11/2026 (user duyệt): các mốc tiền cố định trước đây (300k / 150k / 60k) chỉnh cho chảo vàng (đơn ~920k)
+// → hộp nhựa (~600k) bị cắt muộn hơn tương đối. Giờ tỉ lệ theo bộ điều kiện; bộ chảo vàng (phanh 200k, CPA mục tiêu
+// 200k) ra đúng số cũ. Backtest 0 đơn: hộp nhựa chạm 130k → 5% ngày kết thúc ≤28% ~ chảo vàng chạm 200k → 4%.
+const pauseBase = (r: DecideRule) => Number(r.pause_day_spend || 0) || 200_000
+/** Camp thắng: phanh sáng + mốc 13h = 1,5 × mốc phanh của bộ (chảo vàng 300k) */
+export const veteranMinSpend = (r: DecideRule) => Math.round(1.5 * pauseBase(r))
+/** Mốc 13h 0 đơn = 0,75 × mốc phanh của bộ (chảo vàng 150k) */
+const noonCutSpend = (r: DecideRule) => Math.round(0.75 * pauseBase(r))
+/** Nhảy nấc khi CPA ≤ 0,3 × CPA mục tiêu của bộ (chảo vàng 60k) */
+const jumpCpa = (r: DecideRule) => Math.round(0.3 * (Number(r.target_cpa || 0) || 200_000))
 export const VETERAN_MIN_ORDERS = 5
 export const VETERAN_MAX_PCT = 28
 export const isVeteran = (x: DecideInput) => {
@@ -184,7 +193,7 @@ export function pauseReason(x: DecideInput): string | null {
   if (!r.pause_enabled || x.paused_today) return null
   const minAge = r.pause_min_age_hours ?? 0
   if (minAge > 0 && (x.camp_age_hours === null || x.camp_age_hours === undefined || x.camp_age_hours < minAge)) return null
-  const minSpend = isVeteran(x) ? Math.max(Number(r.pause_day_spend || 0), VETERAN_MIN_SPEND) : Number(r.pause_day_spend || 0)
+  const minSpend = isVeteran(x) ? veteranMinSpend(r) : Number(r.pause_day_spend || 0)
   const maxPct = Number(r.pause_cost_pct || 0)
   if (!minSpend || !maxPct || x.spend_today < minSpend) return null
   const rev = Number(x.revenue_today || 0)
@@ -210,7 +219,6 @@ const LADDER_MAX_PCT = 25
 const LADDER_TOP_ORDERS = 5
 const LADDER_CHECK_HOURS = [12, 16, 21]
 const LADDER_NOON_CUT_HOUR = 13
-const LADDER_NOON_CUT_SPEND = 150_000
 // 30/10/2026 (user duyệt): khung tăng 12h siết — tiền tăng lúc 12h chảy vào 13–18h (giờ xấu 36–48%);
 // 134 lần tăng tháng 10: phần chi sau mốc 9h 27%, 12h 32%, 16h 30%. Chỉ tăng ở 12h khi ≥ 3 đơn và ≤ 22%.
 const LADDER_STRICT_HOUR = 12
@@ -219,7 +227,6 @@ const LADDER_STRICT_PCT = 22
 // 20/10/2026 user: mỗi lần tăng (tay hay hệ thống) là 1 lần reset học → lần sau cách ≥ 3 tiếng.
 const RAISE_GAP_MIN = 180
 const LADDER_JUMP_ORDERS = 5
-const LADDER_JUMP_CPA = 60_000
 const LADDER_LATE_STOP_HOUR = 16
 const LADDER_LATE_STOP_SPEND = 10_000_000
 const LADDER_LATE_STOP_PCT = 35
@@ -241,7 +248,7 @@ function decideLadder(x: DecideInput): Decision {
   const s = x.step
 
   if (!x.paused_today) {
-    if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= (isVeteran(x) ? VETERAN_MIN_SPEND : LADDER_NOON_CUT_SPEND)) {
+    if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= (isVeteran(x) ? veteranMinSpend(rule) : noonCutSpend(rule))) {
       return { action: "tat", final: false, reason: `Mốc ${LADDER_NOON_CUT_HOUR}h: chi ${vnd(x.spend_today)}, 0 đơn — tắt tới hết ngày, 5h sáng mai bật lại mức nền` }
     }
     if (s && s.to === x.budget && inCheck(LADDER_CHECK_HOURS) && s.minutes_ago >= 60 && s.orders_since === 0) {
@@ -265,7 +272,7 @@ function decideLadder(x: DecideInput): Decision {
   for (let i = 0; i < levels.length; i++) if (x.budget >= levels[i] * 0.999) idx = i
   // Nhảy nấc (user duyệt 20/10/2026): nấc đầu mà camp đã ≥ 5 đơn và ≤ 60k/đơn → lên thẳng nấc 3 (300k → 3tr).
   // 205 lần tăng của Xuân 21/6–7/10: có ≥5 đơn thì lần nào cũng nhảy 2–5tr, phần sau tăng 20% (2–4 đơn lên 1tr: 26%).
-  const jump = idx === 0 && x.orders_today >= LADDER_JUMP_ORDERS && cpa !== null && cpa <= LADDER_JUMP_CPA && levels.length > 2
+  const jump = idx === 0 && x.orders_today >= LADDER_JUMP_ORDERS && cpa !== null && cpa <= jumpCpa(rule) && levels.length > 2
   const to = Math.min((jump ? levels[2] : levels[idx + 1]) ?? 0, rule.max_budget)
   if (!to || to <= x.budget) return { action: "none", reason: `Đã ở nấc cao nhất ${vnd(x.budget)}` }
 
