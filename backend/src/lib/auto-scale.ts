@@ -177,7 +177,7 @@ export async function fbCampaign(campaignId: string): Promise<{ ok: boolean; dat
   }
 }
 
-async function fbSetBudget(campaignId: string, budget: number): Promise<{ ok: boolean; data: any }> {
+export async function fbSetBudget(campaignId: string, budget: number): Promise<{ ok: boolean; data: any }> {
   try {
     const r = await fetch(`${GRAPH}/${campaignId}?daily_budget=${Math.round(budget)}&access_token=${token()}`, { method: "POST" })
     const data: any = await r.json()

@@ -1,13 +1,13 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../../lib/db"
-import { ensureTables, fbCampaign } from "../../../../lib/auto-scale"
+import { ensureTables, fbCampaign, fbSetBudget } from "../../../../lib/auto-scale"
 import { canEditAdsRules, EDIT_DENIED, logRuleChange } from "../../../../lib/ads-rules"
 import { getAuthInfo, checkCampOwner } from "../../pancake-sync/report/camp-control/_lib"
 
 /**
  * POST /admin/auto-scale/camps — gắn camp vào bộ điều kiện (hoặc sửa mức nền / bật-tắt).
  * body: { campaign_id, rule_id, base_budget?, enabled? }
- * Mức nền mặc định = ngân sách hiện tại trên FB. Chỉ nhận camp CBO.
+ * Mức nền mặc định = ngân sách hiện tại trên FB; truyền base_budget khác ngân sách hiện tại thì đặt luôn ngân sách FB. Chỉ nhận camp CBO.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const auth = await getAuthInfo(req)
@@ -45,10 +45,25 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     [campaignId, ruleId, fb.data.name, acc[0]?.ad_account_id ?? (fb.data.account_id ? `act_${fb.data.account_id}` : null),
      owner.camp?.mkt_name ?? null, base, b.enabled !== false, auth.email]
   )
+  // 4/11: đổi nền tường minh → đặt luôn ngân sách FB (reset đêm chỉ hạ, không nâng lên nền).
+  // Chỉ khi nền thật sự đổi: UI gửi kèm nền cũ mỗi lần bật/tắt — không được kéo camp đang lên nấc về nền giữa ngày.
+  const baseChanged = !before[0] || Number(before[0].base_budget) !== base
+  let applied: number | null = null
+  if (b.base_budget && b.enabled !== false && baseChanged && base !== cur) {
+    const r = await fbSetBudget(campaignId, base)
+    if (r.ok) {
+      applied = base
+      await pool.query(
+        `INSERT INTO camp_action_log (campaign_id, campaign_name, action, old_value, new_value, source, user_email, fb_response, success)
+         VALUES ($1,$2,'set_budget',$3::jsonb,$4::jsonb,'manual',$5,$6::jsonb,true)`,
+        [campaignId, fb.data.name, JSON.stringify({ daily_budget: cur }), JSON.stringify({ daily_budget: base }), auth.email, JSON.stringify(r.data)]
+      ).catch(() => {})
+    }
+  }
   await logRuleChange("auto_scale_camp", campaignId, before[0] ?? null,
     { campaign_id: campaignId, campaign_name: rows[0].campaign_name, rule_id: rows[0].rule_id, base_budget: rows[0].base_budget, enabled: rows[0].enabled },
     auth.email, b.reason)
-  return res.json({ camp: rows[0], current_budget: cur })
+  return res.json({ camp: rows[0], current_budget: applied ?? cur, budget_applied: applied !== null })
 }
 
 /** DELETE /admin/auto-scale/camps?campaign_id= — gỡ camp khỏi tự scale (không đổi ngân sách hiện tại). */

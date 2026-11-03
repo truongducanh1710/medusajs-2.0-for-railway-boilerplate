@@ -22,14 +22,19 @@ const LOOKBACK_DAYS = 3
 const SEED_PER_RUN = 6
 
 /** Bộ điều kiện Tự scale theo MKT + mã SP / loại camp (khớp products.json của công cụ lên camp). */
-function ruleFor(name: string): number | null {
+const TEST_RULE = 7 // TEST video — giữ nền, không tăng
+const TEST_MAX_BUDGET = 100000
+function ruleFor(name: string, budget = 0, ads = 0): number | null {
   if (/COSTCAP/.test(name)) return null // 28/10: giá thầu giới hạn chi phí tự kìm chi tiêu; đổi ngân sách theo thang làm học lại
   if (/XAKHO/.test(name)) return 5
+  if (/^PHVVN038KLD/.test(name) && /_MESS/.test(name)) return null // Messenger không đo được đơn qua utm
+  // 4/11: test 1-1-1 (≤100k, 1 ad) phải vào bộ TEST — trước đây rơi vào bộ SP có nấc tăng (Q2 bị đẩy 100k → 1tr)
+  if (budget > 0 && budget <= TEST_MAX_BUDGET && ads <= 1) return TEST_RULE
   if (/_XUANLT_/.test(name)) return 1
   if (/^PHVVN042KGV/.test(name)) return 2
   if (/^PHVVN038KLD/.test(name)) return /_MESS/.test(name) ? null : 4 // Messenger không đo được đơn qua utm
   if (/^PHVVN026CV/.test(name)) return 3
-  if (/^PHVVN020TDH/.test(name)) return 3 // 27/10: hộp nhựa ANHTD Tự scale giống chảo vàng
+  if (/^PHVVN020TDH/.test(name)) return 8 // 3/11: hộp nhựa có bộ riêng (phanh 130k theo giá đơn ~600k)
   return null
 }
 
@@ -196,19 +201,22 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
       try {
         const fbc = await fbGet(`/${c.id}?fields=daily_budget`)
         const cur = Number(fbc.daily_budget || 0)
+        const ads = (detail.ads?.data || []).filter((a: any) => !["DELETED", "ARCHIVED"].includes(a.effective_status)).length
+        const r = ruleFor(c.name, cur, ads) ?? rule
         if (!cur) steps.tu_scale = step("skip", "Camp ngân sách cấp nhóm (ABO) — Tự scale không hỗ trợ")
         else {
-          const base = Math.min(cur, 300000) >= 50000 ? Math.min(cur, 300000) : 300000
+          // 4/11: nền = ngân sách lúc lên camp (trước chặn 300k → camp 500k bị reset đêm hạ về 300k)
+          const base = cur >= 50000 ? cur : 300000
           await pool.query(
             `INSERT INTO auto_scale_camp (campaign_id, rule_id, campaign_name, ad_account_id, mkt_name, base_budget, enabled, added_by)
              VALUES ($1,$2,$3,$4,$5,$6,true,'job:ads-launch-check') ON CONFLICT (campaign_id) DO NOTHING`,
-            [c.id, rule, c.name, acc, mkt, base]
+            [c.id, r, c.name, acc, mkt, base]
           )
           await pool.query(
             `INSERT INTO ads_rule_history (kind, ref, old_value, new_value, reason, changed_by) VALUES ('auto_scale_camp',$1,NULL,$2::jsonb,$3,'job:ads-launch-check')`,
-            [c.id, JSON.stringify({ campaign_id: c.id, campaign_name: c.name, rule_id: rule, base_budget: base, enabled: true }), "Quy trình bắt buộc: camp mới chưa gắn Tự scale"]
+            [c.id, JSON.stringify({ campaign_id: c.id, campaign_name: c.name, rule_id: r, base_budget: base, enabled: true }), "Quy trình bắt buộc: camp mới chưa gắn Tự scale"]
           ).catch(() => {})
-          steps.tu_scale = step("ok", `Tự gắn bộ ${rule}, nền ${base.toLocaleString("vi-VN")}đ`)
+          steps.tu_scale = step("ok", `Tự gắn bộ ${r}, nền ${base.toLocaleString("vi-VN")}đ`)
         }
       } catch (e: any) { steps.tu_scale = step("error", e.message) }
     }
