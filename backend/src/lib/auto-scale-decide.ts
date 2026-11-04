@@ -257,6 +257,9 @@ export const BAD_DAY_PREFIX = "NGÀY XẤU"
 export const LOSS_PREFIX = "LỖ NGÀY"
 const GOOD_ORDERS = 3
 const GOOD_PCT = 25
+// Camp lên chưa đủ 24h (ngày học đầu tiên) không bị chế độ ngày xấu / lỗ ngày đụng — phanh thường (> 45%) vẫn áp.
+// 4/11: user chấp nhận chi phí ngày lên camp để lấy đà; _rulestress: 9/27 lần cắt rơi đúng ngày 1.
+const BAD_DAY_MIN_AGE_HOURS = 24
 
 /** Trạng thái cả ngày của MKT: ngày xấu? lỗ bao nhiêu? (hàm thuần — dùng chung cho decide và nhật ký ngày) */
 export function dayMode(hour: number, spend: number | null | undefined, revenue: number | null | undefined) {
@@ -416,7 +419,8 @@ export function decide(x: DecideInput): Decision {
   }
 
   // 3b. Chế độ ngày xấu + lỗ ngày — chỉ bộ chạy thang (bộ TEST #7 do vòng đời video lo), mọi giờ từ 12h
-  if (pf?.day_rules && rule.ladder_mode && rule.pause_enabled && !x.paused_today) {
+  const young = x.camp_age_hours != null && x.camp_age_hours < BAD_DAY_MIN_AGE_HOURS
+  if (pf?.day_rules && rule.ladder_mode && rule.pause_enabled && !x.paused_today && !young) {
     const dm = dayMode(x.hour, pf.spend, pf.revenue)
     const rev = Number(x.revenue_today || 0)
     const campPct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
