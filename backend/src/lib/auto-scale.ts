@@ -305,8 +305,12 @@ export type MktSetting = {
 }
 type PortfolioCtx = { setting: MktSetting; total: MktTotal; ctr_base: number | null; trim_active: boolean; pick: string | null; pick_reason?: string }
 
-/** Chế độ ngày xấu + lỗ ngày (4/11/2026). AUTO_SCALE_BAD_DAY=off để tắt. */
-const badDayEnabled = () => String(process.env.AUTO_SCALE_BAD_DAY ?? "on").toLowerCase() !== "off"
+/** Chế độ ngày xấu + lỗ ngày (4/11/2026). AUTO_SCALE_BAD_DAY = off | on | YYYY-MM-DD (bật từ ngày đó, giờ VN). */
+const badDayEnabled = () => {
+  const v = String(process.env.AUTO_SCALE_BAD_DAY ?? "on").trim().toLowerCase()
+  if (v === "off") return false
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? nowVN().date >= v : true
+}
 
 /**
  * Ghi nhật ký NGÀY cho MKT (đã gộp bàn giao — XUANLT & ANHTD cùng 1 dòng): lần đầu bật ngày xấu, lỗ chạm 2tr / 3tr
