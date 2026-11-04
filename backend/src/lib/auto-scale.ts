@@ -12,6 +12,7 @@ import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
 import { decide, HET_DA_PREFIX, type Portfolio } from "./auto-scale-decide"
 import { mktTotalsForDate, effectiveMktCode, type MktTotal } from "./mkt-today"
+import { videoBlockReason } from "./video-lifecycle"
 
 const GRAPH = "https://graph.facebook.com/v25.0"
 
@@ -455,7 +456,7 @@ async function accountBlocked(adAccountId: string | null, increase = 0): Promise
 }
 
 // ── Người nhận Telegram ──────────────────────────────────────────────────────
-async function emailsForMkt(userModule: any, mkt: string | null): Promise<string[]> {
+export async function emailsForMkt(userModule: any, mkt: string | null): Promise<string[]> {
   const out = new Set<string>()
   if (process.env.SUPER_ADMIN_EMAIL) out.add(process.env.SUPER_ADMIN_EMAIL)
   if (!mkt) return [...out]
@@ -765,6 +766,11 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
         revenue_today: await revenueSince(camp.campaign_id, camp.campaign_name, startOfTodayVN()),
         camp_age_hours: Number.isFinite(created) ? (Date.now() - created) / 3_600_000 : null,
         ...(await pauseHistory(camp.campaign_id)),
+      }
+      // Sắp tới lượt bật lại 5h → kiểm video chính của camp còn sống không (4/11/2026)
+      if (fb.data.effective_status === "PAUSED" && pauseInputs.auto_paused_yesterday && !pauseInputs.resumed_today) {
+        pauseInputs.video_block = await videoBlockReason(camp.campaign_id).catch(() => null)
+        if (pauseInputs.video_block) metrics.video_block = pauseInputs.video_block
       }
       metrics.revenue_today = pauseInputs.revenue_today
       metrics.cost_pct_today = pauseInputs.revenue_today ? Math.round((spend / pauseInputs.revenue_today) * 1000) / 10 : null

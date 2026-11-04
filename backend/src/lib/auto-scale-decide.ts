@@ -83,6 +83,8 @@ export type DecideInput = {
   pause_streak?: number
   /** Đã tự bật lại hôm nay */
   resumed_today?: boolean
+  /** Video chính của camp đã hỏng (7 ngày cộng mọi camp: chi ≥ 300k mà 0 đơn hoặc > 50%) → lý do không bật lại. null = video còn tốt / chưa đủ dữ liệu */
+  video_block?: string | null
   /** 7 ngày trước hôm nay của chính camp (chi, đơn hợp lệ, doanh số) — xét camp thắng */
   week?: { spend: number; orders: number; revenue: number } | null
   /** Nhìn tổng theo MKT (null = MKT chưa bật quản lý tổng) */
@@ -209,12 +211,13 @@ export const RESUME_FROM_HOUR = 5
  * Đơn về tốt nhất 6–7h, 14h, 18h, 20–22h; tăng liên tục mỗi 15' (27 lần 08–16/10) chỉ ra 32%, bước ×3 ra 53%.
  *  - Tăng CHỈ trong KHUNG ladder_hours — mỗi giờ trong danh sách là 1 khung trọn 1 tiếng (19/10/2026 user: 9h–10h,
  *    12h–13h, 16h–17h thay vì 30' đầu giờ của 9h/12h/17h), mỗi khung lên tối đa 1 nấc → tối đa 3 lần/ngày.
- *    Nấc đầu (nền → nấc 2): hôm nay ≥ 2 đơn, CPA ≤ min(150k, mục tiêu).
+ *    Nấc đầu (nền → nấc 2): hôm nay ≥ 3 đơn, ≤ 25%, CPA ≤ min(150k, mục tiêu) (4/11/2026: trước là ≥ 2 đơn).
  *    Nấc sau: % chi phí hôm nay ≤ 25% và ≥ 2 đơn MỚI từ lần tăng trước; lên nấc cuối cần ≥ 5 đơn hôm nay.
  *  - Tắt (ngoài phanh ngày xấu chung): từ 13h camp 0 đơn mà đã chi ≥ 150k (để chạy thì phần sau 52%);
  *    ở mốc 12h/16h/21h (30' đầu giờ) camp đã tăng ≥ 60' mà chi thêm ≥ 1/3 phần vừa tăng, 0 đơn mới → tắt tới hết ngày.
  */
 const LADDER_FIRST_CPA = 150_000
+const LADDER_FIRST_ORDERS = 3
 const LADDER_MAX_PCT = 25
 const LADDER_TOP_ORDERS = 5
 const LADDER_CHECK_HOURS = [12, 16, 21]
@@ -278,9 +281,12 @@ function decideLadder(x: DecideInput): Decision {
 
   const lyDo: string[] = []
   if (idx === 0) {
+    // 4/11/2026 (user duyệt, _intraday.mjs 1/7–3/11): nấc đầu ở MỌI khung cần ≥ 3 đơn & ≤ 25%.
+    // 2 đơn ≤25% lúc 11h: giữ ngân sách phần còn lại 30%, tăng 34%; ≥3 đơn: 24–26% → chỉ ≥3 đơn là tín hiệu thật.
     const firstCpa = Math.min(LADDER_FIRST_CPA, rule.target_cpa)
-    if (x.orders_today < 2) lyDo.push(`mới ${x.orders_today}/2 đơn`)
+    if (x.orders_today < LADDER_FIRST_ORDERS) lyDo.push(`mới ${x.orders_today}/${LADDER_FIRST_ORDERS} đơn`)
     else if (cpa! > firstCpa) lyDo.push(`${vnd(cpa!)}/đơn > ${vnd(firstCpa)}`)
+    else if (!(pct <= LADDER_MAX_PCT)) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
   } else {
     // Ngân sách đang ở nấc trên mà KHÔNG do hệ thống tăng hôm nay (người nâng tay) → không tự tăng tiếp.
     // 17/10: 3 camp bị nâng tay lên 1tr, hệ thống coi 2 đơn cả ngày là "2 đơn mới" và nhảy 3tr
@@ -335,6 +341,9 @@ export function decide(x: DecideInput): Decision {
       && x.hour >= RESUME_FROM_HOUR && x.hour < RESUME_FROM_HOUR + 3) {
     const max = rule.pause_max_streak ?? 3
     if ((x.pause_streak ?? 0) >= max) return { action: "none", reason: `Xấu ${x.pause_streak} ngày liền — để tắt hẳn, chờ người quyết` }
+    // 4/11/2026 (user duyệt, _ts10.mjs): bật lại camp chạy video đã hỏng ra 45% (video test chưa đủ dữ liệu thì
+    // vẫn bật — luật vòng đời video tự cắt ở mốc 300k/800k). Camp xấu mà video còn tốt thì bật lại vẫn 31–33%.
+    if (x.video_block) return { action: "none", reason: `Không bật lại: ${x.video_block}` }
     return { action: "bat", to: x.base, reason: `Ngày mới — bật lại sau khi hôm qua bị phanh (${x.pause_streak} ngày xấu liền)` }
   }
 
