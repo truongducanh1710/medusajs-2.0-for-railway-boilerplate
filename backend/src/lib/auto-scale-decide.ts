@@ -85,6 +85,8 @@ export type DecideInput = {
   resumed_today?: boolean
   /** Video chính của camp đã hỏng (7 ngày cộng mọi camp: chi ≥ 300k mà 0 đơn hoặc > 50%) → lý do không bật lại. null = video còn tốt / chưa đủ dữ liệu */
   video_block?: string | null
+  /** Ngân sách đang thấp hơn nền do CHÍNH hệ thống hạ (lỗ ngày) và không ai chỉnh tay sau đó → reset đêm nâng về nền */
+  system_lowered?: boolean
   /** 7 ngày trước hôm nay của chính camp (chi, đơn hợp lệ, doanh số) — xét camp thắng */
   week?: { spend: number; orders: number; revenue: number } | null
   /** Nhìn tổng theo MKT (null = MKT chưa bật quản lý tổng) */
@@ -102,6 +104,9 @@ export type Portfolio = {
   mkt: string
   pct: number | null          // % chi phí cả MKT hôm nay
   spend?: number | null       // tổng chi cả MKT hôm nay (đ)
+  revenue?: number | null     // doanh số cả MKT hôm nay (đ) — tính lỗ ngày
+  /** Bật chế độ ngày xấu + lớp lỗ ngày (env AUTO_SCALE_BAD_DAY ≠ off) */
+  day_rules?: boolean
   max_pct: number
   lenient_max_pct: number
   trim_active: boolean
@@ -230,9 +235,38 @@ const LADDER_STRICT_PCT = 22
 // 20/10/2026 user: mỗi lần tăng (tay hay hệ thống) là 1 lần reset học → lần sau cách ≥ 3 tiếng.
 const RAISE_GAP_MIN = 180
 const LADDER_JUMP_ORDERS = 5
-const LADDER_LATE_STOP_HOUR = 16
-const LADDER_LATE_STOP_SPEND = 10_000_000
-const LADDER_LATE_STOP_PCT = 35
+
+/**
+ * CHẾ ĐỘ NGÀY XẤU (4/11/2026, user duyệt — KINH_NGHIEM mục 18–19, _ngayxau.mjs / _xautot.mjs / _lo3tr.mjs).
+ * Thay mốc cũ "từ 16h tổng ≥ 10tr & > 35% thì không tăng" và trần cứng 12tr (trần chưa từng chặn lần tăng nào).
+ *  - Từ 12h, cả MKT (gộp bàn giao XUANLT+ANHTD) đã chi ≥ 1,5tr và % hôm nay > 30% → ngày xấu:
+ *    camp 0 đơn đã chi ≥ ½ mốc phanh của bộ (chảo vàng 100k) hoặc camp > 35% → tắt tới hết ngày.
+ *    Ngày xấu lúc 11h: camp 0 đơn ≥100k phần sau 45% (ngày ổn 32–38%) → tiền cắt ra biên 60–106%.
+ *  - Camp 1–2 đơn giữ nguyên; camp ≥ 3 đơn ≤ 25% vẫn leo thang (ngày xấu tăng ra 29–30%, ngang ngày ổn).
+ *  - Lỗ ngày = chi − 28% × doanh số cả MKT. Chạm 2tr → hạ 50% mọi camp (1 lần/ngày) trừ camp ≥ 3 đơn ≤ 25%;
+ *    chạm 3tr (mức user chấp nhận cho 1 ngày xấu) → không tăng thêm camp nào.
+ */
+export const BAD_DAY_FROM_HOUR = 12
+export const BAD_DAY_MIN_SPEND = 1_500_000
+export const BAD_DAY_PCT = 30
+const BAD_DAY_CAMP_PCT = 35
+export const LOSS_TARGET_PCT = 28
+export const LOSS_HALVE = 2_000_000
+export const LOSS_STOP_RAISE = 3_000_000
+export const BAD_DAY_PREFIX = "NGÀY XẤU"
+export const LOSS_PREFIX = "LỖ NGÀY"
+const GOOD_ORDERS = 3
+const GOOD_PCT = 25
+
+/** Trạng thái cả ngày của MKT: ngày xấu? lỗ bao nhiêu? (hàm thuần — dùng chung cho decide và nhật ký ngày) */
+export function dayMode(hour: number, spend: number | null | undefined, revenue: number | null | undefined) {
+  const s = Number(spend || 0), r = Number(revenue || 0)
+  const pct = r > 0 ? (s / r) * 100 : s > 0 ? Infinity : null
+  const loss = s - (LOSS_TARGET_PCT / 100) * r
+  const bad = hour >= BAD_DAY_FROM_HOUR && s >= BAD_DAY_MIN_SPEND && pct !== null && pct > BAD_DAY_PCT
+  return { bad, loss, pct, halve: loss >= LOSS_HALVE, stop_raise: loss >= LOSS_STOP_RAISE }
+}
+const fmtPct = (p: number | null) => (p === null ? "—" : Number.isFinite(p) ? `${p.toFixed(0)}%` : "chưa có doanh số")
 
 const parseNums = (s: string | undefined, def: number[]) => {
   const v = String(s || "").split(",").map((t) => Number(t.trim())).filter((n) => Number.isFinite(n) && n > 0)
@@ -301,12 +335,14 @@ function decideLadder(x: DecideInput): Decision {
     if (x.orders_today < LADDER_STRICT_ORDERS) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≥ ${LADDER_STRICT_ORDERS} đơn (đang ${x.orders_today}) — chờ 16h`)
     else if (!(pct <= LADDER_STRICT_PCT)) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≤ ${LADDER_STRICT_PCT}% (đang ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}) — chờ 16h`)
   }
-  // 20/10/2026 (user duyệt): từ 16h, tổng MKT đã chi ≥ 10tr mà % chi phí hôm nay > 35% → không tăng thêm.
-  if (x.hour >= LADDER_LATE_STOP_HOUR && x.portfolio?.spend != null && x.portfolio.spend >= LADDER_LATE_STOP_SPEND
-      && x.portfolio.pct != null && x.portfolio.pct > LADDER_LATE_STOP_PCT) {
-    lyDo.push(`từ ${LADDER_LATE_STOP_HOUR}h tổng ${x.portfolio.mkt} đã chi ${vnd(x.portfolio.spend)}, ${x.portfolio.pct}% > ${LADDER_LATE_STOP_PCT}%`)
+  // 4/11/2026: bỏ mốc "từ 16h ≥ 10tr & > 35%" — thay bằng chế độ ngày xấu (camp ≥ 3 đơn ≤ 25% vẫn tăng ngày xấu).
+  // Lỗ ngày chạm 3tr (mức user chấp nhận) → không tăng thêm camp nào.
+  const pf = x.portfolio
+  if (pf?.day_rules) {
+    const dm = dayMode(x.hour, pf.spend, pf.revenue)
+    if (dm.stop_raise) lyDo.push(`${LOSS_PREFIX} ${pf.mkt} đã ${vnd(dm.loss)} ≥ ${vnd(LOSS_STOP_RAISE)} — không tăng thêm`)
   }
-  // 17/10/2026: trần tổng chi theo MKT do người duyệt đặt (XUANLT + ANHTD ≤ 12tr/ngày).
+  // Trần an toàn tổng chi theo MKT (17/10: 12tr; 4/11: 20tr — chỉ chống lỗi, % do chế độ ngày xấu giữ).
   const cap = Number(rule.ladder_spend_cap || 0)
   const mktSpend = x.portfolio?.spend
   if (cap > 0 && mktSpend != null && mktSpend + (to - x.budget) > cap) {
@@ -330,6 +366,8 @@ export function decide(x: DecideInput): Decision {
   const resetHour = x.account_hour ?? x.hour
   if (rule.nightly_reset && resetHour < 6 && !x.reset_done_today) {
     // Chỉ HẠ về mức nền. MKT chủ động hạ tay thấp hơn nền (camp xấu) thì giữ nguyên, không nâng lên.
+    // Ngoại lệ: chính hệ thống hạ hôm trước (lỗ ngày) → nâng lại nền.
+    if (x.budget < x.base && x.system_lowered) return { action: "reset", to: x.base, reason: `Reset đêm: hôm qua hệ thống hạ (${LOSS_PREFIX}) → về lại mức nền` }
     if (x.budget <= x.base) return { action: "reset", to: x.budget, reason: x.budget === x.base ? "Đã ở mức nền" : "Đang thấp hơn mức nền — giữ nguyên" }
     return { action: "reset", to: x.base, reason: "Reset đêm về mức nền" }
   }
@@ -374,6 +412,32 @@ export function decide(x: DecideInput): Decision {
     return {
       action: "tat", final,
       reason: `Tỉa: tổng ${pf.mkt} hôm nay ${pf.pct}% > ${pf.max_pct}% — camp xấu nhất (chi ${vnd(x.spend_today)}, ${x.orders_today} đơn, ${campPct})`,
+    }
+  }
+
+  // 3b. Chế độ ngày xấu + lỗ ngày — chỉ bộ chạy thang (bộ TEST #7 do vòng đời video lo), mọi giờ từ 12h
+  if (pf?.day_rules && rule.ladder_mode && rule.pause_enabled && !x.paused_today) {
+    const dm = dayMode(x.hour, pf.spend, pf.revenue)
+    const rev = Number(x.revenue_today || 0)
+    const campPct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
+    const good = x.orders_today >= GOOD_ORDERS && campPct <= GOOD_PCT
+    const tong = `tổng ${pf.mkt} chi ${vnd(Number(pf.spend || 0))}, ${fmtPct(dm.pct)}, lỗ ${vnd(dm.loss)}`
+    if (dm.bad && !good) {
+      // camp thắng 7 ngày (isVeteran) được nới tới đúng mốc phanh của bộ
+      const minSpend = isVeteran(x) ? pauseBase(rule) : Math.round(0.5 * pauseBase(rule))
+      if (x.spend_today >= minSpend && (x.orders_today === 0 || campPct > BAD_DAY_CAMP_PCT)) {
+        return {
+          action: "tat", final,
+          reason: `${BAD_DAY_PREFIX} (${tong} > ${BAD_DAY_PCT}%): camp chi ${vnd(x.spend_today)}, ${x.orders_today} đơn, ${fmtPct(campPct)} — tắt tới hết ngày`,
+        }
+      }
+    }
+    if (dm.halve && !good && !x.reverted_today && x.budget > 100_000) {
+      const to = Math.max(50_000, Math.round(x.budget / 2 / 1000) * 1000)
+      return {
+        action: "lui", to,
+        reason: `${LOSS_PREFIX} ≥ ${vnd(LOSS_HALVE)} (${tong}): hạ 50% ${vnd(x.budget)} → ${vnd(to)} — camp ${x.orders_today} đơn, ${fmtPct(campPct)}; 0h về lại nền`,
+      }
     }
   }
 

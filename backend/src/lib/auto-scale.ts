@@ -12,6 +12,7 @@ import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
 import { decide, HET_DA_PREFIX, type Portfolio } from "./auto-scale-decide"
 import { mktTotalsForDate, effectiveMktCode, type MktTotal } from "./mkt-today"
+import { dayMode, BAD_DAY_PCT, BAD_DAY_MIN_SPEND, BAD_DAY_FROM_HOUR, LOSS_HALVE, LOSS_STOP_RAISE, BAD_DAY_PREFIX, LOSS_PREFIX } from "./auto-scale-decide"
 import { videoBlockReason } from "./video-lifecycle"
 
 const GRAPH = "https://graph.facebook.com/v25.0"
@@ -149,6 +150,17 @@ export function ensureTables(): Promise<void> {
       -- Camp chỉ bị tỉa khi % chi phí hôm nay của RIÊNG camp > mức này (09/10: tỉa theo max_pct 27%
       -- cắt cả camp đang 27–29% đúng mục tiêu, 7/9 camp bị tắt ở ~200k chi → mất đơn buổi tối)
       ALTER TABLE auto_scale_mkt ADD COLUMN IF NOT EXISTS trim_camp_pct NUMERIC(5,1) NOT NULL DEFAULT 40;
+      -- Nhật ký theo NGÀY (4/11/2026): lúc bật chế độ ngày xấu / lỗ 2tr / lỗ 3tr + chốt cuối ngày — để đánh giá về sau
+      CREATE TABLE IF NOT EXISTS auto_scale_day_log (
+        date DATE NOT NULL,
+        mkt_name TEXT NOT NULL,
+        event TEXT NOT NULL,                 -- bad_day_on | loss_2tr | loss_3tr | day_end
+        at_hour TEXT,
+        spend BIGINT, revenue BIGINT, pct NUMERIC(6,1), loss BIGINT,
+        detail JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (date, mkt_name, event)
+      );
     `)
   })().catch((e) => { _ready = null; throw e })
   return _ready
@@ -293,11 +305,64 @@ export type MktSetting = {
 }
 type PortfolioCtx = { setting: MktSetting; total: MktTotal; ctr_base: number | null; trim_active: boolean; pick: string | null; pick_reason?: string }
 
+/** Chế độ ngày xấu + lỗ ngày (4/11/2026). AUTO_SCALE_BAD_DAY=off để tắt. */
+const badDayEnabled = () => String(process.env.AUTO_SCALE_BAD_DAY ?? "on").toLowerCase() !== "off"
+
+/**
+ * Ghi nhật ký NGÀY cho MKT (đã gộp bàn giao — XUANLT & ANHTD cùng 1 dòng): lần đầu bật ngày xấu, lỗ chạm 2tr / 3tr
+ * (mỗi sự kiện 1 lần/ngày, báo Telegram), và chốt cuối ngày từ 23h45 (ghi đè) để đánh giá về sau.
+ */
+async function logDayEvents(mktCode: string, today: string, hour: number, minute: number, total: MktTotal, userModule?: any) {
+  const pool = getPool()
+  const dm = dayMode(hour, total.spend, total.revenue)
+  const at = `${hour}:${String(minute).padStart(2, "0")}`
+  const pct = dm.pct !== null && Number.isFinite(dm.pct) ? Math.round(dm.pct * 10) / 10 : null
+  const vals = [at, Math.round(total.spend || 0), Math.round(total.revenue || 0), pct, Math.round(dm.loss)]
+  const events: { ev: string; text: string }[] = []
+  if (dm.bad) events.push({ ev: "bad_day_on", text: `🌧 ${BAD_DAY_PREFIX} — ${mktCode} lúc ${at}: chi ${vnd(total.spend)}, doanh số ${vnd(total.revenue)}, ${pct ?? "—"}% > ${BAD_DAY_PCT}%.\nTừ giờ: tắt camp 0 đơn đã chi ≥ ½ mốc phanh hoặc camp > 35%; camp 1–2 đơn giữ; camp ≥ 3 đơn ≤ 25% vẫn được tăng.` })
+  if (dm.halve) events.push({ ev: "loss_2tr", text: `🧯 ${LOSS_PREFIX} ${mktCode} chạm ${vnd(dm.loss)} ≥ ${vnd(LOSS_HALVE)} lúc ${at} (chi ${vnd(total.spend)}, ${pct ?? "—"}%) — hạ 50% mọi camp trừ camp ≥ 3 đơn ≤ 25%. 0h về lại nền.` })
+  if (dm.stop_raise) events.push({ ev: "loss_3tr", text: `🛑 ${LOSS_PREFIX} ${mktCode} chạm ${vnd(dm.loss)} ≥ ${vnd(LOSS_STOP_RAISE)} lúc ${at} — không tăng thêm camp nào tới hết ngày.` })
+  for (const e of events) {
+    const r = await pool.query(
+      `INSERT INTO auto_scale_day_log (date, mkt_name, event, at_hour, spend, revenue, pct, loss) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (date, mkt_name, event) DO NOTHING`, [today, mktCode, e.ev, ...vals])
+    if (r.rowCount && userModule) await notifyTelegramByEmail(userModule, await emailsForMkt(userModule, mktCode), e.text, "auto_scale").catch(() => {})
+  }
+  if (hour === 23 && minute >= 45) {
+    const { rows: ev } = await pool.query(`SELECT event, at_hour, loss FROM auto_scale_day_log WHERE date=$1 AND mkt_name=$2 AND event <> 'day_end'`, [today, mktCode])
+    const { rows: act } = await pool.query(
+      `SELECT l.action, CASE WHEN l.reason LIKE $2 THEN 'ngay_xau' WHEN l.reason LIKE $3 THEN 'lo_ngay' WHEN l.reason LIKE 'Tỉa%' THEN 'tia' ELSE 'khac' END kind,
+              count(*)::int n, COALESCE(sum(l.new_budget - l.old_budget),0)::bigint d_budget
+         FROM auto_scale_log l
+        WHERE l.created_at >= $1::timestamptz AND NOT l.dry_run AND l.success AND l.action IN ('tang','lui','tat','bat')
+        GROUP BY 1,2`, [startOfTodayVN(), `${BAD_DAY_PREFIX}%`, `${LOSS_PREFIX}%`]).catch(() => ({ rows: [] as any[] }))
+    await pool.query(
+      `INSERT INTO auto_scale_day_log (date, mkt_name, event, at_hour, spend, revenue, pct, loss, detail) VALUES ($1,$2,'day_end',$3,$4,$5,$6,$7,$8::jsonb)
+       ON CONFLICT (date, mkt_name, event) DO UPDATE SET at_hour=EXCLUDED.at_hour, spend=EXCLUDED.spend, revenue=EXCLUDED.revenue, pct=EXCLUDED.pct,
+         loss=EXCLUDED.loss, detail=EXCLUDED.detail, created_at=now()`,
+      [today, mktCode, ...vals, JSON.stringify({ events: ev, actions: act, rules: { BAD_DAY_FROM_HOUR, BAD_DAY_MIN_SPEND, BAD_DAY_PCT, LOSS_HALVE, LOSS_STOP_RAISE } })])
+  }
+}
+
+/** Ngân sách thấp hơn nền vì CHÍNH hệ thống hạ (lỗ ngày) và không ai chỉnh tay sau đó → reset đêm nâng lại nền. */
+async function systemLowered(campaignId: string): Promise<boolean> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT action, reason, created_at FROM auto_scale_log WHERE campaign_id = $1 AND action IN ('tang','lui','reset') AND NOT dry_run AND success
+      AND old_budget IS DISTINCT FROM new_budget ORDER BY created_at DESC LIMIT 1`, [campaignId])
+  const l = rows[0]
+  if (!l || l.action !== "lui" || !String(l.reason || "").startsWith(LOSS_PREFIX)) return false
+  const { rows: man } = await pool.query(
+    `SELECT 1 FROM camp_action_log WHERE campaign_id = $1 AND action = 'set_budget' AND source <> 'auto_scale' AND created_at > $2 LIMIT 1`,
+    [campaignId, l.created_at]).catch(() => ({ rows: [] as any[] }))
+  return man.length === 0
+}
+
 /**
  * Bối cảnh tổng theo MKT cho 1 vòng xét: % chi phí cả MKT hôm nay, CTR 7 ngày của MKT, có đang
  * giờ tỉa không, và camp xấu nhất được chọn tỉa vòng này (mỗi MKT tối đa 1 camp / 15 phút).
  */
-async function loadPortfolios(hour: number): Promise<Map<string, PortfolioCtx>> {
+async function loadPortfolios(hour: number, minute = 0, userModule?: any): Promise<Map<string, PortfolioCtx>> {
   const pool = getPool()
   const out = new Map<string, PortfolioCtx>()
   const { rows: settings } = await pool.query(`SELECT * FROM auto_scale_mkt WHERE enabled`)
@@ -323,6 +388,7 @@ async function loadPortfolios(hour: number): Promise<Map<string, PortfolioCtx>> 
     const trim_active = hour >= setting.trim_hour || (setting.trim_spend > 0 && total.spend >= setting.trim_spend)
     const ctx: PortfolioCtx = { setting, total, ctr_base, trim_active, pick: null }
     out.set(mkt, ctx)
+    if (badDayEnabled()) await logDayEvents(await effectiveMktCode(mkt, today), today, hour, minute, total, userModule).catch((e) => console.error("[AutoScale] day log:", e.message))
 
     const bad = total.pct === null ? total.spend > 0 : total.pct > setting.max_pct
     if (!trim_active || !bad) continue
@@ -679,7 +745,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
   )
   let actions = 0
   // Bối cảnh tổng theo MKT — tính 1 lần/vòng cho mọi camp (kể cả khi chỉ xét 1 camp)
-  const portfolios = await loadPortfolios(hour).catch((e) => {
+  const portfolios = await loadPortfolios(hour, minute, userModule).catch((e) => {
     console.error("[AutoScale] portfolio error:", e.message)
     return new Map<string, PortfolioCtx>()
   })
@@ -789,11 +855,14 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
         // So với CHÍNH camp; camp mới chưa đủ 7 ngày dữ liệu thì dùng CTR 7 ngày của MKT
         const ctrBase = st.ctr_base ?? ctx.ctr_base
         const portfolio: Portfolio = {
-          mkt: camp.mkt_name, pct: ctx.total.pct, spend: ctx.total.spend, max_pct: ctx.setting.max_pct, lenient_max_pct: ctx.setting.lenient_max_pct,
+          mkt: camp.mkt_name, pct: ctx.total.pct, spend: ctx.total.spend, revenue: ctx.total.revenue, day_rules: badDayEnabled(),
+          max_pct: ctx.setting.max_pct, lenient_max_pct: ctx.setting.lenient_max_pct,
           trim_active: ctx.trim_active, trim_pick: ctx.pick === camp.campaign_id, ctr: st.ctr, ctr_base: ctrBase, cpc_ratio: st.cpc_ratio,
         }
         pauseInputs.portfolio = portfolio
         metrics.mkt = { pct: ctx.total.pct, spend: ctx.total.spend, revenue: ctx.total.revenue, trim_active: ctx.trim_active, ctr: st.ctr, ctr_base: ctrBase, cpc_ratio: st.cpc_ratio }
+        const dm = dayMode(hour, ctx.total.spend, ctx.total.revenue)
+        metrics.day = { bad: dm.bad, loss: Math.round(dm.loss), halve: dm.halve, stop_raise: dm.stop_raise }
       }
     }
 
@@ -807,6 +876,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       account_hour: (hour + tzShift + 24) % 24,
       account_block: await accountBlocked(camp.ad_account_id, Math.max(0, Math.min(cur * rule.multiplier, rule.max_budget) - cur)),
       ...(await spendSnapshot(camp.campaign_id, hour, minute)),
+      system_lowered: cur < base ? await systemLowered(camp.campaign_id) : false,
       ...pauseInputs,
     })
 
