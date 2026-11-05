@@ -34,6 +34,8 @@ export type DecideRule = {
   ladder_levels?: string
   /** Trần tổng chi CẢ MKT hôm nay: tăng mà vượt mức này thì không tăng (0 = bỏ qua) */
   ladder_spend_cap?: number
+  /** Số đơn tối thiểu để tăng nấc đầu, kể cả khung 12h (khung 12h khi đó dùng ≤ 25%). Trống = mặc định 3 đơn, khung 12h ≤ 22% */
+  ladder_first_orders?: number | null
   /** Phanh ngày xấu — xét 24/7, theo số liệu CỦA RIÊNG HÔM NAY */
   pause_enabled?: boolean
   /** Hôm nay chi ≥ mức này mới xét (đủ mẫu) */
@@ -286,6 +288,7 @@ function decideLadder(x: DecideInput): Decision {
   const pct = rev > 0 ? (x.spend_today / rev) * 100 : Infinity
   const cpa = x.orders_today > 0 ? x.spend_today / x.orders_today : null
   const s = x.step
+  const firstOrders = Number(rule.ladder_first_orders) || LADDER_FIRST_ORDERS
 
   if (!x.paused_today) {
     if (x.hour >= LADDER_NOON_CUT_HOUR && x.orders_today === 0 && x.spend_today >= (isVeteran(x) ? veteranMinSpend(rule) : noonCutSpend(rule))) {
@@ -320,8 +323,9 @@ function decideLadder(x: DecideInput): Decision {
   if (idx === 0) {
     // 4/11/2026 (user duyệt, _intraday.mjs 1/7–3/11): nấc đầu ở MỌI khung cần ≥ 3 đơn & ≤ 25%.
     // 2 đơn ≤25% lúc 11h: giữ ngân sách phần còn lại 30%, tăng 34%; ≥3 đơn: 24–26% → chỉ ≥3 đơn là tín hiệu thật.
+    // 5/11/2026 (user duyệt): hộp nhựa nền 200k không đủ tiền ra 3 đơn → bộ tự đặt ladder_first_orders.
     const firstCpa = Math.min(LADDER_FIRST_CPA, rule.target_cpa)
-    if (x.orders_today < LADDER_FIRST_ORDERS) lyDo.push(`mới ${x.orders_today}/${LADDER_FIRST_ORDERS} đơn`)
+    if (x.orders_today < firstOrders) lyDo.push(`mới ${x.orders_today}/${firstOrders} đơn`)
     else if (cpa! > firstCpa) lyDo.push(`${vnd(cpa!)}/đơn > ${vnd(firstCpa)}`)
     else if (!(pct <= LADDER_MAX_PCT)) lyDo.push(`hôm nay ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "chưa có doanh số"} > ${LADDER_MAX_PCT}%`)
   } else {
@@ -335,8 +339,10 @@ function decideLadder(x: DecideInput): Decision {
     if (idx + 1 === levels.length - 1 && x.orders_today < LADDER_TOP_ORDERS) lyDo.push(`lên nấc cuối cần ≥ ${LADDER_TOP_ORDERS} đơn (đang ${x.orders_today})`)
   }
   if (x.hour === LADDER_STRICT_HOUR) {
-    if (x.orders_today < LADDER_STRICT_ORDERS) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≥ ${LADDER_STRICT_ORDERS} đơn (đang ${x.orders_today}) — chờ 16h`)
-    else if (!(pct <= LADDER_STRICT_PCT)) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≤ ${LADDER_STRICT_PCT}% (đang ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}) — chờ 16h`)
+    const strictOrders = rule.ladder_first_orders ? firstOrders : LADDER_STRICT_ORDERS
+    const strictPct = rule.ladder_first_orders ? LADDER_MAX_PCT : LADDER_STRICT_PCT
+    if (x.orders_today < strictOrders) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≥ ${strictOrders} đơn (đang ${x.orders_today}) — chờ 16h`)
+    else if (!(pct <= strictPct)) lyDo.push(`khung ${LADDER_STRICT_HOUR}h cần ≤ ${strictPct}% (đang ${Number.isFinite(pct) ? pct.toFixed(0) + "%" : "—"}) — chờ 16h`)
   }
   // 4/11/2026: bỏ mốc "từ 16h ≥ 10tr & > 35%" — thay bằng chế độ ngày xấu (camp ≥ 3 đơn ≤ 25% vẫn tăng ngày xấu).
   // Lỗ ngày chạm 3tr (mức user chấp nhận) → không tăng thêm camp nào.

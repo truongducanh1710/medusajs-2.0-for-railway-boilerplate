@@ -49,6 +49,7 @@ export type Rule = {
   ladder_hours: string
   ladder_levels: string
   ladder_spend_cap: number
+  ladder_first_orders?: number | null
 }
 
 let _ready: Promise<void> | null = null
@@ -134,6 +135,8 @@ export function ensureTables(): Promise<void> {
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_hours TEXT NOT NULL DEFAULT '9,12,17';
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_levels TEXT NOT NULL DEFAULT '300000,1000000,3000000,6000000';
       ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_spend_cap BIGINT NOT NULL DEFAULT 0;
+      -- Số đơn tăng nấc đầu riêng của bộ (thêm 05/11/2026): NULL = mặc định 3 đơn
+      ALTER TABLE auto_scale_rule ADD COLUMN IF NOT EXISTS ladder_first_orders INT;
       -- Quản lý tổng theo MKT (thêm 08/10/2026): giữ % chi phí cả MKT trong ngày quanh mục tiêu
       CREATE TABLE IF NOT EXISTS auto_scale_mkt (
         mkt_name TEXT PRIMARY KEY,
@@ -771,6 +774,7 @@ export async function runAutoScale(userModule?: any, onlyCampaignId?: string): P
       ladder_hours: String(camp.rule.ladder_hours || "9,12,17"),
       ladder_levels: String(camp.rule.ladder_levels || "300000,1000000,3000000,6000000"),
       ladder_spend_cap: Number(camp.rule.ladder_spend_cap || 0),
+      ladder_first_orders: camp.rule.ladder_first_orders ? Number(camp.rule.ladder_first_orders) : null,
     }
     const base = Number(camp.base_budget)
 
