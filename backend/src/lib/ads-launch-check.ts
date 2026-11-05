@@ -135,20 +135,17 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
     : beforeRule ? step("skip", `Lên trước luật loại trừ (20/10) — thiếu: ${[...new Set(missing)].join(", ")}`)
     : step("error", `Thiếu: ${[...new Set(missing)].join(", ")}`)
 
-  // 2. Cài đặt nhắm chọn — từ 30/10/2026 camp mới khoá tuổi 35–65 (tắt Advantage+ đối tượng, FB không cho age_min > 25 khi bật)
+  // 2. Targeting: age ≥ 25 + Advantage+ audience (35–65 lock dropped 5/11/2026). Camps created while the lock applied (30/10–5/11) may stay 35–65 with Advantage+ off.
   const bad: string[] = []
-  const age35 = Date.parse(String(c.created_time).replace(/([+-]\d{2})(\d{2})$/, "$1:$2")) >= Date.parse("2026-10-30T06:00:00+07:00")
+  const created = Date.parse(String(c.created_time).replace(/([+-]\d{2})(\d{2})$/, "$1:$2"))
+  const lockEra = created >= Date.parse("2026-10-30T06:00:00+07:00") && created < Date.parse("2026-11-06T00:00:00+07:00")
   for (const s of adsets) {
     const ageMin = Number(s.targeting?.age_min || 18)
-    if (age35) {
-      if (ageMin < 35) bad.push(`tuổi tối thiểu ${ageMin} (luật 35–65)`)
-    } else {
-      if (ageMin < 25) bad.push(`tuổi tối thiểu ${ageMin}`)
-      if (Number(s.targeting?.targeting_automation?.advantage_audience ?? 0) !== 1) bad.push("tắt Advantage+ đối tượng")
-    }
+    if (ageMin < 25) bad.push(`tuổi tối thiểu ${ageMin}`)
+    if (Number(s.targeting?.targeting_automation?.advantage_audience ?? 0) !== 1 && !(lockEra && ageMin >= 35)) bad.push("tắt Advantage+ đối tượng")
   }
   steps.cai_dat = bad.length ? step("error", [...new Set(bad)].join(", "))
-    : step("ok", age35 ? `Tuổi 35–65, pixel ${pixel || "?"}` : `Tuổi ≥25, Advantage+, pixel ${pixel || "?"}`)
+    : step("ok", `Tuổi ≥25, pixel ${pixel || "?"}`)
 
   // 3. Seeding mọi post
   const posts = new Map<string, string>() // post → link
