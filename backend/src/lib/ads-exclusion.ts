@@ -35,7 +35,7 @@ export function ensureExclusionTable() {
     ready = getPool().query(`
       CREATE TABLE IF NOT EXISTS ads_exclusion_audience (
         account_id TEXT NOT NULL,
-        kind TEXT NOT NULL,            -- pixel_cr180 | chan_pos
+        kind TEXT NOT NULL,            -- pixel_cr180 | chan_pos | cv_pos
         pixel_id TEXT NOT NULL DEFAULT '',
         audience_id TEXT NOT NULL,
         name TEXT,
@@ -198,6 +198,69 @@ async function uploadUsers(audienceId: string, hashes: string[], replace: boolea
     if (!r.ok) return { ok: false, error: r.data?.error?.error_user_msg || r.data?.error?.message || "lỗi FB" }
   }
   return { ok: true }
+}
+
+const CV_POS_KIND = "cv_pos"
+const CV_POS_NAME = "PHV_CV_DANGKY_POS_AUTO (khách đăng ký chảo vàng trên POS, cập nhật 15 phút)"
+/** Re-read a little before the cursor so an order arriving mid-run is not missed; re-adding a phone is a no-op on FB. */
+const CV_POS_OVERLAP_MS = 10 * 60 * 1000
+
+/** Phones of POS orders containing the gold pan, any status. `since` limits to rows changed after that time. */
+async function cvPosPhones(since: Date | null) {
+  const { rows } = await getPool().query(
+    `SELECT raw->>'bill_phone_number' a, raw->'shipping_address'->>'phone_number' b, customer_phone c
+       FROM pancake_order o
+      WHERE deleted_at IS NULL
+        AND ($1::timestamptz IS NULL OR updated_at > $1::timestamptz)
+        AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.raw->'items') = 'array' THEN o.raw->'items' ELSE '[]'::jsonb END) i
+           WHERE UPPER(TRIM(i->'variation_info'->>'display_id')) IN ('PHVVN026_CV', 'PHVVN027_CV')
+              OR i->'variation_info'->>'name' ILIKE 'CHẢO VÀNG%'
+        )`,
+    [since]
+  )
+  const set = new Set<string>()
+  for (const r of rows) for (const p of [r.a, r.b, r.c]) { const n = normPhone(p); if (n) set.add(n) }
+  return [...set].map((p) => crypto.createHash("sha256").update(p).digest("hex"))
+}
+
+/**
+ * Tệp khách đăng ký chảo vàng trên POS (user 6/11/2026: cập nhật 15 phút/lần). Không tự gắn vào camp nào:
+ * công cụ lên camp và kiểm tra camp chỉ đọc kind pixel_cr180 + chan_pos.
+ * Chỉ thêm, không thay toàn bộ: lần đầu nạp hết, sau đó nạp SĐT của đơn mới đổi. Tài khoản lỗi giữ nguyên mốc, lần sau nạp bù.
+ */
+export async function syncCvPosAudience() {
+  await ensureExclusionTable()
+  const { rows } = await getPool().query(`SELECT account_id, audience_id, last_sync_at FROM ads_exclusion_audience WHERE kind=$1`, [CV_POS_KIND])
+  const byAccount = new Map<string, any>(rows.map((r: any) => [r.account_id, r]))
+  const cursors = rows.filter((r: any) => r.last_sync_at).map((r: any) => new Date(r.last_sync_at).getTime())
+  const needsFull = EXCLUSION_TARGETS.some((t) => !byAccount.get(t.account)?.last_sync_at)
+  const full = needsFull ? await cvPosPhones(null) : []
+  const delta = cursors.length ? await cvPosPhones(new Date(Math.min(...cursors) - CV_POS_OVERLAP_MS)) : []
+  const out: any[] = []
+  for (const t of EXCLUSION_TARGETS) {
+    const row = byAccount.get(t.account)
+    let audienceId = row?.audience_id as string | undefined
+    const created = !audienceId
+    if (!audienceId) {
+      const r = await fbPost(`/${t.account}/customaudiences`, { name: CV_POS_NAME, subtype: "CUSTOM", customer_file_source: "USER_PROVIDED_ONLY",
+        description: "Tự động: SĐT khách có đơn chảo vàng trên Pancake POS, mọi trạng thái. Không sửa tay." })
+      if (!r.ok) { out.push({ account: t.label, error: r.data?.error?.error_user_msg || r.data?.error?.message }); continue }
+      audienceId = r.data.id as string
+      await upsertRow(t.account, CV_POS_KIND, "", audienceId, CV_POS_NAME, true)
+    }
+    const isFull = !row?.last_sync_at
+    const hashes = isFull ? full : delta
+    if (!hashes.length) {
+      await upsertRow(t.account, CV_POS_KIND, "", audienceId, CV_POS_NAME, true, { synced: true })
+      continue
+    }
+    const r = await uploadUsers(audienceId, hashes, false)
+    // user_count is only known after a full load; incremental runs keep the last value
+    await upsertRow(t.account, CV_POS_KIND, "", audienceId, CV_POS_NAME, true, { user_count: isFull && r.ok ? hashes.length : null, last_error: r.error ?? null, synced: r.ok })
+    out.push({ account: t.label, audience_id: audienceId, created, full: isFull, phones: hashes.length, ...r })
+  }
+  return out
 }
 
 export async function listExclusions() {
