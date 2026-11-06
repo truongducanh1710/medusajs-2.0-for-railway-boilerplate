@@ -201,7 +201,7 @@ async function uploadUsers(audienceId: string, hashes: string[], replace: boolea
 }
 
 const CV_POS_KIND = "cv_pos"
-const CV_POS_NAME = "PHV_CV_DANGKY_POS_AUTO (khách đăng ký chảo vàng trên POS, cập nhật 15 phút)"
+const CV_POS_NAME = "PHV_CV_CHẢO VÀNG_DANGKY_POS_AUTO (đơn POS mọi trạng thái, cập nhật 15 phút)"
 /** Re-read a little before the cursor so an order arriving mid-run is not missed; re-adding a phone is a no-op on FB. */
 const CV_POS_OVERLAP_MS = 10 * 60 * 1000
 
@@ -231,7 +231,7 @@ async function cvPosPhones(since: Date | null) {
  */
 export async function syncCvPosAudience() {
   await ensureExclusionTable()
-  const { rows } = await getPool().query(`SELECT account_id, audience_id, last_sync_at FROM ads_exclusion_audience WHERE kind=$1`, [CV_POS_KIND])
+  const { rows } = await getPool().query(`SELECT account_id, audience_id, name, last_sync_at FROM ads_exclusion_audience WHERE kind=$1`, [CV_POS_KIND])
   const byAccount = new Map<string, any>(rows.map((r: any) => [r.account_id, r]))
   const cursors = rows.filter((r: any) => r.last_sync_at).map((r: any) => new Date(r.last_sync_at).getTime())
   const needsFull = EXCLUSION_TARGETS.some((t) => !byAccount.get(t.account)?.last_sync_at)
@@ -249,15 +249,22 @@ export async function syncCvPosAudience() {
       audienceId = r.data.id as string
       await upsertRow(t.account, CV_POS_KIND, "", audienceId, CV_POS_NAME, true)
     }
+    // Keep the stored name until FB accepts the rename, so a failed rename retries next run
+    let name = (row?.name as string | undefined) || CV_POS_NAME
+    if (name !== CV_POS_NAME) {
+      const rn = await fbPost(`/${audienceId}`, { name: CV_POS_NAME })
+      if (rn.ok) name = CV_POS_NAME
+      else out.push({ account: t.label, audience_id: audienceId, rename_error: rn.data?.error?.error_user_msg || rn.data?.error?.message })
+    }
     const isFull = !row?.last_sync_at
     const hashes = isFull ? full : delta
     if (!hashes.length) {
-      await upsertRow(t.account, CV_POS_KIND, "", audienceId, CV_POS_NAME, true, { synced: true })
+      await upsertRow(t.account, CV_POS_KIND, "", audienceId, name, true, { synced: true })
       continue
     }
     const r = await uploadUsers(audienceId, hashes, false)
     // user_count is only known after a full load; incremental runs keep the last value
-    await upsertRow(t.account, CV_POS_KIND, "", audienceId, CV_POS_NAME, true, { user_count: isFull && r.ok ? hashes.length : null, last_error: r.error ?? null, synced: r.ok })
+    await upsertRow(t.account, CV_POS_KIND, "", audienceId, name, true, { user_count: isFull && r.ok ? hashes.length : null, last_error: r.error ?? null, synced: r.ok })
     out.push({ account: t.label, audience_id: audienceId, created, full: isFull, phones: hashes.length, ...r })
   }
   return out
