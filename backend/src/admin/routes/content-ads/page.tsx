@@ -98,12 +98,12 @@ function AdMock({ r, expanded }: { r: Row; expanded?: boolean }) {
         {card.video_url
           ? <video
               src={card.video_url} poster={poster || undefined} controls preload="none" playsInline
-              style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               onClick={(e) => e.stopPropagation()}
               onPlay={(e) => document.querySelectorAll("video").forEach((v) => { if (v !== e.currentTarget) v.pause() })}
             />
           : poster
-            ? <img src={poster} alt="" referrerPolicy="no-referrer" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+            ? <img src={poster} alt="" referrerPolicy="no-referrer" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             : <div style={{ color: "#fff", padding: 24, textAlign: "center", fontSize: 12 }}>Không có ảnh xem trước</div>}
       </div>
       <div style={fb.foot}>
