@@ -25,6 +25,7 @@ export const ROUTE_PERMS: Record<string, string | string[]> = {
   // Freelance vào bằng page.bao-cao-mkt.own; số liệu đã bị lọc về camp của họ ở backend.
   "/bao-cao-mkt": ["page.bao-cao.view", "page.bao-cao-mkt.own"],
   "/tu-scale": "page.bao-cao.view",
+  "/content-ads": "page.bao-cao.view",
   "/media": "page.san-pham.edit",
   "/uu-tien-goi": "page.don-hang.view",
   "/live-view": "page.live-view.view",

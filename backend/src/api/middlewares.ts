@@ -340,6 +340,8 @@ export default defineMiddlewares({
     // Tự scale camp theo giờ (/app/tu-scale): xem = view, gắn camp/sửa điều kiện = camp-control
     { matcher: "/admin/auto-scale*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/auto-scale*", method: ["POST", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
+    // Content ads (/app/content-ads): chỉ đọc nội dung ad đang chạy
+    { matcher: "/admin/ad-content*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control/verify", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
