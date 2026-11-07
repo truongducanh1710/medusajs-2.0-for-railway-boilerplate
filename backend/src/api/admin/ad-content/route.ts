@@ -1,13 +1,15 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getPool } from "../../../lib/db"
+import { AdPreview, parseAdPreviewHtml } from "../../../lib/fb-ad-preview"
 import { extractMkt } from "../../../lib/mkt-code"
 import { MKT_ORDER_FILTER_SQL } from "../../../lib/mkt-today"
-import { callFbApi, FB_API_BASE } from "../pancake-sync/report/camp-control/_lib"
+import { callFbApi } from "../pancake-sync/report/camp-control/_lib"
 
 /**
- * GET /admin/ad-content[?refresh=1] — ad đang chạy (effective_status = ACTIVE) kèm nội dung creative.
+ * GET /admin/ad-content[?refresh=1] — ad đang chạy (effective_status = ACTIVE) kèm thứ khách nhìn thấy.
  * Trạng thái ad không lưu trong DB (mkt_ads_cost_ad.effective_status luôn null) nên phải đọc FB.
- * Chỉ đọc. Cache 5 phút để không ăn rate limit FB khi nhiều người mở tab.
+ * Tiêu đề lấy từ bản xem trước vì ad dùng bài có sẵn không trả tiêu đề qua creative.
+ * Chỉ đọc. Danh sách cache 5 phút, bản xem trước cache theo ad (mỗi lần tải ~700KB).
  */
 
 const AD_FIELDS =
@@ -15,9 +17,20 @@ const AD_FIELDS =
   "creative{id,title,body,object_type,call_to_action_type,thumbnail_url,effective_object_story_id,link_url," +
   "object_story_spec{page_id,video_data{title,message,link_description,call_to_action},link_data{name,message,description,link}}," +
   "asset_feed_spec{titles,bodies,descriptions,link_urls}}"
-const CACHE_MS = 5 * 60 * 1000
+const LIST_CACHE_MS = 5 * 60 * 1000
+const PREVIEW_CACHE_MS = 3 * 60 * 60 * 1000
+const PREVIEW_REFRESH_MS = 30 * 60 * 1000
 const FB_CONCURRENCY = 6
 const HIDDEN_CHARS = /[​-‏⁠﻿]/g
+// preview_iframe.php trả lỗi 400 nếu request không giống trình duyệt mở trang
+const PREVIEW_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  Accept: "text/html",
+  "Accept-Language": "vi-VN,vi;q=0.9",
+}
 
 const uniq = (a: (string | null | undefined)[]) => [...new Set(a.map((s) => (s || "").trim()).filter(Boolean))]
 const normUtm = (s: string | null) => (s || "").replace(HIDDEN_CHARS, "").trim()
@@ -53,26 +66,23 @@ async function fetchActiveAds(accountId: string): Promise<any[]> {
   return ads
 }
 
-/** Tên page + nội dung bài gốc. Bài đăng cần page token — token chỉ dùng trong hàm này, không trả ra ngoài. */
-async function fetchPageInfo(pageIds: string[], storyIds: string[]) {
-  const pages = new Map<string, { name: string | null; token: string | null }>()
-  await mapLimit(pageIds, FB_CONCURRENCY, async (id) => {
-    const r = await callFbApi("GET", `/${id}?fields=name,access_token`)
-    if (r.ok) return pages.set(id, { name: r.data.name ?? null, token: r.data.access_token ?? null })
-    const n = await callFbApi("GET", `/${id}?fields=name`)
-    return pages.set(id, { name: n.ok ? n.data.name ?? null : null, token: null })
-  })
-  const posts = new Map<string, any>()
-  await mapLimit(storyIds, FB_CONCURRENCY, async (story) => {
-    const token = pages.get(story.split("_")[0])?.token
-    if (!token) return
-    try {
-      const url = `${FB_API_BASE}/${story}?fields=${encodeURIComponent("message,call_to_action,attachments{title,description}")}&access_token=${token}`
-      const j: any = await (await fetch(url)).json()
-      if (!j.error) posts.set(story, j)
-    } catch { /* bài không đọc được: giữ nội dung từ creative */ }
-  })
-  return { pages, posts }
+const previewCache = new Map<string, { at: number; preview: AdPreview }>()
+
+async function fetchPreview(adId: string, maxAge: number): Promise<AdPreview | null> {
+  const hit = previewCache.get(adId)
+  if (hit && Date.now() - hit.at < maxAge) return hit.preview
+  try {
+    const r = await callFbApi("GET", `/${adId}/previews?ad_format=MOBILE_FEED_STANDARD`)
+    const src = String(r.data?.data?.[0]?.body || "").match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&")
+    if (!src) return hit?.preview ?? null
+    const html = await (await fetch(src, { headers: PREVIEW_HEADERS, signal: AbortSignal.timeout(30000) })).text()
+    const preview = parseAdPreviewHtml(html)
+    if (!preview) return hit?.preview ?? null
+    previewCache.set(adId, { at: Date.now(), preview })
+    return preview
+  } catch {
+    return hit?.preview ?? null
+  }
 }
 
 async function loadProducts(): Promise<{ code: string; name: string }[]> {
@@ -95,7 +105,7 @@ function resolveProduct(campName: string, adName: string, mkt: string, products:
   return { code, name: (i >= 0 && parts[i + 1]) || code || "Chưa rõ" }
 }
 
-async function buildData() {
+async function buildData(refresh: boolean) {
   const pool = getPool()
   const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
   const { rows: accRows } = await pool.query(
@@ -120,13 +130,11 @@ async function buildData() {
   })
   const ads = lists.flat()
 
-  const storyOf = (ad: any): string | null => ad.creative?.effective_object_story_id || null
-  const pageOf = (ad: any): string | null => ad.creative?.object_story_spec?.page_id || storyOf(ad)?.split("_")[0] || null
-  const pageIds = uniq(ads.map(pageOf))
-  const storyIds = uniq(ads.map(storyOf))
-  const { pages, posts } = await fetchPageInfo(pageIds, storyIds)
-
   const adIds = ads.map((a) => String(a.id))
+  const maxAge = refresh ? PREVIEW_REFRESH_MS : PREVIEW_CACHE_MS
+  const previews = new Map<string, AdPreview | null>()
+  await mapLimit(adIds, FB_CONCURRENCY, async (id) => { previews.set(id, await fetchPreview(id, maxAge)) })
+
   const { rows: costRows } = await pool.query(
     `SELECT ad_id, (ARRAY_AGG(mkt_name ORDER BY date DESC))[1] mkt_name, (ARRAY_AGG(vd_code ORDER BY date DESC))[1] vd_code,
             COALESCE(SUM(spend) FILTER (WHERE date::date = $2::date), 0)::bigint spend_today,
@@ -168,12 +176,15 @@ async function buildData() {
     const c = ad.creative || {}
     const spec = c.object_story_spec || {}
     const feed = c.asset_feed_spec || {}
-    const story = storyOf(ad)
-    const post = story ? posts.get(story) : null
-    const att = post?.attachments?.data?.[0]
-    const pageId = pageOf(ad)
-    const creativeTitles = uniq([c.title, spec.video_data?.title, spec.link_data?.name, ...(feed.titles || []).map((t: any) => t.text)])
-    const titles = creativeTitles.length ? creativeTitles : uniq([att?.title])
+    const preview = previews.get(String(ad.id)) ?? null
+    const card = preview?.cards[0]
+    const story: string | null = c.effective_object_story_id || null
+    const pageId: string | null = spec.page_id || story?.split("_")[0] || null
+    const apiDescriptions = uniq([spec.video_data?.link_description, spec.link_data?.description, ...(feed.descriptions || []).map((t: any) => t.text)])
+    const apiTitles = uniq([c.title, spec.video_data?.title, spec.link_data?.name, ...(feed.titles || []).map((t: any) => t.text)])
+    // Tiêu đề khách thấy là chuẩn. Không có bản xem trước thì lấy creative; thiếu title thì FB hiện mô tả vào chỗ tiêu đề.
+    const titles = uniq([...(preview?.cards || []).map((x) => x.headline), ...apiTitles])
+    if (!titles.length && apiDescriptions[0]) titles.push(apiDescriptions[0])
     const m = cost.get(String(ad.id))
     const campName = String(ad.campaign?.name || "")
     const mkt = m?.mkt_name || extractMkt(campName)
@@ -200,16 +211,17 @@ async function buildData() {
       product_code: product.code,
       product_name: product.name,
       page_id: pageId,
-      page_name: pageId ? pages.get(pageId)?.name ?? null : null,
+      page_name: preview?.page_name ?? null,
       post_id: story,
       post_url: story ? `https://www.facebook.com/${story}` : null,
       creative_id: c.id || null,
       titles,
-      descriptions: uniq([spec.video_data?.link_description, spec.link_data?.description, ...(feed.descriptions || []).map((t: any) => t.text), att?.description]),
-      bodies: uniq([c.body, spec.video_data?.message, spec.link_data?.message, ...(feed.bodies || []).map((t: any) => t.text), post?.message]),
-      cta: c.call_to_action_type || post?.call_to_action?.type || null,
-      landing: c.link_url || spec.video_data?.call_to_action?.value?.link || spec.link_data?.link || feed.link_urls?.[0]?.website_url || post?.call_to_action?.value?.link || null,
+      descriptions: uniq([card?.description, ...apiDescriptions]).filter((d) => !titles.includes(d)),
+      bodies: uniq([preview?.message, c.body, spec.video_data?.message, spec.link_data?.message, ...(feed.bodies || []).map((t: any) => t.text)]),
+      cta: card?.cta || c.call_to_action_type || null,
+      landing: c.link_url || spec.video_data?.call_to_action?.value?.link || spec.link_data?.link || feed.link_urls?.[0]?.website_url || card?.link || null,
       thumbnail: c.thumbnail_url || null,
+      preview,
       spend_today: Number(m?.spend_today || 0),
       spend_7d: spend7,
       ctr_7d: impressions > 0 ? (clicks / impressions) * 100 : null,
@@ -225,8 +237,8 @@ let cache: { at: number; data: Promise<any> } | null = null
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const refresh = (req.query as any).refresh === "1"
-    if (refresh || !cache || Date.now() - cache.at > CACHE_MS) {
-      cache = { at: Date.now(), data: buildData() }
+    if (refresh || !cache || Date.now() - cache.at > LIST_CACHE_MS) {
+      cache = { at: Date.now(), data: buildData(refresh) }
       cache.data.catch(() => { cache = null })
     }
     return res.json(await cache.data)
