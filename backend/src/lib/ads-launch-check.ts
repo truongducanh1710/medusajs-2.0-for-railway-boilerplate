@@ -187,8 +187,15 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
     `SELECT 1 FROM ads_rule_history WHERE kind='auto_scale_camp' AND ref=$1 AND new_value IS NULL LIMIT 1`, [c.id]
   ).catch(() => ({ rows: [] as any[] }))
   const rule = ruleFor(c.name)
+  // 9/11: MKT đã tắt Tự scale (user care tay từ 7/11) → không tự gắn; chảo vàng do Bộ chảo vàng tự động (cv-bo) quản lý,
+  // 2 hệ thống không được chạy cùng 1 camp (trước đây job tự gắn C1–C3 + camp kiểu Xuân vào bộ đang chạy thật).
+  const { rows: mktOn } = await pool.query(`SELECT enabled FROM auto_scale_mkt WHERE mkt_name = $1`, [mkt])
+    .catch(() => ({ rows: [] as any[] }))
+  const isChaoVang = /^PHVVN026CV/.test(c.name) || c.name.normalize("NFC").toUpperCase().includes("CHẢO VÀNG")
   if (ts[0]) steps.tu_scale = step(ts[0].enabled ? "ok" : "skip", ts[0].enabled ? "Đã gắn" : "Gắn nhưng đang tạm dừng")
   else if (removed.length) steps.tu_scale = step("skip", "Đã bị gỡ khỏi Tự scale (đã quyết) — không tự gắn lại")
+  else if (isChaoVang) steps.tu_scale = step("skip", "Chảo vàng do Bộ chảo vàng tự động quản lý — không gắn Tự scale")
+  else if (mktOn[0] && mktOn[0].enabled === false) steps.tu_scale = step("skip", `Tự scale của ${mkt} đang tắt — không tự gắn`)
   else if (c.status !== "ACTIVE") steps.tu_scale = step("skip", `Camp đang ${c.status}`)
   else if (!rule) steps.tu_scale = step("skip", "Loại camp không dùng Tự scale (Messenger / giới hạn chi phí)")
   else {
