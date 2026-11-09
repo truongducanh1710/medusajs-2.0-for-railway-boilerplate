@@ -28,12 +28,12 @@ const ACCOUNTS: Record<string, string> = {
 }
 // Sản phẩm quản lý theo bộ. accounts = thứ tự ưu tiên tài khoản (chỉ tài khoản có pixel của SP).
 // User 9/11: chảo vàng trước (344→342→329→349); 9/11 thêm kệ gia vị (pixel KGV chỉ có ở ADS342/329/327).
-export type Prod = { key: string; label: string; sku: string; product: string; pixel: string; link: string; accounts: string[]; match: (n: string) => boolean }
+export type Prod = { key: string; label: string; sku: string; product: string; pixel: string; link: string; accounts: string[]; match: (n: string) => boolean; posKind?: string }
 export const PRODUCTS: Prod[] = [
   { key: "CV", label: "Chảo vàng", sku: "PHVVN026CV", product: "CHẢO VÀNG HẤP", pixel: "943650651603498",
     link: "https://www.giadungphanviet.shop/chaoultratitanmua1tang4", accounts: ["ADS344", "ADS342", "ADS329", "ADS349"],
     match: (n) => n.startsWith("PHVVN026CV") || n.includes("CHẢO VÀNG") },
-  { key: "KGV", label: "Kệ gia vị", sku: "PHVVN042KGV", product: "KỆ GIA VỊ", pixel: "648566867843285",
+  { key: "KGV", label: "Kệ gia vị", posKind: "kgv_pos", sku: "PHVVN042KGV", product: "KỆ GIA VỊ", pixel: "648566867843285",
     link: "https://www.giadungphanviet.site/giamgiasoc", accounts: ["ADS342", "ADS329", "ADS327"],
     match: (n) => n.startsWith("PHVVN042KGV") || n.includes("KỆ GIA VỊ") || n.includes("KỆ ĐỰNG GIA VỊ") },
 ]
@@ -433,10 +433,13 @@ async function pickAccount(setKey: string, D: BoData, aliveByAcc: Map<string, nu
   return { code: cand[0][0], id: cand[0][1] }
 }
 
-function exclusionsFor(excl: any[], acc: string, pixel: string) {
+function exclusionsFor(excl: any[], acc: string, pixel: string, posKind?: string) {
   const px = excl.find((a) => a.account_id === acc && a.kind === "pixel_cr180" && a.pixel_id === pixel)
   const blk = excl.find((a) => a.account_id === acc && a.kind === "chan_pos")
-  return px && blk ? [{ id: px.audience_id }, { id: blk.audience_id }] : null
+  if (!px || !blk) return null
+  // User 9/11: kệ gia vị loại thêm khách đã có đơn POS kệ (kgv_pos) — chưa có tệp thì vẫn lên với 2 tệp bắt buộc
+  const pos = posKind ? excl.find((a) => a.account_id === acc && a.kind === posKind && a.audience_id) : null
+  return [{ id: px.audience_id }, { id: blk.audience_id }, ...(pos ? [{ id: pos.audience_id }] : [])]
 }
 
 async function launchCamp(o: { bo: BoRow; acc: { code: string; id: string }; start: string; suffix: string; kieu: "test" | "nhan"; reason: string
@@ -447,7 +450,7 @@ async function launchCamp(o: { bo: BoRow; acc: { code: string; id: string }; sta
   const [, m, d] = start.split("-"); const dm = `${+d}/${+m}`
   const setName = "VD" + posts.map((p) => String(p.vd).replace(/^VD/i, "")).join("")
   const name = `${P.sku}_${dm}_${MKT_NEW}_${P.product}_${acc.code}_${PAGE_CODE[bo.page_id] || "PAGE"}_${setName}_30ALL_${o.suffix}`
-  const excluded = exclusionsFor(o.excl, acc.id, P.pixel)
+  const excluded = exclusionsFor(o.excl, acc.id, P.pixel, P.posKind)
   const detail = { account: acc.code, start, posts, kieu: o.kieu }
   if (!excluded) { await logRow({ action: "loi", bo_key: bo.key, reason: `Không lên được ${name}: tài khoản thiếu tệp loại trừ`, dry, ok: false }); return null }
   if (dry) { await logRow({ action: "len", bo_key: bo.key, camp: { id: "", name, acc: acc.id, bo: bo.key, first: null, last: null }, new_budget: BASE, reason: o.reason, detail, dry }); return "dry" }
