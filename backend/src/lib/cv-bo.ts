@@ -39,7 +39,7 @@ export const STATE_LABEL: Record<string, string> = {
   QUEUE: "Chờ test", TEST: "Đang test", WIN: "Thắng (3 camp)", SCALE: "Scale (6 camp)", GIU1: "Yếu — giữ 1 camp",
   NGHI: "Nghỉ 14 ngày", TRUOT: "Trượt", HOAN: "Người khoá",
 }
-const DATA_DAYS = 60
+const DATA_DAYS = 100 // mkt_ads_cost_ad có từ 20/7 — đủ gom bộ theo post
 
 // ── Bảng ─────────────────────────────────────────────────────────────────────
 let _ready: Promise<void> | null = null
@@ -352,7 +352,7 @@ function initState(key: string, D: BoData, asOf: string): { state: string; since
     return { state: "WIN", since: asOf, why: "Bộ đang chạy → xếp theo 7 ngày" }
   }
   if (all.s < 300_000) return null
-  if (all.o >= 10 && pctOf(all.s, all.ds) <= 30 && all.s >= 3_000_000)
+  if (all.o >= 10 && pctOf(all.s, all.ds) <= 33 && all.s >= 2_000_000)
     return { state: "QUEUE", since: asOf, why: `Bộ từng thắng (${DATA_DAYS} ngày: ${all.o} đơn ${fmtPct(all.s, all.ds)}) lâu chưa chạy → chờ test lại` }
   return { state: "TRUOT", since: asOf, why: `Bộ cũ không đủ thắng (${all.o} đơn ${fmtPct(all.s, all.ds)})` }
 }
