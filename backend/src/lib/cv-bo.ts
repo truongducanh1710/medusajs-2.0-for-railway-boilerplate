@@ -674,7 +674,8 @@ export async function runCvBo(userModule?: any, force?: "check" | "night" | "mor
   const once = async (mode: string, fn: () => Promise<any>) => {
     if (!force && (await loggedToday("run", date, st.dry_run, undefined, mode)).length) return null
     const r = await fn()
-    await logRow({ action: "run", reason: mode, detail: r, dry: st.dry_run })
+    // Chạy tay (force) không đánh dấu "đã chạy hôm nay" → lượt theo giờ của cron vẫn chạy bình thường
+    if (!force) await logRow({ action: "run", reason: mode, detail: r, dry: st.dry_run })
     return r
   }
   if (force === "night" || (!force && hour === 23)) return once("night", () => runNight(st, userModule))
