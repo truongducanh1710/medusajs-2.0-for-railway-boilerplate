@@ -547,6 +547,10 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   // 5. Kế hoạch theo bộ
   const excl = await listExclusions().catch(() => [])
   const newToday = (await loggedToday("len", today, dry)).length
+  // User 9/11 "cần test nhiều": giữ chỗ camp mới cho slot test bộ chờ trước, phần còn lại mới dùng để bù camp
+  const testsDone = (await loggedToday("state", today, dry, undefined, "%Chờ test → Đang test%")).length
+  const queued = [...B.values()].filter((b) => b.state === "QUEUE" && !b.locked).length
+  const reserveTest = allowNew ? Math.min(queued, Math.max(0, st.test_per_day - testsDone)) : 0
   let newCount = newToday
   const aliveByAcc = new Map<string, number>()
   const isAlive = (c: CampInfo) => !c.retired && c.fb_status === "ACTIVE"
@@ -584,7 +588,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     // Thừa → tắt camp kém nhất (7 ngày)
     const score = (c: CampInfo) => { const x = D.sum(c.id, addD(today, -6), today); return pctOf(x.s, x.ds) }
     alive.sort((a, c) => score(a) - score(c))
-    const keepN = Math.min(target, Math.max(0, st.max_camps - total))
+    // Trần max_camps chỉ chặn bật thêm / lên mới — KHÔNG tắt camp đang chạy của bộ khác (preview 9/11 định tắt VD131+133+134 S1)
+    const keepN = target
     const keep = alive.slice(0, keepN), extra = alive.slice(keepN)
     for (const c of extra) {
       if (resumeDefault.has(c.id)) { resumeDefault.delete(c.id); continue }
@@ -592,7 +597,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     }
     for (const c of keep) if (resumeDefault.has(c.id)) planBat.push(c)
     total += keep.length
-    let need = Math.min(target, Math.max(0, st.max_camps - (total - keep.length))) - keep.length
+    let need = Math.min(target - keep.length, Math.max(0, st.max_camps - total))
     if (need <= 0) continue
     // Thiếu → bật lại camp cũ của bộ trước (tắt ≤14 ngày, lần chạy gần nhất không quá 40%, không phải người vừa tắt)
     const cands: CampInfo[] = []
@@ -606,7 +611,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     cands.sort((a, c) => { const x = D.sum(a.id, addD(today, -DATA_DAYS), today), y = D.sum(c.id, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })
     for (const c of cands.slice(0, need)) { planBat.push(c); total++; need--; aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1) }
     // Vẫn thiếu → lên camp mới bằng bài cũ (chỉ ngày tốt, ≤ max_new_day/ngày)
-    while (need > 0 && allowNew && newCount < st.max_new_day && total < st.max_camps) {
+    while (need > 0 && allowNew && newCount < st.max_new_day - reserveTest && total < st.max_camps) {
       const acc = await pickAccount(b.key, D, aliveByAcc, excl)
       if (!acc) { out.push(`không có tài khoản hợp lệ cho ${b.name}`); break }
       const id = await launchCamp({ bo: b, acc, start: tomorrow, suffix: `B${sc.length + 1 + (newCount - newToday)}`, kieu: b.state === "TEST" ? "test" : "nhan",
