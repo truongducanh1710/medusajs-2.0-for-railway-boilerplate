@@ -30,14 +30,14 @@ const ACCOUNTS: Record<string, string> = {
 // User 9/11: chảo vàng trước (344→342→329→349); 9/11 thêm kệ gia vị (pixel KGV chỉ có ở ADS342/329/327) và hộp nhựa (ADS344/349).
 export type Prod = { key: string; label: string; sku: string; product: string; pixel: string; link: string; accounts: string[]; match: (n: string) => boolean; posKind?: string }
 export const PRODUCTS: Prod[] = [
-  { key: "CV", label: "Chảo vàng", sku: "PHVVN026CV", product: "CHẢO VÀNG HẤP", pixel: "943650651603498",
+  { key: "CV", label: "Chảo vàng", posKind: "cv_pos", sku: "PHVVN026CV", product: "CHẢO VÀNG HẤP", pixel: "943650651603498",
     link: "https://www.giadungphanviet.shop/chaoultratitanmua1tang4", accounts: ["ADS344", "ADS342", "ADS329", "ADS349"],
     match: (n) => n.startsWith("PHVVN026CV") || n.includes("CHẢO VÀNG") },
   { key: "KGV", label: "Kệ gia vị", posKind: "kgv_pos", sku: "PHVVN042KGV", product: "KỆ GIA VỊ", pixel: "648566867843285",
     link: "https://www.giadungphanviet.site/giamgiasoc", accounts: ["ADS342", "ADS329", "ADS327"],
     match: (n) => n.startsWith("PHVVN042KGV") || n.includes("KỆ GIA VỊ") || n.includes("KỆ ĐỰNG GIA VỊ") },
   // User 9/11 "ok nhé": hộp nhựa vào Bộ tự động; pixel hộp nhựa chỉ có ở ADS344/349 (ưu tiên ADS344: CPM ADS349 cao hơn ~50%)
-  { key: "TDH", label: "Hộp nhựa", sku: "PHVVN020TDH", product: "HỘP NHỰA NHIỀU NGĂN", pixel: "2563693040631730",
+  { key: "TDH", label: "Hộp nhựa", posKind: "tdh_pos", sku: "PHVVN020TDH", product: "HỘP NHỰA NHIỀU NGĂN", pixel: "2563693040631730",
     link: "https://www.giadungphanviet.shop/thunghat", accounts: ["ADS344", "ADS349"],
     match: (n) => n.startsWith("PHVVN020TDH") || n.includes("HỘP NHỰA") },
 ]
@@ -442,7 +442,7 @@ function exclusionsFor(excl: any[], acc: string, pixel: string, posKind?: string
   const px = excl.find((a) => a.account_id === acc && a.kind === "pixel_cr180" && a.pixel_id === pixel)
   const blk = excl.find((a) => a.account_id === acc && a.kind === "chan_pos")
   if (!px || !blk) return null
-  // User 9/11: kệ gia vị loại thêm khách đã có đơn POS kệ (kgv_pos) — chưa có tệp thì vẫn lên với 2 tệp bắt buộc
+  // User 9/11: loại thêm khách đã có đơn POS của SP (cv_pos / kgv_pos / tdh_pos) — chưa có tệp thì vẫn lên với 2 tệp bắt buộc
   const pos = posKind ? excl.find((a) => a.account_id === acc && a.kind === posKind && a.audience_id) : null
   return [{ id: px.audience_id }, { id: blk.audience_id }, ...(pos ? [{ id: pos.audience_id }] : [])]
 }

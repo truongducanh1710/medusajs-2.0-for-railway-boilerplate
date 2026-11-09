@@ -35,7 +35,7 @@ export function ensureExclusionTable() {
     ready = getPool().query(`
       CREATE TABLE IF NOT EXISTS ads_exclusion_audience (
         account_id TEXT NOT NULL,
-        kind TEXT NOT NULL,            -- pixel_cr180 | chan_pos | cv_pos | kgv_pos
+        kind TEXT NOT NULL,            -- pixel_cr180 | chan_pos | cv_pos | kgv_pos | tdh_pos
         pixel_id TEXT NOT NULL DEFAULT '',
         audience_id TEXT NOT NULL,
         name TEXT,
@@ -205,16 +205,22 @@ const POS_OVERLAP_MS = 10 * 60 * 1000
 type PosAud = { kind: string; name: string; desc: string; targets: typeof EXCLUSION_TARGETS; codes: string[]; namePat: string }
 /** Tệp SĐT khách có đơn POS theo sản phẩm (mọi trạng thái), cập nhật 15 phút. */
 const POS_AUDIENCES: PosAud[] = [
-  // User 6/11/2026: chảo vàng chỉ tạo trên ADS344 và ADS342; không tự gắn vào camp nào
+  // User 6/11/2026: chảo vàng tạo trên ADS344 và ADS342. 9/11 "ok làm cả 2 luôn": thêm ADS329/349 (đủ tài khoản chảo vàng của Bộ tự động),
+  // Bộ tự động + launch.mjs gắn vào loại trừ camp chảo vàng mới
   { kind: "cv_pos", name: "PHV_CV_CHẢO VÀNG_DANGKY_POS_AUTO (đơn POS mọi trạng thái, cập nhật 15 phút)",
     desc: "Tự động: SĐT khách có đơn chảo vàng trên Pancake POS, mọi trạng thái. Không sửa tay.",
-    targets: EXCLUSION_TARGETS.filter((t) => t.label === "ADS344" || t.label === "ADS342"),
+    targets: EXCLUSION_TARGETS.filter((t) => ["ADS344", "ADS342", "ADS329", "ADS349"].includes(t.label)),
     codes: ["PHVVN026_CV", "PHVVN027_CV"], namePat: "CHẢO VÀNG%" },
   // User 9/11/2026: "phần loại trừ bổ sung đơn pos kệ" — 3 tài khoản có pixel kệ gia vị; Bộ tự động gắn vào camp kệ
   { kind: "kgv_pos", name: "PHV_KGV_KỆ GIA VỊ_DANGKY_POS_AUTO (đơn POS mọi trạng thái, cập nhật 15 phút)",
     desc: "Tự động: SĐT khách có đơn kệ gia vị trên Pancake POS, mọi trạng thái. Không sửa tay.",
     targets: EXCLUSION_TARGETS.filter((t) => ["ADS342", "ADS329", "ADS327"].includes(t.label)),
     codes: ["PHVVN042_KGV"], namePat: "%KỆ%GIA VỊ%" },
+  // User 9/11/2026 "ok làm cả 2 luôn": hộp nhựa (~5.000 khách POS năm nay, pixel hộp nhựa mới dùng từ cuối 10 nên không bắt được)
+  { kind: "tdh_pos", name: "PHV_TDH_HỘP NHỰA_DANGKY_POS_AUTO (đơn POS mọi trạng thái, cập nhật 15 phút)",
+    desc: "Tự động: SĐT khách có đơn hộp nhựa trên Pancake POS, mọi trạng thái. Không sửa tay.",
+    targets: EXCLUSION_TARGETS.filter((t) => ["ADS344", "ADS349"].includes(t.label)),
+    codes: ["PHVVN020_TDH_MEDIUM", "PHVVN020_TDH_LARGE", "PHVVN020_TDH"], namePat: "%HỘP NHỰA%" },
 ]
 
 /** Phones of POS orders containing the product, any status. `since` limits to rows changed after that time. */

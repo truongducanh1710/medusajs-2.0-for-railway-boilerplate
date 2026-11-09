@@ -10,7 +10,9 @@ export default async function adsCvPosAudienceJob() {
     // Only the first load goes to rule history; every 15 min would drown it
     if (r.some((x) => x.created)) {
       const kinds = [...new Set(r.filter((x) => x.created).map((x) => x.kind))]
-      const why = kinds.includes("kgv_pos")
+      const why = kinds.includes("tdh_pos") || (kinds.includes("cv_pos") && !kinds.includes("kgv_pos"))
+        ? "Tạo tệp khách có đơn POS hộp nhựa (tdh_pos, ADS344/349) + chảo vàng thêm ADS329/349, cập nhật 15 phút/lần, gắn loại trừ camp mới của Bộ tự động. User 9/11: \"ok làm cả 2 luôn\""
+        : kinds.includes("kgv_pos")
         ? "Tạo tệp khách có đơn kệ gia vị trên POS (kgv_pos, ADS342/329/327), cập nhật 15 phút/lần, Bộ tự động gắn vào loại trừ camp kệ. User 9/11: \"phần loại trừ bổ sung đơn pos kệ\""
         : "Tạo tệp khách đăng ký chảo vàng trên POS, cập nhật 15 phút/lần. User 6/11: \"tạo tệp khách đăng ký chảo vàng trên pos và cập nhật theo 15p / lần\""
       await logRuleChange("ads_exclusion", null, null, r.filter((x) => x.created), "job:ads-cv-pos-audience", why)
