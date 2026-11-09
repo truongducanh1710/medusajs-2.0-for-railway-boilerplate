@@ -702,7 +702,7 @@ export async function runCvBo(userModule?: any, force?: "check" | "night" | "mor
 export async function boOverview() {
   const D = await loadData()
   const today = D.today
-  const { rows } = await getPool().query(`SELECT key, name, page_id, posts, state, state_since::text, extended, locked, note, updated_at FROM cv_bo`)
+  const { rows } = await getPool().query(`SELECT key, name, page_id, posts, state, state_since::text, extended, locked, note, prio, updated_at FROM cv_bo`)
   const sets = rows.map((b: any) => {
     const camps = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!).filter(Boolean)
     const w7 = D.sumSet(b.key, addD(today, -7), addD(today, -1)), all = D.sumSet(b.key, addD(today, -DATA_DAYS), addD(today, -1)), t = D.sumSet(b.key, today, today)

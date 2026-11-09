@@ -564,7 +564,7 @@ function BoTab() {
         <th style={th}>Bộ</th><th style={th}>Page</th><th style={th}>Trạng thái</th><th style={th}>Camp chạy / cần</th><th style={th}>Hôm nay</th><th style={th}>7 ngày</th><th style={th}>60 ngày</th><th style={th}>Chạy gần nhất</th><th style={th}>Ghi chú</th>
       </tr></thead><tbody>
         {sets.map((b: any) => <tr key={b.key}>
-          <td style={td}><b>{b.name}</b></td><td style={td}>{b.page}</td>
+          <td style={td}><b>{b.name}</b>{b.state === "QUEUE" && b.prio ? <div style={{ fontSize: 11, color: "#6b7280" }}>ưu tiên {b.prio}</div> : null}</td><td style={td}>{b.page}</td>
           <td style={td}><span style={{ color: BO_COLOR[b.state] || "#111", fontWeight: 600 }}>{b.label}</span>{b.locked ? " 🔒" : ""}<div style={{ fontSize: 11, color: "#6b7280" }}>từ {b.state_since}</div></td>
           <td style={td}>{b.alive} / {b.target}<div style={{ fontSize: 11, color: "#6b7280" }}>{b.camps} camp từng chạy</div></td>
           <td style={td}>{aggCell(b.today)}</td><td style={td}>{aggCell(b.w7)}</td><td style={td}>{aggCell(b.all)}</td>
