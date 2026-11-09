@@ -547,10 +547,11 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   // 5. Kế hoạch theo bộ
   const excl = await listExclusions().catch(() => [])
   const newToday = (await loggedToday("len", today, dry)).length
-  // User 9/11 "cần test nhiều": giữ chỗ camp mới cho slot test bộ chờ trước, phần còn lại mới dùng để bù camp
+  // User 9/11 (lần 2): bù camp cho bộ SCALE → WIN trước (chắc ăn hơn test), test dùng phần còn lại;
+  // chỉ giữ chỗ 1 camp mới cho test để hàng chờ không đứng. Test tối đa test_per_day bộ/ngày.
   const testsDone = (await loggedToday("state", today, dry, undefined, "%Chờ test → Đang test%")).length
   const queued = [...B.values()].filter((b) => b.state === "QUEUE" && !b.locked).length
-  const reserveTest = allowNew ? Math.min(queued, Math.max(0, st.test_per_day - testsDone)) : 0
+  const reserveTest = allowNew ? Math.min(queued, Math.max(0, 1 - testsDone)) : 0
   let newCount = newToday
   const aliveByAcc = new Map<string, number>()
   const isAlive = (c: CampInfo) => !c.retired && c.fb_status === "ACTIVE"

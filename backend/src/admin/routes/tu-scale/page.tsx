@@ -555,7 +555,7 @@ function BoTab() {
         quá 50% hoặc chi ≥1tr 0 đơn → <b>nghỉ</b> 14 ngày rồi test lại. Bộ mới / bộ từng thắng lâu chưa chạy → <b>test 1 camp 300k</b>, chấm sau 3 ngày (≥3 đơn ≤35% là thắng).<br />
         Trong ngày kiểu Xuân: 2 đơn ≤15% → 1tr, ≥4 đơn ≤20% → 2tr, ≥6 đơn ≤20% → 4tr (6h–20h); 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k → tắt tới hết ngày; từ 15h &gt;45% → tắt.
         23h về 300k, thiếu camp thì hẹn bật lại camp cũ của bộ lúc 5h, vẫn thiếu thì lên camp mới bằng đúng bài cũ (chỉ ngày tốt ≤{st.bad_day_pct}%).<br />
-        Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày, {st.test_per_day} bộ test/ngày, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
+        Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày (bù bộ Scale → Thắng trước, giữ 1 suất cho test), {st.test_per_day} bộ test/ngày, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
       </div>
     </div>
     <div style={box}>
