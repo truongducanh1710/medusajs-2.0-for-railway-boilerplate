@@ -549,22 +549,22 @@ function BoTab() {
   const sets = (d.sets || []).filter((b: any) => showAll || !["TRUOT"].includes(b.state))
   return <>
     <div style={box}>
-      <h2 style={h2}>Bộ chảo vàng tự động {st.enabled ? (st.dry_run ? "— đang CHẠY THỬ (chỉ ghi, chưa làm thật)" : "— đang CHẠY THẬT") : "— đang TẮT"}</h2>
+      <h2 style={h2}>Bộ tự động ({(d.products || []).map((p: any) => `${p.label} ${p.on ? "bật" : "tắt"}`).join(", ") || "chảo vàng"}) {st.enabled ? (st.dry_run ? "— đang CHẠY THỬ (chỉ ghi, chưa làm thật)" : "— đang CHẠY THẬT") : "— đang TẮT"}</h2>
       <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
         Mỗi <b>bộ</b> = 1 tập bài (post) chạy chung camp. Bộ <b>thắng</b> giữ 3 camp, <b>scale</b> (7 ngày ≥10 đơn ≤28%) giữ 6, <b>yếu</b> (7 ngày 35–50%) giữ 1,
         quá 50% hoặc chi ≥1tr 0 đơn → <b>nghỉ</b> 14 ngày rồi test lại. Bộ mới / bộ từng thắng lâu chưa chạy → <b>test 1 camp 300k</b>, chấm sau 3 ngày (≥3 đơn ≤35% là thắng).<br />
         Trong ngày kiểu Xuân: 2 đơn ≤15% → 1tr, ≥4 đơn ≤20% → 2tr, ≥6 đơn ≤20% → 4tr (6h–20h); 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k → tắt tới hết ngày; từ 15h &gt;45% → tắt.
         23h về 300k, thiếu camp thì hẹn bật lại camp cũ của bộ lúc 5h, vẫn thiếu thì lên camp mới bằng đúng bài cũ (chỉ ngày tốt ≤{st.bad_day_pct}%).<br />
-        Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày (bù bộ Scale → Thắng trước, giữ 1 suất cho test), {st.test_per_day} bộ test/ngày, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
+        Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày (bù bộ Scale → Thắng trước, giữ 1 suất cho test), {st.test_per_day} bộ test/ngày (mỗi sản phẩm tính riêng{Object.entries(st.products || {}).filter(([, v]: any) => v?.max_new_day != null || v?.test_per_day != null).map(([k, v]: any) => `; ${k}: ${v.max_new_day ?? st.max_new_day} camp mới, ${v.test_per_day ?? st.test_per_day} bộ test`).join("")}), ngày tốt/xấu tính theo từng sản phẩm, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
       </div>
     </div>
     <div style={box}>
       <h2 style={h2}>Các bộ <label style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> hiện cả bộ trượt</label></h2>
       <div style={{ overflowX: "auto" }}><table style={tbl}><thead><tr>
-        <th style={th}>Bộ</th><th style={th}>Page</th><th style={th}>Trạng thái</th><th style={th}>Camp chạy / cần</th><th style={th}>Hôm nay</th><th style={th}>7 ngày</th><th style={th}>60 ngày</th><th style={th}>Chạy gần nhất</th><th style={th}>Ghi chú</th>
+        <th style={th}>Bộ</th><th style={th}>Sản phẩm</th><th style={th}>Page</th><th style={th}>Trạng thái</th><th style={th}>Camp chạy / cần</th><th style={th}>Hôm nay</th><th style={th}>7 ngày</th><th style={th}>60 ngày</th><th style={th}>Chạy gần nhất</th><th style={th}>Ghi chú</th>
       </tr></thead><tbody>
         {sets.map((b: any) => <tr key={b.key}>
-          <td style={td}><b>{b.name}</b>{b.state === "QUEUE" && b.prio ? <div style={{ fontSize: 11, color: "#6b7280" }}>ưu tiên {b.prio}</div> : null}</td><td style={td}>{b.page}</td>
+          <td style={td}><b>{b.name}</b>{b.state === "QUEUE" && b.prio ? <div style={{ fontSize: 11, color: "#6b7280" }}>ưu tiên {b.prio}</div> : null}</td><td style={td}>{b.product_label || "Chảo vàng"}</td><td style={td}>{b.page}</td>
           <td style={td}><span style={{ color: BO_COLOR[b.state] || "#111", fontWeight: 600 }}>{b.label}</span>{b.locked ? " 🔒" : ""}<div style={{ fontSize: 11, color: "#6b7280" }}>từ {b.state_since}</div></td>
           <td style={td}>{b.alive} / {b.target}<div style={{ fontSize: 11, color: "#6b7280" }}>{b.camps} camp từng chạy</div></td>
           <td style={td}>{aggCell(b.today)}</td><td style={td}>{aggCell(b.w7)}</td><td style={td}>{aggCell(b.all)}</td>

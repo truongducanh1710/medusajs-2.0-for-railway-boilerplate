@@ -3,7 +3,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../lib/db"
 import { canEditAdsRules, EDIT_DENIED, logRuleChange } from "../../../../lib/ads-rules"
 import { getAuthInfo } from "../../pancake-sync/report/camp-control/_lib"
-import { boOverview, getSetting, runCvBo, ensureCvBoTables, STATE_LABEL } from "../../../../lib/cv-bo"
+import { boOverview, getSetting, runCvBo, ensureCvBoTables, STATE_LABEL, PRODUCTS } from "../../../../lib/cv-bo"
 
 /** GET /admin/auto-scale/bo — cài đặt, danh sách bộ chảo vàng + số liệu, 300 dòng nhật ký gần nhất. */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -19,6 +19,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 /**
  * POST /admin/auto-scale/bo — chỉ AI, luôn kèm reason.
  *   { action: "setting", enabled?, dry_run?, max_camps?, max_new_day?, test_per_day?, cap_total?, bad_day_pct?, week_stop_pct?, reason }
+ *     products: { "KGV": { "enabled": true, "max_new_day": 2, "test_per_day": 1 } } — bật/tắt + giới hạn riêng từng SP (CV mặc định bật, SP khác mặc định tắt)
+ *   { action: "add", posts, name?, prio?, state?, product? ("CV" | "KGV"), reason }
  *   { action: "state", key, state, locked?, reason }   — đặt tay trạng thái bộ (vd HOAN bộ Tết, QUEUE để test lại)
  *   { action: "run", mode: "check" | "night" | "morning" | "summary", reason }
  */
@@ -34,9 +36,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     if (b.action === "setting") {
       const before = await getSetting()
-      const F = ["enabled", "dry_run", "max_camps", "max_new_day", "test_per_day", "cap_total", "bad_day_pct", "week_stop_pct"]
+      const F = ["enabled", "dry_run", "max_camps", "max_new_day", "test_per_day", "cap_total", "bad_day_pct", "week_stop_pct", "products"]
       const sets: string[] = [], vals: any[] = []
-      for (const f of F) if (b[f] !== undefined) { vals.push(b[f]); sets.push(`${f} = $${vals.length}`) }
+      for (const f of F) if (b[f] !== undefined) { vals.push(f === "products" ? JSON.stringify(b[f]) : b[f]); sets.push(`${f} = $${vals.length}`) }
       if (!sets.length) return res.status(400).json({ error: "Không có trường nào để sửa" })
       vals.push(auth.email)
       await pool.query(`UPDATE cv_bo_setting SET ${sets.join(", ")}, updated_by = $${vals.length}, updated_at = now() WHERE id = 1`, vals)
@@ -66,10 +68,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const state = STATE_LABEL[b.state] ? b.state : "QUEUE"
       const { rows: before } = await pool.query(`SELECT * FROM cv_bo WHERE key = $1`, [key])
       const { rows } = await pool.query(
-        `INSERT INTO cv_bo (key, name, page_id, posts, state, state_since, note, prio) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)
+        `INSERT INTO cv_bo (key, name, page_id, posts, state, state_since, note, prio, product) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9)
          ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, state = EXCLUDED.state, state_since = EXCLUDED.state_since, extended = false,
-           locked = false, note = EXCLUDED.note, prio = EXCLUDED.prio, updated_at = now() RETURNING *`,
-        [key, name, String(posts[0].post).split("_")[0], JSON.stringify(posts.map((p: any) => ({ post: p.post, vd: p.vd || "?" }))), state, today, `Người thêm: ${reason}`, Number(b.prio || 0)])
+           locked = false, note = EXCLUDED.note, prio = EXCLUDED.prio, product = EXCLUDED.product, updated_at = now() RETURNING *`,
+        [key, name, String(posts[0].post).split("_")[0], JSON.stringify(posts.map((p: any) => ({ post: p.post, vd: p.vd || "?" }))), state, today, `Người thêm: ${reason}`, Number(b.prio || 0),
+         PRODUCTS.some((P) => P.key === b.product) ? b.product : "CV"])
       await logRuleChange("cv_bo", key, before[0] ?? null, rows[0], auth.email, reason)
       return res.json({ ok: true, bo: rows[0] })
     }
