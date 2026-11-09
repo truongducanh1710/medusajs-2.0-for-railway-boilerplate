@@ -585,10 +585,16 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   // 4–6. Theo từng SP đang bật (chảo vàng, kệ gia vị): ngày tốt/xấu, giới hạn camp mới & test tính riêng từng SP
   const excl = await listExclusions().catch(() => [])
   const aliveByAcc = new Map<string, number>()
-  const isAlive = (c: CampInfo) => !c.retired && c.fb_status === "ACTIVE"
+  const isAlive = (c: CampInfo) => !c.retired && (c.fb_status === "ACTIVE" || resumeScheduled.has(c.id))
   const planBat: CampInfo[] = []
   // Camp hệ thống tắt hôm nay → mặc định bật lại 5h (trừ camp mới ≤2 ngày chưa từng có đơn)
   const resumeDefault = new Set<string>()
+  const resumeScheduled = new Set<string>()
+  // Camp người đã hẹn bật (Lịch hẹn camp, trước 6h sáng mai) → coi như sẽ chạy, không lên camp mới trùng (preview 9/11: 4VID S1 hẹn 5h vẫn bị lên mới)
+  const { rows: sched } = await pool.query(
+    `SELECT DISTINCT campaign_id FROM camp_schedule WHERE status = 'pending' AND deleted_at IS NULL AND action = 'activate' AND scheduled_at < $1::timestamptz`,
+    [`${tomorrow}T06:00:00+07:00`]).catch(() => ({ rows: [] as any[] }))
+  for (const r of sched) { const c = D.camps.get(String(r.campaign_id)); if (c && !c.retired && c.fb_status === "PAUSED" && inScope(c)) resumeScheduled.add(c.id) }
   for (const id of pausedToday) {
     const c = D.camps.get(id); if (!c || c.retired || c.fb_status !== "PAUSED" || !inScope(c)) continue
     const life = D.sum(id, addD(today, -DATA_DAYS), today)
@@ -654,7 +660,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       const score = (c: CampInfo) => { const x = D.sum(c.id, addD(today, -6), today); return pctOf(x.s, x.ds) }
       alive.sort((a, c) => score(a) - score(c))
       // Trần max_camps chỉ chặn bật thêm / lên mới — KHÔNG tắt camp đang chạy của bộ khác (preview 9/11 định tắt VD131+133+134 S1)
-      const keepN = target
+      // Bộ đang test: không tắt bớt camp người lên tay để test (user 9/11 VD5+15 nhân 3) — chấm sau 3 ngày mới quyết
+      const keepN = b.state === "TEST" ? Math.max(target, alive.length) : target
       const keep = alive.slice(0, keepN), extra = alive.slice(keepN)
       for (const c of extra) {
         if (resumeDefault.has(c.id)) { resumeDefault.delete(c.id); continue }
