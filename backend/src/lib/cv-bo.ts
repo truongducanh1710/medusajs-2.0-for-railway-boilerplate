@@ -27,7 +27,7 @@ const ACCOUNTS: Record<string, string> = {
   ADS327: "act_1133464788237858",
 }
 // Sản phẩm quản lý theo bộ. accounts = thứ tự ưu tiên tài khoản (chỉ tài khoản có pixel của SP).
-// User 9/11: chảo vàng trước (344→342→329→349); 9/11 thêm kệ gia vị (pixel KGV chỉ có ở ADS342/329/327).
+// User 9/11: chảo vàng trước (344→342→329→349); 9/11 thêm kệ gia vị (pixel KGV chỉ có ở ADS342/329/327) và hộp nhựa (ADS344/349).
 export type Prod = { key: string; label: string; sku: string; product: string; pixel: string; link: string; accounts: string[]; match: (n: string) => boolean; posKind?: string }
 export const PRODUCTS: Prod[] = [
   { key: "CV", label: "Chảo vàng", sku: "PHVVN026CV", product: "CHẢO VÀNG HẤP", pixel: "943650651603498",
@@ -36,6 +36,10 @@ export const PRODUCTS: Prod[] = [
   { key: "KGV", label: "Kệ gia vị", posKind: "kgv_pos", sku: "PHVVN042KGV", product: "KỆ GIA VỊ", pixel: "648566867843285",
     link: "https://www.giadungphanviet.site/giamgiasoc", accounts: ["ADS342", "ADS329", "ADS327"],
     match: (n) => n.startsWith("PHVVN042KGV") || n.includes("KỆ GIA VỊ") || n.includes("KỆ ĐỰNG GIA VỊ") },
+  // User 9/11 "ok nhé": hộp nhựa vào Bộ tự động; pixel hộp nhựa chỉ có ở ADS344/349 (ưu tiên ADS344: CPM ADS349 cao hơn ~50%)
+  { key: "TDH", label: "Hộp nhựa", sku: "PHVVN020TDH", product: "HỘP NHỰA NHIỀU NGĂN", pixel: "2563693040631730",
+    link: "https://www.giadungphanviet.shop/thunghat", accounts: ["ADS344", "ADS349"],
+    match: (n) => n.startsWith("PHVVN020TDH") || n.includes("HỘP NHỰA") },
 ]
 const PROD = new Map(PRODUCTS.map((p) => [p.key, p]))
 /** SP của camp theo tên (mã SKU hoặc tên kiểu cũ đầu năm "23/1_XUANLT_CHẢO VÀNG HẤP_..."). */
@@ -48,6 +52,7 @@ const prodNum = (st: CvBoSetting, k: string, f: "max_new_day" | "test_per_day") 
 let ON = new Set<string>(["CV"]) // SP đang bật trong lượt chạy hiện tại (đặt ở runCvBo)
 const PAGE_CODE: Record<string, string> = {
   "1137319289463834": "MĐGD", "693411540511731": "SMH", "609893108864013": "TICS", "1001347993069244": "VIETMATE",
+  "914112588453988": "THDH", "1047307628472038": "THDH2", "1052916304563402": "NAMDV1", "888705687664612": "NAMDV2",
 }
 const UTM = "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
 export const BASE = 300_000
@@ -609,6 +614,16 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       if (isAlive(c) && inScope(c)) { await doStatus(c, "PAUSED", "tat", `Bộ ${b.name} ${STATE_LABEL[b.state]} — tắt camp`, dry); out.push(`tắt ${c.name} (bộ ${STATE_LABEL[b.state]})`) }
     }
   }
+  // User 9/11: không lên trùng bài MKT khác đang chạy (Kiên chạy hộp nhựa 0303.1…, VID24.6 kệ) — 3 ngày gần nhất có chi
+  const { rows: busyRows } = await pool.query(
+    `SELECT DISTINCT m.post_id FROM mkt_ads_cost_ad a JOIN ad_video_map m ON m.ad_id = a.ad_id
+      WHERE a.deleted_at IS NULL AND a.date >= $1::date AND a.spend > 0 AND NOT (a.mkt_name = ANY($2)) AND m.post_id IS NOT NULL`,
+    [addD(today, -2), MKTS]).catch(() => ({ rows: [] as any[] }))
+  const busyPosts = new Set<string>(busyRows.map((r: any) => String(r.post_id)))
+  const busyOf = (b: BoRow) => {
+    const posts: any[] = D.sets.get(b.key)?.posts || (Array.isArray((b as any).posts) ? (b as any).posts : [])
+    return posts.map((p) => String(p.post)).filter((p) => busyPosts.has(p))
+  }
   const lenLogs = await loggedToday("len", today, dry)
   const testLogs = await loggedToday("state", today, dry, undefined, "%Chờ test → Đang test%")
   for (const P of PRODUCTS.filter((x) => ON.has(x.key))) {
@@ -649,6 +664,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       total += keep.length
       let need = Math.min(target - keep.length, Math.max(0, st.max_camps - total))
       if (need <= 0) continue
+      const bz = busyOf(b)
+      if (bz.length) { out.push(`${b.name} không bù camp: bài ${bz.join(", ")} MKT khác đang chạy`); continue }
       // Thiếu → bật lại camp cũ của bộ trước (tắt ≤14 ngày, lần chạy gần nhất không quá 40%, không phải người vừa tắt)
       const cands: CampInfo[] = []
       for (const c of sc) {
@@ -678,6 +695,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       .sort((a, b) => (Number(b.prio || 0) - Number(a.prio || 0)) || (() => { const x = D.sumSet(a.key, addD(today, -DATA_DAYS), today), y = D.sumSet(b.key, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })())
     for (const b of queue) {
       if (!(allowNew && testsToday < testMax && newCount < maxNew && total < st.max_camps)) break
+      if (busyOf(b).length) { out.push(`bỏ qua test ${b.name}: bài MKT khác đang chạy`); continue }
       const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!)
       const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14))
       let ok = false
