@@ -73,6 +73,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await logRuleChange("cv_bo", key, before[0] ?? null, rows[0], auth.email, reason)
       return res.json({ ok: true, bo: rows[0] })
     }
+    if (b.action === "camp") {
+      // Gắn camp lên ngoài hệ thống (launch.mjs, tay) vào bộ — để 23h tính đủ số camp, không lên trùng
+      const { rows: bo } = await pool.query(`SELECT key, name FROM cv_bo WHERE key = $1 OR name = $1 LIMIT 1`, [String(b.bo_key || b.bo_name || "")])
+      if (!bo[0]) return res.status(404).json({ error: "Không có bộ này (bo_key hoặc bo_name)" })
+      const ids: string[] = Array.isArray(b.campaign_ids) ? b.campaign_ids.map(String) : [String(b.campaign_id || "")]
+      for (const id of ids.filter(Boolean)) {
+        await pool.query(`INSERT INTO cv_bo_camp (campaign_id, bo_key, campaign_name, launched) VALUES ($1,$2,$3,true)
+          ON CONFLICT (campaign_id) DO UPDATE SET bo_key = EXCLUDED.bo_key`, [id, bo[0].key, b.campaign_name || null])
+      }
+      await logRuleChange("cv_bo_camp", bo[0].key, null, { campaign_ids: ids, bo: bo[0].name }, auth.email, reason)
+      return res.json({ ok: true, bo: bo[0].name, camps: ids.length })
+    }
     if (b.action === "run") {
       const r = await runCvBo(req.scope.resolve(Modules.USER), b.mode)
       return res.json({ ok: true, result: r })

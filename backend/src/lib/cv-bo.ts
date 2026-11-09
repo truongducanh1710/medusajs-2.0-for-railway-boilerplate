@@ -354,7 +354,8 @@ function initState(key: string, D: BoData, asOf: string): { state: string; since
   const running = camps.some((c) => c.fb_status === "ACTIVE" || (c.last && c.last >= addD(asOf, -1)))
   const first = camps.map((c) => c.first).filter(Boolean).sort()[0] as string | undefined
   if (running) {
-    if (first && first >= addD(asOf, -2)) return { state: "TEST", since: first, why: "Bộ mới đang chạy → test" }
+    // Bộ mới / ít số liệu (<5 đơn cả kỳ) → chấm như test từ ngày chạy đầu, không xếp thẳng vào thắng
+    if (first && (first >= addD(asOf, -6) || all.o < 5)) return { state: "TEST", since: first, why: "Bộ mới / ít số liệu đang chạy → chấm như test" }
     return { state: "WIN", since: asOf, why: "Bộ đang chạy → xếp theo 7 ngày" }
   }
   if (all.s < 300_000) return null
@@ -426,8 +427,10 @@ async function launchCamp(o: { bo: BoRow; acc: { code: string; id: string }; sta
     campId = camp.id
     const adset = await fb("POST", `/${acc.id}/adsets`, { name: setName, campaign_id: camp.id, billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS",
       promoted_object: { pixel_id: PIXEL, custom_event_type: "COMPLETE_REGISTRATION", smart_pse_enabled: false },
-      targeting: { geo_locations: { countries: ["VN"], location_types: ["home", "recent"] }, age_min: 25, age_max: 65, targeting_automation: { advantage_audience: 1 },
+      // User 9/11: gợi ý đối tượng tuổi 30–65+ (Advantage+ giữ khung 25–65) + loại trừ khách hiện có ở "Chiến lược vòng đời khách hàng"
+      targeting: { geo_locations: { countries: ["VN"], location_types: ["home", "recent"] }, age_min: 25, age_max: 65, age_range: [30, 65], targeting_automation: { advantage_audience: 1 },
         excluded_custom_audiences: excluded, brand_safety_content_filter_levels: ["FACEBOOK_RELAXED", "AN_RELAXED"] },
+      ad_set_goal: { type: 2, existing_customers_exclusions: excluded.map((x) => x.id) },
       attribution_spec: [{ event_type: "CLICK_THROUGH", window_days: 7 }, { event_type: "VIEW_THROUGH", window_days: 1 }, { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 }],
       start_time: `${start}T05:00:00+0700`, status: "ACTIVE" })
     for (const c of creatives) await fb("POST", `/${acc.id}/ads`, { name: `${c.vd} - ${c.post.split("_")[1]}`, adset_id: adset.id, creative: { creative_id: c.id }, status: "ACTIVE" })
