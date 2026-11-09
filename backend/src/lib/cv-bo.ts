@@ -101,6 +101,8 @@ export function ensureCvBoTables(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS idx_cv_bo_log_date ON cv_bo_log (date, action);
+      -- Thứ tự ưu tiên trong hàng chờ test (bộ thêm tay từ đầu năm, 9/11): số lớn test trước
+      ALTER TABLE cv_bo ADD COLUMN IF NOT EXISTS prio INT NOT NULL DEFAULT 0;
     `)
   })().catch((e) => { _ready = null; throw e })
   return _ready
@@ -163,13 +165,14 @@ export async function loadData(withFb = true): Promise<BoData> {
   const from = addD(today, -DATA_DAYS)
   const { rows: cost } = await pool.query(
     `SELECT date::date::text d, campaign_id c, campaign_name n, ad_account_id acc, SUM(spend)::bigint s FROM mkt_ads_cost
-      WHERE deleted_at IS NULL AND mkt_name = ANY($1) AND campaign_name LIKE $2 AND date >= $3::date GROUP BY 1,2,3,4`,
-    [MKTS, `${SKU}%`, from])
+      WHERE deleted_at IS NULL AND mkt_name = ANY($1) AND date >= $2::date GROUP BY 1,2,3,4`,
+    [MKTS, from]).then((r) => ({ rows: r.rows.filter((x: any) => isCv(x.n)) }))
+  const cvCamp = new Set(cost.map((x: any) => x.c))
   const { rows: ads } = await pool.query(
     `SELECT DISTINCT a.campaign_id c, COALESCE(a.vd_code, split_part(a.ad_name, ' ', 1)) vd, m.post_id
        FROM mkt_ads_cost_ad a JOIN ad_video_map m ON m.ad_id = a.ad_id
-      WHERE a.deleted_at IS NULL AND a.campaign_name LIKE $1 AND a.date >= $2::date AND m.post_id IS NOT NULL`,
-    [`${SKU}%`, from])
+      WHERE a.deleted_at IS NULL AND a.mkt_name = ANY($1) AND a.date >= $2::date AND m.post_id IS NOT NULL`,
+    [MKTS, from]).then((r) => ({ rows: r.rows.filter((x: any) => cvCamp.has(x.c)) }))
   const { rows: mine } = await pool.query(`SELECT * FROM cv_bo_camp`)
   const { rows: ord } = await pool.query(
     `SELECT (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d, raw->>'p_utm_campaign' ca, raw->>'p_utm_source' so,
@@ -305,10 +308,12 @@ async function humanPausedRecently(campaignId: string): Promise<boolean> {
   return rows.length > 0
 }
 
-const inScope = (c: CampInfo) => c.name.startsWith(SKU)
+/** Camp chảo vàng: mã PHVVN026CV, hoặc tên kiểu cũ đầu năm ("23/1_XUANLT_CHẢO VÀNG HẤP_...") */
+export const isCv = (name: string) => { const n = String(name || "").normalize("NFC").toUpperCase(); return n.startsWith(SKU) || n.includes("CHẢO VÀNG") }
+const inScope = (c: CampInfo) => isCv(c.name)
 
 // ── Chấm bộ (23h, số liệu tới hết hôm nay) ───────────────────────────────────
-type BoRow = { key: string; name: string; page_id: string; posts: any; state: string; state_since: string; extended: boolean; locked: boolean; note: string | null }
+type BoRow = { key: string; name: string; page_id: string; posts: any; state: string; state_since: string; extended: boolean; locked: boolean; note: string | null; prio?: number }
 
 export function evalBo(b: BoRow, D: BoData, asOf: string): { state: string; since: string; extended: boolean; why: string } | null {
   const keep = null
@@ -359,7 +364,7 @@ function initState(key: string, D: BoData, asOf: string): { state: string; since
 
 async function syncBoTable(D: BoData, asOf: string, dry: boolean): Promise<Map<string, BoRow>> {
   const pool = getPool()
-  const { rows } = await pool.query(`SELECT key, name, page_id, posts, state, state_since::text, extended, locked, note FROM cv_bo`)
+  const { rows } = await pool.query(`SELECT key, name, page_id, posts, state, state_since::text, extended, locked, note, prio FROM cv_bo`)
   const M = new Map<string, BoRow>(rows.map((r: any) => [r.key, r]))
   for (const s of D.sets.values()) {
     if (M.has(s.key)) continue
@@ -378,7 +383,7 @@ async function syncBoTable(D: BoData, asOf: string, dry: boolean): Promise<Map<s
 async function pickAccount(setKey: string, D: BoData, aliveByAcc: Map<string, number>, excl: any[]): Promise<{ code: string; id: string } | null> {
   const s = D.sets.get(setKey)
   const used = new Set((s?.camps || []).map((c) => D.camps.get(c)?.acc).filter(Boolean))
-  const ok = Object.entries(ACCOUNTS).filter(([, id]) => used.has(id) && exclusionsFor(excl, id))
+  const ok = Object.entries(ACCOUNTS).filter(([, id]) => (used.size === 0 || used.has(id)) && exclusionsFor(excl, id))
   if (!ok.length) return null
   const { rows: health } = await getPool().query(
     `SELECT DISTINCT ON (account_id) account_id, muc, ma_van_de FROM fb_account_health WHERE checked_at > now() - interval '6 hours' ORDER BY account_id, checked_at DESC`)
@@ -607,27 +612,25 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     }
     if (need > 0) out.push(`${b.name} còn thiếu ${need} camp (${!allowNew ? "ngày xấu/dừng tuần" : newCount >= st.max_new_day ? "đủ " + st.max_new_day + " camp mới/ngày" : "chạm trần " + st.max_camps + " camp"})`)
   }
-  // 6. Slot test bộ chờ (ngày tốt, tối đa test_per_day bộ/ngày)
-  const testsToday = (await loggedToday("state", today, dry, undefined, "%Chờ test → Đang test%")).length
-  if (allowNew && testsToday < st.test_per_day && newCount < st.max_new_day && total < st.max_camps) {
-    const q = [...B.values()].filter((b) => b.state === "QUEUE" && !b.locked)
-      .sort((a, b) => { const x = D.sumSet(a.key, addD(today, -DATA_DAYS), today), y = D.sumSet(b.key, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })
-    const b = q[0]
-    if (b) {
-      const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!)
-      const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14))
-      let ok = false
-      if (old.length && !(await humanPausedRecently(old[0].id))) { planBat.push(old[0]); ok = true }
-      else {
-        const acc = await pickAccount(b.key, D, aliveByAcc, excl)
-        if (acc) ok = !!(await launchCamp({ bo: b, acc, start: tomorrow, suffix: `T${sc.length + 1}`, kieu: "test", reason: `Test lại bộ ${b.name} (từng thắng, lâu chưa chạy)`, excl, dry }))
-      }
-      if (ok) {
-        if (!dry) await pool.query(`UPDATE cv_bo SET state='TEST', state_since=$2, extended=false, note=$3, updated_at=now() WHERE key=$1`, [b.key, tomorrow, "Test lại 1 camp từ 5h"])
-        await logRow({ action: "state", bo_key: b.key, reason: `${b.name}: Chờ test → Đang test (1 camp từ 5h ${tomorrow})`, dry })
-        out.push(`test lại ${b.name}`)
-      }
+  // 6. Slot test bộ chờ (ngày tốt, tối đa test_per_day bộ/ngày) — ưu tiên prio, rồi % lịch sử thấp
+  let testsToday = (await loggedToday("state", today, dry, undefined, "%Chờ test → Đang test%")).length
+  const queue = [...B.values()].filter((b) => b.state === "QUEUE" && !b.locked)
+    .sort((a, b) => (Number(b.prio || 0) - Number(a.prio || 0)) || (() => { const x = D.sumSet(a.key, addD(today, -DATA_DAYS), today), y = D.sumSet(b.key, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })())
+  for (const b of queue) {
+    if (!(allowNew && testsToday < st.test_per_day && newCount < st.max_new_day && total < st.max_camps)) break
+    const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!)
+    const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14))
+    let ok = false
+    if (old.length && !(await humanPausedRecently(old[0].id))) { planBat.push(old[0]); ok = true }
+    else {
+      const acc = await pickAccount(b.key, D, aliveByAcc, excl)
+      if (acc) { ok = !!(await launchCamp({ bo: b, acc, start: tomorrow, suffix: `T${sc.length + 1}`, kieu: "test", reason: `Test lại bộ ${b.name} (từng thắng, lâu chưa chạy)`, excl, dry })); if (ok) { newCount++; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1) } }
     }
+    if (!ok) continue
+    total++; testsToday++
+    if (!dry) await pool.query(`UPDATE cv_bo SET state='TEST', state_since=$2, extended=false, note=$3, updated_at=now() WHERE key=$1`, [b.key, tomorrow, "Test lại 1 camp từ 5h"])
+    await logRow({ action: "state", bo_key: b.key, reason: `${b.name}: Chờ test → Đang test (1 camp từ 5h ${tomorrow})`, dry })
+    out.push(`test lại ${b.name}`)
   }
   // 7. Danh sách bật lại 5h
   for (const c of planBat) await logRow({ action: "plan_bat", camp: c, date: tomorrow, reason: `5h bật lại ở 300k`, dry })

@@ -55,6 +55,24 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       await logRuleChange("cv_bo", b.key, before[0], rows[0], auth.email, reason)
       return res.json({ ok: true, bo: rows[0] })
     }
+    if (b.action === "add") {
+      // Thêm / xếp lại bộ vào hàng chờ test: posts [{ post: "{page}_{story}", vd }] — bộ cũ đầu năm chưa có số liệu ad
+      const posts = (Array.isArray(b.posts) ? b.posts : []).filter((p: any) => /^\d+_\d+$/.test(String(p?.post || "")))
+      if (!posts.length) return res.status(400).json({ error: "Thiếu posts [{post, vd}]" })
+      posts.sort((x: any, y: any) => String(x.post).localeCompare(String(y.post)))
+      const key = posts.map((p: any) => p.post).join(",")
+      const name = String(b.name || "VD" + posts.map((p: any) => String(p.vd || "?").replace(/^VD/i, "")).join("+"))
+      const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
+      const state = STATE_LABEL[b.state] ? b.state : "QUEUE"
+      const { rows: before } = await pool.query(`SELECT * FROM cv_bo WHERE key = $1`, [key])
+      const { rows } = await pool.query(
+        `INSERT INTO cv_bo (key, name, page_id, posts, state, state_since, note, prio) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)
+         ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, state = EXCLUDED.state, state_since = EXCLUDED.state_since, extended = false,
+           locked = false, note = EXCLUDED.note, prio = EXCLUDED.prio, updated_at = now() RETURNING *`,
+        [key, name, String(posts[0].post).split("_")[0], JSON.stringify(posts.map((p: any) => ({ post: p.post, vd: p.vd || "?" }))), state, today, `Người thêm: ${reason}`, Number(b.prio || 0)])
+      await logRuleChange("cv_bo", key, before[0] ?? null, rows[0], auth.email, reason)
+      return res.json({ ok: true, bo: rows[0] })
+    }
     if (b.action === "run") {
       const r = await runCvBo(req.scope.resolve(Modules.USER), b.mode)
       return res.json({ ok: true, result: r })
