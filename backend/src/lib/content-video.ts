@@ -385,7 +385,11 @@ export async function transcribeVideo(videoId: string): Promise<string> {
     body: JSON.stringify({ file: { display_name: `fbvideo-${videoId}` } }),
   })
   const uploadUrl = start.headers.get("x-goog-upload-url")
-  if (!uploadUrl) throw new Error("Gemini không trả link tải lên")
+  if (!uploadUrl) {
+    const e = await start.json().catch(() => ({}))
+    if (start.status === 402) throw new Error("Tài khoản Gemini đã hết tiền nạp trước, cần nạp thêm ở AI Studio rồi bấm lại")
+    throw new Error(`Gemini từ chối tải video (${start.status}): ${String(e?.error?.message || "").slice(0, 160)}`)
+  }
   const up = await (await fetch(uploadUrl, {
     method: "POST",
     headers: { "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize", "Content-Length": String(buf.length) },
