@@ -602,7 +602,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     const maxNew = prodNum(st, P.key, "max_new_day"), testMax = prodNum(st, P.key, "test_per_day")
     const tot = ps.reduce((a, c) => { const x = D.sum(c.id, today, today); a.s += x.s; a.ds += x.ds; return a }, { s: 0, ds: 0 })
     const wk = ps.reduce((a, c) => { const x = D.sum(c.id, addD(today, -6), today); a.s += x.s; a.ds += x.ds; return a }, { s: 0, ds: 0 })
-    const goodDay = pctOf(tot.s, tot.ds) <= st.bad_day_pct
+    // Chi hôm nay <1tr (SP mới bật / đang ít camp) → chưa đủ mẫu để gọi là ngày xấu (preview 9/11: KGV 142k 0 đơn bị chặn lên mới)
+    const goodDay = tot.s < 1_000_000 || pctOf(tot.s, tot.ds) <= st.bad_day_pct
     const weekStop = wk.s >= 3_000_000 && pctOf(wk.s, wk.ds) > st.week_stop_pct
     const allowNew = goodDay && !weekStop
     out.push(`${P.label}: hôm nay chi ${vnd(tot.s)} ${fmtPct(tot.s, tot.ds)} → ${goodDay ? "ngày tốt" : "ngày xấu: chỉ bật lại camp cũ, không lên mới"}${weekStop ? `; 7 ngày ${fmtPct(wk.s, wk.ds)} > ${st.week_stop_pct}% → dừng lên mới` : ""}`)
