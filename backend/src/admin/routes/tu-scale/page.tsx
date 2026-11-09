@@ -67,9 +67,9 @@ function TuScalePage() {
   const [editMkt, setEditMkt] = useState<MktSetting | null>(null)
   const [busy, setBusy] = useState(false)
   const [canEdit, setCanEdit] = useState(false)
-  const [tab, setTab] = useState<"dieu-khien" | "video" | "seeding" | "luat">(() => {
+  const [tab, setTab] = useState<"dieu-khien" | "bo" | "video" | "seeding" | "luat">(() => {
     const t = new URLSearchParams(window.location.search).get("tab")
-    return t === "luat" || t === "video" || t === "seeding" ? t : "dieu-khien"
+    return t === "luat" || t === "video" || t === "seeding" || t === "bo" ? t : "dieu-khien"
   })
   const [luat, setLuat] = useState<{ rules: AdsRule[]; history: RuleHistory[] } | null>(null)
 
@@ -142,7 +142,7 @@ function TuScalePage() {
     <div style={{ padding: 20, maxWidth: 1400 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tự scale camp theo giờ</h1>
       <div style={{ display: "flex", gap: 6, margin: "12px 0" }}>
-        {([["dieu-khien", "Điều khiển"], ["video", "Theo dõi video"], ["seeding", "Mẫu seeding"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
+        {([["dieu-khien", "Điều khiển"], ["bo", "Bộ chảo vàng"], ["video", "Theo dõi video"], ["seeding", "Mẫu seeding"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...btn, ...(tab === k ? { background: "#111827", color: "#fff", borderColor: "#111827" } : {}) }}>{label}</button>
         ))}
       </div>
@@ -151,7 +151,7 @@ function TuScalePage() {
           Chỉ xem — luật, bộ điều kiện và camp gắn Tự scale do AI (admin@yourmail.com) quản lý. Mọi lần sửa có lịch sử ở tab "Luật hiện tại".
         </div>
       )}
-      {tab === "luat" ? <LuatTab data={luat} /> : tab === "video" ? <VideoTab /> : tab === "seeding" ? <SeedingTab /> : <>
+      {tab === "luat" ? <LuatTab data={luat} /> : tab === "bo" ? <BoTab /> : tab === "video" ? <VideoTab /> : tab === "seeding" ? <SeedingTab /> : <>
       <p style={{ color: "#4b5563", fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
         Chỉ camp <b>được gắn bộ điều kiện</b> mới được hệ thống tự đổi ngân sách. Cứ 15 phút, trong khung giờ của bộ điều kiện:
         camp đủ số đơn, chi phí/đơn ≤ mục tiêu và theo nhịp tiêu trong ngày sẽ chạm trần ngân sách → <b>nhân ngân sách</b> (tối đa tới trần);
@@ -439,7 +439,7 @@ function TuScalePage() {
 
 type AdsRule = { key: string; nhom: string; tieu_de: string; noi_dung: string; nguon: string | null; bang_chung: string | null; sort: number; updated_by: string | null; updated_at: string }
 type RuleHistory = { id: number; kind: string; ref: string | null; old_value: any; new_value: any; reason: string | null; changed_by: string | null; created_at: string }
-const KIND: Record<string, string> = { ads_rule: "Luật", auto_scale_rule: "Bộ điều kiện", auto_scale_camp: "Camp gắn Tự scale", auto_scale_mkt: "Tổng theo MKT" }
+const KIND: Record<string, string> = { ads_rule: "Luật", auto_scale_rule: "Bộ điều kiện", auto_scale_camp: "Camp gắn Tự scale", auto_scale_mkt: "Tổng theo MKT", cv_bo_setting: "Cài đặt bộ chảo vàng", cv_bo: "Trạng thái bộ chảo vàng" }
 
 /** Đổi gì: liệt kê các trường khác nhau giữa cũ và mới (bỏ trường thời gian). */
 function diffText(o: any, n: any) {
@@ -535,6 +535,57 @@ const STEP_LABEL: Record<string, string> = { loai_tru: "Loại trừ", cai_dat: 
 const STEP_ICON: Record<string, string> = { ok: "✅", pending: "⏳", error: "❌", skip: "➖" }
 
 /** Quy trình bắt buộc của camp mới (máy chủ tự kiểm 15 phút/lần — /admin/auto-scale/checks). */
+const BO_COLOR: Record<string, string> = { SCALE: "#047857", WIN: "#16a34a", GIU1: "#ca8a04", TEST: "#2563eb", QUEUE: "#7c3aed", NGHI: "#9ca3af", TRUOT: "#dc2626", HOAN: "#6b7280" }
+const BO_ACT: Record<string, string> = { tang: "🚀 Tăng", tat: "⛔ Tắt", bat: "▶️ Bật", reset: "🌙 Về nền", len: "🆕 Lên camp", plan_bat: "📋 Hẹn bật 5h", state: "🏷 Bộ", retire: "🗑 Loại camp", loi: "❌ Lỗi" }
+const aggCell = (a: any) => a && a.s > 0 ? `${k(a.s)} · ${a.o}đ · ${a.ds > 0 ? Math.round(a.s / a.ds * 100) + "%" : "0 đơn"}` : "—"
+
+function BoTab() {
+  const [d, setD] = useState<any>(null)
+  const [showAll, setShowAll] = useState(false)
+  useEffect(() => { apiJson("/admin/auto-scale/bo").then(setD) }, [])
+  if (!d) return <div style={box}>Đang tải…</div>
+  if (d.error) return <div style={box}>❌ {d.error}</div>
+  const st = d.setting || {}
+  const sets = (d.sets || []).filter((b: any) => showAll || !["TRUOT"].includes(b.state))
+  return <>
+    <div style={box}>
+      <h2 style={h2}>Bộ chảo vàng tự động {st.enabled ? (st.dry_run ? "— đang CHẠY THỬ (chỉ ghi, chưa làm thật)" : "— đang CHẠY THẬT") : "— đang TẮT"}</h2>
+      <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
+        Mỗi <b>bộ</b> = 1 tập bài (post) chạy chung camp. Bộ <b>thắng</b> giữ 3 camp, <b>scale</b> (7 ngày ≥10 đơn ≤28%) giữ 6, <b>yếu</b> (7 ngày 35–50%) giữ 1,
+        quá 50% hoặc chi ≥1tr 0 đơn → <b>nghỉ</b> 14 ngày rồi test lại. Bộ mới / bộ từng thắng lâu chưa chạy → <b>test 1 camp 300k</b>, chấm sau 3 ngày (≥3 đơn ≤35% là thắng).<br />
+        Trong ngày kiểu Xuân: 2 đơn ≤15% → 1tr, ≥4 đơn ≤20% → 2tr, ≥6 đơn ≤20% → 4tr (6h–20h); 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k → tắt tới hết ngày; từ 15h &gt;45% → tắt.
+        23h về 300k, thiếu camp thì hẹn bật lại camp cũ của bộ lúc 5h, vẫn thiếu thì lên camp mới bằng đúng bài cũ (chỉ ngày tốt ≤{st.bad_day_pct}%).<br />
+        Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày, {st.test_per_day} bộ test/ngày, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
+      </div>
+    </div>
+    <div style={box}>
+      <h2 style={h2}>Các bộ <label style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> hiện cả bộ trượt</label></h2>
+      <div style={{ overflowX: "auto" }}><table style={tbl}><thead><tr>
+        <th style={th}>Bộ</th><th style={th}>Page</th><th style={th}>Trạng thái</th><th style={th}>Camp chạy / cần</th><th style={th}>Hôm nay</th><th style={th}>7 ngày</th><th style={th}>60 ngày</th><th style={th}>Chạy gần nhất</th><th style={th}>Ghi chú</th>
+      </tr></thead><tbody>
+        {sets.map((b: any) => <tr key={b.key}>
+          <td style={td}><b>{b.name}</b></td><td style={td}>{b.page}</td>
+          <td style={td}><span style={{ color: BO_COLOR[b.state] || "#111", fontWeight: 600 }}>{b.label}</span>{b.locked ? " 🔒" : ""}<div style={{ fontSize: 11, color: "#6b7280" }}>từ {b.state_since}</div></td>
+          <td style={td}>{b.alive} / {b.target}<div style={{ fontSize: 11, color: "#6b7280" }}>{b.camps} camp từng chạy</div></td>
+          <td style={td}>{aggCell(b.today)}</td><td style={td}>{aggCell(b.w7)}</td><td style={td}>{aggCell(b.all)}</td>
+          <td style={td}>{b.last || "—"}</td><td style={{ ...td, fontSize: 12, color: "#4b5563", maxWidth: 360 }}>{b.note}</td>
+        </tr>)}
+      </tbody></table></div>
+    </div>
+    <div style={box}>
+      <h2 style={h2}>Nhật ký</h2>
+      <div style={{ overflowX: "auto" }}><table style={tbl}><thead><tr><th style={th}>Ngày</th><th style={th}>Giờ</th><th style={th}>Việc</th><th style={th}>Camp</th><th style={th}>Lý do</th></tr></thead><tbody>
+        {(d.logs || []).map((l: any) => <tr key={l.id} style={l.ok ? undefined : { background: "#fef2f2" }}>
+          <td style={td}>{String(l.date).slice(0, 10)}</td><td style={td}>{l.at}</td>
+          <td style={td}>{BO_ACT[l.action] || l.action}{l.dry ? <span style={{ color: "#9ca3af" }}> (thử)</span> : ""}</td>
+          <td style={{ ...td, fontSize: 12 }}>{l.campaign_name || "—"}{l.new_budget && l.action !== "tat" ? <div style={{ color: "#6b7280" }}>{l.old_budget ? k(l.old_budget) + " → " : ""}{k(l.new_budget)}</div> : null}</td>
+          <td style={{ ...td, fontSize: 12 }}>{l.reason}{l.error ? <div style={{ color: "#dc2626" }}>{l.error}</div> : null}</td>
+        </tr>)}
+      </tbody></table></div>
+    </div>
+  </>
+}
+
 function LaunchChecks() {
   const [rows, setRows] = useState<any[] | null>(null)
   useEffect(() => { apiJson("/admin/auto-scale/checks?days=3").then((d) => setRows(d?.checks || [])) }, [])
