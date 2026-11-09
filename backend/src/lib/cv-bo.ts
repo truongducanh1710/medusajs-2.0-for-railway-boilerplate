@@ -29,6 +29,7 @@ const LINK_DEFAULT = "https://www.giadungphanviet.shop/chaoultratitanmua1tang4"
 const ACCOUNTS: Record<string, string> = {
   ADS344: "act_1397084955139677", ADS342: "act_741222868885235", ADS329: "act_899712815703406", ADS349: "act_1108526648426194",
 }
+const ACC_PRIORITY = ["ADS344", "ADS342", "ADS329", "ADS349"]
 const PAGE_CODE: Record<string, string> = {
   "1137319289463834": "MĐGD", "693411540511731": "SMH", "609893108864013": "TICS", "1001347993069244": "VIETMATE",
 }
@@ -391,7 +392,8 @@ async function pickAccount(setKey: string, D: BoData, aliveByAcc: Map<string, nu
   const red = new Set(health.filter((h: any) => h.muc === "do").map((h: any) => String(h.account_id).replace(/^act_/, "")))
   const cand = ok.filter(([, id]) => !red.has(id.replace(/^act_/, "")))
   if (!cand.length) return null
-  cand.sort((a, b) => (aliveByAcc.get(a[1]) || 0) - (aliveByAcc.get(b[1]) || 0))
+  // User 9/11: chảo vàng ưu tiên tài khoản ADS344 → ADS342 → ADS329 (ADS349 cuối) — không chia đều theo số camp
+  cand.sort((a, b) => ACC_PRIORITY.indexOf(a[0]) - ACC_PRIORITY.indexOf(b[0]))
   return { code: cand[0][0], id: cand[0][1] }
 }
 
