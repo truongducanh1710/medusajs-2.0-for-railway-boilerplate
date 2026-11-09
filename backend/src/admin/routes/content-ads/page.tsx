@@ -20,7 +20,7 @@ type Row = {
   preview: Preview | null
   spend_today: number; spend_7d: number; ctr_7d: number | null; cpm_7d: number | null; orders_7d: number
 }
-type Data = { generated_at: string; accounts_checked: number; errors: { account: string; error: string }[]; rows: Row[] }
+type Data = { generated_at: string | null; accounts_checked: number; syncing?: boolean; errors: { account: string; error: string }[]; rows: Row[] }
 type GroupBy = "" | "title" | "product" | "account" | "mkt" | "page"
 type SortBy = "spend_today" | "spend_7d" | "created_time"
 
@@ -231,11 +231,13 @@ function ContentAdsPage() {
   const [view, setView] = useState<"cards" | "table">("cards")
   const [openId, setOpenId] = useState<string | null>(null)
 
+  // Mở tab chỉ đọc DB; "Làm mới" mới gọi FB (POST sync) rồi đọc lại. Job nền tự đồng bộ 30 phút/lần.
   const load = useCallback(async (refresh = false) => {
     setLoading(true)
     setErr("")
     try {
-      const d = await apiJson(`/admin/ad-content${refresh ? "?refresh=1" : ""}`)
+      if (refresh) await apiJson("/admin/ad-content/sync", "POST")
+      const d = await apiJson("/admin/ad-content")
       if (d) setData(d)
     } catch (e: any) {
       setErr(e.message || "Không tải được dữ liệu")
@@ -287,16 +289,18 @@ function ContentAdsPage() {
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Content ads đang chạy</h1>
           <div style={{ ...sub, fontSize: 13, marginTop: 2 }}>
-            {data ? `Khách thấy gì trên Facebook. Dữ liệu lúc ${dt(data.generated_at)}, đã đọc ${data.accounts_checked} tài khoản` : "Đang đọc từ Facebook, lần đầu có thể mất khoảng 1 phút..."}
+            {data
+              ? `Khách thấy gì trên Facebook. Cập nhật lúc ${data.generated_at ? dt(data.generated_at) : "chưa có"} (${data.accounts_checked} tài khoản), tự cập nhật 30 phút/lần`
+              : "Đang tải..."}
           </div>
         </div>
-        <button style={btn} disabled={loading} onClick={() => load(true)}>{loading ? "Đang tải..." : "Làm mới từ Facebook"}</button>
+        <button style={btn} disabled={loading} onClick={() => load(true)}>{loading ? (data ? "Đang đọc Facebook..." : "Đang tải...") : "Làm mới từ Facebook"}</button>
       </div>
 
       {err && <div style={{ ...notice, background: "#fef2f2", borderColor: "#fecaca", color: "#991b1b" }}>{err}</div>}
       {!!data?.errors.length && (
         <div style={notice}>
-          <b>Không đọc được {data.errors.length} tài khoản, ad của các tài khoản này không có trong trang:</b>{" "}
+          <b>Không đọc được {data.errors.length} tài khoản, đang hiện ad theo lần đọc được gần nhất:</b>{" "}
           {data.errors.map((e) => e.account).join(", ")}
         </div>
       )}
@@ -410,7 +414,7 @@ function ContentAdsPage() {
 
       {!rows.length && (
         <div style={{ ...sub, fontSize: 13, textAlign: "center", padding: 32 }}>
-          {loading ? "Đang đọc từ Facebook, lần đầu có thể mất khoảng 1 phút..." : "Không có ad nào khớp bộ lọc"}
+          {loading ? "Đang tải..." : "Không có ad nào khớp bộ lọc"}
         </div>
       )}
 
