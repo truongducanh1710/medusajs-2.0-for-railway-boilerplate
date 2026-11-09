@@ -241,9 +241,12 @@ export async function loadData(withFb = true): Promise<BoData> {
 }
 
 // ── Ghi nhật ký / thao tác FB ────────────────────────────────────────────────
+// Xem trước (preview): không ghi gì vào DB, gom các dòng "lẽ ra" trả về cho người xem
+let previewSink: any[] | null = null
 async function logRow(o: { action: string; bo_key?: string | null; camp?: CampInfo | null; old_budget?: number | null; new_budget?: number | null
   reason: string; detail?: any; dry: boolean; ok?: boolean; error?: string | null; date?: string }) {
   const n = vnNow()
+  if (previewSink) { previewSink.push({ at: `${n.hour}:${String(n.minute).padStart(2, "0")}`, action: o.action, camp: o.camp?.name ?? null, old_budget: o.old_budget ?? null, new_budget: o.new_budget ?? null, reason: o.reason, error: o.error ?? null }); return }
   await getPool().query(
     `INSERT INTO cv_bo_log (date, at, action, bo_key, campaign_id, campaign_name, old_budget, new_budget, reason, detail, dry, ok, error)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13)`,
@@ -362,8 +365,8 @@ async function syncBoTable(D: BoData, asOf: string, dry: boolean): Promise<Map<s
     if (M.has(s.key)) continue
     const st = initState(s.key, D, asOf); if (!st) continue
     const row: BoRow = { key: s.key, name: s.name, page_id: s.page, posts: s.posts, state: st.state, state_since: st.since, extended: false, locked: false, note: st.why }
-    // Bảng bộ là trạng thái (không phải thao tác FB) — ghi cả khi chạy thử để xem trước được
-    await pool.query(`INSERT INTO cv_bo (key, name, page_id, posts, state, state_since, note) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7) ON CONFLICT (key) DO NOTHING`,
+    // Bảng bộ là trạng thái (không phải thao tác FB) — ghi cả khi chạy thử để xem trước được (trừ preview)
+    if (!previewSink) await pool.query(`INSERT INTO cv_bo (key, name, page_id, posts, state, state_since, note) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7) ON CONFLICT (key) DO NOTHING`,
       [row.key, row.name, row.page_id, JSON.stringify(row.posts), row.state, row.state_since, row.note])
     await logRow({ action: "state", bo_key: s.key, reason: `${s.name}: xếp lần đầu ${STATE_LABEL[st.state]} — ${st.why}`, dry })
     M.set(s.key, row)
@@ -667,8 +670,13 @@ export async function runSummary(st: CvBoSetting, userModule?: any) {
 }
 
 // ── Điều phối theo giờ (cron 30 phút) ────────────────────────────────────────
-export async function runCvBo(userModule?: any, force?: "check" | "night" | "morning" | "summary") {
+export async function runCvBo(userModule?: any, force?: "check" | "night" | "morning" | "summary" | "preview") {
   const st = await getSetting()
+  if (force === "preview") {
+    // Xem trước lượt 23h với số liệu hiện tại: luôn chạy thử, không ghi DB, không gọi FB ghi
+    previewSink = []
+    try { const r = await runNight({ ...st, dry_run: true }); return { ...r, would: previewSink } } finally { previewSink = null }
+  }
   if (!st.enabled && !force) return { skipped: "tắt" }
   const { date, hour } = vnNow()
   const once = async (mode: string, fn: () => Promise<any>) => {
