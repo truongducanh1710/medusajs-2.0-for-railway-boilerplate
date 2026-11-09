@@ -191,7 +191,7 @@ export function syncAdContent(): Promise<SyncResult> {
   return running
 }
 
-async function loadProducts(): Promise<{ code: string; name: string }[]> {
+export async function loadProducts(): Promise<{ code: string; name: string }[]> {
   const { rows } = await getPool().query(`SELECT code, name FROM mkt_product WHERE active AND code IS NOT NULL AND code <> ''`)
   return rows
     .map((r: any) => ({ code: String(r.code).toUpperCase(), name: String(r.name) }))
@@ -199,7 +199,7 @@ async function loadProducts(): Promise<{ code: string; name: string }[]> {
 }
 
 /** Mã SP lấy từ tên camp rồi tới tên ad; mkt_product là nguồn tên SP, không có thì lấy đoạn tên trong tên camp. */
-function resolveProduct(campName: string, adName: string, mkt: string, products: { code: string; name: string }[]) {
+export function resolveProduct(campName: string, adName: string, mkt: string, products: { code: string; name: string }[]) {
   for (const src of [campName, adName]) {
     const up = src.toUpperCase()
     const hit = products.find((p) => up.includes(p.code))

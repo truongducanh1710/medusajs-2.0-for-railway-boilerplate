@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react"
 import { apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
+import { ContentVideoTab } from "../../components/content-video-tab"
 
 type Card = {
   type: "video" | "image"; video_url: string | null; poster: string | null; aspect_ratio: number | null; duration_ms: number | null
@@ -217,6 +218,39 @@ function DetailModal({ r, onClose }: { r: Row; onClose: () => void }) {
   )
 }
 
+type Tab = "ads" | "video"
+const TABS: { key: Tab; label: string }[] = [
+  { key: "ads", label: "Ad đang chạy" },
+  { key: "video", label: "Hiệu quả theo video" },
+]
+const tabFromUrl = (): Tab => (new URLSearchParams(window.location.search).get("tab") === "video" ? "video" : "ads")
+
+/** Tab chuyển bằng ?tab= (không dùng react-router-dom trong admin route). */
+function ContentPage() {
+  const [tab, setTab] = useState<Tab>(tabFromUrl)
+  const choose = (t: Tab) => {
+    setTab(t)
+    const u = new URL(window.location.href)
+    if (t === "ads") u.searchParams.delete("tab")
+    else u.searchParams.set("tab", t)
+    history.replaceState(history.state, "", u.toString())
+  }
+  return (
+    <div style={{ padding: 16, fontSize: 13, color: "var(--fg-base, #111827)" }}>
+      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border-base, #e5e7eb)", marginBottom: 14 }} role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => choose(t.key)}
+            style={{ cursor: "pointer", padding: "8px 14px", border: 0, background: "none", color: "inherit", fontSize: 14,
+              fontWeight: tab === t.key ? 700 : 500, borderBottom: tab === t.key ? "2px solid var(--fg-base, #111827)" : "2px solid transparent", marginBottom: -1 }}
+          >{t.label}</button>
+        ))}
+      </div>
+      {tab === "ads" ? <ContentAdsPage /> : <ContentVideoTab />}
+    </div>
+  )
+}
+
 function ContentAdsPage() {
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(false)
@@ -284,10 +318,10 @@ function ContentAdsPage() {
   const all = data?.rows || []
 
   return (
-    <div style={{ padding: 16, fontSize: 13, color: "var(--fg-base, #111827)" }}>
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Content ads đang chạy</h1>
+          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Content ads đang chạy</h1>
           <div style={{ ...sub, fontSize: 13, marginTop: 2 }}>
             {data
               ? `Khách thấy gì trên Facebook. Cập nhật lúc ${data.generated_at ? dt(data.generated_at) : "chưa có"} (${data.accounts_checked} tài khoản), tự cập nhật 30 phút/lần`
@@ -477,4 +511,4 @@ export const config = defineRouteConfig({
   label: "Content ads", rank: 4,
 })
 
-export default withRouteGuard(ContentAdsPage)
+export default withRouteGuard(ContentPage)

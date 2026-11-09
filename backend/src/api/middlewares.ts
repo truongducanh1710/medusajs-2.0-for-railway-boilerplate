@@ -344,6 +344,9 @@ export default defineMiddlewares({
     { matcher: "/admin/ad-content*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     // Làm mới từ FB: chỉ đọc FB rồi ghi bảng ad_content, không đổi gì trên tài khoản ads
     { matcher: "/admin/ad-content/sync", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
+    // Theo video: đồng bộ chỉ đọc FB; lời thoại gọi Gemini (tốn phí nhỏ, chỉ khi bấm)
+    { matcher: "/admin/ad-content/videos/sync", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/ad-content/videos/transcript", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/report/camp-control*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/camp-control/verify", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
