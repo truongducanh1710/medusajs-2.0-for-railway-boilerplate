@@ -232,11 +232,22 @@ export async function loadData(withFb = true): Promise<BoData> {
     const s = sets.get(key) || { key, posts: posts.map((p) => ({ post: p, vd: String(m.get(p) || "?") })), page: posts[0].split("_")[0], name: "", camps: [], prod: camps.get(cid)!.prod || "CV" }
     s.camps.push(cid); camps.get(cid)!.bo = key; sets.set(key, s)
   }
-  for (const m of mine) { // camp hệ thống vừa lên, chưa có số liệu ad
+  // Bộ thêm tay chưa từng có số liệu ad (bộ test từ đầu năm, KGV VD5…) — vẫn phải có trong sets để camp gắn vào được tính,
+  // không thì bộ báo "còn thiếu camp" và lên trùng (preview 9/11)
+  const { rows: boRows } = await pool.query(`SELECT key, posts, page_id, product FROM cv_bo`)
+  const boByKey = new Map(boRows.map((b: any) => [b.key, b]))
+  for (const m of mine) { // camp hệ thống vừa lên / gắn tay, chưa có số liệu ad
     if (!m.bo_key) continue
     const c = camps.get(m.campaign_id)!; if (c.bo) continue
     c.bo = m.bo_key
-    const s = sets.get(m.bo_key); if (s && !s.camps.includes(m.campaign_id)) s.camps.push(m.campaign_id)
+    let s = sets.get(m.bo_key)
+    const b: any = boByKey.get(m.bo_key)
+    if (!s && b) {
+      const posts = (Array.isArray(b.posts) ? b.posts : []).map((p: any) => ({ post: String(p.post), vd: String(p.vd || "?") }))
+      s = { key: b.key, posts, page: b.page_id || (posts[0]?.post || "").split("_")[0], name: "", camps: [], prod: b.product || "CV" }
+      sets.set(b.key, s)
+    }
+    if (s && !s.camps.includes(m.campaign_id)) s.camps.push(m.campaign_id)
   }
   for (const s of sets.values()) s.name = "VD" + s.posts.map((p) => p.vd.replace(/^VD/i, "")).join("+")
 
@@ -759,7 +770,9 @@ export async function boOverview() {
       alive: camps.filter((c) => c.fb_status === "ACTIVE" && !c.retired).length, camps: camps.length,
       last: camps.map((c) => c.last).filter(Boolean).sort().pop() || null, today: t, w7, all }
   }).sort((a: any, b: any) => (TARGET[b.state] ?? 0) - (TARGET[a.state] ?? 0) || b.all.ds - a.all.ds)
-  const { rows: logs } = await getPool().query(`SELECT * FROM cv_bo_log WHERE action <> 'run' ORDER BY created_at DESC LIMIT 300`)
+  const { rows: logs0 } = await getPool().query(`SELECT * FROM cv_bo_log WHERE action <> 'run' ORDER BY created_at DESC LIMIT 500`)
+  const boProd = new Map(rows.map((b: any) => [b.key, b.product || "CV"]))
+  const logs = logs0.map((l: any) => ({ ...l, product: boProd.get(l.bo_key) || prodOf(l.campaign_name || "")?.key || null })) // tab con theo sản phẩm
   const setting = await getSetting()
   return { setting, sets, logs, today, products: PRODUCTS.map((P) => ({ key: P.key, label: P.label, on: prodOn(setting, P.key), accounts: P.accounts })) }
 }

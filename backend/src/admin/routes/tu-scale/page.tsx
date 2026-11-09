@@ -142,7 +142,7 @@ function TuScalePage() {
     <div style={{ padding: 20, maxWidth: 1400 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Tự scale camp theo giờ</h1>
       <div style={{ display: "flex", gap: 6, margin: "12px 0" }}>
-        {([["dieu-khien", "Điều khiển"], ["bo", "Bộ chảo vàng"], ["video", "Theo dõi video"], ["seeding", "Mẫu seeding"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
+        {([["dieu-khien", "Điều khiển"], ["bo", "Bộ tự động"], ["video", "Theo dõi video"], ["seeding", "Mẫu seeding"], ["luat", "Luật hiện tại"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...btn, ...(tab === k ? { background: "#111827", color: "#fff", borderColor: "#111827" } : {}) }}>{label}</button>
         ))}
       </div>
@@ -542,12 +542,29 @@ const aggCell = (a: any) => a && a.s > 0 ? `${k(a.s)} · ${a.o}đ · ${a.ds > 0 
 function BoTab() {
   const [d, setD] = useState<any>(null)
   const [showAll, setShowAll] = useState(false)
+  // Tab con theo sản phẩm (9/11): ?sp=CV|KGV
+  const [sp, setSp] = useState<string>(() => { try { return new URLSearchParams(window.location.search).get("sp") || "CV" } catch { return "CV" } })
+  const pickSp = (x: string) => {
+    setSp(x)
+    try { const u = new URL(window.location.href); u.searchParams.set("sp", x); window.history.replaceState(null, "", u.toString()) } catch {}
+  }
   useEffect(() => { apiJson("/admin/auto-scale/bo").then(setD) }, [])
   if (!d) return <div style={box}>Đang tải…</div>
   if (d.error) return <div style={box}>❌ {d.error}</div>
   const st = d.setting || {}
-  const sets = (d.sets || []).filter((b: any) => showAll || !["TRUOT"].includes(b.state))
+  const prods: any[] = d.products?.length ? d.products : [{ key: "CV", label: "Chảo vàng", on: true }]
+  const cur = prods.find((p) => p.key === sp) || prods[0]
+  const allOfSp = (d.sets || []).filter((b: any) => (b.product || "CV") === cur.key)
+  const sets = allOfSp.filter((b: any) => showAll || !["TRUOT"].includes(b.state))
+  const logs = (d.logs || []).filter((l: any) => (l.product || "CV") === cur.key)
+  const cnt = (key: string) => (d.sets || []).filter((b: any) => (b.product || "CV") === key && !["TRUOT", "NGHI", "HOAN"].includes(b.state)).length
   return <>
+    <div style={{ display: "flex", gap: 6, margin: "0 0 12px", flexWrap: "wrap" }}>
+      {prods.map((p) => <button key={p.key} onClick={() => pickSp(p.key)}
+        style={{ ...btnSm, padding: "4px 12px", ...(cur.key === p.key ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" } : {}) }}>
+        {p.label} · {cnt(p.key)} bộ{p.on ? "" : " (tắt)"}
+      </button>)}
+    </div>
     <div style={box}>
       <h2 style={h2}>Bộ tự động ({(d.products || []).map((p: any) => `${p.label} ${p.on ? "bật" : "tắt"}`).join(", ") || "chảo vàng"}) {st.enabled ? (st.dry_run ? "— đang CHẠY THỬ (chỉ ghi, chưa làm thật)" : "— đang CHẠY THẬT") : "— đang TẮT"}</h2>
       <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
@@ -559,12 +576,12 @@ function BoTab() {
       </div>
     </div>
     <div style={box}>
-      <h2 style={h2}>Các bộ <label style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> hiện cả bộ trượt</label></h2>
+      <h2 style={h2}>Các bộ {cur.label} ({allOfSp.length}) <label style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> hiện cả bộ trượt</label></h2>
       <div style={{ overflowX: "auto" }}><table style={tbl}><thead><tr>
-        <th style={th}>Bộ</th><th style={th}>Sản phẩm</th><th style={th}>Page</th><th style={th}>Trạng thái</th><th style={th}>Camp chạy / cần</th><th style={th}>Hôm nay</th><th style={th}>7 ngày</th><th style={th}>60 ngày</th><th style={th}>Chạy gần nhất</th><th style={th}>Ghi chú</th>
+        <th style={th}>Bộ</th><th style={th}>Page</th><th style={th}>Trạng thái</th><th style={th}>Camp chạy / cần</th><th style={th}>Hôm nay</th><th style={th}>7 ngày</th><th style={th}>60 ngày</th><th style={th}>Chạy gần nhất</th><th style={th}>Ghi chú</th>
       </tr></thead><tbody>
         {sets.map((b: any) => <tr key={b.key}>
-          <td style={td}><b>{b.name}</b>{b.state === "QUEUE" && b.prio ? <div style={{ fontSize: 11, color: "#6b7280" }}>ưu tiên {b.prio}</div> : null}</td><td style={td}>{b.product_label || "Chảo vàng"}</td><td style={td}>{b.page}</td>
+          <td style={td}><b>{b.name}</b>{b.state === "QUEUE" && b.prio ? <div style={{ fontSize: 11, color: "#6b7280" }}>ưu tiên {b.prio}</div> : null}</td><td style={td}>{b.page}</td>
           <td style={td}><span style={{ color: BO_COLOR[b.state] || "#111", fontWeight: 600 }}>{b.label}</span>{b.locked ? " 🔒" : ""}<div style={{ fontSize: 11, color: "#6b7280" }}>từ {b.state_since}</div></td>
           <td style={td}>{b.alive} / {b.target}<div style={{ fontSize: 11, color: "#6b7280" }}>{b.camps} camp từng chạy</div></td>
           <td style={td}>{aggCell(b.today)}</td><td style={td}>{aggCell(b.w7)}</td><td style={td}>{aggCell(b.all)}</td>
@@ -573,9 +590,9 @@ function BoTab() {
       </tbody></table></div>
     </div>
     <div style={box}>
-      <h2 style={h2}>Nhật ký</h2>
+      <h2 style={h2}>Nhật ký {cur.label}</h2>
       <div style={{ overflowX: "auto" }}><table style={tbl}><thead><tr><th style={th}>Ngày</th><th style={th}>Giờ</th><th style={th}>Việc</th><th style={th}>Camp</th><th style={th}>Lý do</th></tr></thead><tbody>
-        {(d.logs || []).map((l: any) => <tr key={l.id} style={l.ok ? undefined : { background: "#fef2f2" }}>
+        {logs.slice(0, 300).map((l: any) => <tr key={l.id} style={l.ok ? undefined : { background: "#fef2f2" }}>
           <td style={td}>{String(l.date).slice(0, 10)}</td><td style={td}>{l.at}</td>
           <td style={td}>{BO_ACT[l.action] || l.action}{l.dry ? <span style={{ color: "#9ca3af" }}> (thử)</span> : ""}</td>
           <td style={{ ...td, fontSize: 12 }}>{l.campaign_name || "—"}{l.new_budget && l.action !== "tat" ? <div style={{ color: "#6b7280" }}>{l.old_budget ? k(l.old_budget) + " → " : ""}{k(l.new_budget)}</div> : null}</td>
