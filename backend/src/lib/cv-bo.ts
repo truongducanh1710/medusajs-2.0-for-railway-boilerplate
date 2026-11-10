@@ -128,6 +128,8 @@ export function ensureCvBoTables(): Promise<void> {
       -- 9/11: nhiều sản phẩm (CV chảo vàng, KGV kệ gia vị); cài đặt riêng theo SP: { "KGV": { "enabled": true, "max_new_day": 2, "test_per_day": 1 } }
       ALTER TABLE cv_bo ADD COLUMN IF NOT EXISTS product TEXT NOT NULL DEFAULT 'CV';
       ALTER TABLE cv_bo_setting ADD COLUMN IF NOT EXISTS products JSONB NOT NULL DEFAULT '{}'::jsonb;
+      -- 10/11: camp cũ tốt xấu 3 ngày liền → nghỉ tới hết ngày rest_until rồi 5h hôm sau bật lại
+      ALTER TABLE cv_bo_camp ADD COLUMN IF NOT EXISTS rest_until DATE;
     `)
   })().catch((e) => { _ready = null; throw e })
   return _ready
@@ -173,7 +175,7 @@ type Agg = { s: number; o: number; ds: number; days: number }
 const zero = (): Agg => ({ s: 0, o: 0, ds: 0, days: 0 })
 export type CampInfo = {
   id: string; name: string; acc: string; bo: string | null; first: string | null; last: string | null
-  fb_status?: string; fb_effective?: string; budget?: number; created?: string; retired?: boolean; prod?: string | null
+  fb_status?: string; fb_effective?: string; budget?: number; created?: string; retired?: boolean; prod?: string | null; rest_until?: string | null
 }
 export type BoData = {
   today: string
@@ -199,7 +201,7 @@ export async function loadData(withFb = true): Promise<BoData> {
        FROM mkt_ads_cost_ad a JOIN ad_video_map m ON m.ad_id = a.ad_id
       WHERE a.deleted_at IS NULL AND a.mkt_name = ANY($1) AND a.date >= $2::date AND m.post_id IS NOT NULL`,
     [MKTS, from]).then((r) => ({ rows: r.rows.filter((x: any) => cvCamp.has(x.c)) }))
-  const { rows: mine } = await pool.query(`SELECT * FROM cv_bo_camp`)
+  const { rows: mine } = await pool.query(`SELECT *, rest_until::text rest_until_s FROM cv_bo_camp`)
   const { rows: ord } = await pool.query(
     `SELECT (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d, raw->>'p_utm_campaign' ca, raw->>'p_utm_source' so,
             ${ORDER_REVENUE_SQL} ds
@@ -219,6 +221,7 @@ export async function loadData(withFb = true): Promise<BoData> {
   for (const m of mine) {
     if (!camps.has(m.campaign_id)) camps.set(m.campaign_id, { id: m.campaign_id, name: m.campaign_name || "", acc: "", bo: m.bo_key, first: null, last: null, prod: prodOf(m.campaign_name)?.key ?? null })
     camps.get(m.campaign_id)!.retired = !!m.retired
+    camps.get(m.campaign_id)!.rest_until = m.rest_until_s || null
   }
   const ordersToday = new Map<string, { o: number; ds: number }>()
   for (const o of ord) {
@@ -560,11 +563,31 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     if (c.fb_status !== "ACTIVE" && !pausedToday.has(c.id)) continue
     if ((c.budget || 0) > BASE) { await doBudget(c, BASE, "reset", `23h về nền 300k (đang ${vnd(c.budget || 0)})`, dry) }
   }
-  // 2. Camp xấu 3 ngày liền → loại (không bật lại nữa)
+  // User 10/11: camp CŨ TỐT không theo trạng thái bộ — ngày gần nhất tốt thì được chạy; chỉ khi xấu 3 ngày liền mới nghỉ 2 ngày rồi bật lại.
+  // Camp cũ tốt = chạy ≥7 ngày, 100 ngày ≥10 đơn, chi ≥2tr, ≤33% (cùng mốc "bộ từng thắng").
+  const dayBad = (id: string, d: string) => { const x = D.sum(id, d, d); return x.s >= 200_000 && (x.o === 0 || pctOf(x.s, x.ds) > 45) }
+  const oldGood = (c: CampInfo) => {
+    if (!c.first || c.first > addD(today, -7)) return false
+    const x = D.sum(c.id, addD(today, -DATA_DAYS), today); return x.o >= 10 && x.s >= 2_000_000 && pctOf(x.s, x.ds) <= 33
+  }
+  const resting = (c: CampInfo) => !!c.rest_until && c.rest_until > today // còn nghỉ ngày mai
+  const restBack = new Set<string>() // hết nghỉ → 5h mai bật lại
+  // 2. Camp xấu 3 ngày liền → loại (không bật lại nữa); camp cũ tốt → nghỉ 2 ngày rồi bật lại
   for (const c of scope) {
     if (c.retired || !(c.fb_status === "ACTIVE" || pausedToday.has(c.id))) continue
-    const bad = [0, 1, 2].every((k) => { const x = D.sum(c.id, addD(today, -k), addD(today, -k)); return x.s >= 200_000 && (x.o === 0 || pctOf(x.s, x.ds) > 45) })
+    const bad = [0, 1, 2].every((k) => dayBad(c.id, addD(today, -k)))
     if (!bad) continue
+    if (oldGood(c)) {
+      const until = addD(today, 2)
+      c.rest_until = until
+      if (!dry) await pool.query(`INSERT INTO cv_bo_camp (campaign_id, bo_key, campaign_name, rest_until) VALUES ($1,$2,$3,$4)
+        ON CONFLICT (campaign_id) DO UPDATE SET rest_until = EXCLUDED.rest_until`, [c.id, c.bo, c.name, until])
+      const why = `Camp cũ tốt xấu 3 ngày liền → nghỉ ${addD(today, 1)} và ${until}, 5h ${addD(until, 1)} bật lại`
+      if (c.fb_status === "ACTIVE") await doStatus(c, "PAUSED", "tat", why, dry)
+      else await logRow({ action: "tat", camp: c, reason: why, dry })
+      out.push(`nghỉ 2 ngày ${c.name}`)
+      continue
+    }
     c.retired = true
     if (!dry) await pool.query(`INSERT INTO cv_bo_camp (campaign_id, bo_key, campaign_name, retired, retired_reason) VALUES ($1,$2,$3,true,$4)
       ON CONFLICT (campaign_id) DO UPDATE SET retired = true, retired_reason = EXCLUDED.retired_reason`, [c.id, c.bo, c.name, "Xấu 3 ngày liền"])
@@ -600,8 +623,16 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     const life = D.sum(id, addD(today, -DATA_DAYS), today)
     const age = c.created ? daysBetween(c.created, today) : 99
     if (age <= 2 && life.o === 0) { out.push(`không bật lại (mới ${age} ngày, chưa có đơn) ${c.name}`); continue }
+    if (resting(c)) continue
     resumeDefault.add(id)
   }
+  for (const c of scope) {
+    if (c.rest_until !== today || c.retired || c.fb_status !== "PAUSED" || resumeDefault.has(c.id)) continue
+    if (await humanPausedRecently(c.id)) continue
+    restBack.add(c.id); resumeDefault.add(c.id); out.push(`hết nghỉ 2 ngày → 5h bật lại ${c.name}`)
+  }
+  // Camp được giữ chạy dù bộ nghỉ / thừa camp: camp cũ tốt (không đang nghỉ) hoặc vừa hết nghỉ
+  const protect = (c: CampInfo) => !c.retired && !resting(c) && (oldGood(c) || restBack.has(c.id))
   const order = ["SCALE", "WIN", "GIU1", "TEST"]
   const pOf = (b: BoRow) => b.product || "CV"
   const w7pct = (k: string) => { const x = D.sumSet(k, addD(today, -6), today); return pctOf(x.s, x.ds) }
@@ -616,7 +647,10 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   for (const b of B.values()) {
     if (order.includes(b.state) || b.locked || b.state === "HOAN" || !ON.has(pOf(b))) continue
     for (const id of D.sets.get(b.key)?.camps || []) {
-      const c = D.camps.get(id)!; resumeDefault.delete(id)
+      const c = D.camps.get(id)!
+      if (inScope(c) && protect(c)) { if (isAlive(c) || resumeDefault.has(c.id)) out.push(`giữ camp cũ tốt ${c.name} (bộ ${STATE_LABEL[b.state]})`); continue }
+      resumeDefault.delete(id)
+      const i = planBat.indexOf(c); if (i >= 0) planBat.splice(i, 1) // camp tắt trong ngày của bộ nghỉ: không bật lại 5h
       if (isAlive(c) && inScope(c)) { await doStatus(c, "PAUSED", "tat", `Bộ ${b.name} ${STATE_LABEL[b.state]} — tắt camp`, dry); out.push(`tắt ${c.name} (bộ ${STATE_LABEL[b.state]})`) }
     }
   }
@@ -664,6 +698,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       const keepN = b.state === "TEST" ? Math.max(target, alive.length) : target
       const keep = alive.slice(0, keepN), extra = alive.slice(keepN)
       for (const c of extra) {
+        if (protect(c)) { if (resumeDefault.has(c.id)) planBat.push(c); total++; out.push(`giữ camp cũ tốt ${c.name} (bộ ${b.name} thừa camp)`); continue }
         if (resumeDefault.has(c.id)) { resumeDefault.delete(c.id); continue }
         await doStatus(c, "PAUSED", "tat", `Bộ ${b.name} ${STATE_LABEL[b.state]}: thừa camp (giữ ${keepN}) — tắt camp kém nhất`, dry); out.push(`tắt thừa ${c.name}`)
       }
