@@ -342,13 +342,7 @@ async function loggedToday(action: string, date: string, dry: boolean, campaignI
   return rows
 }
 
-/** Camp người tắt tay trên web trong 3 ngày qua → hệ thống không tự bật lại (người đã quyết). */
-async function humanPausedRecently(campaignId: string): Promise<boolean> {
-  const { rows } = await getPool().query(
-    `SELECT 1 FROM camp_action_log WHERE campaign_id = $1 AND action = 'pause' AND source NOT IN ('cv_bo','auto_scale')
-        AND created_at > now() - interval '3 days' LIMIT 1`, [campaignId]).catch(() => ({ rows: [] as any[] }))
-  return rows.length > 0
-}
+// User 10/11: bỏ chặn "người tắt tay 3 ngày thì không tự bật" — camp tắt tay mà theo luật vẫn được bật thì hệ thống cứ bật.
 
 /** Camp chảo vàng (giữ cho chỗ cũ gọi) */
 export const isCv = (name: string) => prodOf(name)?.key === "CV"
@@ -577,6 +571,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   const pool = getPool()
   const scope = [...D.camps.values()].filter(inScope)
   const pausedToday = new Set((await loggedToday("tat", today, dry)).map((r) => r.campaign_id))
+  // User 10/11: camp người tắt tay hôm nay (đã chạy hôm nay, giờ đang tắt) xét như camp hệ thống tắt — về nền, chấm 3 ngày xấu, đủ luật thì 5h bật lại
+  for (const c of scope) if (!c.retired && c.fb_status === "PAUSED" && D.sum(c.id, today, today).s > 0) pausedToday.add(c.id)
   const out: string[] = []
 
   // 1. Về nền 300k
@@ -652,7 +648,6 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   }
   for (const c of scope) {
     if (c.rest_until !== today || c.retired || c.fb_status !== "PAUSED" || resumeDefault.has(c.id)) continue
-    if (await humanPausedRecently(c.id)) continue
     restBack.add(c.id); resumeDefault.add(c.id); out.push(`hết nghỉ 2 ngày → 5h bật lại ${c.name}`)
   }
   // Camp được giữ chạy dù bộ nghỉ / thừa camp: camp cũ tốt (không đang nghỉ) hoặc vừa hết nghỉ
@@ -738,7 +733,6 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
         if (keep.includes(c) || c.retired || c.fb_status !== "PAUSED" || !c.last || c.last < addD(today, -14)) continue
         const x = D.sum(c.id, addD(c.last, -2), c.last)
         if (x.s > 0 && pctOf(x.s, x.ds) > 40) continue
-        if (await humanPausedRecently(c.id)) continue
         cands.push(c)
       }
       cands.sort((a, c) => { const x = D.sum(a.id, addD(today, -DATA_DAYS), today), y = D.sum(c.id, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })
@@ -765,7 +759,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!)
       const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14))
       let ok = false
-      if (old.length && !(await humanPausedRecently(old[0].id))) { planBat.push(old[0]); ok = true }
+      if (old.length) { planBat.push(old[0]); ok = true }
       else {
         const acc = await pickAccount(b.key, D, aliveByAcc, excl, P)
         if (acc) { ok = !!(await launchCamp({ bo: b, acc, start: tomorrow, suffix: `T${sc.length + 1}`, kieu: "test", reason: `Test lại bộ ${b.name} (từng thắng, lâu chưa chạy)`, excl, dry })); if (ok) { newCount++; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1) } }
@@ -792,7 +786,6 @@ export async function runMorning(st: CvBoSetting) {
   for (const p of plan) {
     const c = D.camps.get(p.campaign_id); if (!c || c.retired) continue
     if (c.fb_status === "ACTIVE") continue
-    if (await humanPausedRecently(c.id)) continue
     await doStatus(c, "ACTIVE", "bat", "5h bật lại ở 300k (theo kế hoạch 23h)", dry); n++
   }
   return { resumed: n, planned: plan.length }
