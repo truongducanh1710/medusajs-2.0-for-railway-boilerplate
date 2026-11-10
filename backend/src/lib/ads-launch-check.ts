@@ -113,7 +113,7 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
   const steps: Record<string, Step> = {}
   let detail: any
   try {
-    detail = await fbGet(`/${c.id}?fields=adsets{targeting,promoted_object,start_time},ads{name,effective_status,creative{effective_object_story_id,object_story_spec{video_data{call_to_action}}}}`)
+    detail = await fbGet(`/${c.id}?fields=adsets{targeting,promoted_object,start_time,ad_set_goal},ads{name,effective_status,creative{effective_object_story_id,object_story_spec{video_data{call_to_action}}}}`)
   } catch (e: any) {
     steps.doc_camp = step("error", `Không đọc được camp: ${e.message}`)
     return save(c, acc, mkt, steps, ctx.userModule)
@@ -126,7 +126,8 @@ async function checkOne(c: any, acc: string, ctx: { exc: any[]; pageTok: Map<str
   const needBlk = ctx.exc.find((a) => a.account_id === acc && a.kind === "chan_pos")
   const missing: string[] = []
   for (const s of adsets) {
-    const ids = new Set((s.targeting?.excluded_custom_audiences || []).map((x: any) => String(x.id)))
+    // Lifecycle strategy (ad_set_goal type 2, from 9/11): FB moves exclusions into ad_set_goal.existing_customers_exclusions
+    const ids = new Set([...(s.targeting?.excluded_custom_audiences || []).map((x: any) => String(x.id)), ...(s.ad_set_goal?.existing_customers_exclusions || []).map(String)])
     if (!needPx || !ids.has(String(needPx.audience_id))) missing.push(needPx ? "đăng ký 180 ngày" : `tài khoản chưa có tệp đăng ký 180 ngày cho pixel ${pixel}`)
     if (!needBlk || !ids.has(String(needBlk.audience_id))) missing.push(needBlk ? "chặn POS mới" : "tài khoản chưa có tệp chặn POS mới")
   }
