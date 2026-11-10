@@ -6,6 +6,8 @@
 //   TEST trượt → TRUOT. HOAN = người khoá (vd bộ Tết), hệ thống không đụng.
 // Trong ngày theo kiểu Xuân (KINH_NGHIEM 35–37): tăng 300k→1tr khi 2 đơn ≤15%, 1tr→2tr khi ≥4 đơn ≤20%, 2tr→4tr khi ≥6 đơn ≤20% (6–20h);
 // tắt tới hết ngày khi 0 đơn & 0 ĐK FB & chi ≥200k & (CPC ≥13k hoặc chi ≥300k), hoặc từ 15h có đơn mà >45% & chi ≥300k.
+// User 10/11 siết thêm: 0 đơn & chi ≥300k (kể cả có ĐK) → tắt; chi ≥800k & >50% → tắt bất kể giờ; 0 ĐK & CPC ≥30k & chi ≥150k → tắt;
+// 6h camp còn ngân sách >300k mà hôm nay chưa được tăng (đêm không về nền) → về 300k.
 // 23h: về 300k, chấm bộ, lập danh sách bật lại 5h, lên camp mới (chỉ ngày tốt ≤35%) bằng ĐÚNG BÀI CŨ, chạy từ 5h hôm sau.
 // 5h: bật lại theo danh sách. 21h: báo Telegram.
 // Không gắn Tự scale cũ (auto_scale_camp) cho camp của bộ — 2 hệ thống không được cùng chạy trên 1 camp.
@@ -531,10 +533,26 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
     if (r.o === 0 && r.reg === 0 && r.s >= 200_000 && (r.cpc >= 13_000 || r.s >= 300_000)) {
       await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: 0 đơn & chưa ĐK — ${d}`, dry, r); actions++; continue
     }
+    // User 10/11 (S2 359k 1 ĐK 0 đơn, Q2 410k 2 ĐK): có ĐK mà vẫn 0 đơn tới 300k → tắt
+    if (r.o === 0 && r.s >= 300_000) {
+      await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: 0 đơn dù chi ≥300k — ${d}`, dry, r); actions++; continue
+    }
+    // User 10/11 (hộp nhựa VD47 168k CPC 84k): CPC quá cao & chưa ĐK → tắt sớm từ 150k
+    if (r.o === 0 && r.reg === 0 && r.s >= 150_000 && r.cpc >= 30_000) {
+      await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: CPC ≥30k & chưa ĐK — ${d}`, dry, r); actions++; continue
+    }
+    // User 10/11 (NH1 1,43tr 53% lúc 12h): chi lớn lỗ nặng → tắt không đợi 15h
+    if (r.o > 0 && r.s >= 800_000 && r.p > 50) {
+      await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: chi ≥800k mà >50% — ${d}`, dry, r); actions++; continue
+    }
     if (hour >= 15 && r.o > 0 && r.p > 45 && r.s >= 300_000) {
       await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: >45% từ 15h — ${d}`, dry, r); actions++; continue
     }
     const b = c.budget || 0
+    // User 10/11: 6h còn ngân sách >300k mà hôm nay chưa tăng → đêm qua không về nền (lỗi/chạy thử) → về 300k
+    if (hour === 6 && b > BASE && !raisedToday.has(c.id)) {
+      await doBudget(c, BASE, "reset", `6h về nền 300k (đang ${vnd(b)}, đêm qua chưa về nền)`, dry, r); actions++; continue
+    }
     let nb = 0
     if (b <= 400_000 && r.o >= 2 && r.p <= 15) nb = 1_000_000
     else if (b >= 900_000 && b < 2_000_000 && r.o >= 4 && r.p <= 20) nb = 2_000_000
