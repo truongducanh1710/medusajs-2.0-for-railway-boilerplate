@@ -365,8 +365,11 @@ export function evalBo(b: BoRow, D: BoData, asOf: string): { state: string; sinc
   if (b.state === "TEST") {
     const t = D.sumSet(b.key, b.state_since, asOf), days = daysBetween(b.state_since, asOf) + 1, p = pctOf(t.s, t.ds)
     const tag = `test ${days} ngày: chi ${vnd(t.s)}, ${t.o} đơn, ${fmtPct(t.s, t.ds)}`
-    if (t.s >= 300_000 && t.o === 0) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tag}` }
-    if (t.s >= 800_000 && t.o <= 1) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tag}` }
+    // User 10/11: mốc trượt sớm nhân theo số camp đang test của bộ (bộ VD5+15 nhân 3 không trượt sau 1 ngày)
+    const nCamp = Math.max(1, (D.sets.get(b.key)?.camps || []).filter((id) => D.sum(id, b.state_since, asOf).s > 0).length)
+    const tagN = nCamp > 1 ? `${tag}, ${nCamp} camp` : tag
+    if (t.s >= 300_000 * nCamp && t.o === 0) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tagN}` }
+    if (t.s >= 800_000 * nCamp && t.o <= 1) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tagN}` }
     if (days < 3) return keep
     // Camp test chưa tiêu được (FB chưa phân phối / bị tắt) → chưa đủ mẫu, đợi tối đa 7 ngày
     if (t.s < 200_000 && t.o === 0) return days >= 7 ? { state: "TRUOT", since: asOf, extended: false, why: `Trượt — 7 ngày không tiêu được (${tag})` } : keep
