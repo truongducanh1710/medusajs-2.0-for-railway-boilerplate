@@ -577,7 +577,9 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     if (c.retired || !(c.fb_status === "ACTIVE" || pausedToday.has(c.id))) continue
     const bad = [0, 1, 2].every((k) => dayBad(c.id, addD(today, -k)))
     if (!bad) continue
-    if (oldGood(c)) {
+    // User 10/11 (cách 1): đã nghỉ 2 ngày trong 14 ngày qua mà lại xấu 3 ngày liền → dừng hẳn như camp thường
+    const restedRecently = !!c.rest_until && c.rest_until >= addD(today, -14)
+    if (oldGood(c) && !restedRecently) {
       const until = addD(today, 2)
       c.rest_until = until
       if (!dry) await pool.query(`INSERT INTO cv_bo_camp (campaign_id, bo_key, campaign_name, rest_until) VALUES ($1,$2,$3,$4)
@@ -589,9 +591,10 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       continue
     }
     c.retired = true
+    const rWhy = restedRecently ? `Camp cũ tốt đã nghỉ 2 ngày (tới ${c.rest_until}) mà lại xấu 3 ngày liền trong 14 ngày → dừng hẳn` : "Xấu 3 ngày liền"
     if (!dry) await pool.query(`INSERT INTO cv_bo_camp (campaign_id, bo_key, campaign_name, retired, retired_reason) VALUES ($1,$2,$3,true,$4)
-      ON CONFLICT (campaign_id) DO UPDATE SET retired = true, retired_reason = EXCLUDED.retired_reason`, [c.id, c.bo, c.name, "Xấu 3 ngày liền"])
-    await logRow({ action: "retire", camp: c, reason: "Loại camp: xấu 3 ngày liền (mỗi ngày chi ≥200k mà 0 đơn hoặc >45%)", dry })
+      ON CONFLICT (campaign_id) DO UPDATE SET retired = true, retired_reason = EXCLUDED.retired_reason`, [c.id, c.bo, c.name, rWhy])
+    await logRow({ action: "retire", camp: c, reason: `Loại camp: ${rWhy} (mỗi ngày chi ≥200k mà 0 đơn hoặc >45%)`, dry })
     if (c.fb_status === "ACTIVE") await doStatus(c, "PAUSED", "tat", "Loại camp xấu 3 ngày liền", dry)
     out.push(`loại ${c.name}`)
   }
