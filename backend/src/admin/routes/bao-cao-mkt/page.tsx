@@ -141,6 +141,9 @@ function BaoCaoMktPage() {
   const [campTo, setCampTo] = useState(todayVN())
   const [campRangeMode, setCampRangeMode] = useState(false)
   const [campOnlySpend, setCampOnlySpend] = useState(true)
+  // Camp tab: group by product (default on, collapsed); viewer choice remembered per browser
+  const [campByProduct, setCampByProduct] = useState<boolean>(() => { try { return localStorage.getItem("bcm_camp_by_sp") !== "0" } catch { return true } })
+  const [campOpenSp, setCampOpenSp] = useState<Set<string>>(new Set())
 
   // Tab Chi phí SP
   const [spRows, setSpRows] = useState<any[]>([])
@@ -1314,6 +1317,72 @@ function BaoCaoMktPage() {
                 </th>
               )
             }
+            // Group by product: SKU = leading PHVVN... segment, label = 4th name segment (naming convention SKU_d/m_MKT_PRODUCT_...)
+            const spOf = (r: any) => {
+              const parts = String(r.campaign_name ?? "").split("_")
+              const sku = /^PHVVN\w+$/i.test(parts[0] ?? "") ? parts[0].toUpperCase() : "KHÁC"
+              return { sku, label: sku !== "KHÁC" && parts[3] ? parts[3] : "" }
+            }
+            const groups = new Map<string, { sku: string; labels: Map<string, number>; rows: any[] }>()
+            for (const r of sortedCamps) {
+              const { sku, label } = spOf(r)
+              const g = groups.get(sku) || { sku, labels: new Map<string, number>(), rows: [] as any[] }
+              if (label) g.labels.set(label, (g.labels.get(label) || 0) + 1)
+              g.rows.push(r)
+              groups.set(sku, g)
+            }
+            const groupList = [...groups.values()]
+              .map((g) => ({ ...g, spend: g.rows.reduce((x: number, r: any) => x + Number(r.spend ?? 0), 0), label: [...g.labels.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "" }))
+              .sort((a, b) => b.spend - a.spend)
+            const displayRows: any[] = campByProduct
+              ? groupList.flatMap((g) => [{ __group: g }, ...(campOpenSp.has(g.sku) ? g.rows : [])])
+              : sortedCamps
+            const toggleSp = (sku: string) => setCampOpenSp((prev) => { const n = new Set(prev); if (n.has(sku)) n.delete(sku); else n.add(sku); return n })
+            const renderGroupRow = (g: any) => {
+              const rs = g.rows as any[]
+              const sum = (k: string) => rs.reduce((x: number, r: any) => x + Number(r[k] ?? 0), 0)
+              const spd = sum("spend"), imp = sum("impressions"), clk = sum("clicks"), cod = sum("cod_total")
+              const cpm = imp > 0 ? Math.round(spd / imp * 1000) : null
+              const cpc = clk > 0 ? Math.round(spd / clk) : null
+              const ctr = imp > 0 ? Math.round(clk / imp * 10000) / 100 : null
+              const care = cod > 0 ? Math.round(spd / cod * 10000) / 100 : null
+              const active = rs.filter((r) => r.effective_status === "ACTIVE").length
+              const open = campOpenSp.has(g.sku)
+              const mkts = [...new Set(rs.map((r) => r.mkt_name || "KHÁC"))] as string[]
+              const bg = dark ? "#1f2937" : "#f1f5f9"
+              const cell = { padding: "10px 12px", textAlign: "right" as const, fontWeight: 700, background: bg }
+              return (
+                <tr key={"sp_" + g.sku} onClick={() => toggleSp(g.sku)} style={{ cursor: "pointer", borderBottom: `1px solid ${t.rowBorder}`, borderTop: `2px solid ${t.thead}` }}>
+                  <td style={{ ...cell, textAlign: "left", color: t.text, position: "sticky", left: 0, zIndex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: campColWidths.campaign, width: campColWidths.campaign, maxWidth: campColWidths.campaign }}
+                    title={`${g.label || g.sku} — bấm để ${open ? "thu gọn" : "mở"}`}>
+                    <span style={{ display: "inline-block", width: 16, color: t.textMuted }}>{open ? "▼" : "▶"}</span>
+                    {g.label || g.sku}{g.label && <span style={{ fontWeight: 400, color: t.textMuted, fontSize: 11, marginLeft: 6 }}>{g.sku}</span>}
+                  </td>
+                  <td style={{ ...cell, textAlign: "center", position: "sticky", left: campColWidths.campaign, zIndex: 1, fontSize: 12, color: active ? "#1877f2" : t.textMuted }}>{active}/{rs.length} camp</td>
+                  <td style={{ ...cell, textAlign: "center", fontSize: 11, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: campColWidths.mkt }} title={mkts.join(", ")}>{mkts.length === 1 ? <span style={{ color: mktColor(mkts[0]) }}>{mkts[0]}</span> : `${mkts.length} MKT`}</td>
+                  <td style={{ ...cell, color: t.textMuted, fontWeight: 600 }}>{fmtMoney(sum("daily_budget"))}</td>
+                  <td style={{ ...cell, color: t.amber }}>{fmtMoney(spd)}</td>
+                  <td style={{ ...cell, color: t.textMuted, fontWeight: 400 }}>{imp.toLocaleString("vi-VN")}</td>
+                  <td style={{ ...cell, color: t.textMuted, fontWeight: 400 }}>{clk.toLocaleString("vi-VN")}</td>
+                  <td style={{ ...cell, color: cpmColor(cpm) }}>{cpm !== null ? fmtMoney(cpm) : "—"}</td>
+                  <td style={{ ...cell, color: cpcColor(cpc) }}>{cpc !== null ? fmtMoney(cpc) : "—"}</td>
+                  <td style={{ ...cell, color: ctr !== null ? ctrColor(ctr) : t.textMuted }}>{ctr !== null ? ctr + "%" : "—"}</td>
+                  <td style={cell}>
+                    <div style={{ color: t.green }}>{fmtMoney(cod)}</div>
+                    <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>{fmtMoney(sum("cod_confirmed"))} xác nhận</div>
+                  </td>
+                  <td style={{ ...cell, fontSize: 12 }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <span title="Xác nhận" style={{ color: t.green }}>✓{sum("confirmed")}</span>
+                      <span title="Hủy" style={{ color: t.red }}>✕{sum("cancelled")}</span>
+                    </div>
+                    {sum("total_orders") > 0 && <div style={{ fontSize: 10, color: t.textMuted, fontWeight: 400 }}>{sum("total_orders")} tổng</div>}
+                  </td>
+                  <td style={{ ...cell, color: carePctColor(care) }}>{care !== null ? care + "%" : "—"}</td>
+                  {canControl && <td style={cell}></td>}
+                </tr>
+              )
+            }
             return (
           <>
           {sortedCamps.length === 0 && !campLoading ? (
@@ -1323,6 +1392,19 @@ function BaoCaoMktPage() {
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
                 {(filterStatus || kw) ? `${sortedCamps.length}/${campRows.length} camp` : `${campRows.length} camp`}
                 {campRangeMode && <span style={{ marginLeft: 8, color: t.amber }}>📅 Tổng {campFrom} → {campTo}</span>}
+                <span style={{ marginLeft: 12, display: "inline-flex", border: `1px solid ${t.cardBorder}`, borderRadius: 6, overflow: "hidden", verticalAlign: "middle" }}>
+                  {([[true, "Theo SP"], [false, "Danh sách"]] as const).map(([v, lb]) => (
+                    <button key={lb} onClick={() => { setCampByProduct(v); try { localStorage.setItem("bcm_camp_by_sp", v ? "1" : "0") } catch {} }}
+                      style={{ border: "none", padding: "3px 10px", fontSize: 12, cursor: "pointer", fontWeight: 600,
+                        background: campByProduct === v ? "#1877f2" : "transparent", color: campByProduct === v ? "#fff" : t.textMuted }}>{lb}</button>
+                  ))}
+                </span>
+                {campByProduct && groupList.length > 1 && (
+                  <button onClick={() => setCampOpenSp(campOpenSp.size >= groupList.length ? new Set() : new Set(groupList.map((g) => g.sku)))}
+                    style={{ marginLeft: 8, border: "none", background: "transparent", color: "#1877f2", fontSize: 12, cursor: "pointer" }}>
+                    {campOpenSp.size >= groupList.length ? "Thu gọn hết" : "Mở hết"}
+                  </button>
+                )}
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 920 }}>
                 <thead>
@@ -1348,7 +1430,8 @@ function BaoCaoMktPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedCamps.map((row: any) => {
+                  {displayRows.map((row: any) => {
+                    if (row.__group) return renderGroupRow(row.__group)
                     const imp = Number(row.impressions)
                     const clk = Number(row.clicks)
                     const spd = Number(row.spend)
