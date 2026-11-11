@@ -642,7 +642,14 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     const c = D.camps.get(id); if (!c || c.retired || c.fb_status !== "PAUSED" || !inScope(c)) continue
     const life = D.sum(id, addD(today, -DATA_DAYS), today)
     const age = c.created ? daysBetween(c.created, today) : 99
-    if (age <= 2 && life.o === 0) { out.push(`không bật lại (mới ${age} ngày, chưa có đơn) ${c.name}`); continue }
+    if (age <= 2 && life.o === 0) {
+      // User 11/11 (cách B): camp của bộ đang TEST được thêm 1 ngày — ngày 0 đơn đầu tiên vẫn bật lại 5h;
+      // đã có 1 ngày chi ≥200k mà 0 đơn trước hôm nay → không bật (bộ tự trượt khi chi ≥300k/camp mà 0 đơn)
+      const prev = D.sum(id, addD(today, -DATA_DAYS), addD(today, -1))
+      const testSet = c.bo ? B.get(c.bo)?.state === "TEST" : false
+      if (!testSet || prev.s >= 200_000) { out.push(`không bật lại (mới ${age} ngày, chưa có đơn${testSet ? ", đã hết lượt thêm 1 ngày" : ""}) ${c.name}`); continue }
+      out.push(`camp test 0 đơn ngày đầu → cho thêm 1 ngày, 5h bật lại ${c.name}`)
+    }
     if (resting(c)) continue
     resumeDefault.add(id)
   }
@@ -737,6 +744,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       }
       cands.sort((a, c) => { const x = D.sum(a.id, addD(today, -DATA_DAYS), today), y = D.sum(c.id, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })
       for (const c of cands.slice(0, need)) { planBat.push(c); total++; need--; aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1) }
+      // Bộ đang TEST đã có camp chạy rồi (camp đó bị tắt, hết lượt bật lại) → không lên camp mới bằng chính bài vừa hỏng (11/11)
+      if (b.state === "TEST" && sc.length > 0) { out.push(`${b.name} đang test, camp test không được bật lại → không lên mới, chờ chấm`); continue }
       // Vẫn thiếu → lên camp mới bằng bài cũ (chỉ ngày tốt, ≤ max_new_day/ngày của SP)
       while (need > 0 && allowNew && newCount < maxNew - reserveTest && total < st.max_camps) {
         const acc = await pickAccount(b.key, D, aliveByAcc, excl, P)
