@@ -535,6 +535,16 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
     const c: CampInfo = r.c
     if (pausedToday.has(c.id)) continue // đã tắt hôm nay mà người bật lại → tôn trọng tới hết ngày
     const d = `chi ${vnd(r.s)}, ${r.o} đơn${r.o ? " " + Math.round(r.p) + "%" : ""}, ĐK FB ${r.reg}, CPC ${vnd(r.cpc)}`
+    // User 13/11 "kệ và hộp cần tắt sớm hơn": backtest kệ 58 ngày — 5 mốc dưới cắt phần chi về sau ra 48% (mốc cũ 42%).
+    // Hộp CHƯA áp: backtest 18 ngày phần chi bị cắt sớm vẫn ra 17% (10 đơn) — chờ user chốt.
+    if (c.prod === "KGV") {
+      const why = r.o === 0 && r.s >= 200_000 ? "0 đơn dù chi ≥200k"
+        : r.o === 0 && r.reg === 0 && r.s >= 150_000 && r.cpc >= 20_000 ? "CPC ≥20k & chưa ĐK từ 150k"
+        : r.o === 1 && r.s >= 400_000 && r.p > 50 ? "1 đơn mà chi ≥400k >50%"
+        : r.o > 0 && r.s >= 600_000 && r.p > 50 ? "chi ≥600k mà >50%"
+        : hour >= 12 && r.o > 0 && r.s >= 300_000 && r.p > 45 ? ">45% từ 12h" : ""
+      if (why) { await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày (kệ): ${why} — ${d}`, dry, r); actions++; continue }
+    }
     if (r.o === 0 && r.reg === 0 && r.s >= 200_000 && (r.cpc >= 13_000 || r.s >= 300_000)) {
       await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: 0 đơn & chưa ĐK — ${d}`, dry, r); actions++; continue
     }
@@ -559,7 +569,13 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
       await doBudget(c, BASE, "reset", `6h về nền 300k (đang ${vnd(b)}, đêm qua chưa về nền)`, dry, r); actions++; continue
     }
     let nb = 0
-    if (b <= 400_000 && r.o >= 2 && r.p <= 15) nb = 1_000_000
+    // User 13/11 "kệ và hộp tăng ít hơn": nấc nhỏ 300k→600k (≥3 đơn ≤20%) → 1tr (≥5 đơn ≤20%), trần 1tr.
+    // Backtest: hộp mốc cũ ≥2 đơn ≤15% phần sau 44%, mốc ≥3 đơn ≤20% còn 32%; kệ 35%.
+    if (c.prod === "KGV" || c.prod === "TDH") {
+      if (b <= 400_000 && r.o >= 3 && r.p <= 20) nb = 600_000
+      else if (b >= 550_000 && b < 900_000 && r.o >= 5 && r.p <= 20) nb = 1_000_000
+    }
+    else if (b <= 400_000 && r.o >= 2 && r.p <= 15) nb = 1_000_000
     else if (b >= 900_000 && b < 2_000_000 && r.o >= 4 && r.p <= 20) nb = 2_000_000
     else if (b >= 2_000_000 && b < 4_000_000 && r.o >= 6 && r.p <= 20) nb = 4_000_000
     if (!nb || nb <= b) continue
