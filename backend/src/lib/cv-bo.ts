@@ -63,6 +63,8 @@ export const STATE_LABEL: Record<string, string> = {
   QUEUE: "Chờ test", TEST: "Đang test", WIN: "Thắng (3 camp)", SCALE: "Scale (6 camp)", GIU1: "Yếu — giữ 1 camp",
   NGHI: "Nghỉ 14 ngày", TRUOT: "Trượt", HOAN: "Người khoá",
 }
+// User 12/11: mỗi bộ tối đa PER_SET_NEW camp mới/đêm; ngày xấu chỉ bộ mạnh (7 ngày chi ≥BAD_STRONG_MIN, ≤BAD_STRONG_PCT%) lên 1 camp, tổng BAD_NEW_MAX
+const PER_SET_NEW = 2, BAD_NEW_MAX = 2, BAD_STRONG_PCT = 30, BAD_STRONG_MIN = 1_000_000
 const DATA_DAYS = 100 // mkt_ads_cost_ad có từ 20/7 — đủ gom bộ theo post
 
 // ── Bảng ─────────────────────────────────────────────────────────────────────
@@ -701,7 +703,10 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     const goodDay = tot.s < 1_000_000 || pctOf(tot.s, tot.ds) <= st.bad_day_pct
     const weekStop = wk.s >= 3_000_000 && pctOf(wk.s, wk.ds) > st.week_stop_pct
     const allowNew = goodDay && !weekStop
-    out.push(`${P.label}: hôm nay chi ${vnd(tot.s)} ${fmtPct(tot.s, tot.ds)} → ${goodDay ? "ngày tốt" : "ngày xấu: chỉ bật lại camp cũ, không lên mới"}${weekStop ? `; 7 ngày ${fmtPct(wk.s, wk.ds)} > ${st.week_stop_pct}% → dừng lên mới` : ""}`)
+    // User 12/11 (hướng 2, backtest _bt_huong2.mjs 1/8–9/11): sau ngày xấu, camp mới của bộ 7 ngày ≤30% ra 32% (18 camp)
+    // ≈ sau ngày tốt 29%; bộ >30% ra 50% → ngày xấu chỉ cho bộ Scale/Thắng mạnh lên 1 camp/bộ, tổng BAD_NEW_MAX (chỉ chảo vàng)
+    const badNew = !goodDay && !weekStop && P.key === "CV"
+    out.push(`${P.label}: hôm nay chi ${vnd(tot.s)} ${fmtPct(tot.s, tot.ds)} → ${goodDay ? "ngày tốt" : badNew ? `ngày xấu: bật lại camp cũ; chỉ bộ Scale/Thắng 7 ngày ≤${BAD_STRONG_PCT}% được lên 1 camp mới (tối đa ${BAD_NEW_MAX})` : "ngày xấu: chỉ bật lại camp cũ, không lên mới"}${weekStop ? `; 7 ngày ${fmtPct(wk.s, wk.ds)} > ${st.week_stop_pct}% → dừng lên mới` : ""}`)
 
     // 5. Kế hoạch theo bộ
     const newToday = lenLogs.filter((r) => prodOf(r.campaign_name)?.key === P.key).length
@@ -746,17 +751,23 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       for (const c of cands.slice(0, need)) { planBat.push(c); total++; need--; aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1) }
       // Bộ đang TEST đã có camp chạy rồi (camp đó bị tắt, hết lượt bật lại) → không lên camp mới bằng chính bài vừa hỏng (11/11)
       if (b.state === "TEST" && sc.length > 0) { out.push(`${b.name} đang test, camp test không được bật lại → không lên mới, chờ chấm`); continue }
-      // Vẫn thiếu → lên camp mới bằng bài cũ (chỉ ngày tốt, ≤ max_new_day/ngày của SP)
-      while (need > 0 && allowNew && newCount < maxNew - reserveTest && total < st.max_camps) {
+      // Vẫn thiếu → lên camp mới bằng bài cũ (ngày tốt: ≤ max_new_day/ngày của SP, ≤ PER_SET_NEW/bộ để không dồn hết suất vào 1 bộ — user 12/11)
+      const w7s = D.sumSet(b.key, addD(today, -6), today)
+      const strong = (b.state === "SCALE" || b.state === "WIN") && w7s.s >= BAD_STRONG_MIN && pctOf(w7s.s, w7s.ds) <= BAD_STRONG_PCT
+      const setMax = allowNew ? PER_SET_NEW : badNew && strong ? 1 : 0
+      const cap = allowNew ? maxNew - reserveTest : Math.min(maxNew, BAD_NEW_MAX)
+      let setNew = 0
+      while (need > 0 && setNew < setMax && newCount < cap && total < st.max_camps) {
         const acc = await pickAccount(b.key, D, aliveByAcc, excl, P)
         if (!acc) { out.push(`không có tài khoản hợp lệ cho ${b.name}`); break }
         const id = await launchCamp({ bo: b, acc, start: tomorrow, suffix: `B${sc.length + 1 + (newCount - newToday)}`, kieu: b.state === "TEST" ? "test" : "nhan",
           reason: `Bộ ${b.name} ${STATE_LABEL[b.state]}: cần ${target} camp, đang có ${target - need}`, excl, dry })
         if (!id) break
-        newCount++; total++; need--; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1)
-        out.push(`lên mới ${b.name} ở ${acc.code}`)
+        newCount++; setNew++; total++; need--; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1)
+        out.push(`lên mới ${b.name} ở ${acc.code}${allowNew ? "" : ` (ngày xấu, bộ 7 ngày ${fmtPct(w7s.s, w7s.ds)})`}`)
       }
-      if (need > 0) out.push(`${b.name} còn thiếu ${need} camp (${!allowNew ? "ngày xấu/dừng tuần" : newCount >= maxNew - reserveTest ? "đủ " + maxNew + " camp mới/ngày" : "chạm trần " + st.max_camps + " camp"})`)
+      if (need > 0) out.push(`${b.name} còn thiếu ${need} camp (${setMax === 0 ? (badNew ? `ngày xấu, bộ 7 ngày ${fmtPct(w7s.s, w7s.ds)} chưa đủ mạnh` : "ngày xấu/dừng tuần")
+        : newCount >= cap ? (allowNew ? "đủ " + maxNew + " camp mới/ngày" : "đủ " + BAD_NEW_MAX + " camp mới ngày xấu") : setNew >= setMax ? `đủ ${setMax} camp mới/bộ/đêm` : "chạm trần " + st.max_camps + " camp"})`)
     }
     // 6. Slot test bộ chờ (ngày tốt, tối đa test_per_day bộ/ngày) — ưu tiên prio, rồi % lịch sử thấp
     let testsToday = testsDone
