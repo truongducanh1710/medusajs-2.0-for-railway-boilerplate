@@ -557,6 +557,10 @@ function BoTab() {
   const allOfSp = (d.sets || []).filter((b: any) => (b.product || "CV") === cur.key)
   const sets = allOfSp.filter((b: any) => showAll || !["TRUOT"].includes(b.state))
   const logs = (d.logs || []).filter((l: any) => (l.product || "CV") === cur.key)
+  // User 13/11 "có thấy đâu": camp hẹn bật 5h phải thấy rõ, không lẫn trong nhật ký (dòng plan_bat lưu theo ngày sẽ bật)
+  const vnDay = (t: any) => new Date(Date.parse(t) + 7 * 3600e3).toISOString().slice(0, 10)
+  const batDone = new Set(logs.filter((l: any) => l.action === "bat" && l.ok).map((l: any) => `${l.campaign_id}|${String(l.date).slice(0, 10)}`))
+  const planned = logs.filter((l: any) => l.action === "plan_bat" && !l.dry && String(l.date).slice(0, 10) >= (d.today || "") && !batDone.has(`${l.campaign_id}|${String(l.date).slice(0, 10)}`))
   const cnt = (key: string) => (d.sets || []).filter((b: any) => (b.product || "CV") === key && !["TRUOT", "NGHI", "HOAN"].includes(b.state)).length
   return <>
     <div style={{ display: "flex", gap: 6, margin: "0 0 12px", flexWrap: "wrap" }}>
@@ -570,7 +574,10 @@ function BoTab() {
       <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7 }}>
         Mỗi <b>bộ</b> = 1 tập bài (post) chạy chung camp. Bộ <b>thắng</b> giữ 3 camp, <b>scale</b> (7 ngày ≥10 đơn ≤28%) giữ 6, <b>yếu</b> (7 ngày 35–50%) giữ 1,
         quá 50% hoặc chi ≥1tr 0 đơn → <b>nghỉ</b> 14 ngày rồi test lại. Bộ mới / bộ từng thắng lâu chưa chạy → <b>test 1 camp 300k</b>, chấm sau 3 ngày (≥3 đơn ≤35% là thắng).<br />
-        Trong ngày kiểu Xuân: 2 đơn ≤15% → 1tr, ≥4 đơn ≤20% → 2tr, ≥6 đơn ≤20% → 4tr (6h–20h); 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k → tắt tới hết ngày; từ 15h &gt;45% → tắt.
+        {cur.key === "CV" ? <>Trong ngày kiểu Xuân (6h–20h): 2 đơn ≤15% → 1tr, ≥4 đơn ≤20% → 2tr, ≥6 đơn ≤20% → 4tr; 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k → tắt tới hết ngày; chi ≥800k &gt;50% hoặc từ 15h &gt;45% → tắt.</>
+          : <>Trong ngày (6h–20h, user 13/11 tăng ít hơn): ≥3 đơn ≤20% → 600k, ≥5 đơn ≤20% → 1tr, trần 1tr.{" "}
+            {cur.key === "KGV" ? <>Tắt sớm (kệ): 0 đơn mà chi ≥200k; CPC ≥20k chưa ĐK từ 150k; 1 đơn mà ≥400k &gt;50%; ≥600k &gt;50%; từ 12h &gt;45%.</>
+              : <>Tắt: 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k; CPC ≥30k từ 150k; ≥800k &gt;50%; từ 15h &gt;45%.</>}</>}
         23h về 300k, thiếu camp thì hẹn bật lại camp cũ của bộ lúc 5h, vẫn thiếu thì lên camp mới bằng đúng bài cũ (chỉ ngày tốt ≤{st.bad_day_pct}%).<br />
         Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày (bù bộ Scale → Thắng trước, giữ 1 suất cho test), {st.test_per_day} bộ test/ngày (mỗi sản phẩm tính riêng{Object.entries(st.products || {}).filter(([, v]: any) => v?.max_new_day != null || v?.test_per_day != null).map(([k, v]: any) => `; ${k}: ${v.max_new_day ?? st.max_new_day} camp mới, ${v.test_per_day ?? st.test_per_day} bộ test`).join("")}), ngày tốt/xấu tính theo từng sản phẩm, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
       </div>
@@ -590,13 +597,19 @@ function BoTab() {
       </tbody></table></div>
     </div>
     <div style={box}>
+      <h2 style={h2}>⏰ Hẹn bật lại lúc 5h ({planned.length})</h2>
+      {planned.length ? <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+        {planned.map((l: any) => <li key={l.id}>5h {String(l.date).slice(8, 10)}/{String(l.date).slice(5, 7)} · {l.campaign_name} <span style={{ color: "#6b7280" }}>(hẹn lúc {l.at} {vnDay(l.created_at).slice(8, 10)}/{vnDay(l.created_at).slice(5, 7)})</span></li>)}
+      </ul> : <div style={{ fontSize: 13, color: "#6b7280" }}>Không có camp nào của {cur.label} hẹn bật lại. Camp đang chạy tốt thì không cần hẹn; camp bị tắt chỉ được hẹn khi luật cho chạy lại.</div>}
+    </div>
+    <div style={box}>
       <h2 style={h2}>Nhật ký {cur.label}</h2>
       <div style={{ overflowX: "auto" }}><table style={tbl}><thead><tr><th style={th}>Ngày</th><th style={th}>Giờ</th><th style={th}>Việc</th><th style={th}>Camp</th><th style={th}>Lý do</th></tr></thead><tbody>
         {logs.slice(0, 300).map((l: any) => <tr key={l.id} style={l.ok ? undefined : { background: "#fef2f2" }}>
-          <td style={td}>{String(l.date).slice(0, 10)}</td><td style={td}>{l.at}</td>
+          <td style={td}>{l.created_at ? vnDay(l.created_at) : String(l.date).slice(0, 10)}</td><td style={td}>{l.at}</td>
           <td style={td}>{BO_ACT[l.action] || l.action}{l.dry ? <span style={{ color: "#9ca3af" }}> (thử)</span> : ""}</td>
           <td style={{ ...td, fontSize: 12 }}>{l.campaign_name || "—"}{l.new_budget && l.action !== "tat" ? <div style={{ color: "#6b7280" }}>{l.old_budget ? k(l.old_budget) + " → " : ""}{k(l.new_budget)}</div> : null}</td>
-          <td style={{ ...td, fontSize: 12 }}>{l.reason}{l.error ? <div style={{ color: "#dc2626" }}>{l.error}</div> : null}</td>
+          <td style={{ ...td, fontSize: 12 }}>{l.action === "plan_bat" ? `Bật lại lúc 5h ${String(l.date).slice(8, 10)}/${String(l.date).slice(5, 7)} ở 300k` : l.reason}{l.error ? <div style={{ color: "#dc2626" }}>{l.error}</div> : null}</td>
         </tr>)}
       </tbody></table></div>
     </div>
