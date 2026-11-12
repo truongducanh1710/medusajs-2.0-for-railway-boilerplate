@@ -65,6 +65,10 @@ export const STATE_LABEL: Record<string, string> = {
 }
 // User 12/11: mỗi bộ tối đa PER_SET_NEW camp mới/đêm; ngày xấu chỉ bộ mạnh (7 ngày chi ≥BAD_STRONG_MIN, ≤BAD_STRONG_PCT%) lên 1 camp, tổng BAD_NEW_MAX
 const PER_SET_NEW = 2, BAD_NEW_MAX = 2, BAD_STRONG_PCT = 30, BAD_STRONG_MIN = 1_000_000
+// User 12/11: camp test bộ chờ chạy cố định thứ 3 + thứ 5 (lượt 23h tối thứ 2/thứ 4 luôn lên, không xét ngày tốt/xấu),
+// suất test tính riêng, không ăn vào max_new_day; ngày khác vẫn test thêm nếu ngày tốt như cũ. Áp cả 3 SP.
+const FIXED_TEST_DOWS = [2, 4]
+const isFixedTestDay = (d: string) => FIXED_TEST_DOWS.includes(new Date(`${d}T00:00:00Z`).getUTCDay())
 const DATA_DAYS = 100 // mkt_ads_cost_ad có từ 20/7 — đủ gom bộ theo post
 
 // ── Bảng ─────────────────────────────────────────────────────────────────────
@@ -371,7 +375,12 @@ export function evalBo(b: BoRow, D: BoData, asOf: string): { state: string; sinc
     if (days < 3) return keep
     // Camp test chưa tiêu được (FB chưa phân phối / bị tắt) → chưa đủ mẫu, đợi tối đa 7 ngày
     if (t.s < 200_000 && t.o === 0) return days >= 7 ? { state: "TRUOT", since: asOf, extended: false, why: `Trượt — 7 ngày không tiêu được (${tag})` } : keep
-    if (t.o >= 3 && p <= 35) return { state: "WIN", since: asOf, extended: false, why: `Thắng — ${tag}` }
+    // User 12/11: test có thể rơi vào ngày xấu (thứ 3/5 cố định) → so thêm với % chung của SP cùng giai đoạn:
+    // SP chung X% (chi ≥1tr) thì bộ test ≤ X−5% vẫn thắng, ngưỡng trong khoảng 35–40%
+    const pk = b.product || "CV"
+    const pt = [...D.camps.values()].filter((c) => c.prod === pk).reduce((a, c) => { const x = D.sum(c.id, b.state_since, asOf); a.s += x.s; a.ds += x.ds; return a }, { s: 0, ds: 0 })
+    const winMax = pt.s >= 1_000_000 ? Math.min(40, Math.max(35, pctOf(pt.s, pt.ds) - 5)) : 35
+    if (t.o >= 3 && p <= winMax) return { state: "WIN", since: asOf, extended: false, why: `Thắng — ${tag}${winMax > 35 ? ` (SP chung ${fmtPct(pt.s, pt.ds)}, ngưỡng ${winMax}%)` : ""}` }
     if (!b.extended && t.o > 0 && p <= 50) return { state: "TEST", since: b.state_since, extended: true, why: `Gia hạn test thêm 3 ngày — ${tag}` }
     if (b.extended && days < 6) return keep
     return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tag}` }
@@ -714,7 +723,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     // chỉ giữ chỗ 1 camp mới cho test để hàng chờ không đứng. Test tối đa test_per_day bộ/ngày.
     const testsDone = testLogs.filter((r) => pOf(B.get(r.bo_key) || ({} as BoRow)) === P.key).length
     const queued = [...B.values()].filter((b) => b.state === "QUEUE" && !b.locked && pOf(b) === P.key).length
-    const reserveTest = allowNew ? Math.min(queued, Math.max(0, 1 - testsDone)) : 0
+    const fixedTest = isFixedTestDay(tomorrow)
+    const reserveTest = allowNew && !fixedTest ? Math.min(queued, Math.max(0, 1 - testsDone)) : 0
     let newCount = newToday
     const boList = boAll.filter((b) => pOf(b) === P.key).sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || w7pct(a.key) - w7pct(b.key))
     for (const b of boList) {
@@ -769,12 +779,12 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       if (need > 0) out.push(`${b.name} còn thiếu ${need} camp (${setMax === 0 ? (badNew ? `ngày xấu, bộ 7 ngày ${fmtPct(w7s.s, w7s.ds)} chưa đủ mạnh` : "ngày xấu/dừng tuần")
         : newCount >= cap ? (allowNew ? "đủ " + maxNew + " camp mới/ngày" : "đủ " + BAD_NEW_MAX + " camp mới ngày xấu") : setNew >= setMax ? `đủ ${setMax} camp mới/bộ/đêm` : "chạm trần " + st.max_camps + " camp"})`)
     }
-    // 6. Slot test bộ chờ (ngày tốt, tối đa test_per_day bộ/ngày) — ưu tiên prio, rồi % lịch sử thấp
+    // 6. Slot test bộ chờ (ngày tốt, hoặc đêm trước thứ 3/thứ 5 bất kể ngày; tối đa test_per_day bộ/ngày) — ưu tiên prio, rồi % lịch sử thấp
     let testsToday = testsDone
     const queue = [...B.values()].filter((b) => b.state === "QUEUE" && !b.locked && pOf(b) === P.key)
       .sort((a, b) => (Number(b.prio || 0) - Number(a.prio || 0)) || (() => { const x = D.sumSet(a.key, addD(today, -DATA_DAYS), today), y = D.sumSet(b.key, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })())
     for (const b of queue) {
-      if (!(allowNew && testsToday < testMax && newCount < maxNew && total < st.max_camps)) break
+      if (!(testsToday < testMax && total < st.max_camps && (fixedTest || (allowNew && newCount < maxNew)))) break
       if (busyOf(b).length) { out.push(`bỏ qua test ${b.name}: bài MKT khác đang chạy`); continue }
       const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!)
       const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14))
@@ -788,7 +798,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       total++; testsToday++
       if (!dry) await pool.query(`UPDATE cv_bo SET state='TEST', state_since=$2, extended=false, note=$3, updated_at=now() WHERE key=$1`, [b.key, tomorrow, "Test lại 1 camp từ 5h"])
       await logRow({ action: "state", bo_key: b.key, reason: `${b.name}: Chờ test → Đang test (1 camp từ 5h ${tomorrow})`, dry })
-      out.push(`test lại ${b.name}`)
+      out.push(`test lại ${b.name}${fixedTest ? " (lịch test cố định thứ 3/thứ 5)" : ""}`)
     }
   }
   // 7. Danh sách bật lại 5h
