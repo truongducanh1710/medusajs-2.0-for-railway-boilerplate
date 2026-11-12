@@ -66,12 +66,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       const name = String(b.name || "VD" + posts.map((p: any) => String(p.vd || "?").replace(/^VD/i, "")).join("+"))
       const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
       const state = STATE_LABEL[b.state] ? b.state : "QUEUE"
+      // 13/11: bộ test lên tay chạy từ 5h hôm sau → since = ngày camp bắt đầu chạy để chấm đủ 3 ngày
+      const since = /^\d{4}-\d{2}-\d{2}$/.test(String(b.since || "")) ? String(b.since) : today
       const { rows: before } = await pool.query(`SELECT * FROM cv_bo WHERE key = $1`, [key])
       const { rows } = await pool.query(
         `INSERT INTO cv_bo (key, name, page_id, posts, state, state_since, note, prio, product) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9)
          ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, state = EXCLUDED.state, state_since = EXCLUDED.state_since, extended = false,
            locked = false, note = EXCLUDED.note, prio = EXCLUDED.prio, product = EXCLUDED.product, updated_at = now() RETURNING *`,
-        [key, name, String(posts[0].post).split("_")[0], JSON.stringify(posts.map((p: any) => ({ post: p.post, vd: p.vd || "?" }))), state, today, `Người thêm: ${reason}`, Number(b.prio || 0),
+        [key, name, String(posts[0].post).split("_")[0], JSON.stringify(posts.map((p: any) => ({ post: p.post, vd: p.vd || "?" }))), state, since, `Người thêm: ${reason}`, Number(b.prio || 0),
          PRODUCTS.some((P) => P.key === b.product) ? b.product : "CV"])
       await logRuleChange("cv_bo", key, before[0] ?? null, rows[0], auth.email, reason)
       return res.json({ ok: true, bo: rows[0] })
