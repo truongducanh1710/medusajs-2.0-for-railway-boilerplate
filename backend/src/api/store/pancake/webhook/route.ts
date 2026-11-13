@@ -7,6 +7,7 @@ import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-s
 import { sendPurchaseEvent } from "../../../../lib/fb-capi"
 import { fixMarketerFromUtm } from "../../../../lib/pancake"
 import { fixDuplicateLanding } from "../../../../lib/landing-dedup"
+import { untagCompletedDraft } from "../../../../lib/landing-draft"
 import { pixelOfCampaign, systemToken, fbcFromLink, isMarketplaceOrder } from "../../../../lib/campaign-pixel"
 
 /**
@@ -182,6 +183,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
               .then(() => fixDuplicateLanding(rawOrder))
               .then((msg) => { if (msg) console.log(`[Pancake Webhook] Đơn trùng #${pancakeOrderId}: ${msg}`) })
               .catch((e: any) => console.warn(`[Pancake Webhook] Fix đơn trùng #${pancakeOrderId} lỗi:`, e.message))
+              .then(() => untagCompletedDraft(rawOrder))
+              .then((msg) => { if (msg) console.log(`[Pancake Webhook] Đơn nháp #${pancakeOrderId}: ${msg}`) })
+              .catch((e: any) => console.warn(`[Pancake Webhook] Gỡ tag nháp #${pancakeOrderId} lỗi:`, e.message))
           }
         } else {
           // Fallback: upsert minimal from webhook body
