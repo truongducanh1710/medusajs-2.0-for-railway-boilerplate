@@ -404,6 +404,10 @@ export default function BundleSelector({ product, region }: Props) {
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
                   {isSel && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
                 </div>
+                {vc.image && (
+                  // Thumbnail inside the card: on phones the gallery is off-screen when choosing
+                  <img src={vc.image} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-200" />
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-gray-900 text-sm">{vc.label}</p>
                   {Array.isArray(vc.desc) && vc.desc.length ? (

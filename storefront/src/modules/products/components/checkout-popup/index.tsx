@@ -205,12 +205,26 @@ export default function CheckoutPopup({
 
   const isTrueFlag = (v: unknown) => v === true || v === "true"
   const isDigitalProduct = isTrueFlag(product.metadata?.digital_delivery)
+  // Per-version image + description lines from bundle_options_v2 (digital products)
+  const versionMeta: Record<string, { image?: string; desc?: string[] }> = (() => {
+    try {
+      const raw = product.metadata?.bundle_options_v2
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw
+      const out: Record<string, { image?: string; desc?: string[] }> = {}
+      for (const vc of parsed?.variants ?? []) out[vc.variantId] = { image: vc.image, desc: vc.desc }
+      return out
+    } catch {
+      return {}
+    }
+  })()
   const digitalVersions = isDigitalProduct && variantLabels.length > 1
     ? (product.variants ?? []).filter((v) => variantLabels.includes(v.title ?? "")).map((v) => ({
         id: v.id,
         title: v.title ?? "",
         price: Number(v.calculated_price?.calculated_amount ?? 0),
         ships: isTrueFlag(v.metadata?.requires_shipping),
+        image: versionMeta[v.id]?.image,
+        desc: Array.isArray(versionMeta[v.id]?.desc) ? versionMeta[v.id]!.desc! : [],
       }))
     : []
 
@@ -224,16 +238,35 @@ export default function CheckoutPopup({
           <button
             key={dv.id}
             onClick={() => onVariantChange(vi)}
-            className={`w-full text-left rounded-xl border-2 px-3 py-2.5 flex items-center gap-2.5 ${isSel ? "border-blue-600 bg-blue-50/40" : "border-gray-200"}`}
+            className={`w-full text-left rounded-xl border-2 px-3 py-2.5 ${isSel ? "border-blue-600 bg-blue-50/40" : "border-gray-200"}`}
           >
-            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
-              {isSel && <span className="w-2 h-2 rounded-full bg-blue-600" />}
+            <span className="flex items-center gap-2.5">
+              <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
+                {isSel && <span className="w-2 h-2 rounded-full bg-blue-600" />}
+              </span>
+              {dv.image && !isSel && (
+                <img src={dv.image} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-gray-200" />
+              )}
+              <span className="flex-1 min-w-0">
+                <span className="block font-black text-sm text-gray-900">{dv.title}</span>
+                {!isSel && (
+                  <span className="block text-[11px] text-gray-600">{dv.ships ? "Lịch giấy giao tận nhà + file ngay" : "File PDF + video, không có lịch giấy"}</span>
+                )}
+              </span>
+              <span className="font-black text-sm text-orange-500 flex-shrink-0">{formatVND(dv.price)}</span>
             </span>
-            <span className="flex-1 min-w-0">
-              <span className="block font-black text-sm text-gray-900">{dv.title}</span>
-              <span className="block text-[11px] text-gray-600">{dv.ships ? "File qua email ngay · lịch giao sau" : "PDF + 27 video qua email ngay"}</span>
-            </span>
-            <span className="font-black text-sm text-orange-500 flex-shrink-0">{formatVND(dv.price)}</span>
+            {isSel && (dv.image || dv.desc.length > 0) && (
+              <span className="flex gap-2.5 mt-2 items-start">
+                {dv.image && <img src={dv.image} alt={dv.title} className="w-[42%] flex-shrink-0 rounded-lg border border-gray-200" />}
+                {dv.desc.length > 0 && (
+                  <span className="block flex-1 space-y-1">
+                    {dv.desc.map((line, li) => (
+                      <span key={li} className="block text-[12.5px] text-gray-700 leading-snug">{line}</span>
+                    ))}
+                  </span>
+                )}
+              </span>
+            )}
           </button>
         )
       })}
