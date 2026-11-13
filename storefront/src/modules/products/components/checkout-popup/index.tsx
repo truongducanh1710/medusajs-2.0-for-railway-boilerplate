@@ -303,6 +303,16 @@ export default function CheckoutPopup({
 
   const bundleVariantIds = (product.variants ?? []).map((v) => v.id)
 
+  // Digital product: SePay only, email required, address only for variants that ship
+  const isTrue = (v: unknown) => v === true || v === "true"
+  const digitalDelivery = isTrue(product.metadata?.digital_delivery)
+    ? {
+        requiresShipping: isTrue(
+          (product.variants ?? []).find((v) => v.id === cartLine.variantId)?.metadata?.requires_shipping
+        ),
+      }
+    : undefined
+
   // Portal to body: a transformed ancestor on the product page would break position: fixed
   return createPortal(
     // Above ChatBot / FloatingContact / SocialProofPopup (zIndex 9997–9999)
@@ -328,6 +338,7 @@ export default function CheckoutPopup({
           compareAtBundlePrice={selectedOpt?.originalPrice}
           syncing={syncing}
           ensureReady={ensureReady}
+          digitalDelivery={digitalDelivery}
         />
       </div>
       <style>{`

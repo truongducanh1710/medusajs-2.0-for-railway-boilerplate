@@ -4,6 +4,7 @@ import { SubscriberArgs, SubscriberConfig } from '@medusajs/medusa'
 import { EmailTemplates } from '../modules/email-notifications/templates'
 import { pushAndRecord } from '../lib/pancake-push'
 import { sendCompleteRegistrationEvent } from '../lib/fb-capi'
+import { isDigitalFlag } from '../lib/digital-delivery'
 
 export default async function orderPlacedHandler({
   event: { data },
@@ -47,7 +48,8 @@ export default async function orderPlacedHandler({
     }
   }
 
-  try {
+  // Digital orders get their own email (lib/digital-delivery) once SePay confirms payment
+  if (!isDigitalFlag((order.metadata as any)?.digital_delivery)) try {
     await notificationModuleService.createNotifications({
       to: order.email,
       channel: 'email',

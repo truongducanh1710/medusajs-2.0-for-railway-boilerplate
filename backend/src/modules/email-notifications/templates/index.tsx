@@ -3,11 +3,13 @@ import { MedusaError } from '@medusajs/framework/utils'
 import { InviteUserEmail, INVITE_USER, isInviteUserData } from './invite-user'
 import { OrderPlacedTemplate, ORDER_PLACED, isOrderPlacedTemplateData } from './order-placed'
 import { TaskReminderEmail, TASK_REMINDER, isTaskReminderData } from './task-reminder'
+import { DigitalDeliveryEmail, DIGITAL_DELIVERY, isDigitalDeliveryData } from './digital-delivery'
 
 export const EmailTemplates = {
   INVITE_USER,
   ORDER_PLACED,
   TASK_REMINDER,
+  DIGITAL_DELIVERY,
 } as const
 
 export type EmailTemplateType = keyof typeof EmailTemplates
@@ -38,6 +40,12 @@ export function generateEmailTemplate(templateKey: string, data: unknown): React
       }
       return <TaskReminderEmail {...data} />
 
+    case EmailTemplates.DIGITAL_DELIVERY:
+      if (!isDigitalDeliveryData(data)) {
+        throw new MedusaError(MedusaError.Types.INVALID_DATA, `Invalid data for template "${EmailTemplates.DIGITAL_DELIVERY}"`)
+      }
+      return <DigitalDeliveryEmail {...data} />
+
     default:
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
@@ -46,4 +54,4 @@ export function generateEmailTemplate(templateKey: string, data: unknown): React
   }
 }
 
-export { InviteUserEmail, OrderPlacedTemplate, TaskReminderEmail }
+export { InviteUserEmail, OrderPlacedTemplate, TaskReminderEmail, DigitalDeliveryEmail }

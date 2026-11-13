@@ -79,11 +79,12 @@ function roundDiscountUp(amount: number, step = 1000) {
   return Math.ceil(amount / step) * step
 }
 
-function SepayModal({ orderCode, amount, onClose, onSuccess }: {
+function SepayModal({ orderCode, amount, onClose, onSuccess, closeLabel = "Quay lại chọn COD" }: {
   orderCode: string
   amount: number
   onClose: () => void
   onSuccess: (orderId: string) => void
+  closeLabel?: string
 }) {
   const [qrUrl, setQrUrl] = useState("")
   const [info, setInfo] = useState<any>(null)
@@ -292,7 +293,7 @@ function SepayModal({ orderCode, amount, onClose, onSuccess }: {
                 </p>
               )}
               <p className="text-center text-xs text-gray-400 mb-3">🔄 Tự động xác nhận khi nhận được tiền</p>
-              <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">Quay lại chọn COD</button>
+              <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm hover:bg-gray-50">{closeLabel}</button>
 
               {showBankPicker && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center" onClick={() => setShowBankPicker(false)}>
@@ -360,6 +361,9 @@ type SimpleCheckoutProps = {
   // Resolves (with the cart's shipping options) once the cart reflects the picked bundle;
   // awaited before submitting
   ensureReady?: () => Promise<any[] | null>
+  // Digital product (PDF + video by email): SePay only, email required,
+  // shipping address only when the picked variant also ships a physical item
+  digitalDelivery?: { requiresShipping: boolean }
 }
 
 const EMPTY_CART = { id: "", items: [] } as unknown as HttpTypes.StoreCart
@@ -376,6 +380,7 @@ export default function SimpleCheckout({
   compareAtBundlePrice,
   syncing = false,
   ensureReady,
+  digitalDelivery,
 }: SimpleCheckoutProps) {
   const router = useRouter()
   const params = useParams()
@@ -383,7 +388,7 @@ export default function SimpleCheckout({
   const countdown = useCountdown(12)
   const cart = cartProp ?? EMPTY_CART
 
-  const [form, setForm] = useState({ name: "", phone: "", street: "", note: "", province: "", ward: "" })
+  const [form, setForm] = useState({ name: "", phone: "", email: "", street: "", note: "", province: "", ward: "" })
   const [provinces, setProvinces] = useState<{ code: number; name: string }[]>([])
   const [wards, setWards] = useState<{ code: number; name: string }[]>([])
   const [wardSearch, setWardSearch] = useState("")
@@ -391,7 +396,14 @@ export default function SimpleCheckout({
   const [loadingWards, setLoadingWards] = useState(false)
   const [provinceSearch, setProvinceSearch] = useState("")
   const [provinceOpen, setProvinceOpen] = useState(false)
-  const [payment, setPayment] = useState<"cod" | "sepay">("cod")
+  const [payment, setPayment] = useState<"cod" | "sepay">(digitalDelivery ? "sepay" : "cod")
+  const isDigital = !!digitalDelivery
+  const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
+  const [digitalDone, setDigitalDone] = useState<{ email: string } | null>(null)
+  // Digital products are bank-transfer only
+  useEffect(() => {
+    if (isDigital && payment !== "sepay") setPayment("sepay")
+  }, [isDigital, payment])
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState("")
@@ -584,7 +596,7 @@ export default function SimpleCheckout({
       try {
         const parsed = JSON.parse(saved)
         // Chỉ khôi phục thông tin giao hàng — phương thức thanh toán luôn mặc định COD
-        setForm(parsed.form || { name: "", phone: "", street: "", note: "", province: "", ward: "" })
+        setForm({ name: "", phone: "", email: "", street: "", note: "", province: "", ward: "", ...(parsed.form || {}) })
       } catch (e) {
         // ignore
       }
@@ -723,7 +735,9 @@ export default function SimpleCheckout({
     const amount = Number(raw)
     return Number.isFinite(amount) && amount >= 0 ? [Math.floor(amount)] : []
   })
-  const paymentDiscount = configuredPaymentDiscounts.length
+  const paymentDiscount = isDigital
+    ? 0
+    : configuredPaymentDiscounts.length
     ? Math.min(...configuredPaymentDiscounts, Math.max(0, cartTotal - 1000))
     : (embedded && !cartProp ? 0 : DEFAULT_SEPAY_DISCOUNT)
   const sepayTotal = Math.max(1000, cartTotal - paymentDiscount)
@@ -738,7 +752,8 @@ export default function SimpleCheckout({
     const e: Record<string, string> = {}
     if (!form.name.trim()) e.name = "Vui lòng nhập họ tên"
     if (!/^(0|\+84)[0-9]{8,9}$/.test(form.phone.replace(/\s/g, ""))) e.phone = "Số điện thoại không hợp lệ"
-    if (!form.street.trim()) e.street = "Vui lòng nhập địa chỉ nhận hàng"
+    if (needsAddress && !form.street.trim()) e.street = "Vui lòng nhập địa chỉ nhận hàng"
+    if (isDigital && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = "Vui lòng nhập email để nhận tài liệu"
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -780,10 +795,10 @@ export default function SimpleCheckout({
       })
 
       // Cập nhật cart với thông tin giao hàng
-      const fullAddress = buildAddress()
+      const fullAddress = needsAddress ? buildAddress() : "Sản phẩm số - gửi qua email"
       const orderUtm = await resolveOrderUtm()
       const updatedCart = await updateCart({
-        email: `guest${Date.now()}@example.com`,
+        email: isDigital ? form.email.trim() : `guest${Date.now()}@example.com`,
         shipping_address: {
           first_name: form.name,
           last_name: "",
@@ -806,6 +821,9 @@ export default function SimpleCheckout({
         metadata: {
           note: form.note,
           payment_method: payment,
+          ...(isDigital
+            ? { digital_delivery: true, requires_shipping: needsAddress, customer_email: form.email.trim() }
+            : {}),
           // So sánh tỷ lệ chốt đơn popup trên trang SP vs trang /checkout
           checkout_mode: embedded ? "popup" : "page",
           // Phiên bản bố cục popup — đổi khi thay layout để so tỷ lệ chốt giữa các bản
@@ -950,6 +968,12 @@ export default function SimpleCheckout({
     } catch (err) {
       logCheckoutError("clearCompletedCart failed", err, { cartId: cart.id })
     }
+    if (isDigital && embedded) {
+      // Stay in the popup: files are emailed by the backend once payment is confirmed
+      setSubmitting(false)
+      setDigitalDone({ email: form.email.trim() })
+      return
+    }
     router.push(`/${countryCode}/order/confirmed/${createdOrderId}`)
   }
 
@@ -959,6 +983,7 @@ export default function SimpleCheckout({
       amount={sepayTotal}
       onClose={() => setShowQR(false)}
       onSuccess={handleSepaySuccess}
+      closeLabel={isDigital ? "Quay lại" : undefined}
     />
   )
 
@@ -977,6 +1002,24 @@ export default function SimpleCheckout({
       ? compareAtBundlePrice - pendingBundlePrice
       : 0
     const totalSaved = compareAt + Math.max(0, subtotal - finalTotal)
+
+    if (digitalDone) {
+      return (
+        <div className="bg-white px-5 py-8 text-center space-y-3">
+          <div className="text-5xl">✅</div>
+          <p className="font-black text-xl text-green-600">Thanh toán thành công!</p>
+          <p className="text-sm text-gray-700">
+            File PDF và bộ video đã được gửi tới <strong className="break-all">{digitalDone.email}</strong>.
+            Bạn kiểm tra hộp thư (cả mục Quảng cáo / Spam) trong vài phút tới nhé.
+          </p>
+          {needsAddress && (
+            <p className="text-sm text-gray-700">📦 Lịch in sẽ được giao tới địa chỉ của bạn sau.</p>
+          )}
+          <p className="text-xs text-gray-500">Chưa nhận được mail? Gọi 0967 993 609 để được hỗ trợ.</p>
+          <button onClick={onClose} className="w-full mt-2 py-3 rounded-xl bg-orange-500 text-white font-black">Đóng</button>
+        </div>
+      )
+    }
 
     return (
       <>
@@ -1011,7 +1054,7 @@ export default function SimpleCheckout({
 
             {/* Thông tin giao hàng — ngay màn hình đầu */}
             <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 space-y-2.5">
-              <p className="font-black text-sm text-gray-900">🚚 Thông tin nhận hàng</p>
+              <p className="font-black text-sm text-gray-900">{isDigital ? "📧 Thông tin nhận tài liệu" : "🚚 Thông tin nhận hàng"}</p>
               <div>
                 <input
                   type="text"
@@ -1041,7 +1084,24 @@ export default function SimpleCheckout({
                 />
                 {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
               </div>
-              <div>
+              {isDigital && (
+                <div>
+                  <input
+                    type="email"
+                    name="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    enterKeyHint={needsAddress ? "next" : "done"}
+                    placeholder="Email nhận PDF + video *"
+                    value={form.email}
+                    onFocus={scrollFieldIntoView}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                    className={fieldClass(!!errors.email)}
+                  />
+                  {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+                </div>
+              )}
+              {needsAddress && <div>
                 <input
                   type="text"
                   name="street-address"
@@ -1054,7 +1114,7 @@ export default function SimpleCheckout({
                   className={fieldClass(!!errors.street)}
                 />
                 {errors.street && <p className="text-red-500 text-xs mt-1">{errors.street}</p>}
-              </div>
+              </div>}
               {showNote || form.note ? (
                 <textarea
                   placeholder="Ghi chú (màu sắc, giờ nhận hàng...)"
@@ -1074,6 +1134,12 @@ export default function SimpleCheckout({
             {/* Thanh toán — gọn, COD mặc định */}
             <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 space-y-2">
               <p className="font-black text-sm text-gray-900">💳 Thanh toán</p>
+              {isDigital ? (
+                <div className="px-3 py-2.5 rounded-xl border-2 border-blue-600 bg-blue-50">
+                  <p className="text-sm font-bold text-gray-900">Chuyển khoản QR</p>
+                  <p className="text-[11px] text-gray-600">Thanh toán xong, hệ thống tự gửi PDF + video vào email của bạn.</p>
+                </div>
+              ) : (<>
               <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "cod" ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
                 <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
                 <span className="flex-1 text-sm font-bold text-gray-900">Thanh toán khi nhận hàng</span>
@@ -1084,6 +1150,7 @@ export default function SimpleCheckout({
                 <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR</span>
                 {paymentDiscount > 0 && <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(paymentDiscount)}</span>}
               </label>
+              </>)}
             </div>
           </div>
 
@@ -1116,7 +1183,9 @@ export default function SimpleCheckout({
               {submitting ? "⏳ Đang xử lý..." : payment === "sepay" ? "💳 THANH TOÁN QR NGAY" : "🛒 ĐẶT HÀNG NGAY"}
             </button>
             <p className="text-center text-[11px] text-gray-500">
-              {hasBundleShipping ? "Thanh toán khi nhận hàng · Hỗ trợ theo chính sách đổi trả" : "✅ Kiểm tra hàng trước · 🔄 Đổi trả 7 ngày · 🛡️ Bảo hành"}
+              {isDigital
+                ? (needsAddress ? "📧 Nhận PDF + video qua email ngay · 📦 Lịch in giao sau" : "📧 Nhận PDF + video qua email ngay sau khi thanh toán")
+                : hasBundleShipping ? "Thanh toán khi nhận hàng · Hỗ trợ theo chính sách đổi trả" : "✅ Kiểm tra hàng trước · 🔄 Đổi trả 7 ngày · 🛡️ Bảo hành"}
             </p>
           </div>
         </div>
