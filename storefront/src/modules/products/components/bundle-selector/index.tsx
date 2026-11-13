@@ -31,6 +31,8 @@ type VariantBundleConfig = {
   variantId: string
   label: string
   image?: string
+  /** Short bullet lines explaining what this version includes (digital version cards) */
+  desc?: string[]
   options: BundleOption[]
 }
 
@@ -404,9 +406,17 @@ export default function BundleSelector({ product, region }: Props) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-gray-900 text-sm">{vc.label}</p>
-                  <p className="text-[11px] text-gray-600 leading-snug">
-                    {ships ? "📧 PDF + 27 video qua email ngay · 📦 lịch để bàn giao sau" : "📧 PDF 28 trang + 27 video gửi qua email ngay"}
-                  </p>
+                  {Array.isArray(vc.desc) && vc.desc.length ? (
+                    <ul className="mt-1 space-y-0.5">
+                      {vc.desc.map((line, li) => (
+                        <li key={li} className="text-[12px] text-gray-600 leading-snug">{line}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[11px] text-gray-600 leading-snug">
+                      {ships ? "📧 PDF + 27 video qua email ngay · 📦 lịch để bàn giao sau" : "📧 PDF 28 trang + 27 video gửi qua email ngay"}
+                    </p>
+                  )}
                 </div>
                 <p className="font-black text-orange-500 flex-shrink-0">{formatVND(opt?.price ?? 0)}</p>
               </div>
