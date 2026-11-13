@@ -13,6 +13,8 @@ type Props = {
   socialDelaySec?: number
   socialIntervalSec?: number
   socialDisplaySec?: number
+  /** Only show real recent orders (from /store/recent-buyers); never random names */
+  realBuyersOnly?: boolean
 }
 
 function formatVND(amount: number) {
@@ -32,7 +34,8 @@ function genName() {
 function timeLabel(mins: number) {
   if (mins <= 1) return "vừa xong"
   if (mins < 60) return `${mins} phút trước`
-  return `${Math.floor(mins / 60)} giờ trước`
+  if (mins < 1440) return `${Math.floor(mins / 60)} giờ trước`
+  return `${Math.floor(mins / 1440)} ngày trước`
 }
 
 export default function StickyBuyBar({
@@ -41,6 +44,7 @@ export default function StickyBuyBar({
   socialDelaySec = 12,
   socialIntervalSec = 30,
   socialDisplaySec = 5,
+  realBuyersOnly = false,
 }: Props) {
   const [visible, setVisible] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -128,8 +132,38 @@ export default function StickyBuyBar({
     return () => observer.disconnect()
   }, [anchorId])
 
+  // Real buyers (digital products) — fetched once
+  const realBuyers = useRef<Array<{ name: string; place: string; variant: string; at: string }>>([])
+  const realIdx = useRef(0)
+  useEffect(() => {
+    if (!realBuyersOnly) return
+    const base = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || ""
+    fetch(`${base}/store/recent-buyers?product_id=${encodeURIComponent(product.id)}`, {
+      headers: { "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || "" },
+    })
+      .then(r => (r.ok ? r.json() : { buyers: [] }))
+      .then(d => { realBuyers.current = Array.isArray(d?.buyers) ? d.buyers : [] })
+      .catch(() => {})
+  }, [realBuyersOnly, product.id])
+
   // Social proof timing
   const showProof = useCallback(() => {
+    if (realBuyersOnly) {
+      const list = realBuyers.current
+      if (!list.length) return
+      const b = list[realIdx.current++ % list.length]
+      setProof({
+        name: b.place ? `${b.name} (${b.place})` : b.name,
+        city: "",
+        avatar: "🧑",
+        mins: Math.max(1, Math.round((Date.now() - new Date(b.at).getTime()) / 60000)),
+        variant: b.variant,
+      } as any)
+      setProofVisible(true)
+      clearTimeout(proofTimer.current)
+      proofTimer.current = setTimeout(() => setProofVisible(false), socialDisplaySec * 1000)
+      return
+    }
     setProof({
       name: genName(),
       city: rand(CITIES),
@@ -139,7 +173,7 @@ export default function StickyBuyBar({
     setProofVisible(true)
     clearTimeout(proofTimer.current)
     proofTimer.current = setTimeout(() => setProofVisible(false), socialDisplaySec * 1000)
-  }, [socialDisplaySec])
+  }, [socialDisplaySec, realBuyersOnly])
 
   useEffect(() => {
     if (!socialEnabled) return
@@ -192,7 +226,7 @@ export default function StickyBuyBar({
           <span style={{ fontSize: 12, color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             <span style={{ fontWeight: 700 }}>{proof.name}</span>
             {" "}vừa đặt{" "}
-            <span style={{ fontWeight: 700, color: "#E8420A" }}>{product.title}</span>
+            <span style={{ fontWeight: 700, color: "#E8420A" }}>{(proof as any).variant || product.title}</span>
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />

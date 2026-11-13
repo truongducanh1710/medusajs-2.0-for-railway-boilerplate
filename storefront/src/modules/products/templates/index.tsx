@@ -217,7 +217,7 @@ function SpecsSection({ product }: { product: HttpTypes.StoreProduct }) {
 }
 
 // Section: Reviews
-function ReviewsSection({ product }: { product: HttpTypes.StoreProduct }) {
+function ReviewsSection({ product, realOnly = false }: { product: HttpTypes.StoreProduct; realOnly?: boolean }) {
   const reviewsRaw = meta(product, "reviews")
   let reviews: Array<{ name: string; location?: string; rating: number; text: string; date: string }> = []
 
@@ -236,6 +236,8 @@ function ReviewsSection({ product }: { product: HttpTypes.StoreProduct }) {
   }
 
   // Default reviews nếu chưa có
+  if (realOnly && !reviews.length) return null
+
   if (!reviews.length) {
     reviews = [
       { name: "Nguyễn Thị Lan", location: "Hà Nội", rating: 5, text: "Sản phẩm rất tốt, chất lượng vượt mong đợi! Giao hàng nhanh, đóng gói cẩn thận. Sẽ mua lại lần sau.", date: "2 ngày trước" },
@@ -250,10 +252,10 @@ function ReviewsSection({ product }: { product: HttpTypes.StoreProduct }) {
         <div className="flex items-center justify-between mb-6 sm:mb-8">
           <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">💬 Khách hàng nói gì?</h2>
           <div className="flex items-center gap-2">
-            <span className="text-3xl font-black text-orange-500">4.8</span>
+            <span className="text-3xl font-black text-orange-500">{realOnly ? (reviews.reduce((a, r) => a + r.rating, 0) / reviews.length).toFixed(1) : "4.8"}</span>
             <div>
               <div className="text-orange-400">★★★★★</div>
-              <div className="text-xs text-gray-400">1.247 đánh giá</div>
+              <div className="text-xs text-gray-400">{realOnly ? reviews.length : "1.247"} đánh giá</div>
             </div>
           </div>
         </div>
@@ -545,7 +547,10 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       )}
 
       {pageContent ? (
-        <ProductPageContent content={pageContent} />
+        <>
+          <ProductPageContent content={pageContent} />
+          {isDigitalProduct && <ReviewsSection product={product} realOnly />}
+        </>
       ) : (
         <>
           {/* Video */}
@@ -599,7 +604,8 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
         product={product}
         region={region}
         anchorId="bundle-selector"
-        socialEnabled={!isDigitalProduct && meta(product, "social_proof_enabled") !== "false"}
+        socialEnabled={meta(product, "social_proof_enabled") !== "false"}
+        realBuyersOnly={isDigitalProduct}
         socialDelaySec={Number(meta(product, "social_proof_delay") || 12)}
         socialIntervalSec={Number(meta(product, "social_proof_interval") || 30)}
         socialDisplaySec={Number(meta(product, "social_proof_display") || 5)}
