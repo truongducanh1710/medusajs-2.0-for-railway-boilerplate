@@ -136,6 +136,22 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
     product.metadata?.digital_drive_url ? `🔗 Link gửi khách: ${esc(product.metadata.digital_drive_url)}` : "",
   ].filter(Boolean)
 
+  // Ready-to-copy message for Zalo/manual email (tap the block in Telegram to copy)
+  const drive = String(product.metadata?.digital_drive_url ?? "")
+  const greet = a.first_name ? `Chào anh/chị ${a.first_name}` : "Chào anh/chị"
+  const msg = [
+    `${greet}, Phan Việt đã nhận thanh toán đơn #${order.display_id ?? order.id} — ${product.title}. Cảm ơn anh/chị ạ!`,
+    "",
+    "📂 Link tài liệu (PDF 28 trang + 27 video):",
+    drive,
+    "",
+    "Cách dùng: bấm link là mở được ngay trên điện thoại, không cần cài gì. Video xem trực tiếp; file PDF có thể tải về để in. Nên lưu link này lại để dùng lâu dài.",
+    ...(ships ? ["", "📦 Lịch để bàn sẽ được giao tới địa chỉ anh/chị đã đặt trong 2–4 ngày."] : []),
+    "",
+    "Mở link không được hoặc cần hỗ trợ, anh/chị nhắn lại Zalo này giúp shop nhé. Chúc bé học tốt! 🌟",
+  ].join(String.fromCharCode(10))
+  lines.push("", "📋 <b>Tin gửi khách (bấm để copy):</b>", `<pre>${esc(msg)}</pre>`)
+
   const userModule = scope.resolve(Modules.USER)
   for (const e of emails) await notifyTelegramByEmail(userModule, e, lines.join("\n"), "digital_order")
   await orderService.updateOrders([{ id: orderId, metadata: { ...meta, digital_tg_at: new Date().toISOString() } }])
