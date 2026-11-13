@@ -1076,7 +1076,7 @@ export default function SimpleCheckout({
                   inputMode="tel"
                   autoComplete="tel"
                   enterKeyHint="next"
-                  placeholder="Số điện thoại *"
+                  placeholder={isDigital ? "Số điện thoại Zalo *" : "Số điện thoại *"}
                   value={form.phone}
                   onFocus={scrollFieldIntoView}
                   onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
@@ -1426,7 +1426,7 @@ return parsed
                 <div>
                   <input
                     type="tel"
-                    placeholder="Số điện thoại *"
+                    placeholder={isDigital ? "Số điện thoại Zalo *" : "Số điện thoại *"}
                     value={form.phone}
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                     className={`w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-400 transition-colors ${errors.phone ? "border-red-400" : "border-gray-200"}`}
