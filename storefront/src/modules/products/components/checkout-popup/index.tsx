@@ -211,7 +211,7 @@ export default function CheckoutPopup({
       const raw = product.metadata?.bundle_options_v2
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw
       const out: Record<string, { image?: string; desc?: string[] }> = {}
-      for (const vc of parsed?.variants ?? []) out[vc.variantId] = { image: vc.image, desc: vc.desc }
+      for (const vc of parsed?.variants ?? []) out[vc.variantId] = { image: vc.thumb || vc.image, desc: vc.desc }
       return out
     } catch {
       return {}

@@ -33,6 +33,8 @@ type VariantBundleConfig = {
   image?: string
   /** Short bullet lines explaining what this version includes (digital version cards) */
   desc?: string[]
+  /** Clean product shot (no small text) for the version card; `image` stays the gallery infographic */
+  thumb?: string
   options: BundleOption[]
 }
 
@@ -411,8 +413,8 @@ export default function BundleSelector({ product, region }: Props) {
                 </div>
                 {/* Body: image (visible here because the gallery is off-screen on phones) + what's included */}
                 <div className="flex gap-2.5 mt-2 items-start">
-                  {vc.image && (
-                    <img src={vc.image} alt="" className={`${isSel ? "w-[38%]" : "w-16"} flex-shrink-0 rounded-lg border border-gray-200 transition-all`} />
+                  {(vc.thumb || vc.image) && (
+                    <img src={vc.thumb || vc.image} alt="" className={`${isSel ? "w-[38%]" : "w-16"} flex-shrink-0 rounded-lg border border-gray-200 transition-all`} />
                   )}
                   {Array.isArray(vc.desc) && vc.desc.length ? (
                     <ul className="flex-1 min-w-0 space-y-1">
