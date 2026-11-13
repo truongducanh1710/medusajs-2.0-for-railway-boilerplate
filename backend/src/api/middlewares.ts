@@ -464,6 +464,7 @@ export default defineMiddlewares({
     { matcher: "/admin/fb-content/post*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.fb-content.post")] },
     { matcher: "/admin/fb-content/templates*", method: ["POST", "PATCH", "DELETE"], middlewares: [requirePerm("page.fb-content.post")] },
     { matcher: "/admin/fb-content/refresh-tokens", method: ["POST"], middlewares: [requirePerm("page.fb-content.post")] },
+    { matcher: "/admin/fb-content/auto-post", method: ["POST"], middlewares: [requirePerm("page.fb-content.post")] },
 
     // Đo video qua Ads — tab Hiệu quả Video trong bao-cao-mkt
     { matcher: "/admin/pancake-sync/report/video-performance*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
