@@ -2,7 +2,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { completeCartWorkflow } from "@medusajs/medusa/core-flows"
 import { sendPurchaseEvent } from "./fb-capi"
 import { validateBundleShippingCart } from "./bundle-shipping"
-import { sendDigitalDeliveryIfNeeded } from "./digital-delivery"
+import { sendDigitalDeliveryIfNeeded, notifyDigitalOrderTelegram } from "./digital-delivery"
 
 /**
  * SePay QR flow: storefront shows QR with content `PV{cartId without "cart_"}`.
@@ -150,6 +150,9 @@ export async function confirmSepayPayment(
   // Digital products: email the download folder once paid (idempotent via order metadata)
   await sendDigitalDeliveryIfNeeded(scope, orderId as string).catch((err) =>
     console.error("[SePay] digital delivery error:", err?.message)
+  )
+  await notifyDigitalOrderTelegram(scope, orderId as string).catch((err) =>
+    console.error("[SePay] digital telegram error:", err?.message)
   )
 
   return { ok: true, orderId: orderId as string }
