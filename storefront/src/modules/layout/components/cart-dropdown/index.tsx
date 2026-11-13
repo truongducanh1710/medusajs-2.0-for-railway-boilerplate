@@ -58,6 +58,13 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
   }, 0) || 0
   const savings = originalTotal - subtotal
   const freeshipThreshold = 500000
+  // Digital-only cart: no shipping/returns promises, no fake strike-through savings
+  const isDigitalItem = (i: any) => {
+    const v = i?.variant?.product?.metadata?.digital_delivery
+    return v === true || v === "true"
+  }
+  const allDigital = (cart?.items?.length ?? 0) > 0 && cart!.items!.every(isDigitalItem)
+  const digitalHandle = allDigital ? (cart!.items![0] as any).variant?.product?.handle : null
 
 
   const handleDelete = async (id: string) => {
@@ -356,7 +363,7 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
               const bundleLabel = liveMeta?.bundle_label as string | undefined
               const displayPrice = bundlePrice ?? (item.unit_price * item.quantity)
               const originalPrice = roundHundred(displayPrice * 1.4)
-              const savings = originalPrice - displayPrice
+              const savings = isDigitalItem(liveItem ?? item) ? 0 : originalPrice - displayPrice
               const thumb = item.variant?.product?.thumbnail || (item as any).thumbnail
               const variantText = item.variant?.options?.map(o => `${o.option?.title}: ${o.value}`).join(" | ") || ""
 
@@ -376,12 +383,12 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
                       <p className="font-semibold text-sm text-gray-900 line-clamp-2">{item.title || (item as any).product_title}</p>
                       {bundleLabel && <p className="text-xs text-blue-600 font-bold mt-0.5">{bundleLabel}</p>}
                       {variantText && <p className="text-xs text-gray-500 mt-0.5">{variantText}</p>}
-                      <div className="flex items-center mt-1">
+                      {savings > 0 && <div className="flex items-center mt-1">
                         <span className="text-xs text-gray-400 line-through mr-2">{fmtVND(originalPrice)}</span>
                         <span className="bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded uppercase">ƯU ĐÃI GIỚI HẠN</span>
-                      </div>
+                      </div>}
                       <p className="text-sm font-black text-orange-500 mt-1">{fmtVND(displayPrice)}</p>
-                      <p className="text-xs text-green-600 font-medium mt-1">✓ Bạn tiết kiệm {fmtVND(savings)}</p>
+                      {savings > 0 && <p className="text-xs text-green-600 font-medium mt-1">✓ Bạn tiết kiệm {fmtVND(savings)}</p>}
                       <div className="flex items-center gap-2 mt-2">
                         <button
                           onClick={() => {
@@ -436,7 +443,7 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
         </div>
 
         {/* Trust Badges */}
-        {sortedItems.length > 0 && (
+        {sortedItems.length > 0 && !allDigital && (
           <div className="flex justify-around items-center p-4 bg-gray-50 border-t border-b border-gray-200 flex-shrink-0">
             <div className="flex flex-col items-center gap-1 flex-1">
               <span className="text-xl">⭐</span>
@@ -475,7 +482,7 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
             </div>
 
             {/* Freeship Reminder */}
-            {subtotal < freeshipThreshold ? (
+            {allDigital ? null : subtotal < freeshipThreshold ? (
               <div className="bg-yellow-100 text-amber-800 p-3 rounded-lg text-sm mb-3 text-center">
                 🎁 Mua thêm {fmtVND(freeshipThreshold - subtotal)} để được FREESHIP
               </div>
@@ -485,7 +492,7 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
               </div>
             )}
 
-            {savings > 0 && (
+            {savings > 0 && !allDigital && (
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-sm text-green-700 font-semibold">Tiết kiệm được</span>
                 <span className="text-sm text-green-700 font-bold">-{fmtVND(savings)}</span>
@@ -495,7 +502,7 @@ const CartDropdown = ({ cart: initialCart }: { cart?: HttpTypes.StoreCart | null
               <span className="text-base font-black text-gray-900">Tổng cộng</span>
               <span className="text-lg font-black text-orange-500">{fmtVND(subtotal)}</span>
             </div>
-            <LocalizedClientLink href="/checkout" onClick={() => setOpen(false)} className="block w-full bg-orange-500 text-white font-black text-base py-3.5 rounded-lg text-center hover:bg-orange-600 transition-colors no-underline">
+            <LocalizedClientLink href={digitalHandle ? `/products/${digitalHandle}#bundle-selector` : "/checkout"} onClick={() => setOpen(false)} className="block w-full bg-orange-500 text-white font-black text-base py-3.5 rounded-lg text-center hover:bg-orange-600 transition-colors no-underline">
               Hoàn tất đơn hàng
             </LocalizedClientLink>
             <button onClick={() => setOpen(false)} className="block w-full bg-none border-none cursor-pointer text-center text-sm text-gray-500 py-1 hover:text-gray-700">

@@ -316,12 +316,12 @@ function FAQSection({ product }: { product: HttpTypes.StoreProduct }) {
 }
 
 // Section: Final CTA — scroll-to-buy anchor
-function FinalCTA({ product }: { product: HttpTypes.StoreProduct; region: HttpTypes.StoreRegion }) {
+function FinalCTA({ product, digital }: { product: HttpTypes.StoreProduct; region: HttpTypes.StoreRegion; digital?: boolean }) {
   return (
     <div className="py-8 sm:py-12 bg-gradient-to-r from-blue-950 to-blue-900 text-white">
       <div className="max-w-2xl mx-auto px-4 text-center">
         <h2 className="text-xl sm:text-2xl font-extrabold mb-2">{product.title}</h2>
-        <p className="text-blue-200 mb-4 sm:mb-6">Đừng bỏ lỡ — Còn hàng có hạn</p>
+        <p className="text-blue-200 mb-4 sm:mb-6">{digital ? "Nhận PDF + video qua email ngay sau khi chuyển khoản" : "Đừng bỏ lỡ — Còn hàng có hạn"}</p>
         <a
           href="#bundle-selector"
           className="block w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-black text-lg sm:text-xl py-4 px-10 rounded-2xl transition-colors shadow-lg"
@@ -331,8 +331,17 @@ function FinalCTA({ product }: { product: HttpTypes.StoreProduct; region: HttpTy
         </a>
         <div className="mt-5 flex flex-wrap justify-center gap-4 sm:gap-6 text-sm text-blue-200">
           <span>🔒 Thanh toán an toàn</span>
-          <span>🚚 Miễn phí ship từ 500K</span>
-          <span>🔄 Đổi trả 7 ngày</span>
+          {digital ? (
+            <>
+              <span>📧 Gửi file qua email</span>
+              <span>📦 Lịch in giao sau</span>
+            </>
+          ) : (
+            <>
+              <span>🚚 Miễn phí ship từ 500K</span>
+              <span>🔄 Đổi trả 7 ngày</span>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -408,7 +417,11 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       {/* Promo banner override theo sản phẩm — set metadata promo_banner */}
       {(() => {
         const raw = product.metadata?.promo_banner as string | undefined
-        if (!raw) return null
+        if (!raw) {
+          return isDigitalProduct
+            ? <PromoOverride messages={["📧 Thanh toán xong nhận PDF + video qua email ngay", "🔒 Chuyển khoản QR · xác nhận tự động"]} />
+            : null
+        }
         try {
           const parsed = JSON.parse(raw)
           const msgs = Array.isArray(parsed) ? parsed : [String(parsed)]
@@ -448,6 +461,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
               let reviews: { rating: number }[] = []
               try { reviews = JSON.parse(meta(product, "reviews") || "[]") } catch {}
               const total = reviews.length
+              if (isDigitalProduct && total === 0) return null
               const avg = total > 0
                 ? (reviews.reduce((s, r) => s + r.rating, 0) / total).toFixed(1)
                 : "4.8"
@@ -458,7 +472,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
                   <span className="text-orange-400 text-base">{"★".repeat(stars)}{"☆".repeat(5 - stars)}</span>
                   <span className="text-sm font-bold text-gray-800">{avg}</span>
                   <span className="text-sm text-gray-400">({displayTotal.toLocaleString("vi-VN")} đánh giá)</span>
-                  <span className="text-sm text-green-600 font-semibold">● Còn hàng</span>
+                  {!isDigitalProduct && <span className="text-sm text-green-600 font-semibold">● Còn hàng</span>}
                 </div>
               )
             })()}
@@ -568,24 +582,24 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       )}
 
       {/* Final CTA */}
-      <FinalCTA product={product} region={region} />
+      <FinalCTA product={product} region={region} digital={isDigitalProduct} />
 
-      {/* Related Products */}
-      <div className="py-12 bg-gray-50">
+      {/* Related Products — hidden for digital products (off-audience) */}
+      {!isDigitalProduct && <div className="py-12 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4">
           <h2 className="text-2xl font-extrabold text-gray-900 mb-8">🛍️ Sản phẩm liên quan</h2>
           <Suspense fallback={<SkeletonRelatedProducts />}>
             <RelatedProducts product={product} countryCode={countryCode} />
           </Suspense>
         </div>
-      </div>
+      </div>}
 
       {/* Sticky buy bar — appears when BundleSelector scrolls off screen */}
       <StickyBuyBar
         product={product}
         region={region}
         anchorId="bundle-selector"
-        socialEnabled={meta(product, "social_proof_enabled") !== "false"}
+        socialEnabled={!isDigitalProduct && meta(product, "social_proof_enabled") !== "false"}
         socialDelaySec={Number(meta(product, "social_proof_delay") || 12)}
         socialIntervalSec={Number(meta(product, "social_proof_interval") || 30)}
         socialDisplaySec={Number(meta(product, "social_proof_display") || 5)}
