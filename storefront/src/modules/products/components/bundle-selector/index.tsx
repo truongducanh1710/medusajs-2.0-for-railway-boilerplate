@@ -399,30 +399,33 @@ export default function BundleSelector({ product, region }: Props) {
               <div
                 key={vc.variantId}
                 onClick={() => changeVariant(vi)}
-                className={`rounded-xl border-2 cursor-pointer transition-all p-3 flex items-center gap-3 ${isSel ? "border-blue-600 shadow-md bg-blue-50/40" : "border-gray-200 hover:border-blue-300"}`}
+                className={`rounded-xl border-2 cursor-pointer transition-all p-3 ${isSel ? "border-blue-600 shadow-md bg-blue-50/40" : "border-gray-200 hover:border-blue-300"}`}
               >
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
-                  {isSel && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                {/* Header row: radio · title · price — always one line-ish on phones */}
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
+                    {isSel && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                  </div>
+                  <p className="flex-1 min-w-0 font-black text-gray-900 text-[15px] leading-tight">{vc.label}</p>
+                  <p className="font-black text-orange-500 text-lg flex-shrink-0">{formatVND(opt?.price ?? 0)}</p>
                 </div>
-                {vc.image && (
-                  // Thumbnail inside the card: on phones the gallery is off-screen when choosing
-                  <img src={vc.image} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-200" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-black text-gray-900 text-sm">{vc.label}</p>
+                {/* Body: image (visible here because the gallery is off-screen on phones) + what's included */}
+                <div className="flex gap-2.5 mt-2 items-start">
+                  {vc.image && (
+                    <img src={vc.image} alt="" className={`${isSel ? "w-[38%]" : "w-16"} flex-shrink-0 rounded-lg border border-gray-200 transition-all`} />
+                  )}
                   {Array.isArray(vc.desc) && vc.desc.length ? (
-                    <ul className="mt-1 space-y-0.5">
-                      {vc.desc.map((line, li) => (
-                        <li key={li} className="text-[12px] text-gray-600 leading-snug">{line}</li>
+                    <ul className="flex-1 min-w-0 space-y-1">
+                      {(isSel ? vc.desc : vc.desc.slice(0, 1)).map((line, li) => (
+                        <li key={li} className="text-[12.5px] text-gray-700 leading-snug">{line}</li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-[11px] text-gray-600 leading-snug">
+                    <p className="text-[12px] text-gray-600 leading-snug">
                       {ships ? "📧 PDF + 27 video qua email ngay · 📦 lịch để bàn giao sau" : "📧 PDF 28 trang + 27 video gửi qua email ngay"}
                     </p>
                   )}
                 </div>
-                <p className="font-black text-orange-500 flex-shrink-0">{formatVND(opt?.price ?? 0)}</p>
               </div>
             )
           })}
