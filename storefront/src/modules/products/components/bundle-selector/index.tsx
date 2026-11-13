@@ -341,6 +341,9 @@ export default function BundleSelector({ product, region }: Props) {
   }, [adding])
 
   const productMeta = (product.metadata ?? {}) as Record<string, any>
+  // Digital product: every version shown as its own priced card, no fake urgency/return badges
+  const isDigital = productMeta.digital_delivery === true || productMeta.digital_delivery === "true"
+  const versionCards = isDigital && isMultiVariant
 
   return (
     <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
@@ -370,6 +373,7 @@ export default function BundleSelector({ product, region }: Props) {
           skipProductPixelInit
         />
       )}
+      {!isDigital && (<>
       <div className="bg-gray-100 py-2 text-center text-xs font-semibold text-gray-500 tracking-widest uppercase">
         — Đổi trả 7 ngày — Hài lòng hoặc hoàn tiền —
       </div>
@@ -379,9 +383,40 @@ export default function BundleSelector({ product, region }: Props) {
           🔥 NHANH! Ưu đãi kết thúc sau <Countdown minutes={17} /> ⏰
         </p>
       </div>
+      </>)}
+
+      {versionCards && (
+        <div className="p-3 space-y-2.5 bg-white">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Chọn phiên bản:</p>
+          {variantConfigs2.map((vc, vi) => {
+            const opt = vc.options?.[0]
+            const isSel = activeVariantIdx === vi
+            const v = product.variants?.find((x) => x.id === vc.variantId)
+            const ships = (v?.metadata as any)?.requires_shipping === true || (v?.metadata as any)?.requires_shipping === "true"
+            return (
+              <div
+                key={vc.variantId}
+                onClick={() => changeVariant(vi)}
+                className={`rounded-xl border-2 cursor-pointer transition-all p-3 flex items-center gap-3 ${isSel ? "border-blue-600 shadow-md bg-blue-50/40" : "border-gray-200 hover:border-blue-300"}`}
+              >
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
+                  {isSel && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-gray-900 text-sm">{vc.label}</p>
+                  <p className="text-[11px] text-gray-600 leading-snug">
+                    {ships ? "📧 PDF + 27 video qua email ngay · 📦 lịch để bàn giao sau" : "📧 PDF 28 trang + 27 video gửi qua email ngay"}
+                  </p>
+                </div>
+                <p className="font-black text-orange-500 flex-shrink-0">{formatVND(opt?.price ?? 0)}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Variant selector — chỉ hiện khi có multi-variant config */}
-      {isMultiVariant && (
+      {isMultiVariant && !versionCards && (
         <div className="px-3 pt-3 pb-2 bg-white border-b border-gray-100">
           <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Chọn loại:</p>
           <div className="flex gap-2 flex-wrap">
@@ -402,7 +437,7 @@ export default function BundleSelector({ product, region }: Props) {
         </div>
       )}
 
-      <div className="p-3 space-y-2.5 bg-white">
+      {!versionCards && <div className="p-3 space-y-2.5 bg-white">
         {options.map((opt) => {
           const isSelected = selected === opt.qty
 
@@ -459,9 +494,11 @@ export default function BundleSelector({ product, region }: Props) {
                       {opt.shippingFee > 0 ? `+ ${formatVND(opt.shippingFee)} ship` : "Miễn phí giao hàng"}
                     </p>
                   )}
-                  <p className="text-xs text-gray-400 line-through">
-                    {formatVND(opt.originalPrice)}
-                  </p>
+                  {opt.originalPrice > opt.price && (
+                    <p className="text-xs text-gray-400 line-through">
+                      {formatVND(opt.originalPrice)}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -496,7 +533,7 @@ export default function BundleSelector({ product, region }: Props) {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       <div className="px-3 pb-4 pt-1 bg-white space-y-3">
         <button
@@ -504,16 +541,21 @@ export default function BundleSelector({ product, region }: Props) {
           disabled={adding}
           className="w-full py-3 sm:py-4 rounded-xl font-black text-base sm:text-lg tracking-wide transition-all bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98] disabled:opacity-70 shadow-lg"
         >
-          {adding ? "⏳ Đang thêm vào giỏ..." : "🛒 ĐẶT HÀNG NGAY"}
+          {adding ? "⏳ Đang thêm vào giỏ..." : isDigital ? `🛒 MUA NGAY — ${formatVND(selectedOpt.price)}` : "🛒 ĐẶT HÀNG NGAY"}
         </button>
 
         <div className="grid grid-cols-4 gap-1 pt-1">
-          {[
+          {(isDigital ? [
+            { icon: "📧", line1: "Nhận file", line2: "ngay" },
+            { icon: "🎬", line1: "27 video", line2: "bài giảng" },
+            { icon: "🔤", line1: "Song ngữ", line2: "Việt – Anh" },
+            { icon: "🔒", line1: "Chuyển khoản", line2: "QR" },
+          ] : [
             { icon: "⭐", line1: "4.8/5", line2: "Đánh giá" },
             { icon: "🔄", line1: "Đổi trả", line2: "7 ngày" },
             { icon: "🇻🇳", line1: "Hàng", line2: "Chính hãng" },
             { icon: "🔒", line1: "Thanh toán", line2: "An toàn" },
-          ].map((b) => (
+          ]).map((b) => (
             <div key={b.line1} className="flex flex-col items-center gap-0.5">
               <span className="text-xl sm:text-2xl">{b.icon}</span>
               <span className="text-[10px] text-gray-500 font-semibold text-center leading-tight">

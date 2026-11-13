@@ -376,6 +376,8 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       0) as number
   const currency = region.currency_code?.toUpperCase() || "VND"
 
+  const isDigitalProduct = product.metadata?.digital_delivery === true || product.metadata?.digital_delivery === "true"
+
   const pageContent =
     typeof product.metadata?.page_content === "string"
       ? (product.metadata.page_content as string)
@@ -491,8 +493,8 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
               )
             })()}
 
-            {/* Live viewer count */}
-            <ViewerCount />
+            {/* Live viewer count — not shown for digital products */}
+            {!isDigitalProduct && <ViewerCount />}
 
             {/* Bundle selector: add to cart then checkout */}
             <div id="bundle-selector">
@@ -500,11 +502,19 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             </div>
 
             {/* Delivery info */}
+            {isDigitalProduct ? (
+            <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📧</span><span><strong>Nhận file:</strong> PDF + video gửi qua email ngay khi thanh toán xong</span></div>
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Lịch in:</strong> giao sau, nội thành 1-2 ngày, tỉnh 2-4 ngày</span></div>
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">🔒</span><span><strong>Thanh toán:</strong> chuyển khoản QR, xác nhận tự động</span></div>
+            </div>
+            ) : (
             <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">
               <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Giao hàng:</strong> Nội thành 1-2 ngày, tỉnh 2-4 ngày</span></div>
               <div className="flex gap-2 items-start"><span className="flex-shrink-0">🔒</span><span><strong>Thanh toán:</strong> COD, chuyển khoản, QR SePay</span></div>
               <div className="flex gap-2 items-start"><span className="flex-shrink-0">🛡️</span><span><strong>Bảo hành:</strong> {meta(product, "bao_hanh") || "12 tháng"}</span></div>
             </div>
+            )}
           </div>
         </div>
       </div>

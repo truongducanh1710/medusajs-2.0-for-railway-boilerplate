@@ -1028,7 +1028,7 @@ export default function SimpleCheckout({
           {/* Header 1 dòng: tiêu đề + countdown + đóng */}
           <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-2">
             <span className="font-black text-base text-gray-900">🛒 Đặt hàng</span>
-            {!hasBundleShipping && (
+            {!hasBundleShipping && !isDigital && (
             <span className={`ml-auto text-[11px] font-black text-white rounded-full px-2 py-1 ${countdown.expired ? "bg-red-600" : "bg-orange-500"}`}>
               {countdown.expired ? "⏰ Sắp hết ưu đãi" : <>⏰ Giữ giá <span className="tabular-nums">{countdown.m}:{countdown.s}</span></>}
             </span>
@@ -1036,7 +1036,7 @@ export default function SimpleCheckout({
             <button
               onClick={onClose}
               aria-label="Đóng"
-              className={`w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none ${hasBundleShipping ? "ml-auto" : ""}`}
+              className={`w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 text-xl leading-none ${hasBundleShipping || isDigital ? "ml-auto" : ""}`}
             >✕</button>
           </div>
 

@@ -203,7 +203,43 @@ export default function CheckoutPopup({
     </p>
   )
 
-  const bundlePicker = !pickerOpen ? (
+  const isTrueFlag = (v: unknown) => v === true || v === "true"
+  const isDigitalProduct = isTrueFlag(product.metadata?.digital_delivery)
+  const digitalVersions = isDigitalProduct && variantLabels.length > 1
+    ? (product.variants ?? []).filter((v) => variantLabels.includes(v.title ?? "")).map((v) => ({
+        id: v.id,
+        title: v.title ?? "",
+        price: Number(v.calculated_price?.calculated_amount ?? 0),
+        ships: isTrueFlag(v.metadata?.requires_shipping),
+      }))
+    : []
+
+  const bundlePicker = digitalVersions.length > 1 ? (
+    <div className="space-y-2">
+      <p className="font-black text-sm text-gray-900">Chọn phiên bản</p>
+      {digitalVersions.map((dv) => {
+        const vi = variantLabels.indexOf(dv.title)
+        const isSel = vi === activeVariantIdx
+        return (
+          <button
+            key={dv.id}
+            onClick={() => onVariantChange(vi)}
+            className={`w-full text-left rounded-xl border-2 px-3 py-2.5 flex items-center gap-2.5 ${isSel ? "border-blue-600 bg-blue-50/40" : "border-gray-200"}`}
+          >
+            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSel ? "border-blue-600" : "border-gray-300"}`}>
+              {isSel && <span className="w-2 h-2 rounded-full bg-blue-600" />}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block font-black text-sm text-gray-900">{dv.title}</span>
+              <span className="block text-[11px] text-gray-600">{dv.ships ? "File qua email ngay · lịch giao sau" : "PDF + 27 video qua email ngay"}</span>
+            </span>
+            <span className="font-black text-sm text-orange-500 flex-shrink-0">{formatVND(dv.price)}</span>
+          </button>
+        )
+      })}
+      {syncErrorLine}
+    </div>
+  ) : !pickerOpen ? (
     <div className="space-y-2">
       {selectedSummary}
       {selectedGifts}
