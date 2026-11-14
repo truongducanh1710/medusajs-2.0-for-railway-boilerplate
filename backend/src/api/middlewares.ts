@@ -338,6 +338,9 @@ export default defineMiddlewares({
     { matcher: "/admin/sql-query*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-backfill*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/pancake-sync/report/mkt-cost-status*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    // order_funnel (bảng dẫn xuất mỗi đơn 1 dòng): xem trạng thái = view, chạy backfill = camp-control
+    { matcher: "/admin/order-funnel*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
+    { matcher: "/admin/order-funnel*", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     // Tự scale camp theo giờ (/app/tu-scale): xem = view, gắn camp/sửa điều kiện = camp-control
     { matcher: "/admin/auto-scale*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/auto-scale*", method: ["POST", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
