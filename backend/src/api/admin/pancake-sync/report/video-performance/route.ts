@@ -1,22 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { fbFetchJson } from "../../../../../lib/fb-fetch"
 import { getOwnScope } from "../../../../../lib/freelance-scope"
+import { syncVideoPerformance, dateVN } from "../../../../../lib/video-performance"
 
-const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
-
-/** Parse VD-code (VD + số) từ ad_name. Trả null nếu không có. */
-function extractVdCode(adName: string): string | null {
-  const m = (adName || "").match(/VD\d+/i)
-  return m ? m[0].toUpperCase() : null
-}
-
-/** Lấy action value theo type từ mảng actions của FB insights. */
-function actionVal(actions: any[] | undefined, type: string): number {
-  if (!Array.isArray(actions)) return 0
-  const a = actions.find((x) => x.action_type === type)
-  return a ? Number(a.value || 0) : 0
-}
 
 /**
  * GET /admin/pancake-sync/report/video-performance?from=&to=
@@ -94,61 +80,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 /**
  * POST /admin/pancake-sync/report/video-performance
- * Body: { date?: "2026-06-03" } — sync ad-level insights → mkt_ads_video.
+ * Body: { date?: "2026-06-03" } — sync ad-level insights → mkt_ads_video (mặc định hôm nay giờ VN).
+ * Job video-performance-daily-sync tự chạy mỗi tối cho hôm qua + hôm nay; route này để bấm tay ngày khác.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
     if (!FB_TOKEN) return res.status(400).json({ error: "FB_ACCESS_TOKEN chưa được cấu hình" })
     const body = req.body as any
-    const date = (body?.date as string) || new Date().toISOString().slice(0, 10)
-    const timeRange = encodeURIComponent(JSON.stringify({ since: date, until: date }))
+    const date = (body?.date as string) || dateVN()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "date phải dạng YYYY-MM-DD" })
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
 
-    const dbAccounts = await cskhService.sql(`
-      SELECT account_id FROM fb_ad_account WHERE deleted_at IS NULL AND active = true ORDER BY created_at ASC
-    `)
-    if (!dbAccounts.length) return res.status(400).json({ error: "Chưa có tài khoản FB Ads nào" })
+    const [{ n }] = await cskhService.sql(`SELECT count(*)::int n FROM fb_ad_account WHERE deleted_at IS NULL AND active = true`)
+    if (!n) return res.status(400).json({ error: "Chưa có tài khoản FB Ads nào" })
 
-    let synced = 0, errors = 0, withVd = 0
-    const fields = "ad_id,ad_name,spend,impressions,clicks,ctr,cpm,actions,video_play_actions,video_thruplay_watched_actions"
-
-    for (const { account_id: rawAccount } of dbAccounts) {
-      const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount.replace(/^act_/, "")}`
-      let nextUrl: string | null = `${FB_API_BASE}/${actId}/insights?level=ad&fields=${fields}&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
-      try {
-        while (nextUrl) {
-          const data: any = await fbFetchJson(nextUrl)
-          if (data.error) { console.error(`[video-perf] FB error ${actId}:`, data.error.message); errors++; break }
-          for (const ad of data.data ?? []) {
-            const spend = Math.round(Number(ad.spend ?? 0))
-            const vdCode = extractVdCode(ad.ad_name ?? "")
-            if (vdCode) withVd++
-            const impressions = Number(ad.impressions ?? 0)
-            const clicks = Number(ad.clicks ?? 0)
-            const ctr = Number(ad.ctr ?? 0)
-            const cpm = Number(ad.cpm ?? 0)
-            // 3s plays
-            const v3s = actionVal(ad.video_play_actions, "video_view") || actionVal(ad.actions, "video_view")
-            // thruplay
-            const thru = actionVal(ad.video_thruplay_watched_actions, "video_view")
-
-            await cskhService.sql(`
-              INSERT INTO mkt_ads_video (ad_id, ad_name, vd_code, account_id, stat_date, spend, impressions, clicks, ctr, cpm, video_3s, video_thruplay, updated_at)
-              VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11,$12, now())
-              ON CONFLICT (ad_id, stat_date) DO UPDATE SET
-                ad_name = EXCLUDED.ad_name, vd_code = EXCLUDED.vd_code, account_id = EXCLUDED.account_id,
-                spend = EXCLUDED.spend, impressions = EXCLUDED.impressions, clicks = EXCLUDED.clicks,
-                ctr = EXCLUDED.ctr, cpm = EXCLUDED.cpm, video_3s = EXCLUDED.video_3s,
-                video_thruplay = EXCLUDED.video_thruplay, updated_at = now()
-            `, [ad.ad_id, ad.ad_name ?? "", vdCode, actId, date, spend, impressions, clicks, ctr, cpm, v3s, thru])
-            synced++
-          }
-          nextUrl = data.paging?.next ?? null
-        }
-      } catch (e: any) { console.error(`[video-perf] account ${actId}:`, e.message); errors++ }
-    }
-
-    return res.json({ ok: true, date, synced, withVd, errors })
+    const r = await syncVideoPerformance(cskhService, FB_TOKEN, date)
+    return res.json({ ok: true, ...r })
   } catch (err: any) {
     console.error("[video-performance POST]", err.message)
     return res.status(500).json({ error: err.message })
