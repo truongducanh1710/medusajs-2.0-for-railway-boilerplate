@@ -1020,6 +1020,15 @@ export default function SimpleCheckout({
             <p>📧 Email <strong className="break-all">{digitalDone.email}</strong> <span className="text-gray-500">(xem cả mục Quảng cáo / Spam)</span></p>
             {needsAddress && <p>📦 Lịch để bàn giao tới địa chỉ của bạn trong 2–4 ngày.</p>}
           </div>
+          <a
+            href="https://zalo.me/g/ua65oi9tadphum8tmte3"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full py-3 rounded-xl bg-[#0068FF] text-white font-black text-sm"
+          >
+            💬 Vào nhóm Zalo hỗ trợ
+          </a>
+          <p className="text-xs text-gray-500 -mt-1">Vào nhóm để được hướng dẫn dùng tài liệu và hỏi đáp trực tiếp.</p>
           <p className="text-xs text-gray-500">Sau 10 phút chưa nhận được? Nhắn Zalo / gọi <strong>0967 993 609</strong> kèm SĐT đặt hàng.</p>
           <button onClick={onClose} className="w-full mt-2 py-3 rounded-xl bg-orange-500 text-white font-black">Đóng</button>
         </div>
