@@ -1008,14 +1008,14 @@ export default function SimpleCheckout({
         <div className="bg-white px-5 py-8 text-center space-y-3">
           <div className="text-5xl">✅</div>
           <p className="font-black text-xl text-green-600">Thanh toán thành công!</p>
-          <p className="text-sm text-gray-700">
-            File PDF và bộ video đã được gửi tới <strong className="break-all">{digitalDone.email}</strong>.
-            Bạn kiểm tra hộp thư (cả mục Quảng cáo / Spam) trong vài phút tới nhé.
-          </p>
-          {needsAddress && (
-            <p className="text-sm text-gray-700">📦 Lịch in sẽ được giao tới địa chỉ của bạn sau.</p>
-          )}
-          <p className="text-xs text-gray-500">Chưa nhận được mail? Gọi 0967 993 609 để được hỗ trợ.</p>
+          <p className="text-sm text-gray-700">Cảm ơn bạn đã tin chọn Lịch Toán Thông Minh của Phan Việt.</p>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-left text-sm text-gray-800 space-y-2">
+            <p>⏱️ Trong <strong>5–10 phút</strong>, shop gửi link tài liệu (PDF 28 trang + 27 video) tới:</p>
+            <p>📱 <strong>Zalo</strong> số điện thoại bạn vừa nhập</p>
+            <p>📧 Email <strong className="break-all">{digitalDone.email}</strong> <span className="text-gray-500">(xem cả mục Quảng cáo / Spam)</span></p>
+            {needsAddress && <p>📦 Lịch để bàn giao tới địa chỉ của bạn trong 2–4 ngày.</p>}
+          </div>
+          <p className="text-xs text-gray-500">Sau 10 phút chưa nhận được? Nhắn Zalo / gọi <strong>0967 993 609</strong> kèm SĐT đặt hàng.</p>
           <button onClick={onClose} className="w-full mt-2 py-3 rounded-xl bg-orange-500 text-white font-black">Đóng</button>
         </div>
       )
