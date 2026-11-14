@@ -150,6 +150,7 @@ const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNext
 export default defineMiddlewares({
   routes: [
     { matcher: "/store/carts/:id/bundle-shipping", method: ["POST"], bodyParser: { sizeLimit: "10kb" } },
+    { matcher: "/store/track/event", method: ["POST"], bodyParser: { sizeLimit: "16kb" } },
     {
       matcher: "/store/carts/:id/complete",
       method: ["POST"],
@@ -364,6 +365,7 @@ export default defineMiddlewares({
     { matcher: "/admin/ai-agents*", method: ["GET"], middlewares: [requirePerm("page.ai-settings.manage")] },
 
     { matcher: "/admin/live-view*", method: ["GET"], middlewares: [requirePerm("page.live-view.view")] },
+    { matcher: "/admin/funnel*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
 
     { matcher: "/admin/exchange-rate/list", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
 

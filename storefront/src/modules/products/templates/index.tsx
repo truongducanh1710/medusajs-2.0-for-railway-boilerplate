@@ -1,5 +1,6 @@
 import React, { Suspense } from "react"
 import { notFound } from "next/navigation"
+import FunnelTracker from "@modules/products/components/funnel-tracker"
 import { HttpTypes } from "@medusajs/types"
 
 import ImageGallery from "@modules/products/components/image-gallery"
@@ -549,6 +550,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
       {pageContent ? (
         <>
           <ProductPageContent content={pageContent} />
+          <FunnelTracker handle={product.handle!} />
           {isDigitalProduct && <ReviewsSection product={product} realOnly />}
         </>
       ) : (
