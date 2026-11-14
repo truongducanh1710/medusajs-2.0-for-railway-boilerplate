@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { trackFunnel } from "@lib/funnel"
 import { HttpTypes } from "@medusajs/types"
 import { addToCart } from "@lib/data/cart"
 import { generateEventId } from "@lib/pixel"
@@ -211,6 +212,7 @@ export default function BundleSelector({ product, region }: Props) {
   const [popupEverOpened, setPopupEverOpened] = useState(false)
 
   const changeVariant = (vi: number) => {
+    trackFunnel("variant_select", vi, { repeat: true })
     setActiveVariantIdx(vi)
     setSelected(1)
     const vc = variantConfigs2[vi]

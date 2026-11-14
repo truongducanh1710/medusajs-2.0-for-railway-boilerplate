@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, type FocusEvent, type ReactNode } from "react"
+import { trackFunnel } from "@lib/funnel"
 import { HttpTypes } from "@medusajs/types"
 import {
   updateCart,
@@ -169,6 +170,7 @@ function SepayModal({ orderCode, amount, onClose, onSuccess, closeLabel = "Quay 
           hasQrUrl: Boolean(body?.qrUrl),
         })
         setQrUrl(body?.qrUrl || "")
+        if (body?.qrUrl) trackFunnel("qr_shown")
         setInfo(body)
       } catch (error) {
         logCheckoutError("SePay QR request threw", error, { orderCode, amount })
@@ -201,6 +203,7 @@ function SepayModal({ orderCode, amount, onClose, onSuccess, closeLabel = "Quay 
             body,
           })
           setPaid(true)
+          trackFunnel("paid")
           clearInterval(iv)
           setTimeout(() => onSuccess(body.orderId), 1500)
         } else {
@@ -398,6 +401,7 @@ export default function SimpleCheckout({
   const [provinceOpen, setProvinceOpen] = useState(false)
   const [payment, setPayment] = useState<"cod" | "sepay">(digitalDelivery ? "sepay" : "cod")
   const isDigital = !!digitalDelivery
+  useEffect(() => { trackFunnel("checkout_open") }, [])
   const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
   const [digitalDone, setDigitalDone] = useState<{ email: string } | null>(null)
   // Digital products are bank-transfer only
@@ -775,6 +779,7 @@ export default function SimpleCheckout({
   }
 
   const handleSubmit = async () => {
+    trackFunnel("checkout_submit", undefined, { repeat: true })
     if (configuredQtyBusy.current || configuredQtyError.current) {
       setSubmitError("Vui lòng chờ giỏ hàng cập nhật hoặc chọn lại combo trước khi đặt hàng.")
       return
