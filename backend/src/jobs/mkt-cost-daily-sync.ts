@@ -1,6 +1,6 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
-import { syncAdsetAndAdLevels } from "../lib/mkt-cost-levels"
+import { syncAdsetAndAdLevels, campaignInsightsUrl, upsertCampaignCostRows } from "../lib/mkt-cost-levels"
 import { fbFetchJson } from "../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
@@ -38,12 +38,11 @@ async function syncAccountForDate(
   date: string,
   rawAccount: string
 ): Promise<{ synced: number; errors: number }> {
-  const timeRange = encodeURIComponent(JSON.stringify({ since: date, until: date }))
   let totalSynced = 0
   let totalErrors = 0
 
   const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`
-  const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
+  const url = campaignInsightsUrl(actId, date, FB_TOKEN)
 
   // Adset + ad level chạy song song với campaign-level (khác bảng, độc lập nhau).
   // Không await ở đây — gom kết quả ở cuối để 2 nhánh thực sự chạy cùng lúc.
@@ -59,28 +58,9 @@ async function syncAccountForDate(
         break
       }
 
-      const campaigns: any[] = data.data ?? []
-      for (const c of campaigns) {
-        const spend = Math.round(Number(c.spend ?? 0))
-        if (spend <= 0) continue
-
-        const mktName = extractMkt(c.campaign_name ?? "")
-        const impressions = Number(c.impressions ?? 0)
-        const clicks = Number(c.clicks ?? 0)
-
-        await cskhService.sql(`
-          INSERT INTO mkt_ads_cost (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks)
-          VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT (date, campaign_id) DO UPDATE SET
-            spend = EXCLUDED.spend,
-            impressions = EXCLUDED.impressions,
-            clicks = EXCLUDED.clicks,
-            mkt_name = EXCLUDED.mkt_name,
-            updated_at = now()
-        `, [date, mktName, actId, c.campaign_id, c.campaign_name, spend, impressions, clicks])
-
-        totalSynced++
-      }
+      // 1 câu upsert/trang, kèm reach/link click/video/mua hàng FB
+      const rows = await upsertCampaignCostRows(cskhService, date, actId, data.data ?? [])
+      totalSynced += rows.length
 
       nextUrl = data.paging?.next ?? null
     }

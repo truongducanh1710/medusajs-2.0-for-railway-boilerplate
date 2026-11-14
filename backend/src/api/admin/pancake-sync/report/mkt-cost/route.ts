@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { extractMkt } from "../../../../../lib/mkt-code"
 import { fbFetchJson } from "../../../../../lib/fb-fetch"
+import { campaignInsightsUrl, upsertCampaignCostRows } from "../../../../../lib/mkt-cost-levels"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
 const FB_TOKEN = process.env.FB_SYSTEM_TOKEN || process.env.FB_ACCESS_TOKEN || ""
@@ -74,7 +75,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const body = req.body as any
     const date = (body?.date as string) || new Date().toISOString().slice(0, 10)
-    const timeRange = encodeURIComponent(JSON.stringify({ since: date, until: date }))
 
     const cskhService = req.scope.resolve("cskhAnalysisModule") as any
 
@@ -93,7 +93,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     for (const { account_id: rawAccount } of dbAccounts) {
       const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount.replace(/^act_/, "")}`
-      const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
+      const url = campaignInsightsUrl(actId, date, FB_TOKEN)
 
       try {
         let nextUrl: string | null = url
@@ -106,26 +106,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             break
           }
 
-          const campaigns: any[] = data.data ?? []
-          for (const c of campaigns) {
+          const written = await upsertCampaignCostRows(cskhService, date, actId, data.data ?? [])
+          for (const c of written) {
             const spend = Math.round(Number(c.spend ?? 0))
-            if (spend <= 0) continue
-
             const mktName = extractMkt(c.campaign_name ?? "")
-            const impressions = Number(c.impressions ?? 0)
-            const clicks = Number(c.clicks ?? 0)
-
-            await cskhService.sql(`
-              INSERT INTO mkt_ads_cost (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks)
-              VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8)
-              ON CONFLICT (date, campaign_id) DO UPDATE SET
-                spend = EXCLUDED.spend,
-                impressions = EXCLUDED.impressions,
-                clicks = EXCLUDED.clicks,
-                mkt_name = EXCLUDED.mkt_name,
-                updated_at = now()
-            `, [date, mktName, actId, c.campaign_id, c.campaign_name, spend, impressions, clicks])
-
             perMkt[mktName] = (perMkt[mktName] ?? 0) + spend
             totalSynced++
             details.push({ account: actId, campaign: c.campaign_name, mkt: mktName, spend })

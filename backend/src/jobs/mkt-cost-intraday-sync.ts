@@ -1,6 +1,6 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { extractMkt } from "../lib/mkt-code"
-import { syncAdsetAndAdLevels } from "../lib/mkt-cost-levels"
+import { syncAdsetAndAdLevels, campaignInsightsUrl, upsertCampaignCostRows } from "../lib/mkt-cost-levels"
 import { fbFetchJson } from "../lib/fb-fetch"
 
 const FB_API_BASE = "https://graph.facebook.com/v25.0"
@@ -31,7 +31,6 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
   }
 
   const today = todayVN()
-  const timeRange = encodeURIComponent(JSON.stringify({ since: today, until: today }))
 
   // KHÔNG .catch(() => []) ở đây: lỗi SQL từng bị nuốt thành mảng rỗng rồi
   // return im lặng, khiến job trông như chưa từng chạy.
@@ -60,7 +59,7 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
 
   for (const { account_id: rawAccount } of dbAccounts) {
     const actId = rawAccount.startsWith("act_") ? rawAccount : `act_${rawAccount}`
-    const url = `${FB_API_BASE}/${actId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${timeRange}&limit=200&access_token=${FB_TOKEN}`
+    const url = campaignInsightsUrl(actId, today, FB_TOKEN)
 
     // Adset + ad level chạy song song với campaign-level (khác bảng, độc lập nhau)
     const levelsPromise = syncAdsetAndAdLevels(cskhService, logger, FB_TOKEN, today, rawAccount)
@@ -75,36 +74,9 @@ export default async function mktCostIntradaySync(container: MedusaContainer) {
           break
         }
 
-        // Gom cả trang thành 1 câu upsert (unnest) thay vì 1 SQL/camp —
-        // dedupe theo campaign_id vì ON CONFLICT không cho trùng trong cùng 1 câu
-        const byId = new Map<string, any>()
-        for (const c of (data.data ?? [])) {
-          if (Math.round(Number(c.spend ?? 0)) > 0 && c.campaign_id) byId.set(String(c.campaign_id), c)
-        }
-        const rows = [...byId.values()]
-        if (rows.length > 0) {
-          await cskhService.sql(`
-            INSERT INTO mkt_ads_cost (date, mkt_name, ad_account_id, campaign_id, campaign_name, spend, impressions, clicks)
-            SELECT $1::date, u.mkt_name, $2, u.campaign_id, u.campaign_name, u.spend, u.impressions, u.clicks
-            FROM unnest($3::text[], $4::text[], $5::text[], $6::bigint[], $7::bigint[], $8::bigint[])
-              AS u(mkt_name, campaign_id, campaign_name, spend, impressions, clicks)
-            ON CONFLICT (date, campaign_id) DO UPDATE SET
-              spend = EXCLUDED.spend,
-              impressions = EXCLUDED.impressions,
-              clicks = EXCLUDED.clicks,
-              mkt_name = EXCLUDED.mkt_name,
-              updated_at = now()
-          `, [
-            today, actId,
-            rows.map((c) => extractMkt(c.campaign_name ?? "")),
-            rows.map((c) => String(c.campaign_id)),
-            rows.map((c) => c.campaign_name ?? ""),
-            rows.map((c) => Math.round(Number(c.spend ?? 0))),
-            rows.map((c) => Number(c.impressions ?? 0)),
-            rows.map((c) => Number(c.clicks ?? 0)),
-          ])
-          totalSynced += rows.length
-        }
+        // Gom cả trang thành 1 câu upsert (unnest), kèm reach/link click/video/mua hàng FB
+        const rows = await upsertCampaignCostRows(cskhService, today, actId, data.data ?? [])
+        totalSynced += rows.length
 
         nextUrl = data.paging?.next ?? null
       }
