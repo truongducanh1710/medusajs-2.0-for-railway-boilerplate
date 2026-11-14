@@ -242,9 +242,14 @@ export async function loadData(withFb = true): Promise<BoData> {
   const postsOf = new Map<string, Map<string, string>>()
   for (const a of ads) { const m = postsOf.get(a.c) || new Map(); m.set(a.post_id, a.vd); postsOf.set(a.c, m) }
   const sets: BoData["sets"] = new Map()
+  // 14/11: camp đã gắn bộ trong cv_bo_camp mà mới vài ad có chi → tập post thấy được là tập con của bộ → không tạo bộ con,
+  // để bước dự phòng bên dưới gắn theo bo_key (không thì bộ báo thiếu camp, sinh bộ ma, camp bị tắt theo bộ con đã trượt)
+  const pinned = new Map<string, string>(mine.filter((m: any) => m.bo_key).map((m: any) => [m.campaign_id, String(m.bo_key)]))
   for (const [cid, m] of postsOf) {
     if (!camps.has(cid)) continue
     const posts = [...m.keys()].sort(); const key = posts.join(",")
+    const pin = pinned.get(cid)
+    if (pin && pin !== key) { const pp = new Set(pin.split(",")); if (posts.every((p) => pp.has(p))) continue }
     const s = sets.get(key) || { key, posts: posts.map((p) => ({ post: p, vd: String(m.get(p) || "?") })), page: posts[0].split("_")[0], name: "", camps: [], prod: camps.get(cid)!.prod || "CV" }
     s.camps.push(cid); camps.get(cid)!.bo = key; sets.set(key, s)
   }
