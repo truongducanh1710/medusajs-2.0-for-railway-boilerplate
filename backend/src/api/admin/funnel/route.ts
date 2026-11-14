@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { FUNNEL_STEPS, ensureFunnelTable, funnelPool, funnelReport } from "../../../lib/funnel"
+import { FUNNEL_EXTRAS, FUNNEL_MIN_SAMPLE, FUNNEL_STEPS, FUNNEL_V2_SINCE, ensureFunnelTable, funnelPool, funnelReport } from "../../../lib/funnel"
 
 const vnToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
 const DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -15,5 +15,5 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `SELECT handle, count(DISTINCT session_id)::int AS n FROM web_funnel_event WHERE created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 30`)
   const handle = q.handle || handles[0]?.handle || ""
   const rows = handle ? await funnelReport(handle, from, to, group) : []
-  res.json({ handle, from, to, group, steps: FUNNEL_STEPS, handles, rows })
+  res.json({ handle, from, to, group, steps: FUNNEL_STEPS, extras: FUNNEL_EXTRAS, min_sample: FUNNEL_MIN_SAMPLE, v2_since: FUNNEL_V2_SINCE, handles, rows })
 }

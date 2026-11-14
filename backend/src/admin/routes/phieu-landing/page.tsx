@@ -4,8 +4,12 @@ import { apiJson } from "../../lib/api-client"
 import { withRouteGuard } from "../../components/route-guard"
 
 type Step = { key: string; label: string }
-type Row = { group: string; events: Record<string, number>; avg_sec: number | null }
-type Data = { handle: string; from: string; to: string; group: string; steps: Step[]; handles: { handle: string; n: number }[]; rows: Row[] }
+type Row = { group: string; events: Record<string, number>; med_sec: number | null }
+type Data = {
+  handle: string; from: string; to: string; group: string
+  steps: Step[]; extras: Step[]; min_sample: number; v2_since: string
+  handles: { handle: string; n: number }[]; rows: Row[]
+}
 
 const vnDay = (back = 0) => new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10)
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) + "%" : "—")
@@ -33,13 +37,17 @@ function PhieuLandingPage() {
   useEffect(() => { load() }, [load])
 
   const steps = data?.steps ?? []
+  const extras = data?.extras ?? []
+  const minSample = data?.min_sample ?? 5
+  const beforeV2 = !!data && data.from < data.v2_since
   const quick = (b: number, e: number) => { setFrom(vnDay(b)); setTo(vnDay(e)) }
 
   return (
     <div style={{ padding: 20, maxWidth: 1300 }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Phễu landing</h1>
       <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 14 }}>
-        Mỗi bước tính số phiên khác nhau (1 người vào trang = 1 phiên). % là so với bước "Vào trang". Thời gian ở trang lấy lúc khách rời trang.
+        Mỗi bước tính số phiên khác nhau (1 người vào trang = 1 phiên). % là so với bước "Vào trang".
+        "Đặt đơn thành công" gồm cả COD và QR đã trả. Thời gian ở trang là trung vị, chỉ tính lúc khách đang mở trang.
       </p>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
@@ -69,7 +77,8 @@ function PhieuLandingPage() {
             <tr>
               <th style={th}>{group === "ad" ? "Video" : group === "campaign" ? "Camp" : ""}</th>
               {steps.map((s) => <th key={s.key} style={{ ...th, textAlign: "right" }}>{s.label}</th>)}
-              <th style={{ ...th, textAlign: "right" }}>TG ở trang</th>
+              {extras.map((s, i) => <th key={s.key} style={{ ...th, ...xtra, textAlign: "right", borderLeft: i ? undefined : sep }}>{s.label}</th>)}
+              <th style={{ ...th, ...xtra, textAlign: "right" }}>TG ở trang</th>
             </tr>
           </thead>
           <tbody>
@@ -81,7 +90,9 @@ function PhieuLandingPage() {
                   {steps.map((s, i) => {
                     const n = r.events[s.key] ?? 0
                     const prev = i ? r.events[steps[i - 1].key] ?? 0 : 0
-                    const drop = i > 0 && prev > 0 && n / prev < 0.4
+                    // "Form hợp lệ" has no data before v2, so it can't be judged (or judged against) there
+                    const noData = beforeV2 && (s.key === "checkout_valid" || steps[i - 1]?.key === "checkout_valid")
+                    const drop = i > 0 && !noData && prev >= minSample && n / prev < 0.4
                     return (
                       <td key={s.key} style={{ ...td, textAlign: "right", background: drop ? "#fef2f2" : undefined }}>
                         <div style={{ fontWeight: 700 }}>{n}</div>
@@ -89,15 +100,32 @@ function PhieuLandingPage() {
                       </td>
                     )
                   })}
-                  <td style={{ ...td, textAlign: "right" }}>{fmtSec(r.avg_sec)}</td>
+                  {extras.map((s, i) => {
+                    const n = r.events[s.key] ?? 0
+                    return (
+                      <td key={s.key} style={{ ...td, textAlign: "right", color: "#4b5563", borderLeft: i ? undefined : sep }}>
+                        <div style={{ fontWeight: 600 }}>{n}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{pct(n, base)}</div>
+                      </td>
+                    )
+                  })}
+                  <td style={{ ...td, textAlign: "right" }}>{fmtSec(r.med_sec)}</td>
                 </tr>
               )
             })}
-            {data && !data.rows.length && <tr><td style={td} colSpan={steps.length + 2}>Chưa có lượt vào trang trong khoảng này.</td></tr>}
+            {data && !data.rows.length && <tr><td style={td} colSpan={steps.length + extras.length + 2}>Chưa có lượt vào trang trong khoảng này.</td></tr>}
           </tbody>
         </table>
       </div>
-      <p style={{ color: "#6b7280", fontSize: 12, marginTop: 8 }}>Ô đỏ: còn dưới 40% so với bước liền trước — chỗ khách rơi nhiều.</p>
+      <p style={{ color: "#6b7280", fontSize: 12, marginTop: 8 }}>
+        Ô đỏ: còn dưới 40% so với bước liền trước — chỗ khách rơi nhiều (chỉ tô khi bước trước có từ {minSample} phiên).
+        Các cột bên phải vạch là hành động phụ, không nằm trong chuỗi phễu.
+      </p>
+      {beforeV2 && (
+        <p style={{ color: "#b45309", fontSize: 12, marginTop: 4 }}>
+          Trước ngày {data!.v2_since.split("-").reverse().join("/")}: chưa ghi "Form hợp lệ" và đơn COD, nên hai cột cuối của phễu thiếu số cho những ngày đó.
+        </p>
+      )}
     </div>
   )
 }
@@ -106,7 +134,9 @@ const inp: React.CSSProperties = { padding: "6px 8px", border: "1px solid #d1d5d
 const btn: React.CSSProperties = { padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff", cursor: "pointer" }
 const tbl: React.CSSProperties = { width: "100%", borderCollapse: "collapse", border: "1px solid #e5e7eb", fontSize: 13 }
 const th: React.CSSProperties = { padding: "6px 10px", background: "#f3f4f6", borderBottom: "1px solid #e5e7eb", fontWeight: 600, whiteSpace: "nowrap" }
-const td: React.CSSProperties = { padding: "6px 10px", borderBottom: "1px solid #f3f4f6", verticalAlign: "middle" }
+const sep = "2px solid #d1d5db"
+const xtra: React.CSSProperties = { fontWeight: 500, color: "#4b5563" }
+const td: React.CSSProperties ={ padding: "6px 10px", borderBottom: "1px solid #f3f4f6", verticalAlign: "middle" }
 
 export const config = defineRouteConfig({ label: "Phễu landing" })
 

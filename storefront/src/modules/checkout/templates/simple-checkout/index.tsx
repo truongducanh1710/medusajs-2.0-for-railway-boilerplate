@@ -785,6 +785,7 @@ export default function SimpleCheckout({
       return
     }
     if (!validate()) return
+    trackFunnel("checkout_valid")
     setSubmitting(true)
     setSubmitError("")
 
@@ -935,6 +936,7 @@ export default function SimpleCheckout({
       if (result?.type === "order") {
         // Đặt hàng thành công → khóa đơn nháp để không bắn trùng khi rời trang
         abandonStateRef.current.placed = true
+        trackFunnel("order", "cod")
         router.push(`/${countryCode}/order/confirmed/${result.order.id}`)
       } else if (result) {
         // placeOrder thành công sẽ redirect; trả về cart nghĩa là complete thất bại
@@ -945,6 +947,7 @@ export default function SimpleCheckout({
       // action promise bằng NEXT_REDIRECT — thành công, không phải lỗi
       if (isRedirectError(err)) {
         abandonStateRef.current.placed = true
+        trackFunnel("order", "cod")
         return
       }
       logCheckoutError("handleSubmit failed", err, {

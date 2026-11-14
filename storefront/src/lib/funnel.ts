@@ -32,9 +32,21 @@ export function productHandleFromPath(): string {
   return m ? decodeURIComponent(m[1]) : ""
 }
 
+// Last product page seen in this tab — lets the standalone /checkout page attribute its events
+const HANDLE_KEY = "pvw_fhandle"
+
+function resolveHandle(explicit?: string): string {
+  const onPage = explicit || productHandleFromPath()
+  try {
+    if (onPage) { sessionStorage.setItem(HANDLE_KEY, onPage); return onPage }
+    return sessionStorage.getItem(HANDLE_KEY) || ""
+  } catch { return onPage }
+}
+
 export function trackFunnel(event: string, value?: string | number, opts: { repeat?: boolean; handle?: string } = {}) {
   try {
-    const handle = opts.handle || productHandleFromPath()
+    if ((navigator as any).webdriver) return // automated browsers
+    const handle = resolveHandle(opts.handle)
     if (!handle) return
     const key = `${handle}|${event}`
     if (!opts.repeat && sent.has(key)) return

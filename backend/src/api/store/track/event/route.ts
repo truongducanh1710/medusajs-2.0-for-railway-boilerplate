@@ -3,13 +3,32 @@ import { FUNNEL_EVENTS, ensureFunnelTable, funnelPool } from "../../../../lib/fu
 
 const s = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : null)
 
+// Crawlers, link previewers and scripted clients never count as visitors
+const BOT_UA = /bot|crawl|spider|slurp|facebookexternalhit|facebookcatalog|headless|lighthouse|pagespeed|python|curl|wget|axios|node-fetch|go-http/i
+
+// Per-IP cap (events per minute). Generous because mobile carriers put many real users behind one IP.
+const LIMIT = 300
+const WINDOW_MS = 60_000
+const hits = new Map<string, { n: number; reset: number }>()
+
+function allow(ip: string, count: number): boolean {
+  const now = Date.now()
+  if (hits.size > 5000) for (const [k, v] of hits) if (v.reset <= now) hits.delete(k)
+  const h = hits.get(ip)
+  if (!h || h.reset <= now) { hits.set(ip, { n: count, reset: now + WINDOW_MS }); return true }
+  h.n += count
+  return h.n <= LIMIT
+}
+
 /** Landing funnel event beacon (fire-and-forget from the product page). Accepts one event or { events: [...] }. */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   try {
+    const ua = String(req.headers["user-agent"] ?? "")
+    const ip = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() || req.ip || "?"
     const body = (req.body ?? {}) as any
     const list: any[] = Array.isArray(body.events) ? body.events.slice(0, 20) : [body]
     const rows = list.filter((e) => FUNNEL_EVENTS.has(e?.event) && typeof e?.session_id === "string" && typeof e?.handle === "string")
-    if (rows.length) {
+    if (rows.length && ua && !BOT_UA.test(ua) && allow(ip, rows.length)) {
       await ensureFunnelTable()
       const vals: any[] = []
       const ph = rows.map((e, i) => {

@@ -1,6 +1,6 @@
 import { MedusaContainer } from "@medusajs/framework"
 import { Modules } from "@medusajs/framework/utils"
-import { FUNNEL_STEPS, funnelReport } from "../lib/funnel"
+import { FUNNEL_EXTRAS, FUNNEL_MIN_SAMPLE, FUNNEL_STEPS, funnelReport } from "../lib/funnel"
 import { notifyTelegramByEmail } from "../lib/notify"
 
 const vnToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)
@@ -24,22 +24,23 @@ export default async function funnelDailyReport(container: MedusaContainer) {
       const ev = all.events, base = ev.view
       const lines = [`📊 <b>Phễu landing hôm nay — ${p.title}</b>`]
       for (const s of FUNNEL_STEPS) lines.push(`${s.label}: <b>${ev[s.key] ?? 0}</b> (${pct(ev[s.key] ?? 0, base)})`)
-      if (all.avg_sec != null) lines.push(`⏱️ Ở trang TB: ${all.avg_sec}s`)
-      // Biggest relative drop between consecutive steps (ignore steps with < 5 sessions before)
+      lines.push(FUNNEL_EXTRAS.map((s) => `${s.label}: <b>${ev[s.key] ?? 0}</b>`).join(" · "))
+      if (all.med_sec != null) lines.push(`⏱️ Ở trang (trung vị): ${all.med_sec}s`)
+      // Biggest relative drop between consecutive steps (ignore steps with too few sessions before)
       let worst: { from: string; to: string; keep: number } | null = null
       for (let i = 1; i < FUNNEL_STEPS.length; i++) {
         const a = ev[FUNNEL_STEPS[i - 1].key] ?? 0, b = ev[FUNNEL_STEPS[i].key] ?? 0
-        if (a < 5) continue
+        if (a < FUNNEL_MIN_SAMPLE) continue
         const keep = b / a
         if (!worst || keep < worst.keep) worst = { from: FUNNEL_STEPS[i - 1].label, to: FUNNEL_STEPS[i].label, keep }
       }
       if (worst) lines.push(``, `⚠️ Rơi nhiều nhất: ${worst.from} → ${worst.to} (chỉ còn ${Math.round(worst.keep * 100)}%)`)
       const byAd = await funnelReport(p.handle, day, day, "ad")
       if (byAd.length > 1) {
-        lines.push(``, `<b>Theo video</b> (vào → chọn bản → QR → trả tiền):`)
+        lines.push(``, `<b>Theo video</b> (vào → chọn bản → mở form → đặt đơn):`)
         for (const r of byAd.slice(0, 8)) {
           const e = r.events
-          lines.push(`${r.group}: ${e.view ?? 0} → ${e.variant_select ?? 0} → ${e.qr_shown ?? 0} → ${e.paid ?? 0}`)
+          lines.push(`${r.group}: ${e.view ?? 0} → ${e.variant_select ?? 0} → ${e.checkout_open ?? 0} → ${e.order ?? 0}`)
         }
       }
       lines.push(``, `Chi tiết: api.phanviet.vn/app/phieu-landing`)

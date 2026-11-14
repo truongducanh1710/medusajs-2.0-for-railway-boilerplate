@@ -6,8 +6,12 @@ import { trackFunnel } from "@lib/funnel"
 /** Mounted on the product page: page view, scroll depth, video play/end, time on page, leave. */
 export default function FunnelTracker({ handle }: { handle: string }) {
   useEffect(() => {
-    const start = Date.now()
-    trackFunnel("view", undefined, { handle })
+    // Time on page = total time the tab was visible (a trip to the banking app and back keeps counting)
+    let visibleMs = 0
+    let visibleSince = document.visibilityState === "visible" ? Date.now() : 0
+    // Prerendered / background-loaded pages only count as a view once actually shown
+    const view = () => trackFunnel("view", undefined, { handle })
+    if (visibleSince) view()
 
     const marks = [25, 50, 75, 100]
     const onScroll = () => {
@@ -26,13 +30,17 @@ export default function FunnelTracker({ handle }: { handle: string }) {
     const t30 = setTimeout(() => trackFunnel("time_30s", undefined, { handle }), 30000)
     const t90 = setTimeout(() => trackFunnel("time_90s", undefined, { handle }), 90000)
 
-    let left = false
+    // Sent on every hide with the running total; the report keeps the largest value per session
     const leave = () => {
-      if (left) return
-      left = true
-      trackFunnel("leave", Math.round((Date.now() - start) / 1000), { handle })
+      if (!visibleSince) return
+      visibleMs += Date.now() - visibleSince
+      visibleSince = 0
+      trackFunnel("leave", Math.round(visibleMs / 1000), { handle, repeat: true })
     }
-    const onVis = () => { if (document.visibilityState === "hidden") leave() }
+    const onVis = () => {
+      if (document.visibilityState === "hidden") leave()
+      else if (!visibleSince) { visibleSince = Date.now(); view() }
+    }
     document.addEventListener("visibilitychange", onVis)
     window.addEventListener("pagehide", leave)
 
