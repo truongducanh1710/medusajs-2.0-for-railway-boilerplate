@@ -536,7 +536,11 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
     if (pausedToday.has(c.id)) continue // đã tắt hôm nay mà người bật lại → tôn trọng tới hết ngày
     const d = `chi ${vnd(r.s)}, ${r.o} đơn${r.o ? " " + Math.round(r.p) + "%" : ""}, ĐK FB ${r.reg}, CPC ${vnd(r.cpc)}`
     // User 13/11 "kệ và hộp cần tắt sớm hơn": backtest kệ 58 ngày — 5 mốc dưới cắt phần chi về sau ra 48% (mốc cũ 42%).
-    // Hộp CHƯA áp: backtest 18 ngày phần chi bị cắt sớm vẫn ra 17% (10 đơn) — chờ user chốt.
+    // Hộp: user 14/11 chốt (VD2208 162k 0 đơn CPC 18k vẫn chạy) — 0 đơn & chưa ĐK & chi ≥150k & CPC ≥13k → tắt
+    // (mốc chung là 200k; backtest 13/11 từng ra phần chi bị cắt sớm 17% nhưng user chọn cắt).
+    if (c.prod === "TDH" && r.o === 0 && r.reg === 0 && r.s >= 150_000 && r.cpc >= 13_000) {
+      await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày (hộp): CPC ≥13k & chưa ĐK từ 150k — ${d}`, dry, r); actions++; continue
+    }
     if (c.prod === "KGV") {
       const why = r.o === 0 && r.s >= 200_000 ? "0 đơn dù chi ≥200k"
         : r.o === 0 && r.reg === 0 && r.s >= 150_000 && r.cpc >= 20_000 ? "CPC ≥20k & chưa ĐK từ 150k"

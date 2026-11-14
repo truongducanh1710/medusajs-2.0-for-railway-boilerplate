@@ -577,7 +577,7 @@ function BoTab() {
         {cur.key === "CV" ? <>Trong ngày kiểu Xuân (6h–20h): 2 đơn ≤15% → 1tr, ≥4 đơn ≤20% → 2tr, ≥6 đơn ≤20% → 4tr; 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k → tắt tới hết ngày; chi ≥800k &gt;50% hoặc từ 15h &gt;45% → tắt.</>
           : <>Trong ngày (6h–20h, user 13/11 tăng ít hơn): ≥3 đơn ≤20% → 600k, ≥5 đơn ≤20% → 1tr, trần 1tr.{" "}
             {cur.key === "KGV" ? <>Tắt sớm (kệ): 0 đơn mà chi ≥200k; CPC ≥20k chưa ĐK từ 150k; 1 đơn mà ≥400k &gt;50%; ≥600k &gt;50%; từ 12h &gt;45%.</>
-              : <>Tắt: 0 đơn chưa ĐK mà chi ≥200k (CPC ≥13k) hoặc ≥300k; CPC ≥30k từ 150k; ≥800k &gt;50%; từ 15h &gt;45%.</>}</>}
+              : <>Tắt (hộp): 0 đơn chưa ĐK mà chi ≥150k &amp; CPC ≥13k; 0 đơn mà chi ≥300k; ≥800k &gt;50%; từ 15h &gt;45%.</>}</>}
         23h về 300k, thiếu camp thì hẹn bật lại camp cũ của bộ lúc 5h, vẫn thiếu thì lên camp mới bằng đúng bài cũ (chỉ ngày tốt ≤{st.bad_day_pct}%).<br />
         Giới hạn: tối đa {st.max_camps} camp, {st.max_new_day} camp mới/ngày (bù bộ Scale → Thắng trước, giữ 1 suất cho test), {st.test_per_day} bộ test/ngày (mỗi sản phẩm tính riêng{Object.entries(st.products || {}).filter(([, v]: any) => v?.max_new_day != null || v?.test_per_day != null).map(([k, v]: any) => `; ${k}: ${v.max_new_day ?? st.max_new_day} camp mới, ${v.test_per_day ?? st.test_per_day} bộ test`).join("")}), ngày tốt/xấu tính theo từng sản phẩm, tổng ngân sách ≤ {vnd(st.cap_total)}, 7 ngày &gt;{st.week_stop_pct}% thì dừng lên mới. Báo Telegram 21h.
       </div>
