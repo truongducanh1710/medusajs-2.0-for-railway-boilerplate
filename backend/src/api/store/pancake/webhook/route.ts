@@ -5,6 +5,7 @@ import { PANCAKE_WEBHOOK_SECRET, getPancakeShopsForMarket } from "../../../../li
 import { mapPancakeOrder, statusLabel } from "../../../../modules/pancake-sync/service"
 import { extractNotesForOrder, extractTags } from "../../../../modules/pancake-sync/extractors"
 import { sendPurchaseEvent } from "../../../../lib/fb-capi"
+import { isDigitalFlag, sendDigitalDeliveryIfNeeded } from "../../../../lib/digital-delivery"
 import { fixMarketerFromUtm } from "../../../../lib/pancake"
 import { fixDuplicateLanding } from "../../../../lib/landing-dedup"
 import { untagCompletedDraft } from "../../../../lib/landing-draft"
@@ -269,6 +270,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
                 }).catch(() => medusaOrderShallow)
               : undefined
             const meta = medusaOrder?.metadata ?? {}
+
+            // Lịch in trả COD: giao xong mới gửi PDF + video qua email
+            if (medusaOrder && isDigitalFlag(meta.digital_delivery) && meta.payment_method === "cod" && !meta.digital_sent_at) {
+              const r = await sendDigitalDeliveryIfNeeded(req.scope, medusaOrder.id, { codDelivered: true }).catch((err: any) => {
+                console.error(`[Pancake Webhook] COD digital delivery failed for ${medusaOrder.id}:`, err?.message)
+                return "error"
+              })
+              console.log(`[Pancake Webhook] COD digital delivery ${medusaOrder.id}: ${r}`)
+            }
 
             // Đơn đã thanh toán SePay → Purchase đã bắn lúc thanh toán, không bắn lại.
             // FB chỉ dedup trong 48h, giao hàng thường sau vài ngày nên phải tự guard.

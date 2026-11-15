@@ -404,10 +404,12 @@ export default function SimpleCheckout({
   useEffect(() => { trackFunnel("checkout_open") }, [])
   const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
   const [digitalDone, setDigitalDone] = useState<{ email: string } | null>(null)
-  // Digital products are bank-transfer only
+  // Download-only digital variants are bank-transfer only; ones that ship a physical
+  // item (printed calendar) may be COD — files are emailed once Pancake marks it delivered
+  const codAllowed = !isDigital || needsAddress
   useEffect(() => {
-    if (isDigital && payment !== "sepay") setPayment("sepay")
-  }, [isDigital, payment])
+    if (!codAllowed && payment !== "sepay") setPayment("sepay")
+  }, [codAllowed, payment])
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState("")
@@ -1151,7 +1153,7 @@ export default function SimpleCheckout({
             {/* Thanh toán — gọn, COD mặc định */}
             <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 space-y-2">
               <p className="font-black text-sm text-gray-900">💳 Thanh toán</p>
-              {isDigital ? (
+              {!codAllowed ? (
                 <div className="px-3 py-2.5 rounded-xl border-2 border-blue-600 bg-blue-50">
                   <p className="text-sm font-bold text-gray-900">Chuyển khoản QR</p>
                   <p className="text-[11px] text-gray-600">Thanh toán xong, hệ thống tự gửi PDF + video vào email của bạn.</p>
@@ -1159,12 +1161,16 @@ export default function SimpleCheckout({
               ) : (<>
               <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "cod" ? "border-orange-500 bg-orange-50" : "border-gray-200"}`}>
                 <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
-                <span className="flex-1 text-sm font-bold text-gray-900">Thanh toán khi nhận hàng</span>
+                <span className="flex-1 text-sm font-bold text-gray-900">Thanh toán khi nhận hàng
+                  {isDigital && <span className="block text-[11px] font-normal text-gray-600">PDF + video gửi email sau khi nhận lịch</span>}
+                </span>
                 <span className="text-[11px] text-gray-500">Kiểm tra rồi trả</span>
               </label>
               <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
                 <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
-                <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR</span>
+                <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR
+                  {isDigital && <span className="block text-[11px] font-normal text-gray-600">Nhận PDF + video qua email ngay</span>}
+                </span>
                 {paymentDiscount > 0 && <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(paymentDiscount)}</span>}
               </label>
               </>)}
@@ -1201,7 +1207,9 @@ export default function SimpleCheckout({
             </button>
             <p className="text-center text-[11px] text-gray-500">
               {isDigital
-                ? (needsAddress ? "📧 Nhận PDF + video qua email ngay · 📦 Lịch in giao sau" : "📧 Nhận PDF + video qua email ngay sau khi thanh toán")
+                ? (needsAddress
+                    ? (payment === "cod" ? "📦 Lịch giao 3–5 ngày, trả tiền khi nhận · 📧 PDF + video gửi email sau khi nhận" : "📧 Nhận PDF + video qua email ngay · 📦 Lịch in giao sau")
+                    : "📧 Nhận PDF + video qua email ngay sau khi thanh toán")
                 : hasBundleShipping ? "Thanh toán khi nhận hàng · Hỗ trợ theo chính sách đổi trả" : "✅ Kiểm tra hàng trước · 🔄 Đổi trả 7 ngày · 🛡️ Bảo hành"}
             </p>
           </div>

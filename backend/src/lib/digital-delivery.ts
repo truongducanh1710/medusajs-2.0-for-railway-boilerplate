@@ -7,6 +7,8 @@ import { notifyTelegramByEmail } from "./notify"
  * Once payment is confirmed the customer gets an email with the product's Drive folder
  * (product.metadata.digital_drive_url). Variants with metadata.requires_shipping = true
  * (e.g. printed calendar) also get the files; the physical item ships later via Pancake.
+ * Those shipped variants may also be COD: then the files go out when Pancake marks the
+ * order delivered (status 3), see api/store/pancake/webhook.
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -19,7 +21,11 @@ export function isRealCustomerEmail(email?: string | null): boolean {
   return !!email && EMAIL_RE.test(email) && !/@example\.com$/i.test(email)
 }
 
-export async function sendDigitalDeliveryIfNeeded(scope: any, orderId: string): Promise<"sent" | "skipped" | "already_sent"> {
+export async function sendDigitalDeliveryIfNeeded(
+  scope: any,
+  orderId: string,
+  opts: { codDelivered?: boolean } = {}
+): Promise<"sent" | "skipped" | "already_sent"> {
   const orderService = scope.resolve(Modules.ORDER) as any
   const productService = scope.resolve(Modules.PRODUCT) as any
 
@@ -29,7 +35,8 @@ export async function sendDigitalDeliveryIfNeeded(scope: any, orderId: string): 
   })
   const meta = (order.metadata ?? {}) as Record<string, any>
   if (meta.digital_sent_at) return "already_sent"
-  if (meta.payment_status !== "paid") return "skipped"
+  const codDelivered = !!opts.codDelivered && meta.payment_method === "cod"
+  if (meta.payment_status !== "paid" && !codDelivered) return "skipped"
 
   const variantIds = (order.items ?? []).map((i: any) => i.variant_id).filter(Boolean)
   if (!variantIds.length) return "skipped"
@@ -53,6 +60,8 @@ export async function sendDigitalDeliveryIfNeeded(scope: any, orderId: string): 
 
   const variant = variants.find((v: any) => v.product_id === digitalProduct.id)
   const shipsPhysical = isDigitalFlag(variant?.metadata?.requires_shipping)
+  // COD delivery is only offered for shipped variants; a download-only COD order is never sent
+  if (codDelivered && !shipsPhysical) return "skipped"
   const orderCode = `#${order.display_id ?? order.id}`
 
   const notificationService = scope.resolve(Modules.NOTIFICATION) as any
@@ -70,7 +79,8 @@ export async function sendDigitalDeliveryIfNeeded(scope: any, orderId: string): 
         variantTitle: variant?.title,
         orderCode,
         driveUrl,
-        shipsPhysical,
+        // COD: the calendar has already arrived, don't promise it again
+        shipsPhysical: shipsPhysical && !codDelivered,
       },
     })
   } catch (err: any) {
