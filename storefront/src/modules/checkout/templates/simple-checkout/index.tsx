@@ -358,6 +358,8 @@ type SimpleCheckoutProps = {
   pendingBundlePrice?: number
   // Separate fee for the picked offer while popup cart synchronization is pending.
   pendingShippingFee?: number
+  // payment_discount_amount of the picked bundle's cart line (variant metadata, else product)
+  pendingPaymentDiscount?: unknown
   // Original (strike-through) price of the picked bundle — popup footer shows the saving
   compareAtBundlePrice?: number
   syncing?: boolean
@@ -380,6 +382,7 @@ export default function SimpleCheckout({
   bundleVariantIds,
   pendingBundlePrice,
   pendingShippingFee,
+  pendingPaymentDiscount,
   compareAtBundlePrice,
   syncing = false,
   ensureReady,
@@ -735,17 +738,20 @@ export default function SimpleCheckout({
   const cartTotal = Math.max(0, subtotal - promoDiscount) + shippingFee
   // A product may cap or disable the order-level QR incentive; zero is a valid override.
   // For mixed carts use the smallest configured incentive instead of adding discounts.
-  const configuredPaymentDiscounts = sortedItems.flatMap((item: any) => {
-    const raw = item.metadata?.payment_discount_amount
+  const parsePaymentDiscount = (raw: unknown): number[] => {
     if (raw == null || (typeof raw !== "number" && typeof raw !== "string") || (typeof raw === "string" && !raw.trim())) return []
     const amount = Number(raw)
     return Number.isFinite(amount) && amount >= 0 ? [Math.floor(amount)] : []
-  })
-  const paymentDiscount = isDigital
-    ? 0
-    : configuredPaymentDiscounts.length
+  }
+  // Popup: the picked bundle's value is authoritative (its cart line may still be the old pick
+  // while syncing); other cart lines keep their own value.
+  const configuredPaymentDiscounts = embedded && pendingBundlePrice != null
+    ? [...parsePaymentDiscount(pendingPaymentDiscount), ...displayItems.flatMap((item: any) => parsePaymentDiscount(item.metadata?.payment_discount_amount))]
+    : sortedItems.flatMap((item: any) => parsePaymentDiscount(item.metadata?.payment_discount_amount))
+  // Digital products get no QR incentive unless a product/variant configures one
+  const paymentDiscount = configuredPaymentDiscounts.length
     ? Math.min(...configuredPaymentDiscounts, Math.max(0, cartTotal - 1000))
-    : (embedded && !cartProp ? 0 : DEFAULT_SEPAY_DISCOUNT)
+    : isDigital || (embedded && !cartProp) ? 0 : DEFAULT_SEPAY_DISCOUNT
   const sepayTotal = Math.max(1000, cartTotal - paymentDiscount)
   const baseTotal = cartTotal
   const finalTotal = payment === "sepay" ? sepayTotal : baseTotal

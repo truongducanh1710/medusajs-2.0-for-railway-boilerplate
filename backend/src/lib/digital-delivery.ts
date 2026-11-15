@@ -131,7 +131,9 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
   const ships = isDigitalFlag(variant?.metadata?.requires_shipping)
   const a = order.shipping_address ?? {}
   const name = [a.first_name, a.last_name].filter(Boolean).join(" ")
-  const total = Number(order.items?.reduce((s: number, i: any) => s + Number(i.unit_price ?? 0) * Number(i.quantity ?? 1), 0) ?? 0)
+  const listTotal = Number(order.items?.reduce((s: number, i: any) => s + Number(i.unit_price ?? 0) * Number(i.quantity ?? 1), 0) ?? 0)
+  // Paid amount: list price minus the QR incentive (e.g. printed calendar 149K → 139K)
+  const total = Math.max(0, listTotal - (meta.payment_method === "sepay" ? Number(meta.sepay_discount ?? 0) || 0 : 0))
   // Orders the Messenger sale bot closed: the bot sends the link in the chat once paid (no email needed)
   const viaBot = meta.checkout_mode === "messenger_bot"
   const mailLine = meta.digital_sent_at

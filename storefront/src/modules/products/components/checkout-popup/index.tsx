@@ -404,6 +404,7 @@ export default function CheckoutPopup({
           bundleVariantIds={bundleVariantIds}
           pendingBundlePrice={selectedOpt?.price}
           pendingShippingFee={selectedOpt?.shippingFee}
+          pendingPaymentDiscount={cartLine.metadata?.payment_discount_amount}
           compareAtBundlePrice={selectedOpt?.originalPrice}
           syncing={syncing}
           ensureReady={ensureReady}

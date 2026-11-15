@@ -198,8 +198,10 @@ export default function BundleSelector({ product, region }: Props) {
       bundle_price: selectedOpt.price,
       bundle_label: selectedOpt.label,
       ...(selectedOpt.shippingFee != null ? { bundle_shipping_fee: selectedOpt.shippingFee } : {}),
-      ...(product.metadata?.payment_discount_amount != null
-        ? { payment_discount_amount: product.metadata.payment_discount_amount }
+      // QR incentive: variant metadata wins over product metadata (e.g. only the printed
+      // calendar variant of a digital product gets -10K)
+      ...(((variant?.metadata as any)?.payment_discount_amount ?? product.metadata?.payment_discount_amount) != null
+        ? { payment_discount_amount: (variant?.metadata as any)?.payment_discount_amount ?? product.metadata?.payment_discount_amount }
         : {}),
       bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts, shippingFee: o.shippingFee }))),
       ...(selectedOpt.gifts?.length ? { gifts: JSON.stringify(selectedOpt.gifts) } : {}),
