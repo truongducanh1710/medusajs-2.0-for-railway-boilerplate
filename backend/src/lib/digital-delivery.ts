@@ -150,7 +150,7 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
     drive,
     "",
     "Cách dùng: bấm link là mở được ngay trên điện thoại, không cần cài gì. Video xem trực tiếp; file PDF có thể tải về để in. Nên lưu link này lại để dùng lâu dài.",
-    ...(ships ? ["", "📦 Lịch để bàn sẽ được giao tới địa chỉ anh/chị đã đặt trong 2–4 ngày."] : []),
+    ...(ships ? ["", "📦 Lịch để bàn sẽ được giao tới địa chỉ anh/chị đã đặt trong 3–5 ngày tuỳ vùng miền."] : []),
     "",
     "Mở link không được hoặc cần hỗ trợ, anh/chị nhắn lại Zalo này giúp shop nhé. Chúc bé học tốt! 🌟",
   ].join(String.fromCharCode(10))

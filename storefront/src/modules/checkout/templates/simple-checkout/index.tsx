@@ -1021,7 +1021,7 @@ export default function SimpleCheckout({
             <p>⏱️ Trong <strong>5–10 phút</strong>, shop gửi link tài liệu (PDF 28 trang + 27 video) tới:</p>
             <p>📱 <strong>Zalo</strong> số điện thoại bạn vừa nhập</p>
             <p>📧 Email <strong className="break-all">{digitalDone.email}</strong> <span className="text-gray-500">(xem cả mục Quảng cáo / Spam)</span></p>
-            {needsAddress && <p>📦 Lịch để bàn giao tới địa chỉ của bạn trong 2–4 ngày.</p>}
+            {needsAddress && <p>📦 Lịch để bàn giao tới địa chỉ của bạn trong 3–5 ngày tuỳ vùng miền.</p>}
           </div>
           <a
             href="https://zalo.me/g/ua65oi9tadphum8tmte3"

@@ -522,7 +522,7 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             {isDigitalProduct ? (
             <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">
               <div className="flex gap-2 items-start"><span className="flex-shrink-0">📧</span><span><strong>Nhận file:</strong> PDF + video gửi qua email ngay khi thanh toán xong</span></div>
-              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Lịch in:</strong> giao sau, nội thành 1-2 ngày, tỉnh 2-4 ngày</span></div>
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Lịch in:</strong> giao sau 3–5 ngày tuỳ vùng miền</span></div>
               <div className="flex gap-2 items-start"><span className="flex-shrink-0">🔒</span><span><strong>Thanh toán:</strong> chuyển khoản QR, xác nhận tự động</span></div>
             </div>
             ) : (
