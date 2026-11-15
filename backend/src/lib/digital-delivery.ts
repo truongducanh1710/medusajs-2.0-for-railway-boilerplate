@@ -122,15 +122,19 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
   const a = order.shipping_address ?? {}
   const name = [a.first_name, a.last_name].filter(Boolean).join(" ")
   const total = Number(order.items?.reduce((s: number, i: any) => s + Number(i.unit_price ?? 0) * Number(i.quantity ?? 1), 0) ?? 0)
+  // Orders the Messenger sale bot closed: the bot sends the link in the chat once paid (no email needed)
+  const viaBot = meta.checkout_mode === "messenger_bot"
   const mailLine = meta.digital_sent_at
     ? `✅ Đã gửi email tới ${esc(order.email)}`
-    : `⚠️ Email CHƯA gửi được (${esc(meta.digital_send_error || "chưa rõ")}) → gửi link qua Zalo tay`
+    : viaBot
+      ? `💬 Đơn chốt qua Messenger (bot) → bot tự gửi link trong tin nhắn`
+      : `⚠️ Email CHƯA gửi được (${esc(meta.digital_send_error || "chưa rõ")}) → gửi link qua Zalo tay`
   const lines = [
     `🧾 <b>Đơn mới: ${esc(product.title)}</b>`,
     `Đơn #${esc(order.display_id ?? order.id)} · ${esc(variant?.title)} · ${total.toLocaleString("vi-VN")}đ · ĐÃ THANH TOÁN`,
     `👤 ${esc(name)}`,
-    `📱 Zalo: ${esc(a.phone)}`,
-    `📧 ${esc(order.email)}`,
+    a.phone ? `📱 Zalo: ${esc(a.phone)}` : "",
+    isRealCustomerEmail(order.email) ? `📧 ${esc(order.email)}` : "",
     ships ? `📦 Giao lịch: ${esc([a.address_1, a.city, a.province].filter(Boolean).join(", "))}` : `📄 Bản tải về (không giao hàng)`,
     mailLine,
     product.metadata?.digital_drive_url ? `🔗 Link gửi khách: ${esc(product.metadata.digital_drive_url)}` : "",
