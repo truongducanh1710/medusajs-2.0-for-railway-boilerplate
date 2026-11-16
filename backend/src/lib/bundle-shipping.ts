@@ -28,6 +28,37 @@ export function configuredBundleLineUpdate(item: any, productMetadata: any) {
   return { id: item.id, unit_price: unitPrice, is_custom_price: true, metadata }
 }
 
+/**
+ * Quantity price tiers of one variant from product.metadata.bundle_options_v2
+ * ({ variants: [{ variantId, options: [{ qty, price, label }], strict_qty }] }).
+ * Only a table with 2+ options is a tier table; single-option configs keep legacy behavior.
+ */
+export function variantTierConfig(productMetadata: any, variantId?: string | null) {
+  const v2 = parse(productMetadata?.bundle_options_v2)
+  const config = Array.isArray(v2?.variants) ? v2.variants.find((entry: any) => entry?.variantId === variantId) : null
+  const options = (Array.isArray(config?.options) ? config.options : []).filter((option: any) =>
+    Number.isSafeInteger(option?.qty) && option.qty >= 1 && Number.isSafeInteger(option?.price) && option.price > 0)
+  if (options.length < 2) return null
+  return { options, strict: config.strict_qty === true }
+}
+
+/** Server-authoritative price for a tiered line: the client's bundle_price is never trusted. */
+export function variantTierLineUpdate(item: any, productMetadata: any) {
+  const tiers = variantTierConfig(productMetadata, item.variant_id)
+  if (!tiers) return null
+  const qty = Number(item.quantity)
+  const offer = tiers.options.find((option: any) => option.qty === qty)
+  if (!offer) {
+    if (tiers.strict) invalid("Số lượng này chưa có giá. Vui lòng chọn lại số lượng.")
+    return null
+  }
+  const unitPrice = offer.price / qty
+  const label = typeof offer.label === "string" && offer.label ? offer.label : item.metadata?.bundle_label
+  const metadata = { ...(item.metadata ?? {}), bundle_qty: qty, bundle_price: offer.price, bundle_tier: true, ...(label ? { bundle_label: label } : {}) }
+  if (Math.abs(Number(item.unit_price) - unitPrice) <= 0.000001 && item.is_custom_price === true && Number(item.metadata?.bundle_qty) === qty && Number(item.metadata?.bundle_price) === offer.price && item.metadata?.bundle_tier === true && item.metadata?.bundle_label === label) return null
+  return { id: item.id, unit_price: unitPrice, is_custom_price: true, metadata }
+}
+
 /** Only server product metadata activates shipping rules; line metadata cannot opt out. */
 export function deriveBundleShippingPlan(cart: any, products: any[], variants: any[]): BundleShippingPlan | null {
   const productMap = new Map(products.map((product: any) => [product.id, product]))
@@ -95,7 +126,7 @@ export async function loadBundleShippingContext(scope: any, cartId: string, norm
     const updates = []
     for (const item of cart.items ?? []) {
       const product: any = productMap.get(variantMap.get(item.variant_id))
-      const update = configuredBundleLineUpdate(item, product?.metadata)
+      const update = configuredBundleLineUpdate(item, product?.metadata) ?? variantTierLineUpdate(item, product?.metadata)
       if (update) {
         updates.push(update)
         Object.assign(item, update)

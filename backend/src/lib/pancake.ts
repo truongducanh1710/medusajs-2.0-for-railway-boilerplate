@@ -318,6 +318,13 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
   }
   if (giftLines.length > 0) noteparts.push('Quà tặng kèm:\n' + giftLines.join('\n'))
 
+  // Quantity-tier lines (e.g. 2 printed calendars -20%): spell out what the price covers
+  for (const item of order.items || []) {
+    if (item.metadata?.bundle_tier === true && Number(item.metadata?.bundle_qty) > 1 && item.metadata?.bundle_label) {
+      noteparts.push(`🧾 ${item.metadata.bundle_label}: ${Number(item.metadata.bundle_price).toLocaleString('vi-VN')}đ`)
+    }
+  }
+
   // UTM info cho sale/CSKH thấy nhanh trong Tin nội bộ (giống Webcake)
   if (mktCode) noteparts.push(`mkt: ${mktCode}`)
   if (utmSource) noteparts.push(`camp: ${utmSource}`)

@@ -74,7 +74,7 @@ export async function confirmSepayPayment(
   tx: SepayTx
 ): Promise<SepayConfirmResult> {
   const query = scope.resolve(ContainerRegistrationKeys.QUERY)
-  const { data: carts } = await query.graph({
+  const loadCart = () => query.graph({
     entity: "cart",
     fields: [
       "id",
@@ -94,12 +94,13 @@ export async function confirmSepayPayment(
     ],
     filters: { id: cartId },
   })
-  const cart = carts?.[0]
-  if (!cart) {
+  if (!(await loadCart()).data?.[0]) {
     return { ok: false, reason: "cart_not_found" }
   }
 
+  // Validation normalizes line prices (combo / quantity tiers) — read the cart after it
   const { plan } = await validateBundleShippingCart(scope, cartId)
+  const cart = (await loadCart()).data[0]
   const expected = plan ? plan.goodsTotal + plan.fee : expectedSepayAmount(cart)
   if (!Number.isFinite(tx.amount) || tx.amount + (plan ? 0 : AMOUNT_TOLERANCE) < expected) {
     console.warn("[SePay] amount mismatch", { cartId, expected, received: tx.amount })

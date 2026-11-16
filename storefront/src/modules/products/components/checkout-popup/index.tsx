@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import { HttpTypes } from "@medusajs/types"
 import { prepareQuickCheckout } from "@lib/data/cart"
 import SimpleCheckout from "@modules/checkout/templates/simple-checkout"
+import QtyTiers from "@modules/products/components/bundle-selector/qty-tiers"
 
 export type PopupBundleOption = {
   qty: number
@@ -24,6 +25,9 @@ type Props = {
   product: HttpTypes.StoreProduct
   options: PopupBundleOption[]
   variantLabels: string[] // empty when product has a single variant
+  // Quantity tiers of the active version (bundle_options_v2 qty_note / qty_unit)
+  qtyNote?: string
+  qtyUnit?: string
   activeVariantIdx: number
   onVariantChange: (idx: number) => void
   selected: number
@@ -62,6 +66,8 @@ export default function CheckoutPopup({
   product,
   options,
   variantLabels,
+  qtyNote,
+  qtyUnit,
   activeVariantIdx,
   onVariantChange,
   selected,
@@ -218,7 +224,10 @@ export default function CheckoutPopup({
     }
   })()
   const digitalVersions = isDigitalProduct && variantLabels.length > 1
-    ? (product.variants ?? []).filter((v) => variantLabels.includes(v.title ?? "")).map((v) => ({
+    // Same order as the page picker (bundle_options_v2), not the product's variant order
+    ? (product.variants ?? []).filter((v) => variantLabels.includes(v.title ?? ""))
+        .sort((a, b) => variantLabels.indexOf(a.title ?? "") - variantLabels.indexOf(b.title ?? ""))
+        .map((v) => ({
         id: v.id,
         title: v.title ?? "",
         price: Number(v.calculated_price?.calculated_amount ?? 0),
@@ -234,9 +243,10 @@ export default function CheckoutPopup({
       {digitalVersions.map((dv) => {
         const vi = variantLabels.indexOf(dv.title)
         const isSel = vi === activeVariantIdx
+        const hasTiers = isSel && options.length > 1
         return (
+          <div key={dv.id}>
           <button
-            key={dv.id}
             onClick={() => onVariantChange(vi)}
             className={`w-full text-left rounded-xl border-2 px-3 py-2.5 ${isSel ? "border-blue-600 bg-blue-50/40" : "border-gray-200"}`}
           >
@@ -253,7 +263,7 @@ export default function CheckoutPopup({
                   <span className="block text-[11px] text-gray-600">{dv.ships ? "Lịch giấy giao tận nhà + file ngay" : "File PDF + video, không có lịch giấy"}</span>
                 )}
               </span>
-              <span className="font-black text-sm text-orange-500 flex-shrink-0">{formatVND(dv.price)}</span>
+              <span className="font-black text-sm text-orange-500 flex-shrink-0">{formatVND(hasTiers && selectedOpt ? selectedOpt.price : dv.price)}</span>
             </span>
             {isSel && (dv.image || dv.desc.length > 0) && (
               <span className="flex gap-2.5 mt-2 items-start">
@@ -268,6 +278,8 @@ export default function CheckoutPopup({
               </span>
             )}
           </button>
+          {hasTiers && <QtyTiers options={options} selected={selected} onSelect={onSelect} note={qtyNote} unit={qtyUnit} />}
+          </div>
         )
       })}
       {syncErrorLine}

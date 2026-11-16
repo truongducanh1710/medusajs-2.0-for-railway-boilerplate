@@ -1,7 +1,7 @@
 import { Modules } from "@medusajs/framework/utils"
 import { ICartModuleService } from "@medusajs/framework/types"
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa"
-import { configuredBundleLineUpdate } from "../lib/bundle-shipping"
+import { configuredBundleLineUpdate, variantTierConfig, variantTierLineUpdate } from "../lib/bundle-shipping"
 
 /**
  * Configured shipping offers use product-authoritative pricing on creation and update.
@@ -19,6 +19,16 @@ export default async function cartItemBundlePriceHandler({
         select: ["id", "variant_id", "unit_price", "quantity", "metadata", "is_custom_price"],
       })
 
+      const productMetadata = await loadProductMetadata(container, item.variant_id)
+      // Quantity tiers (bundle_options_v2 with 2+ options): price always from product metadata
+      const tierUpdate = variantTierLineUpdate(item, productMetadata)
+      if (tierUpdate) {
+        await (cartService as any).updateLineItems([tierUpdate])
+        continue
+      }
+      // Settled tier line: the legacy paths below must not re-price it from client metadata
+      if (variantTierConfig(productMetadata, item.variant_id)?.options.some((option: any) => option.qty === Number(item.quantity))) continue
+
       if (name === "cart.line_item.created") {
         const bundlePrice = Number(item.metadata?.bundle_price ?? 0)
         const bundleQty = Number(item.metadata?.bundle_qty ?? 0) || Number(item.quantity) || 1
@@ -30,15 +40,6 @@ export default async function cartItemBundlePriceHandler({
         continue
       }
 
-      let productMetadata: any = {}
-      if (item.variant_id) {
-        const productService = container.resolve(Modules.PRODUCT) as any
-        const variants = await productService.listProductVariants({ id: [item.variant_id] }, { select: ["id", "product_id"] })
-        if (variants[0]?.product_id) {
-          const products = await productService.listProducts({ id: [variants[0].product_id] }, { select: ["id", "metadata"] })
-          productMetadata = products[0]?.metadata ?? {}
-        }
-      }
       const update = configuredBundleLineUpdate(item, productMetadata)
       if (update) {
         await (cartService as any).updateLineItems([update])
@@ -47,6 +48,15 @@ export default async function cartItemBundlePriceHandler({
       console.error("[CartItemBundlePrice] Error:", err.message)
     }
   }
+}
+
+async function loadProductMetadata(container: any, variantId?: string | null): Promise<any> {
+  if (!variantId) return {}
+  const productService = container.resolve(Modules.PRODUCT) as any
+  const variants = await productService.listProductVariants({ id: [variantId] }, { select: ["id", "product_id"] })
+  if (!variants[0]?.product_id) return {}
+  const products = await productService.listProducts({ id: [variants[0].product_id] }, { select: ["id", "metadata"] })
+  return products[0]?.metadata ?? {}
 }
 
 export const config: SubscriberConfig = {

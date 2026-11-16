@@ -9,6 +9,7 @@ import { useParams, useRouter } from "next/navigation"
 import CheckoutPopup from "@modules/products/components/checkout-popup"
 import CheckoutTracker from "@components/CheckoutTracker"
 import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
+import QtyTiers from "./qty-tiers"
 
 type GiftItem = {
   image?: string
@@ -36,6 +37,10 @@ type VariantBundleConfig = {
   desc?: string[]
   /** Clean product shot (no small text) for the version card; `image` stays the gallery infographic */
   thumb?: string
+  /** Quantity tiers (2+ options): short promo line shown under the quantity stepper */
+  qty_note?: string
+  /** Unit word for the stepper ("cuốn") */
+  qty_unit?: string
   options: BundleOption[]
 }
 
@@ -214,6 +219,8 @@ export default function BundleSelector({ product, region }: Props) {
   const [popupEverOpened, setPopupEverOpened] = useState(false)
 
   const changeVariant = (vi: number) => {
+    // Re-tapping the picked version must not reset its chosen quantity
+    if (vi === activeVariantIdx) return
     trackFunnel("variant_select", vi, { repeat: true })
     setActiveVariantIdx(vi)
     setSelected(1)
@@ -360,6 +367,8 @@ export default function BundleSelector({ product, region }: Props) {
           product={product}
           options={options}
           variantLabels={isMultiVariant ? variantConfigs2.map(vc => vc.label ?? "") : []}
+          qtyNote={activeVarConfig?.qty_note}
+          qtyUnit={activeVarConfig?.qty_unit}
           activeVariantIdx={activeVariantIdx}
           onVariantChange={changeVariant}
           selected={selected}
@@ -399,6 +408,8 @@ export default function BundleSelector({ product, region }: Props) {
           {variantConfigs2.map((vc, vi) => {
             const opt = vc.options?.[0]
             const isSel = activeVariantIdx === vi
+            const hasTiers = (vc.options?.length ?? 0) > 1
+            const shownPrice = isSel && hasTiers ? selectedOpt.price : opt?.price ?? 0
             const v = product.variants?.find((x) => x.id === vc.variantId)
             const ships = (v?.metadata as any)?.requires_shipping === true || (v?.metadata as any)?.requires_shipping === "true"
             return (
@@ -413,7 +424,7 @@ export default function BundleSelector({ product, region }: Props) {
                     {isSel && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
                   </div>
                   <p className="flex-1 min-w-0 font-black text-gray-900 text-[15px] leading-tight">{vc.label}</p>
-                  <p className="font-black text-orange-500 text-lg flex-shrink-0">{formatVND(opt?.price ?? 0)}</p>
+                  <p className="font-black text-orange-500 text-lg flex-shrink-0">{formatVND(shownPrice)}</p>
                 </div>
                 {/* Body: image (visible here because the gallery is off-screen on phones) + what's included */}
                 <div className="flex gap-2.5 mt-2 items-start">
@@ -432,6 +443,9 @@ export default function BundleSelector({ product, region }: Props) {
                     </p>
                   )}
                 </div>
+                {isSel && hasTiers && (
+                  <QtyTiers options={vc.options} selected={selected} onSelect={setSelected} note={vc.qty_note} unit={vc.qty_unit} />
+                )}
               </div>
             )
           })}

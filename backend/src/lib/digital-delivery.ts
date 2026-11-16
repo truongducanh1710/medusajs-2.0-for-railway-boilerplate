@@ -131,7 +131,9 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
   const ships = isDigitalFlag(variant?.metadata?.requires_shipping)
   const a = order.shipping_address ?? {}
   const name = [a.first_name, a.last_name].filter(Boolean).join(" ")
-  const listTotal = Number(order.items?.reduce((s: number, i: any) => s + Number(i.unit_price ?? 0) * Number(i.quantity ?? 1), 0) ?? 0)
+  // bundle_price = server-set line total (quantity tiers), else unit price × quantity
+  const listTotal = Number(order.items?.reduce((s: number, i: any) => s + (i.metadata?.bundle_price != null ? Number(i.metadata.bundle_price) : Number(i.unit_price ?? 0) * Number(i.quantity ?? 1)), 0) ?? 0)
+  const qty = Number(order.items?.find((i: any) => i.variant_id === variant?.id)?.quantity ?? 1)
   // Paid amount: list price minus the QR incentive (e.g. printed calendar 149K → 139K)
   const total = Math.max(0, listTotal - (meta.payment_method === "sepay" ? Number(meta.sepay_discount ?? 0) || 0 : 0))
   // Orders the Messenger sale bot closed: the bot sends the link in the chat once paid (no email needed)
@@ -143,7 +145,7 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
       : `⚠️ Email CHƯA gửi được (${esc(meta.digital_send_error || "chưa rõ")}) → gửi link qua Zalo tay`
   const lines = [
     `🧾 <b>Đơn mới: ${esc(product.title)}</b>`,
-    `Đơn #${esc(order.display_id ?? order.id)} · ${esc(variant?.title)} · ${total.toLocaleString("vi-VN")}đ · ĐÃ THANH TOÁN`,
+    `Đơn #${esc(order.display_id ?? order.id)} · ${esc(variant?.title)}${qty > 1 ? ` × ${qty}` : ""} · ${total.toLocaleString("vi-VN")}đ · ĐÃ THANH TOÁN`,
     `👤 ${esc(name)}`,
     a.phone ? `📱 Zalo: ${esc(a.phone)}` : "",
     isRealCustomerEmail(order.email) ? `📧 ${esc(order.email)}` : "",
