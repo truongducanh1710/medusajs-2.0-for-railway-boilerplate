@@ -18,12 +18,13 @@ export function validGifts(gifts: unknown): VersionGift[] {
   return Array.isArray(gifts) ? gifts.filter((g: any) => g && typeof g.name === "string" && g.name.trim()) : []
 }
 
-export default function VersionGifts({ gifts, compact }: { gifts: VersionGift[]; compact?: boolean }) {
+export default function VersionGifts({ gifts, compact, codAllowed = true }: { gifts: VersionGift[]; compact?: boolean; codAllowed?: boolean }) {
   if (!gifts.length) return null
   if (compact) {
     return <p className="mt-1.5 text-[12px] font-bold text-blue-600">🎁 +{gifts.length} QUÀ TẶNG MIỄN PHÍ</p>
   }
-  const transferOnly = gifts.filter((g) => g.when === "transfer")
+  // Transfer-only versions (download): every gift comes with the order, no payment tag needed
+  const transferOnly = codAllowed ? gifts.filter((g) => g.when === "transfer") : []
   return (
     <div className="mt-2.5 rounded-lg border border-dashed border-blue-200 bg-blue-50 px-3 py-2">
       <p className="text-[12px] font-black text-blue-700">🎁 QUÀ TẶNG KÈM</p>
@@ -39,13 +40,15 @@ export default function VersionGifts({ gifts, compact }: { gifts: VersionGift[];
               <span className="font-black text-blue-600">TẶNG! </span>
               {g.name}
             </p>
-            <span
-              className={`mt-0.5 inline-block rounded-full px-2 py-[1px] text-[10.5px] font-bold ${
-                g.when === "transfer" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
-              }`}
-            >
-              {g.when === "transfer" ? "Khi chuyển khoản QR" : "COD hoặc chuyển khoản"}
-            </span>
+            {codAllowed && (
+              <span
+                className={`mt-0.5 inline-block rounded-full px-2 py-[1px] text-[10.5px] font-bold ${
+                  g.when === "transfer" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                }`}
+              >
+                {g.when === "transfer" ? "Khi chuyển khoản QR" : "COD hoặc chuyển khoản"}
+              </span>
+            )}
           </div>
           {typeof g.value === "number" && g.value > 0 && (
             <p className="flex-shrink-0 text-xs text-gray-400 line-through">{formatVND(g.value)}</p>

@@ -446,7 +446,7 @@ export default function BundleSelector({ product, region }: Props) {
                     </p>
                   )}
                 </div>
-                <VersionGifts gifts={validGifts(vc.gifts)} compact={!isSel} />
+                <VersionGifts gifts={validGifts(vc.gifts)} compact={!isSel} codAllowed={ships} />
                 {isSel && hasTiers && (
                   <QtyTiers options={vc.options} selected={selected} onSelect={setSelected} note={vc.qty_note} unit={vc.qty_unit} />
                 )}
