@@ -368,7 +368,7 @@ type SimpleCheckoutProps = {
   ensureReady?: () => Promise<any[] | null>
   // Digital product (PDF + video by email): SePay only, email required,
   // shipping address only when the picked variant also ships a physical item
-  digitalDelivery?: { requiresShipping: boolean }
+  digitalDelivery?: { requiresShipping: boolean; gifts?: { name: string; when?: "any" | "transfer" }[] }
 }
 
 const EMPTY_CART = { id: "", items: [] } as unknown as HttpTypes.StoreCart
@@ -406,6 +406,9 @@ export default function SimpleCheckout({
   const isDigital = !!digitalDelivery
   useEffect(() => { trackFunnel("checkout_open") }, [])
   const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
+  // Version gifts by payment method: COD gets the "any" ones, QR transfer gets all
+  const allGifts = digitalDelivery?.gifts ?? []
+  const codGifts = allGifts.filter((g) => g.when !== "transfer")
   const [digitalDone, setDigitalDone] = useState<{ email: string } | null>(null)
   // Download-only digital variants are bank-transfer only; ones that ship a physical
   // item (printed calendar) may be COD — files are emailed once Pancake marks it delivered
@@ -1169,6 +1172,7 @@ export default function SimpleCheckout({
                 <input type="radio" name="payment" value="cod" checked={payment === "cod"} onChange={() => setPayment("cod")} className="accent-orange-500" />
                 <span className="flex-1 text-sm font-bold text-gray-900">Thanh toán khi nhận hàng
                   {isDigital && <span className="block text-[11px] font-normal text-gray-600">PDF + video gửi email sau khi nhận lịch</span>}
+                  {codGifts.length > 0 && <span className="block text-[11px] font-semibold text-green-700">🎁 Tặng {codGifts.map((g) => g.name).join(" + ")}</span>}
                 </span>
                 <span className="text-[11px] text-gray-500">Kiểm tra rồi trả</span>
               </label>
@@ -1176,6 +1180,7 @@ export default function SimpleCheckout({
                 <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
                 <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR
                   {isDigital && <span className="block text-[11px] font-normal text-gray-600">Nhận PDF + video qua email ngay</span>}
+                  {allGifts.length > codGifts.length && <span className="block text-[11px] font-semibold text-blue-700">🎁 Tặng đủ {allGifts.length} quà: {allGifts.map((g) => g.name).join(" + ")}</span>}
                 </span>
                 {paymentDiscount > 0 && <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(paymentDiscount)}</span>}
               </label>

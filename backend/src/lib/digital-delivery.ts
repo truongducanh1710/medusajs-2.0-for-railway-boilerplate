@@ -21,6 +21,23 @@ export function isRealCustomerEmail(email?: string | null): boolean {
   return !!email && EMAIL_RE.test(email) && !/@example\.com$/i.test(email)
 }
 
+export type GiftLink = { name: string; url: string; when?: "any" | "transfer" }
+
+/**
+ * Bonus files sent with a shipped variant: variant.metadata.gift_links = [{ name, url, when }].
+ * when "transfer" = only for orders paid by QR transfer (SePay), "any" (default) = COD too.
+ * The product page shows the same gifts from bundle_options_v2 (gifts[].when).
+ */
+export function giftLinksFor(variantMeta: Record<string, any> | null | undefined, paidByTransfer: boolean): GiftLink[] {
+  let raw = variantMeta?.gift_links
+  if (typeof raw === "string") { try { raw = JSON.parse(raw) } catch { raw = [] } }
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((g: any) => g && typeof g.name === "string" && typeof g.url === "string" && /^https:\/\//.test(g.url))
+    .filter((g: any) => g.when !== "transfer" || paidByTransfer)
+    .map((g: any) => ({ name: g.name, url: g.url, when: g.when === "transfer" ? "transfer" : "any" }))
+}
+
 export async function sendDigitalDeliveryIfNeeded(
   scope: any,
   orderId: string,
@@ -63,6 +80,7 @@ export async function sendDigitalDeliveryIfNeeded(
   // COD delivery is only offered for shipped variants; a download-only COD order is never sent
   if (codDelivered && !shipsPhysical) return "skipped"
   const orderCode = `#${order.display_id ?? order.id}`
+  const gifts = giftLinksFor(variant?.metadata, meta.payment_method === "sepay" && !codDelivered)
 
   const notificationService = scope.resolve(Modules.NOTIFICATION) as any
   try {
@@ -81,6 +99,7 @@ export async function sendDigitalDeliveryIfNeeded(
         driveUrl,
         // COD: the calendar has already arrived, don't promise it again
         shipsPhysical: shipsPhysical && !codDelivered,
+        gifts,
       },
     })
   } catch (err: any) {
@@ -94,7 +113,7 @@ export async function sendDigitalDeliveryIfNeeded(
     id: orderId,
     metadata: { ...rest, digital_sent_at: new Date().toISOString(), digital_sent_to: email },
   }])
-  console.info("[DigitalDelivery] sent", { orderId, email, shipsPhysical })
+  console.info("[DigitalDelivery] sent", { orderId, email, shipsPhysical, gifts: gifts.length })
   return "sent"
 }
 
@@ -156,12 +175,16 @@ export async function notifyDigitalOrderTelegram(scope: any, orderId: string): P
 
   // Ready-to-copy message for Zalo/manual email (tap the block in Telegram to copy)
   const drive = String(product.metadata?.digital_drive_url ?? "")
+  // Telegram fires only for paid orders: COD orders paid on delivery are not "sepay"
+  const gifts = giftLinksFor(variant?.metadata, meta.payment_method === "sepay")
+  if (gifts.length) lines.push(`🎁 Quà: ${gifts.map((g) => esc(g.name)).join(" · ")}`)
   const greet = a.first_name ? `Chào anh/chị ${a.first_name}` : "Chào anh/chị"
   const msg = [
     `${greet}, Phan Việt đã nhận thanh toán đơn #${order.display_id ?? order.id} — ${product.title}. Cảm ơn anh/chị ạ!`,
     "",
     "📂 Link tài liệu (PDF 28 trang + 27 video):",
     drive,
+    ...gifts.flatMap((g) => ["", `🎁 Quà tặng: ${g.name}`, g.url]),
     "",
     "Cách dùng: bấm link là mở được ngay trên điện thoại, không cần cài gì. Video xem trực tiếp; file PDF có thể tải về để in. Nên lưu link này lại để dùng lâu dài.",
     ...(ships ? ["", "📦 Lịch để bàn sẽ được giao tới địa chỉ anh/chị đã đặt trong 3–5 ngày tuỳ vùng miền."] : []),

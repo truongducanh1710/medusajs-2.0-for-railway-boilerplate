@@ -10,6 +10,7 @@ import CheckoutPopup from "@modules/products/components/checkout-popup"
 import CheckoutTracker from "@components/CheckoutTracker"
 import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
 import QtyTiers from "./qty-tiers"
+import VersionGifts, { validGifts, type VersionGift } from "./version-gifts"
 
 type GiftItem = {
   image?: string
@@ -41,6 +42,8 @@ type VariantBundleConfig = {
   qty_note?: string
   /** Unit word for the stepper ("cuốn") */
   qty_unit?: string
+  /** Gifts of this version, each tagged by the payment method that earns it */
+  gifts?: VersionGift[]
   options: BundleOption[]
 }
 
@@ -443,6 +446,7 @@ export default function BundleSelector({ product, region }: Props) {
                     </p>
                   )}
                 </div>
+                <VersionGifts gifts={validGifts(vc.gifts)} compact={!isSel} />
                 {isSel && hasTiers && (
                   <QtyTiers options={vc.options} selected={selected} onSelect={setSelected} note={vc.qty_note} unit={vc.qty_unit} />
                 )}

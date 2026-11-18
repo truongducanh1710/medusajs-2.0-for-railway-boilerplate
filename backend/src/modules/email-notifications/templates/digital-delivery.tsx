@@ -10,6 +10,8 @@ export interface DigitalDeliveryEmailProps {
   orderCode: string
   driveUrl: string
   shipsPhysical: boolean
+  /** Bonus files for this order (already filtered by payment method) */
+  gifts?: { name: string; url: string }[]
 }
 
 export const isDigitalDeliveryData = (data: any): data is DigitalDeliveryEmailProps =>
@@ -22,6 +24,7 @@ export const DigitalDeliveryEmail = ({
   orderCode,
   driveUrl,
   shipsPhysical,
+  gifts,
 }: DigitalDeliveryEmailProps) => (
   <Base preview={`Tài liệu ${productTitle} của bạn đã sẵn sàng`}>
     <Section className="mt-[24px]">
@@ -48,6 +51,23 @@ export const DigitalDeliveryEmail = ({
       <Text className="text-[#555] text-[12px] leading-[20px] break-all">
         Nếu nút không bấm được, dán link này vào trình duyệt: {driveUrl}
       </Text>
+      {gifts && gifts.length > 0 && (
+        <Section className="mt-2 mb-2">
+          <Text className="text-black text-[14px] leading-[22px] font-semibold">
+            🎁 Quà tặng kèm đơn của bạn
+          </Text>
+          {gifts.map((g) => (
+            <Section key={g.url} className="mb-3 text-center">
+              <Button
+                className="bg-[#2563eb] rounded text-white text-[14px] font-semibold no-underline px-6 py-3"
+                href={g.url}
+              >
+                {g.name}
+              </Button>
+            </Section>
+          ))}
+        </Section>
+      )}
       {shipsPhysical && (
         <Text className="text-black text-[14px] leading-[22px]">
           📦 Lịch in của bạn sẽ được đóng gói và giao sau. Phan Việt sẽ liên hệ qua số điện thoại khi gửi hàng.

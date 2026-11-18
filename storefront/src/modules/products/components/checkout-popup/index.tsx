@@ -386,11 +386,20 @@ export default function CheckoutPopup({
 
   // Digital product: SePay only, email required, address only for variants that ship
   const isTrue = (v: unknown) => v === true || v === "true"
+  // Gifts of the picked version (bundle_options_v2 variants[].gifts, tagged by payment method)
+  const versionGifts = (() => {
+    try {
+      const raw = product.metadata?.bundle_options_v2
+      const vc = (typeof raw === "string" ? JSON.parse(raw) : raw)?.variants?.find((x: any) => x.variantId === cartLine.variantId)
+      return Array.isArray(vc?.gifts) ? vc.gifts.filter((g: any) => g && typeof g.name === "string" && g.name.trim()) : []
+    } catch { return [] }
+  })() as { name: string; when?: "any" | "transfer" }[]
   const digitalDelivery = isTrue(product.metadata?.digital_delivery)
     ? {
         requiresShipping: isTrue(
           (product.variants ?? []).find((v) => v.id === cartLine.variantId)?.metadata?.requires_shipping
         ),
+        gifts: versionGifts,
       }
     : undefined
 
