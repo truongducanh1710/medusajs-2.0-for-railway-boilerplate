@@ -81,6 +81,27 @@ export type AutoPostPlan = {
   video: { id: string; vd_code: string; link: string; status: string; last_here: string | null } | null
   caption: string | null
   reason?: string
+  /** Per product of the rule: usable videos, videos never posted on this page, usable captions */
+  stock?: Array<{ product_code: string; videos: number; fresh: number; captions: number }>
+}
+
+async function productStock(pool: Pool, pageId: string, productCode: string) {
+  const { rows: [v] } = await pool.query(
+    `SELECT count(*)::int AS videos,
+            count(*) FILTER (WHERE NOT EXISTS (
+              SELECT 1 FROM fb_scheduled_post p WHERE p.video_id = v.id AND p.page_id = $1 AND p.status = 'published'))::int AS fresh
+       FROM mkt_video v
+      WHERE v.product_code = $2 AND v.status IN ('done','posted') AND v.link ILIKE 'http%'`,
+    [pageId, productCode]
+  )
+  const { rows: [c] } = await pool.query(
+    `SELECT count(DISTINCT p.message)::int AS captions
+       FROM fb_scheduled_post p JOIN mkt_video v ON v.id = p.video_id
+      WHERE v.product_code = $1 AND p.status = 'published' AND length(p.message) > 40
+        AND p.published_at > now() - ($2 || ' days')::interval AND p.message ~* $3`,
+    [productCode, String(CAPTION_LOOKBACK_DAYS), CAPTION_KEYWORDS[productCode] || "."]
+  )
+  return { product_code: productCode, videos: v.videos, fresh: v.fresh, captions: c.captions }
 }
 
 async function pickVideo(pool: Pool, pageId: string, productCode: string) {
@@ -136,16 +157,15 @@ async function planRule(pool: Pool, rule: any): Promise<AutoPostPlan & { rot_use
   return { ...base, reason: "Không có video hoặc caption dùng được cho sản phẩm nào", rot_used: rule.rot_idx }
 }
 
-/** Preview what each enabled rule would post now — no writes. */
+/** Preview what each rule would post next + stock per product — no writes. */
 export async function previewAutoPost(pool: Pool): Promise<AutoPostPlan[]> {
   await ensureAutoPostTables(pool)
-  const { rows: rules } = await pool.query(`SELECT * FROM fb_auto_post_rule WHERE enabled ORDER BY post_time`)
-  const out: AutoPostPlan[] = []
-  for (const r of rules) {
+  const { rows: rules } = await pool.query(`SELECT * FROM fb_auto_post_rule ORDER BY post_time`)
+  return Promise.all(rules.map(async (r: any) => {
     const { rot_used, ...plan } = await planRule(pool, r)
-    out.push(plan)
-  }
-  return out
+    const stock = await Promise.all((r.product_codes || []).map((c: string) => productStock(pool, r.page_id, c)))
+    return { ...plan, stock }
+  }))
 }
 
 type Notify = (title: string, description: string) => Promise<void>

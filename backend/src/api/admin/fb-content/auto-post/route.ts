@@ -55,3 +55,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(500).json({ error: e.message })
   }
 }
+
+/** DELETE /admin/fb-content/auto-post?page_id=... — remove a page's rule (log is kept). */
+export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
+  try {
+    const pageId = String((req.query as any)?.page_id || "").trim()
+    if (!pageId) return res.status(400).json({ error: "Thiếu page_id" })
+    const pool = getPool()
+    await ensureAutoPostTables(pool)
+    const { rowCount } = await pool.query(`DELETE FROM fb_auto_post_rule WHERE page_id = $1`, [pageId])
+    return res.json({ deleted: rowCount })
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message })
+  }
+}

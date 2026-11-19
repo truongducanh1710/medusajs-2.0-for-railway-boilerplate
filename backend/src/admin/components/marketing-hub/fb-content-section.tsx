@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { apiFetch, apiJson } from "../../lib/api-client"
 import { useCurrentPermissions } from "../../lib/use-permissions"
 import { PostStatsTab } from "./post-stats-tab"
+import { AutoPostTab } from "./auto-post-tab"
 
 export type FbPrefill = { videoId?: string; driveUrl?: string; sp?: string; vd?: string } | null
 
@@ -1490,6 +1491,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
     { id: "dangbai",      label: "Đăng bài" },
     { id: "lenlich",      label: "📅 Lên lịch hàng loạt" },
     { id: "lichdang",     label: "Lịch đăng" },
+    { id: "tudang",       label: "🤖 Tự đăng" },
     { id: "viraltracker", label: "Viral Tracker" },
     { id: "thuvien",      label: "Thư viện" },
     { id: "poststats",    label: "📊 Tổng hợp bài viết" },
@@ -1507,6 +1509,7 @@ export function FbContentSection({ prefill, initialTab }: { prefill: FbPrefill; 
         {tab === "dangbai"      && <DangBaiTab key={prefill?.videoId || "blank"} prefill={prefill} />}
         {tab === "lenlich"      && <LenLichHangLoatTab />}
         {tab === "lichdang"     && <LichDangTab />}
+        {tab === "tudang"       && <AutoPostTab />}
         {tab === "viraltracker" && <ViralTrackerTab />}
         {tab === "thuvien"      && <ThuVienTab />}
         {tab === "poststats"    && <PostStatsTab />}
