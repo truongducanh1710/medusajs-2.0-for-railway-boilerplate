@@ -491,7 +491,8 @@ async function launchCamp(o: { bo: BoRow; acc: { code: string; id: string }; sta
       promoted_object: { pixel_id: P.pixel, custom_event_type: "COMPLETE_REGISTRATION", smart_pse_enabled: false },
       // User 9/11: gợi ý đối tượng tuổi 30–65+ (Advantage+ giữ khung 25–65) + loại trừ khách hiện có ở "Chiến lược vòng đời khách hàng"
       targeting: { geo_locations: { countries: ["VN"], location_types: ["home", "recent"] }, age_min: 25, age_max: 65, age_range: [30, 65], targeting_automation: { advantage_audience: 1 },
-        excluded_custom_audiences: excluded, brand_safety_content_filter_levels: ["FACEBOOK_RELAXED", "AN_RELAXED"] },
+        excluded_custom_audiences: excluded, brand_safety_content_filter_levels: ["FACEBOOK_RELAXED", "AN_RELAXED"],
+        publisher_platforms: ["facebook", "instagram"] }, // user 20/11: bỏ Audience Network (5% click CV, LPV/click 77%, VD2210 40% click từ AN)
       ad_set_goal: { type: 2, existing_customers_exclusions: excluded.map((x) => x.id) },
       attribution_spec: [{ event_type: "CLICK_THROUGH", window_days: 7 }, { event_type: "VIEW_THROUGH", window_days: 1 }, { event_type: "ENGAGED_VIDEO_VIEW", window_days: 1 }],
       start_time: `${start}T05:00:00+0700`, status: "ACTIVE" })
