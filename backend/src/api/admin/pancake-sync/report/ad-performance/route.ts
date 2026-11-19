@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { callFbApi } from "../camp-control/_lib"
+import { ORDER_REVENUE_SQL } from "../../../../../lib/mkt-today"
 
 const adExpr = `COALESCE(raw->>'p_ad_id', raw->>'ad_id', raw->>'utm_ad_id', raw->>'p_utm_ad_id', raw->'marketing'->>'ad_id')`
 
@@ -28,8 +29,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         ${adExpr} AS ad_id,
         COUNT(*)::int AS total_orders,
         COUNT(*) FILTER (WHERE status IN (1,2,3,4,5))::int AS confirmed,
-        SUM(CASE WHEN status NOT IN (-2,7) THEN cod_amount ELSE 0 END)::bigint AS cod_total,
-        SUM(CASE WHEN status IN (1,2,3,4,5) THEN cod_amount ELSE 0 END)::bigint AS cod_confirmed
+        SUM(CASE WHEN status NOT IN (-2,7) THEN ${ORDER_REVENUE_SQL} ELSE 0 END)::bigint AS cod_total,
+        SUM(CASE WHEN status IN (1,2,3,4,5) THEN ${ORDER_REVENUE_SQL} ELSE 0 END)::bigint AS cod_confirmed
       FROM pancake_order
       WHERE deleted_at IS NULL
         AND pancake_created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')

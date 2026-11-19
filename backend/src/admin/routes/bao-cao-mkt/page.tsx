@@ -1423,7 +1423,7 @@ function BaoCaoMktPage() {
                     {mkSortTh("cpm", "cpm", "CPM")}
                     {mkSortTh("cpc", "cpc", "CPC")}
                     {mkSortTh("ctr", "ctr", "CTR%")}
-                    {mkSortTh("cod_total", "cod", "COD")}
+                    {mkSortTh("cod_total", "cod", "Doanh số")}
                     <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, position: "relative", minWidth: campColWidths.don, width: campColWidths.don }}>Đơn{rHandle("don")}</th>
                     {mkSortTh("care_pct", "care", "% Care")}
                     {canControl && <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600, position: "relative", minWidth: campColWidths.action, width: campColWidths.action }}>⏰{rHandle("action")}</th>}

@@ -11,7 +11,7 @@
 import { getPool } from "./db"
 import { notifyTelegramByEmail } from "./notify"
 import { decide, HET_DA_PREFIX, type Portfolio } from "./auto-scale-decide"
-import { mktTotalsForDate, effectiveMktCode, type MktTotal } from "./mkt-today"
+import { mktTotalsForDate, effectiveMktCode, ORDER_REVENUE_SQL, type MktTotal } from "./mkt-today"
 import { dayMode, BAD_DAY_PCT, BAD_DAY_MIN_SPEND, BAD_DAY_FROM_HOUR, LOSS_HALVE, LOSS_STOP_RAISE, BAD_DAY_PREFIX, LOSS_PREFIX } from "./auto-scale-decide"
 import { videoBlockReason } from "./video-lifecycle"
 
@@ -442,7 +442,7 @@ async function loadPortfolios(hour: number, minute = 0, userModule?: any): Promi
 /** Doanh số hôm nay của camp — cùng cách ghép đơn với ordersSince, cùng cách tính cod_total của báo cáo. */
 async function revenueSince(campaignId: string, campaignName: string, since: string): Promise<number> {
   const { rows } = await getPool().query(
-    `SELECT COALESCE(SUM(cod_amount),0)::bigint s FROM pancake_order
+    `SELECT COALESCE(SUM(${ORDER_REVENUE_SQL}),0)::bigint s FROM pancake_order
       WHERE (raw->>'p_utm_campaign' = $1
              OR (COALESCE(raw->>'p_utm_campaign','') !~ '^[0-9]{10,}$' AND raw->>'p_utm_source' = $2))
         AND pancake_created_at >= $3::timestamptz AND ${DON_HOP_LE}`,

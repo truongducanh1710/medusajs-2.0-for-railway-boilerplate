@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ORDER_REVENUE_SQL } from "../../../../../lib/mkt-today"
 
 /**
  * GET /admin/pancake-sync/report/mkt-campaign
@@ -88,8 +89,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           COUNT(*)::int                                            AS total_orders,
           SUM(CASE WHEN status IN (1,2,3,4,5) THEN 1 ELSE 0 END)::int AS confirmed,
           SUM(CASE WHEN status IN (6,7,-1,-2) THEN 1 ELSE 0 END)::int AS cancelled,
-          SUM(CASE WHEN status NOT IN (-2,7) THEN cod_amount ELSE 0 END)::bigint AS cod_total,
-          SUM(CASE WHEN status IN (1,2,3,4,5) THEN cod_amount ELSE 0 END)::bigint AS cod_confirmed
+          SUM(CASE WHEN status NOT IN (-2,7) THEN ${ORDER_REVENUE_SQL} ELSE 0 END)::bigint AS cod_total,
+          SUM(CASE WHEN status IN (1,2,3,4,5) THEN ${ORDER_REVENUE_SQL} ELSE 0 END)::bigint AS cod_confirmed
         FROM pancake_order
         WHERE deleted_at IS NULL
           AND source IN ('manual','webcake','medusa')

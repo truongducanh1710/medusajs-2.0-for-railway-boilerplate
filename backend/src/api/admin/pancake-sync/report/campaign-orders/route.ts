@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ORDER_REVENUE_SQL } from "../../../../../lib/mkt-today"
 
 const excludedOrderFilter = `
   deleted_at IS NULL
@@ -31,7 +32,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const rows = await sql.sql(`
       SELECT
         id, source, status, status_name, customer_name, customer_phone,
-        total, cod_amount, items, marketer_name, sale_name, care_name,
+        total, cod_amount, ${ORDER_REVENUE_SQL} AS revenue, items, marketer_name, sale_name, care_name,
         fb_campaign_id,
         raw->>'p_utm_source' AS p_utm_source,
         raw->>'p_utm_campaign' AS p_utm_campaign,
@@ -67,10 +68,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const summary = rows.reduce((acc: any, r: any) => {
       acc.total_orders += 1
-      acc.cod_total += Number(r.cod_amount ?? 0)
+      acc.cod_total += Number(r.revenue ?? 0)
       if ([1, 2, 3, 4, 5].includes(Number(r.status))) {
         acc.confirmed += 1
-        acc.cod_confirmed += Number(r.cod_amount ?? 0)
+        acc.cod_confirmed += Number(r.revenue ?? 0)
       }
       return acc
     }, { total_orders: 0, confirmed: 0, cod_total: 0, cod_confirmed: 0 })

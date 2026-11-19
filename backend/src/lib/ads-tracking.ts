@@ -4,6 +4,7 @@
  * ads_launch bổ sung thông tin lúc lên camp (kiểu lên, page, lý do, seeding) cho camp lên qua công cụ của AI.
  */
 import { getPool } from "./db"
+import { ORDER_REVENUE_SQL } from "./mkt-today"
 
 let ready: Promise<void> | null = null
 export function ensureTrackingTables() {
@@ -90,11 +91,11 @@ export async function videoTracking(opts: { days: number; mkts: string[] }) {
   if (!ids.length) return { sets: [], today }
   const [{ rows: cd }, { rows: od }, { rows: ad }, { rows: aod }, { rows: launches }, { rows: hub }, { rows: seeded }] = await Promise.all([
     pool.query(`SELECT campaign_id, date::text d, sum(spend)::float sp, max(effective_status) st FROM mkt_ads_cost WHERE campaign_id = ANY($1) AND deleted_at IS NULL GROUP BY 1,2`, [ids]),
-    pool.query(`SELECT raw->>'p_utm_campaign' cid, (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d, count(*)::int n, coalesce(sum(cod_amount),0)::float ds
+    pool.query(`SELECT raw->>'p_utm_campaign' cid, (pancake_created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text d, count(*)::int n, coalesce(sum(${ORDER_REVENUE_SQL}),0)::float ds
                   FROM pancake_order WHERE raw->>'p_utm_campaign' = ANY($1) AND ${ORDER_FILTER} GROUP BY 1,2`, [ids]),
     pool.query(`SELECT campaign_id, vd_code, max(ad_name) ad_name, sum(spend)::float sp, min(date)::text first_date FROM mkt_ads_cost_ad
                  WHERE campaign_id = ANY($1) AND deleted_at IS NULL GROUP BY 1,2`, [ids]),
-    pool.query(`SELECT raw->>'p_utm_campaign' cid, substring(raw->>'p_utm_content' from '^(VD[0-9]+)') vd, count(*)::int n, coalesce(sum(cod_amount),0)::float ds
+    pool.query(`SELECT raw->>'p_utm_campaign' cid, substring(raw->>'p_utm_content' from '^(VD[0-9]+)') vd, count(*)::int n, coalesce(sum(${ORDER_REVENUE_SQL}),0)::float ds
                   FROM pancake_order WHERE raw->>'p_utm_campaign' = ANY($1) AND ${ORDER_FILTER} GROUP BY 1,2`, [ids]),
     pool.query(`SELECT * FROM ads_launch WHERE campaign_id = ANY($1)`, [ids]),
     pool.query(`SELECT vd_code, maker, video_type, product_code, created_at::date::text c, left(note,120) note FROM mkt_video`),

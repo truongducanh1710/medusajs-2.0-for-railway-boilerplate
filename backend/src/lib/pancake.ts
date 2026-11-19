@@ -362,7 +362,9 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
     is_free_shipping: shippingFee === 0,
     received_at_shop: false,
     shipping_fee: shippingFee,
-    total_discount: totalDiscount,
+    // QR discount must reach POS too: prepaid = totalPrice already excludes it, so leaving it
+    // out made POS show the gap as COD (#100005: 149k item, paid 139k → shipper COD 10k).
+    total_discount: totalDiscount + sepayDiscount,
     cash,
     prepaid,
     cod,
