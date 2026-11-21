@@ -32,15 +32,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const { from, to } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
 
-    const { items, spendByAcc, unallocated, unallocatedNotes } =
+    const { items, spendByAcc, unallocated, unallocatedNotes, adAccounts } =
       await computeAccountingCost(from, to)
+    // Gồm cả TK tự bổ sung (có chi tiêu nhưng chưa khai báo trong AD_ACCOUNTS)
+    const codeToAcc: Record<string, string> = { ...codeToAccount }
+    for (const a of adAccounts) { codeToAcc[a.ads_code] = a.account_id; accountToCode[a.account_id] ||= a.ads_code }
 
     // Tiền nạp theo từng tài khoản FB trong kỳ (nhiều khoản nạp cùng 1 mã ADS
     // thì cộng dồn — tỷ lệ quy đổi spend → tiền vẫn đúng).
     const napByAccount: Record<string, number> = {}
     for (const it of items) {
       if (it.kind !== "nap" || !it.ads_code) continue
-      const acc = codeToAccount[it.ads_code]
+      const acc = codeToAcc[it.ads_code]
       if (!acc) continue
       napByAccount[acc] = (napByAccount[acc] || 0) + Number(it.amount)
     }

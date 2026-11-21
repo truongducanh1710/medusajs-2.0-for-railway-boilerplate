@@ -35,9 +35,32 @@ export const AD_ACCOUNTS: { account_id: string; ads_code: string }[] = [
   { account_id: "act_741222868885235",  ads_code: "ADS342" },  // BMPHANVIET_ANHTD
   { account_id: "act_2087764658730081", ads_code: "ADS345" },  // BMPHV_USA_ANHNT
   { account_id: "act_27214643188160995", ads_code: "ADS348" }, // BMPHV2_VN_ANHTD
+  { account_id: "act_1108526648426194", ads_code: "ADS349" },  // 21/11: kế toán báo thiếu (cùng id ở cv-bo/ads-exclusion/fb-account-health)
 ]
 export const codeToAccount: Record<string, string> = {}
 for (const a of AD_ACCOUNTS) codeToAccount[a.ads_code] = a.account_id
+
+/**
+ * Danh sách TK cho ô chọn = AD_ACCOUNTS + mọi TK có chi tiêu trong kỳ mà chưa khai báo
+ * (lấy tên ngắn từ fb_account_billing nếu có, không thì dùng luôn act_id làm mã).
+ * Để kế toán luôn nhập được tiền nạp cho TK đang tiêu tiền, kể cả TK mới chưa kịp thêm vào code.
+ */
+async function resolveAccounts(spendByAcc: Record<string, Record<string, number>>) {
+  const list = AD_ACCOUNTS.map(a => ({ ...a }))
+  const known = new Set(list.map(a => a.account_id))
+  const missing = Object.entries(spendByAcc)
+    .filter(([acc, m]) => acc && acc !== "unknown" && !known.has(acc) && Object.values(m).some(v => v > 0))
+    .map(([acc]) => acc)
+  if (missing.length) {
+    const names: Record<string, string> = {}
+    const rows = await sql(`SELECT account_id, ten_ngan FROM fb_account_billing WHERE account_id = ANY($1)`, [missing]).catch(() => [])
+    for (const r of rows) if (r.ten_ngan) names[r.account_id] = String(r.ten_ngan).toUpperCase()
+    for (const acc of missing) list.push({ account_id: acc, ads_code: names[acc] || acc })
+  }
+  const map: Record<string, string> = {}
+  for (const a of list) map[a.ads_code] = a.account_id
+  return { list, map }
+}
 
 async function ensureTable() {
   await sql(`
@@ -135,6 +158,7 @@ export async function computeAccountingCost(
   nvCodes: string[]
   spendByAcc: Record<string, Record<string, number>>
   ggSpendByNV: Record<string, number>
+  adAccounts: { account_id: string; ads_code: string }[]
 }> {
   await ensureTable()
   const month = monthOf(from)
@@ -146,6 +170,7 @@ export async function computeAccountingCost(
   const nvCodes = await getMarketerCodes(from, to)
   const spendByAcc = await getSpendByAccountNV(from, to)
   const ggSpendByNV = await getGgSpendByNV(from, to)
+  const { list: adAccounts, map: accByCode } = await resolveAccounts(spendByAcc)
 
   const costByNV: Record<string, number> = {}
   const add = (code: string, amt: number) => { costByNV[code] = (costByNV[code] || 0) + amt }
@@ -169,7 +194,7 @@ export async function computeAccountingCost(
     const amount = Number(it.amount)
     if (it.kind === "nap") {
       costByPlatform.facebook += amount
-      const acc = it.ads_code ? codeToAccount[it.ads_code] : null
+      const acc = it.ads_code ? (accByCode[it.ads_code] || codeToAccount[it.ads_code]) : null
       const spend = acc ? spendByAcc[acc] : null
       const totalSpend = spend ? Object.values(spend).reduce((s, v) => s + v, 0) : 0
       if (totalSpend > 0) {
@@ -245,7 +270,7 @@ export async function computeAccountingCost(
   const allocatedRounded = Object.values(costByNV).reduce((sum, v) => sum + v, 0)
   unallocated = grandTotal - allocatedRounded
   for (const k of Object.keys(costByPlatform)) costByPlatform[k] = Math.round(costByPlatform[k])
-  return { costByNV, unallocated, unallocatedNotes, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV }
+  return { costByNV, unallocated, unallocatedNotes, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV, adAccounts }
 }
 
 // GET: trả các khoản chi phí + bảng phân bổ CP thực về từng NV.
@@ -254,7 +279,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const { from, to } = req.query as Record<string, string>
     if (!from || !to) return res.status(400).json({ error: "Thiếu from/to" })
 
-    const { costByNV, unallocated, unallocatedNotes, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV } =
+    const { costByNV, unallocated, unallocatedNotes, costByPlatform, items, nvCodes, spendByAcc, ggSpendByNV, adAccounts } =
       await computeAccountingCost(from, to)
     const rows = Object.entries(costByNV)
       .map(([nv, cp]) => ({ nv, cp_thuc: cp }))
@@ -269,7 +294,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       unallocated, unallocated_notes: unallocatedNotes,
       cost_by_platform: costByPlatform,
       gg_spend_by_nv: ggSpendByNV,
-      ad_accounts: AD_ACCOUNTS,
+      ad_accounts: adAccounts,
       marketer_codes: nvCodes,
       spend_by_account: spendByAcc,
     })
