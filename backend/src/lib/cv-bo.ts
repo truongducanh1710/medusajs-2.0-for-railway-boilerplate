@@ -64,7 +64,8 @@ export const STATE_LABEL: Record<string, string> = {
   NGHI: "Nghỉ 14 ngày", TRUOT: "Trượt", HOAN: "Người khoá",
 }
 // User 12/11: mỗi bộ tối đa PER_SET_NEW camp mới/đêm; ngày xấu chỉ bộ mạnh (7 ngày chi ≥BAD_STRONG_MIN, ≤BAD_STRONG_PCT%) lên 1 camp, tổng BAD_NEW_MAX
-const PER_SET_NEW = 2, BAD_NEW_MAX = 2, BAD_STRONG_PCT = 30, BAD_STRONG_MIN = 1_000_000
+// User 21/11 (backtest _nc2111_bt.mjs 10–20/11): 2 → 1 — 19/35 camp bù chết sau 1 ngày, phần thêm ra ~39%
+const PER_SET_NEW = 1, BAD_NEW_MAX = 2, BAD_STRONG_PCT = 30, BAD_STRONG_MIN = 1_000_000
 // User 12/11: camp test bộ chờ chạy cố định thứ 3 + thứ 5 (lượt 23h tối thứ 2/thứ 4 luôn lên, không xét ngày tốt/xấu),
 // suất test tính riêng, không ăn vào max_new_day; ngày khác vẫn test thêm nếu ngày tốt như cũ. Áp cả 3 SP.
 const FIXED_TEST_DOWS = [2, 4]
@@ -787,6 +788,9 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       for (const c of cands.slice(0, need)) { planBat.push(c); total++; need--; aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1) }
       // Bộ đang TEST đã có camp chạy rồi (camp đó bị tắt, hết lượt bật lại) → không lên camp mới bằng chính bài vừa hỏng (11/11)
       if (b.state === "TEST" && sc.length > 0) { out.push(`${b.name} đang test, camp test không được bật lại → không lên mới, chờ chấm`); continue }
+      // User 21/11 (backtest _nc2111_bt.mjs): camp lên mới của bộ trong 3 ngày gần nhất (đã chi ≥200k) đều 0 đơn hoặc >45% → ngừng bù, chỉ bật lại camp cũ
+      const recentNew = sc.filter((c) => c.first && c.first >= addD(today, -3)).map((c) => D.sum(c.id, c.first!, today)).filter((x) => x.s >= 200_000)
+      if (recentNew.length && recentNew.every((x) => x.o === 0 || pctOf(x.s, x.ds) > 45)) { out.push(`${b.name} ngừng bù camp mới: ${recentNew.length} camp mới 3 ngày qua đều 0 đơn hoặc >45%`); continue }
       // Vẫn thiếu → lên camp mới bằng bài cũ (ngày tốt: ≤ max_new_day/ngày của SP, ≤ PER_SET_NEW/bộ để không dồn hết suất vào 1 bộ — user 12/11)
       const w7s = D.sumSet(b.key, addD(today, -6), today)
       const strong = (b.state === "SCALE" || b.state === "WIN") && w7s.s >= BAD_STRONG_MIN && pctOf(w7s.s, w7s.ds) <= BAD_STRONG_PCT
