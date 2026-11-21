@@ -14,7 +14,7 @@ import { callFbApi, FB_API_BASE } from "../api/admin/pancake-sync/report/camp-co
 /** Tài khoản + pixel sản phẩm cần tệp "đăng ký 180 ngày" (theo output/ads-autopilot/care/products.json). */
 export const EXCLUSION_TARGETS: { account: string; label: string; pixels: string[] }[] = [
   { account: "act_1397084955139677", label: "ADS344", pixels: ["943650651603498", "2563693040631730"] }, // 27/10: + pixel hộp nhựa
-  { account: "act_741222868885235", label: "ADS342", pixels: ["943650651603498", "648566867843285", "1487834185630970"] },
+  { account: "act_741222868885235", label: "ADS342", pixels: ["943650651603498", "648566867843285", "1487834185630970", "2563693040631730"] }, // 21/11: user share pixel hộp nhựa
   { account: "act_899712815703406", label: "ADS329", pixels: ["943650651603498", "648566867843285", "2563693040631730"] }, // 21/11: + pixel hộp nhựa (đã share sẵn)
   { account: "act_1133464788237858", label: "ADS327", pixels: ["1921074788473811", "648566867843285", "943650651603498", "2563693040631730"] }, // 21/11: + pixel hộp nhựa
   { account: "act_27214643188160995", label: "ADS348", pixels: ["648566867843285", "943650651603498"] }, // 23/10: thêm cho ANHTD
@@ -219,7 +219,7 @@ const POS_AUDIENCES: PosAud[] = [
   // User 9/11/2026 "ok làm cả 2 luôn": hộp nhựa (~5.000 khách POS năm nay, pixel hộp nhựa mới dùng từ cuối 10 nên không bắt được)
   { kind: "tdh_pos", name: "PHV_TDH_HỘP NHỰA_DANGKY_POS_AUTO (đơn POS mọi trạng thái, cập nhật 15 phút)",
     desc: "Tự động: SĐT khách có đơn hộp nhựa trên Pancake POS, mọi trạng thái. Không sửa tay.",
-    targets: EXCLUSION_TARGETS.filter((t) => ["ADS344", "ADS349", "ADS329", "ADS327"].includes(t.label)), // 21/11: hộp nhựa rải sang TK khác (luật 3 camp/bộ/TK)
+    targets: EXCLUSION_TARGETS.filter((t) => ["ADS344", "ADS349", "ADS329", "ADS327", "ADS342"].includes(t.label)), // 21/11: hộp nhựa rải sang TK khác (luật 3 camp/bộ/TK)
     codes: ["PHVVN020_TDH_MEDIUM", "PHVVN020_TDH_LARGE", "PHVVN020_TDH"], namePat: "%HỘP NHỰA%" },
 ]
 
