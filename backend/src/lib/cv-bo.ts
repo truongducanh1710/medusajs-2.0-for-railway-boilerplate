@@ -33,14 +33,14 @@ const ACCOUNTS: Record<string, string> = {
 export type Prod = { key: string; label: string; sku: string; product: string; pixel: string; link: string; accounts: string[]; match: (n: string) => boolean; posKind?: string }
 export const PRODUCTS: Prod[] = [
   { key: "CV", label: "Chảo vàng", posKind: "cv_pos", sku: "PHVVN026CV", product: "CHẢO VÀNG HẤP", pixel: "943650651603498",
-    link: "https://www.giadungphanviet.shop/chaoultratitanmua1tang4", accounts: ["ADS344", "ADS342", "ADS329", "ADS349"],
+    link: "https://www.giadungphanviet.shop/chaoultratitanmua1tang4", accounts: ["ADS342", "ADS329", "ADS344", "ADS327", "ADS349"], // user 21/11: thêm ADS327; thứ tự ưu tiên khi hoà
     match: (n) => n.startsWith("PHVVN026CV") || n.includes("CHẢO VÀNG") },
   { key: "KGV", label: "Kệ gia vị", posKind: "kgv_pos", sku: "PHVVN042KGV", product: "KỆ GIA VỊ", pixel: "648566867843285",
     link: "https://www.giadungphanviet.site/giamgiasoc", accounts: ["ADS342", "ADS329", "ADS327"],
     match: (n) => n.startsWith("PHVVN042KGV") || n.includes("KỆ GIA VỊ") || n.includes("KỆ ĐỰNG GIA VỊ") },
   // User 9/11 "ok nhé": hộp nhựa vào Bộ tự động; pixel hộp nhựa chỉ có ở ADS344/349 (ưu tiên ADS344: CPM ADS349 cao hơn ~50%)
   { key: "TDH", label: "Hộp nhựa", posKind: "tdh_pos", sku: "PHVVN020TDH", product: "HỘP NHỰA NHIỀU NGĂN", pixel: "2563693040631730",
-    link: "https://www.giadungphanviet.shop/thunghat", accounts: ["ADS344", "ADS349"],
+    link: "https://www.giadungphanviet.shop/thunghat", accounts: ["ADS344", "ADS329", "ADS342", "ADS327", "ADS349"], // user 21/11: share pixel hộp nhựa sang TK khác — TK chỉ được chọn khi đã có tệp loại trừ của pixel
     match: (n) => n.startsWith("PHVVN020TDH") || n.includes("HỘP NHỰA") },
 ]
 const PROD = new Map(PRODUCTS.map((p) => [p.key, p]))
@@ -438,22 +438,21 @@ async function syncBoTable(D: BoData, asOf: string, dry: boolean): Promise<Map<s
 }
 
 // ── Lên camp mới bằng bài cũ ─────────────────────────────────────────────────
-async function pickAccount(setKey: string, D: BoData, aliveByAcc: Map<string, number>, excl: any[], P: Prod): Promise<{ code: string; id: string } | null> {
-  const s = D.sets.get(setKey)
-  const used = new Set((s?.camps || []).map((c) => D.camps.get(c)?.acc).filter(Boolean))
+// User 21/11 (phân tích _cap3_*.mjs): 1 bộ tối đa PER_ACC_MAX camp đang chạy trên 1 tài khoản (tổng bộ vẫn theo TARGET, Scale 6).
+// Bỏ luật cũ "bộ từng chạy ở TK nào chỉ lên ở TK đó" (khiến bộ chỉ từng chạy ADS344 không bao giờ sang TK khác).
+// Chọn: TK đủ tệp loại trừ + không đỏ + bộ đang có <PER_ACC_MAX camp; ưu tiên TK bộ đang có <2 camp, rồi theo thứ tự P.accounts.
+export const PER_ACC_MAX = 3
+async function pickAccount(setKey: string, D: BoData, boAcc: (setKey: string, accId: string) => number, excl: any[], P: Prod): Promise<{ code: string; id: string } | null> {
   const mine = P.accounts.map((k) => [k, ACCOUNTS[k]] as [string, string]).filter(([, id]) => !!id)
-  // Bộ từng chạy ở tài khoản khác (vd ADS344 với KGV không có pixel) → được chọn mọi tài khoản của SP
-  const usedMine = mine.filter(([, id]) => used.has(id))
-  const ok = (usedMine.length ? usedMine : mine).filter(([, id]) => exclusionsFor(excl, id, P.pixel))
+  const ok = mine.filter(([, id]) => exclusionsFor(excl, id, P.pixel))
   if (!ok.length) return null
   const { rows: health } = await getPool().query(
     `SELECT DISTINCT ON (account_id) account_id, muc, ma_van_de FROM fb_account_health WHERE checked_at > now() - interval '6 hours' ORDER BY account_id, checked_at DESC`)
     .catch(() => ({ rows: [] as any[] }))
   const red = new Set(health.filter((h: any) => h.muc === "do").map((h: any) => String(h.account_id).replace(/^act_/, "")))
-  const cand = ok.filter(([, id]) => !red.has(id.replace(/^act_/, "")))
+  const cand = ok.filter(([, id]) => !red.has(id.replace(/^act_/, "")) && boAcc(setKey, id) < PER_ACC_MAX)
   if (!cand.length) return null
-  // User 9/11: ưu tiên tài khoản theo thứ tự của SP (chảo vàng ADS344 → ADS342 → ADS329 → ADS349) — không chia đều theo số camp
-  cand.sort((a, b) => P.accounts.indexOf(a[0]) - P.accounts.indexOf(b[0]))
+  cand.sort((a, b) => (boAcc(setKey, a[1]) >= 2 ? 1 : 0) - (boAcc(setKey, b[1]) >= 2 ? 1 : 0) || P.accounts.indexOf(a[0]) - P.accounts.indexOf(b[0]))
   return { code: cand[0][0], id: cand[0][1] }
 }
 
@@ -705,6 +704,17 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
   let total = scope.filter((c) => !boCamps.has(c.id) && (isAlive(c) || resumeDefault.has(c.id))).length
   for (const id of resumeDefault) if (!boCamps.has(id)) planBat.push(D.camps.get(id)!)
   for (const c of scope) if (isAlive(c) || resumeDefault.has(c.id)) aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1)
+  // User 21/11: số camp của 1 bộ đang chạy (ACTIVE / sẽ bật 5h / có chi hôm qua–hôm nay) trên 1 tài khoản + camp lên mới đêm nay
+  const boAccNew = new Map<string, number>()
+  const boAcc = (setKey: string, accId: string) => {
+    let n = boAccNew.get(setKey + "|" + accId) || 0
+    for (const id of D.sets.get(setKey)?.camps || []) {
+      const c = D.camps.get(id)
+      if (!c || c.retired || c.acc !== accId) continue
+      if (isAlive(c) || resumeDefault.has(c.id) || planBat.includes(c) || D.sum(c.id, addD(today, -1), today).s > 0) n++
+    }
+    return n
+  }
 
   // Bộ không còn mục tiêu (NGHI/TRUOT/QUEUE) mà còn camp chạy → tắt; camp tắt hôm nay thì không bật lại
   for (const b of B.values()) {
@@ -797,12 +807,12 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       const cap = allowNew ? maxNew - reserveTest : Math.min(maxNew, BAD_NEW_MAX)
       let setNew = 0
       while (need > 0 && setNew < setMax && newCount < cap && total < st.max_camps) {
-        const acc = await pickAccount(b.key, D, aliveByAcc, excl, P)
+        const acc = await pickAccount(b.key, D, boAcc, excl, P)
         if (!acc) { out.push(`không có tài khoản hợp lệ cho ${b.name}`); break }
         const id = await launchCamp({ bo: b, acc, start: tomorrow, suffix: `B${sc.length + 1 + (newCount - newToday)}`, kieu: b.state === "TEST" ? "test" : "nhan",
           reason: `Bộ ${b.name} ${STATE_LABEL[b.state]}: cần ${target} camp, đang có ${target - need}`, excl, dry })
         if (!id) break
-        newCount++; setNew++; total++; need--; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1)
+        newCount++; setNew++; total++; need--; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1); boAccNew.set(b.key + "|" + acc.id, (boAccNew.get(b.key + "|" + acc.id) || 0) + 1)
         out.push(`lên mới ${b.name} ở ${acc.code}${allowNew ? "" : ` (ngày xấu, bộ 7 ngày ${fmtPct(w7s.s, w7s.ds)})`}`)
       }
       if (need > 0) out.push(`${b.name} còn thiếu ${need} camp (${setMax === 0 ? (badNew ? `ngày xấu, bộ 7 ngày ${fmtPct(w7s.s, w7s.ds)} chưa đủ mạnh` : "ngày xấu/dừng tuần")
@@ -820,8 +830,8 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       let ok = false
       if (old.length) { planBat.push(old[0]); ok = true }
       else {
-        const acc = await pickAccount(b.key, D, aliveByAcc, excl, P)
-        if (acc) { ok = !!(await launchCamp({ bo: b, acc, start: tomorrow, suffix: `T${sc.length + 1}`, kieu: "test", reason: `Test lại bộ ${b.name} (từng thắng, lâu chưa chạy)`, excl, dry })); if (ok) { newCount++; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1) } }
+        const acc = await pickAccount(b.key, D, boAcc, excl, P)
+        if (acc) { ok = !!(await launchCamp({ bo: b, acc, start: tomorrow, suffix: `T${sc.length + 1}`, kieu: "test", reason: `Test lại bộ ${b.name} (từng thắng, lâu chưa chạy)`, excl, dry })); if (ok) { newCount++; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1); boAccNew.set(b.key + "|" + acc.id, (boAccNew.get(b.key + "|" + acc.id) || 0) + 1) } }
       }
       if (!ok) continue
       total++; testsToday++
