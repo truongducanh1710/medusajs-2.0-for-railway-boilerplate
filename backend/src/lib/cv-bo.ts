@@ -58,9 +58,18 @@ const PAGE_CODE: Record<string, string> = {
 }
 const UTM = "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
 export const BASE = 300_000
-export const TARGET: Record<string, number> = { TEST: 1, WIN: 3, SCALE: 6, GIU1: 1, NGHI: 0, QUEUE: 0, TRUOT: 0, HOAN: 0 }
+export const TARGET: Record<string, number> = { TEST: 1, WIN: 3, SCALE: 4, GIU1: 1, NGHI: 0, QUEUE: 0, TRUOT: 0, HOAN: 0 }
+// User 22/11 "siết lại bộ scale" (DANHGIA_9010_2211.md): 27/39 camp mới CV là để lấp SCALE lên 6, camp mới ≤7 ngày của bộ SCALE
+// 19,5tr ở 44% (camp cũ cùng bộ 23%), camp thứ 4–6 ra 40%; SCALE lật 12 lên / 8 về trong 12 ngày.
+// → SCALE 4 camp; 6 camp chỉ khi 7 ngày ≥15 đơn & ≤25%. Bộ vừa thắng test: 7 ngày đầu giữ 2 camp, chưa được SCALE.
+export const SCALE_STRONG = { orders: 15, pct: 25 }, FRESH_WIN_DAYS = 7, FRESH_WIN_TARGET = 2
+export function targetOf(b: { key: string; state: string; state_since: string; extended: boolean }, D: BoData, asOf: string) {
+  if (b.state === "SCALE") { const w = D.sumSet(b.key, addD(asOf, -6), asOf); return w.o >= SCALE_STRONG.orders && pctOf(w.s, w.ds) <= SCALE_STRONG.pct ? 6 : 4 }
+  if (b.state === "WIN" && b.extended && daysBetween(b.state_since, asOf) < FRESH_WIN_DAYS) return FRESH_WIN_TARGET
+  return TARGET[b.state] ?? 0
+}
 export const STATE_LABEL: Record<string, string> = {
-  QUEUE: "Chờ test", TEST: "Đang test", WIN: "Thắng (3 camp)", SCALE: "Scale (6 camp)", GIU1: "Yếu — giữ 1 camp",
+  QUEUE: "Chờ test", TEST: "Đang test", WIN: "Thắng (2–3 camp)", SCALE: "Scale (4–6 camp)", GIU1: "Yếu — giữ 1 camp",
   NGHI: "Nghỉ 14 ngày", TRUOT: "Trượt", HOAN: "Người khoá",
 }
 // User 12/11: mỗi bộ tối đa PER_SET_NEW camp mới/đêm; ngày xấu chỉ bộ mạnh (7 ngày chi ≥BAD_STRONG_MIN, ≤BAD_STRONG_PCT%) lên 1 camp, tổng BAD_NEW_MAX
@@ -386,7 +395,7 @@ export function evalBo(b: BoRow, D: BoData, asOf: string): { state: string; sinc
     const pk = b.product || "CV"
     const pt = [...D.camps.values()].filter((c) => c.prod === pk).reduce((a, c) => { const x = D.sum(c.id, b.state_since, asOf); a.s += x.s; a.ds += x.ds; return a }, { s: 0, ds: 0 })
     const winMax = pt.s >= 1_000_000 ? Math.min(40, Math.max(35, pctOf(pt.s, pt.ds) - 5)) : 35
-    if (t.o >= 3 && p <= winMax) return { state: "WIN", since: asOf, extended: false, why: `Thắng — ${tag}${winMax > 35 ? ` (SP chung ${fmtPct(pt.s, pt.ds)}, ngưỡng ${winMax}%)` : ""}` }
+    if (t.o >= 3 && p <= winMax) return { state: "WIN", since: asOf, extended: true, why: `Thắng — ${tag}${winMax > 35 ? ` (SP chung ${fmtPct(pt.s, pt.ds)}, ngưỡng ${winMax}%)` : ""}` }
     if (!b.extended && t.o > 0 && p <= 50) return { state: "TEST", since: b.state_since, extended: true, why: `Gia hạn test thêm 3 ngày — ${tag}` }
     if (b.extended && days < 6) return keep
     return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tag}` }
@@ -394,12 +403,18 @@ export function evalBo(b: BoRow, D: BoData, asOf: string): { state: string; sinc
   // WIN / SCALE / GIU1: theo 7 ngày gần nhất của cả bộ
   const w = D.sumSet(b.key, addD(asOf, -6), asOf), p = pctOf(w.s, w.ds)
   const tag = `7 ngày: chi ${vnd(w.s)}, ${w.o} đơn, ${fmtPct(w.s, w.ds)}`
+  // WIN với extended=true = bộ vừa thắng test (đánh dấu ở nhánh TEST); hết 7 ngày thì thành WIN thường
+  const fresh = b.state === "WIN" && b.extended && daysBetween(b.state_since, asOf) < FRESH_WIN_DAYS
+  const scaleOk = (x: { o: number; s: number; ds: number }) => x.o >= 10 && pctOf(x.s, x.ds) <= 28
+  const wPrev = D.sumSet(b.key, addD(asOf, -7), addD(asOf, -1))
   let next = "WIN"
   if (w.s >= 1_000_000 && (w.o === 0 || p > 50)) next = "NGHI"
-  else if (w.o >= 10 && p <= 28) next = "SCALE"
   else if (w.s >= 1_000_000 && p > 35) next = "GIU1"
-  if (next === b.state) return keep
-  const why = next === "NGHI" ? `Nghỉ — ${tag}` : next === "SCALE" ? `Lên scale 6 camp — ${tag}` : next === "GIU1" ? `Yếu, giữ 1 camp — ${tag}` : `Về thắng 3 camp — ${tag}`
+  // User 22/11: SCALE có độ trễ — ở lại SCALE tới khi 7 ngày >32%; lên SCALE phải đạt 2 đêm liền (7 ngày tới hôm nay và tới hôm qua), bộ vừa thắng chưa được lên
+  else if (b.state === "SCALE") next = p > 32 ? "WIN" : "SCALE"
+  else if (!fresh && scaleOk(w) && scaleOk(wPrev)) next = "SCALE"
+  if (next === b.state) return fresh && next === "WIN" ? keep : (b.state === "WIN" && b.extended ? { state: "WIN", since: b.state_since, extended: false, why: `Hết 7 ngày đầu sau thắng test → Thắng 3 camp — ${tag}` } : keep)
+  const why = next === "NGHI" ? `Nghỉ — ${tag}` : next === "SCALE" ? `Lên scale (2 đêm liền ≥10 đơn ≤28%) — ${tag}` : next === "GIU1" ? `Yếu, giữ 1 camp — ${tag}` : `Về thắng 3 camp — ${tag}`
   return { state: next, since: asOf, extended: false, why }
 }
 
@@ -780,7 +795,7 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
     let newCount = newToday
     const boList = boAll.filter((b) => pOf(b) === P.key).sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || w7pct(a.key) - w7pct(b.key))
     for (const b of boList) {
-      const target = TARGET[b.state]
+      const target = targetOf(b, D, today)
       const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!).filter(inScope)
       const alive = sc.filter((c) => isAlive(c) || resumeDefault.has(c.id))
       // Thừa → tắt camp kém nhất (7 ngày)
@@ -819,6 +834,11 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       // Vẫn thiếu → lên camp mới bằng bài cũ (ngày tốt: ≤ max_new_day/ngày của SP, ≤ PER_SET_NEW/bộ để không dồn hết suất vào 1 bộ — user 12/11)
       const w7s = D.sumSet(b.key, addD(today, -6), today)
       const strong = (b.state === "SCALE" || b.state === "WIN") && w7s.s >= BAD_STRONG_MIN && pctOf(w7s.s, w7s.ds) <= BAD_STRONG_PCT
+      // User 22/11 (DANHGIA_9010_2211 mục e): bộ không phải test chỉ lên camp MỚI khi bộ 7 ngày ≥10 đơn & ≤28% và SP 7 ngày ≤30%
+      // (bộ vừa thắng test miễn điều kiện của bộ, vẫn cần SP ≤30%); thiếu thì chỉ bật lại camp cũ
+      const freshWin = b.state === "WIN" && b.extended && daysBetween(b.state_since, today) < FRESH_WIN_DAYS
+      const boNewOk = b.state === "TEST" || ((freshWin || (w7s.o >= 10 && pctOf(w7s.s, w7s.ds) <= 28)) && pctOf(wk.s, wk.ds) <= 30)
+      if (!boNewOk) { out.push(`${b.name} không lên camp mới: bộ 7 ngày ${w7s.o} đơn ${fmtPct(w7s.s, w7s.ds)}, SP 7 ngày ${fmtPct(wk.s, wk.ds)} (cần bộ ≥10 đơn ≤28% & SP ≤30%)`); continue }
       const setMax = allowNew ? PER_SET_NEW : badNew && strong ? 1 : 0
       const cap = allowNew ? maxNew - reserveTest : Math.min(maxNew, BAD_NEW_MAX)
       let setNew = 0
@@ -931,7 +951,7 @@ export async function boOverview() {
   const sets = rows.map((b: any) => {
     const camps = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!).filter(Boolean)
     const w7 = D.sumSet(b.key, addD(today, -7), addD(today, -1)), all = D.sumSet(b.key, addD(today, -DATA_DAYS), addD(today, -1)), t = D.sumSet(b.key, today, today)
-    return { ...b, product_label: PROD.get(b.product || "CV")?.label || b.product, page: PAGE_CODE[b.page_id] || b.page_id, target: TARGET[b.state] ?? 0, label: STATE_LABEL[b.state] || b.state,
+    return { ...b, product_label: PROD.get(b.product || "CV")?.label || b.product, page: PAGE_CODE[b.page_id] || b.page_id, target: targetOf(b, D, today), label: STATE_LABEL[b.state] || b.state,
       alive: camps.filter((c) => c.fb_status === "ACTIVE" && !c.retired).length, camps: camps.length,
       last: camps.map((c) => c.last).filter(Boolean).sort().pop() || null, today: t, w7, all }
   }).sort((a: any, b: any) => (TARGET[b.state] ?? 0) - (TARGET[a.state] ?? 0) || b.all.ds - a.all.ds)
