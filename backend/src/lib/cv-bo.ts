@@ -512,6 +512,15 @@ async function launchCamp(o: { bo: BoRow; acc: { code: string; id: string }; sta
 }
 
 // ── Trong ngày (6h–20h): tăng / tắt kiểu Xuân ───────────────────────────────
+/** Campaign created on FB at most 2 days before `today` (VN date). Unknown → false (do not cut). */
+async function isFreshCamp(id: string, today: string) {
+  const j = await fb("GET", `/${id}?fields=created_time`).catch(() => ({}))
+  const t = Date.parse(j?.created_time || "")
+  if (!t) return false
+  const born = new Date(t + 7 * 3600e3).toISOString().slice(0, 10)
+  return born >= addD(today, -2)
+}
+
 export async function runCheck(st: CvBoSetting, D?: BoData) {
   const dry = st.dry_run
   D = D || await loadData()
@@ -524,13 +533,13 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
   const rows: any[] = []
   const totP = new Map<string, { s: number; ds: number }>() // lỗ ngày tính riêng từng SP
   for (const c of active) {
-    const j = await fb("GET", `/${c.id}/insights?date_preset=today&fields=spend,inline_link_clicks,actions`).catch(() => ({}))
+    const j = await fb("GET", `/${c.id}/insights?date_preset=today&fields=spend,impressions,inline_link_clicks,actions`).catch(() => ({}))
     const r = j?.data?.[0] || {}
-    const s = +r.spend || 0, lc = +r.inline_link_clicks || 0
+    const s = +r.spend || 0, lc = +r.inline_link_clicks || 0, imp = +r.impressions || 0
     const reg = +((r.actions || []).find((a: any) => /complete_registration/.test(a.action_type))?.value || 0)
     const o = D.ordersToday.get(c.id) || { o: 0, ds: 0 }
     const tp = totP.get(c.prod!) || { s: 0, ds: 0 }; tp.s += s; tp.ds += o.ds; totP.set(c.prod!, tp)
-    rows.push({ c, s, o: o.o, ds: o.ds, p: pctOf(s, o.ds), cpc: lc ? s / lc : 99_000, reg })
+    rows.push({ c, s, o: o.o, ds: o.ds, p: pctOf(s, o.ds), cpc: lc ? s / lc : 99_000, cpm: imp ? (s / imp) * 1000 : 0, reg })
   }
   const dmP = new Map([...totP].map(([k, t]) => [k, dayMode(hour, t.s, t.ds)]))
   const tot = [...totP.values()].reduce((a, t) => ({ s: a.s + t.s, ds: a.ds + t.ds }), { s: 0, ds: 0 })
@@ -553,6 +562,13 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
         : r.o > 0 && r.s >= 600_000 && r.p > 50 ? "chi ≥600k mà >50%"
         : hour >= 12 && r.o > 0 && r.s >= 300_000 && r.p > 45 ? ">45% từ 12h" : ""
       if (why) { await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày (kệ): ${why} — ${d}`, dry, r); actions++; continue }
+    }
+    // User 22/11 "thêm luật này chạy thật luôn": chảo vàng, camp MỚI ngày chạy đầu, lúc 12h chi ≥100k & CPM >400k & CPC >10k → tắt tới hết ngày.
+    // Backtest BACKTEST_TAT_SANG_2211.md phụ lục B (1/10–21/11): 63 camp-ngày, tiết kiệm 5,8tr, mất 8 đơn, phần cắt 90%, ròng +3,7tr
+    // (T10 156%, T11 51%). Camp cũ KHÔNG áp (34%, không ổn định). Mới = ngày đầu có chi VÀ tạo trên FB ≤2 ngày.
+    if (c.prod === "CV" && hour === 12 && (!c.first || c.first === today) && r.s >= 100_000 && r.cpm > 400_000 && r.cpc > 10_000
+      && (await isFreshCamp(c.id, today))) {
+      await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày (camp mới 12h): CPM ${vnd(r.cpm)} >400k & CPC >10k — ${d}`, dry, r); actions++; continue
     }
     if (r.o === 0 && r.reg === 0 && r.s >= 200_000 && (r.cpc >= 13_000 || r.s >= 300_000)) {
       await doStatus(c, "PAUSED", "tat", `Tắt tới hết ngày: 0 đơn & chưa ĐK — ${d}`, dry, r); actions++; continue
