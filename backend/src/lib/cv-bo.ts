@@ -58,18 +58,25 @@ const PAGE_CODE: Record<string, string> = {
 }
 const UTM = "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
 export const BASE = 300_000
-export const TARGET: Record<string, number> = { TEST: 1, WIN: 3, SCALE: 4, GIU1: 1, NGHI: 0, QUEUE: 0, TRUOT: 0, HOAN: 0 }
+export const TARGET: Record<string, number> = { TEST: 1, WIN: 2, SCALE: 2, GIU1: 1, NGHI: 0, QUEUE: 0, TRUOT: 0, HOAN: 0 }
 // User 22/11 "siết lại bộ scale" (DANHGIA_9010_2211.md): 27/39 camp mới CV là để lấp SCALE lên 6, camp mới ≤7 ngày của bộ SCALE
 // 19,5tr ở 44% (camp cũ cùng bộ 23%), camp thứ 4–6 ra 40%; SCALE lật 12 lên / 8 về trong 12 ngày.
-// → SCALE 4 camp; 6 camp chỉ khi 7 ngày ≥15 đơn & ≤25%. Bộ vừa thắng test: 7 ngày đầu giữ 2 camp, chưa được SCALE.
-export const SCALE_STRONG = { orders: 15, pct: 25 }, FRESH_WIN_DAYS = 7, FRESH_WIN_TARGET = 2
+// → SCALE có độ trễ (lên 2 đêm liền, về khi >32%). Bộ vừa thắng test: 7 ngày đầu chưa được SCALE. Số camp: xem targetOf (22/11 lần 2: 2 camp).
+export const FRESH_WIN_DAYS = 7
+// User 22/11 (lần 2, "ok" sau DANHGIA_LUAT_USER_2211): bộ thắng (WIN/SCALE) tối đa 2 camp chạy cùng lúc — thử 7–10 ngày, chấm lại ~2/12.
+// Camp thứ 3 chỉ khi bộ 7 ngày ≥10 đơn & ≤28% VÀ là camp cũ (đang chạy hoặc bật lại) có 7 ngày ≤30% — không lên camp mới cho suất này.
+// Backtest: cv-bo 10–21/11 camp thứ 3+ ra 36–46%, cắt về 2 ròng +1,9–4,3tr (nhưng thời Xuân camp 3–7 ra 26–28% → nới lại khi có bộ mạnh).
 export function targetOf(b: { key: string; state: string; state_since: string; extended: boolean }, D: BoData, asOf: string) {
-  if (b.state === "SCALE") { const w = D.sumSet(b.key, addD(asOf, -6), asOf); return w.o >= SCALE_STRONG.orders && pctOf(w.s, w.ds) <= SCALE_STRONG.pct ? 6 : 4 }
-  if (b.state === "WIN" && b.extended && daysBetween(b.state_since, asOf) < FRESH_WIN_DAYS) return FRESH_WIN_TARGET
   return TARGET[b.state] ?? 0
 }
+export function bonusThird(b: { key: string; state: string; state_since: string; extended: boolean }, D: BoData, asOf: string) {
+  if (b.state !== "WIN" && b.state !== "SCALE") return false
+  if (b.state === "WIN" && b.extended && daysBetween(b.state_since, asOf) < FRESH_WIN_DAYS) return false
+  const w = D.sumSet(b.key, addD(asOf, -6), asOf)
+  return w.o >= 10 && pctOf(w.s, w.ds) <= 28
+}
 export const STATE_LABEL: Record<string, string> = {
-  QUEUE: "Chờ test", TEST: "Đang test", WIN: "Thắng (2–3 camp)", SCALE: "Scale (4–6 camp)", GIU1: "Yếu — giữ 1 camp",
+  QUEUE: "Chờ test", TEST: "Đang test", WIN: "Thắng (2 camp)", SCALE: "Scale (2–3 camp)", GIU1: "Yếu — giữ 1 camp",
   NGHI: "Nghỉ 14 ngày", TRUOT: "Trượt", HOAN: "Người khoá",
 }
 // User 12/11: mỗi bộ tối đa PER_SET_NEW camp mới/đêm; ngày xấu chỉ bộ mạnh (7 ngày chi ≥BAD_STRONG_MIN, ≤BAD_STRONG_PCT%) lên 1 camp, tổng BAD_NEW_MAX
@@ -387,18 +394,25 @@ export function evalBo(b: BoRow, D: BoData, asOf: string): { state: string; sinc
     const tagN = nCamp > 1 ? `${tag}, ${nCamp} camp` : tag
     if (t.s >= 300_000 * nCamp && t.o === 0) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tagN}` }
     if (t.s >= 800_000 * nCamp && t.o <= 1) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tagN}` }
-    if (days < 3) return keep
     // Camp test chưa tiêu được (FB chưa phân phối / bị tắt) → chưa đủ mẫu, đợi tối đa 7 ngày
-    if (t.s < 200_000 && t.o === 0) return days >= 7 ? { state: "TRUOT", since: asOf, extended: false, why: `Trượt — 7 ngày không tiêu được (${tag})` } : keep
+    if (days >= 7 && t.s < 200_000 && t.o === 0) return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — 7 ngày không tiêu được (${tag})` }
+    // User 22/11 ("ok" P2 DANHGIA_BO_MOI_2111, backtest _bm2111_alt.mjs C): đếm ngày test theo NGÀY CÓ PHÂN PHỐI (bộ chi ≥100k/camp),
+    // chấm ở ngày phân phối thứ 3 / 6 / 9: thắng; ngày 3 có đơn ≤50% → gia hạn; ngày 6 có đơn ≤45% → gia hạn lần 2 (cứu bài thắng chậm kiểu VD131–134);
+    // còn lại trượt. Quá 14 ngày lịch thì chấm chốt. Backtest 3–10/2026: bộ thắng dài qua 21 → 23/26, giữ 91% đơn trọn đời (55%), +8,6tr chi test/8 tháng.
+    let dd = 0, todayDeliv = false
+    for (let i = 0; i < days; i++) { const d = addD(b.state_since, i); const x = D.sumSet(b.key, d, d); const ok = x.s >= 100_000 * nCamp; if (ok) dd++; if (d === asOf) todayDeliv = ok }
+    const tagD = `${tag}, ${dd} ngày phân phối`
+    const dueStage = todayDeliv ? [3, 6, 9].indexOf(dd) : -1
+    if (dueStage < 0 && days < 14) return keep
     // User 12/11: test có thể rơi vào ngày xấu (thứ 3/5 cố định) → so thêm với % chung của SP cùng giai đoạn:
     // SP chung X% (chi ≥1tr) thì bộ test ≤ X−5% vẫn thắng, ngưỡng trong khoảng 35–40%
     const pk = b.product || "CV"
     const pt = [...D.camps.values()].filter((c) => c.prod === pk).reduce((a, c) => { const x = D.sum(c.id, b.state_since, asOf); a.s += x.s; a.ds += x.ds; return a }, { s: 0, ds: 0 })
     const winMax = pt.s >= 1_000_000 ? Math.min(40, Math.max(35, pctOf(pt.s, pt.ds) - 5)) : 35
-    if (t.o >= 3 && p <= winMax) return { state: "WIN", since: asOf, extended: true, why: `Thắng — ${tag}${winMax > 35 ? ` (SP chung ${fmtPct(pt.s, pt.ds)}, ngưỡng ${winMax}%)` : ""}` }
-    if (!b.extended && t.o > 0 && p <= 50) return { state: "TEST", since: b.state_since, extended: true, why: `Gia hạn test thêm 3 ngày — ${tag}` }
-    if (b.extended && days < 6) return keep
-    return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tag}` }
+    if (t.o >= 3 && p <= winMax) return { state: "WIN", since: asOf, extended: true, why: `Thắng — ${tagD}${winMax > 35 ? ` (SP chung ${fmtPct(pt.s, pt.ds)}, ngưỡng ${winMax}%)` : ""}` }
+    if (dueStage === 0 && t.o > 0 && p <= 50) return { state: "TEST", since: b.state_since, extended: true, why: `Gia hạn test tới ngày phân phối 6 — ${tagD}` }
+    if (dueStage === 1 && t.o > 0 && p <= 45) return { state: "TEST", since: b.state_since, extended: true, why: `Gia hạn lần 2 tới ngày phân phối 9 (bài thắng chậm) — ${tagD}` }
+    return { state: "TRUOT", since: asOf, extended: false, why: `Trượt — ${tagD}` }
   }
   // WIN / SCALE / GIU1: theo 7 ngày gần nhất của cả bộ
   const w = D.sumSet(b.key, addD(asOf, -6), asOf), p = pctOf(w.s, w.ds)
@@ -803,7 +817,9 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       alive.sort((a, c) => score(a) - score(c))
       // Trần max_camps chỉ chặn bật thêm / lên mới — KHÔNG tắt camp đang chạy của bộ khác (preview 9/11 định tắt VD131+133+134 S1)
       // Bộ đang test: không tắt bớt camp người lên tay để test (user 9/11 VD5+15 nhân 3) — chấm sau 3 ngày mới quyết
-      const keepN = b.state === "TEST" ? Math.max(target, alive.length) : target
+      const bonus = bonusThird(b, D, today)
+      const camp7ok = (c: CampInfo) => { const x = D.sum(c.id, addD(today, -6), today); if (x.s > 0) return pctOf(x.s, x.ds) <= 30; const y = c.last ? D.sum(c.id, addD(c.last, -2), c.last) : x; return pctOf(y.s, y.ds) <= 30 }
+      const keepN = b.state === "TEST" ? Math.max(target, alive.length) : target + (bonus && alive[target] && camp7ok(alive[target]) ? 1 : 0)
       const keep = alive.slice(0, keepN), extra = alive.slice(keepN)
       for (const c of extra) {
         if (protect(c)) { if (resumeDefault.has(c.id)) planBat.push(c); total++; out.push(`giữ camp cũ tốt ${c.name} (bộ ${b.name} thừa camp)`); continue }
@@ -812,8 +828,11 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       }
       for (const c of keep) if (resumeDefault.has(c.id)) planBat.push(c)
       total += keep.length
+      // Suất camp thứ 3 (bonus) chỉ lấp bằng camp cũ bật lại có 7 ngày ≤30%, không lên mới
+      const capOld = target + (bonus ? 1 : 0)
+      let needOld = Math.min(capOld - keep.length, Math.max(0, st.max_camps - total))
       let need = Math.min(target - keep.length, Math.max(0, st.max_camps - total))
-      if (need <= 0) continue
+      if (needOld <= 0) continue
       const bz = busyOf(b)
       if (bz.length) { out.push(`${b.name} không bù camp: bài ${bz.join(", ")} MKT khác đang chạy`); continue }
       // Thiếu → bật lại camp cũ của bộ trước (tắt ≤14 ngày, lần chạy gần nhất không quá 40%, không phải người vừa tắt)
@@ -825,7 +844,15 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
         cands.push(c)
       }
       cands.sort((a, c) => { const x = D.sum(a.id, addD(today, -DATA_DAYS), today), y = D.sum(c.id, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })
-      for (const c of cands.slice(0, need)) { planBat.push(c); total++; need--; aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1) }
+      let got = keep.length
+      for (const c of cands) {
+        if (needOld <= 0) break
+        if (got >= target && !camp7ok(c)) continue // suất thứ 3: camp cũ phải ≤30%
+        planBat.push(c); total++; got++; needOld--; aliveByAcc.set(c.acc, (aliveByAcc.get(c.acc) || 0) + 1)
+        if (got >= target + 1) out.push(`bật camp thứ 3 (camp cũ ≤30%) cho ${b.name}: ${c.name}`)
+      }
+      need = Math.max(0, target - got)
+      if (need <= 0) continue
       // Bộ đang TEST đã có camp chạy rồi (camp đó bị tắt, hết lượt bật lại) → không lên camp mới bằng chính bài vừa hỏng (11/11)
       if (b.state === "TEST" && sc.length > 0) { out.push(`${b.name} đang test, camp test không được bật lại → không lên mới, chờ chấm`); continue }
       // User 21/11 (backtest _nc2111_bt.mjs): camp lên mới của bộ trong 3 ngày gần nhất (đã chi ≥200k) đều 0 đơn hoặc >45% → ngừng bù, chỉ bật lại camp cũ
