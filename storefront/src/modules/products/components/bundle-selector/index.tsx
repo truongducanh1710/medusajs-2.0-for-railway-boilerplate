@@ -11,11 +11,13 @@ import CheckoutTracker from "@components/CheckoutTracker"
 import { loadProductTikTokPixel, ttqTrack } from "@lib/tiktok"
 import QtyTiers from "./qty-tiers"
 import VersionGifts, { validGifts, type VersionGift } from "./version-gifts"
+import GiftChoicePicker, { validGiftChoice, type GiftChoice } from "./gift-choice"
 
 type GiftItem = {
   image?: string
   name: string
   value: number
+  sku?: string
 }
 
 type BundleOption = {
@@ -27,6 +29,8 @@ type BundleOption = {
   originalPrice: number
   shippingFee?: number
   gifts?: GiftItem[]
+  /** Customer picks 1 of these items; the pick is merged into gifts (first) */
+  giftChoice?: GiftChoice
   image?: string
 }
 
@@ -80,6 +84,8 @@ function Countdown({ minutes = 17 }: { minutes?: number }) {
 export default function BundleSelector({ product, region }: Props) {
   const [adding, setAdding] = useState(false)
   const [activeVariantIdx, setActiveVariantIdx] = useState(0)
+  // bundle qty → index of the picked gift in that option's giftChoice
+  const [giftPick, setGiftPick] = useState<Record<number, number>>({})
   const params = useParams()
   const countryCode = params.countryCode as string
   const router = useRouter()
@@ -154,6 +160,14 @@ export default function BundleSelector({ product, region }: Props) {
     ]
   }
 
+  options = options.map((option) => {
+    const choice = validGiftChoice(option.giftChoice)
+    if (!choice) return { ...option, giftChoice: undefined }
+    const picked = choice.items[giftPick[option.qty] ?? 0] ?? choice.items[0]
+    const pickedGift: GiftItem = { name: picked.name, value: Number(picked.value) || 0, image: picked.image, ...(picked.sku ? { sku: picked.sku } : {}) }
+    return { ...option, giftChoice: choice, gifts: [pickedGift, ...(option.gifts ?? [])] }
+  })
+
   options = options.map((option) => ({
     ...option,
     shippingFee: typeof option.shippingFee === "number" && Number.isFinite(option.shippingFee) && option.shippingFee >= 0
@@ -213,6 +227,7 @@ export default function BundleSelector({ product, region }: Props) {
         : {}),
       bundle_options: JSON.stringify(options.map(o => ({ qty: o.qty, price: o.price, originalPrice: o.originalPrice, label: o.label, gifts: o.gifts, shippingFee: o.shippingFee }))),
       ...(selectedOpt.gifts?.length ? { gifts: JSON.stringify(selectedOpt.gifts) } : {}),
+      ...(selectedOpt.giftChoice ? { gift_choice: selectedOpt.gifts?.[0]?.name } : {}),
     },
   }
 
@@ -377,6 +392,13 @@ export default function BundleSelector({ product, region }: Props) {
           selected={selected}
           onSelect={setSelected}
           cartLine={cartLine}
+          giftChoiceSlot={selectedOpt.giftChoice ? (
+            <GiftChoicePicker
+              choice={selectedOpt.giftChoice}
+              picked={giftPick[selectedOpt.qty] ?? 0}
+              onPick={(i) => setGiftPick((prev) => ({ ...prev, [selectedOpt.qty]: i }))}
+            />
+          ) : null}
           onClose={() => setPopupOpen(false)}
         />
       )}
@@ -569,6 +591,13 @@ export default function BundleSelector({ product, region }: Props) {
                       </p>
                     </div>
                   ))}
+                  {opt.giftChoice && (
+                    <GiftChoicePicker
+                      choice={opt.giftChoice}
+                      picked={giftPick[opt.qty] ?? 0}
+                      onPick={(i) => setGiftPick((prev) => ({ ...prev, [opt.qty]: i }))}
+                    />
+                  )}
                 </div>
               )}
             </div>

@@ -815,8 +815,10 @@ const [showPain, setShowPain] = useState(false)
         badgeColor: o.badgeColor ? String(o.badgeColor) : undefined,
         image: o.image ? String(o.image) : undefined,
         gifts: Array.isArray(o.gifts)
-          ? o.gifts.map((g: any) => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined }))
+          ? o.gifts.map((g: any) => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined, sku: g.sku ? String(g.sku) : undefined }))
           : [],
+        // "Pick 1 gift" (set via API, no editor UI yet) must survive a save from this widget
+        giftChoice: o.giftChoice && Array.isArray(o.giftChoice.items) ? o.giftChoice : undefined,
       }))
       if (isMultiVariant && variantBundles.length > 0) {
         m.bundle_options_v2 = JSON.stringify({ variants: variantBundles.map(vb => ({ ...vb, options: sanitizeOpts(vb.options) })) })

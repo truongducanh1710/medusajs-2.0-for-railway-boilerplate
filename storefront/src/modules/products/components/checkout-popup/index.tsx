@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { HttpTypes } from "@medusajs/types"
 import { prepareQuickCheckout } from "@lib/data/cart"
@@ -34,6 +34,8 @@ type Props = {
   onSelect: (qty: number) => void
   // Cart line for the current pick — the popup keeps the cart in sync with it
   cartLine: CartLineInput
+  /** "Pick 1 gift" control of the selected bundle (rendered by BundleSelector) */
+  giftChoiceSlot?: ReactNode
   onClose: () => void
 }
 
@@ -73,6 +75,7 @@ export default function CheckoutPopup({
   selected,
   onSelect,
   cartLine,
+  giftChoiceSlot,
   onClose,
 }: Props) {
   const [cart, setCart] = useState<HttpTypes.StoreCart | null>(null)
@@ -108,7 +111,8 @@ export default function CheckoutPopup({
     chainRef.current = run
   }, [])
 
-  const lineKey = `${cartLine.variantId}:${cartLine.quantity}`
+  // Gifts are part of the key: picking another gift must rewrite the cart line metadata
+  const lineKey = `${cartLine.variantId}:${cartLine.quantity}:${(cartLine.metadata as any)?.gifts ?? ""}`
   useEffect(() => {
     syncCart(cartLine)
     // cartLine is rebuilt every render — only resync when the pick actually changes
@@ -288,6 +292,7 @@ export default function CheckoutPopup({
     <div className="space-y-2">
       {selectedSummary}
       {selectedGifts}
+      {giftChoiceSlot}
       {syncErrorLine}
     </div>
   ) : (
@@ -378,6 +383,7 @@ export default function CheckoutPopup({
           </button>
         )
       })}
+      {giftChoiceSlot}
       {syncErrorLine}
     </div>
   )
