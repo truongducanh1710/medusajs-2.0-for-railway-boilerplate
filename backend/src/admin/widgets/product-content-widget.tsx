@@ -817,7 +817,8 @@ const [showPain, setShowPain] = useState(false)
         gifts: Array.isArray(o.gifts)
           ? o.gifts.map((g: any) => ({ name: String(g.name || ""), value: Number(g.value) || 0, image: g.image ? String(g.image) : undefined, sku: g.sku ? String(g.sku) : undefined }))
           : [],
-        // "Pick 1 gift" (set via API, no editor UI yet) must survive a save from this widget
+        // Per-bundle shipping fee and "pick 1 gift" are set via API (no editor UI yet) — keep them on save
+        shippingFee: Number.isSafeInteger(o.shippingFee) && o.shippingFee >= 0 ? o.shippingFee : undefined,
         giftChoice: o.giftChoice && Array.isArray(o.giftChoice.items) ? o.giftChoice : undefined,
       }))
       if (isMultiVariant && variantBundles.length > 0) {

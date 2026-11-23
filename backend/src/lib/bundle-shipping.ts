@@ -14,6 +14,19 @@ export type BundleShippingPlan = {
   productIds: string[]
 }
 
+/**
+ * Server gifts of a configured offer. With offer.giftChoice ({ items: [...] }) the customer's pick
+ * (line metadata gift_choice = item name) goes first; an unknown or missing pick falls back to item 0.
+ */
+export function configuredOfferGifts(offer: any, pickName?: unknown): any[] {
+  const base = Array.isArray(offer?.gifts) ? offer.gifts : []
+  const items = Array.isArray(offer?.giftChoice?.items) ? offer.giftChoice.items.filter((g: any) => g && typeof g.name === "string" && g.name.trim()) : []
+  if (items.length < 2) return base
+  const picked = items.find((g: any) => g.name === pickName) ?? items[0]
+  const gift = { name: picked.name, value: Number(picked.value) || 0, ...(picked.image ? { image: picked.image } : {}), ...(picked.sku ? { sku: picked.sku } : {}) }
+  return [gift, ...base]
+}
+
 /** Normalize only configured offers; return null once the native line is settled. */
 export function configuredBundleLineUpdate(item: any, productMetadata: any) {
   const offers = parse(productMetadata?.bundle_options)
@@ -22,7 +35,7 @@ export function configuredBundleLineUpdate(item: any, productMetadata: any) {
   const offer = offers.find((entry: any) => Number(entry.qty) === qty)
   if (!Number.isSafeInteger(qty) || qty < 1 || !offer || !Number.isSafeInteger(offer.price) || offer.price <= 0 || !Number.isSafeInteger(offer.shippingFee) || offer.shippingFee < 0) invalid("Số lượng combo chưa được cấu hình hợp lệ.")
   const unitPrice = offer.price / qty
-  const giftJson = JSON.stringify(Array.isArray(offer.gifts) ? offer.gifts : [])
+  const giftJson = JSON.stringify(configuredOfferGifts(offer, item.metadata?.gift_choice))
   const metadata = { ...(item.metadata ?? {}), bundle_qty: qty, bundle_price: offer.price, bundle_shipping_fee: offer.shippingFee, gifts: giftJson }
   if (Math.abs(Number(item.unit_price) - unitPrice) <= 0.000001 && item.is_custom_price === true && Number(item.metadata?.bundle_qty) === qty && Number(item.metadata?.bundle_price) === offer.price && Number(item.metadata?.bundle_shipping_fee) === offer.shippingFee && item.metadata?.gifts === giftJson) return null
   return { id: item.id, unit_price: unitPrice, is_custom_price: true, metadata }

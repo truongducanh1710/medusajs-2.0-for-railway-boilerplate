@@ -123,4 +123,12 @@ describe("server-authoritative bundle shipping", () => {
     await validateBundleShippingCart(legacyScope, cart.id)
     expect(updateLineItems.mock.calls[0][0][0].metadata).not.toHaveProperty("bundle_shipping_fee")
   })
+  test("configured offer keeps the customer's gift pick and rejects unknown picks", () => {
+    const offer = { qty: 1, price: 799000, shippingFee: 30000, gifts: [{ name: "Xửng" }], giftChoice: { items: [{ name: "Máy bào", value: 499000, sku: "MB" }, { name: "Kệ", value: 499000, sku: "KGV" }] } }
+    const meta = { bundle_options: [offer] }
+    const pick = configuredBundleLineUpdate({ id: "l", quantity: 1, unit_price: 0, metadata: { gift_choice: "Kệ" } }, meta) as any
+    expect(JSON.parse(pick.metadata.gifts)).toEqual([{ name: "Kệ", value: 499000, sku: "KGV" }, { name: "Xửng" }])
+    const bad = configuredBundleLineUpdate({ id: "l", quantity: 1, unit_price: 0, metadata: { gift_choice: "Nồi" } }, meta) as any
+    expect(JSON.parse(bad.metadata.gifts)[0].name).toBe("Máy bào")
+  })
 })
