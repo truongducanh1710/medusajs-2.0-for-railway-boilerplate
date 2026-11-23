@@ -282,6 +282,7 @@ export default defineMiddlewares({
     { matcher: "/admin/ads-expense/report*", method: ["GET"], middlewares: [requirePerm("page.bao-cao.view")] },
     { matcher: "/admin/ads-expense/report", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/ads-expense/report/*", method: ["PATCH", "DELETE"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
+    { matcher: "/admin/ads-expense/reparse", method: ["POST"], middlewares: [requirePerm("page.bao-cao.camp-control")] },
     { matcher: "/admin/pancake-sync/call-board*", method: ["GET"], middlewares: [requirePerm("page.don-hang.view")] },
     // Sale ghi kết quả cuộc gọi / sửa đơn sang POS. Sale hiện có quyền lệch nhau (Linh: don-hang.edit,
     // HADTT: cskh-goi-khach.call) — quyền nào trong 2 cũng là người được gọi + xác nhận đơn.

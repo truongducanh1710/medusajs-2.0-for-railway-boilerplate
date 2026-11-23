@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 import { getPool } from "../../../../../../lib/db"
 import { broadcastToChannel, canAccessMktChannel, canPostInMktChannel, createMentionNotifications, formatMktMessage, getMktChatAuthInfo, getMktUserNameMap } from "../../../_lib"
-import { ADS_EXPENSE_CHANNEL_NAME, parseAdsExpenseText } from "../../../_ads-expense-parser"
+import { ADS_EXPENSE_CHANNEL_NAME, ingestAdsExpenseMessage } from "../../../_ads-expense-parser"
 import { parseDeviceFromUA } from "../../../_presence"
 
 function normalizeMentionText(value: string): string {
@@ -230,22 +230,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const formattedMessage = formatMktMessage(message, nameByEmail, replySnippet)
 
     if (messageType === "text" && channel.name === ADS_EXPENSE_CHANNEL_NAME) {
-      const parsedList = parseAdsExpenseText(text)
-      for (const parsed of parsedList) {
-        svc.createAdsExpenseTransactions({
-          source_message_id: message.id,
-          channel_id: id,
-          card_last4: parsed.card_last4,
-          merchant: parsed.merchant,
-          amount: parsed.amount,
-          currency: parsed.currency,
-          txn_at: parsed.txn_at,
-          raw_text: parsed.raw_text,
-          parsed_by: "regex",
-        }).catch((e: any) => {
-          if (e?.code !== "23505") console.error(e) // 23505 = trùng giao dịch (đã bắt trước đó), bỏ qua
-        })
-      }
+      ingestAdsExpenseMessage(svc, { id: message.id, channel_id: id, content: text, created_at: new Date() })
+        .catch((e: any) => console.error("[ads-expense] ingest failed", e))
     }
 
     broadcastToChannel(id, "message.created", { message: formattedMessage })

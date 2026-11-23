@@ -92,6 +92,19 @@ function ChiPhiKeToanPage() {
     }
   }
 
+  async function reparseChannel() {
+    if (!confirm(`Quét lại tin nhắn nhóm KẾ TOÁN từ ${from} để bắt giao dịch còn sót? Giao dịch đã có sẽ được bỏ qua.`)) return
+    setLoading(true)
+    try {
+      const r = await apiJson(`/admin/ads-expense/reparse?from=${from}`, "POST")
+      alert(`Đã quét ${r.messages} tin: thêm ${r.inserted} giao dịch mới, bỏ qua ${r.skipped} đã có.`)
+      fetchData()
+    } catch (e: any) {
+      alert(e.message)
+      setLoading(false)
+    }
+  }
+
   async function addManual() {
     if (!addDraft.amount || Number.isNaN(Number(addDraft.amount))) {
       alert("Số tiền không hợp lệ")
@@ -131,6 +144,14 @@ function ChiPhiKeToanPage() {
           }}>
             {loading ? "Đang tải..." : "↻ Refresh"}
           </button>
+          {canEdit && (
+            <button onClick={reparseChannel} disabled={loading} title="Đọc lại SMS trong nhóm kế toán bằng cú pháp mới nhất" style={{
+              background: "#fff", color: "#1d4ed8", border: "1px solid #1d4ed8", borderRadius: 6,
+              padding: "8px 16px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13,
+            }}>
+              ⟳ Quét lại nhóm
+            </button>
+          )}
           {canEdit && (
             <button onClick={() => setShowAddForm(v => !v)} style={{
               background: "#059669", color: "#fff", border: "none", borderRadius: 6,
