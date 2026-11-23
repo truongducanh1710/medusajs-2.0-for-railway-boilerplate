@@ -318,6 +318,18 @@ function FAQSection({ product }: { product: HttpTypes.StoreProduct }) {
   )
 }
 
+// Per-bundle shipping (bundle_options[].shippingFee): name the smallest free bundle instead of the generic 500K line
+function freeShipLine(product: HttpTypes.StoreProduct) {
+  try {
+    const offers = JSON.parse(String(product.metadata?.bundle_options || "[]"))
+    if (Array.isArray(offers) && offers.some((o: any) => Number(o?.shippingFee) > 0)) {
+      const free = offers.filter((o: any) => o?.shippingFee === 0).map((o: any) => Number(o.qty)).sort((a: number, b: number) => a - b)[0]
+      if (free) return `🚚 Miễn phí ship khi mua từ ${free}`
+    }
+  } catch {}
+  return "🚚 Miễn phí ship từ 500K"
+}
+
 // Section: Final CTA — scroll-to-buy anchor
 function FinalCTA({ product, digital }: { product: HttpTypes.StoreProduct; region: HttpTypes.StoreRegion; digital?: boolean }) {
   return (
@@ -341,7 +353,7 @@ function FinalCTA({ product, digital }: { product: HttpTypes.StoreProduct; regio
             </>
           ) : (
             <>
-              <span>🚚 Miễn phí ship từ 500K</span>
+              <span>{freeShipLine(product)}</span>
               <span>🔄 Đổi trả 7 ngày</span>
             </>
           )}
