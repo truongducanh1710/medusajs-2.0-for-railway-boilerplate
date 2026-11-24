@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Pool } from "pg"
+import { loadHandoverRules } from "../_lng-core"
 
 let _pool: Pool | null = null
 function getPool(): Pool {
@@ -106,17 +107,22 @@ async function getMarketerCodes(from: string, to: string): Promise<string[]> {
 
 // % tiêu thực của mỗi NV trên từng TÀI KHOẢN ads (từ mkt_ads_cost) — để phân bổ tiền nạp.
 async function getSpendByAccountNV(from: string, to: string): Promise<Record<string, Record<string, number>>> {
+  // Gom theo NGÀY để áp luật bàn giao (mkt_handover) giống hệt bảng LNG — không áp thì
+  // tiền của NV đã bàn giao vẫn chia về tên cũ, còn LNG đã dồn ads/đơn của họ sang người
+  // nhận → cột CP thực (KT) rơi mất phần đó (T10/2026 hụt 56,9tr của ANHNT+NAMDV).
   const rows = await sql(`
-    SELECT ad_account_id, UPPER(TRIM(mkt_name)) AS nv, SUM(spend)::bigint AS spend
+    SELECT ad_account_id, UPPER(TRIM(mkt_name)) AS nv, to_char(date, 'YYYY-MM-DD') AS d, SUM(spend)::bigint AS spend
     FROM mkt_ads_cost
     WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
-    GROUP BY ad_account_id, UPPER(TRIM(mkt_name))
+    GROUP BY ad_account_id, UPPER(TRIM(mkt_name)), date
   `, [from, to])
+  const rules = await loadHandoverRules()
   const map: Record<string, Record<string, number>> = {}
   for (const r of rows) {
     const acc = r.ad_account_id || "unknown"
+    const nv = r.nv ? handoverCode(r.nv, r.d, rules) : "KHÁC"
     if (!map[acc]) map[acc] = {}
-    map[acc][r.nv || "KHÁC"] = (map[acc][r.nv || "KHÁC"] || 0) + Number(r.spend)
+    map[acc][nv] = (map[acc][nv] || 0) + Number(r.spend)
   }
   return map
 }
@@ -126,15 +132,36 @@ async function getSpendByAccountNV(from: string, to: string): Promise<Record<str
 // nên gom thẳng theo NV.
 async function getGgSpendByNV(from: string, to: string): Promise<Record<string, number>> {
   const rows = await sql(`
-    SELECT UPPER(TRIM(mkt_name)) AS nv, SUM(cost)::bigint AS spend
+    SELECT UPPER(TRIM(mkt_name)) AS nv, to_char(date, 'YYYY-MM-DD') AS d, SUM(cost)::bigint AS spend
     FROM mkt_ads_cost_gg
     WHERE deleted_at IS NULL AND date >= $1::date AND date <= $2::date
-    GROUP BY UPPER(TRIM(mkt_name))
-    HAVING SUM(cost) > 0
+    GROUP BY UPPER(TRIM(mkt_name)), date
   `, [from, to]).catch(() => [])
+  const rules = await loadHandoverRules()
   const map: Record<string, number> = {}
-  for (const r of rows) map[r.nv || "KHÁC"] = Number(r.spend)
+  for (const r of rows) {
+    const nv = r.nv ? handoverCode(r.nv, r.d, rules) : "KHÁC"
+    map[nv] = (map[nv] || 0) + Number(r.spend)
+  }
+  for (const k of Object.keys(map)) if (map[k] <= 0) delete map[k]
   return map
+}
+
+// Đổi mã NV theo luật bàn giao có hiệu lực vào ngày d (YYYY-MM-DD) — cùng logic applyHandover
+// của _lng-core (khớp luật đầu tiên, không nối chuỗi), so sánh không phân biệt hoa thường.
+function handoverCode(
+  nv: string,
+  d: string,
+  rules: { from_code: string; to_code: string; effective_from: string; effective_to: string | null }[]
+): string {
+  for (const rule of rules) {
+    if (
+      nv === String(rule.from_code).toUpperCase().trim() &&
+      d >= rule.effective_from &&
+      (!rule.effective_to || d <= rule.effective_to)
+    ) return String(rule.to_code).toUpperCase().trim()
+  }
+  return nv
 }
 
 function monthOf(from: string): string {
