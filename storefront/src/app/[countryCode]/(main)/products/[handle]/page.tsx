@@ -1,5 +1,5 @@
 import { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
 import ProductTemplate from "@modules/products/templates"
 import { getRegion } from "@lib/data/regions"
@@ -60,6 +60,12 @@ export default async function ProductPage({ params }: Props) {
   const pricedProduct = await getProductByHandle(params.handle, region.id)
   if (!pricedProduct) {
     notFound()
+  }
+
+  // ICEgel products live in the multi-product shop (cross-product box tiers need its cart flow)
+  const icegelSlug = (pricedProduct.metadata as any)?.icegel_slug
+  if ((pricedProduct.metadata as any)?.bundle_group === "icegel" && icegelSlug) {
+    redirect(`/${params.countryCode}/icegel/${icegelSlug}`)
   }
 
   return (

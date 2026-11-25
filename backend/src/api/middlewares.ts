@@ -150,6 +150,7 @@ const extensionCors = (req: MedusaRequest, res: MedusaResponse, next: MedusaNext
 export default defineMiddlewares({
   routes: [
     { matcher: "/store/carts/:id/bundle-shipping", method: ["POST"], bodyParser: { sizeLimit: "10kb" } },
+    { matcher: "/store/carts/:id/group-lines", method: ["POST"], bodyParser: { sizeLimit: "10kb" } },
     { matcher: "/store/track/event", method: ["POST"], bodyParser: { sizeLimit: "16kb" } },
     {
       matcher: "/store/carts/:id/complete",

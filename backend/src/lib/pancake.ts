@@ -377,6 +377,10 @@ export async function pushOrderToPancake(order: any, shippingAddress: any) {
 
   // Tag để nhận diện đơn từ website khi sync ngược lại
   payload.tags = [{ name: "phanviet-web" }]
+  // ICEgel shop (/icegel, 25/11/2026): own tag so reports can split the brand from gia dụng
+  if ((order.items || []).some((item: any) => item.metadata?.bundle_group === "icegel")) {
+    payload.tags.push({ name: "ICEgel" })
+  }
 
   // Nguồn đơn: chỉ đơn có ttclid mới là TikTok — đúng giá trị sale vẫn chọn tay trên POS
   // ("TikTok › Gia Dụng Phan Việt": order_sources -9, account 921031955). Đơn web khác để trống như cũ.

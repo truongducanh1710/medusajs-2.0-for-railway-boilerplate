@@ -2,6 +2,7 @@ import { Modules } from "@medusajs/framework/utils"
 import { ICartModuleService } from "@medusajs/framework/types"
 import { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa"
 import { configuredBundleLineUpdate, variantTierConfig, variantTierLineUpdate } from "../lib/bundle-shipping"
+import { productGroup } from "../lib/bundle-group"
 
 /**
  * Configured shipping offers use product-authoritative pricing on creation and update.
@@ -20,6 +21,9 @@ export default async function cartItemBundlePriceHandler({
       })
 
       const productMetadata = await loadProductMetadata(container, item.variant_id)
+      // Cross-product group lines (ICEgel) are priced cart-wide by /store/carts/:id/group-lines
+      // and re-checked at checkout — never re-price them from client metadata here
+      if (productGroup(productMetadata)) continue
       // Quantity tiers (bundle_options_v2 with 2+ options): price always from product metadata
       const tierUpdate = variantTierLineUpdate(item, productMetadata)
       if (tierUpdate) {

@@ -1,4 +1,5 @@
 import { ContainerRegistrationKeys, Modules, MedusaError } from "@medusajs/framework/utils"
+import { groupLineUpdates, groupTier, groupUnitPrice, productGroup } from "./bundle-group"
 
 const invalid = (message: string): never => { throw new MedusaError(MedusaError.Types.INVALID_DATA, message) }
 const parse = (value: any): any => {
@@ -79,9 +80,13 @@ export function deriveBundleShippingPlan(cart: any, products: any[], variants: a
   const lines = (cart.items ?? []).map((item: any) => {
     const product: any = productMap.get((variantMap.get(item.variant_id) as any)?.product_id)
     const offers = parse(product?.metadata?.bundle_options)
-    const configured = Array.isArray(offers) && offers.some((offer: any) => Object.prototype.hasOwnProperty.call(offer, "shippingFee"))
-    return { item, product, offers, configured }
+    const group = productGroup(product?.metadata)
+    const configured = !!group || (Array.isArray(offers) && offers.some((offer: any) => Object.prototype.hasOwnProperty.call(offer, "shippingFee")))
+    return { item, product, offers, configured, group }
   })
+  // Cross-product groups: the tier depends on the total boxes of the group in this cart
+  const groupBoxes = new Map<string, number>()
+  for (const line of lines) if (line.group) groupBoxes.set(line.group.key, (groupBoxes.get(line.group.key) ?? 0) + Number(line.item.quantity))
   if (!lines.some((line: any) => line.configured)) return null
   if (cart.currency_code !== "vnd") invalid("Combo này chỉ hỗ trợ thanh toán bằng VND.")
   if (lines.some((line: any) => !line.configured)) invalid("Vui lòng đặt combo này riêng với sản phẩm khác.")
@@ -91,11 +96,20 @@ export function deriveBundleShippingPlan(cart: any, products: any[], variants: a
   let profileId = ""
   const maps: Record<string, string>[] = []
   const productIds: string[] = []
-  for (const { item, product, offers } of lines) {
+  for (const { item, product, offers, group } of lines) {
     const qty = Number(item.quantity)
     const declaredQty = Number(item.metadata?.bundle_qty)
     if (!Number.isSafeInteger(qty) || qty < 1 || declaredQty !== qty) invalid("Số lượng combo không hợp lệ.")
-    const offer = offers.find((entry: any) => Number(entry.qty) === qty)
+    let offer: any
+    if (group) {
+      const boxes = groupBoxes.get(group.key) ?? 0
+      const unitPrice = groupUnitPrice(product.metadata)
+      if (boxes > group.maxBoxes) invalid(`Mỗi đơn ${group.label} tối đa ${group.maxBoxes} hộp.`)
+      if (!unitPrice) invalid("Sản phẩm chưa được cấu hình giá.")
+      offer = { price: unitPrice! * qty, shippingFee: groupTier(group, boxes).fee }
+    } else {
+      offer = offers.find((entry: any) => Number(entry.qty) === qty)
+    }
     if (!offer || !Number.isSafeInteger(offer.price) || offer.price <= 0 || !Number.isSafeInteger(offer.shippingFee) || offer.shippingFee < 0) invalid("Combo chưa được cấu hình giá và phí vận chuyển hợp lệ.")
     if (Number(item.metadata?.bundle_price) !== offer.price) invalid("Giá combo đã thay đổi. Vui lòng chọn lại combo.")
     if (!Number.isFinite(Number(item.unit_price)) || Math.abs(Number(item.unit_price) * qty - offer.price) > 1) invalid("Giá trong giỏ chưa cập nhật. Vui lòng thử lại sau ít giây.")
@@ -136,9 +150,17 @@ export async function loadBundleShippingContext(scope: any, cartId: string, norm
   if (normalize && !cart.completed_at) {
     const variantMap = new Map(variants.map((variant: any) => [variant.id, variant.product_id]))
     const productMap = new Map(products.map((product: any) => [product.id, product]))
-    const updates = []
+    const updates: any[] = []
+    const groupUpdates = groupLineUpdates((cart.items ?? []).map((item: any) => ({ item, productMetadata: (productMap.get(variantMap.get(item.variant_id)) as any)?.metadata })))
+    const groupUpdateIds = new Set(groupUpdates.map((update: any) => update.id))
+    for (const update of groupUpdates) {
+      updates.push(update)
+      Object.assign((cart.items ?? []).find((item: any) => item.id === update.id), update)
+    }
     for (const item of cart.items ?? []) {
+      if (groupUpdateIds.has(item.id)) continue
       const product: any = productMap.get(variantMap.get(item.variant_id))
+      if (productGroup(product?.metadata)) continue
       const update = configuredBundleLineUpdate(item, product?.metadata) ?? variantTierLineUpdate(item, product?.metadata)
       if (update) {
         updates.push(update)

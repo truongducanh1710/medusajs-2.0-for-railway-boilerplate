@@ -133,6 +133,40 @@ export async function prepareQuickCheckout(input: AddToCartInput) {
 }
 
 /**
+ * Multi-product shop pages (/icegel): replace the cart's lines of one product group with the
+ * customer's picks. The backend prices every line and writes tier fee + gifts
+ * (POST /store/carts/:id/group-lines). A cart holding other products starts fresh, since
+ * a group ships as its own parcel and checkout rejects mixed carts.
+ */
+export async function prepareGroupCheckout(input: {
+  group: string
+  countryCode: string
+  items: { variant_id: string; quantity: number }[]
+  giftPicks: string[]
+}) {
+  let cart = await getOrSetCart(input.countryCode)
+  if (!cart) throw new Error("Error retrieving or creating cart")
+  const foreign = (cart.items ?? []).some((item) => (item.metadata as any)?.bundle_group !== input.group)
+  if (foreign || cart.completed_at) {
+    const region = await getRegion(input.countryCode)
+    cart = (await sdk.store.cart.create({ region_id: region!.id }, {}, await getAuthHeaders())).cart
+    await setCartId(cart.id)
+  }
+  await rememberUtmOnCart(cart)
+  const result = await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${cart.id}/group-lines`, {
+      method: "POST",
+      headers: await getAuthHeaders(),
+      body: { group: input.group, items: input.items, gift_picks: input.giftPicks },
+    })
+    .catch((error) => {
+      logCartActionError("prepareGroupCheckout failed", error, { cartId: cart!.id })
+      return medusaError(error)
+    })
+  return result.cart
+}
+
+/**
  * Ghi UTM của lượt bấm quảng cáo vào metadata GIỎ HÀNG ngay lúc khách bấm mua.
  *
  * Trước đây UTM chỉ được đọc từ cookie trình duyệt ở bước cuối (đặt hàng). Cookie mất
