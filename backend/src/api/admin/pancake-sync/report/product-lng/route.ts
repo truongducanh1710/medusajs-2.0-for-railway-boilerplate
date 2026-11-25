@@ -72,6 +72,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const stripKey = (s: string) => s.replace(/[_\s]/g, "").toUpperCase()
     const stripToCode: Record<string, string> = {}
     for (const c of codeSet) stripToCode[stripKey(c)] = c
+
+    // Mã item trên đơn thường là mã SP + đuôi biến thể (size/màu): PHVVN036_NC20CM, PHVVN036_NC28CM
+    // trong khi danh mục SP + tên camp dùng mã gốc PHVVN036_NC. Không quy về mã gốc thì 1 SP bị
+    // tách nhiều dòng và KHÔNG dòng nào khớp được chi phí ads (T11/2026: nồi chiên 2 dòng, ads 0
+    // trong khi camp PHVVN036NC tiêu ~30tr → LNG phồng ~30tr). Lấy mã danh mục dài nhất là tiền tố.
+    const codesByLen = [...codeSet].sort((a, b) => stripKey(b).length - stripKey(a).length)
+    const canonCache: Record<string, string> = {}
+    const toProductCode = (raw: string | null | undefined): string | null => {
+      if (!raw) return null
+      const up = String(raw).trim().toUpperCase()
+      if (codeSet.has(up)) return up
+      if (canonCache[up] !== undefined) return canonCache[up]
+      const s = stripKey(up)
+      const hit = codesByLen.find((c) => s.startsWith(stripKey(c)))
+      return (canonCache[up] = hit || up)
+    }
     const reHead = /^(PHVVN\d{2,3}[A-ZĐ]*)/i
 
     // Sửa mã SP bị MKT đặt nhầm khi tạo camp trên Facebook. Đổi tên camp bên FB không sửa
@@ -165,7 +181,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // nhiều SP tính được vốn, hai tiêu chí cho CÙNG kết quả (0 đơn khác), và dùng giá vốn
     // còn khử được ca hoà giá trị (1 đơn từng bị đếm 2 lần vì 2 SP cùng giá niêm yết cao nhất).
     // Tie-break bằng sp_key để mỗi đơn luôn chốt đúng 1 SP chính duy nhất.
-    const rows = await sql(`
+    const productQuery = `
       WITH cost_map(kind, key, unit) AS (VALUES ${costValues}),
       oi AS (
         SELECT
@@ -291,7 +307,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         COUNT(*) FILTER (WHERE is_main AND status = 9 AND NOT ${excludeCond})::int AS cho_chuyen_hang
       FROM os
       GROUP BY sp_key
-    `, [from, to])
+    `
+    const rows = await sql(productQuery, [from, to])
 
     // Ads KHÔNG gán được theo SP (tên camp không chứa mã SP ở vị trí cố định) → để 0.
     // LNG theo SP vì vậy không trừ chi phí ads.
@@ -299,13 +316,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // ── Merge theo sp_key (gom các biến thể tên cùng code) + tính field ─────────
     const merged: Record<string, any> = {}
     for (const row of rows) {
-      // gom theo code nếu có, để biến thể tên cùng SP về 1 dòng
-      const key = row.sp_code || row.sp_key
+      // gom theo mã SP gốc (biến thể size/màu + biến thể tên cùng SP về 1 dòng)
+      const prodCode = toProductCode(row.sp_code)
+      const key = prodCode || row.sp_key
       if (!merged[key]) {
         // Tên hiển thị: ưu tiên tên chuẩn mkt_product theo code, else tên item.
-        const stdName = row.sp_code ? codeToName[String(row.sp_code).toUpperCase()] : null
+        const stdName = prodCode ? codeToName[prodCode] : null
         merged[key] = {
-          sp_label: stdName || row.sp_label, sp_code: row.sp_code || null,
+          sp_label: stdName || row.sp_label, sp_code: prodCode,
           total_orders: 0, main_orders: 0, revenue_total: 0, revenue_delivered: 0, revenue_treo: 0,
           revenue_shipped: 0, ship_cost: 0,
           delivered_qty: 0, cogs_order: 0, cogs_treo: 0, da_nhan: 0, da_hoan: 0, dang_hoan: 0, da_huy: 0,
@@ -377,6 +395,31 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // TỔNG và dòng SP không còn mâu thuẫn nhau.
     const dkhhNen = 1 - tyLeNhanNen
 
+    // ── TỶ LỆ NHẬN NỀN THEO TỪNG SP ─────────────────────────────────────────────
+    // Một con số chung cho mọi SP che mất SP hoàn huỷ nặng: nồi chiên 3 tháng 8–10 nhận
+    // ~75% trong khi nền shop ~80%, nên DT/LNG tạm tính của nó bị đội lên. Mỗi SP dùng
+    // tỷ lệ của CHÍNH NÓ trong 3 tháng trước kỳ (vẫn đứng yên trong tháng); SP chưa đủ
+    // MIN_DON_SP đơn đã chốt thì lùi về nền chung ở trên.
+    const MIN_DON_SP = 30
+    const [fy, fm] = from.split("-").map(Number)
+    const baseFrom = new Date(Date.UTC(fy, fm - 1 - 3, 1)).toISOString().slice(0, 10)
+    const baseTo = new Date(Date.UTC(fy, fm - 1, 0)).toISOString().slice(0, 10)
+    const baseRows = await sql(productQuery, [baseFrom, baseTo]).catch(() => [] as any[])
+    const spBase: Record<string, { nhan: number; chot: number }> = {}
+    for (const r of baseRows) {
+      const k = toProductCode(r.sp_code) || r.sp_key
+      const b = (spBase[k] ??= { nhan: 0, chot: 0 })
+      const nhan = Number(r.da_nhan || 0)
+      b.nhan += nhan
+      b.chot += nhan + Number(r.da_hoan || 0) + Number(r.dang_hoan || 0) + Number(r.da_huy || 0)
+    }
+    const tyLeNhanOf = (key: string): { rate: number; own: boolean; n: number } => {
+      const b = spBase[key]
+      return b && b.chot >= MIN_DON_SP
+        ? { rate: b.nhan / b.chot, own: true, n: b.chot }
+        : { rate: tyLeNhanNen, own: false, n: b?.chot || 0 }
+    }
+
     const result = Object.entries(merged).map(([key, g]: [string, any]) => {
       // Giá vốn = vốn TRỌN ĐƠN của các đơn đã nhận mà SP này là SP chính (tính sẵn trong SQL,
       // đã gồm cả SP tặng kèm). Không nhân lại unit × delivered_qty vì đơn combo còn có
@@ -412,8 +455,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       // DT tạm tính = DT đã nhận (thực) + DT đơn còn treo × tỷ lệ nhận kỳ vọng.
       // Hết tháng → đơn treo = 0 → tạm tính hội tụ về thực.
       const nGiao = g.total_orders
-      const tyLeNhan = tyLeNhanNen
-      const dkhh = dkhhNen
+      const nen = tyLeNhanOf(key)
+      const tyLeNhan = nen.rate
+      const dkhh = 1 - nen.rate
       // Giá vốn tạm tính = vốn đơn ĐÃ NHẬN + vốn đơn CÒN TREO × tỷ lệ nhận. Cùng công
       // thức với doanh thu tạm tính nên hai vế đi cùng tập đơn, và khi hết tháng (đơn
       // treo = 0) nó hội tụ về đúng vốn thực.
@@ -453,9 +497,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         tong_giao: g.da_nhan, tong_don_giao: nGui,
         ty_le_hoan, ty_le_huy, ty_le_giao: pctN(g.da_nhan),
         hoan_huy: Math.round((ty_le_hoan + ty_le_huy) * 10) / 10,
-        // Dùng tỷ lệ nền cho MỌI dòng — cùng con số với dòng TỔNG và với tỷ lệ nhận
-        // đang dựng doanh thu tạm tính, nên bảng không tự mâu thuẫn.
+        // Tỷ lệ nền của chính SP (3 tháng trước kỳ) — cùng con số đang dựng DT tạm tính
+        // của dòng này. dkhh_nguon = "chung" khi SP chưa đủ đơn và phải dùng nền shop.
         du_kien_hoan_huy: Math.round(dkhh * 1000) / 10,
+        dkhh_nguon: nen.own ? "sp" : "chung",
+        dkhh_don_nen: nen.n,
         // LNG thực
         total_orders: g.total_orders, revenue_total: g.revenue_total,
         revenue_delivered: g.revenue_delivered, cogs, ship_cost: g.ship_cost, ads_cost,
@@ -506,8 +552,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       cho_chuyen_hang: sum("cho_chuyen_hang"), tong_giao: sum("da_nhan"), tong_don_giao: N,
       ty_le_hoan: tlh, ty_le_huy: tlhuy, ty_le_giao: pctT(sum("da_nhan")),
       hoan_huy: Math.round((tlh + tlhuy) * 10) / 10,
-      // Cùng con số nền với các dòng SP — xem ghi chú ở tyLeNhanNen.
-      du_kien_hoan_huy: Math.round(dkhhNen * 1000) / 10,
+      // Bình quân các dòng SP theo số đơn của kỳ (mỗi SP dùng nền riêng); kỳ chưa có đơn
+      // thì về nền chung.
+      du_kien_hoan_huy: N > 0
+        ? Math.round(result.reduce((s, r: any) => s + r.du_kien_hoan_huy * r.tong_don_giao, 0) / N * 10) / 10
+        : Math.round(dkhhNen * 1000) / 10,
     }
 
     return res.json({ rows: result, totals, from, to })
