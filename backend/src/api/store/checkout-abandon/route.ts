@@ -1,8 +1,11 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PANCAKE_API_BASE, PANCAKE_API_KEY, PANCAKE_SHOP_ID, PANCAKE_WAREHOUSE_ID } from "../../../lib/constants"
 import { getPancakeProvinceId, detectProvinceFromText } from "../../../lib/pancake-address"
-import { MKT_PANCAKE_UUID, extractMktCode } from "../../../lib/pancake"
+import { MKT_PANCAKE_UUID, extractMktCode, getPancakeVariationMap } from "../../../lib/pancake"
 import { loadBundleShippingContext } from "../../../lib/bundle-shipping"
+import { Modules } from "@medusajs/framework/utils"
+
+const DRAFT_TAG_ID = 39 // tag "Đơn nháp" trên Pancake (xem lib/landing-draft.ts)
 
 // Chống bắn trùng: mỗi cartId/phone chỉ tạo 1 đơn nháp trong cửa sổ thời gian.
 // In-memory (per-instance) — đủ chặn các beacon liên tiếp từ cùng 1 client.
@@ -46,21 +49,37 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const sourceItems = context?.plan
       ? context.cart.items.map((item: any) => ({ ...item, bundle_qty: item.metadata?.bundle_qty, bundle_price: item.metadata?.bundle_price }))
       : (items || [])
-    const pancakeItems = sourceItems.map((item: any) => ({
-      variation_id: null,
-      quantity: item.bundle_qty || item.quantity || 1,
-      is_bonus_product: false,
-      is_discount_percent: false,
-      is_wholesale: false,
-      one_time_product: true,
-      discount_each_product: 0,
-      variation_info: {
-        name: item.title || "Sản phẩm",
-        retail_price: context?.plan
-          ? Number(item.bundle_price) / Number(item.bundle_qty)
-          : (item.bundle_price || item.unit_price || 0),
-      },
-    }))
+    // Gắn đúng sản phẩm Pancake qua SKU của biến thể web (vd chảo vàng web SKU PHVVN027_CV).
+    // Trước 25/11 mọi dòng đều là "SP nhập tay" → báo cáo theo SP tách chảo vàng ra dòng
+    // "CHẢO CHỐNG DÍNH VIETMATE…" không giá vốn, không ads. Hết hàng thì lùi về nhập tay (dưới).
+    const skuByVariant: Record<string, string> = {}
+    const variantIds = [...new Set(sourceItems.map((i: any) => i.variant_id).filter(Boolean))] as string[]
+    if (variantIds.length) {
+      try {
+        const vs = await req.scope.resolve(Modules.PRODUCT).listProductVariants({ id: variantIds }, { select: ["id", "sku"] })
+        for (const v of vs as any[]) if (v.sku) skuByVariant[v.id] = String(v.sku)
+      } catch (e: any) { console.warn("[checkout-abandon] variant sku lookup failed:", e?.message) }
+    }
+    const variationMap = Object.keys(skuByVariant).length ? await getPancakeVariationMap().catch(() => new Map<string, string>()) : new Map<string, string>()
+    const itemSkus: (string | null)[] = sourceItems.map((item: any) => skuByVariant[item.variant_id] ?? item.variant_sku ?? null)
+    const pancakeItems = sourceItems.map((item: any, i: number) => {
+      const variationId = itemSkus[i] ? (variationMap.get(itemSkus[i]!) ?? null) : null
+      return {
+        variation_id: variationId,
+        quantity: item.bundle_qty || item.quantity || 1,
+        is_bonus_product: false,
+        is_discount_percent: false,
+        is_wholesale: false,
+        one_time_product: !variationId,
+        discount_each_product: 0,
+        variation_info: {
+          name: item.title || "Sản phẩm",
+          retail_price: context?.plan
+            ? Number(item.bundle_price) / Number(item.bundle_qty)
+            : (item.bundle_price || item.unit_price || 0),
+        },
+      }
+    })
 
     const totalPrice = context?.plan ? context.plan.goodsTotal + shippingFee : (items || []).reduce((sum: number, item: any) => {
       return sum + (item.bundle_price || (item.unit_price * (item.bundle_qty || item.quantity || 1)) || 0)
@@ -112,7 +131,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       prepaid: 0,
       cod: totalPrice,
       status: 0,
-      tags: [{ name: "Đơn nháp" }, { name: "phanviet-web" }],
+      // Pancake chỉ nhận tag theo ID — gửi theo tên bị bỏ qua im lặng: 16/16 đơn nháp web
+      // từ T10 không có tag, nên đơn nháp chờ xử lý bị cộng vào doanh số. 39 = "Đơn nháp".
+      tags: [DRAFT_TAG_ID],
       // Giữ p_utm_source = "checkout-abandon" để vẫn nhận ra đơn nháp.
       // Trước 27/09 đơn nháp CHỈ có trường này — mất mã camp/video, không ghép được
       // về camp (vd đơn 90684 từ camp Chảo vàng Ads327). Giờ mang theo UTM từ cookie.
@@ -129,11 +150,30 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (PANCAKE_WAREHOUSE_ID) payload.warehouse_id = PANCAKE_WAREHOUSE_ID
 
     const url = `${PANCAKE_API_BASE}/shops/${PANCAKE_SHOP_ID}/orders?api_key=${PANCAKE_API_KEY}`
-    const response = await fetch(url, {
+    const post = (body: any) => fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     })
+    let response = await post(payload)
+
+    // SP có mã tồn kho mà hết hàng → Pancake 422 chặn đơn. Đơn nháp không được mất:
+    // đẩy lại dạng nhập tay, kèm [SKU] trong tên để báo cáo vẫn quy về đúng SP.
+    if (!response.ok && response.status === 422 && payload.items.some((it: any) => it.variation_id)) {
+      const errText = await response.clone().text()
+      if (/không đủ|hết hàng|tồn kho|số lượng/i.test(errText)) {
+        console.warn(`[checkout-abandon] Hết hàng — đẩy lại dạng nhập tay. Lỗi: ${errText.slice(0, 200)}`)
+        response = await post({
+          ...payload,
+          items: payload.items.map((it: any, i: number) => ({
+            ...it,
+            variation_id: null,
+            one_time_product: true,
+            variation_info: { ...it.variation_info, name: `${it.variation_info?.name || "Sản phẩm"}${itemSkus[i] ? ` [${itemSkus[i]}]` : ""}` },
+          })),
+        })
+      }
+    }
 
     if (!response.ok) {
       const text = await response.text()

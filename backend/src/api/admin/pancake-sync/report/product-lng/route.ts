@@ -100,7 +100,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // còn NỒI SỨ được báo lãi ảo vì không phải chịu phần ads của chính nó.
     const CAMPAIGN_CODE_FIXES: { when: RegExp; to: string }[] = [
       { when: /^PHVVN033NCDTMS.*NỒI\s*SỨ/i, to: "PHVVN044_NS" },
+      // Lịch Toán (bán trên web từ 13/11) chưa có mã PHVVN số + chưa có trên Pancake: camp
+      // đặt tiền tố PHVVNLTT không khớp reHead → ~7,6tr ads T11 bị chia sang SP khác. Gán
+      // về mã tạm PHVVNLTT, khớp với dòng SP ở PRODUCT_NAME_CODES bên dưới.
+      { when: /^PHVVNLTT/i, to: "PHVVNLTT" },
     ]
+
+    // Item "nhập tay" (one_time_product, không display_id) — đơn web đẩy sang Pancake khi SP
+    // chưa có/không khớp mã POS. Quy về mã SP theo thứ tự: [SKU] trong tên (đơn web hết hàng
+    // được đẩy lại kèm SKU) → SKU của SP cùng tên trên web (Medusa) → bảng tên cố định dưới.
+    const PRODUCT_NAME_CODES: { when: RegExp; to: string }[] = [
+      { when: /^LỊCH TOÁN THÔNG MINH/i, to: "PHVVNLTT" },
+    ]
+    const webSkuRows = await sql(`
+      SELECT upper(trim(p.title)) AS title, MIN(v.sku) AS sku
+      FROM product p JOIN product_variant v ON v.product_id = p.id AND v.deleted_at IS NULL
+      WHERE p.deleted_at IS NULL AND v.sku IS NOT NULL AND v.sku <> ''
+      GROUP BY 1
+    `).catch(() => [] as any[])
+    const esc = (s: string) => String(s).replace(/'/g, "''")
+    const nameCodeValues = [
+      ...webSkuRows.map((r: any) => `('eq', '${esc(r.title)}', '${esc(r.sku)}')`),
+      ...PRODUCT_NAME_CODES.map((f) => `('re', '${esc(f.when.source)}', '${esc(f.to)}')`),
+    ]
+    const nameMapCte = `name_map(kind, pat, code) AS (VALUES ${nameCodeValues.length ? nameCodeValues.join(",") : "('eq', '__none__', '')"})`
+    // Mã cho 1 item: display_id → [SKU] trong tên → khớp tên web → regex tên.
+    const itemCodeExpr = (nameExpr: string) => `COALESCE(
+          NULLIF(mi->'variation_info'->>'display_id', ''),
+          (regexp_match(${nameExpr}, '\\[(PHVVN[A-Z0-9_Đ]+)\\]\\s*$'))[1],
+          (SELECT code FROM name_map WHERE kind = 'eq' AND pat = upper(trim(${nameExpr})) LIMIT 1),
+          (SELECT code FROM name_map WHERE kind = 're' AND upper(trim(${nameExpr})) ~* pat LIMIT 1)
+        )`
 
     const adsRows = await sql(`
       SELECT campaign_name, SUM(spend)::bigint AS spend
@@ -183,12 +213,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // Tie-break bằng sp_key để mỗi đơn luôn chốt đúng 1 SP chính duy nhất.
     const productQuery = `
       WITH cost_map(kind, key, unit) AS (VALUES ${costValues}),
+      ${nameMapCte},
       oi AS (
         SELECT
           po.id AS order_id,
           po.status,
           po.tags,
-          ${resolveSql("mi->'variation_info'->>'display_id'")} AS sp_code,
+          ${resolveSql(itemCodeExpr("COALESCE(mi->'variation_info'->>'name', mi->>'name', '')"))} AS sp_code,
           upper(trim(COALESCE(mi->'variation_info'->>'name', mi->>'name', ''))) AS sp_name_up,
           COALESCE(mi->'variation_info'->>'name', mi->>'name', 'CHƯA RÕ SP') AS sp_label,
           COALESCE((mi->>'quantity')::numeric, 1) AS qty,

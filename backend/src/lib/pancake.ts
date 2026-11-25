@@ -14,7 +14,7 @@ const GIFT_SKU_ALIAS: Record<string, string> = {
   PHVVN043_CCX: 'PHVVN043_CCX01',
 }
 
-async function getPancakeVariationMap(): Promise<Map<string, string>> {
+export async function getPancakeVariationMap(): Promise<Map<string, string>> {
   const now = Date.now()
   if (variationMapCache && now - variationMapCachedAt < CACHE_TTL_MS) {
     return variationMapCache
