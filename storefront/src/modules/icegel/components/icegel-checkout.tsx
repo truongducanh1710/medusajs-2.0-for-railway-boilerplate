@@ -31,6 +31,8 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
   const [syncError, setSyncError] = useState("")
   const chainRef = useRef<Promise<any>>(Promise.resolve(null))
   const seqRef = useRef(0)
+  // Key of the picks the server cart matches; checkout is blocked until it equals the current picks
+  const syncedKeyRef = useRef("")
 
   const picked = items.filter((item) => (qty[item.variantId] ?? 0) > 0)
   const boxes = picked.reduce((sum, item) => sum + qty[item.variantId], 0)
@@ -42,6 +44,8 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
   const lines = picked.map((item) => ({ variant_id: item.variantId, quantity: qty[item.variantId] }))
   const picks = giftPicks.slice(0, packs)
   const syncKey = JSON.stringify([lines, picks])
+  const syncKeyRef = useRef(syncKey)
+  syncKeyRef.current = syncKey
 
   const sync = useCallback(() => {
     const seq = ++seqRef.current
@@ -57,6 +61,7 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
         if (seq !== seqRef.current) return null
         const fresh = await prepareGroupCheckout({ group: ICEGEL.key, countryCode, items: payload[0], giftPicks: payload[1] })
         if (seq === seqRef.current) {
+          syncedKeyRef.current = syncKey
           setCart(fresh)
           setSyncing(false)
         }
@@ -64,6 +69,12 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
       })
     run.catch((error) => {
       console.error("[IcegelCheckout] cart sync failed", error)
+      // Page loaded from a previous deploy: its server action ids no longer exist. Reload —
+      // the picks are kept in localStorage, so the customer lands back on the same selection.
+      if (/Server Action .* was not found|failed-to-find-server-action/i.test(String((error as any)?.message ?? error))) {
+        window.location.reload()
+        return
+      }
       if (seq === seqRef.current) {
         setSyncing(false)
         setSyncError(error instanceof Error ? error.message : "Chưa cập nhật được giỏ hàng")
@@ -84,6 +95,10 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
       current = chainRef.current
       await current.catch(() => null)
     } while (current !== chainRef.current)
+    // Never place an order from a stale cart (e.g. the last sync failed)
+    if (syncedKeyRef.current !== syncKeyRef.current) {
+      throw new Error("Giỏ hàng chưa cập nhật đúng số hộp. Vui lòng bấm \"thử lại\" rồi đặt hàng.")
+    }
     return null
   }, [])
 
@@ -181,7 +196,7 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
           pendingBundlePrice={goods}
           pendingShippingFee={tier.fee}
           pendingPaymentDiscount={0}
-          syncing={syncing || picked.length === 0}
+          syncing={syncing || !!syncError || picked.length === 0}
           ensureReady={ensureReady}
         />
       </div>
