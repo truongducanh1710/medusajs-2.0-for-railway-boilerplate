@@ -14,6 +14,7 @@ export type LandingData = {
   problem?: { title: string; text?: string; bullets: string[]; media?: Media }
   solution?: { title: string; text: string; media?: Media }
   usps?: { title: string; items: { big: string; label: string; text: string }[]; footnote?: string }
+  proofs?: { title: string; items: { media: Media; title: string; text: string }[] }
   moments?: { title: string; items: { media: Media; caption: string }[] }
   compare?: { title: string; columns: string[]; rows: [string, ...string[]][] }
   steps?: { title: string; items: { image: string; title: string; text: string }[]; tip?: string }
@@ -80,7 +81,7 @@ export function LandingHero({ data, price, pack }: { data: LandingData; price: n
 }
 
 export function LandingBody({ data }: { data: LandingData }) {
-  const { forWho, problem, solution, usps, moments, compare, steps, quality } = data
+  const { forWho, problem, solution, usps, proofs, moments, compare, steps, quality } = data
   return (
     <>
       {forWho && (
@@ -140,6 +141,23 @@ export function LandingBody({ data }: { data: LandingData }) {
             ))}
           </ul>
           {usps.footnote && <p className="mt-2 text-[11px] text-gray-500">{usps.footnote}</p>}
+        </section>
+      )}
+
+      {proofs && (
+        <section className="mt-8">
+          <SectionTitle kicker="Xem tận mắt">{proofs.title}</SectionTitle>
+          <div className="space-y-3">
+            {proofs.items.map((item, index) => (
+              <article key={item.title} className="rounded-3xl bg-white border border-gray-100 overflow-hidden grid grid-cols-[42%_1fr] sm:grid-cols-2">
+                <div className={`aspect-[4/5] bg-gray-100 ${index % 2 ? "sm:order-2" : ""}`}><MediaBox media={item.media} /></div>
+                <div className="p-3 sm:p-6 flex flex-col justify-center">
+                  <h3 className="font-black text-[15px] sm:text-lg text-gray-900 leading-snug">{item.title}</h3>
+                  <p className="mt-1 text-[13px] sm:text-[15px] text-gray-700 leading-snug">{item.text}</p>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       )}
 
