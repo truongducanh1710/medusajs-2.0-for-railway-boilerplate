@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { getRegion } from "@lib/data/regions"
 import { getIcegelItems } from "@modules/icegel/data"
 import IcegelShop from "@modules/icegel/components/icegel-shop"
+import IcegelPixel from "@modules/icegel/components/icegel-pixel"
 import { IcegelFaq, IcegelTrust, IcegelHowItWorks } from "@modules/icegel/components/sections"
 
 export const revalidate = 300
@@ -62,6 +63,7 @@ export default async function IcegelPage({ params }: Props) {
       </section>
 
       <div className="max-w-5xl mx-auto px-4">
+        <IcegelPixel pixelIds={Array.from(new Set(items.map((item) => item.pixelId).filter(Boolean)))} />
         <IcegelShop items={items} />
         <IcegelTrust />
         <IcegelHowItWorks />

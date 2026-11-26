@@ -85,7 +85,7 @@ export default async function IcegelProductPage({ params }: Props) {
   return (
     <div className="bg-gray-50 min-h-screen">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <ProductPixelTracker pixelIds={[]} productId={item.id} productTitle={item.title} price={item.price} currency="VND" />
+      <ProductPixelTracker pixelIds={item.pixelId ? [item.pixelId] : []}productId={item.id} productTitle={item.title} price={item.price} currency="VND" />
       <div className="max-w-5xl mx-auto px-4">
         <nav aria-label="Đường dẫn" className="pt-3 text-[12px] text-gray-500">
           <LocalizedClientLink href="/icegel" className="font-semibold text-sky-700">ICEgel</LocalizedClientLink>

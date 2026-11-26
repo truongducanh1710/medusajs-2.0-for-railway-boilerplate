@@ -25,6 +25,7 @@ export type IcegelItem = {
   ingredients: string
   congBo: string
   landing: LandingData | null
+  pixelId: string
 }
 
 export const LINES: { key: string; label: string }[] = [
@@ -71,6 +72,7 @@ export function toIcegelItem(product: HttpTypes.StoreProduct): IcegelItem | null
     ingredients: String(m.icegel_ingredients ?? ""),
     congBo: String(m.icegel_cong_bo ?? ""),
     landing: parseLanding(m.icegel_landing),
+    pixelId: String(m.fb_pixel_id ?? ""),
   }
 }
 
