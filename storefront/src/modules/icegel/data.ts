@@ -1,6 +1,7 @@
 import { HttpTypes } from "@medusajs/types"
 import { sdk } from "@lib/config"
 import { getCollectionByHandle } from "@lib/data/collections"
+import { parseLanding, type LandingData } from "./components/landing"
 
 export type IcegelItem = {
   id: string
@@ -23,6 +24,7 @@ export type IcegelItem = {
   how: string
   ingredients: string
   congBo: string
+  landing: LandingData | null
 }
 
 export const LINES: { key: string; label: string }[] = [
@@ -68,6 +70,7 @@ export function toIcegelItem(product: HttpTypes.StoreProduct): IcegelItem | null
     how: String(m.icegel_how ?? ""),
     ingredients: String(m.icegel_ingredients ?? ""),
     congBo: String(m.icegel_cong_bo ?? ""),
+    landing: parseLanding(m.icegel_landing),
   }
 }
 

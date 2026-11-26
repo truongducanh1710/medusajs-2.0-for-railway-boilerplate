@@ -46,18 +46,19 @@ const FAQ: [string, string][] = [
   ["Phí giao hàng thế nào?", "Đơn 1–2 hộp phí giao 20.000đ. Từ 3 hộp miễn phí giao hàng toàn quốc. Bạn kiểm tra hàng rồi mới thanh toán."],
 ]
 
-export function IcegelFaq() {
+export function IcegelFaq({ extra = [] }: { extra?: [string, string][] }) {
+  const items = [...extra, ...FAQ]
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: FAQ.map(([question, answer]) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })),
+    mainEntity: items.map(([question, answer]) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })),
   }
   return (
     <section className="mt-8 mb-6" aria-labelledby="icegel-faq">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <h2 id="icegel-faq" className="text-lg font-black text-gray-900">Câu hỏi thường gặp</h2>
       <div className="mt-3 space-y-2">
-        {FAQ.map(([question, answer]) => (
+        {items.map(([question, answer]) => (
           <details key={question} className="group rounded-xl bg-white border border-gray-100 px-4 py-3">
             <summary className="cursor-pointer list-none font-bold text-[14px] text-gray-900 flex justify-between gap-3">
               {question}

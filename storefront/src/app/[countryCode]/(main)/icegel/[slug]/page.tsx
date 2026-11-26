@@ -8,6 +8,7 @@ import { IcegelFaq, IcegelTrust } from "@modules/icegel/components/sections"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import { formatVND } from "@modules/icegel/components/format"
+import { LandingBody, LandingCautions, LandingHero } from "@modules/icegel/components/landing"
 
 export const revalidate = 300
 
@@ -77,6 +78,10 @@ export default async function IcegelProductPage({ params }: Props) {
     ["Sản xuất", "Foshan Biours (Trung Quốc). Phân phối: Công ty TNHH Xinh Today"],
   ]
 
+  const landing = item.landing
+  // The landing hero carries the page's h1; the product block then uses h2
+  const TitleTag = landing ? "h2" : "h1"
+
   return (
     <div className="bg-gray-50 min-h-screen">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
@@ -88,7 +93,14 @@ export default async function IcegelProductPage({ params }: Props) {
           <span>{item.short}</span>
         </nav>
 
-        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+        {landing && (
+          <div className="mt-2">
+            <LandingHero data={landing} price={item.price} pack={item.pack} />
+            <LandingBody data={landing} />
+          </div>
+        )}
+
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-5 ${landing ? "mt-8" : "mt-2"}`}>
           <div className="min-w-0">
             <IcegelGallery images={item.images} alt={item.title} />
           </div>
@@ -98,7 +110,7 @@ export default async function IcegelProductPage({ params }: Props) {
                 <span key={badge} className={`text-[11px] font-black px-2 py-0.5 rounded-full ${badge === "Bán chạy" ? "bg-orange-500 text-white" : "bg-sky-50 text-sky-800 border border-sky-100"}`}>{badge}</span>
               ))}
             </div>
-            <h1 className="mt-2 text-xl sm:text-2xl font-black text-gray-900 leading-snug">{item.title}</h1>
+            <TitleTag className="mt-2 text-xl sm:text-2xl font-black text-gray-900 leading-snug">{item.title}</TitleTag>
             {item.subtitle && <p className="mt-1 text-[14px] text-gray-600">{item.subtitle}</p>}
             <p className="mt-2 text-2xl font-black text-orange-600">{formatVND(item.price)} <span className="text-[13px] font-semibold text-gray-500">/ hộp</span></p>
             <ul className="mt-3 space-y-1.5">
@@ -135,8 +147,9 @@ export default async function IcegelProductPage({ params }: Props) {
           <p className="mt-3 text-[12px] text-gray-500">Sản phẩm không phải là thuốc, không có tác dụng thay thế thuốc chữa bệnh.</p>
         </section>
 
+        {landing && <LandingCautions data={landing} />}
         <IcegelTrust />
-        <IcegelFaq />
+        <IcegelFaq extra={landing?.faq ?? []} />
       </div>
     </div>
   )
