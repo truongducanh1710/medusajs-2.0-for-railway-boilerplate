@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { usePathname } from "next/navigation"
 
 const DEFAULT_MESSAGES = [
   "🚚 Miễn phí vận chuyển toàn quốc cho mọi đơn hàng",
@@ -15,6 +16,7 @@ export default function PromoBanner() {
   const [index, setIndex] = useState(0)
   const [visible, setVisible] = useState(true)
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
+  const pathname = usePathname()
 
   // Lắng nghe override từ product page
   useEffect(() => {
@@ -40,6 +42,10 @@ export default function PromoBanner() {
   }, [messages])
 
   const isOverride = messages !== DEFAULT_MESSAGES
+
+  // ICEgel has its own shipping terms (fee for 1–2 boxes) and no 12-month warranty,
+  // so the store-wide promises would mislead on those pages.
+  if (/\/icegel(\/|$)/.test(pathname ?? "")) return null
 
   return (
     <div
