@@ -88,9 +88,11 @@ export default async function IcegelProductPage({ params }: Props) {
           <span>{item.short}</span>
         </nav>
 
-        <div className="mt-2 grid md:grid-cols-2 gap-5">
-          <IcegelGallery images={item.images} alt={item.title} />
-          <div>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="min-w-0">
+            <IcegelGallery images={item.images} alt={item.title} />
+          </div>
+          <div className="min-w-0">
             <div className="flex flex-wrap gap-1.5">
               {item.badges.map((badge) => (
                 <span key={badge} className={`text-[11px] font-black px-2 py-0.5 rounded-full ${badge === "Bán chạy" ? "bg-orange-500 text-white" : "bg-sky-50 text-sky-800 border border-sky-100"}`}>{badge}</span>

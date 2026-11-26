@@ -5,6 +5,14 @@ import LocalizedClientLink from "@modules/common/components/localized-client-lin
 import { generateEventId } from "@lib/pixel"
 import { trackFunnel } from "@lib/funnel"
 import CheckoutTracker from "@components/CheckoutTracker"
+import PromoOverride from "@components/PromoOverride"
+
+// Site banner says "free ship for every order" and "12-month warranty" — both wrong for ICEgel
+const ICEGEL_PROMO = [
+  "🎁 Mua 2 hộp ICEgel bất kỳ — tặng 2 miếng dán",
+  "🚚 Từ 3 hộp: tặng 4 miếng + miễn phí giao hàng",
+  "📦 Nhận hàng, kiểm tra rồi mới trả tiền",
+]
 import { ICEGEL, SLUG_TO_GIFT, nextTier, tierFor } from "@lib/bundle-groups"
 import { LINES, type IcegelItem } from "../data"
 import IcegelCheckout, { Stepper } from "./icegel-checkout"
@@ -90,12 +98,14 @@ export default function IcegelShop({ items, focus, mode = "grid" }: Props) {
     setEverOpened(true)
   }
 
+  // Product page: the viewed product first (its own stepper), then the add-ons
   const visible = mode === "addons"
-    ? items.filter((item) => item.variantId !== focus?.variantId)
+    ? [...items].sort((a, b) => Number(b.variantId === focus?.variantId) - Number(a.variantId === focus?.variantId))
     : items.filter((item) => line === "all" || item.line === line)
 
   return (
     <>
+      <PromoOverride messages={ICEGEL_PROMO} />
       {mode === "grid" && (
         <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-white/95 backdrop-blur border-b border-gray-100 flex gap-2 overflow-x-auto no-scrollbar" role="tablist" aria-label="Lọc theo nhóm">
           {[{ key: "all", label: "Tất cả" }, ...LINES].map((entry) => (
@@ -142,7 +152,7 @@ export default function IcegelShop({ items, focus, mode = "grid" }: Props) {
       ) : (
         <ul className="divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
           {visible.map((item) => (
-            <li key={item.variantId} className="flex items-center gap-3 p-2.5">
+            <li key={item.variantId} className={`flex items-center gap-3 p-2.5 ${item.variantId === focus?.variantId ? "bg-sky-50 rounded-t-2xl" : ""}`}>
               <LocalizedClientLink href={`/icegel/${item.slug}`} className="w-14 h-14 flex-shrink-0 rounded-lg bg-gray-50 overflow-hidden">
                 <img src={item.thumb} alt={item.title} loading="lazy" className="w-full h-full object-contain" />
               </LocalizedClientLink>
