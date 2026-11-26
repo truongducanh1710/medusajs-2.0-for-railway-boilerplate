@@ -17,8 +17,8 @@ export const EXCLUSION_TARGETS: { account: string; label: string; pixels: string
   { account: "act_741222868885235", label: "ADS342", pixels: ["943650651603498", "648566867843285", "1487834185630970", "2563693040631730"] }, // 21/11: user share pixel hộp nhựa
   { account: "act_899712815703406", label: "ADS329", pixels: ["943650651603498", "648566867843285", "2563693040631730"] }, // 21/11: + pixel hộp nhựa (đã share sẵn)
   { account: "act_1133464788237858", label: "ADS327", pixels: ["1921074788473811", "648566867843285", "943650651603498", "2563693040631730"] }, // 21/11: + pixel hộp nhựa
-  { account: "act_27214643188160995", label: "ADS348", pixels: ["648566867843285", "943650651603498"] }, // 23/10: thêm cho ANHTD
-  { account: "act_1108526648426194", label: "ADS349", pixels: ["943650651603498", "2563693040631730"] }, // 20/10: camp BROAD chảo vàng Anh TD; 27/10: + pixel hộp nhựa
+  { account: "act_27214643188160995", label: "ADS348", pixels: ["648566867843285", "943650651603498", "1131360182837216"] }, // 23/10: thêm cho ANHTD; 26/11: + pixel ICEgel
+  { account: "act_1108526648426194", label: "ADS349", pixels: ["943650651603498", "2563693040631730", "1131360182837216"] }, // 20/10: camp BROAD chảo vàng Anh TD; 27/10: + pixel hộp nhựa; 26/11: + pixel ICEgel
 ]
 const BLOCK_NAME = "PHV_CHAN_POS_AUTO (chặn POS + hoàn hàng 180d, cập nhật hằng ngày)"
 /**
