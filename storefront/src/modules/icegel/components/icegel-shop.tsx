@@ -82,7 +82,8 @@ export default function IcegelShop({ items, focus, mode = "grid" }: Props) {
       return nextQty
     })
     if (item && n > before) {
-      trackFunnel("icegel_add", undefined, { repeat: true })
+      // "icegel_add" was not an accepted funnel event and had no handle, so it was always dropped
+      trackFunnel("variant_select", item.slug, { repeat: true, handle: focus?.handle || item.handle })
       if (typeof window !== "undefined" && window.fbq) {
         window.fbq("track", "AddToCart", {
           content_ids: [variantId], content_name: item.title, content_type: "product",

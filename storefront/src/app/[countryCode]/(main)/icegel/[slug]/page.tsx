@@ -7,6 +7,7 @@ import IcegelGallery from "@modules/icegel/components/gallery"
 import { IcegelFaq, IcegelTrust } from "@modules/icegel/components/sections"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ProductPixelTracker from "@components/ProductPixelTracker"
+import FunnelTracker from "@modules/products/components/funnel-tracker"
 import { formatVND } from "@modules/icegel/components/format"
 import { LandingBody, LandingCautions, LandingHero } from "@modules/icegel/components/landing"
 
@@ -86,6 +87,9 @@ export default async function IcegelProductPage({ params }: Props) {
     <div className="bg-gray-50 min-h-screen">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <ProductPixelTracker pixelIds={item.pixelId ? [item.pixelId] : []}productId={item.id} productTitle={item.title} price={item.price} currency="VND" />
+      {/* Landing funnel (/app/phieu-landing): the path has no /products/ segment, so the handle must be explicit.
+          It also tags the session so the embedded checkout's events land on this product. */}
+      {item.handle && <FunnelTracker handle={item.handle} />}
       <div className="max-w-5xl mx-auto px-4">
         <nav aria-label="Đường dẫn" className="pt-3 text-[12px] text-gray-500">
           <LocalizedClientLink href="/icegel" className="font-semibold text-sky-700">ICEgel</LocalizedClientLink>
