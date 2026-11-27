@@ -63,6 +63,14 @@ export const TARGET: Record<string, number> = { TEST: 1, WIN: 2, SCALE: 2, GIU1:
 // 19,5tr ở 44% (camp cũ cùng bộ 23%), camp thứ 4–6 ra 40%; SCALE lật 12 lên / 8 về trong 12 ngày.
 // → SCALE có độ trễ (lên 2 đêm liền, về khi >32%). Bộ vừa thắng test: 7 ngày đầu chưa được SCALE. Số camp: xem targetOf (22/11 lần 2: 2 camp).
 export const FRESH_WIN_DAYS = 7
+// User 27/11 "xả kho" kệ gia vị (backtest care/_kgv_bt2711.mjs, KGV 120 ngày mọi MKT, hoà vốn ~41%):
+// - bật lại camp cũ: % lần chạy trước không đoán được lần sau (26 lần >40% → 3 ngày sau ~37%, +3tr) → bộ WIN/SCALE bỏ chặn ≤40%
+// - lên camp mới bằng bài cũ: video 7 ngày 28–38% → 3 ngày đầu 37% (13 camp, +1tr); >38% → 55% → cần bộ ≤38% (≥3 đơn), bỏ điều kiện SP ≤30%
+// SP khác giữ nguyên. null = không chặn.
+type ProdRule = { reviveMaxPct: number | null; newBoPct: number; newBoMinOrders: number; newSpPct: number | null }
+const DEFAULT_RULE: ProdRule = { reviveMaxPct: 40, newBoPct: 28, newBoMinOrders: 10, newSpPct: 30 }
+const PROD_RULE: Record<string, Partial<ProdRule>> = { KGV: { reviveMaxPct: null, newBoPct: 38, newBoMinOrders: 3, newSpPct: null } }
+const ruleOf = (k: string): ProdRule => ({ ...DEFAULT_RULE, ...(PROD_RULE[k] || {}) })
 // User 22/11 (lần 2, "ok" sau DANHGIA_LUAT_USER_2211): bộ thắng (WIN/SCALE) tối đa 2 camp chạy cùng lúc — thử 7–10 ngày, chấm lại ~2/12.
 // Camp thứ 3 chỉ khi bộ 7 ngày ≥10 đơn & ≤28% VÀ là camp cũ (đang chạy hoặc bật lại) có 7 ngày ≤30% — không lên camp mới cho suất này.
 // Backtest: cv-bo 10–21/11 camp thứ 3+ ra 36–46%, cắt về 2 ròng +1,9–4,3tr (nhưng thời Xuân camp 3–7 ra 26–28% → nới lại khi có bộ mạnh).
@@ -836,11 +844,13 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       const bz = busyOf(b)
       if (bz.length) { out.push(`${b.name} không bù camp: bài ${bz.join(", ")} MKT khác đang chạy`); continue }
       // Thiếu → bật lại camp cũ của bộ trước (tắt ≤14 ngày, lần chạy gần nhất không quá 40%, không phải người vừa tắt)
+      const R = ruleOf(P.key)
+      const reviveMax = (b.state === "WIN" || b.state === "SCALE") ? R.reviveMaxPct : DEFAULT_RULE.reviveMaxPct
       const cands: CampInfo[] = []
       for (const c of sc) {
         if (keep.includes(c) || c.retired || c.fb_status !== "PAUSED" || !c.last || c.last < addD(today, -14)) continue
         const x = D.sum(c.id, addD(c.last, -2), c.last)
-        if (x.s > 0 && pctOf(x.s, x.ds) > 40) continue
+        if (reviveMax !== null && x.s > 0 && pctOf(x.s, x.ds) > reviveMax) continue
         cands.push(c)
       }
       cands.sort((a, c) => { const x = D.sum(a.id, addD(today, -DATA_DAYS), today), y = D.sum(c.id, addD(today, -DATA_DAYS), today); return pctOf(x.s, x.ds) - pctOf(y.s, y.ds) })
@@ -864,8 +874,9 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       // User 22/11 (DANHGIA_9010_2211 mục e): bộ không phải test chỉ lên camp MỚI khi bộ 7 ngày ≥10 đơn & ≤28% và SP 7 ngày ≤30%
       // (bộ vừa thắng test miễn điều kiện của bộ, vẫn cần SP ≤30%); thiếu thì chỉ bật lại camp cũ
       const freshWin = b.state === "WIN" && b.extended && daysBetween(b.state_since, today) < FRESH_WIN_DAYS
-      const boNewOk = b.state === "TEST" || ((freshWin || (w7s.o >= 10 && pctOf(w7s.s, w7s.ds) <= 28)) && pctOf(wk.s, wk.ds) <= 30)
-      if (!boNewOk) { out.push(`${b.name} không lên camp mới: bộ 7 ngày ${w7s.o} đơn ${fmtPct(w7s.s, w7s.ds)}, SP 7 ngày ${fmtPct(wk.s, wk.ds)} (cần bộ ≥10 đơn ≤28% & SP ≤30%)`); continue }
+      const spOk = R.newSpPct === null || pctOf(wk.s, wk.ds) <= R.newSpPct
+      const boNewOk = b.state === "TEST" || ((freshWin || (w7s.o >= R.newBoMinOrders && pctOf(w7s.s, w7s.ds) <= R.newBoPct)) && spOk)
+      if (!boNewOk) { out.push(`${b.name} không lên camp mới: bộ 7 ngày ${w7s.o} đơn ${fmtPct(w7s.s, w7s.ds)}, SP 7 ngày ${fmtPct(wk.s, wk.ds)} (cần bộ ≥${R.newBoMinOrders} đơn ≤${R.newBoPct}%${R.newSpPct === null ? "" : ` & SP ≤${R.newSpPct}%`})`); continue }
       const setMax = allowNew ? PER_SET_NEW : badNew && strong ? 1 : 0
       const cap = allowNew ? maxNew - reserveTest : Math.min(maxNew, BAD_NEW_MAX)
       let setNew = 0
