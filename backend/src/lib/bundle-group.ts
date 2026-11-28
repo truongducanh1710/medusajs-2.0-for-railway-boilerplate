@@ -39,9 +39,9 @@ export const GROUPS: Record<string, BundleGroup> = {
       { minBoxes: 3, fee: 0, giftPatches: 4 },
       { minBoxes: 4, fee: 0, giftPatches: 6 },
     ],
-    // 28/11 user: fee shown only after the address (by province), first order ships free.
-    // VTP PL01: nội tỉnh 16,5k, liên tỉnh ~20k for parcels ≤0,5kg.
-    shipping: { localFee: 16000, localProvinces: ["ha noi"], newCustomerFree: true },
+    // 28/11 user: fee shown only after the address, first order ships free.
+    // Same day: "phí ship mặc định 20k, không cần theo tỉnh" → no local provinces (Hanoi pays 20k too).
+    shipping: { localFee: 20000, localProvinces: [], newCustomerFree: true },
     giftChoices: [
       { key: "giam-dau", name: "miếng dán giảm đau", value: 42000 },
       { key: "lam-am", name: "miếng dán làm ấm", value: 42000 },
@@ -96,6 +96,7 @@ const NOT_LOCAL = / (ho chi minh|hcm|tphcm|sai gon|thu duc) /
 export function isLocalAddress(ship: GroupShipping, text: unknown): boolean {
   const n = ` ${normalizeProvince(text).replace(/[^a-z0-9]+/g, " ")} `
   if (NOT_LOCAL.test(n)) return false
+  if (!ship.localProvinces.length) return false
   return ship.localProvinces.some((p) => n.includes(` ${p} `) || n.includes(` ${p.replace(/ /g, "")} `)) || / hn /.test(n)
 }
 

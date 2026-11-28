@@ -74,6 +74,8 @@ describe("ICEgel cross-product box tiers", () => {
 
   test("gift picks are honored, unknown picks fall back to defaults, same types merge", () => {
     const g = GROUPS.icegel
+  // ICEgel dropped the Hanoi rate on 28/11; the detection is still tested on a group that has one
+  const hn = { ...g, shipping: { localFee: 16000, localProvinces: ["ha noi"], newCustomerFree: true } }
     expect(groupGifts(g, 4, ["mat-na-mat", "mat-na-mat", "hack"])).toEqual([
       expect.objectContaining({ key: "mat-na-mat", quantity: 4 }),
       expect.objectContaining({ key: g.giftChoices[2].key, quantity: 2 }),
@@ -90,21 +92,26 @@ describe("ICEgel cross-product box tiers", () => {
 describe("groupShippingQuote (28/11 address-based fee)", () => {
   const { GROUPS, groupShippingQuote, normalizeProvince, phoneKey } = require("../bundle-group")
   const g = GROUPS.icegel
+  // ICEgel dropped the Hanoi rate on 28/11; the detection is still tested on a group that has one
+  const hn = { ...g, shipping: { localFee: 16000, localProvinces: ["ha noi"], newCustomerFree: true } }
   it("free from 3 boxes regardless of address", () => {
     expect(groupShippingQuote(g, 3, { province: "Tỉnh Nghệ An" })).toEqual({ fee: 0, reason: "tier_free" })
   })
   it("new customer ships free on 1 box", () => {
     expect(groupShippingQuote(g, 1, { province: "Tỉnh Nghệ An", isNewCustomer: true })).toEqual({ fee: 0, reason: "new_customer" })
   })
+  it("ICEgel charges Hà Nội the default 20k", () => {
+    expect(groupShippingQuote(g, 2, { province: "Thành phố Hà Nội" })).toEqual({ fee: 20000, reason: "standard" })
+  })
   it("Hà Nội pays the local fee", () => {
-    expect(groupShippingQuote(g, 2, { province: "Thành phố Hà Nội" })).toEqual({ fee: 16000, reason: "local" })
+    expect(groupShippingQuote(hn, 2, { province: "Thành phố Hà Nội" })).toEqual({ fee: 16000, reason: "local" })
     expect(normalizeProvince("Thành phố Hà Nội")).toBe("ha noi")
   })
   it("finds Hanoi in free-text addresses", () => {
-    expect(groupShippingQuote(g, 1, { province: "12 ngõ 5 Cầu Giấy, HN" }).reason).toBe("local")
-    expect(groupShippingQuote(g, 1, { province: "số 3 Trần Duy Hưng, Trung Hòa, Hanoi" }).reason).toBe("local")
-    expect(groupShippingQuote(g, 1, { province: "88 Xa lộ Hà Nội, Thủ Đức, TP HCM" }).reason).toBe("standard")
-    expect(groupShippingQuote(g, 1, { province: "Thôn Hà, xã Nội Duệ, Bắc Ninh" }).reason).toBe("standard")
+    expect(groupShippingQuote(hn, 1, { province: "12 ngõ 5 Cầu Giấy, HN" }).reason).toBe("local")
+    expect(groupShippingQuote(hn, 1, { province: "số 3 Trần Duy Hưng, Trung Hòa, Hanoi" }).reason).toBe("local")
+    expect(groupShippingQuote(hn, 1, { province: "88 Xa lộ Hà Nội, Thủ Đức, TP HCM" }).reason).toBe("standard")
+    expect(groupShippingQuote(hn, 1, { province: "Thôn Hà, xã Nội Duệ, Bắc Ninh" }).reason).toBe("standard")
   })
   it("other provinces pay the tier fee", () => {
     expect(groupShippingQuote(g, 1, { province: "Thành phố Hồ Chí Minh" })).toEqual({ fee: 20000, reason: "standard" })
