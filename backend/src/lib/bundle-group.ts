@@ -72,9 +72,17 @@ export function groupTier(group: BundleGroup, boxes: number): GroupTier {
   return [...group.tiers].reverse().find((tier) => boxes >= tier.minBoxes) ?? group.tiers[0]
 }
 
+const VN_GROUPS: Record<string, string> = {
+  a: "àáảãạăằắẳẵặâầấẩẫậ", e: "èéẻẽẹêềếểễệ", i: "ìíỉĩị", o: "òóỏõọôồốổỗộơờớởỡợ",
+  u: "ùúủũụưừứửữự", y: "ỳýỷỹỵ", d: "đ",
+}
+const VN_BASE: Record<string, string> = Object.fromEntries(
+  Object.entries(VN_GROUPS).flatMap(([base, chars]) => [...chars].map((ch) => [ch, base])))
+
 /** "Thành phố Hà Nội" / "Ha Noi" → "ha noi" */
 export function normalizeProvince(value: unknown): string {
-  return String(value ?? "").normalize("NFD").replace(/\p{Mn}/gu, "").replace(/đ/gi, "d").toLowerCase()
+  // Explicit table: String.normalize("NFD") did not strip marks on the production runtime (28/11)
+  return [...String(value ?? "").normalize("NFC").toLowerCase()].map((ch) => VN_BASE[ch] ?? ch).join("")
     .replace(/^(thanh pho|tinh|tp\.?)\s+/, "").replace(/\s+/g, " ").trim()
 }
 
