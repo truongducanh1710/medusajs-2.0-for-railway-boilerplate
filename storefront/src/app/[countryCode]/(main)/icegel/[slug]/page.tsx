@@ -81,7 +81,8 @@ export default async function IcegelProductPage({ params }: Props) {
 
   const landing = item.landing
   // The landing hero carries the page's h1; the product block then uses h2
-  const TitleTag = landing ? "h2" : "h1"
+  // The product name (with "ICEgel") is the page H1 — the landing hero headline is marketing copy
+  const TitleTag = "h1"
 
   return (
     <div className="bg-gray-50 min-h-screen">
