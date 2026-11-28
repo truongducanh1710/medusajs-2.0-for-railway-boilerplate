@@ -46,9 +46,11 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
   const [shipInput, setShipInput] = useState({ phone: "", province: "" })
   const [quote, setQuote] = useState<{ key: string; fee: number; reason: string } | null>(null)
   const phoneOk = /^(0|\+84)[0-9]{8,9}$/.test(shipInput.phone.replace(/\s/g, ""))
-  const quoteKey = JSON.stringify([boxes, shipInput.province, phoneOk ? shipInput.phone.replace(/\s/g, "") : ""])
+  // Quote once the address looks complete enough to tell the province (≥ 8 chars typed)
+  const addressReady = shipInput.province.trim().length >= 8
+  const quoteKey = JSON.stringify([boxes, shipInput.province.trim(), phoneOk ? shipInput.phone.replace(/\s/g, "") : ""])
   useEffect(() => {
-    if (!tier.fee || !shipInput.province || !boxes) return
+    if (!tier.fee || !addressReady || !boxes) return
     let alive = true
     const timer = setTimeout(async () => {
       try {
@@ -67,7 +69,7 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
   const currentQuote = quote?.key === quoteKey ? quote : null
   const shippingQuote = !tier.fee
     ? { awaitingAddress: false, fee: 0, label: "Miễn phí" }
-    : !shipInput.province || !currentQuote
+    : !addressReady || !currentQuote
       ? { awaitingAddress: true, fee: 0 }
       : { awaitingAddress: false, fee: currentQuote.fee, label: currentQuote.reason === "new_customer" ? "Miễn phí · mã FREESHIP khách mới" : "Miễn phí" }
   const onShipInput = useCallback((input: { phone: string; province: string }) => setShipInput(input), [])

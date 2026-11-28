@@ -413,7 +413,8 @@ export default function SimpleCheckout({
   useEffect(() => { trackFunnel("checkout_open") }, [])
   const onShipInputRef = useRef(onShipInput)
   onShipInputRef.current = onShipInput
-  useEffect(() => { onShipInputRef.current?.({ phone: form.phone, province: form.province }) }, [form.phone, form.province])
+  // "province" carries the whole typed address: the popup has one free-text address field
+  useEffect(() => { onShipInputRef.current?.({ phone: form.phone, province: [form.street, form.ward, form.province].filter(Boolean).join(", ") }) }, [form.phone, form.street, form.ward, form.province])
   const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
   // Version gifts by payment method: COD gets the "any" ones, QR transfer gets all
   const allGifts = digitalDelivery?.gifts ?? []

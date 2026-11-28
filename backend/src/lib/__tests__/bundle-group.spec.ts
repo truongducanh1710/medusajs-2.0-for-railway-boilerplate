@@ -100,6 +100,12 @@ describe("groupShippingQuote (28/11 address-based fee)", () => {
     expect(groupShippingQuote(g, 2, { province: "Thành phố Hà Nội" })).toEqual({ fee: 16000, reason: "local" })
     expect(normalizeProvince("Thành phố Hà Nội")).toBe("ha noi")
   })
+  it("finds Hanoi in free-text addresses", () => {
+    expect(groupShippingQuote(g, 1, { province: "12 ngõ 5 Cầu Giấy, HN" }).reason).toBe("local")
+    expect(groupShippingQuote(g, 1, { province: "số 3 Trần Duy Hưng, Trung Hòa, Hanoi" }).reason).toBe("local")
+    expect(groupShippingQuote(g, 1, { province: "88 Xa lộ Hà Nội, Thủ Đức, TP HCM" }).reason).toBe("standard")
+    expect(groupShippingQuote(g, 1, { province: "Thôn Hà, xã Nội Duệ, Bắc Ninh" }).reason).toBe("standard")
+  })
   it("other provinces pay the tier fee", () => {
     expect(groupShippingQuote(g, 1, { province: "Thành phố Hồ Chí Minh" })).toEqual({ fee: 20000, reason: "standard" })
   })

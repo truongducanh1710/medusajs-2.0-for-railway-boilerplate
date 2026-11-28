@@ -43,7 +43,7 @@ const FAQ: [string, string][] = [
   ["Trẻ nhỏ dùng được không?", "Miếng hạ sốt 0–3 tuổi dành cho trẻ sơ sinh. Thông mũi và giảm ho dùng cho trẻ từ 3 tuổi, cần người lớn giám sát khi dán. Trẻ sốt cao hoặc kéo dài cần đưa đi khám."],
   ["Miếng dán dùng được bao lâu?", "Tuỳ dòng: thông mũi 4–6 giờ, giảm ho 8–12 giờ, hạ sốt khoảng 8 giờ, thái dương 20–30 phút mỗi lần. Xem cách dùng ở trang từng sản phẩm."],
   ["Ai nên thận trọng?", "Không dán lên vết thương hở, vùng da đang kích ứng. Người dị ứng với thành phần tinh dầu nên thử trên một vùng da nhỏ trước. Sản phẩm không thay thế thuốc hoặc chỉ định của bác sĩ."],
-  ["Phí giao hàng thế nào?", "Đơn 1–2 hộp phí giao 20.000đ. Từ 3 hộp miễn phí giao hàng toàn quốc. Bạn kiểm tra hàng rồi mới thanh toán."],
+  ["Phí giao hàng thế nào?", "Khách đặt lần đầu được miễn phí giao hàng. Từ 3 hộp miễn phí giao hàng toàn quốc. Đơn 1–2 hộp của khách cũ: 16.000đ trong Hà Nội, 20.000đ các tỉnh khác — phí hiện ngay khi bạn nhập địa chỉ. Bạn kiểm tra hàng rồi mới thanh toán."],
 ]
 
 export function IcegelFaq({ extra = [] }: { extra?: [string, string][] }) {

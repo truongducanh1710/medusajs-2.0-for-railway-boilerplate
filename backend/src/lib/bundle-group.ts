@@ -86,6 +86,19 @@ export function normalizeProvince(value: unknown): string {
     .replace(/^(thanh pho|tinh|tp\.?)\s+/, "").replace(/\s+/g, " ").trim()
 }
 
+// Places outside Hanoi whose names contain "Hà Nội" (Xa lộ Hà Nội in Thủ Đức)
+const NOT_LOCAL = / (ho chi minh|hcm|tphcm|sai gon|thu duc) /
+
+/**
+ * Checkout addresses are free text ("12 ngõ 5 Cầu Giấy, Hà Nội", "... HN"), so the province is
+ * found anywhere in the text rather than in a dedicated field.
+ */
+export function isLocalAddress(ship: GroupShipping, text: unknown): boolean {
+  const n = ` ${normalizeProvince(text).replace(/[^a-z0-9]+/g, " ")} `
+  if (NOT_LOCAL.test(n)) return false
+  return ship.localProvinces.some((p) => n.includes(` ${p} `) || n.includes(` ${p.replace(/ /g, "")} `)) || / hn /.test(n)
+}
+
 /** Fee the customer pays for this many boxes, given where it ships and who orders. */
 export function groupShippingQuote(group: BundleGroup, boxes: number, ctx: ShipContext = {}): ShipQuote {
   const tierFee = groupTier(group, boxes).fee
@@ -93,7 +106,7 @@ export function groupShippingQuote(group: BundleGroup, boxes: number, ctx: ShipC
   const ship = group.shipping
   if (!ship) return { fee: tierFee, reason: "standard" }
   if (ship.newCustomerFree && ctx.isNewCustomer) return { fee: 0, reason: "new_customer" }
-  if (ship.localProvinces.includes(normalizeProvince(ctx.province))) return { fee: Math.min(tierFee, ship.localFee), reason: "local" }
+  if (isLocalAddress(ship, ctx.province)) return { fee: Math.min(tierFee, ship.localFee), reason: "local" }
   return { fee: tierFee, reason: "standard" }
 }
 

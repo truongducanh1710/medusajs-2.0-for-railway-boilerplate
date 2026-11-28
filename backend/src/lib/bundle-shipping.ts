@@ -109,7 +109,8 @@ export function deriveBundleShippingPlan(cart: any, products: any[], variants: a
       const unitPrice = groupUnitPrice(product.metadata)
       if (boxes > group.maxBoxes) invalid(`Mỗi đơn ${group.label} tối đa ${group.maxBoxes} hộp.`)
       if (!unitPrice) invalid("Sản phẩm chưa được cấu hình giá.")
-      const quote = groupShippingQuote(group, boxes, { province: cart.shipping_address?.city, ...ship })
+      const address = [cart.shipping_address?.address_1, cart.shipping_address?.address_2, cart.shipping_address?.city].filter(Boolean).join(", ")
+      const quote = groupShippingQuote(group, boxes, { province: address, ...ship })
       shipReason = quote.reason
       offer = { price: unitPrice! * qty, shippingFee: quote.fee }
     } else {
