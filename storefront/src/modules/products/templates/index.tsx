@@ -533,9 +533,9 @@ const ProductTemplate: React.FC<Props> = ({ product, region, countryCode }) => {
             {/* Delivery info */}
             {isDigitalProduct ? (
             <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">
-              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📧</span><span><strong>Nhận file:</strong> PDF + video gửi qua email ngay khi thanh toán xong</span></div>
-              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Lịch in:</strong> giao sau 3–5 ngày tuỳ vùng miền</span></div>
-              <div className="flex gap-2 items-start"><span className="flex-shrink-0">🔒</span><span><strong>Thanh toán:</strong> chuyển khoản QR, xác nhận tự động</span></div>
+              {/* Printed calendar is COD only, download is QR transfer only (user 28/11) */}
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📦</span><span><strong>Lịch in:</strong> giao tận nhà 3–5 ngày, nhận hàng mới trả tiền (COD); PDF + video gửi email khi lịch tới</span></div>
+              <div className="flex gap-2 items-start"><span className="flex-shrink-0">📧</span><span><strong>Bản tải về:</strong> chuyển khoản QR, PDF + video gửi email ngay</span></div>
             </div>
             ) : (
             <div className="bg-blue-50 rounded-xl p-3 sm:p-4 text-xs sm:text-sm space-y-2">

@@ -408,7 +408,7 @@ export default function SimpleCheckout({
   const [loadingWards, setLoadingWards] = useState(false)
   const [provinceSearch, setProvinceSearch] = useState("")
   const [provinceOpen, setProvinceOpen] = useState(false)
-  const [payment, setPayment] = useState<"cod" | "sepay">(digitalDelivery ? "sepay" : "cod")
+  const [payment, setPayment] = useState<"cod" | "sepay">(digitalDelivery && !digitalDelivery.requiresShipping ? "sepay" : "cod")
   const isDigital = !!digitalDelivery
   useEffect(() => { trackFunnel("checkout_open") }, [])
   const onShipInputRef = useRef(onShipInput)
@@ -416,16 +416,19 @@ export default function SimpleCheckout({
   // "province" carries the whole typed address: the popup has one free-text address field
   useEffect(() => { onShipInputRef.current?.({ phone: form.phone, province: [form.street, form.ward, form.province].filter(Boolean).join(", ") }) }, [form.phone, form.street, form.ward, form.province])
   const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
-  // Version gifts by payment method: COD gets the "any" ones, QR transfer gets all
+  // Digital variants that ship a physical item (printed calendar) are COD only (user 28/11),
+  // so COD earns every gift; download-only variants stay bank-transfer only
+  const sepayAllowed = !(isDigital && needsAddress)
   const allGifts = digitalDelivery?.gifts ?? []
-  const codGifts = allGifts.filter((g) => g.when !== "transfer")
+  const codGifts = sepayAllowed ? allGifts.filter((g) => g.when !== "transfer") : allGifts
   const [digitalDone, setDigitalDone] = useState<{ email: string } | null>(null)
   // Download-only digital variants are bank-transfer only; ones that ship a physical
   // item (printed calendar) may be COD — files are emailed once Pancake marks it delivered
   const codAllowed = !isDigital || needsAddress
   useEffect(() => {
     if (!codAllowed && payment !== "sepay") setPayment("sepay")
-  }, [codAllowed, payment])
+    if (!sepayAllowed && payment !== "cod") setPayment("cod")
+  }, [codAllowed, sepayAllowed, payment])
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState("")
@@ -1191,14 +1194,14 @@ export default function SimpleCheckout({
                 </span>
                 <span className="text-[11px] text-gray-500">Kiểm tra rồi trả</span>
               </label>
-              <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
+              {sepayAllowed && <label className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
                 <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
                 <span className="flex-1 text-sm font-bold text-gray-900">Chuyển khoản QR
                   {isDigital && <span className="block text-[11px] font-normal text-gray-600">Nhận PDF + video qua email ngay</span>}
                   {allGifts.length > codGifts.length && <span className="block text-[11px] font-semibold text-blue-700">🎁 Tặng đủ {allGifts.length} quà: {allGifts.map((g) => g.name).join(" + ")}</span>}
                 </span>
                 {paymentDiscount > 0 && <span className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">-{formatVND(paymentDiscount)}</span>}
-              </label>
+              </label>}
               </>)}
             </div>
           </div>
@@ -1446,7 +1449,7 @@ return parsed
                   <span className="text-2xl">💵</span>
                 </label>
 
-                <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
+                {sepayAllowed && <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${payment === "sepay" ? "border-blue-600 bg-blue-50" : "border-gray-200"}`}>
                   <input type="radio" name="payment" value="sepay" checked={payment === "sepay"} onChange={() => setPayment("sepay")} className="accent-blue-600" />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -1456,7 +1459,7 @@ return parsed
                     <p className="text-xs text-gray-500">Quét mã QR — mọi ngân hàng đều được</p>
                   </div>
                   <span className="text-2xl">📱</span>
-                </label>
+                </label>}
               </div>
             </div>
 

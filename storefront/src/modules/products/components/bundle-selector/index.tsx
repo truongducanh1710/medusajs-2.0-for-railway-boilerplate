@@ -119,6 +119,8 @@ export default function BundleSelector({ product, region }: Props) {
     : product.variants?.[0]
 
   const variant = activeVariant
+  // Digital product version that ships a printed item: COD only, files emailed on delivery (user 28/11)
+  const activeShips = (variant?.metadata as any)?.requires_shipping === true || (variant?.metadata as any)?.requires_shipping === "true"
   const basePrice =
     variant?.calculated_price?.calculated_amount ??
     variant?.prices?.[0]?.amount ??
@@ -464,7 +466,7 @@ export default function BundleSelector({ product, region }: Props) {
                     </ul>
                   ) : (
                     <p className="text-[12px] text-gray-600 leading-snug">
-                      {ships ? "📧 PDF + 27 video qua email ngay · 📦 lịch để bàn giao sau" : "📧 PDF 28 trang + 27 video gửi qua email ngay"}
+                      {ships ? "📦 Lịch giao tận nhà, nhận hàng mới trả tiền · 📧 PDF + 27 video gửi email khi nhận lịch" : "📧 PDF 28 trang + 27 video gửi qua email ngay"}
                     </p>
                   )}
                 </div>
@@ -616,10 +618,10 @@ export default function BundleSelector({ product, region }: Props) {
 
         <div className="grid grid-cols-4 gap-1 pt-1">
           {(isDigital ? [
-            { icon: "📧", line1: "Nhận file", line2: "ngay" },
+            activeShips ? { icon: "🚚", line1: "Miễn phí", line2: "giao hàng" } : { icon: "📧", line1: "Nhận file", line2: "ngay" },
             { icon: "🎬", line1: "27 video", line2: "bài giảng" },
             { icon: "🔤", line1: "Song ngữ", line2: "Việt – Anh" },
-            { icon: "🔒", line1: "Chuyển khoản", line2: "QR" },
+            activeShips ? { icon: "💵", line1: "Nhận hàng", line2: "mới trả tiền" } : { icon: "🔒", line1: "Chuyển khoản", line2: "QR" },
           ] : [
             { icon: "⭐", line1: "4.8/5", line2: "Đánh giá" },
             { icon: "🔄", line1: "Đổi trả", line2: "7 ngày" },
