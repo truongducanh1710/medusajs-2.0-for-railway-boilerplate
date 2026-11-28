@@ -132,7 +132,7 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
           <img src={item.thumb} alt="" className="w-12 h-12 rounded-lg object-cover border border-gray-100 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-bold text-gray-900 leading-snug line-clamp-2">{item.short}</p>
-            <p className="text-[12px] text-gray-500">{formatVND(item.price)} / hộp</p>
+            <p className="text-[12px] text-gray-500">{formatVND(item.price)} / hộp{item.compareAt > 0 && <s className="ml-1 text-gray-400">{formatVND(item.compareAt)}</s>}</p>
           </div>
           <Stepper value={qty[item.variantId]} onChange={(n) => onQty(item.variantId, n)} label={item.short} />
         </div>

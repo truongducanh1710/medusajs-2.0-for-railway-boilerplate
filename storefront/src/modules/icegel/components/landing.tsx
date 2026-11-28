@@ -1,5 +1,5 @@
 import LoopVideo from "./loop-video"
-import { formatVND } from "./format"
+import { discountPct, formatVND } from "./format"
 
 /**
  * Story landing for one ICEgel product, driven by product.metadata.icegel_landing (JSON) so copy
@@ -48,7 +48,7 @@ function SectionTitle({ kicker, children }: { kicker?: string; children: React.R
   )
 }
 
-export function LandingHero({ data, price, pack }: { data: LandingData; price: number; pack: string }) {
+export function LandingHero({ data, price, compareAt = 0, pack }: { data: LandingData; price: number; compareAt?: number; pack: string }) {
   const { hero } = data
   return (
     <section className="relative -mx-4 sm:mx-0 sm:rounded-3xl overflow-hidden bg-sky-950 sm:grid sm:grid-cols-2">
@@ -71,6 +71,7 @@ export function LandingHero({ data, price, pack }: { data: LandingData; price: n
             <a href="#mua-kem" className="px-5 py-3 rounded-xl bg-orange-500 font-black text-[15px] shadow-lg active:scale-[0.98]">Chọn số hộp</a>
             <p className="leading-tight">
               <span className="block text-xl font-black">{formatVND(price)}</span>
+              {compareAt > price && <span className="block text-[12px] text-sky-100"><s>{formatVND(compareAt)}</s> · giảm {discountPct(price, compareAt)}%</span>}
               <span className="block text-[12px] text-sky-100">{pack}</span>
             </p>
           </div>

@@ -139,7 +139,10 @@ export default function IcegelShop({ items, focus, mode = "grid" }: Props) {
                 <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">{item.pack}</p>
                 <p className="text-[12px] text-gray-600 mt-1 line-clamp-2 leading-snug">{item.benefits[0]}</p>
                 <div className="mt-auto pt-2 flex items-center justify-between gap-1">
-                  <span className="font-black text-[15px] text-orange-600">{formatK(item.price)}</span>
+                  <span className="leading-tight">
+                    <span className="font-black text-[15px] text-orange-600">{formatK(item.price)}</span>
+                    {item.compareAt > 0 && <s className="block text-[11px] text-gray-400">{formatK(item.compareAt)}</s>}
+                  </span>
                   {(qty[item.variantId] ?? 0) > 0 ? (
                     <Stepper value={qty[item.variantId]} onChange={(n) => setOne(item.variantId, n)} label={item.short} />
                   ) : (
@@ -159,7 +162,7 @@ export default function IcegelShop({ items, focus, mode = "grid" }: Props) {
               </LocalizedClientLink>
               <div className="flex-1 min-w-0">
                 <LocalizedClientLink href={`/icegel/${item.slug}`} className="text-[13px] font-bold text-gray-900 line-clamp-1">{item.short}</LocalizedClientLink>
-                <p className="text-[12px] text-gray-500 line-clamp-1">{item.pack} · <span className="font-bold text-orange-600">{formatK(item.price)}</span></p>
+                <p className="text-[12px] text-gray-500 line-clamp-1">{item.pack} · <span className="font-bold text-orange-600">{formatK(item.price)}</span>{item.compareAt > 0 && <s className="ml-1 text-gray-400">{formatK(item.compareAt)}</s>}</p>
               </div>
               {(qty[item.variantId] ?? 0) > 0 ? (
                 <Stepper value={qty[item.variantId]} onChange={(n) => setOne(item.variantId, n)} label={item.short} />

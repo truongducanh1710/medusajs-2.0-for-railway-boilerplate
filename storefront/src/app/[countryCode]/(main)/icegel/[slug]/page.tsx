@@ -8,7 +8,7 @@ import { IcegelFaq, IcegelTrust } from "@modules/icegel/components/sections"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ProductPixelTracker from "@components/ProductPixelTracker"
 import FunnelTracker from "@modules/products/components/funnel-tracker"
-import { formatVND } from "@modules/icegel/components/format"
+import { discountPct, formatVND } from "@modules/icegel/components/format"
 import { LandingBody, LandingCautions, LandingHero } from "@modules/icegel/components/landing"
 
 export const revalidate = 300
@@ -99,7 +99,7 @@ export default async function IcegelProductPage({ params }: Props) {
 
         {landing && (
           <div className="mt-2">
-            <LandingHero data={landing} price={item.price} pack={item.pack} />
+            <LandingHero data={landing} price={item.price} compareAt={item.compareAt} pack={item.pack} />
             <LandingBody data={landing} />
           </div>
         )}
@@ -116,7 +116,15 @@ export default async function IcegelProductPage({ params }: Props) {
             </div>
             <TitleTag className="mt-2 text-xl sm:text-2xl font-black text-gray-900 leading-snug">{item.title}</TitleTag>
             {item.subtitle && <p className="mt-1 text-[14px] text-gray-600">{item.subtitle}</p>}
-            <p className="mt-2 text-2xl font-black text-orange-600">{formatVND(item.price)} <span className="text-[13px] font-semibold text-gray-500">/ hộp</span></p>
+            <p className="mt-2 text-2xl font-black text-orange-600">
+              {formatVND(item.price)} <span className="text-[13px] font-semibold text-gray-500">/ hộp</span>
+              {item.compareAt > 0 && (
+                <>
+                  <s className="ml-2 text-[15px] font-semibold text-gray-400">{formatVND(item.compareAt)}</s>
+                  <span className="ml-2 align-middle text-[12px] font-black px-2 py-0.5 rounded-full bg-red-600 text-white">-{discountPct(item.price, item.compareAt)}%</span>
+                </>
+              )}
+            </p>
             <ul className="mt-3 space-y-1.5">
               {item.benefits.map((benefit) => (
                 <li key={benefit} className="flex gap-2 text-[14px] text-gray-800"><span className="text-sky-600 font-black" aria-hidden="true">✓</span>{benefit}</li>

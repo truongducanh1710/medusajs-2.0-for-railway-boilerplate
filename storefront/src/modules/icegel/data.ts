@@ -14,6 +14,8 @@ export type IcegelItem = {
   description: string
   pack: string
   price: number
+  /** List price before discount (metadata.compare_at_price); 0 = no discount */
+  compareAt: number
   thumb: string
   images: string[]
   badges: string[]
@@ -61,6 +63,7 @@ export function toIcegelItem(product: HttpTypes.StoreProduct): IcegelItem | null
     description: product.description ?? "",
     pack: String(m.icegel_pack ?? ""),
     price,
+    compareAt: Number(m.compare_at_price) > price ? Number(m.compare_at_price) : 0,
     thumb: product.thumbnail || images[0] || "",
     images: images.length ? images : product.thumbnail ? [product.thumbnail] : [],
     badges: list(m.icegel_badges),
