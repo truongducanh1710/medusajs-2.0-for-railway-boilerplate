@@ -58,6 +58,9 @@ const PAGE_CODE: Record<string, string> = {
 }
 const UTM = "utm_source={{campaign.name}}&utm_medium={{adset.name}}&utm_campaign={{campaign.id}}&utm_content={{ad.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}"
 export const BASE = 300_000
+// User 28/11: chỉ tăng ngân sách khi CPC hôm nay ≤20k; tạm không test lại bộ từng thắng trên ADS342
+export const RAISE_CPC_MAX = 20_000
+export const RETEST_SKIP_ACC = "ADS342"
 export const TARGET: Record<string, number> = { TEST: 1, WIN: 2, SCALE: 2, GIU1: 1, NGHI: 0, QUEUE: 0, TRUOT: 0, HOAN: 0 }
 // User 22/11 "siết lại bộ scale" (DANHGIA_9010_2211.md): 27/39 camp mới CV là để lấp SCALE lên 6, camp mới ≤7 ngày của bộ SCALE
 // 19,5tr ở 44% (camp cũ cùng bộ 23%), camp thứ 4–6 ra 40%; SCALE lật 12 lên / 8 về trong 12 ngày.
@@ -479,8 +482,8 @@ async function syncBoTable(D: BoData, asOf: string, dry: boolean): Promise<Map<s
 // Bỏ luật cũ "bộ từng chạy ở TK nào chỉ lên ở TK đó" (khiến bộ chỉ từng chạy ADS344 không bao giờ sang TK khác).
 // Chọn: TK đủ tệp loại trừ + không đỏ + bộ đang có <PER_ACC_MAX camp; ưu tiên TK bộ đang có <2 camp, rồi theo thứ tự P.accounts.
 export const PER_ACC_MAX = 3
-async function pickAccount(setKey: string, D: BoData, boAcc: (setKey: string, accId: string) => number, excl: any[], P: Prod): Promise<{ code: string; id: string } | null> {
-  const mine = P.accounts.map((k) => [k, ACCOUNTS[k]] as [string, string]).filter(([, id]) => !!id)
+async function pickAccount(setKey: string, D: BoData, boAcc: (setKey: string, accId: string) => number, excl: any[], P: Prod, skip: string[] = []): Promise<{ code: string; id: string } | null> {
+  const mine = P.accounts.filter((k) => !skip.includes(k)).map((k) => [k, ACCOUNTS[k]] as [string, string]).filter(([, id]) => !!id)
   const ok = mine.filter(([, id]) => exclusionsFor(excl, id, P.pixel))
   if (!ok.length) return null
   const { rows: health } = await getPool().query(
@@ -641,6 +644,9 @@ export async function runCheck(st: CvBoSetting, D?: BoData) {
     else if (b >= 900_000 && b < 2_000_000 && r.o >= 4 && r.p <= 20) nb = 2_000_000
     else if (b >= 2_000_000 && b < 4_000_000 && r.o >= 6 && r.p <= 20) nb = 4_000_000
     if (!nb || nb <= b) continue
+    // User 28/11 "1 ok": chỉ tăng khi CPC ≤20k. Backtest 10–27/11: tăng ở CPC ≤15k 67 lần ra 19%; >20k 4 lần 14–42%
+    // (VIETMATE T2 27/11 tăng ở CPC 60k → 672k 2 đơn 42%).
+    if (r.cpc > RAISE_CPC_MAX) continue
     if (dmP.get(c.prod!)?.stop_raise) continue // lỗ ngày ≥3tr (của SP): không tăng thêm
     if (budgetSum + (nb - b) > st.cap_total) continue
     const last = raisedToday.get(c.id)
@@ -900,11 +906,13 @@ export async function runNight(st: CvBoSetting, userModule?: any) {
       if (!(testsToday < testMax && total < st.max_camps && (fixedTest || (allowNew && newCount < maxNew)))) break
       if (busyOf(b).length) { out.push(`bỏ qua test ${b.name}: bài MKT khác đang chạy`); continue }
       const sc = (D.sets.get(b.key)?.camps || []).map((id) => D.camps.get(id)!)
-      const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14))
+      // User 28/11 "2 ok": tạm dừng test lại bộ từng thắng trên ADS342 (27/11 2/2 trượt, CPM 490k–1,1tr) — nhường chỗ test video mới
+      const old = sc.filter((c) => !c.retired && c.fb_status === "PAUSED" && c.last && c.last >= addD(today, -14) && c.acc !== ACCOUNTS[RETEST_SKIP_ACC])
       let ok = false
       if (old.length) { planBat.push(old[0]); ok = true }
       else {
-        const acc = await pickAccount(b.key, D, boAcc, excl, P)
+        const acc = await pickAccount(b.key, D, boAcc, excl, P, [RETEST_SKIP_ACC])
+        if (!acc) out.push(`không test lại ${b.name}: không có tài khoản hợp lệ ngoài ${RETEST_SKIP_ACC}`)
         if (acc) { ok = !!(await launchCamp({ bo: b, acc, start: tomorrow, suffix: `T${sc.length + 1}`, kieu: "test", reason: `Test lại bộ ${b.name} (từng thắng, lâu chưa chạy)`, excl, dry })); if (ok) { newCount++; aliveByAcc.set(acc.id, (aliveByAcc.get(acc.id) || 0) + 1); boAccNew.set(b.key + "|" + acc.id, (boAccNew.get(b.key + "|" + acc.id) || 0) + 1) } }
       }
       if (!ok) continue
