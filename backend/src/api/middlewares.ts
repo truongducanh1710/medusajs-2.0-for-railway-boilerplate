@@ -152,6 +152,7 @@ export default defineMiddlewares({
     { matcher: "/store/carts/:id/bundle-shipping", method: ["POST"], bodyParser: { sizeLimit: "10kb" } },
     { matcher: "/store/carts/:id/group-lines", method: ["POST"], bodyParser: { sizeLimit: "10kb" } },
     { matcher: "/store/track/event", method: ["POST"], bodyParser: { sizeLimit: "16kb" } },
+    { matcher: "/store/group-ship-quote", method: ["POST"], bodyParser: { sizeLimit: "2kb" } },
     {
       matcher: "/store/carts/:id/complete",
       method: ["POST"],

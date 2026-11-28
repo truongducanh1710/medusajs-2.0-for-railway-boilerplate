@@ -41,6 +41,37 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
   const next = nextTier(boxes)
   const packs = Math.floor(tier.giftPatches / ICEGEL.giftPackSize)
 
+  // Shipping is quoted only once the customer picks a province (Shopee-style); the server
+  // re-decides the same fee when the order is placed (lib/bundle-shipping)
+  const [shipInput, setShipInput] = useState({ phone: "", province: "" })
+  const [quote, setQuote] = useState<{ key: string; fee: number; reason: string } | null>(null)
+  const phoneOk = /^(0|\+84)[0-9]{8,9}$/.test(shipInput.phone.replace(/\s/g, ""))
+  const quoteKey = JSON.stringify([boxes, shipInput.province, phoneOk ? shipInput.phone.replace(/\s/g, "") : ""])
+  useEffect(() => {
+    if (!tier.fee || !shipInput.province || !boxes) return
+    let alive = true
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "https://api.phanviet.vn"}/store/group-ship-quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || "" },
+          body: JSON.stringify({ group: "icegel", boxes, province: shipInput.province, phone: phoneOk ? shipInput.phone : "" }),
+        })
+        const body = await response.json()
+        if (alive && response.ok && Number.isFinite(body?.fee)) setQuote({ key: quoteKey, fee: body.fee, reason: body.reason })
+      } catch {}
+    }, 400)
+    return () => { alive = false; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, tier.fee])
+  const currentQuote = quote?.key === quoteKey ? quote : null
+  const shippingQuote = !tier.fee
+    ? { awaitingAddress: false, fee: 0, label: "Miễn phí" }
+    : !shipInput.province || !currentQuote
+      ? { awaitingAddress: true, fee: 0 }
+      : { awaitingAddress: false, fee: currentQuote.fee, label: currentQuote.reason === "new_customer" ? "Miễn phí · mã FREESHIP khách mới" : "Miễn phí" }
+  const onShipInput = useCallback((input: { phone: string; province: string }) => setShipInput(input), [])
+
   const lines = picked.map((item) => ({ variant_id: item.variantId, quantity: qty[item.variantId] }))
   const picks = giftPicks.slice(0, packs)
   const syncKey = JSON.stringify([lines, picks])
@@ -198,6 +229,8 @@ export default function IcegelCheckout({ items, qty, onQty, giftPicks, onGiftPic
           pendingPaymentDiscount={0}
           syncing={syncing || !!syncError || picked.length === 0}
           ensureReady={ensureReady}
+          shippingQuote={shippingQuote}
+          onShipInput={onShipInput}
         />
       </div>
     </div>,

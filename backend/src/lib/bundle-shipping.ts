@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys, Modules, MedusaError } from "@medusajs/framework/utils"
-import { groupLineUpdates, groupTier, groupUnitPrice, productGroup } from "./bundle-group"
+import { groupLineUpdates, groupShippingQuote, groupUnitPrice, phoneKey, productGroup, type ShipContext, type ShipQuote } from "./bundle-group"
 
 const invalid = (message: string): never => { throw new MedusaError(MedusaError.Types.INVALID_DATA, message) }
 const parse = (value: any): any => {
@@ -13,6 +13,8 @@ export type BundleShippingPlan = {
   optionId: string
   profileId: string
   productIds: string[]
+  /** Why a group cart pays this fee (absent for single-product combos) */
+  shipReason?: ShipQuote["reason"]
 }
 
 /**
@@ -74,7 +76,7 @@ export function variantTierLineUpdate(item: any, productMetadata: any) {
 }
 
 /** Only server product metadata activates shipping rules; line metadata cannot opt out. */
-export function deriveBundleShippingPlan(cart: any, products: any[], variants: any[]): BundleShippingPlan | null {
+export function deriveBundleShippingPlan(cart: any, products: any[], variants: any[], ship: ShipContext = {}): BundleShippingPlan | null {
   const productMap = new Map(products.map((product: any) => [product.id, product]))
   const variantMap = new Map(variants.map((variant: any) => [variant.id, variant]))
   const lines = (cart.items ?? []).map((item: any) => {
@@ -94,6 +96,7 @@ export function deriveBundleShippingPlan(cart: any, products: any[], variants: a
   let fee = 0
   let goodsTotal = 0
   let profileId = ""
+  let shipReason: ShipQuote["reason"] | undefined
   const maps: Record<string, string>[] = []
   const productIds: string[] = []
   for (const { item, product, offers, group } of lines) {
@@ -106,7 +109,9 @@ export function deriveBundleShippingPlan(cart: any, products: any[], variants: a
       const unitPrice = groupUnitPrice(product.metadata)
       if (boxes > group.maxBoxes) invalid(`Mỗi đơn ${group.label} tối đa ${group.maxBoxes} hộp.`)
       if (!unitPrice) invalid("Sản phẩm chưa được cấu hình giá.")
-      offer = { price: unitPrice! * qty, shippingFee: groupTier(group, boxes).fee }
+      const quote = groupShippingQuote(group, boxes, { province: cart.shipping_address?.city, ...ship })
+      shipReason = quote.reason
+      offer = { price: unitPrice! * qty, shippingFee: quote.fee }
     } else {
       offer = offers.find((entry: any) => Number(entry.qty) === qty)
     }
@@ -125,7 +130,39 @@ export function deriveBundleShippingPlan(cart: any, products: any[], variants: a
   }
   const optionId = maps[0]?.[String(fee)]
   if (typeof optionId !== "string" || !optionId || maps.some((map) => map[String(fee)] !== optionId)) invalid("Các combo chưa có phương thức giao chung.")
-  return { fee, goodsTotal, optionId, profileId, productIds }
+  return { fee, goodsTotal, optionId, profileId, productIds, ...(shipReason ? { shipReason } : {}) }
+}
+
+/**
+ * True when no earlier order (web or Pancake POS, cancelled/deleted ones excepted) used this phone.
+ * The cart's own order is ignored, so re-validating after checkout (Sepay webhook) keeps the same fee.
+ */
+export async function isNewCustomerPhone(scope: any, phone: unknown, cartId?: string): Promise<boolean> {
+  const key = phoneKey(phone)
+  if (!key) return false
+  const pg = scope.resolve(ContainerRegistrationKeys.PG_CONNECTION)
+  const like = `%${key}`
+  // The cart's own order and the POS copy it was pushed to (order.metadata.pancake_order_id)
+  const own: { id: string; pos: string | null }[] = cartId
+    ? (await pg.raw(
+        `SELECT o.id, o.metadata->>'pancake_order_id' AS pos FROM order_cart oc JOIN "order" o ON o.id = oc.order_id
+          WHERE oc.cart_id = ? AND oc.deleted_at IS NULL`, [cartId])).rows
+    : []
+  const ownIds = own.map((o) => o.id)
+  const ownPos = own.map((o) => o.pos).filter((v): v is string => !!v)
+  const list = (n: number) => Array(n).fill("?").join(",")
+  const web = await pg.raw(
+    `SELECT 1 FROM "order" o JOIN order_address a ON a.id = o.shipping_address_id
+      WHERE o.deleted_at IS NULL AND o.status <> 'canceled' AND regexp_replace(coalesce(a.phone, ''), '[^0-9]', '', 'g') LIKE ?
+        ${ownIds.length ? `AND o.id NOT IN (${list(ownIds.length)})` : ""} LIMIT 1`,
+    [like, ...ownIds])
+  if (web.rows.length) return false
+  const pos = await pg.raw(
+    `SELECT 1 FROM pancake_order WHERE deleted_at IS NULL AND status NOT IN (6, 7)
+      AND regexp_replace(coalesce(customer_phone, ''), '[^0-9]', '', 'g') LIKE ?
+      ${ownPos.length ? `AND id NOT IN (${list(ownPos.length)})` : ""} LIMIT 1`,
+    [like, ...ownPos])
+  return !pos.rows.length
 }
 
 export async function loadBundleShippingContext(scope: any, cartId: string, normalize = false) {
@@ -169,7 +206,12 @@ export async function loadBundleShippingContext(scope: any, cartId: string, norm
     }
     if (updates.length) await scope.resolve(Modules.CART).updateLineItems(updates)
   }
-  return { cart, plan: deriveBundleShippingPlan(cart, products, variants) }
+  // Address-based group shipping needs to know whether this phone has ordered before
+  const needsHistory = products.some((product: any) => productGroup(product.metadata)?.shipping?.newCustomerFree)
+  const ship: ShipContext = needsHistory && cart.shipping_address?.phone
+    ? { isNewCustomer: await isNewCustomerPhone(scope, cart.shipping_address.phone, cart.id) }
+    : {}
+  return { cart, plan: deriveBundleShippingPlan(cart, products, variants, ship) }
 }
 
 export function assertBundleShippingMethods(cart: any, plan: BundleShippingPlan | null) {

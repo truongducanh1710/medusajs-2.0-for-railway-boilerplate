@@ -369,6 +369,10 @@ type SimpleCheckoutProps = {
   // Digital product (PDF + video by email): SePay only, email required,
   // shipping address only when the picked variant also ships a physical item
   digitalDelivery?: { requiresShipping: boolean; gifts?: { name: string; when?: "any" | "transfer" }[] }
+  // Address-based shipping (ICEgel): the fee is unknown until the customer picks a province, so the
+  // parent quotes it from the typed phone/province. awaitingAddress hides the fee from the total.
+  shippingQuote?: { awaitingAddress: boolean; fee: number; label?: string } | null
+  onShipInput?: (input: { phone: string; province: string }) => void
 }
 
 const EMPTY_CART = { id: "", items: [] } as unknown as HttpTypes.StoreCart
@@ -387,6 +391,8 @@ export default function SimpleCheckout({
   syncing = false,
   ensureReady,
   digitalDelivery,
+  shippingQuote,
+  onShipInput,
 }: SimpleCheckoutProps) {
   const router = useRouter()
   const params = useParams()
@@ -405,6 +411,9 @@ export default function SimpleCheckout({
   const [payment, setPayment] = useState<"cod" | "sepay">(digitalDelivery ? "sepay" : "cod")
   const isDigital = !!digitalDelivery
   useEffect(() => { trackFunnel("checkout_open") }, [])
+  const onShipInputRef = useRef(onShipInput)
+  onShipInputRef.current = onShipInput
+  useEffect(() => { onShipInputRef.current?.({ phone: form.phone, province: form.province }) }, [form.phone, form.province])
   const needsAddress = !digitalDelivery || digitalDelivery.requiresShipping
   // Version gifts by payment method: COD gets the "any" ones, QR transfer gets all
   const allGifts = digitalDelivery?.gifts ?? []
@@ -735,9 +744,13 @@ export default function SimpleCheckout({
   }
   const hasBundleShipping = pendingShippingFee != null || sortedItems.some((item: any) => item.metadata?.bundle_shipping_fee != null)
   // Shipping is separate from goods and promotion discounts. One parcel uses the highest offer fee.
-  const shippingFee = cartPending
-    ? Math.max(0, pendingShippingFee ?? 0, ...displayItems.map(lineShippingFee))
-    : Math.max(0, ...sortedItems.map(lineShippingFee))
+  const shippingFee = shippingQuote
+    ? (shippingQuote.awaitingAddress ? 0 : Math.max(0, shippingQuote.fee))
+    : cartPending
+      ? Math.max(0, pendingShippingFee ?? 0, ...displayItems.map(lineShippingFee))
+      : Math.max(0, ...sortedItems.map(lineShippingFee))
+  const shipAwaiting = !!shippingQuote?.awaitingAddress
+  const shipLabel = shipAwaiting ? "Nhập địa chỉ để tính" : shippingFee > 0 ? formatVND(shippingFee) : (shippingQuote?.label || "Miễn phí")
   const cartTotal = Math.max(0, subtotal - promoDiscount) + shippingFee
   // A product may cap or disable the order-level QR incentive; zero is a valid override.
   // For mixed carts use the smallest configured incentive instead of adding discounts.
@@ -1199,7 +1212,7 @@ export default function SimpleCheckout({
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-gray-500">
                 Tổng cộng
-                {hasBundleShipping && <span className="block text-[11px]">{shippingFee > 0 ? `Đã gồm ${formatVND(shippingFee)} phí ship` : "Miễn phí giao hàng"}</span>}
+                {hasBundleShipping && <span className="block text-[11px]">{shipAwaiting ? "Chưa gồm phí ship" : shippingFee > 0 ? `Đã gồm ${formatVND(shippingFee)} phí ship` : (shippingQuote?.label || "Miễn phí giao hàng")}</span>}
                 {promoDiscount > 0 && <span className="text-green-600"> · đã giảm {formatVND(promoDiscount)}</span>}
                 {payment === "sepay" && paymentDiscount > 0 && <span className="text-green-600"> · QR -{formatVND(paymentDiscount)}</span>}
               </span>
@@ -1381,7 +1394,7 @@ return parsed
                 {hasBundleShipping && (
                   <div className="flex justify-between text-sm text-gray-600">
                     <span>Phí giao hàng</span>
-                    <span>{shippingFee > 0 ? formatVND(shippingFee) : "Miễn phí"}</span>
+                    <span className={shipAwaiting ? "text-gray-400 italic" : shippingFee === 0 ? "text-green-600 font-semibold" : ""}>{shipLabel}</span>
                   </div>
                 )}
                 {promoDiscount > 0 && (

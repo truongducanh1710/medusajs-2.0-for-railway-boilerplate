@@ -184,8 +184,8 @@ export default function IcegelShop({ items, focus, mode = "grid" }: Props) {
                 {boxes ? `${boxes} hộp${tier.giftPatches ? ` · tặng ${tier.giftPatches} miếng` : ""}` : "Chưa chọn sản phẩm"}
               </p>
               <p className="font-black text-lg text-gray-900 leading-tight">
-                {formatVND(goods + (boxes ? tier.fee : 0))}
-                {boxes > 0 && <span className="ml-1.5 text-[11px] font-semibold text-gray-500">{tier.fee ? `gồm ${formatK(tier.fee)} ship` : "miễn phí ship"}</span>}
+                {formatVND(goods)}
+                {boxes > 0 && <span className="ml-1.5 text-[11px] font-semibold text-gray-500">{tier.fee ? "chưa gồm ship · khách mới freeship" : "miễn phí ship"}</span>}
               </p>
             </div>
             <button

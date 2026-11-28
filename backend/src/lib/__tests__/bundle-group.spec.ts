@@ -86,3 +86,24 @@ describe("ICEgel cross-product box tiers", () => {
     expect(groupLineUpdates(items.map((item) => ({ item, productMetadata: metaOf(item.variant_id) })))).toEqual([])
   })
 })
+
+describe("groupShippingQuote (28/11 address-based fee)", () => {
+  const { GROUPS, groupShippingQuote, normalizeProvince, phoneKey } = require("../bundle-group")
+  const g = GROUPS.icegel
+  it("free from 3 boxes regardless of address", () => {
+    expect(groupShippingQuote(g, 3, { province: "Tỉnh Nghệ An" })).toEqual({ fee: 0, reason: "tier_free" })
+  })
+  it("new customer ships free on 1 box", () => {
+    expect(groupShippingQuote(g, 1, { province: "Tỉnh Nghệ An", isNewCustomer: true })).toEqual({ fee: 0, reason: "new_customer" })
+  })
+  it("Hà Nội pays the local fee", () => {
+    expect(groupShippingQuote(g, 2, { province: "Thành phố Hà Nội" })).toEqual({ fee: 16000, reason: "local" })
+    expect(normalizeProvince("Thành phố Hà Nội")).toBe("ha noi")
+  })
+  it("other provinces pay the tier fee", () => {
+    expect(groupShippingQuote(g, 1, { province: "Thành phố Hồ Chí Minh" })).toEqual({ fee: 20000, reason: "standard" })
+  })
+  it("phone keys match across formats", () => {
+    expect(phoneKey("0912 345 678")).toBe(phoneKey("+84912345678"))
+  })
+})

@@ -7,6 +7,12 @@
  */
 export type GroupTier = { minBoxes: number; fee: number; giftPatches: number }
 export type GiftChoice = { key: string; name: string; value: number }
+/**
+ * Address-based shipping for tiers that charge a fee: same-province parcels (the warehouse is in
+ * Hanoi) pay localFee; a phone that has never ordered from Phan Viet (web or POS) ships free.
+ * Every fee here needs a matching key in product.metadata.bundle_shipping_option_ids.
+ */
+export type GroupShipping = { localFee: number; localProvinces: string[]; newCustomerFree: boolean }
 export type BundleGroup = {
   key: string
   label: string
@@ -14,7 +20,11 @@ export type BundleGroup = {
   giftPackSize: number
   tiers: GroupTier[]
   giftChoices: GiftChoice[]
+  shipping?: GroupShipping
 }
+/** Who is shipping where: province = shipping_address.city as typed by the checkout; isNewCustomer from order history */
+export type ShipContext = { province?: string | null; isNewCustomer?: boolean }
+export type ShipQuote = { fee: number; reason: "tier_free" | "new_customer" | "local" | "standard" }
 
 export const GROUPS: Record<string, BundleGroup> = {
   icegel: {
@@ -29,6 +39,9 @@ export const GROUPS: Record<string, BundleGroup> = {
       { minBoxes: 3, fee: 0, giftPatches: 4 },
       { minBoxes: 4, fee: 0, giftPatches: 6 },
     ],
+    // 28/11 user: fee shown only after the address (by province), first order ships free.
+    // VTP PL01: nội tỉnh 16,5k, liên tỉnh ~20k for parcels ≤0,5kg.
+    shipping: { localFee: 16000, localProvinces: ["ha noi"], newCustomerFree: true },
     giftChoices: [
       { key: "giam-dau", name: "miếng dán giảm đau", value: 42000 },
       { key: "lam-am", name: "miếng dán làm ấm", value: 42000 },
@@ -57,6 +70,29 @@ export function groupUnitPrice(productMetadata: any): number | null {
 
 export function groupTier(group: BundleGroup, boxes: number): GroupTier {
   return [...group.tiers].reverse().find((tier) => boxes >= tier.minBoxes) ?? group.tiers[0]
+}
+
+/** "Thành phố Hà Nội" / "Ha Noi" → "ha noi" */
+export function normalizeProvince(value: unknown): string {
+  return String(value ?? "").normalize("NFD").replace(/\p{Mn}/gu, "").replace(/đ/gi, "d").toLowerCase()
+    .replace(/^(thanh pho|tinh|tp\.?)\s+/, "").replace(/\s+/g, " ").trim()
+}
+
+/** Fee the customer pays for this many boxes, given where it ships and who orders. */
+export function groupShippingQuote(group: BundleGroup, boxes: number, ctx: ShipContext = {}): ShipQuote {
+  const tierFee = groupTier(group, boxes).fee
+  if (tierFee === 0) return { fee: 0, reason: "tier_free" }
+  const ship = group.shipping
+  if (!ship) return { fee: tierFee, reason: "standard" }
+  if (ship.newCustomerFree && ctx.isNewCustomer) return { fee: 0, reason: "new_customer" }
+  if (ship.localProvinces.includes(normalizeProvince(ctx.province))) return { fee: Math.min(tierFee, ship.localFee), reason: "local" }
+  return { fee: tierFee, reason: "standard" }
+}
+
+/** Last 9 digits of a VN phone ("0912…", "+84912…", "84 912…" all match) */
+export function phoneKey(value: unknown): string {
+  const digits = String(value ?? "").replace(/\D/g, "")
+  return digits.length >= 9 ? digits.slice(-9) : ""
 }
 
 /** Gift packs for the tier: valid customer picks first, then the first choices as defaults. */
